@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -373,6 +374,7 @@ type monsterBattleResponse struct {
 	ID                   uuid.UUID                      `json:"id"`
 	UserID               uuid.UUID                      `json:"userId"`
 	MonsterID            uuid.UUID                      `json:"monsterId"`
+	MonsterEncounterID   *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
 	State                string                         `json:"state"`
 	TurnIndex            int                            `json:"turnIndex"`
 	StartedAt            time.Time                      `json:"startedAt"`
@@ -424,6 +426,7 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		ID:                   battle.ID,
 		UserID:               battle.UserID,
 		MonsterID:            battle.MonsterID,
+		MonsterEncounterID:   battle.MonsterEncounterID,
 		State:                battle.State,
 		TurnIndex:            battle.TurnIndex,
 		StartedAt:            battle.StartedAt,
@@ -850,6 +853,7 @@ func (s *server) createFreshMonsterBattle(
 	ctx context.Context,
 	userID uuid.UUID,
 	monsterID uuid.UUID,
+	monsterEncounterID *uuid.UUID,
 ) (*models.MonsterBattle, error) {
 	now := time.Now()
 
@@ -883,12 +887,13 @@ func (s *server) createFreshMonsterBattle(
 	}
 
 	battle := &models.MonsterBattle{
-		UserID:         userID,
-		MonsterID:      monsterID,
-		State:          string(models.MonsterBattleStateActive),
-		TurnIndex:      0,
-		StartedAt:      now,
-		LastActivityAt: now,
+		UserID:             userID,
+		MonsterID:          monsterID,
+		MonsterEncounterID: monsterEncounterID,
+		State:              string(models.MonsterBattleStateActive),
+		TurnIndex:          0,
+		StartedAt:          now,
+		LastActivityAt:     now,
 	}
 	if err := s.dbClient.MonsterBattle().Create(ctx, battle); err != nil {
 		return nil, err
@@ -903,6 +908,86 @@ func (s *server) createFreshMonsterBattle(
 		return nil, err
 	}
 	return battle, nil
+}
+
+func (s *server) monsterBattleScalingLevel(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+) (int, error) {
+	if battle == nil {
+		return 1, nil
+	}
+
+	maxLevel := 1
+	foundParticipant := false
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		return 0, err
+	}
+	for _, participant := range participants {
+		level, err := s.currentUserLevel(ctx, participant.UserID)
+		if err != nil {
+			return 0, err
+		}
+		if !foundParticipant || level > maxLevel {
+			maxLevel = level
+		}
+		foundParticipant = true
+	}
+	if foundParticipant {
+		return maxLevel, nil
+	}
+	if battle.UserID == uuid.Nil {
+		return maxLevel, nil
+	}
+	level, err := s.currentUserLevel(ctx, battle.UserID)
+	if err != nil {
+		return 0, err
+	}
+	if level > maxLevel {
+		maxLevel = level
+	}
+	return maxLevel, nil
+}
+
+func (s *server) monsterScaledForBattle(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	monster *models.Monster,
+) (*models.Monster, error) {
+	if battle == nil || monster == nil {
+		return monster, nil
+	}
+	var (
+		encounter *models.MonsterEncounter
+		err       error
+	)
+	if battle.MonsterEncounterID != nil && *battle.MonsterEncounterID != uuid.Nil {
+		encounter, err = s.dbClient.MonsterEncounter().FindByID(ctx, *battle.MonsterEncounterID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	if encounter == nil {
+		encounter, err = s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if encounter == nil || !encounter.ScaleWithUserLevel {
+		return monster, nil
+	}
+	userLevel, err := s.monsterBattleScalingLevel(ctx, battle)
+	if err != nil {
+		return nil, err
+	}
+	scaledMonster := *monster
+	scaledMonster.Level = scaledEncounterMonsterLevelForUserLevelAndType(
+		userLevel,
+		len(encounter.Members),
+		encounter.EncounterType,
+	)
+	return &scaledMonster, nil
 }
 
 func (s *server) buildMonsterResponse(
@@ -930,7 +1015,11 @@ func (s *server) buildMonsterResponse(
 	for _, status := range activeStatuses {
 		totalStatusBonuses = totalStatusBonuses.Add(status.StatModifiers())
 	}
-	response := monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, activeBattle)
+	battleMonster, err := s.monsterScaledForBattle(ctx, activeBattle, monster)
+	if err != nil {
+		return monsterResponse{}, err
+	}
+	response := monsterResponseFrom(battleMonster, totalStatusBonuses, activeStatuses, activeBattle)
 	if err := s.applyMonsterRewardsForUser(ctx, userID, monster, &response); err != nil {
 		return monsterResponse{}, err
 	}
@@ -2441,7 +2530,53 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 		return
 	}
 
-	battle, err := s.createFreshMonsterBattle(ctx, user.ID, monsterID)
+	var requestBody struct {
+		MonsterEncounterID *string `json:"monsterEncounterId"`
+	}
+	if ctx.Request.ContentLength > 0 {
+		if err := ctx.ShouldBindJSON(&requestBody); err != nil && !errors.Is(err, io.EOF) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	var encounterID *uuid.UUID
+	if requestBody.MonsterEncounterID != nil {
+		trimmed := strings.TrimSpace(*requestBody.MonsterEncounterID)
+		if trimmed != "" {
+			parsedEncounterID, err := uuid.Parse(trimmed)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster encounter ID"})
+				return
+			}
+			encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, parsedEncounterID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+					return
+				}
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if !monsterEncounterVisibleToUser(user.ID, encounter) {
+				ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+				return
+			}
+			memberMatch := false
+			for _, member := range encounter.Members {
+				if member.MonsterID == monsterID {
+					memberMatch = true
+					break
+				}
+			}
+			if !memberMatch {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster is not part of the requested encounter"})
+				return
+			}
+			encounterID = &parsedEncounterID
+		}
+	}
+
+	battle, err := s.createFreshMonsterBattle(ctx, user.ID, monsterID, encounterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -3170,7 +3305,12 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	monsterAction, participantResources, err := s.executeMonsterBattleAction(ctx, battle, updatedMonster)
+	battleMonster, err := s.monsterScaledForBattle(ctx, battle, updatedMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	monsterAction, participantResources, err := s.executeMonsterBattleAction(ctx, battle, battleMonster)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

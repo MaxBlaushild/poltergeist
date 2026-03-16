@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -15,6 +16,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -1476,9 +1478,18 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		participants = append(participants, participant)
 	}
 
-	encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
-	if err != nil {
-		return nil, err
+	var encounter *models.MonsterEncounter
+	if battle.MonsterEncounterID != nil && *battle.MonsterEncounterID != uuid.Nil {
+		encounter, err = s.dbClient.MonsterEncounter().FindByID(ctx, *battle.MonsterEncounterID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	if encounter == nil {
+		encounter, err = s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	participantCount := len(participants)
 	expRewards := splitRewardEvenly(max(0, monster.RewardExperience), participantCount)

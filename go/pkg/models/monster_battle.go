@@ -97,6 +97,7 @@ type MonsterBattle struct {
 	UpdatedAt               time.Time                     `json:"updatedAt"`
 	UserID                  uuid.UUID                     `json:"userId" gorm:"column:user_id"`
 	MonsterID               uuid.UUID                     `json:"monsterId" gorm:"column:monster_id"`
+	MonsterEncounterID      *uuid.UUID                    `json:"monsterEncounterId,omitempty" gorm:"column:monster_encounter_id"`
 	State                   string                        `json:"state" gorm:"column:state"`
 	TurnIndex               int                           `json:"turnIndex" gorm:"column:turn_index"`
 	StartedAt               time.Time                     `json:"startedAt" gorm:"column:started_at"`

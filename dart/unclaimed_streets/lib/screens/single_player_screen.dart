@@ -8118,6 +8118,73 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<MonsterEncounter> _hydrateMonsterEncounterForBattle(
+    MonsterEncounter encounter,
+    String battleMonsterId,
+  ) async {
+    final refreshedMonster = await context.read<PoiService>().getMonsterById(
+      battleMonsterId,
+    );
+    if (refreshedMonster == null) {
+      return encounter;
+    }
+
+    final sourceMembers = encounter.members.isNotEmpty
+        ? encounter.members
+        : encounter.monsters
+              .asMap()
+              .entries
+              .map(
+                (entry) => MonsterEncounterMember(
+                  slot: entry.key + 1,
+                  monster: entry.value,
+                ),
+              )
+              .toList(growable: false);
+
+    final hydratedMembers = sourceMembers
+        .map((member) {
+          if (member.monster.id != battleMonsterId) {
+            return member;
+          }
+          return MonsterEncounterMember(
+            slot: member.slot,
+            monster: refreshedMonster,
+          );
+        })
+        .toList(growable: false);
+
+    final resolvedMembers = hydratedMembers.isNotEmpty
+        ? hydratedMembers
+        : <MonsterEncounterMember>[
+            MonsterEncounterMember(slot: 1, monster: refreshedMonster),
+          ];
+    final resolvedMonsters = resolvedMembers
+        .map((member) => member.monster)
+        .toList(growable: false);
+
+    return MonsterEncounter(
+      id: encounter.id,
+      name: encounter.name,
+      description: encounter.description,
+      imageUrl: encounter.imageUrl,
+      thumbnailUrl: encounter.thumbnailUrl,
+      encounterType: encounter.encounterType,
+      rewardMode: encounter.rewardMode,
+      randomRewardSize: encounter.randomRewardSize,
+      rewardExperience: encounter.rewardExperience,
+      rewardGold: encounter.rewardGold,
+      itemRewards: encounter.itemRewards,
+      zoneId: encounter.zoneId,
+      pointOfInterestId: encounter.pointOfInterestId,
+      latitude: encounter.latitude,
+      longitude: encounter.longitude,
+      monsterCount: resolvedMonsters.length,
+      members: resolvedMembers,
+      monsters: resolvedMonsters,
+    );
+  }
+
   Future<void> _startMonsterBattle(
     MonsterEncounter monster,
     BuildContext parentContext, {
@@ -8147,7 +8214,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ? await poiService.getMonsterBattleStatusById(resolvedBattleId)
             : await poiService.getMonsterBattleStatus(battleMonsterId);
       } else {
-        battleDetail = await poiService.startMonsterBattle(battleMonsterId);
+        battleDetail = await poiService.startMonsterBattle(
+          battleMonsterId,
+          monsterEncounterId: monster.id.trim().isNotEmpty ? monster.id : null,
+        );
       }
       final battleRaw = battleDetail['battle'];
       final battle = battleRaw is Map<String, dynamic>
@@ -8209,6 +8279,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     MonsterBattleResult? result;
+    final battleEncounter = await _hydrateMonsterEncounterForBattle(
+      monster,
+      battleMonsterId,
+    );
     try {
       result = await showDialog<MonsterBattleResult>(
         context: parentContext,
@@ -8216,7 +8290,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         useSafeArea: false,
         barrierDismissible: false,
         builder: (_) => MonsterBattleDialog(
-          encounter: monster,
+          encounter: battleEncounter,
           isPartyBattle: effectivePartyBattle,
           battleMonsterId: battleMonsterId,
           battleId: resolvedBattleId.isNotEmpty ? resolvedBattleId : null,
@@ -8249,6 +8323,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         health: result.playerHealthRemaining,
         mana: result.playerManaRemaining,
       );
+      await Future.wait([
+        statsProvider.refresh(silent: true),
+        context.read<AuthProvider>().refresh(),
+        context.read<ActivityFeedProvider>().refresh(),
+      ]);
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {

@@ -189,9 +189,16 @@ class PoiService {
     return map;
   }
 
-  Future<Map<String, dynamic>> startMonsterBattle(String monsterId) async {
+  Future<Map<String, dynamic>> startMonsterBattle(
+    String monsterId, {
+    String? monsterEncounterId,
+  }) async {
     final raw = await _api.post<dynamic>(
       ApiConstants.monsterBattleStartEndpoint(monsterId),
+      data: {
+        if (monsterEncounterId != null && monsterEncounterId.trim().isNotEmpty)
+          'monsterEncounterId': monsterEncounterId.trim(),
+      },
     );
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
