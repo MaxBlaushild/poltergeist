@@ -250,6 +250,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   bool _playerTurn = true;
   bool _busy = false;
   bool _battleOver = false;
+  bool _endingBattle = false;
   double _monsterShakeDx = 0;
   double _playerShakeDx = 0;
   Color? _monsterFlashTint;
@@ -273,6 +274,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _partyTurnIndex = 0;
   bool _partyMonsterTurnInFlight = false;
   int _lastPartyMonsterHealthDeficit = -1;
+  int _lastSeenPartyActionSequence = -1;
   int _pendingLocalDamage = 0;
   bool _partySelfResourceSyncInFlight = false;
   bool _partySelfHealthIncreaseSyncAllowed = false;
@@ -328,6 +330,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       await _finishBattle(
         MonsterBattleOutcome.defeat,
         'Your party has been defeated.',
+      );
+      return;
+    }
+    if (widget.isPartyBattle) {
+      await _finishBattle(
+        MonsterBattleOutcome.victory,
+        _enemies.length == 1
+            ? 'Your party defeated ${_enemies.first.monster.name}!'
+            : 'Your party won the battle.',
       );
       return;
     }
@@ -1342,6 +1353,118 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return int.tryParse(raw?.toString() ?? '') ?? fallback;
   }
 
+  bool _parseBoolValue(dynamic raw, {bool fallback = false}) {
+    if (raw is bool) return raw;
+    final normalized = (raw?.toString() ?? '').trim().toLowerCase();
+    if (normalized == 'true') return true;
+    if (normalized == 'false') return false;
+    return fallback;
+  }
+
+  Map<String, dynamic>? _battleMapFromPayload(Map<String, dynamic>? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    final directBattleRaw = payload['battle'];
+    if (directBattleRaw is Map<String, dynamic>) {
+      return directBattleRaw;
+    }
+    if (directBattleRaw is Map) {
+      return Map<String, dynamic>.from(directBattleRaw);
+    }
+    final detailRaw = payload['battleDetail'];
+    final detail = detailRaw is Map<String, dynamic>
+        ? detailRaw
+        : (detailRaw is Map ? Map<String, dynamic>.from(detailRaw) : null);
+    if (detail == null) return null;
+    final nestedBattleRaw = detail['battle'];
+    if (nestedBattleRaw is Map<String, dynamic>) {
+      return nestedBattleRaw;
+    }
+    if (nestedBattleRaw is Map) {
+      return Map<String, dynamic>.from(nestedBattleRaw);
+    }
+    return null;
+  }
+
+  String _formatPartyBattleActionLog(Map<String, dynamic> action) {
+    final actorName = (action['actorName']?.toString() ?? '').trim();
+    if (actorName.isEmpty) return '';
+    final abilityName = (action['abilityName']?.toString() ?? '').trim();
+    final actionType = (action['actionType']?.toString() ?? '').trim();
+    final targetName = (action['targetName']?.toString() ?? '').trim();
+    final targetsAllEnemies = _parseBoolValue(action['targetsAllEnemies']);
+    final damage = _parseIntValue(action['damage']);
+    final heal = _parseIntValue(action['heal']);
+    final statusesApplied = _parseIntValue(action['statusesApplied']);
+    final statusesRemoved = _parseIntValue(action['statusesRemoved']);
+    final resolvedTarget = targetsAllEnemies
+        ? 'all enemies'
+        : (targetName.isNotEmpty ? targetName : 'the enemy');
+
+    if (damage > 0) {
+      if (abilityName.isNotEmpty) {
+        return '$actorName uses $abilityName on $resolvedTarget for $damage damage.';
+      }
+      return '$actorName attacks $resolvedTarget for $damage damage.';
+    }
+    if (heal > 0) {
+      if (abilityName.isNotEmpty) {
+        if (targetName.isNotEmpty) {
+          return '$actorName uses $abilityName on $targetName and restores $heal HP.';
+        }
+        return '$actorName uses $abilityName and restores $heal HP.';
+      }
+      if (targetName.isNotEmpty) {
+        return '$actorName restores $heal HP to $targetName.';
+      }
+      return '$actorName restores $heal HP.';
+    }
+    if (abilityName.isNotEmpty) {
+      if (targetsAllEnemies) {
+        return '$actorName uses $abilityName on all enemies.';
+      }
+      if (targetName.isNotEmpty) {
+        return '$actorName uses $abilityName on $targetName.';
+      }
+      if (statusesApplied > 0 || statusesRemoved > 0) {
+        return '$actorName uses $abilityName.';
+      }
+    }
+    if (actionType == 'attack') {
+      return '$actorName attacks.';
+    }
+    return '';
+  }
+
+  bool _consumePartyLastActionFromPayload(Map<String, dynamic>? payload) {
+    final battle = _battleMapFromPayload(payload);
+    if (battle == null || battle.isEmpty) return false;
+    final sequence = _parseIntValue(battle['lastActionSequence']);
+    if (_lastSeenPartyActionSequence < 0) {
+      _lastSeenPartyActionSequence = math.max(0, sequence);
+      return false;
+    }
+    if (sequence <= 0) return false;
+    if (sequence <= _lastSeenPartyActionSequence) return false;
+    _lastSeenPartyActionSequence = sequence;
+
+    final rawAction = battle['lastAction'];
+    final action = rawAction is Map<String, dynamic>
+        ? rawAction
+        : (rawAction is Map ? Map<String, dynamic>.from(rawAction) : null);
+    if (action == null || action.isEmpty) return true;
+
+    final actorUserId = (action['actorUserId']?.toString() ?? '').trim();
+    if (_selfUserId.isNotEmpty && actorUserId == _selfUserId) {
+      return true;
+    }
+
+    final message = _formatPartyBattleActionLog(action);
+    if (message.isNotEmpty) {
+      _battleLog.add(message);
+    }
+    return true;
+  }
+
   String _userDisplayNameFromRaw(Map<String, dynamic> raw) {
     final username = (raw['username']?.toString() ?? '').trim();
     if (username.isNotEmpty) return '@$username';
@@ -1489,7 +1612,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             name: _userDisplayNameFromRaw(raw),
             iconUrl: (raw['profilePictureUrl']?.toString() ?? '').trim(),
             level: id == _selfUserId ? _playerLevel : 1,
-            currentHealth: id == _selfUserId ? _playerHealth : 0,
+            currentHealth: id == _selfUserId ? _playerHealth : 1,
             maxHealth: id == _selfUserId ? _playerMaxHealth : 1,
             currentMana: id == _selfUserId ? _playerMana : 0,
             maxMana: id == _selfUserId ? _playerMaxMana : 0,
@@ -1557,7 +1680,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     bool syncHealth = true,
     bool syncMana = true,
   }) {
-    if (!widget.isPartyBattle) return;
+    if (!widget.isPartyBattle || _battleOver || _endingBattle) return;
     if (syncHealth) {
       _pendingPartySelfHealthSync = true;
     }
@@ -1577,7 +1700,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   }
 
   Future<void> _syncPartySelfResourcesToBackend() async {
-    if (!widget.isPartyBattle || _selfUserId.isEmpty || !mounted) {
+    if (!widget.isPartyBattle ||
+        _selfUserId.isEmpty ||
+        !mounted ||
+        _battleOver ||
+        _endingBattle) {
       return;
     }
     if (_partySelfResourceSyncInFlight) {
@@ -1588,6 +1715,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     try {
       while (mounted &&
           widget.isPartyBattle &&
+          !_battleOver &&
+          !_endingBattle &&
           (_pendingPartySelfHealthSync || _pendingPartySelfManaSync)) {
         final syncHealth = _pendingPartySelfHealthSync;
         final syncMana = _pendingPartySelfManaSync;
@@ -1694,7 +1823,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             name: 'Party Member',
             iconUrl: '',
             level: 1,
-            currentHealth: 0,
+            currentHealth: 1,
             maxHealth: 1,
             currentMana: 0,
             maxMana: 0,
@@ -1785,6 +1914,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final ally = _partyAllies[existing];
     final prevHealth = ally.currentHealth;
     final prevMana = ally.currentMana;
+    final isInitialSnapshot =
+        !ally.isSelf &&
+        ally.level <= 1 &&
+        ally.maxHealth <= 1 &&
+        ally.currentHealth <= 1 &&
+        ally.maxMana == 0 &&
+        ally.currentMana == 0;
     ally.name = _userDisplayNameFromRaw(user);
     final icon = (user['profilePictureUrl']?.toString() ?? '').trim();
     if (icon.isNotEmpty) {
@@ -1809,6 +1945,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     ).clamp(0, ally.maxMana).toInt();
 
     if (ally.isSelf) return;
+    if (isInitialSnapshot) return;
     if (prevHealth != ally.currentHealth) {
       final delta = ally.currentHealth - prevHealth;
       if (delta > 0) {
@@ -1921,10 +2058,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       await _syncPartyParticipantsFromStatus(status);
       if (!mounted || _battleOver) return;
       _syncEnemyStatusesFromPayload(status);
-      final battleRaw = status['battle'];
-      final battle = battleRaw is Map<String, dynamic>
-          ? battleRaw
-          : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+      final battle = _battleMapFromPayload(status);
       final deficit = _parseIntValue(battle?['monsterHealthDeficit']);
       final endedAtRaw = (battle?['endedAt']?.toString() ?? '').trim();
       if (_enemies.isNotEmpty) {
@@ -1933,13 +2067,14 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         setState(() {
           _syncSelfAllyFromLocalResources();
           _updatePartyTurnOrderFromStatus(status);
+          final consumedLastAction = _consumePartyLastActionFromPayload(status);
           if (_lastPartyMonsterHealthDeficit >= 0 &&
               deficit > _lastPartyMonsterHealthDeficit) {
             final rawDelta = deficit - _lastPartyMonsterHealthDeficit;
             final attributedToLocal = math.min(_pendingLocalDamage, rawDelta);
             _pendingLocalDamage -= attributedToLocal;
             final remoteDelta = rawDelta - attributedToLocal;
-            if (remoteDelta > 0) {
+            if (remoteDelta > 0 && !consumedLastAction) {
               _battleLog.add(
                 'A party member hits ${primaryEnemy.monster.name} for $remoteDelta damage.',
               );
@@ -1977,7 +2112,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         }
       }
       if (endedAtRaw.isNotEmpty && !_battleOver) {
-        final didWin = _aliveEnemies.isEmpty;
+        final didWin =
+            _aliveEnemies.isEmpty ||
+            (widget.isPartyBattle &&
+                !_allPartyMembersDefeated() &&
+                _playerHealth > 0);
         final didLose = _allPartyMembersDefeated() || _playerHealth <= 0;
         if (didWin) {
           await _finishBattle(
@@ -2009,7 +2148,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
   }
 
-  Future<Map<String, dynamic>?> _reportPartyBattleDamage(int damage) async {
+  Future<Map<String, dynamic>?> _reportPartyBattleDamage(
+    int damage, {
+    Map<String, dynamic>? action,
+  }) async {
     if (!widget.isPartyBattle || damage <= 0 || _battleOver) return null;
     final battleId = (_partyBattleId ?? '').trim();
     final monsterId = _partyBattleMonsterId;
@@ -2024,11 +2166,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         response = await poiService.applyMonsterBattleDamageById(
           battleId,
           damage,
+          action: action,
         );
       } else {
         response = await poiService.applyMonsterBattleDamage(
           monsterId!,
           damage,
+          action: action,
         );
       }
       try {
@@ -2691,6 +2835,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     int allyManaDelta = 0,
     bool? syncPartyHealth,
     bool? syncPartyMana,
+    Map<String, dynamic>? partyActionPayload,
     Future<void> Function(Map<String, dynamic>? damageResponse)?
     onAfterTurnSynced,
   }) async {
@@ -2793,7 +2938,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       Map<String, dynamic>? damageResponse;
       if (sharedDamage > 0) {
         if (widget.isPartyBattle) {
-          damageResponse = await _reportPartyBattleDamage(sharedDamage);
+          damageResponse = await _reportPartyBattleDamage(
+            sharedDamage,
+            action: partyActionPayload,
+          );
         } else {
           damageResponse = await _reportSoloBattleDamage(sharedDamage);
         }
@@ -3008,7 +3156,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     MonsterBattleOutcome outcome,
     String summary,
   ) async {
-    if (_battleOver) return;
+    if (_battleOver || _endingBattle) return;
+    _endingBattle = true;
+    _pendingPartySelfHealthSync = false;
+    _pendingPartySelfManaSync = false;
+    _partySelfHealthIncreaseSyncAllowed = false;
     if (widget.isPartyBattle && outcome == MonsterBattleOutcome.defeat) {
       await _endSharedPartyBattleOnServer();
     }
@@ -3278,6 +3430,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       message: '$_playerName attacks ${target.monster.name} for $damage damage',
       damageToMonster: damage,
       targetEnemyIndex: targetIndex,
+      partyActionPayload: const <String, dynamic>{'actionType': 'attack'},
       onAfterTurnSynced: (damageResponse) async {
         if (damageResponse != null && damageResponse.isNotEmpty) {
           _advanceLocalTechniqueCooldownsForAction();
@@ -3527,6 +3680,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         allyHealthDelta: 0,
         syncPartyHealth: didSelfHealthChange,
         syncPartyMana: didManaChange,
+        partyActionPayload: <String, dynamic>{
+          'actionType': 'ability',
+          'abilityId': ability.id,
+          'abilityName': ability.name,
+          'abilityType': ability.abilityType,
+          'targetsAllEnemies': allEnemiesDamage > 0,
+          if (didSelfHealthChange)
+            'heal': math.max(0, _playerHealth - healthBeforeCast),
+        },
         onAfterTurnSynced: (damageResponse) async {
           final hasSeparateTurnResponse =
               damageResponse != null && damageResponse.isNotEmpty;
@@ -3728,6 +3890,14 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       allyTargetIndex: allyTargetIndex,
       allyHealthDelta: allyHealthDelta,
       allyManaDelta: allyTargetIndex != null ? item.manaDelta : 0,
+      partyActionPayload: <String, dynamic>{
+        'actionType': 'item',
+        'abilityName': item.name,
+        'abilityType': 'item',
+        'targetsAllEnemies': allEnemiesDamage > 0,
+        if (playerHealthDelta > 0 || allyHealthDelta > 0)
+          'heal': math.max(playerHealthDelta, allyHealthDelta),
+      },
       onAfterTurnSynced: (damageResponse) async {
         if (damageResponse == null || damageResponse.isEmpty) return;
         setState(() {
@@ -3977,6 +4147,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                               if (entry.enemyIndex != null &&
                                   !entry.isDefeated) {
                                 _activeEnemyIndex = entry.enemyIndex!;
+                              } else if (entry.allyIndex != null) {
+                                _activeAllyIndex = entry.allyIndex!;
                               }
                             });
                           };
@@ -4374,24 +4546,20 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         : activeEnemy.statuses
               .map(_CombatStatusVisual.fromMonsterStatus)
               .toList(growable: false);
-    final activeAlly = widget.isPartyBattle ? _selfPartyAlly : _activeAlly;
+    final activeAlly = widget.isPartyBattle
+        ? (_activeAlly ?? _selfPartyAlly)
+        : _activeAlly;
     final allyName = activeAlly?.name ?? _playerName;
     final allyLevel = activeAlly?.level ?? _playerLevel;
-    final allyCurrentHp = widget.isPartyBattle
-        ? _playerHealth
-        : (activeAlly?.currentHealth ?? _playerHealth);
-    final allyMaxHp = widget.isPartyBattle
-        ? _playerMaxHealth
-        : (activeAlly?.maxHealth ?? _playerMaxHealth);
-    final allyCurrentMana = widget.isPartyBattle
-        ? _playerMana
-        : (activeAlly?.currentMana ?? _playerMana);
-    final allyMaxMana = widget.isPartyBattle
-        ? _playerMaxMana
-        : (activeAlly?.maxMana ?? _playerMaxMana);
-    final playerStatuses = _playerStatuses
-        .map(_CombatStatusVisual.fromCharacterStatus)
-        .toList(growable: false);
+    final allyCurrentHp = activeAlly?.currentHealth ?? _playerHealth;
+    final allyMaxHp = activeAlly?.maxHealth ?? _playerMaxHealth;
+    final allyCurrentMana = activeAlly?.currentMana ?? _playerMana;
+    final allyMaxMana = activeAlly?.maxMana ?? _playerMaxMana;
+    final playerStatuses = (activeAlly?.isSelf ?? true)
+        ? _playerStatuses
+              .map(_CombatStatusVisual.fromCharacterStatus)
+              .toList(growable: false)
+        : const <_CombatStatusVisual>[];
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),

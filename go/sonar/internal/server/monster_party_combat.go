@@ -79,6 +79,51 @@ type monsterBattleActionSummary struct {
 	MonsterStatusesRemoved []string                       `json:"monsterStatusesRemoved,omitempty"`
 }
 
+func normalizeMonsterBattleActionType(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "attack":
+		return "attack"
+	case "item":
+		return "item"
+	case "ability", "spell", "technique":
+		return "ability"
+	default:
+		return "attack"
+	}
+}
+
+func monsterBattleUserDisplayName(user *models.User) string {
+	if user == nil {
+		return "Party Member"
+	}
+	if user.Username != nil {
+		if username := strings.TrimSpace(*user.Username); username != "" {
+			return "@" + username
+		}
+	}
+	if name := strings.TrimSpace(user.Name); name != "" {
+		return name
+	}
+	return "Party Member"
+}
+
+func (s *server) recordMonsterBattleLastAction(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	action models.MonsterBattleLastAction,
+) error {
+	if battle == nil || battle.EndedAt != nil {
+		return nil
+	}
+	action.ActionType = normalizeMonsterBattleActionType(action.ActionType)
+	if err := s.dbClient.MonsterBattle().RecordLastAction(ctx, battle.ID, action); err != nil {
+		return err
+	}
+	battle.LastActionSequence += 1
+	battle.LastAction = action
+	return nil
+}
+
 func (s *server) findActiveMonsterBattleForUser(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -163,7 +208,10 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 			initiator != nil && initiator.PartyID != nil,
 		)
 		battle.State = string(models.MonsterBattleStateActive)
-		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
+		if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State); err != nil {
+			return err
+		}
+		return s.setMonsterBattleOpeningTurn(ctx, battle)
 	}
 
 	partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, battle.UserID)
@@ -177,7 +225,10 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 			battle.UserID,
 		)
 		battle.State = string(models.MonsterBattleStateActive)
-		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
+		if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State); err != nil {
+			return err
+		}
+		return s.setMonsterBattleOpeningTurn(ctx, battle)
 	}
 	log.Printf(
 		"[party-combat][invite] evaluating party members battle=%s count=%d",
@@ -191,7 +242,10 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 	}
 	if monster.OwnerUserID != nil {
 		battle.State = string(models.MonsterBattleStateActive)
-		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
+		if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State); err != nil {
+			return err
+		}
+		return s.setMonsterBattleOpeningTurn(ctx, battle)
 	}
 
 	inviteCount := 0
@@ -282,7 +336,13 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 		)
 		battle.State = string(models.MonsterBattleStatePendingPartyResponses)
 	}
-	return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
+	if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State); err != nil {
+		return err
+	}
+	if battle.State == string(models.MonsterBattleStateActive) {
+		return s.setMonsterBattleOpeningTurn(ctx, battle)
+	}
+	return nil
 }
 
 func userDisplayName(user *models.User) string {
@@ -462,8 +522,42 @@ func (s *server) refreshMonsterBattleInviteState(
 		if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, targetState); err != nil {
 			return nil, err
 		}
+		if targetState == string(models.MonsterBattleStateActive) {
+			battle.State = targetState
+			if err := s.setMonsterBattleOpeningTurn(ctx, battle); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return s.dbClient.MonsterBattle().FindByID(ctx, battleID)
+}
+
+func (s *server) setMonsterBattleOpeningTurn(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+) error {
+	if battle == nil || battle.EndedAt != nil {
+		return nil
+	}
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		return err
+	}
+	turnOrder, err := s.buildMonsterBattleTurnOrder(ctx, battle, participants)
+	if err != nil {
+		return err
+	}
+	for index, entry := range turnOrder {
+		if strings.ToLower(strings.TrimSpace(entry.EntityType)) != "user" {
+			continue
+		}
+		if err := s.dbClient.MonsterBattle().SetTurnIndex(ctx, battle.ID, index); err != nil {
+			return err
+		}
+		battle.TurnIndex = index
+		return nil
+	}
+	return nil
 }
 
 func (s *server) getUserBattleDexterity(ctx context.Context, userID uuid.UUID) (int, error) {

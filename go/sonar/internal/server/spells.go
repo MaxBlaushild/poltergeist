@@ -3012,6 +3012,53 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			return
 		}
 	}
+	if monsterBattle != nil && advanceCombatTurnOnCast {
+		totalHeal := 0
+		for _, heal := range heals {
+			totalHeal += max(0, heal.Restored)
+		}
+		var targetUserUUID *uuid.UUID
+		var targetMonsterUUID *uuid.UUID
+		targetName := ""
+		if hasTargetUserID {
+			targetUserUUID = &targetUserID
+			targetUser, targetErr := s.dbClient.User().FindByID(ctx, targetUserID)
+			if targetErr != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": targetErr.Error()})
+				return
+			}
+			targetName = monsterBattleUserDisplayName(targetUser)
+		} else if len(heals) > 1 {
+			targetName = "the party"
+		}
+		if targetMonsterID != nil && !hasTargetUserID {
+			targetMonsterUUID = targetMonsterID
+			targetMonster, targetErr := s.dbClient.Monster().FindByID(ctx, *targetMonsterID)
+			if targetErr != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": targetErr.Error()})
+				return
+			}
+			targetName = strings.TrimSpace(targetMonster.Name)
+		}
+		if err := s.recordMonsterBattleLastAction(ctx, monsterBattle, models.MonsterBattleLastAction{
+			ActionType:      "ability",
+			ActorType:       "user",
+			ActorUserID:     &user.ID,
+			ActorName:       monsterBattleUserDisplayName(user),
+			AbilityID:       &spellToCast.ID,
+			AbilityName:     strings.TrimSpace(spellToCast.Name),
+			AbilityType:     string(abilityType),
+			TargetUserID:    targetUserUUID,
+			TargetMonsterID: targetMonsterUUID,
+			TargetName:      targetName,
+			Heal:            totalHeal,
+			StatusesApplied: len(appliedUserStatuses) + len(appliedMonsterStatuses),
+			StatusesRemoved: len(removedUserStatuses) + len(removedMonsterStatuses),
+		}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	_, _, maxMana, _, manaAfter, err := s.getScenarioResourceState(ctx, user.ID)
 	if err != nil {

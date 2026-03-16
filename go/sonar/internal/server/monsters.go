@@ -284,6 +284,15 @@ type monsterEncounterUpsertRequest struct {
 	MonsterIDs          []string `json:"monsterIds"`
 }
 
+type monsterBattleActionRequest struct {
+	ActionType        string  `json:"actionType"`
+	AbilityID         *string `json:"abilityId"`
+	AbilityName       string  `json:"abilityName"`
+	AbilityType       string  `json:"abilityType"`
+	TargetsAllEnemies bool    `json:"targetsAllEnemies"`
+	Heal              int     `json:"heal"`
+}
+
 type monsterTemplateResponse struct {
 	ID                    uuid.UUID      `json:"id"`
 	CreatedAt             time.Time      `json:"createdAt"`
@@ -355,16 +364,18 @@ type monsterResponse struct {
 }
 
 type monsterBattleResponse struct {
-	ID                   uuid.UUID  `json:"id"`
-	UserID               uuid.UUID  `json:"userId"`
-	MonsterID            uuid.UUID  `json:"monsterId"`
-	State                string     `json:"state"`
-	TurnIndex            int        `json:"turnIndex"`
-	StartedAt            time.Time  `json:"startedAt"`
-	LastActivityAt       time.Time  `json:"lastActivityAt"`
-	MonsterHealthDeficit int        `json:"monsterHealthDeficit"`
-	MonsterManaDeficit   int        `json:"monsterManaDeficit"`
-	EndedAt              *time.Time `json:"endedAt,omitempty"`
+	ID                   uuid.UUID                      `json:"id"`
+	UserID               uuid.UUID                      `json:"userId"`
+	MonsterID            uuid.UUID                      `json:"monsterId"`
+	State                string                         `json:"state"`
+	TurnIndex            int                            `json:"turnIndex"`
+	StartedAt            time.Time                      `json:"startedAt"`
+	LastActivityAt       time.Time                      `json:"lastActivityAt"`
+	MonsterHealthDeficit int                            `json:"monsterHealthDeficit"`
+	MonsterManaDeficit   int                            `json:"monsterManaDeficit"`
+	LastActionSequence   int                            `json:"lastActionSequence"`
+	LastAction           models.MonsterBattleLastAction `json:"lastAction"`
+	EndedAt              *time.Time                     `json:"endedAt,omitempty"`
 }
 
 type monsterEncounterMemberResponse struct {
@@ -408,7 +419,56 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		LastActivityAt:       battle.LastActivityAt,
 		MonsterHealthDeficit: battle.MonsterHealthDeficit,
 		MonsterManaDeficit:   battle.MonsterManaDeficit,
+		LastActionSequence:   battle.LastActionSequence,
+		LastAction:           battle.LastAction,
 		EndedAt:              battle.EndedAt,
+	}
+}
+
+func parseMonsterBattleActionAbilityID(raw *string) (*uuid.UUID, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsed, err := uuid.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("invalid abilityId")
+	}
+	return &parsed, nil
+}
+
+func monsterBattleLastActionFromRequest(
+	user *models.User,
+	monster *models.Monster,
+	request monsterBattleActionRequest,
+	abilityID *uuid.UUID,
+	appliedDamage int,
+) models.MonsterBattleLastAction {
+	targetName := "the enemy"
+	var targetMonsterID *uuid.UUID
+	if monster != nil {
+		targetName = strings.TrimSpace(monster.Name)
+		if targetName == "" {
+			targetName = "the enemy"
+		}
+		targetMonsterID = &monster.ID
+	}
+	return models.MonsterBattleLastAction{
+		ActionType:        normalizeMonsterBattleActionType(request.ActionType),
+		ActorType:         "user",
+		ActorUserID:       &user.ID,
+		ActorName:         monsterBattleUserDisplayName(user),
+		AbilityID:         abilityID,
+		AbilityName:       strings.TrimSpace(request.AbilityName),
+		AbilityType:       strings.TrimSpace(request.AbilityType),
+		TargetMonsterID:   targetMonsterID,
+		TargetName:        targetName,
+		TargetsAllEnemies: request.TargetsAllEnemies,
+		Damage:            max(0, appliedDamage),
+		Heal:              max(0, request.Heal),
 	}
 }
 
@@ -2539,8 +2599,9 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Damage         int     `json:"damage"`
-		DamageAffinity *string `json:"damageAffinity"`
+		Damage         int                         `json:"damage"`
+		DamageAffinity *string                     `json:"damageAffinity"`
+		Action         *monsterBattleActionRequest `json:"action"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2557,6 +2618,15 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	actionRequest := monsterBattleActionRequest{ActionType: "attack"}
+	if requestBody.Action != nil {
+		actionRequest = *requestBody.Action
+	}
+	abilityID, err := parseMonsterBattleActionAbilityID(actionRequest.AbilityID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
@@ -2643,6 +2713,14 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := s.recordMonsterBattleLastAction(
+		ctx,
+		battle,
+		monsterBattleLastActionFromRequest(user, monster, actionRequest, abilityID, appliedDamage),
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2684,8 +2762,9 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Damage         int     `json:"damage"`
-		DamageAffinity *string `json:"damageAffinity"`
+		Damage         int                         `json:"damage"`
+		DamageAffinity *string                     `json:"damageAffinity"`
+		Action         *monsterBattleActionRequest `json:"action"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2702,6 +2781,15 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	actionRequest := monsterBattleActionRequest{ActionType: "attack"}
+	if requestBody.Action != nil {
+		actionRequest = *requestBody.Action
+	}
+	abilityID, err := parseMonsterBattleActionAbilityID(actionRequest.AbilityID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	battle, err := s.dbClient.MonsterBattle().FindByID(ctx, battleID)
@@ -2794,6 +2882,14 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		return
 	}
 	if battle, err = s.advanceMonsterBattleTurnState(ctx, battle, &user.ID, nil); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.recordMonsterBattleLastAction(
+		ctx,
+		battle,
+		monsterBattleLastActionFromRequest(user, monster, actionRequest, abilityID, appliedDamage),
+	); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

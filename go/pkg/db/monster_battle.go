@@ -36,6 +36,15 @@ func (h *monsterBattleHandler) Create(ctx context.Context, battle *models.Monste
 	if battle.TurnIndex < 0 {
 		battle.TurnIndex = 0
 	}
+	if battle.MonsterManaDeficit < 0 {
+		battle.MonsterManaDeficit = 0
+	}
+	if battle.MonsterAbilityCooldowns == nil {
+		battle.MonsterAbilityCooldowns = models.MonsterBattleAbilityCooldowns{}
+	}
+	if battle.LastActionSequence < 0 {
+		battle.LastActionSequence = 0
+	}
 	return h.db.WithContext(ctx).Create(battle).Error
 }
 
@@ -180,6 +189,23 @@ func (h *monsterBattleHandler) UpdateMonsterCombatState(
 			"monster_mana_deficit":      manaDeficit,
 			"monster_ability_cooldowns": cooldowns,
 			"updated_at":                now,
+		}).Error
+}
+
+func (h *monsterBattleHandler) RecordLastAction(
+	ctx context.Context,
+	battleID uuid.UUID,
+	action models.MonsterBattleLastAction,
+) error {
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterBattle{}).
+		Where("id = ? AND ended_at IS NULL", battleID).
+		Updates(map[string]interface{}{
+			"last_action_sequence": gorm.Expr("last_action_sequence + 1"),
+			"last_action":          action,
+			"last_activity_at":     now,
+			"updated_at":           now,
 		}).Error
 }
 

@@ -368,6 +368,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _onAuthChanged() {
     if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading || !auth.isAuthenticated) {
+      return;
+    }
     _requestQuestLogIfReady(force: true);
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));

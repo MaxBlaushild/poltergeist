@@ -212,11 +212,15 @@ class PoiService {
 
   Future<Map<String, dynamic>> applyMonsterBattleDamage(
     String monsterId,
-    int damage,
-  ) async {
+    int damage, {
+    Map<String, dynamic>? action,
+  }) async {
     final raw = await _api.post<dynamic>(
       ApiConstants.monsterBattleDamageEndpoint(monsterId),
-      data: {'damage': damage},
+      data: {
+        'damage': damage,
+        if (action != null && action.isNotEmpty) 'action': action,
+      },
     );
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
@@ -271,11 +275,15 @@ class PoiService {
 
   Future<Map<String, dynamic>> applyMonsterBattleDamageById(
     String battleId,
-    int damage,
-  ) async {
+    int damage, {
+    Map<String, dynamic>? action,
+  }) async {
     final raw = await _api.post<dynamic>(
       ApiConstants.monsterBattleDamageByIdEndpoint(battleId),
-      data: {'damage': damage},
+      data: {
+        'damage': damage,
+        if (action != null && action.isNotEmpty) 'action': action,
+      },
     );
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
