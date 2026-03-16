@@ -8269,36 +8269,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _loadTreasureChestsForSelectedZone();
       if (!mounted || !parentContext.mounted) return;
 
-      final itemTotals = <int, Map<String, dynamic>>{};
-      for (final enemy in monster.monsters) {
-        for (final reward in enemy.itemRewards) {
-          final quantity = reward.quantity > 0 ? reward.quantity : 1;
-          final entry = itemTotals.putIfAbsent(reward.inventoryItemId, () {
-            return <String, dynamic>{
-              'id': reward.inventoryItemId,
-              'name': reward.inventoryItemName.isNotEmpty
-                  ? reward.inventoryItemName
-                  : 'Item #${reward.inventoryItemId}',
-              'imageUrl': reward.inventoryItemImageUrl,
-              'quantity': 0,
-            };
-          });
-          entry['quantity'] = (entry['quantity'] as int) + quantity;
-          if ((entry['imageUrl'] as String).isEmpty &&
-              reward.inventoryItemImageUrl.isNotEmpty) {
-            entry['imageUrl'] = reward.inventoryItemImageUrl;
-          }
-        }
-      }
-      final itemsAwarded = itemTotals.values.toList();
       parentContext.read<CompletedTaskProvider>().showModal(
         'monsterBattleVictory',
         data: {
           'monsterEncounterId': monster.id,
           'monsterName': monster.name,
-          'rewardExperience': monster.totalRewardExperience,
-          'rewardGold': monster.totalRewardGold,
-          'itemsAwarded': itemsAwarded,
+          'rewardExperience': result.rewardExperience,
+          'rewardGold': result.rewardGold,
+          'itemsAwarded': result.itemsAwarded,
         },
       );
       return;

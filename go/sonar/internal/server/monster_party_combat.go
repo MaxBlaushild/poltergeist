@@ -28,6 +28,13 @@ type monsterBattleParticipantSummary struct {
 	JoinedAt    time.Time `json:"joinedAt"`
 }
 
+type monsterBattleParticipantRewardSummary struct {
+	UserID           uuid.UUID            `json:"userId"`
+	RewardExperience int                  `json:"rewardExperience"`
+	RewardGold       int                  `json:"rewardGold"`
+	ItemsAwarded     []models.ItemAwarded `json:"itemsAwarded"`
+}
+
 type monsterBattleInviteSummary struct {
 	ID            uuid.UUID  `json:"id"`
 	BattleID      uuid.UUID  `json:"battleId"`
@@ -47,11 +54,13 @@ type monsterBattleTurnOrderEntry struct {
 }
 
 type monsterBattleDetail struct {
-	Battle           *monsterBattleResponse            `json:"battle"`
-	Participants     []monsterBattleParticipantSummary `json:"participants"`
-	Invites          []monsterBattleInviteSummary      `json:"invites"`
-	PendingResponses int64                             `json:"pendingResponses"`
-	TurnOrder        []monsterBattleTurnOrderEntry     `json:"turnOrder"`
+	Battle               *monsterBattleResponse                  `json:"battle"`
+	Participants         []monsterBattleParticipantSummary       `json:"participants"`
+	ParticipantRewards   []monsterBattleParticipantRewardSummary `json:"participantRewards"`
+	ParticipantResources []monsterBattleUserResource             `json:"participantResources"`
+	Invites              []monsterBattleInviteSummary            `json:"invites"`
+	PendingResponses     int64                                   `json:"pendingResponses"`
+	TurnOrder            []monsterBattleTurnOrderEntry           `json:"turnOrder"`
 }
 
 type monsterBattleUserResource struct {
@@ -122,6 +131,37 @@ func (s *server) recordMonsterBattleLastAction(
 	battle.LastActionSequence += 1
 	battle.LastAction = action
 	return nil
+}
+
+func monsterBattleLastActionFromMonsterAction(
+	action *monsterBattleActionSummary,
+) models.MonsterBattleLastAction {
+	if action == nil {
+		return models.MonsterBattleLastAction{}
+	}
+	var actorMonsterID *uuid.UUID
+	if action.ActorMonsterID != uuid.Nil {
+		actorMonsterID = &action.ActorMonsterID
+	}
+	targetName := ""
+	if len(action.TargetUserIDs) > 1 {
+		targetName = "the party"
+	}
+	return models.MonsterBattleLastAction{
+		ActionType:      normalizeMonsterBattleActionType(action.ActionType),
+		ActorType:       "monster",
+		ActorMonsterID:  actorMonsterID,
+		ActorName:       strings.TrimSpace(action.ActorMonsterName),
+		AbilityID:       action.AbilityID,
+		AbilityName:     strings.TrimSpace(action.AbilityName),
+		AbilityType:     strings.TrimSpace(action.AbilityType),
+		TargetUserID:    action.TargetUserID,
+		TargetName:      targetName,
+		Damage:          max(0, action.Damage),
+		Heal:            max(0, action.Heal),
+		StatusesApplied: len(action.UserStatusesApplied) + len(action.MonsterStatusesApplied),
+		StatusesRemoved: len(action.UserStatusesRemoved) + len(action.MonsterStatusesRemoved),
+	}
 }
 
 func (s *server) findActiveMonsterBattleForUser(
@@ -1288,10 +1328,12 @@ func (s *server) monsterBattleDetailResponse(
 ) (*monsterBattleDetail, error) {
 	if battle == nil {
 		return &monsterBattleDetail{
-			Battle:       nil,
-			Participants: []monsterBattleParticipantSummary{},
-			Invites:      []monsterBattleInviteSummary{},
-			TurnOrder:    []monsterBattleTurnOrderEntry{},
+			Battle:               nil,
+			Participants:         []monsterBattleParticipantSummary{},
+			ParticipantRewards:   []monsterBattleParticipantRewardSummary{},
+			ParticipantResources: []monsterBattleUserResource{},
+			Invites:              []monsterBattleInviteSummary{},
+			TurnOrder:            []monsterBattleTurnOrderEntry{},
 		}, nil
 	}
 
@@ -1310,11 +1352,18 @@ func (s *server) monsterBattleDetailResponse(
 	}
 
 	participantSummaries := make([]monsterBattleParticipantSummary, 0, len(participants))
+	participantRewards := make([]monsterBattleParticipantRewardSummary, 0, len(participants))
 	for _, participant := range participants {
 		participantSummaries = append(participantSummaries, monsterBattleParticipantSummary{
 			UserID:      participant.UserID,
 			IsInitiator: participant.IsInitiator,
 			JoinedAt:    participant.JoinedAt,
+		})
+		participantRewards = append(participantRewards, monsterBattleParticipantRewardSummary{
+			UserID:           participant.UserID,
+			RewardExperience: participant.RewardExperience,
+			RewardGold:       participant.RewardGold,
+			ItemsAwarded:     append([]models.ItemAwarded{}, participant.ItemsAwarded...),
 		})
 	}
 
@@ -1336,13 +1385,19 @@ func (s *server) monsterBattleDetailResponse(
 	if err != nil {
 		return nil, err
 	}
+	participantResources, err := s.loadMonsterBattleUserResources(ctx, battle)
+	if err != nil {
+		return nil, err
+	}
 
 	return &monsterBattleDetail{
-		Battle:           monsterBattleResponseFrom(battle),
-		Participants:     participantSummaries,
-		Invites:          inviteSummaries,
-		PendingResponses: pendingCount,
-		TurnOrder:        turnOrder,
+		Battle:               monsterBattleResponseFrom(battle),
+		Participants:         participantSummaries,
+		ParticipantRewards:   participantRewards,
+		ParticipantResources: participantResources,
+		Invites:              inviteSummaries,
+		PendingResponses:     pendingCount,
+		TurnOrder:            turnOrder,
 	}, nil
 }
 
@@ -1409,12 +1464,16 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		return nil, err
 	}
 	if len(participants) == 0 {
-		participants = append(participants, models.MonsterBattleParticipant{
+		participant := models.MonsterBattleParticipant{
 			BattleID:    battle.ID,
 			UserID:      battle.UserID,
 			IsInitiator: true,
 			JoinedAt:    time.Now(),
-		})
+		}
+		if err := s.dbClient.MonsterBattleParticipant().CreateOrUpdate(ctx, &participant); err != nil {
+			return nil, err
+		}
+		participants = append(participants, participant)
 	}
 
 	participantCount := len(participants)
@@ -1423,7 +1482,7 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	itemRewards := monsterRewardItemsToScenarioRewards(monster.ItemRewards)
 
 	for index, participant := range participants {
-		_, _, err := s.awardScenarioRewards(
+		itemsAwarded, _, err := s.awardScenarioRewards(
 			ctx,
 			participant.UserID,
 			expRewards[index],
@@ -1434,6 +1493,30 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		)
 		if err != nil {
 			return nil, err
+		}
+		if err := s.dbClient.MonsterBattleParticipant().UpdateRewards(
+			ctx,
+			battle.ID,
+			participant.UserID,
+			expRewards[index],
+			goldRewards[index],
+			itemsAwarded,
+		); err != nil {
+			return nil, err
+		}
+		_, _, _, health, _, err := s.getScenarioResourceState(ctx, participant.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if health <= 0 {
+			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(
+				ctx,
+				participant.UserID,
+				-1,
+				0,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
 

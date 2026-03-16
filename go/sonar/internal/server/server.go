@@ -12267,15 +12267,20 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		HealthDelta int `json:"healthDelta"`
-		ManaDelta   int `json:"manaDelta"`
+		HealthDelta int  `json:"healthDelta"`
+		ManaDelta   int  `json:"manaDelta"`
+		Health      *int `json:"health"`
+		Mana        *int `json:"mana"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if requestBody.HealthDelta == 0 && requestBody.ManaDelta == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one of healthDelta or manaDelta must be non-zero"})
+	if requestBody.HealthDelta == 0 &&
+		requestBody.ManaDelta == 0 &&
+		requestBody.Health == nil &&
+		requestBody.Mana == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one of healthDelta, manaDelta, health, or mana must be provided"})
 		return
 	}
 
@@ -12300,18 +12305,7 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		return
 	}
 
-	stats, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(
-		ctx,
-		userID,
-		-requestBody.HealthDelta,
-		-requestBody.ManaDelta,
-	)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -12328,6 +12322,53 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	maxHealth, maxMana, _, _ := deriveCharacterResources(
+		stats,
+		equipmentBonuses.Add(statusBonuses),
+	)
+	healthDeficitDelta := -requestBody.HealthDelta
+	manaDeficitDelta := -requestBody.ManaDelta
+	if requestBody.Health != nil {
+		targetHealth := *requestBody.Health
+		if targetHealth < 0 {
+			targetHealth = 0
+		}
+		if targetHealth > maxHealth {
+			targetHealth = maxHealth
+		}
+		targetHealthDeficit := maxHealth - targetHealth
+		healthDeficitDelta = targetHealthDeficit - stats.HealthDeficit
+	}
+	if requestBody.Mana != nil {
+		targetMana := *requestBody.Mana
+		if targetMana < 0 {
+			targetMana = 0
+		}
+		if targetMana > maxMana {
+			targetMana = maxMana
+		}
+		targetManaDeficit := maxMana - targetMana
+		manaDeficitDelta = targetManaDeficit - stats.ManaDeficit
+	}
+
+	stats, err = s.dbClient.UserCharacterStats().AdjustResourceDeficits(
+		ctx,
+		userID,
+		healthDeficitDelta,
+		manaDeficitDelta,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

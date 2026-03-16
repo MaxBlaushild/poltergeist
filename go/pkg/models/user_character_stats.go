@@ -31,3 +31,19 @@ type UserCharacterStats struct {
 func (u *UserCharacterStats) TableName() string {
 	return "user_character_stats"
 }
+
+func (u *UserCharacterStats) DerivedMaxHealth() int {
+	constitution := u.Constitution
+	if constitution < 1 {
+		constitution = 1
+	}
+	return constitution * 10
+}
+
+func (u *UserCharacterStats) DerivedMaxMana() int {
+	mental := u.Intelligence + u.Wisdom
+	if mental < 1 {
+		mental = 1
+	}
+	return mental * 5
+}

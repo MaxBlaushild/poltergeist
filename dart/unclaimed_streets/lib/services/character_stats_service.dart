@@ -73,14 +73,27 @@ class CharacterStatsService {
     String userId, {
     int healthDelta = 0,
     int manaDelta = 0,
+    int? health,
+    int? mana,
   }) async {
-    if (healthDelta == 0 && manaDelta == 0) {
+    if (healthDelta == 0 && manaDelta == 0 && health == null && mana == null) {
       return getStats();
     }
     try {
+      final payload = <String, dynamic>{};
+      if (health != null) {
+        payload['health'] = health;
+      } else if (healthDelta != 0) {
+        payload['healthDelta'] = healthDelta;
+      }
+      if (mana != null) {
+        payload['mana'] = mana;
+      } else if (manaDelta != 0) {
+        payload['manaDelta'] = manaDelta;
+      }
       final data = await _api.post<Map<String, dynamic>>(
         '/sonar/admin/users/$userId/resources',
-        data: {'healthDelta': healthDelta, 'manaDelta': manaDelta},
+        data: payload,
       );
       return CharacterStats.fromJson(data);
     } catch (_) {

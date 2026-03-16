@@ -70,6 +70,29 @@ func (h *monsterBattleParticipantHandler) FindByBattleID(
 	return participants, nil
 }
 
+func (h *monsterBattleParticipantHandler) UpdateRewards(
+	ctx context.Context,
+	battleID uuid.UUID,
+	userID uuid.UUID,
+	rewardExperience int,
+	rewardGold int,
+	itemsAwarded []models.ItemAwarded,
+) error {
+	items := models.MonsterBattleItemAwards{}
+	if len(itemsAwarded) > 0 {
+		items = append(items, itemsAwarded...)
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterBattleParticipant{}).
+		Where("battle_id = ? AND user_id = ?", battleID, userID).
+		Updates(map[string]interface{}{
+			"reward_experience": rewardExperience,
+			"reward_gold":       rewardGold,
+			"items_awarded":     items,
+			"updated_at":        time.Now(),
+		}).Error
+}
+
 func (h *monsterBattleParticipantHandler) DeleteByBattleAndUser(
 	ctx context.Context,
 	battleID uuid.UUID,

@@ -104,10 +104,18 @@ func (h *userCharacterStatsHandler) AdjustResourceDeficits(
 		if stats.HealthDeficit < 0 {
 			stats.HealthDeficit = 0
 		}
+		maxHealthDeficit := stats.DerivedMaxHealth()
+		if stats.HealthDeficit > maxHealthDeficit {
+			stats.HealthDeficit = maxHealthDeficit
+		}
 
 		stats.ManaDeficit += manaDeficitDelta
 		if stats.ManaDeficit < 0 {
 			stats.ManaDeficit = 0
+		}
+		maxManaDeficit := stats.DerivedMaxMana()
+		if stats.ManaDeficit > maxManaDeficit {
+			stats.ManaDeficit = maxManaDeficit
 		}
 
 		stats.UpdatedAt = time.Now()

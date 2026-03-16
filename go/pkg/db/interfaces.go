@@ -703,6 +703,14 @@ type MonsterBattleHandle interface {
 type MonsterBattleParticipantHandle interface {
 	CreateOrUpdate(ctx context.Context, participant *models.MonsterBattleParticipant) error
 	FindByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterBattleParticipant, error)
+	UpdateRewards(
+		ctx context.Context,
+		battleID uuid.UUID,
+		userID uuid.UUID,
+		rewardExperience int,
+		rewardGold int,
+		itemsAwarded []models.ItemAwarded,
+	) error
 	DeleteByBattleAndUser(ctx context.Context, battleID uuid.UUID, userID uuid.UUID) error
 	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
 }

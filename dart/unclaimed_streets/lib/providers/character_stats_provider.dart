@@ -277,8 +277,9 @@ class CharacterStatsProvider with ChangeNotifier {
     final current = _stats;
     if (current == null) return false;
 
-    final targetHealth =
-        (health ?? current.health).clamp(0, current.maxHealth).toInt();
+    final targetHealth = (health ?? current.health)
+        .clamp(0, current.maxHealth)
+        .toInt();
     final targetMana = (mana ?? current.mana).clamp(0, current.maxMana).toInt();
     final healthDelta = targetHealth - current.health;
     final manaDelta = targetMana - current.mana;
@@ -291,8 +292,8 @@ class CharacterStatsProvider with ChangeNotifier {
 
     final updated = await _service.adjustUserResources(
       _userId!,
-      healthDelta: healthDelta,
-      manaDelta: manaDelta,
+      health: targetHealth,
+      mana: targetMana,
     );
     if (updated != null) {
       _stats = updated;

@@ -28,11 +28,17 @@ class MonsterBattleResult {
     required this.outcome,
     required this.playerHealthRemaining,
     required this.playerManaRemaining,
+    this.rewardExperience = 0,
+    this.rewardGold = 0,
+    this.itemsAwarded = const <Map<String, dynamic>>[],
   });
 
   final MonsterBattleOutcome outcome;
   final int playerHealthRemaining;
   final int playerManaRemaining;
+  final int rewardExperience;
+  final int rewardGold;
+  final List<Map<String, dynamic>> itemsAwarded;
 }
 
 class _BattleItemChoice {
@@ -229,8 +235,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late final Map<String, int> _playerStats;
   List<Spell> _spells = const [];
   List<Spell> _techniques = const [];
-  late final int _playerMaxHealth;
-  late final int _playerMaxMana;
+  late int _playerMaxHealth;
+  late int _playerMaxMana;
   late int _playerHealth;
   late int _playerMana;
   List<CharacterStatus> _playerStatuses = const [];
@@ -276,6 +282,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _lastPartyMonsterHealthDeficit = -1;
   int _lastSeenPartyActionSequence = -1;
   int _pendingLocalDamage = 0;
+  int _victoryRewardExperience = 0;
+  int _victoryRewardGold = 0;
+  List<Map<String, dynamic>> _victoryItemsAwarded =
+      const <Map<String, dynamic>>[];
   bool _partySelfResourceSyncInFlight = false;
   bool _partySelfHealthIncreaseSyncAllowed = false;
   bool _pendingPartySelfHealthSync = false;
@@ -326,7 +336,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       );
       return;
     }
-    if (_allPartyMembersDefeated() || _playerHealth <= 0) {
+    if (_allPartyMembersDefeated()) {
       await _finishBattle(
         MonsterBattleOutcome.defeat,
         'Your party has been defeated.',
@@ -881,6 +891,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
 
     if (setupResponse != null && setupResponse.isNotEmpty) {
+      _cacheVictoryRewardsFromPayload(setupResponse);
+      _markSeenPartyActionSequenceFromPayload(setupResponse);
       _updatePartyTurnOrderFromPayload(setupResponse);
       _syncPartyMonsterHealthFromPayload(setupResponse);
       _applyMonsterStatusChanges(
@@ -890,6 +902,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _syncEnemyStatusesFromPayload(setupResponse);
     }
     if (turnResponse != null && turnResponse.isNotEmpty) {
+      _cacheVictoryRewardsFromPayload(turnResponse);
+      _markSeenPartyActionSequenceFromPayload(turnResponse);
       _updatePartyTurnOrderFromPayload(turnResponse);
       _syncPartyMonsterHealthFromPayload(turnResponse);
       _syncEnemyStatusesFromPayload(turnResponse);
@@ -921,8 +935,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       final maxHealth = math.max(1, _parseIntValue(snapshot['maxHealth']));
       final mana = _parseIntValue(snapshot['mana']);
       final maxMana = math.max(0, _parseIntValue(snapshot['maxMana']));
+      final nextHealth = health.clamp(0, maxHealth).toInt();
+      var downedLogLabel = '';
+      var shouldLogDowned = false;
       if (userId == _selfUserId) {
-        _playerHealth = health.clamp(0, maxHealth).toInt();
+        shouldLogDowned = _playerHealth > 0 && nextHealth <= 0;
+        downedLogLabel = 'You';
+        _playerHealth = nextHealth;
         _playerMaxHealth = maxHealth;
         _playerMana = mana.clamp(0, maxMana).toInt();
         _playerMaxMana = maxMana;
@@ -932,13 +951,27 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         (ally) => ally.userId == userId,
       );
       if (allyIndex < 0) {
+        if (shouldLogDowned) {
+          _battleLog.add('$downedLogLabel are down.');
+        }
         continue;
       }
       final ally = _partyAllies[allyIndex];
+      if (!shouldLogDowned && ally.currentHealth > 0 && nextHealth <= 0) {
+        shouldLogDowned = true;
+        downedLogLabel = ally.isSelf ? 'You' : ally.name;
+      }
       ally.maxHealth = maxHealth;
-      ally.currentHealth = health.clamp(0, maxHealth).toInt();
+      ally.currentHealth = nextHealth;
       ally.maxMana = maxMana;
       ally.currentMana = mana.clamp(0, maxMana).toInt();
+      if (shouldLogDowned) {
+        if (ally.isSelf) {
+          _battleLog.add('$downedLogLabel are down.');
+        } else {
+          _battleLog.add('$downedLogLabel is down.');
+        }
+      }
     }
   }
 
@@ -1385,20 +1418,125 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return null;
   }
 
+  void _markSeenPartyActionSequenceFromPayload(Map<String, dynamic>? payload) {
+    final battle = _battleMapFromPayload(payload);
+    if (battle == null || battle.isEmpty) return;
+    final sequence = _parseIntValue(battle['lastActionSequence']);
+    if (sequence > _lastSeenPartyActionSequence) {
+      _lastSeenPartyActionSequence = sequence;
+    }
+  }
+
+  bool _partyHasLivingParticipantInPayload(Map<String, dynamic>? payload) {
+    if (!widget.isPartyBattle || payload == null || payload.isEmpty) {
+      return _playerHealth > 0;
+    }
+    final detailRaw = payload['battleDetail'];
+    final detail = detailRaw is Map<String, dynamic>
+        ? detailRaw
+        : (detailRaw is Map ? Map<String, dynamic>.from(detailRaw) : payload);
+    final rawSnapshots = detail['participantResources'];
+    if (rawSnapshots is! List) {
+      return !_allPartyMembersDefeated();
+    }
+    for (final raw in rawSnapshots) {
+      final snapshot = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : null);
+      if (snapshot == null) continue;
+      final health = _parseIntValue(snapshot['health']);
+      if (health > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _cacheVictoryRewardsFromPayload(Map<String, dynamic>? payload) {
+    if (payload == null || payload.isEmpty) return;
+    if (!widget.isPartyBattle) return;
+    final detailRaw = payload['battleDetail'];
+    final detail = detailRaw is Map<String, dynamic>
+        ? detailRaw
+        : (detailRaw is Map ? Map<String, dynamic>.from(detailRaw) : payload);
+    final rawRewards = detail['participantRewards'];
+    if (rawRewards is! List) return;
+    for (final raw in rawRewards) {
+      final reward = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : null);
+      if (reward == null) continue;
+      final userId = (reward['userId']?.toString() ?? '').trim();
+      if (userId != _selfUserId) continue;
+      final rawItems = reward['itemsAwarded'];
+      final items = rawItems is List
+          ? rawItems
+                .whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList(growable: false)
+          : const <Map<String, dynamic>>[];
+      _victoryRewardExperience = _parseIntValue(reward['rewardExperience']);
+      _victoryRewardGold = _parseIntValue(reward['rewardGold']);
+      _victoryItemsAwarded = items;
+      return;
+    }
+  }
+
+  List<Map<String, dynamic>> _fallbackVictoryItemsAwarded() {
+    final itemTotals = <int, Map<String, dynamic>>{};
+    for (final monster in widget.encounter.monsters) {
+      for (final reward in monster.itemRewards) {
+        final quantity = reward.quantity > 0 ? reward.quantity : 1;
+        final entry = itemTotals.putIfAbsent(reward.inventoryItemId, () {
+          return <String, dynamic>{
+            'id': reward.inventoryItemId,
+            'name': reward.inventoryItemName.isNotEmpty
+                ? reward.inventoryItemName
+                : 'Item #${reward.inventoryItemId}',
+            'imageUrl': reward.inventoryItemImageUrl,
+            'quantity': 0,
+          };
+        });
+        entry['quantity'] = (entry['quantity'] as int) + quantity;
+        if ((entry['imageUrl'] as String).isEmpty &&
+            reward.inventoryItemImageUrl.isNotEmpty) {
+          entry['imageUrl'] = reward.inventoryItemImageUrl;
+        }
+      }
+    }
+    return itemTotals.values
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList(growable: false);
+  }
+
   String _formatPartyBattleActionLog(Map<String, dynamic> action) {
     final actorName = (action['actorName']?.toString() ?? '').trim();
     if (actorName.isEmpty) return '';
     final abilityName = (action['abilityName']?.toString() ?? '').trim();
     final actionType = (action['actionType']?.toString() ?? '').trim();
     final targetName = (action['targetName']?.toString() ?? '').trim();
+    final targetUserId = (action['targetUserId']?.toString() ?? '').trim();
     final targetsAllEnemies = _parseBoolValue(action['targetsAllEnemies']);
     final damage = _parseIntValue(action['damage']);
     final heal = _parseIntValue(action['heal']);
     final statusesApplied = _parseIntValue(action['statusesApplied']);
     final statusesRemoved = _parseIntValue(action['statusesRemoved']);
-    final resolvedTarget = targetsAllEnemies
-        ? 'all enemies'
-        : (targetName.isNotEmpty ? targetName : 'the enemy');
+    String resolvedTargetName() {
+      if (targetsAllEnemies) return 'all enemies';
+      if (targetName.isNotEmpty) return targetName;
+      if (targetUserId == _selfUserId && _selfUserId.isNotEmpty) return 'you';
+      if (targetUserId.isNotEmpty) {
+        final allyIndex = _partyAllies.indexWhere(
+          (ally) => ally.userId == targetUserId,
+        );
+        if (allyIndex >= 0) {
+          return _partyAllies[allyIndex].name;
+        }
+      }
+      return 'the enemy';
+    }
+
+    final resolvedTarget = resolvedTargetName();
 
     if (damage > 0) {
       if (abilityName.isNotEmpty) {
@@ -1726,6 +1864,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           continue;
         }
         await statsProvider.refresh(silent: true);
+        if (!mounted || !widget.isPartyBattle || _battleOver || _endingBattle) {
+          return;
+        }
         final backendHealth = statsProvider.health.clamp(0, _playerMaxHealth);
         final backendMana = statsProvider.mana.clamp(0, _playerMaxMana);
         var targetHealth = _playerHealth.clamp(0, _playerMaxHealth).toInt();
@@ -1760,6 +1901,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           'syncHealth=$syncHealth syncMana=$syncMana '
           'allowHealthIncrease=$allowHealthIncrease',
         );
+        if (!mounted || !widget.isPartyBattle || _battleOver || _endingBattle) {
+          return;
+        }
         await statsProvider.setCombatResources(
           health: syncHealth ? targetHealth : null,
           mana: syncMana ? targetMana : null,
@@ -2054,6 +2198,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       final status = battleId.isNotEmpty
           ? await poiService.getMonsterBattleStatusById(battleId)
           : await poiService.getMonsterBattleStatus(monsterId!);
+      _cacheVictoryRewardsFromPayload(status);
       if (!mounted || _battleOver) return;
       await _syncPartyParticipantsFromStatus(status);
       if (!mounted || _battleOver) return;
@@ -2061,10 +2206,14 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       final battle = _battleMapFromPayload(status);
       final deficit = _parseIntValue(battle?['monsterHealthDeficit']);
       final endedAtRaw = (battle?['endedAt']?.toString() ?? '').trim();
+      final partyHasLivingParticipant = _partyHasLivingParticipantInPayload(
+        status,
+      );
       if (_enemies.isNotEmpty) {
         final primaryEnemy = _enemies.first;
         final nextHealth = math.max(0, primaryEnemy.maxHealth - deficit);
         setState(() {
+          _applyParticipantResourcesFromPayload(status);
           _syncSelfAllyFromLocalResources();
           _updatePartyTurnOrderFromStatus(status);
           final consumedLastAction = _consumePartyLastActionFromPayload(status);
@@ -2092,6 +2241,33 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           }
           _refreshPartyTurnFlag();
         });
+        if (endedAtRaw.isNotEmpty && !_battleOver) {
+          final didWin =
+              _aliveEnemies.isEmpty ||
+              (widget.isPartyBattle && partyHasLivingParticipant);
+          final didLose = widget.isPartyBattle
+              ? !partyHasLivingParticipant
+              : _playerHealth <= 0;
+          if (didWin) {
+            await _finishBattle(
+              MonsterBattleOutcome.victory,
+              _enemies.length == 1
+                  ? 'Your party defeated ${_enemies.first.monster.name}!'
+                  : 'Your party won the battle.',
+            );
+          } else if (didLose) {
+            await _finishBattle(
+              MonsterBattleOutcome.defeat,
+              'Your party has been defeated.',
+            );
+          } else {
+            await _finishBattle(
+              MonsterBattleOutcome.escaped,
+              'Party battle ended.',
+            );
+          }
+          return;
+        }
         if (nextHealth <= 0 && !_battleOver) {
           await _finishBattle(
             MonsterBattleOutcome.victory,
@@ -2109,32 +2285,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
           await _runPartyMonsterTurn();
           if (_battleOver) return;
-        }
-      }
-      if (endedAtRaw.isNotEmpty && !_battleOver) {
-        final didWin =
-            _aliveEnemies.isEmpty ||
-            (widget.isPartyBattle &&
-                !_allPartyMembersDefeated() &&
-                _playerHealth > 0);
-        final didLose = _allPartyMembersDefeated() || _playerHealth <= 0;
-        if (didWin) {
-          await _finishBattle(
-            MonsterBattleOutcome.victory,
-            _enemies.length == 1
-                ? 'Your party defeated ${_enemies.first.monster.name}!'
-                : 'Your party won the battle.',
-          );
-        } else if (didLose) {
-          await _finishBattle(
-            MonsterBattleOutcome.defeat,
-            'Your party has been defeated.',
-          );
-        } else {
-          await _finishBattle(
-            MonsterBattleOutcome.escaped,
-            'Party battle ended.',
-          );
         }
       }
     } catch (error, stackTrace) {
@@ -3157,6 +3307,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     String summary,
   ) async {
     if (_battleOver || _endingBattle) return;
+    final statsProvider = widget.isPartyBattle
+        ? context.read<CharacterStatsProvider>()
+        : null;
     _endingBattle = true;
     _pendingPartySelfHealthSync = false;
     _pendingPartySelfManaSync = false;
@@ -3171,13 +3324,42 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _busy = false;
       _battleLog.add(summary);
     });
+    final postBattleHealthRemaining = math.max(1, _playerHealth);
+    final rewardExperience = widget.isPartyBattle
+        ? _victoryRewardExperience
+        : widget.encounter.totalRewardExperience;
+    final rewardGold = widget.isPartyBattle
+        ? _victoryRewardGold
+        : widget.encounter.totalRewardGold;
+    final itemsAwarded = widget.isPartyBattle
+        ? List<Map<String, dynamic>>.from(_victoryItemsAwarded)
+        : _fallbackVictoryItemsAwarded();
+    if (widget.isPartyBattle &&
+        outcome != MonsterBattleOutcome.defeat &&
+        _selfUserId.isNotEmpty &&
+        _playerHealth != postBattleHealthRemaining) {
+      await statsProvider!.setCombatResources(
+        health: postBattleHealthRemaining,
+        mana: _playerMana,
+        refreshBeforeAdjust: false,
+      );
+      _playerHealth = postBattleHealthRemaining;
+      _syncSelfAllyFromLocalResources();
+    }
     await Future<void>.delayed(const Duration(milliseconds: 650));
     if (!mounted) return;
     Navigator.of(context).pop(
       MonsterBattleResult(
         outcome: outcome,
-        playerHealthRemaining: _playerHealth,
+        playerHealthRemaining: postBattleHealthRemaining,
         playerManaRemaining: _playerMana,
+        rewardExperience: outcome == MonsterBattleOutcome.victory
+            ? rewardExperience
+            : 0,
+        rewardGold: outcome == MonsterBattleOutcome.victory ? rewardGold : 0,
+        itemsAwarded: outcome == MonsterBattleOutcome.victory
+            ? itemsAwarded
+            : const <Map<String, dynamic>>[],
       ),
     );
   }
