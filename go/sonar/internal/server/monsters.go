@@ -246,8 +246,9 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 }
 
 type monsterRewardItemPayload struct {
-	InventoryItemID int `json:"inventoryItemId"`
-	Quantity        int `json:"quantity"`
+	InventoryItemID int                   `json:"inventoryItemId"`
+	Quantity        int                   `json:"quantity"`
+	InventoryItem   *models.InventoryItem `json:"inventoryItem,omitempty"`
 }
 
 type monsterUpsertRequest struct {
@@ -271,17 +272,22 @@ type monsterUpsertRequest struct {
 }
 
 type monsterEncounterUpsertRequest struct {
-	Name                string   `json:"name"`
-	Description         string   `json:"description"`
-	ImageURL            string   `json:"imageUrl"`
-	ThumbnailURL        string   `json:"thumbnailUrl"`
-	EncounterType       string   `json:"encounterType"`
-	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
-	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
-	ZoneID              string   `json:"zoneId"`
-	Latitude            float64  `json:"latitude"`
-	Longitude           float64  `json:"longitude"`
-	MonsterIDs          []string `json:"monsterIds"`
+	Name                string                     `json:"name"`
+	Description         string                     `json:"description"`
+	ImageURL            string                     `json:"imageUrl"`
+	ThumbnailURL        string                     `json:"thumbnailUrl"`
+	EncounterType       string                     `json:"encounterType"`
+	RewardMode          string                     `json:"rewardMode"`
+	RandomRewardSize    string                     `json:"randomRewardSize"`
+	RewardExperience    int                        `json:"rewardExperience"`
+	RewardGold          int                        `json:"rewardGold"`
+	ItemRewards         []monsterRewardItemPayload `json:"itemRewards"`
+	ScaleWithUserLevel  bool                       `json:"scaleWithUserLevel"`
+	RecurrenceFrequency *string                    `json:"recurrenceFrequency"`
+	ZoneID              string                     `json:"zoneId"`
+	Latitude            float64                    `json:"latitude"`
+	Longitude           float64                    `json:"longitude"`
+	MonsterIDs          []string                   `json:"monsterIds"`
 }
 
 type monsterBattleActionRequest struct {
@@ -392,6 +398,11 @@ type monsterEncounterResponse struct {
 	ImageURL                    string                           `json:"imageUrl"`
 	ThumbnailURL                string                           `json:"thumbnailUrl"`
 	EncounterType               models.MonsterEncounterType      `json:"encounterType"`
+	RewardMode                  models.RewardMode                `json:"rewardMode"`
+	RandomRewardSize            models.RandomRewardSize          `json:"randomRewardSize"`
+	RewardExperience            int                              `json:"rewardExperience"`
+	RewardGold                  int                              `json:"rewardGold"`
+	ItemRewards                 []monsterRewardItemPayload       `json:"itemRewards"`
 	ScaleWithUserLevel          bool                             `json:"scaleWithUserLevel"`
 	RecurringMonsterEncounterID *uuid.UUID                       `json:"recurringMonsterEncounterId,omitempty"`
 	RecurrenceFrequency         *string                          `json:"recurrenceFrequency,omitempty"`
@@ -472,6 +483,85 @@ func monsterBattleLastActionFromRequest(
 	}
 }
 
+func (s *server) buildMonsterEncounterRewardPayloads(
+	ctx context.Context,
+	rewards []models.MonsterEncounterRewardItem,
+) ([]monsterRewardItemPayload, []scenarioRewardItem, error) {
+	itemPayloads := make([]monsterRewardItemPayload, 0, len(rewards))
+	rewardItems := make([]scenarioRewardItem, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil {
+			return nil, nil, err
+		}
+		itemPayloads = append(itemPayloads, monsterRewardItemPayload{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+			InventoryItem:   item,
+		})
+		rewardItems = append(rewardItems, scenarioRewardItem{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return itemPayloads, rewardItems, nil
+}
+
+func (s *server) resolveMonsterEncounterRewardsForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	encounter *models.MonsterEncounter,
+) (models.RewardMode, models.RandomRewardSize, int, int, []monsterRewardItemPayload, []scenarioRewardItem, error) {
+	if encounter == nil {
+		return models.RewardModeExplicit, models.RandomRewardSizeSmall, 0, 0, nil, nil, nil
+	}
+	rewardMode := models.NormalizeRewardMode(string(encounter.RewardMode))
+	rewardSize := models.NormalizeRandomRewardSize(string(encounter.RandomRewardSize))
+	if rewardMode == models.RewardModeRandom {
+		plan, itemByID, err := s.randomRewardPlanForUser(
+			ctx,
+			userID,
+			rewardSize,
+			fmt.Sprintf("monster-encounter:%s:user:%s", encounter.ID, userID),
+		)
+		if err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
+		}
+		payloads := make([]monsterRewardItemPayload, 0, len(plan.ItemGrants))
+		rewardItems := make([]scenarioRewardItem, 0, len(plan.ItemGrants))
+		for _, grant := range plan.ItemGrants {
+			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+				continue
+			}
+			payload := monsterRewardItemPayload{
+				InventoryItemID: grant.InventoryItemID,
+				Quantity:        grant.Quantity,
+			}
+			if item, ok := itemByID[grant.InventoryItemID]; ok {
+				itemCopy := item
+				payload.InventoryItem = &itemCopy
+			}
+			payloads = append(payloads, payload)
+			rewardItems = append(rewardItems, scenarioRewardItem{
+				InventoryItemID: grant.InventoryItemID,
+				Quantity:        grant.Quantity,
+			})
+		}
+		return rewardMode, rewardSize, plan.Experience, plan.Gold, payloads, rewardItems, nil
+	}
+
+	itemPayloads, rewardItems, err := s.buildMonsterEncounterRewardPayloads(ctx, encounter.ItemRewards)
+	if err != nil {
+		return rewardMode, rewardSize, 0, 0, nil, nil, err
+	}
+	rewardExperience := max(0, encounter.RewardExperience)
+	rewardGold := max(0, encounter.RewardGold)
+	return rewardMode, rewardSize, rewardExperience, rewardGold, itemPayloads, rewardItems, nil
+}
+
 func (s *server) monsterEncounterResponseFrom(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -479,6 +569,14 @@ func (s *server) monsterEncounterResponseFrom(
 	userLevel int,
 	applyLevelScaling bool,
 ) (monsterEncounterResponse, error) {
+	rewardMode, rewardSize, rewardExperience, rewardGold, itemRewards, _, err := s.resolveMonsterEncounterRewardsForUser(
+		ctx,
+		userID,
+		encounter,
+	)
+	if err != nil {
+		return monsterEncounterResponse{}, err
+	}
 	members := make([]monsterEncounterMemberResponse, 0, len(encounter.Members))
 	monsters := make([]monsterResponse, 0, len(encounter.Members))
 	for i := range encounter.Members {
@@ -523,6 +621,11 @@ func (s *server) monsterEncounterResponseFrom(
 		ImageURL:                    imageURL,
 		ThumbnailURL:                thumbnailURL,
 		EncounterType:               models.NormalizeMonsterEncounterType(string(encounter.EncounterType)),
+		RewardMode:                  rewardMode,
+		RandomRewardSize:            rewardSize,
+		RewardExperience:            rewardExperience,
+		RewardGold:                  rewardGold,
+		ItemRewards:                 itemRewards,
 		ScaleWithUserLevel:          encounter.ScaleWithUserLevel,
 		RecurringMonsterEncounterID: encounter.RecurringMonsterEncounterID,
 		RecurrenceFrequency:         encounter.RecurrenceFrequency,
@@ -1083,6 +1186,44 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 	if len(body.MonsterIDs) < 1 || len(body.MonsterIDs) > 9 {
 		return nil, nil, fmt.Errorf("monsterIds must include between 1 and 9 monsters")
 	}
+	if body.RewardExperience < 0 {
+		return nil, nil, fmt.Errorf("rewardExperience must be zero or greater")
+	}
+	if body.RewardGold < 0 {
+		return nil, nil, fmt.Errorf("rewardGold must be zero or greater")
+	}
+
+	rewardMode := models.NormalizeRewardMode(body.RewardMode)
+	if strings.TrimSpace(body.RewardMode) == "" {
+		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 {
+			rewardMode = models.RewardModeExplicit
+		}
+	}
+	randomRewardSize := models.NormalizeRandomRewardSize(body.RandomRewardSize)
+
+	itemQtyByID := map[int]int{}
+	for index, reward := range body.ItemRewards {
+		if reward.InventoryItemID <= 0 {
+			return nil, nil, fmt.Errorf("itemRewards[%d].inventoryItemId must be positive", index)
+		}
+		if reward.Quantity <= 0 {
+			return nil, nil, fmt.Errorf("itemRewards[%d].quantity must be positive", index)
+		}
+		if _, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, fmt.Errorf("itemRewards[%d].inventoryItemId not found", index)
+			}
+			return nil, nil, err
+		}
+		itemQtyByID[reward.InventoryItemID] += reward.Quantity
+	}
+	itemRewards := make(models.MonsterEncounterRewardItems, 0, len(itemQtyByID))
+	for inventoryItemID, quantity := range itemQtyByID {
+		itemRewards = append(itemRewards, models.MonsterEncounterRewardItem{
+			InventoryItemID: inventoryItemID,
+			Quantity:        quantity,
+		})
+	}
 
 	seenMonsterIDs := map[uuid.UUID]struct{}{}
 	members := make([]models.MonsterEncounterMember, 0, len(body.MonsterIDs))
@@ -1163,6 +1304,11 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		ImageURL:           imageURL,
 		ThumbnailURL:       thumbnailURL,
 		EncounterType:      encounterType,
+		RewardMode:         rewardMode,
+		RandomRewardSize:   randomRewardSize,
+		RewardExperience:   body.RewardExperience,
+		RewardGold:         body.RewardGold,
+		ItemRewards:        itemRewards,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
 		ZoneID:             zoneID,
 		Latitude:           body.Latitude,

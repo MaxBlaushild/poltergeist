@@ -402,6 +402,11 @@ class MonsterEncounter {
   final String imageUrl;
   final String thumbnailUrl;
   final String encounterType;
+  final String rewardMode;
+  final String randomRewardSize;
+  final int rewardExperience;
+  final int rewardGold;
+  final List<MonsterItemReward> itemRewards;
   final String zoneId;
   final String? pointOfInterestId;
   final double latitude;
@@ -417,6 +422,11 @@ class MonsterEncounter {
     this.imageUrl = '',
     this.thumbnailUrl = '',
     this.encounterType = 'monster',
+    this.rewardMode = 'random',
+    this.randomRewardSize = 'small',
+    this.rewardExperience = 0,
+    this.rewardGold = 0,
+    this.itemRewards = const [],
     required this.zoneId,
     this.pointOfInterestId,
     required this.latitude,
@@ -457,6 +467,20 @@ class MonsterEncounter {
       }
     }
 
+    final itemRewards = <MonsterItemReward>[];
+    final rawItemRewards = json['itemRewards'];
+    if (rawItemRewards is List) {
+      for (final reward in rawItemRewards) {
+        if (reward is Map<String, dynamic>) {
+          itemRewards.add(MonsterItemReward.fromJson(reward));
+        } else if (reward is Map) {
+          itemRewards.add(
+            MonsterItemReward.fromJson(Map<String, dynamic>.from(reward)),
+          );
+        }
+      }
+    }
+
     return MonsterEncounter(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
@@ -467,6 +491,16 @@ class MonsterEncounter {
           (json['encounterType']?.toString().trim().isNotEmpty ?? false)
           ? json['encounterType']!.toString().trim().toLowerCase()
           : 'monster',
+      rewardMode: (json['rewardMode']?.toString().trim().isNotEmpty ?? false)
+          ? json['rewardMode']!.toString().trim().toLowerCase()
+          : 'random',
+      randomRewardSize:
+          (json['randomRewardSize']?.toString().trim().isNotEmpty ?? false)
+          ? json['randomRewardSize']!.toString().trim().toLowerCase()
+          : 'small',
+      rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
+      rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      itemRewards: itemRewards,
       zoneId: json['zoneId']?.toString() ?? '',
       pointOfInterestId: json['pointOfInterestId']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
@@ -479,11 +513,9 @@ class MonsterEncounter {
     );
   }
 
-  int get totalRewardExperience =>
-      monsters.fold<int>(0, (sum, monster) => sum + monster.rewardExperience);
+  int get totalRewardExperience => rewardExperience;
 
-  int get totalRewardGold =>
-      monsters.fold<int>(0, (sum, monster) => sum + monster.rewardGold);
+  int get totalRewardGold => rewardGold;
 
   bool get isBossEncounter => encounterType == 'boss';
 

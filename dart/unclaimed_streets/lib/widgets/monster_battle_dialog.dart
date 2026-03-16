@@ -1145,6 +1145,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return null;
   }
 
+  bool _sameTurnEntry(_TurnOrderEntry a, _TurnOrderEntry b) {
+    if (a.isEnemy && b.isEnemy) {
+      return a.enemyIndex == b.enemyIndex;
+    }
+    if (a.isAlly && b.isAlly) {
+      return (a.userId ?? '') == (b.userId ?? '');
+    }
+    return false;
+  }
+
   bool _isPartySelfTurn() {
     final current = _currentPartyTurnEntry();
     return current?.isSelf == true;
@@ -1484,24 +1494,22 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   List<Map<String, dynamic>> _fallbackVictoryItemsAwarded() {
     final itemTotals = <int, Map<String, dynamic>>{};
-    for (final monster in widget.encounter.monsters) {
-      for (final reward in monster.itemRewards) {
-        final quantity = reward.quantity > 0 ? reward.quantity : 1;
-        final entry = itemTotals.putIfAbsent(reward.inventoryItemId, () {
-          return <String, dynamic>{
-            'id': reward.inventoryItemId,
-            'name': reward.inventoryItemName.isNotEmpty
-                ? reward.inventoryItemName
-                : 'Item #${reward.inventoryItemId}',
-            'imageUrl': reward.inventoryItemImageUrl,
-            'quantity': 0,
-          };
-        });
-        entry['quantity'] = (entry['quantity'] as int) + quantity;
-        if ((entry['imageUrl'] as String).isEmpty &&
-            reward.inventoryItemImageUrl.isNotEmpty) {
-          entry['imageUrl'] = reward.inventoryItemImageUrl;
-        }
+    for (final reward in widget.encounter.itemRewards) {
+      final quantity = reward.quantity > 0 ? reward.quantity : 1;
+      final entry = itemTotals.putIfAbsent(reward.inventoryItemId, () {
+        return <String, dynamic>{
+          'id': reward.inventoryItemId,
+          'name': reward.inventoryItemName.isNotEmpty
+              ? reward.inventoryItemName
+              : 'Item #${reward.inventoryItemId}',
+          'imageUrl': reward.inventoryItemImageUrl,
+          'quantity': 0,
+        };
+      });
+      entry['quantity'] = (entry['quantity'] as int) + quantity;
+      if ((entry['imageUrl'] as String).isEmpty &&
+          reward.inventoryItemImageUrl.isNotEmpty) {
+        entry['imageUrl'] = reward.inventoryItemImageUrl;
       }
     }
     return itemTotals.values
@@ -2374,7 +2382,20 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   List<_TurnOrderEntry> _currentTurnOrder() {
     if (widget.isPartyBattle && _partyTurnOrder.isNotEmpty) {
-      return _partyTurnOrder;
+      final current = _currentPartyTurnEntry();
+      if (current == null) {
+        return _partyTurnOrder;
+      }
+      final currentIndex = _partyTurnOrder.indexWhere(
+        (entry) => _sameTurnEntry(entry, current),
+      );
+      if (currentIndex <= 0) {
+        return _partyTurnOrder;
+      }
+      return <_TurnOrderEntry>[
+        ..._partyTurnOrder.sublist(currentIndex),
+        ..._partyTurnOrder.sublist(0, currentIndex),
+      ];
     }
     final selfAllyIndex = widget.isPartyBattle
         ? _partyAllies.indexWhere((ally) => ally.isSelf)

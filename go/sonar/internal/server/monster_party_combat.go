@@ -1476,18 +1476,35 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		participants = append(participants, participant)
 	}
 
+	encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
+	if err != nil {
+		return nil, err
+	}
 	participantCount := len(participants)
 	expRewards := splitRewardEvenly(max(0, monster.RewardExperience), participantCount)
 	goldRewards := splitRewardEvenly(max(0, monster.RewardGold), participantCount)
 	itemRewards := monsterRewardItemsToScenarioRewards(monster.ItemRewards)
 
 	for index, participant := range participants {
+		rewardExperience := expRewards[index]
+		rewardGold := goldRewards[index]
+		resolvedItemRewards := itemRewards
+		if encounter != nil {
+			_, _, rewardExperience, rewardGold, _, resolvedItemRewards, err = s.resolveMonsterEncounterRewardsForUser(
+				ctx,
+				participant.UserID,
+				encounter,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		itemsAwarded, _, err := s.awardScenarioRewards(
 			ctx,
 			participant.UserID,
-			expRewards[index],
-			goldRewards[index],
-			itemRewards,
+			rewardExperience,
+			rewardGold,
+			resolvedItemRewards,
 			[]scenarioRewardSpell{},
 			[]string{},
 		)
@@ -1498,8 +1515,8 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			ctx,
 			battle.ID,
 			participant.UserID,
-			expRewards[index],
-			goldRewards[index],
+			rewardExperience,
+			rewardGold,
 			itemsAwarded,
 		); err != nil {
 			return nil, err
@@ -1529,10 +1546,6 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	}
 	battle.EndedAt = &endedAt
 	battle.LastActivityAt = endedAt
-	encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
-	if err != nil {
-		return nil, err
-	}
 	participantIDs := make([]uuid.UUID, 0, len(participants))
 	for _, participant := range participants {
 		participantIDs = append(participantIDs, participant.UserID)

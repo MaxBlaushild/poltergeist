@@ -108,6 +108,11 @@ type MonsterEncounterRecord = {
   imageUrl: string;
   thumbnailUrl: string;
   encounterType: MonsterEncounterType;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
+  rewardExperience: number;
+  rewardGold: number;
+  itemRewards: MonsterRewardItem[];
   scaleWithUserLevel: boolean;
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;
@@ -231,6 +236,11 @@ type MonsterEncounterFormState = {
   imageUrl: string;
   thumbnailUrl: string;
   encounterType: MonsterEncounterType;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  rewardExperience: string;
+  rewardGold: string;
+  itemRewards: MonsterFormItem[];
   scaleWithUserLevel: boolean;
   recurrenceFrequency: string;
   zoneId: string;
@@ -467,6 +477,11 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   imageUrl: '',
   thumbnailUrl: '',
   encounterType: 'monster',
+  rewardMode: 'random',
+  randomRewardSize: 'small',
+  rewardExperience: '0',
+  rewardGold: '0',
+  itemRewards: [],
   scaleWithUserLevel: false,
   recurrenceFrequency: '',
   zoneId: '',
@@ -483,6 +498,18 @@ const monsterEncounterFormFromRecord = (
   imageUrl: encounter.imageUrl ?? '',
   thumbnailUrl: encounter.thumbnailUrl ?? '',
   encounterType: encounter.encounterType ?? 'monster',
+  rewardMode: encounter.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    encounter.randomRewardSize === 'medium' ||
+    encounter.randomRewardSize === 'large'
+      ? encounter.randomRewardSize
+      : 'small',
+  rewardExperience: String(encounter.rewardExperience ?? 0),
+  rewardGold: String(encounter.rewardGold ?? 0),
+  itemRewards: (encounter.itemRewards ?? []).map((reward) => ({
+    inventoryItemId: String(reward.inventoryItemId),
+    quantity: String(reward.quantity),
+  })),
   scaleWithUserLevel: Boolean(encounter.scaleWithUserLevel),
   recurrenceFrequency: encounter.recurrenceFrequency ?? '',
   zoneId: encounter.zoneId ?? '',
@@ -501,6 +528,21 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   imageUrl: form.imageUrl.trim(),
   thumbnailUrl: form.thumbnailUrl.trim(),
   encounterType: form.encounterType,
+  rewardMode: form.rewardMode,
+  randomRewardSize: form.randomRewardSize,
+  rewardExperience:
+    form.rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
+  rewardGold:
+    form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
+  itemRewards:
+    form.rewardMode === 'explicit'
+      ? form.itemRewards
+          .map((reward) => ({
+            inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
+            quantity: parseIntSafe(reward.quantity, 0),
+          }))
+          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+      : [],
   scaleWithUserLevel: form.scaleWithUserLevel,
   recurrenceFrequency: form.recurrenceFrequency,
   zoneId: form.zoneId.trim(),
@@ -1437,6 +1479,17 @@ export const Monsters = () => {
     nextReward: Partial<MonsterFormItem>
   ) => {
     setMonsterForm((prev) => {
+      const next = [...prev.itemRewards];
+      next[index] = { ...next[index], ...nextReward };
+      return { ...prev, itemRewards: next };
+    });
+  };
+
+  const updateEncounterItemReward = (
+    index: number,
+    nextReward: Partial<MonsterFormItem>
+  ) => {
+    setEncounterForm((prev) => {
       const next = [...prev.itemRewards];
       next[index] = { ...next[index], ...nextReward };
       return { ...prev, itemRewards: next };
@@ -2512,6 +2565,14 @@ export const Monsters = () => {
                                 ? 'Scales with user level'
                                 : 'Fixed monster levels'}
                             </p>
+                            <p className="text-sm text-gray-600">
+                              Rewards:{' '}
+                              {encounter.rewardMode === 'random'
+                                ? `Random ${(encounter.randomRewardSize ?? 'small').toUpperCase()} reward`
+                                : `XP ${encounter.rewardExperience} · Gold ${encounter.rewardGold} · Item rewards ${
+                                    encounter.itemRewards?.length ?? 0
+                                  }`}
+                            </p>
                             {encounter.recurrenceFrequency ? (
                               <p className="text-sm text-indigo-700">
                                 Recurs {encounter.recurrenceFrequency}
@@ -3372,6 +3433,160 @@ export const Monsters = () => {
                   Scale included monster levels with user level
                 </span>
               </label>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Reward Mode</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.rewardMode}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        rewardMode: event.target.value as 'explicit' | 'random',
+                      }))
+                    }
+                  >
+                    <option value="random">Random Reward</option>
+                    <option value="explicit">Explicit Reward</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Random Reward Size</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.randomRewardSize}
+                    disabled={encounterForm.rewardMode !== 'random'}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        randomRewardSize: event.target.value as
+                          | 'small'
+                          | 'medium'
+                          | 'large',
+                      }))
+                    }
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Reward Experience</span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.rewardExperience}
+                    disabled={encounterForm.rewardMode !== 'explicit'}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        rewardExperience: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Reward Gold</span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.rewardGold}
+                    disabled={encounterForm.rewardMode !== 'explicit'}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        rewardGold: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="border border-gray-200 rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Encounter Item Rewards</h3>
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-secondary"
+                    disabled={encounterForm.rewardMode !== 'explicit'}
+                    onClick={() =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        itemRewards: [
+                          ...prev.itemRewards,
+                          { inventoryItemId: '', quantity: '1' },
+                        ],
+                      }))
+                    }
+                  >
+                    Add Item
+                  </button>
+                </div>
+                {encounterForm.itemRewards.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    No encounter item rewards configured.
+                  </p>
+                ) : (
+                  encounterForm.itemRewards.map((reward, index) => (
+                    <div
+                      key={`${reward.inventoryItemId}-${index}`}
+                      className="grid grid-cols-[1fr_120px_auto] gap-2"
+                    >
+                      <select
+                        className="border border-gray-300 rounded-md p-2"
+                        value={reward.inventoryItemId}
+                        disabled={encounterForm.rewardMode !== 'explicit'}
+                        onChange={(event) =>
+                          updateEncounterItemReward(index, {
+                            inventoryItemId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Select item</option>
+                        {inventoryItems.map((item) => (
+                          <option key={item.id} value={String(item.id)}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        className="border border-gray-300 rounded-md p-2"
+                        value={reward.quantity}
+                        disabled={encounterForm.rewardMode !== 'explicit'}
+                        onChange={(event) =>
+                          updateEncounterItemReward(index, {
+                            quantity: event.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-danger"
+                        disabled={encounterForm.rewardMode !== 'explicit'}
+                        onClick={() =>
+                          setEncounterForm((prev) => ({
+                            ...prev,
+                            itemRewards: prev.itemRewards.filter(
+                              (_, i) => i !== index
+                            ),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
 
               <label className="block">
                 <span className="block text-sm mb-1">Recurrence</span>
