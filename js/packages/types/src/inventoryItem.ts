@@ -28,6 +28,7 @@ type DamageAffinity =
 
 export type InventoryItem = {
   id: number;
+  archived?: boolean;
   name: string;
   imageUrl: string;
   flavorText: string;

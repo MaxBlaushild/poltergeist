@@ -1449,17 +1449,29 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	if err != nil {
 		return nil, err
 	}
+	battleMonster, err := s.monsterScaledForBattle(ctx, battle, monster)
+	if err != nil {
+		return nil, err
+	}
 	statusBonuses, err := s.dbClient.MonsterStatus().GetActiveStatBonuses(ctx, battle.ID)
 	if err != nil {
 		return nil, err
 	}
-	monsterMaxHealth := monster.DerivedMaxHealthWithBonuses(statusBonuses)
+	monsterMaxHealth := battleMonster.DerivedMaxHealthWithBonuses(statusBonuses)
 	if monsterMaxHealth <= 0 {
 		monsterMaxHealth = 1
 	}
 	if battle.MonsterHealthDeficit < monsterMaxHealth {
 		return battle, nil
 	}
+	log.Printf(
+		"[monster-rewards][finalize][start] battle=%s monster=%s encounter=%v deficit=%d maxHealth=%d",
+		battle.ID,
+		battle.MonsterID,
+		battle.MonsterEncounterID,
+		battle.MonsterHealthDeficit,
+		monsterMaxHealth,
+	)
 
 	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
 	if err != nil {
@@ -1491,6 +1503,16 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			return nil, err
 		}
 	}
+	resolvedEncounterID := uuid.Nil
+	if encounter != nil {
+		resolvedEncounterID = encounter.ID
+	}
+	log.Printf(
+		"[monster-rewards][finalize][encounter] battle=%s resolvedEncounter=%s participants=%d",
+		battle.ID,
+		resolvedEncounterID,
+		len(participants),
+	)
 	participantCount := len(participants)
 	expRewards := splitRewardEvenly(max(0, monster.RewardExperience), participantCount)
 	goldRewards := splitRewardEvenly(max(0, monster.RewardGold), participantCount)
@@ -1510,6 +1532,15 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 				return nil, err
 			}
 		}
+		log.Printf(
+			"[monster-rewards][finalize][resolved] battle=%s user=%s encounter=%s rewardExperience=%d rewardGold=%d itemRewardCount=%d",
+			battle.ID,
+			participant.UserID,
+			resolvedEncounterID,
+			rewardExperience,
+			rewardGold,
+			len(resolvedItemRewards),
+		)
 		itemsAwarded, _, err := s.awardScenarioRewards(
 			ctx,
 			participant.UserID,
@@ -1522,6 +1553,14 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		if err != nil {
 			return nil, err
 		}
+		log.Printf(
+			"[monster-rewards][finalize][awarded] battle=%s user=%s itemsAwarded=%d rewardExperience=%d rewardGold=%d",
+			battle.ID,
+			participant.UserID,
+			len(itemsAwarded),
+			rewardExperience,
+			rewardGold,
+		)
 		if err := s.dbClient.MonsterBattleParticipant().UpdateRewards(
 			ctx,
 			battle.ID,
@@ -1587,6 +1626,13 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			}
 		}
 	}
+	log.Printf(
+		"[monster-rewards][finalize][done] battle=%s encounter=%s participants=%d endedAt=%s",
+		battle.ID,
+		resolvedEncounterID,
+		len(participants),
+		endedAt.Format(time.RFC3339),
+	)
 	return battle, nil
 }
 

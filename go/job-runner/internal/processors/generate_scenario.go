@@ -265,7 +265,7 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 
 	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
 
-	inventoryItems, err := p.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	inventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load inventory items: %w", err)
 	}

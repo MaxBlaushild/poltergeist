@@ -695,7 +695,7 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		if err != nil {
 			return 0, nil, nil, err
 		}
-		allItems, err := c.db.InventoryItem().FindAllInventoryItems(ctx)
+		allItems, err := c.db.InventoryItem().FindAllActiveInventoryItems(ctx)
 		if err != nil {
 			return 0, nil, nil, err
 		}

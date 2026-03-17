@@ -83,3 +83,26 @@ func TestAdjustedShopPriceForCharisma(t *testing.T) {
 		t.Fatalf("expected charisma 100 sell price to be 75, got %d", got)
 	}
 }
+
+func TestPriceShopInventoryForUserSkipsMissingItems(t *testing.T) {
+	buyPrice := 25
+	itemByID := map[int]models.InventoryItem{
+		1: {ID: 1, BuyPrice: &buyPrice},
+	}
+
+	priced := priceShopInventoryForUser(
+		[]shopInventoryItem{
+			{ItemID: 1, Price: 25},
+			{ItemID: 999, Price: 50},
+		},
+		itemByID,
+		0,
+	)
+
+	if len(priced) != 1 {
+		t.Fatalf("expected only active/mapped items to remain, got %+v", priced)
+	}
+	if priced[0].ItemID != 1 {
+		t.Fatalf("expected item 1 to remain, got %+v", priced)
+	}
+}

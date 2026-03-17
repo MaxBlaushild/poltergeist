@@ -48,11 +48,23 @@ func (h *monsterTemplateHandle) FindAll(ctx context.Context) ([]models.MonsterTe
 	return templates, nil
 }
 
+func (h *monsterTemplateHandle) FindAllActive(ctx context.Context) ([]models.MonsterTemplate, error) {
+	var templates []models.MonsterTemplate
+	if err := h.preloadBase(ctx).
+		Where("archived = ?", false).
+		Order("name ASC").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
 func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
 	updates.MonsterType = models.NormalizeMonsterTemplateType(string(updates.MonsterType))
 	payload := map[string]interface{}{
+		"archived":                updates.Archived,
 		"monster_type":            updates.MonsterType,
 		"name":                    updates.Name,
 		"description":             updates.Description,

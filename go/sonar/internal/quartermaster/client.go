@@ -39,7 +39,7 @@ func NewClient(db db.DbClient) Quartermaster {
 
 func (c *client) GetInventoryItems() []InventoryItem {
 	ctx := context.Background()
-	dbItems, err := c.db.InventoryItem().FindAllInventoryItems(ctx)
+	dbItems, err := c.db.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		return []InventoryItem{}
 	}
@@ -449,9 +449,15 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 	}
 
 	items := c.GetInventoryItems()
+	if len(items) == 0 {
+		return InventoryItem{}, fmt.Errorf("no active inventory items available")
+	}
 	totalWeight := 0
 	for _, item := range items {
 		totalWeight += rarityWeights[item.RarityTier]
+	}
+	if totalWeight <= 0 {
+		return InventoryItem{}, fmt.Errorf("no droppable active inventory items available")
 	}
 
 	for {

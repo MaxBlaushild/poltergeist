@@ -8307,6 +8307,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     if (!mounted || result == null) return;
+    debugPrint(
+      '[monster-rewards][client][result] '
+      'encounter=${monster.id} outcome=${result.outcome} '
+      'rewardExperience=${result.rewardExperience} rewardGold=${result.rewardGold} '
+      'itemsAwarded=${result.itemsAwarded.length}',
+    );
     final statsProvider = context.read<CharacterStatsProvider>();
     final questLogProvider = context.read<QuestLogProvider>();
 

@@ -47,6 +47,7 @@ type MonsterTemplate struct {
 	ID                    uuid.UUID              `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	CreatedAt             time.Time              `json:"createdAt"`
 	UpdatedAt             time.Time              `json:"updatedAt"`
+	Archived              bool                   `json:"archived" gorm:"column:archived;default:false"`
 	MonsterType           MonsterTemplateType    `json:"monsterType" gorm:"column:monster_type"`
 	Name                  string                 `json:"name"`
 	Description           string                 `json:"description"`

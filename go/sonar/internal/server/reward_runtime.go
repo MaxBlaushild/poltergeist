@@ -19,7 +19,7 @@ func (s *server) randomRewardPlanForUser(
 	if err != nil {
 		return models.RandomRewardPlan{}, nil, err
 	}
-	allItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	allItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		return models.RandomRewardPlan{}, nil, err
 	}

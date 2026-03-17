@@ -421,6 +421,7 @@ type InventoryItemHandle interface {
 	CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error
 	FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error)
 	FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
+	FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
 	UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error
 	DeleteInventoryItem(ctx context.Context, id int) error
 }
@@ -1122,6 +1123,7 @@ type MonsterTemplateHandle interface {
 	Create(ctx context.Context, template *models.MonsterTemplate) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterTemplate, error)
 	FindAll(ctx context.Context) ([]models.MonsterTemplate, error)
+	FindAllActive(ctx context.Context) ([]models.MonsterTemplate, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceSpells(ctx context.Context, templateID uuid.UUID, spells []models.MonsterTemplateSpell) error

@@ -166,7 +166,7 @@ func randomRewardSeed(seed string, level int, size RandomRewardSize) int64 {
 func filterRewardItems(items []InventoryItem, level int, equippable bool) []InventoryItem {
 	filtered := make([]InventoryItem, 0, len(items))
 	for _, item := range items {
-		if item.ID <= 0 || item.IsCaptureType {
+		if item.ID <= 0 || item.IsCaptureType || item.Archived {
 			continue
 		}
 		itemIsEquippable := strings.TrimSpace(derefRewardString(item.EquipSlot)) != ""

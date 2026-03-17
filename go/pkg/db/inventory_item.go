@@ -187,6 +187,15 @@ func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]mod
 	return items, nil
 }
 
+func (h *inventoryItemHandler) FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
+	var items []models.InventoryItem
+	result := h.db.WithContext(ctx).Where("archived = ?", false).Find(&items)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return items, nil
+}
+
 func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error {
 	if updates == nil {
 		return nil

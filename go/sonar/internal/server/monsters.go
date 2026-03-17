@@ -23,6 +23,7 @@ import (
 )
 
 type monsterTemplateUpsertRequest struct {
+	Archived              *bool    `json:"archived"`
 	MonsterType           string   `json:"monsterType"`
 	Name                  string   `json:"name"`
 	Description           string   `json:"description"`
@@ -304,6 +305,7 @@ type monsterTemplateResponse struct {
 	ID                    uuid.UUID      `json:"id"`
 	CreatedAt             time.Time      `json:"createdAt"`
 	UpdatedAt             time.Time      `json:"updatedAt"`
+	Archived              bool           `json:"archived"`
 	MonsterType           string         `json:"monsterType"`
 	Name                  string         `json:"name"`
 	Description           string         `json:"description"`
@@ -660,6 +662,7 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		ID:                    template.ID,
 		CreatedAt:             template.CreatedAt,
 		UpdatedAt:             template.UpdatedAt,
+		Archived:              template.Archived,
 		MonsterType:           string(models.NormalizeMonsterTemplateType(string(template.MonsterType))),
 		Name:                  template.Name,
 		Description:           template.Description,
@@ -1084,6 +1087,7 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	}
 
 	template := &models.MonsterTemplate{
+		Archived:              body.Archived != nil && *body.Archived,
 		MonsterType:           monsterType,
 		Name:                  name,
 		Description:           strings.TrimSpace(body.Description),
@@ -2023,6 +2027,10 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	template.Archived = existingTemplate.Archived
+	if requestBody.Archived != nil {
+		template.Archived = *requestBody.Archived
+	}
 	if template.ImageURL != "" {
 		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusComplete
 		emptyError := ""
@@ -2052,6 +2060,73 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, monsterTemplateResponseFrom(updated))
+}
+
+func (s *server) bulkArchiveMonsterTemplates(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		IDs      []string `json:"ids" binding:"required"`
+		Archived *bool    `json:"archived"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	archived := true
+	if requestBody.Archived != nil {
+		archived = *requestBody.Archived
+	}
+
+	seen := map[uuid.UUID]struct{}{}
+	updatedIDs := make([]uuid.UUID, 0, len(requestBody.IDs))
+	for _, rawID := range requestBody.IDs {
+		templateID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid template ID: %s", rawID)})
+			return
+		}
+		if _, exists := seen[templateID]; exists {
+			continue
+		}
+		seen[templateID] = struct{}{}
+
+		template, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("template not found: %s", templateID)})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if template == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("template not found: %s", templateID)})
+			return
+		}
+		if template.Archived != archived {
+			template.Archived = archived
+			if err := s.dbClient.MonsterTemplate().Update(ctx, templateID, template); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+		updatedIDs = append(updatedIDs, templateID)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"count":    len(updatedIDs),
+		"archived": archived,
+		"ids":      updatedIDs,
+	})
 }
 
 func (s *server) deleteMonsterTemplate(ctx *gin.Context) {
@@ -2585,6 +2660,13 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf(
+		"[monster-rewards][start] user=%s monster=%s battle=%s encounter=%v",
+		user.ID,
+		monsterID,
+		battle.ID,
+		battle.MonsterEncounterID,
+	)
 	if battle.State == string(models.MonsterBattleStateActive) {
 		now := time.Now()
 		if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
@@ -2660,7 +2742,7 @@ func (s *server) getMonsterBattleStatusByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if battle == nil || battle.EndedAt != nil {
+	if battle == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "battle not found"})
 		return
 	}

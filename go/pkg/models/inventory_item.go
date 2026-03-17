@@ -6,6 +6,7 @@ type InventoryItem struct {
 	ID                                       int                            `json:"id" gorm:"primaryKey"`
 	CreatedAt                                time.Time                      `json:"createdAt" gorm:"column:created_at"`
 	UpdatedAt                                time.Time                      `json:"updatedAt" gorm:"column:updated_at"`
+	Archived                                 bool                           `json:"archived" gorm:"column:archived;default:false"`
 	Name                                     string                         `json:"name" gorm:"column:name"`
 	ImageURL                                 string                         `json:"imageUrl" gorm:"column:image_url"`
 	FlavorText                               string                         `json:"flavorText" gorm:"column:flavor_text"`

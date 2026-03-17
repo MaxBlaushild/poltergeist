@@ -434,6 +434,7 @@ export const InventoryItems = () => {
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
   const [items, setItems] = useState<InventoryItemRecord[]>([]);
+  const [itemTab, setItemTab] = useState<'active' | 'archived'>('active');
   const [spells, setSpells] = useState<Spell[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -585,6 +586,10 @@ export const InventoryItems = () => {
       return next.size === prev.size ? prev : next;
     });
   }, [items]);
+
+  useEffect(() => {
+    setSelectedItemIDs(new Set());
+  }, [itemTab]);
 
   const fetchItems = async () => {
     try {
@@ -1208,6 +1213,26 @@ export const InventoryItems = () => {
     }
   };
 
+  const handleSetItemsArchived = async (ids: number[], archived: boolean) => {
+    if (ids.length === 0) return;
+
+    try {
+      await apiClient.post('/sonar/inventory-items/bulk-archive', { ids, archived });
+      const idSet = new Set(ids);
+      setItems((prev) =>
+        prev.map((item) => (idSet.has(item.id) ? { ...item, archived } : item))
+      );
+      setSelectedItemIDs((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    } catch (error) {
+      console.error('Error updating archived state for inventory items:', error);
+      alert(`Error ${archived ? 'archiving' : 'restoring'} inventory items.`);
+    }
+  };
+
   const handleBulkEditSelected = async () => {
     const selectedItems = items.filter((item) => selectedItemIDs.has(item.id));
     if (selectedItems.length === 0) return;
@@ -1579,6 +1604,9 @@ export const InventoryItems = () => {
   const visibleItems = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
+      if (itemTab === 'active' && item.archived) return false;
+      if (itemTab === 'archived' && !item.archived) return false;
+
       const haystack = [
         item.id?.toString(),
         item.name,
@@ -1666,7 +1694,16 @@ export const InventoryItems = () => {
     });
 
     return sorted;
-  }, [items, searchQuery, filters, sortField, sortDirection, spellNamesByID]);
+  }, [items, itemTab, searchQuery, filters, sortField, sortDirection, spellNamesByID]);
+
+  const activeItemCount = useMemo(
+    () => items.filter((item) => !item.archived).length,
+    [items]
+  );
+  const archivedItemCount = useMemo(
+    () => items.filter((item) => item.archived).length,
+    [items]
+  );
 
   const visibleItemIDs = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
   const selectedVisibleCount = useMemo(
@@ -1686,6 +1723,26 @@ export const InventoryItems = () => {
         <h1 className="text-2xl font-bold">Inventory Items</h1>
         <div className="flex flex-wrap gap-2">
           <button
+            className={`px-4 py-2 rounded-md border ${
+              itemTab === 'active'
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white text-slate-700 border-slate-300'
+            }`}
+            onClick={() => setItemTab('active')}
+          >
+            Active ({activeItemCount})
+          </button>
+          <button
+            className={`px-4 py-2 rounded-md border ${
+              itemTab === 'archived'
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white text-slate-700 border-slate-300'
+            }`}
+            onClick={() => setItemTab('archived')}
+          >
+            Archived ({archivedItemCount})
+          </button>
+          <button
             className="bg-blue-500 text-white px-4 py-2 rounded-md"
             onClick={() => setShowCreateItem(true)}
           >
@@ -1696,6 +1753,20 @@ export const InventoryItems = () => {
             onClick={() => setShowGenerateItem(true)}
           >
             Generate Inventory Item
+          </button>
+          <button
+            className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+            onClick={() =>
+              void handleSetItemsArchived(
+                Array.from(selectedItemIDs),
+                itemTab === 'active'
+              )
+            }
+            disabled={!hasSelectedItems}
+          >
+            {itemTab === 'active'
+              ? `Archive Selected (${selectedItemIDs.size})`
+              : `Restore Selected (${selectedItemIDs.size})`}
           </button>
           <button
             className="bg-red-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -2179,6 +2250,10 @@ export const InventoryItems = () => {
               ID: {item.id}
             </p>
 
+            <p style={{ margin: '5px 0', color: item.archived ? '#92400e' : '#166534' }}>
+              Status: {item.archived ? 'Archived' : 'Active'}
+            </p>
+
             <p style={{ margin: '5px 0', color: '#666' }}>
               Image Status: {formatGenerationStatus(item.imageGenerationStatus)}
             </p>
@@ -2253,6 +2328,12 @@ export const InventoryItems = () => {
                 className="bg-blue-500 text-white px-4 py-2 rounded-md mr-2"
               >
                 Edit
+              </button>
+              <button
+                onClick={() => void handleSetItemsArchived([item.id], !item.archived)}
+                className="bg-slate-700 text-white px-4 py-2 rounded-md mr-2"
+              >
+                {item.archived ? 'Restore' : 'Archive'}
               </button>
               {isOutfitName(item.name) && (
                 <button

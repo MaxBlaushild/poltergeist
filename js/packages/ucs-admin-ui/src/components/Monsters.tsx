@@ -21,6 +21,7 @@ type MonsterTemplateRecord = {
   id: string;
   createdAt: string;
   updatedAt: string;
+  archived?: boolean;
   monsterType: MonsterTemplateType;
   name: string;
   description: string;
@@ -678,6 +679,12 @@ export const Monsters = () => {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] =
     useState<MonsterTemplateRecord | null>(null);
+  const [templateTab, setTemplateTab] = useState<'active' | 'archived'>(
+    'active'
+  );
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(
+    new Set()
+  );
   const [templateForm, setTemplateForm] =
     useState<MonsterTemplateFormState>(emptyTemplateForm());
 
@@ -797,6 +804,24 @@ export const Monsters = () => {
   }, [load, records, templates]);
 
   useEffect(() => {
+    setSelectedTemplateIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(templates.map((template) => template.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [templates]);
+
+  useEffect(() => {
+    setSelectedTemplateIds(new Set());
+  }, [templateTab]);
+
+  useEffect(() => {
     formLatitudeRef.current = monsterForm.latitude;
     formLongitudeRef.current = monsterForm.longitude;
   }, [monsterForm.latitude, monsterForm.longitude]);
@@ -889,6 +914,12 @@ export const Monsters = () => {
   const filteredTemplates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return templates.filter((template) => {
+      if (templateTab === 'active' && template.archived) {
+        return false;
+      }
+      if (templateTab === 'archived' && !template.archived) {
+        return false;
+      }
       const matchesType =
         templateTypeFilter === 'all' ||
         (template.monsterType ?? 'monster') === templateTypeFilter;
@@ -903,7 +934,16 @@ export const Monsters = () => {
         template.description.toLowerCase().includes(normalized)
       );
     });
-  }, [query, templateTypeFilter, templates]);
+  }, [query, templateTab, templateTypeFilter, templates]);
+
+  const activeTemplateCount = useMemo(
+    () => templates.filter((template) => !template.archived).length,
+    [templates]
+  );
+  const archivedTemplateCount = useMemo(
+    () => templates.filter((template) => template.archived).length,
+    [templates]
+  );
 
   const filteredMonsters = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -1038,6 +1078,42 @@ export const Monsters = () => {
       const message =
         err instanceof Error ? err.message : 'Failed to delete template.';
       alert(message);
+    }
+  };
+
+  const toggleTemplateSelection = (templateId: string, checked: boolean) => {
+    setSelectedTemplateIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(templateId);
+      } else {
+        next.delete(templateId);
+      }
+      return next;
+    });
+  };
+
+  const setTemplatesArchived = async (ids: string[], archived: boolean) => {
+    if (ids.length === 0) return;
+    try {
+      await apiClient.post('/sonar/monster-templates/bulk-archive', {
+        ids,
+        archived,
+      });
+      const idSet = new Set(ids);
+      setTemplates((prev) =>
+        prev.map((template) =>
+          idSet.has(template.id) ? { ...template, archived } : template
+        )
+      );
+      setSelectedTemplateIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to update monster template archive state', err);
+      alert(`Failed to ${archived ? 'archive' : 'restore'} monster template(s).`);
     }
   };
 
@@ -2186,6 +2262,42 @@ export const Monsters = () => {
           <>
             <div className="qa-card">
               <h2 className="text-lg font-semibold mb-3">Monster Templates</h2>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    templateTab === 'active'
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}
+                  onClick={() => setTemplateTab('active')}
+                >
+                  Active ({activeTemplateCount})
+                </button>
+                <button
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    templateTab === 'archived'
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}
+                  onClick={() => setTemplateTab('archived')}
+                >
+                  Archived ({archivedTemplateCount})
+                </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={selectedTemplateIds.size === 0}
+                  onClick={() =>
+                    void setTemplatesArchived(
+                      Array.from(selectedTemplateIds),
+                      templateTab === 'active'
+                    )
+                  }
+                >
+                  {templateTab === 'active'
+                    ? `Archive Selected (${selectedTemplateIds.size})`
+                    : `Restore Selected (${selectedTemplateIds.size})`}
+                </button>
+              </div>
               {filteredTemplates.length === 0 ? (
                 <p className="text-sm text-gray-600">No templates found.</p>
               ) : (
@@ -2216,8 +2328,30 @@ export const Monsters = () => {
                             </div>
                           )}
                           <div>
-                            <div className="font-semibold text-base">
-                              {template.name}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedTemplateIds.has(template.id)}
+                                onChange={(event) =>
+                                  toggleTemplateSelection(
+                                    template.id,
+                                    event.target.checked
+                                  )
+                                }
+                                aria-label={`Select ${template.name}`}
+                              />
+                              <div className="font-semibold text-base">
+                                {template.name}
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  template.archived
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                {template.archived ? 'Archived' : 'Active'}
+                              </span>
                             </div>
                             <p className="text-xs uppercase tracking-wide text-gray-500 mt-1">
                               {formatMonsterTemplateTypeLabel(
@@ -2294,6 +2428,17 @@ export const Monsters = () => {
                             onClick={() => openEditTemplate(template)}
                           >
                             Edit
+                          </button>
+                          <button
+                            className="qa-btn qa-btn-secondary"
+                            onClick={() =>
+                              void setTemplatesArchived(
+                                [template.id],
+                                !template.archived
+                              )
+                            }
+                          >
+                            {template.archived ? 'Restore' : 'Archive'}
                           </button>
                           <button
                             className="qa-btn qa-btn-danger"

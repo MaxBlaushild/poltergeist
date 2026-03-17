@@ -2193,6 +2193,33 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
   }
 
+  void _replaceEnemySnapshot(
+    int index,
+    Monster monster, {
+    int? currentHealth,
+    int? currentMana,
+  }) {
+    if (index < 0 || index >= _enemies.length) return;
+    final existing = _enemies[index];
+    _enemies[index] = _EncounterEnemyState(
+      monster: monster,
+      currentHealth: (currentHealth ?? existing.currentHealth).clamp(
+        0,
+        monster.maxHealth,
+      ),
+      currentMana: (currentMana ?? existing.currentMana).clamp(
+        0,
+        monster.maxMana,
+      ),
+      statuses: monster.statuses.isNotEmpty
+          ? List<MonsterStatus>.from(monster.statuses)
+          : List<MonsterStatus>.from(existing.statuses),
+      cooldownExpiresAtByAbilityId: Map<String, DateTime>.from(
+        existing.cooldownExpiresAtByAbilityId,
+      ),
+    );
+  }
+
   Future<void> _syncPartyBattleState() async {
     if (!widget.isPartyBattle || _battleOver || _partyBattleSyncInFlight) {
       return;
@@ -2219,7 +2246,28 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       );
       if (_enemies.isNotEmpty) {
         final primaryEnemy = _enemies.first;
-        final nextHealth = math.max(0, primaryEnemy.maxHealth - deficit);
+        var nextHealth = math.max(0, primaryEnemy.maxHealth - deficit);
+        Monster? authoritativeMonster;
+        if (endedAtRaw.isEmpty && nextHealth <= 0) {
+          final refreshedMonsterId = primaryEnemy.monster.id.trim();
+          if (refreshedMonsterId.isNotEmpty) {
+            authoritativeMonster = await poiService.getMonsterById(
+              refreshedMonsterId,
+            );
+            if (authoritativeMonster != null) {
+              nextHealth = math.max(
+                0,
+                authoritativeMonster.maxHealth - deficit,
+              );
+              debugPrint(
+                '[combat][_syncPartyBattleState] authoritative monster refresh '
+                'monster=${authoritativeMonster.id} '
+                'maxHealth=${authoritativeMonster.maxHealth} '
+                'deficit=$deficit nextHealth=$nextHealth',
+              );
+            }
+          }
+        }
         setState(() {
           _applyParticipantResourcesFromPayload(status);
           _syncSelfAllyFromLocalResources();
@@ -2238,7 +2286,18 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             }
           }
           _lastPartyMonsterHealthDeficit = deficit;
-          if (primaryEnemy.currentHealth != nextHealth) {
+          if (authoritativeMonster != null &&
+              (authoritativeMonster.maxHealth != primaryEnemy.maxHealth ||
+                  authoritativeMonster.level != primaryEnemy.monster.level ||
+                  authoritativeMonster.name != primaryEnemy.monster.name)) {
+            _replaceEnemySnapshot(
+              0,
+              authoritativeMonster,
+              currentHealth: nextHealth,
+              currentMana: authoritativeMonster.mana,
+            );
+            _ensureSelectedEnemyIsAlive();
+          } else if (primaryEnemy.currentHealth != nextHealth) {
             primaryEnemy.currentHealth = nextHealth;
             _ensureSelectedEnemyIsAlive();
           }
@@ -2276,13 +2335,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           }
           return;
         }
-        if (nextHealth <= 0 && !_battleOver) {
-          await _finishBattle(
-            MonsterBattleOutcome.victory,
-            'Your party defeated ${primaryEnemy.monster.name}!',
-          );
-          return;
-        }
         if (_allPartyMembersDefeated() && !_battleOver) {
           await _finishBattle(
             MonsterBattleOutcome.defeat,
@@ -2290,7 +2342,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           );
           return;
         }
-        if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
+        if (nextHealth > 0 &&
+            _isPartyMonsterTurn() &&
+            !_partyMonsterTurnInFlight &&
+            !_busy) {
           await _runPartyMonsterTurn();
           if (_battleOver) return;
         }
@@ -2333,6 +2388,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           action: action,
         );
       }
+      _cacheVictoryRewardsFromPayload(response);
       try {
         await _syncPartyBattleState();
       } catch (_) {
@@ -3184,17 +3240,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         );
         return;
       }
-      if (widget.isPartyBattle && _aliveEnemies.isEmpty) {
-        await _finishBattle(
-          MonsterBattleOutcome.victory,
-          _enemies.length == 1
-              ? 'Your party defeated ${_enemies.first.monster.name}!'
-              : 'Your party defeated the entire encounter!',
-        );
-        return;
-      }
-
       if (widget.isPartyBattle) {
+        if (_aliveEnemies.isEmpty) {
+          await _syncPartyBattleState();
+          if (_battleOver) return;
+        }
         setState(() {
           _busy = false;
           _actingEnemyIndex = null;
@@ -3355,6 +3405,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final itemsAwarded = widget.isPartyBattle
         ? List<Map<String, dynamic>>.from(_victoryItemsAwarded)
         : _fallbackVictoryItemsAwarded();
+    debugPrint(
+      '[monster-rewards][client][finish] '
+      'party=${widget.isPartyBattle} outcome=$outcome '
+      'encounter=${widget.encounter.id} '
+      'rewardExperience=$rewardExperience rewardGold=$rewardGold '
+      'itemsAwarded=${itemsAwarded.length}',
+    );
     if (widget.isPartyBattle &&
         outcome != MonsterBattleOutcome.defeat &&
         _selfUserId.isNotEmpty &&

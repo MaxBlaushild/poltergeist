@@ -234,6 +234,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory-items/:id/regenerate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.regenerateInventoryItemImage))
 	r.PUT("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateInventoryItem))
 	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
+	r.POST("/sonar/inventory-items/bulk-archive", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkArchiveInventoryItems))
 	r.POST("/sonar/inventory-items/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteInventoryItems))
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
 	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
@@ -508,6 +509,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
 	r.POST("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterTemplate))
 	r.POST("/sonar/monster-templates/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateMonsterTemplates))
+	r.POST("/sonar/monster-templates/bulk-archive", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkArchiveMonsterTemplates))
 	r.GET("/sonar/monster-templates/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateMonsterTemplatesStatus))
 	r.PUT("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterTemplate))
 	r.POST("/sonar/monster-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterTemplateImage))
@@ -7622,6 +7624,7 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 func (s *server) createInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
 		Name                                     string                         `json:"name" binding:"required"`
+		Archived                                 *bool                          `json:"archived"`
 		ImageURL                                 string                         `json:"imageUrl"`
 		FlavorText                               string                         `json:"flavorText"`
 		EffectText                               string                         `json:"effectText"`
@@ -7756,6 +7759,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	}
 
 	item := &models.InventoryItem{
+		Archived:                                 requestBody.Archived != nil && *requestBody.Archived,
 		Name:                                     requestBody.Name,
 		ImageURL:                                 requestBody.ImageURL,
 		FlavorText:                               requestBody.FlavorText,
@@ -9577,6 +9581,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 
 	var requestBody struct {
 		Name                                     string                         `json:"name"`
+		Archived                                 *bool                          `json:"archived"`
 		ImageURL                                 string                         `json:"imageUrl"`
 		FlavorText                               string                         `json:"flavorText"`
 		EffectText                               string                         `json:"effectText"`
@@ -9701,6 +9706,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		return
 	}
 	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
+	archived := existingItem.Archived
+	if requestBody.Archived != nil {
+		archived = *requestBody.Archived
+	}
 	for idx, rawSpellID := range consumeSpellIDs {
 		spellID, _ := uuid.Parse(rawSpellID)
 		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
@@ -9714,6 +9723,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
+		"archived":                           archived,
 		"name":                               requestBody.Name,
 		"image_url":                          requestBody.ImageURL,
 		"flavor_text":                        requestBody.FlavorText,
@@ -9869,6 +9879,81 @@ func (s *server) bulkDeleteInventoryItems(ctx *gin.Context) {
 		"message": fmt.Sprintf("deleted %d inventory item(s)", len(uniqueIDs)),
 		"deleted": len(uniqueIDs),
 		"ids":     uniqueIDs,
+	})
+}
+
+func (s *server) bulkArchiveInventoryItems(ctx *gin.Context) {
+	var requestBody struct {
+		IDs      []int `json:"ids" binding:"required"`
+		Archived *bool `json:"archived"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	archived := true
+	if requestBody.Archived != nil {
+		archived = *requestBody.Archived
+	}
+
+	seen := make(map[int]struct{}, len(requestBody.IDs))
+	uniqueIDs := make([]int, 0, len(requestBody.IDs))
+	for _, id := range requestBody.IDs {
+		if id <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid inventory item ID: %d", id),
+			})
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	for _, id := range uniqueIDs {
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+		if err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusNotFound, gin.H{
+					"error": fmt.Sprintf("inventory item not found: %d", id),
+				})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if item == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{
+				"error": fmt.Sprintf("inventory item not found: %d", id),
+			})
+			return
+		}
+		if item.Archived == archived {
+			continue
+		}
+		if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, map[string]interface{}{
+			"archived": archived,
+		}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to archive inventory item %d: %s", id, err.Error()),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":  fmt.Sprintf("updated %d inventory item(s)", len(uniqueIDs)),
+		"archived": archived,
+		"ids":      uniqueIDs,
 	})
 }
 
@@ -15571,12 +15656,12 @@ func (s *server) awardScenarioRewards(
 
 	itemsAwarded := []models.ItemAwarded{}
 	for _, reward := range rewardItems {
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil || item == nil || item.Archived {
+			continue
+		}
 		if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &userID, reward.InventoryItemID, reward.Quantity); err != nil {
 			return nil, nil, err
-		}
-		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
-		if err != nil || item == nil {
-			continue
 		}
 		itemsAwarded = append(itemsAwarded, models.ItemAwarded{
 			ID:       item.ID,

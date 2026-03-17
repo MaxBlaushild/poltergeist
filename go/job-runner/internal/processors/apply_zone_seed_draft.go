@@ -276,7 +276,7 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 		return nil
 	}
 
-	templates, err := p.dbClient.MonsterTemplate().FindAll(ctx)
+	templates, err := p.dbClient.MonsterTemplate().FindAllActive(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load monster templates: %w", err)
 	}

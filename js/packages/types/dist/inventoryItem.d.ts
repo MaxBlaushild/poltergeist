@@ -14,6 +14,7 @@ export type InventoryConsumeStatus = {
 type DamageAffinity = 'physical' | 'piercing' | 'slashing' | 'bludgeoning' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
 export type InventoryItem = {
     id: number;
+    archived?: boolean;
     name: string;
     imageUrl: string;
     flavorText: string;

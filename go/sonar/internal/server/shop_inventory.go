@@ -316,10 +316,11 @@ func priceShopInventoryForUser(
 ) []shopInventoryItem {
 	priced := make([]shopInventoryItem, 0, len(inventory))
 	for _, entry := range inventory {
-		buyPrice := entry.Price
-		if item, ok := itemByID[entry.ItemID]; ok {
-			buyPrice = defaultShopPriceForItem(item)
+		item, ok := itemByID[entry.ItemID]
+		if !ok {
+			continue
 		}
+		buyPrice := defaultShopPriceForItem(item)
 		priced = append(priced, shopInventoryItem{
 			ItemID: entry.ItemID,
 			Price:  adjustedShopPurchasePrice(buyPrice, charisma),
@@ -383,17 +384,24 @@ func (s *server) resolveShopInventoryForUser(
 		if err != nil {
 			return nil, err
 		}
+		activeItems := make([]models.InventoryItem, 0, len(items))
+		for _, item := range items {
+			if item.Archived {
+				continue
+			}
+			activeItems = append(activeItems, item)
+		}
 		charisma, err := s.currentUserCharisma(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		resolved := resolveTaggedShopInventory(items, userLevel, tags)
-		return priceShopInventoryForUser(resolved, inventoryItemMap(items), charisma), nil
+		resolved := resolveTaggedShopInventory(activeItems, userLevel, tags)
+		return priceShopInventoryForUser(resolved, inventoryItemMap(activeItems), charisma), nil
 	default:
 		if len(inventory) == 0 {
 			return nil, errShopHasNoInventory
 		}
-		items, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+		items, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 		if err != nil {
 			return nil, err
 		}
