@@ -11,126 +11,130 @@ import (
 )
 
 type client struct {
-	db                                *gorm.DB
-	scoreHandle                       *scoreHandler
-	userHandle                        *userHandle
-	howManyQuestionHandle             *howManyQuestionHandle
-	howManyAnswerHandle               *howManyAnswerHandle
-	teamHandle                        *teamHandle
-	userTeamHandle                    *userTeamHandle
-	pointOfInterestHandle             *pointOfInterestHandle
-	neighboringPointsOfInterestHandle *neighboringPointsOfInterestHandle
-	textVerificationCodeHandle        *textVerificationCodeHandle
-	sentTextHandle                    *sentTextHandle
-	howManySubscriptionHandle         *howManySubscriptionHandle
-	sonarSurveyHandle                 *sonarSurveyHandle
-	sonarSurveySubmissionHandle       *sonarSurveySubmissionHandle
-	sonarActivityHandle               *sonarActivityHandle
-	sonarCategoryHandle               *sonarCategoryHandle
-	matchHandle                       *matchHandle
-	verificationCodeHandle            *verificationCodeHandler
-	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
-	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
-	pointOfInterestImportHandle       *pointOfInterestImportHandle
-	zoneImportHandle                  *zoneImportHandle
-	zoneSeedJobHandle                 *zoneSeedJobHandle
-	scenarioGenerationJobHandle       *scenarioGenerationJobHandle
-	challengeGenerationJobHandle      *challengeGenerationJobHandle
-	zoneFlavorGenerationJobHandle     *zoneFlavorGenerationJobHandle
-	spellHandle                       *spellHandler
-	userSpellHandle                   *userSpellHandler
-	inventoryItemHandle               *inventoryItemHandler
-	newUserStarterConfigHandle        *newUserStarterConfigHandle
-	tutorialHandle                    *tutorialHandle
-	auditItemHandle                   *auditItemHandler
-	imageGenerationHandle             *imageGenerationHandle
-	outfitProfileGenerationHandle     *outfitProfileGenerationHandle
-	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
-	pointOfInterestDiscoveryHandle    *pointOfInterestDiscoveryHandle
-	matchUserHandle                   *matchUserHandle
-	tagHandle                         *tagHandle
-	tagGroupHandle                    *tagGroupHandle
-	zoneHandle                        *zoneHandler
-	locationArchetypeHandle           *locationArchetypeHandle
-	questArchetypeHandle              *questArchetypeHandle
-	questArchetypeNodeHandle          *questArchetypeNodeHandle
-	questArchetypeChallengeHandle     *questArchetypeChallengeHandle
-	questArchetypeNodeChallengeHandle *questArchetypeNodeChallengeHandle
-	questArchetypeItemRewardHandle    *questArchetypeItemRewardHandle
-	zoneQuestArchetypeHandle          *zoneQuestArchetypeHandle
-	questGenerationJobHandle          *questGenerationJobHandle
-	trackedPointOfInterestGroupHandle *trackedPointOfInterestGroupHandle
-	trackedQuestHandle                *trackedQuestHandle
-	pointHandle                       *pointHandler
-	userLevelHandle                   *userLevelHandler
-	userCharacterStatsHandle          *userCharacterStatsHandler
-	userEquipmentHandle               *userEquipmentHandler
-	userStatusHandle                  *userStatusHandler
-	monsterStatusHandle               *monsterStatusHandler
-	userProficiencyHandle             *userProficiencyHandle
-	userZoneReputationHandle          *userZoneReputationHandler
-	partyHandle                       *partyHandle
-	friendHandle                      *friendHandle
-	friendInviteHandle                *friendInviteHandle
-	partyInviteHandle                 *partyInviteHandle
-	postHandle                        *postHandle
-	postTagHandle                     *postTagHandle
-	postFlagHandle                    *postFlagHandle
-	postReactionHandle                *postReactionHandle
-	postCommentHandle                 *postCommentHandle
-	activityHandle                    *activityHandle
-	pointOfInterestGroupMemberHandle  *pointOfInterestGroupMemberHandle
-	characterHandle                   *characterHandler
-	characterLocationHandle           *characterLocationHandle
-	characterActionHandle             *characterActionHandler
-	questAcceptanceHandle             *questAcceptanceHandle
-	questAcceptanceV2Handle           *questAcceptanceV2Handle
-	questHandle                       *questHandle
-	questItemRewardHandle             *questItemRewardHandle
-	questSpellRewardHandle            *questSpellRewardHandle
-	questNodeHandle                   *questNodeHandle
-	questNodeChallengeHandle          *questNodeChallengeHandle
-	questNodeChildHandle              *questNodeChildHandle
-	questNodeProgressHandle           *questNodeProgressHandle
-	movementPatternHandle             *movementPatternHandler
-	treasureChestHandle               *treasureChestHandle
-	healingFountainHandle             *healingFountainHandle
-	challengeHandle                   *challengeHandle
-	monsterTemplateHandle             *monsterTemplateHandle
-	monsterHandle                     *monsterHandle
-	monsterEncounterHandle            *monsterEncounterHandle
-	userMonsterEncounterVictoryHandle *userMonsterEncounterVictoryHandle
-	monsterBattleHandle               *monsterBattleHandler
-	monsterBattleParticipantHandle    *monsterBattleParticipantHandler
-	monsterBattleInviteHandle         *monsterBattleInviteHandler
-	scenarioHandle                    *scenarioHandle
-	documentHandle                    *documentHandler
-	documentTagHandle                 *documentTagHandler
-	documentLocationHandle            *documentLocationHandler
-	googleDriveTokenHandle            *googleDriveTokenHandler
-	dropboxTokenHandle                *dropboxTokenHandler
-	hueTokenHandle                    *hueTokenHandler
-	trendingDestinationHandle         *trendingDestinationHandler
-	quickDecisionRequestHandle        *quickDecisionRequestHandler
-	communityPollHandle               *communityPollHandler
-	utilityClosetPuzzleHandle         *utilityClosetPuzzleHandler
-	feteRoomHandle                    *feteRoomHandler
-	feteTeamHandle                    *feteTeamHandler
-	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
-	feteRoomTeamHandle                *feteRoomTeamHandler
-	blockchainTransactionHandle       *blockchainTransactionHandle
-	userCertificateHandle             *userCertificateHandle
-	albumHandle                       *albumHandle
-	albumMemberHandle                 *albumMemberHandle
-	albumInviteHandle                 *albumInviteHandle
-	albumPostHandle                   *albumPostHandle
-	albumShareHandle                  *albumShareHandle
-	notificationHandle                *notificationHandle
-	userDeviceTokenHandle             *userDeviceTokenHandle
-	userRecentPostTagHandle           *userRecentPostTagHandle
-	socialAccountHandle               *socialAccountHandler
-	insiderTradeHandle                *insiderTradeHandle
-	feedbackItemHandle                *feedbackItemHandle
+	db                                   *gorm.DB
+	scoreHandle                          *scoreHandler
+	userHandle                           *userHandle
+	howManyQuestionHandle                *howManyQuestionHandle
+	howManyAnswerHandle                  *howManyAnswerHandle
+	teamHandle                           *teamHandle
+	userTeamHandle                       *userTeamHandle
+	pointOfInterestHandle                *pointOfInterestHandle
+	neighboringPointsOfInterestHandle    *neighboringPointsOfInterestHandle
+	textVerificationCodeHandle           *textVerificationCodeHandle
+	sentTextHandle                       *sentTextHandle
+	howManySubscriptionHandle            *howManySubscriptionHandle
+	sonarSurveyHandle                    *sonarSurveyHandle
+	sonarSurveySubmissionHandle          *sonarSurveySubmissionHandle
+	sonarActivityHandle                  *sonarActivityHandle
+	sonarCategoryHandle                  *sonarCategoryHandle
+	matchHandle                          *matchHandle
+	verificationCodeHandle               *verificationCodeHandler
+	pointOfInterestGroupHandle           *pointOfInterestGroupHandle
+	pointOfInterestChallengeHandle       *pointOfInterestChallengeHandle
+	pointOfInterestImportHandle          *pointOfInterestImportHandle
+	zoneImportHandle                     *zoneImportHandle
+	zoneSeedJobHandle                    *zoneSeedJobHandle
+	scenarioGenerationJobHandle          *scenarioGenerationJobHandle
+	challengeGenerationJobHandle         *challengeGenerationJobHandle
+	scenarioTemplateHandle               *scenarioTemplateHandle
+	challengeTemplateHandle              *challengeTemplateHandle
+	scenarioTemplateGenerationJobHandle  *scenarioTemplateGenerationJobHandle
+	challengeTemplateGenerationJobHandle *challengeTemplateGenerationJobHandle
+	zoneFlavorGenerationJobHandle        *zoneFlavorGenerationJobHandle
+	spellHandle                          *spellHandler
+	userSpellHandle                      *userSpellHandler
+	inventoryItemHandle                  *inventoryItemHandler
+	newUserStarterConfigHandle           *newUserStarterConfigHandle
+	tutorialHandle                       *tutorialHandle
+	auditItemHandle                      *auditItemHandler
+	imageGenerationHandle                *imageGenerationHandle
+	outfitProfileGenerationHandle        *outfitProfileGenerationHandle
+	pointOfInterestChildrenHandle        *pointOfInterestChildrenHandle
+	pointOfInterestDiscoveryHandle       *pointOfInterestDiscoveryHandle
+	matchUserHandle                      *matchUserHandle
+	tagHandle                            *tagHandle
+	tagGroupHandle                       *tagGroupHandle
+	zoneHandle                           *zoneHandler
+	locationArchetypeHandle              *locationArchetypeHandle
+	questArchetypeHandle                 *questArchetypeHandle
+	questArchetypeNodeHandle             *questArchetypeNodeHandle
+	questArchetypeChallengeHandle        *questArchetypeChallengeHandle
+	questArchetypeNodeChallengeHandle    *questArchetypeNodeChallengeHandle
+	questArchetypeItemRewardHandle       *questArchetypeItemRewardHandle
+	zoneQuestArchetypeHandle             *zoneQuestArchetypeHandle
+	questGenerationJobHandle             *questGenerationJobHandle
+	trackedPointOfInterestGroupHandle    *trackedPointOfInterestGroupHandle
+	trackedQuestHandle                   *trackedQuestHandle
+	pointHandle                          *pointHandler
+	userLevelHandle                      *userLevelHandler
+	userCharacterStatsHandle             *userCharacterStatsHandler
+	userEquipmentHandle                  *userEquipmentHandler
+	userStatusHandle                     *userStatusHandler
+	monsterStatusHandle                  *monsterStatusHandler
+	userProficiencyHandle                *userProficiencyHandle
+	userZoneReputationHandle             *userZoneReputationHandler
+	partyHandle                          *partyHandle
+	friendHandle                         *friendHandle
+	friendInviteHandle                   *friendInviteHandle
+	partyInviteHandle                    *partyInviteHandle
+	postHandle                           *postHandle
+	postTagHandle                        *postTagHandle
+	postFlagHandle                       *postFlagHandle
+	postReactionHandle                   *postReactionHandle
+	postCommentHandle                    *postCommentHandle
+	activityHandle                       *activityHandle
+	pointOfInterestGroupMemberHandle     *pointOfInterestGroupMemberHandle
+	characterHandle                      *characterHandler
+	characterLocationHandle              *characterLocationHandle
+	characterActionHandle                *characterActionHandler
+	questAcceptanceHandle                *questAcceptanceHandle
+	questAcceptanceV2Handle              *questAcceptanceV2Handle
+	questHandle                          *questHandle
+	questItemRewardHandle                *questItemRewardHandle
+	questSpellRewardHandle               *questSpellRewardHandle
+	questNodeHandle                      *questNodeHandle
+	questNodeChallengeHandle             *questNodeChallengeHandle
+	questNodeChildHandle                 *questNodeChildHandle
+	questNodeProgressHandle              *questNodeProgressHandle
+	movementPatternHandle                *movementPatternHandler
+	treasureChestHandle                  *treasureChestHandle
+	healingFountainHandle                *healingFountainHandle
+	challengeHandle                      *challengeHandle
+	monsterTemplateHandle                *monsterTemplateHandle
+	monsterHandle                        *monsterHandle
+	monsterEncounterHandle               *monsterEncounterHandle
+	userMonsterEncounterVictoryHandle    *userMonsterEncounterVictoryHandle
+	monsterBattleHandle                  *monsterBattleHandler
+	monsterBattleParticipantHandle       *monsterBattleParticipantHandler
+	monsterBattleInviteHandle            *monsterBattleInviteHandler
+	scenarioHandle                       *scenarioHandle
+	documentHandle                       *documentHandler
+	documentTagHandle                    *documentTagHandler
+	documentLocationHandle               *documentLocationHandler
+	googleDriveTokenHandle               *googleDriveTokenHandler
+	dropboxTokenHandle                   *dropboxTokenHandler
+	hueTokenHandle                       *hueTokenHandler
+	trendingDestinationHandle            *trendingDestinationHandler
+	quickDecisionRequestHandle           *quickDecisionRequestHandler
+	communityPollHandle                  *communityPollHandler
+	utilityClosetPuzzleHandle            *utilityClosetPuzzleHandler
+	feteRoomHandle                       *feteRoomHandler
+	feteTeamHandle                       *feteTeamHandler
+	feteRoomLinkedListTeamHandle         *feteRoomLinkedListTeamHandler
+	feteRoomTeamHandle                   *feteRoomTeamHandler
+	blockchainTransactionHandle          *blockchainTransactionHandle
+	userCertificateHandle                *userCertificateHandle
+	albumHandle                          *albumHandle
+	albumMemberHandle                    *albumMemberHandle
+	albumInviteHandle                    *albumInviteHandle
+	albumPostHandle                      *albumPostHandle
+	albumShareHandle                     *albumShareHandle
+	notificationHandle                   *notificationHandle
+	userDeviceTokenHandle                *userDeviceTokenHandle
+	userRecentPostTagHandle              *userRecentPostTagHandle
+	socialAccountHandle                  *socialAccountHandler
+	insiderTradeHandle                   *insiderTradeHandle
+	feedbackItemHandle                   *feedbackItemHandle
 }
 
 type ClientConfig struct {
@@ -159,126 +163,130 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	}
 
 	return &client{
-		db:                                db,
-		scoreHandle:                       &scoreHandler{db: db},
-		userHandle:                        &userHandle{db: db},
-		howManyQuestionHandle:             &howManyQuestionHandle{db: db},
-		howManyAnswerHandle:               &howManyAnswerHandle{db: db},
-		teamHandle:                        &teamHandle{db: db},
-		userTeamHandle:                    &userTeamHandle{db: db},
-		pointOfInterestHandle:             &pointOfInterestHandle{db: db},
-		neighboringPointsOfInterestHandle: &neighboringPointsOfInterestHandle{db: db},
-		textVerificationCodeHandle:        &textVerificationCodeHandle{db: db},
-		sentTextHandle:                    &sentTextHandle{db: db},
-		howManySubscriptionHandle:         &howManySubscriptionHandle{db: db},
-		sonarSurveyHandle:                 &sonarSurveyHandle{db: db},
-		sonarSurveySubmissionHandle:       &sonarSurveySubmissionHandle{db: db},
-		sonarActivityHandle:               &sonarActivityHandle{db: db},
-		sonarCategoryHandle:               &sonarCategoryHandle{db: db},
-		matchHandle:                       &matchHandle{db: db},
-		verificationCodeHandle:            &verificationCodeHandler{db: db},
-		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
-		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
-		pointOfInterestImportHandle:       &pointOfInterestImportHandle{db: db},
-		zoneImportHandle:                  &zoneImportHandle{db: db},
-		zoneSeedJobHandle:                 &zoneSeedJobHandle{db: db},
-		scenarioGenerationJobHandle:       &scenarioGenerationJobHandle{db: db},
-		challengeGenerationJobHandle:      &challengeGenerationJobHandle{db: db},
-		zoneFlavorGenerationJobHandle:     &zoneFlavorGenerationJobHandle{db: db},
-		spellHandle:                       &spellHandler{db: db},
-		userSpellHandle:                   &userSpellHandler{db: db},
-		inventoryItemHandle:               &inventoryItemHandler{db: db},
-		newUserStarterConfigHandle:        &newUserStarterConfigHandle{db: db},
-		tutorialHandle:                    &tutorialHandle{db: db},
-		auditItemHandle:                   &auditItemHandler{db: db},
-		imageGenerationHandle:             &imageGenerationHandle{db: db},
-		outfitProfileGenerationHandle:     &outfitProfileGenerationHandle{db: db},
-		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
-		pointOfInterestDiscoveryHandle:    &pointOfInterestDiscoveryHandle{db: db},
-		matchUserHandle:                   &matchUserHandle{db: db},
-		tagHandle:                         &tagHandle{db: db},
-		tagGroupHandle:                    &tagGroupHandle{db: db},
-		zoneHandle:                        &zoneHandler{db: db},
-		locationArchetypeHandle:           &locationArchetypeHandle{db: db},
-		questArchetypeHandle:              &questArchetypeHandle{db: db},
-		questArchetypeNodeHandle:          &questArchetypeNodeHandle{db: db},
-		questArchetypeChallengeHandle:     &questArchetypeChallengeHandle{db: db},
-		questArchetypeNodeChallengeHandle: &questArchetypeNodeChallengeHandle{db: db},
-		questArchetypeItemRewardHandle:    &questArchetypeItemRewardHandle{db: db},
-		zoneQuestArchetypeHandle:          &zoneQuestArchetypeHandle{db: db},
-		questGenerationJobHandle:          &questGenerationJobHandle{db: db},
-		trackedPointOfInterestGroupHandle: &trackedPointOfInterestGroupHandle{db: db},
-		trackedQuestHandle:                &trackedQuestHandle{db: db},
-		pointHandle:                       &pointHandler{db: db},
-		userLevelHandle:                   &userLevelHandler{db: db},
-		userCharacterStatsHandle:          &userCharacterStatsHandler{db: db},
-		userEquipmentHandle:               &userEquipmentHandler{db: db},
-		userStatusHandle:                  &userStatusHandler{db: db},
-		monsterStatusHandle:               &monsterStatusHandler{db: db},
-		userProficiencyHandle:             &userProficiencyHandle{db: db},
-		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
-		partyHandle:                       &partyHandle{db: db},
-		friendHandle:                      &friendHandle{db: db},
-		friendInviteHandle:                &friendInviteHandle{db: db},
-		partyInviteHandle:                 &partyInviteHandle{db: db},
-		postHandle:                        &postHandle{db: db},
-		postTagHandle:                     &postTagHandle{db: db},
-		postFlagHandle:                    &postFlagHandle{db: db},
-		albumHandle:                       &albumHandle{db: db},
-		albumMemberHandle:                 &albumMemberHandle{db: db},
-		albumInviteHandle:                 &albumInviteHandle{db: db},
-		albumPostHandle:                   &albumPostHandle{db: db},
-		albumShareHandle:                  &albumShareHandle{db: db},
-		notificationHandle:                &notificationHandle{db: db},
-		userDeviceTokenHandle:             &userDeviceTokenHandle{db: db},
-		userRecentPostTagHandle:           &userRecentPostTagHandle{db: db},
-		postReactionHandle:                &postReactionHandle{db: db},
-		postCommentHandle:                 &postCommentHandle{db: db},
-		activityHandle:                    &activityHandle{db: db},
-		pointOfInterestGroupMemberHandle:  &pointOfInterestGroupMemberHandle{db: db},
-		characterHandle:                   &characterHandler{db: db},
-		characterLocationHandle:           &characterLocationHandle{db: db},
-		characterActionHandle:             &characterActionHandler{db: db},
-		questAcceptanceHandle:             &questAcceptanceHandle{db: db},
-		questAcceptanceV2Handle:           &questAcceptanceV2Handle{db: db},
-		questHandle:                       &questHandle{db: db},
-		questItemRewardHandle:             &questItemRewardHandle{db: db},
-		questSpellRewardHandle:            &questSpellRewardHandle{db: db},
-		questNodeHandle:                   &questNodeHandle{db: db},
-		questNodeChallengeHandle:          &questNodeChallengeHandle{db: db},
-		questNodeChildHandle:              &questNodeChildHandle{db: db},
-		questNodeProgressHandle:           &questNodeProgressHandle{db: db},
-		movementPatternHandle:             &movementPatternHandler{db: db},
-		treasureChestHandle:               &treasureChestHandle{db: db},
-		healingFountainHandle:             &healingFountainHandle{db: db},
-		challengeHandle:                   &challengeHandle{db: db},
-		monsterTemplateHandle:             &monsterTemplateHandle{db: db},
-		monsterHandle:                     &monsterHandle{db: db},
-		monsterEncounterHandle:            &monsterEncounterHandle{db: db},
-		userMonsterEncounterVictoryHandle: &userMonsterEncounterVictoryHandle{db: db},
-		monsterBattleHandle:               &monsterBattleHandler{db: db},
-		monsterBattleParticipantHandle:    &monsterBattleParticipantHandler{db: db},
-		monsterBattleInviteHandle:         &monsterBattleInviteHandler{db: db},
-		scenarioHandle:                    &scenarioHandle{db: db},
-		documentHandle:                    &documentHandler{db: db},
-		documentTagHandle:                 &documentTagHandler{db: db},
-		documentLocationHandle:            &documentLocationHandler{db: db},
-		googleDriveTokenHandle:            &googleDriveTokenHandler{db: db},
-		dropboxTokenHandle:                &dropboxTokenHandler{db: db},
-		hueTokenHandle:                    &hueTokenHandler{db: db},
-		trendingDestinationHandle:         &trendingDestinationHandler{db: db},
-		quickDecisionRequestHandle:        &quickDecisionRequestHandler{db: db},
-		communityPollHandle:               &communityPollHandler{db: db},
-		utilityClosetPuzzleHandle:         &utilityClosetPuzzleHandler{db: db},
-		feteRoomHandle:                    &feteRoomHandler{db: db},
-		feteTeamHandle:                    &feteTeamHandler{db: db},
-		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
-		feteRoomTeamHandle:                &feteRoomTeamHandler{db: db},
-		blockchainTransactionHandle:       &blockchainTransactionHandle{db: db},
-		userCertificateHandle:             &userCertificateHandle{db: db},
-		socialAccountHandle:               &socialAccountHandler{db: db},
-		insiderTradeHandle:                &insiderTradeHandle{db: db},
-		feedbackItemHandle:                &feedbackItemHandle{db: db},
+		db:                                   db,
+		scoreHandle:                          &scoreHandler{db: db},
+		userHandle:                           &userHandle{db: db},
+		howManyQuestionHandle:                &howManyQuestionHandle{db: db},
+		howManyAnswerHandle:                  &howManyAnswerHandle{db: db},
+		teamHandle:                           &teamHandle{db: db},
+		userTeamHandle:                       &userTeamHandle{db: db},
+		pointOfInterestHandle:                &pointOfInterestHandle{db: db},
+		neighboringPointsOfInterestHandle:    &neighboringPointsOfInterestHandle{db: db},
+		textVerificationCodeHandle:           &textVerificationCodeHandle{db: db},
+		sentTextHandle:                       &sentTextHandle{db: db},
+		howManySubscriptionHandle:            &howManySubscriptionHandle{db: db},
+		sonarSurveyHandle:                    &sonarSurveyHandle{db: db},
+		sonarSurveySubmissionHandle:          &sonarSurveySubmissionHandle{db: db},
+		sonarActivityHandle:                  &sonarActivityHandle{db: db},
+		sonarCategoryHandle:                  &sonarCategoryHandle{db: db},
+		matchHandle:                          &matchHandle{db: db},
+		verificationCodeHandle:               &verificationCodeHandler{db: db},
+		pointOfInterestGroupHandle:           &pointOfInterestGroupHandle{db: db},
+		pointOfInterestChallengeHandle:       &pointOfInterestChallengeHandle{db: db},
+		pointOfInterestImportHandle:          &pointOfInterestImportHandle{db: db},
+		zoneImportHandle:                     &zoneImportHandle{db: db},
+		zoneSeedJobHandle:                    &zoneSeedJobHandle{db: db},
+		scenarioGenerationJobHandle:          &scenarioGenerationJobHandle{db: db},
+		challengeGenerationJobHandle:         &challengeGenerationJobHandle{db: db},
+		scenarioTemplateHandle:               &scenarioTemplateHandle{db: db},
+		challengeTemplateHandle:              &challengeTemplateHandle{db: db},
+		scenarioTemplateGenerationJobHandle:  &scenarioTemplateGenerationJobHandle{db: db},
+		challengeTemplateGenerationJobHandle: &challengeTemplateGenerationJobHandle{db: db},
+		zoneFlavorGenerationJobHandle:        &zoneFlavorGenerationJobHandle{db: db},
+		spellHandle:                          &spellHandler{db: db},
+		userSpellHandle:                      &userSpellHandler{db: db},
+		inventoryItemHandle:                  &inventoryItemHandler{db: db},
+		newUserStarterConfigHandle:           &newUserStarterConfigHandle{db: db},
+		tutorialHandle:                       &tutorialHandle{db: db},
+		auditItemHandle:                      &auditItemHandler{db: db},
+		imageGenerationHandle:                &imageGenerationHandle{db: db},
+		outfitProfileGenerationHandle:        &outfitProfileGenerationHandle{db: db},
+		pointOfInterestChildrenHandle:        &pointOfInterestChildrenHandle{db: db},
+		pointOfInterestDiscoveryHandle:       &pointOfInterestDiscoveryHandle{db: db},
+		matchUserHandle:                      &matchUserHandle{db: db},
+		tagHandle:                            &tagHandle{db: db},
+		tagGroupHandle:                       &tagGroupHandle{db: db},
+		zoneHandle:                           &zoneHandler{db: db},
+		locationArchetypeHandle:              &locationArchetypeHandle{db: db},
+		questArchetypeHandle:                 &questArchetypeHandle{db: db},
+		questArchetypeNodeHandle:             &questArchetypeNodeHandle{db: db},
+		questArchetypeChallengeHandle:        &questArchetypeChallengeHandle{db: db},
+		questArchetypeNodeChallengeHandle:    &questArchetypeNodeChallengeHandle{db: db},
+		questArchetypeItemRewardHandle:       &questArchetypeItemRewardHandle{db: db},
+		zoneQuestArchetypeHandle:             &zoneQuestArchetypeHandle{db: db},
+		questGenerationJobHandle:             &questGenerationJobHandle{db: db},
+		trackedPointOfInterestGroupHandle:    &trackedPointOfInterestGroupHandle{db: db},
+		trackedQuestHandle:                   &trackedQuestHandle{db: db},
+		pointHandle:                          &pointHandler{db: db},
+		userLevelHandle:                      &userLevelHandler{db: db},
+		userCharacterStatsHandle:             &userCharacterStatsHandler{db: db},
+		userEquipmentHandle:                  &userEquipmentHandler{db: db},
+		userStatusHandle:                     &userStatusHandler{db: db},
+		monsterStatusHandle:                  &monsterStatusHandler{db: db},
+		userProficiencyHandle:                &userProficiencyHandle{db: db},
+		userZoneReputationHandle:             &userZoneReputationHandler{db: db},
+		partyHandle:                          &partyHandle{db: db},
+		friendHandle:                         &friendHandle{db: db},
+		friendInviteHandle:                   &friendInviteHandle{db: db},
+		partyInviteHandle:                    &partyInviteHandle{db: db},
+		postHandle:                           &postHandle{db: db},
+		postTagHandle:                        &postTagHandle{db: db},
+		postFlagHandle:                       &postFlagHandle{db: db},
+		albumHandle:                          &albumHandle{db: db},
+		albumMemberHandle:                    &albumMemberHandle{db: db},
+		albumInviteHandle:                    &albumInviteHandle{db: db},
+		albumPostHandle:                      &albumPostHandle{db: db},
+		albumShareHandle:                     &albumShareHandle{db: db},
+		notificationHandle:                   &notificationHandle{db: db},
+		userDeviceTokenHandle:                &userDeviceTokenHandle{db: db},
+		userRecentPostTagHandle:              &userRecentPostTagHandle{db: db},
+		postReactionHandle:                   &postReactionHandle{db: db},
+		postCommentHandle:                    &postCommentHandle{db: db},
+		activityHandle:                       &activityHandle{db: db},
+		pointOfInterestGroupMemberHandle:     &pointOfInterestGroupMemberHandle{db: db},
+		characterHandle:                      &characterHandler{db: db},
+		characterLocationHandle:              &characterLocationHandle{db: db},
+		characterActionHandle:                &characterActionHandler{db: db},
+		questAcceptanceHandle:                &questAcceptanceHandle{db: db},
+		questAcceptanceV2Handle:              &questAcceptanceV2Handle{db: db},
+		questHandle:                          &questHandle{db: db},
+		questItemRewardHandle:                &questItemRewardHandle{db: db},
+		questSpellRewardHandle:               &questSpellRewardHandle{db: db},
+		questNodeHandle:                      &questNodeHandle{db: db},
+		questNodeChallengeHandle:             &questNodeChallengeHandle{db: db},
+		questNodeChildHandle:                 &questNodeChildHandle{db: db},
+		questNodeProgressHandle:              &questNodeProgressHandle{db: db},
+		movementPatternHandle:                &movementPatternHandler{db: db},
+		treasureChestHandle:                  &treasureChestHandle{db: db},
+		healingFountainHandle:                &healingFountainHandle{db: db},
+		challengeHandle:                      &challengeHandle{db: db},
+		monsterTemplateHandle:                &monsterTemplateHandle{db: db},
+		monsterHandle:                        &monsterHandle{db: db},
+		monsterEncounterHandle:               &monsterEncounterHandle{db: db},
+		userMonsterEncounterVictoryHandle:    &userMonsterEncounterVictoryHandle{db: db},
+		monsterBattleHandle:                  &monsterBattleHandler{db: db},
+		monsterBattleParticipantHandle:       &monsterBattleParticipantHandler{db: db},
+		monsterBattleInviteHandle:            &monsterBattleInviteHandler{db: db},
+		scenarioHandle:                       &scenarioHandle{db: db},
+		documentHandle:                       &documentHandler{db: db},
+		documentTagHandle:                    &documentTagHandler{db: db},
+		documentLocationHandle:               &documentLocationHandler{db: db},
+		googleDriveTokenHandle:               &googleDriveTokenHandler{db: db},
+		dropboxTokenHandle:                   &dropboxTokenHandler{db: db},
+		hueTokenHandle:                       &hueTokenHandler{db: db},
+		trendingDestinationHandle:            &trendingDestinationHandler{db: db},
+		quickDecisionRequestHandle:           &quickDecisionRequestHandler{db: db},
+		communityPollHandle:                  &communityPollHandler{db: db},
+		utilityClosetPuzzleHandle:            &utilityClosetPuzzleHandler{db: db},
+		feteRoomHandle:                       &feteRoomHandler{db: db},
+		feteTeamHandle:                       &feteTeamHandler{db: db},
+		feteRoomLinkedListTeamHandle:         &feteRoomLinkedListTeamHandler{db: db},
+		feteRoomTeamHandle:                   &feteRoomTeamHandler{db: db},
+		blockchainTransactionHandle:          &blockchainTransactionHandle{db: db},
+		userCertificateHandle:                &userCertificateHandle{db: db},
+		socialAccountHandle:                  &socialAccountHandler{db: db},
+		insiderTradeHandle:                   &insiderTradeHandle{db: db},
+		feedbackItemHandle:                   &feedbackItemHandle{db: db},
 	}, nil
 }
 
@@ -492,6 +500,22 @@ func (c *client) ScenarioGenerationJob() ScenarioGenerationJobHandle {
 
 func (c *client) ChallengeGenerationJob() ChallengeGenerationJobHandle {
 	return c.challengeGenerationJobHandle
+}
+
+func (c *client) ScenarioTemplate() ScenarioTemplateHandle {
+	return c.scenarioTemplateHandle
+}
+
+func (c *client) ChallengeTemplate() ChallengeTemplateHandle {
+	return c.challengeTemplateHandle
+}
+
+func (c *client) ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle {
+	return c.scenarioTemplateGenerationJobHandle
+}
+
+func (c *client) ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle {
+	return c.challengeTemplateGenerationJobHandle
 }
 
 func (c *client) ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle {

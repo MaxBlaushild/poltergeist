@@ -43,6 +43,8 @@ import Feedback from './components/Feedback.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
 import { Challenges } from './components/Challenges.tsx';
+import ScenarioTemplates from './components/ScenarioTemplates.tsx';
+import ChallengeTemplates from './components/ChallengeTemplates.tsx';
 import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
@@ -104,7 +106,9 @@ const Navigation = () => {
         <Link to="/feedback" className="text-white hover:text-gray-300">Feedback</Link>
         <Link to="/zone-seeding" className="text-white hover:text-gray-300">Zone Seeding</Link>
         <Link to="/scenarios" className="text-white hover:text-gray-300">Scenarios</Link>
+        <Link to="/scenario-templates" className="text-white hover:text-gray-300">Scenario Templates</Link>
         <Link to="/challenges" className="text-white hover:text-gray-300">Challenges</Link>
+        <Link to="/challenge-templates" className="text-white hover:text-gray-300">Challenge Templates</Link>
       </div>
     </nav>
   );
@@ -296,8 +300,18 @@ const router = createBrowserRouter([
         loader: onlyAuthenticated,
       },
       {
+        path: "/scenario-templates",
+        element: <ScenarioTemplates />,
+        loader: onlyAuthenticated,
+      },
+      {
         path: "/challenges",
         element: <Challenges />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/challenge-templates",
+        element: <ChallengeTemplates />,
         loader: onlyAuthenticated,
       },
       {

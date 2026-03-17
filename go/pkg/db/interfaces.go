@@ -33,6 +33,10 @@ type DbClient interface {
 	ZoneSeedJob() ZoneSeedJobHandle
 	ScenarioGenerationJob() ScenarioGenerationJobHandle
 	ChallengeGenerationJob() ChallengeGenerationJobHandle
+	ScenarioTemplate() ScenarioTemplateHandle
+	ChallengeTemplate() ChallengeTemplateHandle
+	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
+	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
 	ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle
 	Spell() SpellHandle
 	UserSpell() UserSpellHandle
@@ -378,6 +382,39 @@ type ChallengeGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ChallengeGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ChallengeGenerationJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ChallengeGenerationJob, error)
+}
+
+type ScenarioTemplateHandle interface {
+	Create(ctx context.Context, template *models.ScenarioTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplate, error)
+	FindAll(ctx context.Context) ([]models.ScenarioTemplate, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.ScenarioTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ChallengeTemplateHandle interface {
+	Create(ctx context.Context, template *models.ChallengeTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ChallengeTemplate, error)
+	FindAll(ctx context.Context) ([]models.ChallengeTemplate, error)
+	FindRecentByLocationArchetypeID(ctx context.Context, locationArchetypeID uuid.UUID, limit int) ([]models.ChallengeTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.ChallengeTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ScenarioTemplateGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ScenarioTemplateGenerationJob) error
+	Update(ctx context.Context, job *models.ScenarioTemplateGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplateGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplateGenerationJob, error)
+}
+
+type ChallengeTemplateGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ChallengeTemplateGenerationJob) error
+	Update(ctx context.Context, job *models.ChallengeTemplateGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ChallengeTemplateGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ChallengeTemplateGenerationJob, error)
+	FindByLocationArchetypeID(ctx context.Context, locationArchetypeID uuid.UUID, limit int) ([]models.ChallengeTemplateGenerationJob, error)
 }
 
 type ZoneFlavorGenerationJobHandle interface {

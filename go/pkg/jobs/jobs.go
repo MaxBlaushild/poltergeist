@@ -26,6 +26,8 @@ const (
 	GenerateChallengeImageTaskType             = "generate_challenge_image"
 	GenerateScenarioTaskType                   = "generate_scenario"
 	GenerateChallengesTaskType                 = "generate_challenges"
+	GenerateScenarioTemplatesTaskType          = "generate_scenario_templates"
+	GenerateChallengeTemplatesTaskType         = "generate_challenge_templates"
 	GenerateZoneFlavorTaskType                 = "generate_zone_flavor"
 	GenerateImageThumbnailTaskType             = "generate_image_thumbnail"
 	QueueThumbnailBackfillTaskType             = "queue_thumbnail_backfill"
@@ -253,6 +255,14 @@ type GenerateScenarioTaskPayload struct {
 }
 
 type GenerateChallengesTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateScenarioTemplatesTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateChallengeTemplatesTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
 }
 
