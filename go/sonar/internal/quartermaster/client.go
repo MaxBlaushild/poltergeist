@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ type UseItemMetadata struct {
 	TargetTeamID      uuid.UUID  `json:"targetTeamId"`
 	ChallengeID       uuid.UUID  `json:"challengeId"`
 	TargetUserID      *uuid.UUID `json:"targetUserId,omitempty"`
+	BaseLatitude      *float64   `json:"baseLatitude,omitempty"`
+	BaseLongitude     *float64   `json:"baseLongitude,omitempty"`
 }
 
 func NewClient(db db.DbClient) Quartermaster {
@@ -148,6 +151,9 @@ func inventoryItemHasConfiguredConsumeEffects(item *models.InventoryItem) bool {
 	if item.ConsumeDealDamage > 0 || item.ConsumeDealDamageAllEnemies > 0 {
 		return true
 	}
+	if item.ConsumeCreateBase {
+		return true
+	}
 	if item.ConsumeRevivePartyMemberHealth > 0 || item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
 		return true
 	}
@@ -193,6 +199,11 @@ func (c *client) applyConfiguredConsumeEffects(
 			if err := c.applyConfiguredConsumeReviveEffect(ctx, recipientID, item.ConsumeReviveAllDownedPartyMembersHealth); err != nil {
 				return err
 			}
+		}
+	}
+	if item.ConsumeCreateBase {
+		if err := c.applyConfiguredConsumeCreateBaseEffect(ctx, userID, metadata); err != nil {
+			return err
 		}
 	}
 
@@ -243,6 +254,28 @@ func (c *client) applyConfiguredConsumeEffects(
 	}
 
 	return nil
+}
+
+func (c *client) applyConfiguredConsumeCreateBaseEffect(
+	ctx context.Context,
+	userID uuid.UUID,
+	metadata *UseItemMetadata,
+) error {
+	if metadata == nil || metadata.BaseLatitude == nil || metadata.BaseLongitude == nil {
+		return errors.New("base location is required")
+	}
+
+	latitude := *metadata.BaseLatitude
+	longitude := *metadata.BaseLongitude
+	if math.IsNaN(latitude) || math.IsInf(latitude, 0) || latitude < -90 || latitude > 90 {
+		return errors.New("base latitude must be between -90 and 90")
+	}
+	if math.IsNaN(longitude) || math.IsInf(longitude, 0) || longitude < -180 || longitude > 180 {
+		return errors.New("base longitude must be between -180 and 180")
+	}
+
+	_, err := c.db.Base().UpsertForUser(ctx, userID, latitude, longitude)
+	return err
 }
 
 func (c *client) applyConfiguredConsumeReviveEffect(

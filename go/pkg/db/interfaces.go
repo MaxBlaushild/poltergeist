@@ -104,6 +104,7 @@ type DbClient interface {
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
 	HealingFountain() HealingFountainHandle
+	Base() BaseHandle
 	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
@@ -1084,6 +1085,13 @@ type HealingFountainHandle interface {
 	FindLatestVisitByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainVisit, error)
 	FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error)
 	CreateUserHealingFountainVisit(ctx context.Context, visit *models.UserHealingFountainVisit) error
+}
+
+type BaseHandle interface {
+	UpsertForUser(ctx context.Context, userID uuid.UUID, latitude float64, longitude float64) (*models.Base, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error)
+	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Base, error)
+	FindAll(ctx context.Context) ([]models.Base, error)
 }
 
 type ChallengeHandle interface {

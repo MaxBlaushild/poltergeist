@@ -64,20 +64,25 @@ class InventoryService {
 
   /// POST /sonar/inventory/:ownedInventoryItemID/use
   /// Optional [targetTeamId] for items that require a team target.
-  Future<void> useItem(
+  Future<Map<String, dynamic>> useItem(
     String ownedInventoryItemId, {
     String? targetTeamId,
     String? targetUserId,
+    double? baseLatitude,
+    double? baseLongitude,
   }) async {
-    await _api.post<dynamic>(
+    final raw = await _api.post<dynamic>(
       '/sonar/inventory/$ownedInventoryItemId/use',
       data: {
         if (targetTeamId != null && targetTeamId.isNotEmpty)
           'targetTeamId': targetTeamId,
         if (targetUserId != null && targetUserId.isNotEmpty)
           'targetUserId': targetUserId,
+        if (baseLatitude != null) 'baseLatitude': baseLatitude,
+        if (baseLongitude != null) 'baseLongitude': baseLongitude,
       },
     );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
   Future<OutfitGeneration?> getOutfitGenerationStatus(

@@ -27,6 +27,7 @@ import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
 import { Parties } from './components/Parties.tsx';
 import { InventoryItems } from './components/InventoryItems.tsx';
+import { Bases } from './components/Bases.tsx';
 import { TreasureChests } from './components/TreasureChests.tsx';
 import NewUserStarterConfig from './components/NewUserStarterConfig.tsx';
 import { FeteRooms } from './components/FeteRooms.tsx';
@@ -94,6 +95,7 @@ const Navigation = () => {
         <Link to="/parties" className="text-white hover:text-gray-300">Parties</Link>
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
+        <Link to="/bases" className="text-white hover:text-gray-300">Bases</Link>
         <Link to="/spells" className="text-white hover:text-gray-300">Spells</Link>
         <Link to="/monsters" className="text-white hover:text-gray-300">Monsters</Link>
         <Link to="/starter-config" className="text-white hover:text-gray-300">Starter Config</Link>
@@ -212,6 +214,11 @@ const router = createBrowserRouter([
       {
         path: "/inventory-items",
         element: <InventoryItems />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/bases",
+        element: <Bases />,
         loader: onlyAuthenticated,
       },
       {

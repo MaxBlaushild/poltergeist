@@ -63,6 +63,7 @@ class InventoryPanel extends StatefulWidget {
   const InventoryPanel({
     super.key,
     required this.onClose,
+    this.onCreateBaseRequested,
     this.closeLocked = false,
     this.tutorialDialogue = const [],
     this.requiredEquipItemIds = const [],
@@ -73,6 +74,8 @@ class InventoryPanel extends StatefulWidget {
   });
 
   final VoidCallback onClose;
+  final Future<void> Function(OwnedInventoryItem owned, InventoryItem item)?
+  onCreateBaseRequested;
   final bool closeLocked;
   final List<String> tutorialDialogue;
   final List<int> requiredEquipItemIds;
@@ -237,6 +240,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   bool _hasConsumableEffects(InventoryItem inv) {
     return inv.consumeHealthDelta != 0 ||
         inv.consumeManaDelta != 0 ||
+        inv.consumeCreateBase ||
         inv.consumeStatusesToAdd.isNotEmpty ||
         inv.consumeStatusesToRemove.isNotEmpty ||
         inv.consumeSpellIds.isNotEmpty;
@@ -715,6 +719,14 @@ class _InventoryPanelState extends State<InventoryPanel>
   }
 
   Future<void> _use(OwnedInventoryItem owned) async {
+    final item = _itemFor(owned);
+    final createBaseHandler = widget.onCreateBaseRequested;
+    if (item != null && item.consumeCreateBase && createBaseHandler != null) {
+      widget.onClose();
+      await createBaseHandler(owned, item);
+      return;
+    }
+
     if (_using) return;
     setState(() {
       _using = true;
@@ -729,7 +741,6 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      final item = _itemFor(owned);
       final shouldCloseAfterTutorialProgress =
           _wouldCompleteTutorialAfterAction(usedInventoryItemId: item?.id);
       final onTutorialProgressChanged = widget.onTutorialProgressChanged;

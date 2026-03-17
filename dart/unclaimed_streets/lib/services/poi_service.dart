@@ -3,6 +3,7 @@ import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
 import '../models/monster.dart';
+import '../models/base.dart';
 import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
 import '../models/quest.dart';
@@ -46,6 +47,13 @@ class PoiService {
     final list = await _api.get<List<dynamic>>('/sonar/characters');
     return list
         .map((e) => Character.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<BasePin>> getVisibleBases() async {
+    final list = await _api.get<List<dynamic>>('/sonar/bases');
+    return list
+        .map((e) => BasePin.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

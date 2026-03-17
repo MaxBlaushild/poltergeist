@@ -59,6 +59,7 @@ const (
 	raidUndiscoveredIconKey            = "thumbnails/placeholders/raid-undiscovered.png"
 	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
 	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
+	baseDiscoveredIconKey              = "thumbnails/placeholders/base-discovered.png"
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
@@ -67,6 +68,7 @@ const (
 	raidUndiscoveredStatusKey          = "admin:thumbnails:raid-undiscovered:requested-at"
 	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
 	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
+	baseDiscoveredStatusKey            = "admin:thumbnails:base-discovered:requested-at"
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
@@ -75,6 +77,7 @@ const (
 	raidUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	characterUndiscoveredIconText      = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	healingFountainDiscoveredIconText  = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
+	baseDiscoveredIconText             = "A discovered adventurer base marker in a retro 16-bit fantasy MMORPG style. Top-down map-ready icon art, sturdy camp or homestead sigil, welcoming hearth glow, no text, no logos, centered composition, crisp outlines, limited palette."
 	userProfilePlaceholderText         = "A polished fantasy RPG profile portrait avatar. Head-and-shoulders, centered composition, expressive face, clean background, no text, no logos, game-ready artwork."
 	staticThumbnailJobTimeout          = 10 * time.Minute
 	staticThumbnailStatusTTL           = 2 * time.Hour
@@ -264,6 +267,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use-outfit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useOutfitItem))
+	r.GET("/sonar/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getVisibleBases))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
 	r.POST("/sonar/equipment/equip", middleware.WithAuthentication(s.authClient, s.livenessClient, s.equipInventoryItem))
@@ -370,6 +374,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseDiscoveredIcon))
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
@@ -377,6 +382,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/:encounterType/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/base/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDiscoveredIconStatus))
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
@@ -384,6 +390,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -511,6 +518,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
+	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
 	r.POST("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterTemplate))
@@ -6813,6 +6821,10 @@ func (s *server) generateHealingFountainDiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, healingFountainDiscoveredIconText, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
 }
 
+func (s *server) generateBaseDiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, baseDiscoveredIconText, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+}
+
 func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
 	status, exists, requestedAt, lastModified, err := s.readStaticThumbnailStatus(ctx, destinationKey, statusKey)
 	if err != nil {
@@ -6855,6 +6867,10 @@ func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
 
 func (s *server) getHealingFountainDiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+}
+
+func (s *server) getBaseDiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
 }
 
 func (s *server) applyUserProfilePlaceholderToUsersWithoutPictures(ctx *gin.Context, profilePictureURL string) (int, error) {
@@ -6972,6 +6988,10 @@ func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {
 
 func (s *server) deleteHealingFountainDiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+}
+
+func (s *server) deleteBaseDiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
 }
 
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
@@ -7239,6 +7259,13 @@ func (s *server) useItem(ctx *gin.Context) {
 		})
 		return
 	}
+	dbInventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedInventoryItem.InventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
 	if isOutfitItemName(inventoryItem.Name) {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -7292,6 +7319,21 @@ func (s *server) useItem(ctx *gin.Context) {
 		}
 
 		ctx.JSON(http.StatusOK, result)
+		return
+	}
+
+	if dbInventoryItem != nil && dbInventoryItem.ConsumeCreateBase && ownedInventoryItem.UserID != nil {
+		base, err := s.dbClient.Base().FindByUserID(ctx, *ownedInventoryItem.UserID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"message": "base created successfully",
+			"base":    serializeBase(base),
+		})
 		return
 	}
 
@@ -7674,6 +7716,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
 		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
 		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
+		ConsumeCreateBase                        bool                           `json:"consumeCreateBase"`
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
@@ -7810,6 +7853,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeDealDamageHits:                    consumeDealDamageHits,
 		ConsumeDealDamageAllEnemies:              requestBody.ConsumeDealDamageAllEnemies,
 		ConsumeDealDamageAllEnemiesHits:          consumeDealDamageAllEnemiesHits,
+		ConsumeCreateBase:                        requestBody.ConsumeCreateBase,
 		ConsumeStatusesToAdd:                     consumeStatusesToAdd,
 		ConsumeStatusesToRemove:                  consumeStatusesToRemove,
 		ConsumeSpellIDs:                          consumeSpellIDs,
@@ -9631,6 +9675,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
 		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
 		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
+		ConsumeCreateBase                        bool                           `json:"consumeCreateBase"`
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
@@ -9774,6 +9819,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"consume_deal_damage_hits":                       consumeDealDamageHits,
 		"consume_deal_damage_all_enemies":                requestBody.ConsumeDealDamageAllEnemies,
 		"consume_deal_damage_all_enemies_hits":           consumeDealDamageAllEnemiesHits,
+		"consume_create_base":                            requestBody.ConsumeCreateBase,
 		"consume_statuses_to_add":                        consumeStatusesToAdd,
 		"consume_statuses_to_remove":                     consumeStatusesToRemove,
 		"consume_spell_ids":                              consumeSpellIDs,

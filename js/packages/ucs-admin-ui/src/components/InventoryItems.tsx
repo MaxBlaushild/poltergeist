@@ -28,6 +28,7 @@ type InventoryItemRecord = InventoryItem & {
   consumeManaDelta?: number;
   consumeRevivePartyMemberHealth?: number;
   consumeReviveAllDownedPartyMembersHealth?: number;
+  consumeCreateBase?: boolean;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];
@@ -382,6 +383,9 @@ const consumeSummary = (
   if ((item.consumeStatusesToAdd?.length ?? 0) > 0) {
     details.push(`Adds statuses: ${item.consumeStatusesToAdd?.map((status) => status.name).join(', ')}`);
   }
+  if (item.consumeCreateBase) {
+    details.push('Creates a player base on use');
+  }
   if ((item.consumeStatusesToRemove?.length ?? 0) > 0) {
     details.push(`Removes statuses: ${item.consumeStatusesToRemove?.join(', ')}`);
   }
@@ -400,6 +404,7 @@ const hasConsumableEffects = (item: InventoryItemRecord) => {
   if ((item.consumeManaDelta ?? 0) !== 0) return true;
   if ((item.consumeRevivePartyMemberHealth ?? 0) > 0) return true;
   if ((item.consumeReviveAllDownedPartyMembersHealth ?? 0) > 0) return true;
+  if (item.consumeCreateBase) return true;
   if ((item.consumeStatusesToAdd?.length ?? 0) > 0) return true;
   if ((item.consumeStatusesToRemove?.length ?? 0) > 0) return true;
   if ((item.consumeSpellIds?.length ?? 0) > 0) return true;
@@ -526,6 +531,7 @@ export const InventoryItems = () => {
     consumeManaDelta: 0,
     consumeRevivePartyMemberHealth: 0,
     consumeReviveAllDownedPartyMembersHealth: 0,
+    consumeCreateBase: false,
     consumeStatusesToAdd: [] as InventoryConsumeStatus[],
     consumeStatusesToRemove: [] as string[],
     consumeSpellIds: [] as string[],
@@ -648,6 +654,7 @@ export const InventoryItems = () => {
       consumeManaDelta: 0,
       consumeRevivePartyMemberHealth: 0,
       consumeReviveAllDownedPartyMembersHealth: 0,
+      consumeCreateBase: false,
       consumeStatusesToAdd: [],
       consumeStatusesToRemove: [],
       consumeSpellIds: [],
@@ -1483,6 +1490,7 @@ export const InventoryItems = () => {
       consumeRevivePartyMemberHealth: item.consumeRevivePartyMemberHealth ?? 0,
       consumeReviveAllDownedPartyMembersHealth:
         item.consumeReviveAllDownedPartyMembersHealth ?? 0,
+      consumeCreateBase: item.consumeCreateBase ?? false,
       consumeStatusesToAdd: (item.consumeStatusesToAdd ?? []).map((status) =>
         normalizeConsumeStatus(status)
       ),
@@ -2821,6 +2829,27 @@ export const InventoryItems = () => {
                     style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
                   />
                 </div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.consumeCreateBase}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        consumeCreateBase: e.target.checked,
+                      })
+                    }
+                  />
+                  Create base on use
+                </label>
               </div>
 
               <div style={{ marginBottom: '12px' }}>

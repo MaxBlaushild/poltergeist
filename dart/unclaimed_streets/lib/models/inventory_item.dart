@@ -32,6 +32,7 @@ class InventoryItem {
   final int consumeDealDamageHits;
   final int consumeDealDamageAllEnemies;
   final int consumeDealDamageAllEnemiesHits;
+  final bool consumeCreateBase;
   final List<InventoryConsumeStatus> consumeStatusesToAdd;
   final List<String> consumeStatusesToRemove;
   final List<String> consumeSpellIds;
@@ -70,6 +71,7 @@ class InventoryItem {
     this.consumeDealDamageHits = 0,
     this.consumeDealDamageAllEnemies = 0,
     this.consumeDealDamageAllEnemiesHits = 0,
+    this.consumeCreateBase = false,
     this.consumeStatusesToAdd = const [],
     this.consumeStatusesToRemove = const [],
     this.consumeSpellIds = const [],
@@ -117,6 +119,7 @@ class InventoryItem {
           (json['consumeDealDamageAllEnemies'] as num?)?.toInt() ?? 0,
       consumeDealDamageAllEnemiesHits:
           (json['consumeDealDamageAllEnemiesHits'] as num?)?.toInt() ?? 0,
+      consumeCreateBase: json['consumeCreateBase'] as bool? ?? false,
       consumeStatusesToAdd:
           (json['consumeStatusesToAdd'] as List<dynamic>?)
               ?.map(

@@ -41,6 +41,7 @@ type InventoryItem struct {
 	ConsumeDealDamageHits                    int                            `json:"consumeDealDamageHits" gorm:"column:consume_deal_damage_hits"`
 	ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies" gorm:"column:consume_deal_damage_all_enemies"`
 	ConsumeDealDamageAllEnemiesHits          int                            `json:"consumeDealDamageAllEnemiesHits" gorm:"column:consume_deal_damage_all_enemies_hits"`
+	ConsumeCreateBase                        bool                           `json:"consumeCreateBase" gorm:"column:consume_create_base"`
 	ConsumeStatusesToAdd                     ScenarioFailureStatusTemplates `json:"consumeStatusesToAdd" gorm:"column:consume_statuses_to_add;type:jsonb"`
 	ConsumeStatusesToRemove                  StringArray                    `json:"consumeStatusesToRemove" gorm:"column:consume_statuses_to_remove;type:jsonb"`
 	ConsumeSpellIDs                          StringArray                    `json:"consumeSpellIds" gorm:"column:consume_spell_ids;type:jsonb"`

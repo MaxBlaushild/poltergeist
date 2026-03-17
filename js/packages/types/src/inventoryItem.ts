@@ -63,6 +63,7 @@ export type InventoryItem = {
   consumeDealDamageHits?: number;
   consumeDealDamageAllEnemies?: number;
   consumeDealDamageAllEnemiesHits?: number;
+  consumeCreateBase?: boolean;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];

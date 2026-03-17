@@ -99,6 +99,7 @@ type client struct {
 	movementPatternHandle                *movementPatternHandler
 	treasureChestHandle                  *treasureChestHandle
 	healingFountainHandle                *healingFountainHandle
+	baseHandle                           *baseHandle
 	challengeHandle                      *challengeHandle
 	monsterTemplateHandle                *monsterTemplateHandle
 	monsterHandle                        *monsterHandle
@@ -259,6 +260,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		movementPatternHandle:                &movementPatternHandler{db: db},
 		treasureChestHandle:                  &treasureChestHandle{db: db},
 		healingFountainHandle:                &healingFountainHandle{db: db},
+		baseHandle:                           &baseHandle{db: db},
 		challengeHandle:                      &challengeHandle{db: db},
 		monsterTemplateHandle:                &monsterTemplateHandle{db: db},
 		monsterHandle:                        &monsterHandle{db: db},
@@ -672,6 +674,10 @@ func (c *client) TreasureChest() TreasureChestHandle {
 
 func (c *client) HealingFountain() HealingFountainHandle {
 	return c.healingFountainHandle
+}
+
+func (c *client) Base() BaseHandle {
+	return c.baseHandle
 }
 
 func (c *client) Challenge() ChallengeHandle {

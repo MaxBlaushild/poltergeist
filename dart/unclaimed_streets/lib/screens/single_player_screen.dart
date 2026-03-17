@@ -17,7 +17,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
+import '../models/base.dart';
 import '../models/healing_fountain.dart';
+import '../models/inventory_item.dart';
 import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -42,12 +44,14 @@ import '../providers/zone_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/party_provider.dart';
 import '../services/media_service.dart';
+import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
 import '../utils/poi_image_util.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
 import '../constants/gameplay_constants.dart';
 import '../widgets/activity_feed_panel.dart';
+import '../widgets/base_panel.dart';
 import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
 import '../widgets/healing_fountain_panel.dart';
@@ -87,6 +91,8 @@ const _healingFountainFallbackImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _healingFountainDiscoveredImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
+const _baseDiscoveredImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-discovered.png';
 const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
@@ -121,6 +127,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
   List<HealingFountain> _healingFountains = [];
+  List<BasePin> _bases = [];
   List<Scenario> _scenarios = [];
   List<MonsterEncounter> _monsters = [];
   List<Challenge> _challenges = [];
@@ -146,6 +153,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Circle> _healingFountainCircles = [];
   final Map<String, Symbol> _healingFountainSymbolById = {};
   final Map<String, Circle> _healingFountainCircleById = {};
+  List<Symbol> _baseSymbols = [];
+  List<Circle> _baseCircles = [];
+  final Map<String, Symbol> _baseSymbolById = {};
+  final Map<String, Circle> _baseCircleById = {};
   List<Symbol> _scenarioSymbols = [];
   List<Circle> _scenarioCircles = [];
   final Map<String, Symbol> _scenarioSymbolById = {};
@@ -243,6 +254,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialRevealPendingAfterCompletionModal = false;
   bool _tutorialWelcomeOverlayVisible = false;
   double _tutorialWelcomeOverlayOpacity = 0.0;
+  String? _pendingBaseOwnedInventoryItemId;
+  InventoryItem? _pendingBaseInventoryItem;
+  LatLng? _pendingBaseSelection;
+  bool _creatingBase = false;
 
   @override
   void initState() {
@@ -375,6 +390,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _requestQuestLogIfReady(force: true);
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
+    unawaited(_loadBases());
     unawaited(context.read<PartyProvider>().fetchParty());
     unawaited(_loadTutorialStatus(force: true));
   }
@@ -394,6 +410,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       ((_tutorialFocusedScenarioId?.trim().isNotEmpty ?? false) ||
           (_tutorialFocusedMonsterEncounterId?.trim().isNotEmpty ?? false) ||
           (_tutorialStatus?.isLoadoutStep ?? false));
+
+  bool get _isPlacingBase => _pendingBaseOwnedInventoryItemId != null;
+
+  BasePin? _baseById(String id) {
+    for (final base in _bases) {
+      if (base.id == id) return base;
+    }
+    return null;
+  }
+
+  BasePin? _currentUserBase() {
+    final userId = context.read<AuthProvider>().user?.id ?? '';
+    if (userId.isEmpty) return null;
+    for (final base in _bases) {
+      if (base.userId == userId) return base;
+    }
+    return null;
+  }
 
   bool _isTutorialFocusedScenarioId(String scenarioId) {
     final focusedId = _tutorialFocusedScenarioId?.trim() ?? '';
@@ -1532,10 +1566,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final zonesFuture = svc.getZones();
       final poisFuture = svc.getPointsOfInterest();
       final charactersFuture = svc.getCharacters();
+      final basesFuture = svc.getVisibleBases();
       await discoveriesFuture;
       final zones = await zonesFuture;
       final pois = await poisFuture;
       final characters = await charactersFuture;
+      final bases = await basesFuture;
       if (!mounted) return;
       debugPrint(
         'SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}',
@@ -1545,6 +1581,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _zones = zones;
         _pois = pois;
         _characters = characters;
+        _bases = bases;
         _markersAdded = false;
       });
       _updateSelectedZoneFromLocation();
@@ -1559,6 +1596,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       debugPrint('SinglePlayer: _loadAll error: $e');
       debugPrint('SinglePlayer: _loadAll stack: $stackTrace');
       if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _loadBases() async {
+    try {
+      final bases = await context.read<PoiService>().getVisibleBases();
+      if (!mounted) return;
+      setState(() {
+        _bases = bases;
+      });
+      if (_styleLoaded && _mapController != null && _markersAdded) {
+        await _refreshBaseSymbols();
+      }
+    } catch (e) {
+      debugPrint('SinglePlayer: _loadBases error: $e');
     }
   }
 
@@ -3347,6 +3399,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
         return;
       }
+      if (type == 'base') {
+        final base = _baseById(idStr);
+        if (base != null) {
+          _showBasePanel(base);
+        }
+        return;
+      }
       if (type == 'scenario') {
         final scenario = _scenarioById(idStr);
         if (scenario != null) {
@@ -3405,6 +3464,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final fountain = _healingFountainById(idStr);
           if (fountain != null && mounted) {
             _showHealingFountainPanel(fountain);
+          }
+          return;
+        }
+        if (type == 'base') {
+          final base = _baseById(idStr);
+          if (base != null && mounted) {
+            _showBasePanel(base);
           }
           return;
         }
@@ -3513,6 +3579,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _handleMapClick(Point<double> point, LatLng coordinates) {
+    if (_isPlacingBase) {
+      setState(() {
+        _pendingBaseSelection = coordinates;
+      });
+      return;
+    }
     final zone = context.read<ZoneProvider>().findZoneAtCoordinate(
       coordinates.latitude,
       coordinates.longitude,
@@ -3772,6 +3844,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _healingFountainCircles.clear();
       }
       _healingFountainCircleById.clear();
+      if (_baseSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_baseSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _baseSymbols.clear();
+      }
+      _baseSymbolById.clear();
+      if (_baseCircles.isNotEmpty) {
+        for (final circle in _baseCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _baseCircles.clear();
+      }
+      _baseCircleById.clear();
       if (_scenarioSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_scenarioSymbols);
@@ -3879,6 +3969,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
       if (tutorialMapFocused) {
         _pinBatchRevealInProgress = false;
+        await _refreshBaseSymbols();
         await _refreshScenarioSymbols();
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
@@ -4151,6 +4242,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
       }
       await _refreshHealingFountainSymbols();
+      await _refreshBaseSymbols();
       await _refreshScenarioSymbols();
       await _refreshMonsterSymbols();
       await _refreshChallengeSymbols();
@@ -4653,6 +4745,136 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(fountain.latitude, fountain.longitude),
               circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: circleColor,
+            ),
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _refreshBaseSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    final desiredIds = _bases.map((base) => base.id).toSet();
+
+    for (final entry in _baseSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _baseSymbols.remove(entry.value);
+        _baseSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _baseCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _baseCircles.remove(entry.value);
+        _baseCircleById.remove(entry.key);
+      }
+    }
+
+    for (final base in _bases) {
+      if (base.id.isEmpty) continue;
+      if (!base.latitude.isFinite || !base.longitude.isFinite) continue;
+      if (base.latitude == 0.0 && base.longitude == 0.0) continue;
+
+      Uint8List? imageBytes;
+      try {
+        imageBytes = await loadPoiThumbnail(
+          base.thumbnailUrl.isNotEmpty
+              ? base.thumbnailUrl
+              : _baseDiscoveredImageUrl,
+        );
+      } catch (_) {}
+
+      if (imageBytes != null) {
+        final imageKey =
+            (base.thumbnailUrl.isNotEmpty
+                    ? base.thumbnailUrl
+                    : _baseDiscoveredImageUrl)
+                .hashCode
+                .abs();
+        final imageId = 'base_${base.id}_${imageKey}_$_mapThumbnailVersion';
+        await _ensureMapImage(c, imageId, imageBytes);
+
+        final existingCircle = _baseCircleById[base.id];
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _baseCircles.remove(existingCircle);
+          _baseCircleById.remove(base.id);
+        }
+
+        final existingSymbol = _baseSymbolById[base.id];
+        if (existingSymbol == null) {
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(base.latitude, base.longitude),
+              iconImage: imageId,
+              iconSize: 0.8,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.9,
+              iconAnchor: 'center',
+              zIndex: 3,
+            ),
+            {'type': 'base', 'id': base.id},
+          );
+          if (!mounted) return;
+          _baseSymbols.add(symbol);
+          _baseSymbolById[base.id] = symbol;
+        } else {
+          try {
+            await c.updateSymbol(
+              existingSymbol,
+              SymbolOptions(
+                geometry: LatLng(base.latitude, base.longitude),
+                iconImage: imageId,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+              ),
+            );
+          } catch (_) {}
+        }
+        continue;
+      }
+
+      final existingSymbol = _baseSymbolById[base.id];
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _baseSymbols.remove(existingSymbol);
+        _baseSymbolById.remove(base.id);
+      }
+
+      final existingCircle = _baseCircleById[base.id];
+      if (existingCircle == null) {
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(base.latitude, base.longitude),
+            circleRadius: 21,
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
+            circleColor: '#8c6239',
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#f4e9d6',
+          ),
+          {'type': 'base', 'id': base.id},
+        );
+        if (!mounted) return;
+        _baseCircles.add(circle);
+        _baseCircleById[base.id] = circle;
+      } else {
+        try {
+          await c.updateCircle(
+            existingCircle,
+            CircleOptions(
+              geometry: LatLng(base.latitude, base.longitude),
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
             ),
           );
         } catch (_) {}
@@ -5568,6 +5790,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await updateCircleOpacity(_chestCircleById);
     await updateSymbolOpacity(_healingFountainSymbolById.values);
     await updateCircleOpacity(_healingFountainCircleById);
+    await updateSymbolOpacity(_baseSymbolById.values);
+    await updateCircleOpacity(_baseCircleById);
     await updateSymbolOpacity(_scenarioSymbolById.values);
     await updateCircleOpacity(_scenarioCircleById);
     await updateSymbolOpacity(_monsterSymbolById.values);
@@ -6654,7 +6878,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
               ),
-            if (polygonQuest != null && polygonNode != null)
+            if (!_isPlacingBase && polygonQuest != null && polygonNode != null)
               Positioned(
                 left: 16,
                 right: 16,
@@ -6667,7 +6891,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   child: Text('Quest: ${polygonQuest.name}'),
                 ),
               ),
-            if (polygonChallenge != null)
+            if (!_isPlacingBase && polygonChallenge != null)
               Positioned(
                 left: 16,
                 right: 16,
@@ -6692,6 +6916,68 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     polygonChallengeQuestEntry != null
                         ? 'Challenge: ${polygonChallengeQuestEntry.key.name}'
                         : 'Challenge Area',
+                  ),
+                ),
+              ),
+            if (_isPlacingBase)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: polygonActionBottom,
+                child: PointerInterceptor(
+                  child: Card(
+                    elevation: 10,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _pendingBaseInventoryItem == null
+                                ? 'Choose a base location'
+                                : 'Use ${_pendingBaseInventoryItem!.name}',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _pendingBaseSelection == null
+                                ? 'Tap anywhere on the map to choose where your base should appear.'
+                                : 'Selected location: ${_pendingBaseSelection!.latitude.toStringAsFixed(5)}, ${_pendingBaseSelection!.longitude.toStringAsFixed(5)}. Tap elsewhere to move it before confirming.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _creatingBase
+                                      ? null
+                                      : _cancelBasePlacement,
+                                  child: const Text('Cancel'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed:
+                                      _pendingBaseSelection == null ||
+                                          _creatingBase
+                                      ? null
+                                      : _confirmBasePlacement,
+                                  child: Text(
+                                    _creatingBase
+                                        ? 'Creating...'
+                                        : 'Confirm location',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -7282,6 +7568,127 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
     if (!mounted || !openTrackedQuests) return;
     _trackedQuestsController.open();
+  }
+
+  void _showBasePanel(BasePin base) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) =>
+          BasePanel(base: base, onClose: () => Navigator.of(context).pop()),
+    );
+  }
+
+  Future<void> _beginBasePlacement(
+    OwnedInventoryItem owned,
+    InventoryItem item,
+  ) async {
+    if (!mounted) return;
+    setState(() {
+      _pendingBaseOwnedInventoryItemId = owned.id;
+      _pendingBaseInventoryItem = item;
+      _pendingBaseSelection = null;
+      _creatingBase = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tap the map to choose where to establish your base.'),
+      ),
+    );
+  }
+
+  void _cancelBasePlacement() {
+    if (!mounted) return;
+    setState(() {
+      _pendingBaseOwnedInventoryItemId = null;
+      _pendingBaseInventoryItem = null;
+      _pendingBaseSelection = null;
+      _creatingBase = false;
+    });
+  }
+
+  Future<void> _confirmBasePlacement() async {
+    final ownedInventoryItemId = _pendingBaseOwnedInventoryItemId;
+    final selection = _pendingBaseSelection;
+    if (ownedInventoryItemId == null || selection == null || _creatingBase) {
+      return;
+    }
+
+    final existingBase = _currentUserBase();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existingBase == null ? 'Establish base?' : 'Move base?'),
+        content: Text(
+          existingBase == null
+              ? 'This will consume the item and place your base at the selected location.'
+              : 'This will consume the item and move your current base to the selected location.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _creatingBase = true;
+    });
+
+    try {
+      await context.read<InventoryService>().useItem(
+        ownedInventoryItemId,
+        baseLatitude: selection.latitude,
+        baseLongitude: selection.longitude,
+      );
+      if (!mounted) return;
+      await _loadBases();
+      if (!mounted) return;
+      _cancelBasePlacement();
+      final mapController = _mapController;
+      if (mapController != null) {
+        await mapController.animateCamera(CameraUpdate.newLatLng(selection));
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            existingBase == null
+                ? 'Base established.'
+                : 'Base moved to the new location.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _creatingBase = false;
+      });
+      var message = e.toString();
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final error = data['error'];
+          if (error is String && error.trim().isNotEmpty) {
+            message = error;
+          }
+        }
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Future<void> _showShopModal(
@@ -8618,6 +9025,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: InventoryPanel(
                     onClose: () => Navigator.of(context).pop(),
+                    onCreateBaseRequested: (owned, item) async {
+                      await _beginBasePlacement(owned, item);
+                    },
                   ),
                 ),
               ),
