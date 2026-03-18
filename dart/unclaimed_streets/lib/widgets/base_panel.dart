@@ -240,6 +240,9 @@ class _BasePanelState extends State<BasePanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
+    final imageUrl = widget.base.imageUrl.trim().isNotEmpty
+        ? widget.base.imageUrl.trim()
+        : widget.base.thumbnailUrl;
     return PaperSheet(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
@@ -270,7 +273,7 @@ class _BasePanelState extends State<BasePanel> {
                   height: 220,
                   width: double.infinity,
                   child: Image.network(
-                    widget.base.thumbnailUrl,
+                    imageUrl,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => Container(
                       color: theme.colorScheme.surfaceContainerHighest,

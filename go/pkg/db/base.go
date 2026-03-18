@@ -110,13 +110,24 @@ func (h *baseHandle) FindAll(ctx context.Context) ([]models.Base, error) {
 	return bases, nil
 }
 
-func (h *baseHandle) UpdateDescription(ctx context.Context, id uuid.UUID, description string) error {
+func (h *baseHandle) UpdateFlavor(ctx context.Context, id uuid.UUID, description string, imageURL string) error {
 	return h.db.WithContext(ctx).
 		Model(&models.Base{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"description": description,
+			"image_url":   imageURL,
 			"updated_at":  time.Now(),
+		}).Error
+}
+
+func (h *baseHandle) UpdateThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error {
+	return h.db.WithContext(ctx).
+		Model(&models.Base{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"thumbnail_url": thumbnailURL,
+			"updated_at":    time.Now(),
 		}).Error
 }
 

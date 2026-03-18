@@ -1,6 +1,12 @@
 ALTER TABLE bases
 ADD COLUMN IF NOT EXISTS description TEXT;
 
+ALTER TABLE bases
+ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+ALTER TABLE bases
+ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+
 CREATE TABLE IF NOT EXISTS base_description_generation_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -8,6 +14,7 @@ CREATE TABLE IF NOT EXISTS base_description_generation_jobs (
   base_id UUID NOT NULL REFERENCES bases(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
   generated_description TEXT,
+  generated_image_url TEXT,
   error_message TEXT
 );
 

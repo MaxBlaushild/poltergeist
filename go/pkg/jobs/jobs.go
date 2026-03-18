@@ -77,6 +77,7 @@ const (
 const (
 	ThumbnailEntityCharacter       = "character"
 	ThumbnailEntityPointOfInterest = "point_of_interest"
+	ThumbnailEntityBase            = "base"
 	ThumbnailEntityStatic          = "static"
 	ThumbnailBucket                = "crew-profile-icons"
 )

@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -28,15 +29,21 @@ func serializeBase(base *models.Base) gin.H {
 	}
 
 	return gin.H{
-		"id":           base.ID,
-		"userId":       base.UserID,
-		"owner":        owner,
-		"latitude":     base.Latitude,
-		"longitude":    base.Longitude,
-		"description":  base.Description,
-		"thumbnailUrl": staticThumbnailURL(baseDiscoveredIconKey),
-		"createdAt":    base.CreatedAt,
-		"updatedAt":    base.UpdatedAt,
+		"id":          base.ID,
+		"userId":      base.UserID,
+		"owner":       owner,
+		"latitude":    base.Latitude,
+		"longitude":   base.Longitude,
+		"description": base.Description,
+		"imageUrl":    base.ImageURL,
+		"thumbnailUrl": func() string {
+			if strings.TrimSpace(base.ThumbnailURL) != "" {
+				return base.ThumbnailURL
+			}
+			return staticThumbnailURL(baseDiscoveredIconKey)
+		}(),
+		"createdAt": base.CreatedAt,
+		"updatedAt": base.UpdatedAt,
 	}
 }
 

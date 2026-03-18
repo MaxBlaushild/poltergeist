@@ -46,6 +46,7 @@ class BasePin {
   final double latitude;
   final double longitude;
   final String description;
+  final String imageUrl;
   final String thumbnailUrl;
 
   const BasePin({
@@ -55,6 +56,7 @@ class BasePin {
     required this.latitude,
     required this.longitude,
     required this.description,
+    required this.imageUrl,
     required this.thumbnailUrl,
   });
 
@@ -72,6 +74,7 @@ class BasePin {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       description: json['description']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
     );
   }

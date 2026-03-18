@@ -4,4 +4,10 @@ DROP INDEX IF EXISTS base_description_generation_jobs_base_id_idx;
 DROP TABLE IF EXISTS base_description_generation_jobs;
 
 ALTER TABLE bases
+DROP COLUMN IF EXISTS thumbnail_url;
+
+ALTER TABLE bases
+DROP COLUMN IF EXISTS image_url;
+
+ALTER TABLE bases
 DROP COLUMN IF EXISTS description;

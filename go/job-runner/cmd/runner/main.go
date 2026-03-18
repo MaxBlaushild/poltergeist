@@ -103,7 +103,7 @@ func main() {
 	generateScenarioTemplatesProcessor := processors.NewGenerateScenarioTemplatesProcessor(dbClient, deepPriestClient)
 	generateChallengeTemplatesProcessor := processors.NewGenerateChallengeTemplatesProcessor(dbClient, deepPriestClient)
 	generateZoneFlavorProcessor := processors.NewGenerateZoneFlavorProcessor(dbClient, deepPriestClient)
-	generateBaseDescriptionProcessor := processors.NewGenerateBaseDescriptionProcessor(dbClient, deepPriestClient)
+	generateBaseDescriptionProcessor := processors.NewGenerateBaseDescriptionProcessor(dbClient, deepPriestClient, awsClient, client)
 	generateImageThumbnailProcessor := processors.NewGenerateImageThumbnailProcessor(dbClient, awsClient)
 	queueThumbnailBackfillProcessor := processors.NewQueueThumbnailBackfillProcessor(dbClient, client)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)

@@ -7,6 +7,8 @@ type BaseRecord = {
   latitude: number;
   longitude: number;
   description?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
   createdAt?: string;
   updatedAt?: string;
   owner?: {
@@ -246,7 +248,7 @@ export const Bases = () => {
         setError(null);
         setBaseMessage(null);
         await apiClient.post(`/sonar/admin/bases/${record.id}/generate-description`);
-        setBaseMessage(`Queued description generation for ${ownerLabel(record)}.`);
+        setBaseMessage(`Queued base flavor generation for ${ownerLabel(record)}.`);
         await fetchDescriptionJobs();
       } catch (err) {
         console.error('Failed to queue base description generation', err);
@@ -470,6 +472,15 @@ export const Bases = () => {
                   Updated {formatDate(record.updatedAt)}
                 </div>
               </div>
+              {record.thumbnailUrl?.trim() ? (
+                <div className="mt-3">
+                  <img
+                    src={record.thumbnailUrl}
+                    alt={`${ownerLabel(record)} base`}
+                    className="h-28 w-28 rounded object-cover"
+                  />
+                </div>
+              ) : null}
               {record.description?.trim() ? (
                 <p className="mt-3 text-sm leading-6 text-gray-700">
                   {record.description.trim()}
@@ -510,7 +521,7 @@ export const Bases = () => {
                 >
                   {regeneratingBaseId === record.id
                     ? 'Queueing...'
-                    : 'Regenerate Description'}
+                    : 'Regenerate Flavor'}
                 </button>
                 <button
                   type="button"

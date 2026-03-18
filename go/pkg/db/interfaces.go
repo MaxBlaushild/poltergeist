@@ -1107,7 +1107,8 @@ type BaseHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Base, error)
 	FindAll(ctx context.Context) ([]models.Base, error)
-	UpdateDescription(ctx context.Context, id uuid.UUID, description string) error
+	UpdateFlavor(ctx context.Context, id uuid.UUID, description string, imageURL string) error
+	UpdateThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

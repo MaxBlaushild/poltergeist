@@ -20,6 +20,7 @@ type BaseDescriptionGenerationJob struct {
 	BaseID               uuid.UUID `json:"baseId" gorm:"type:uuid"`
 	Status               string    `json:"status"`
 	GeneratedDescription *string   `json:"generatedDescription,omitempty" gorm:"column:generated_description"`
+	GeneratedImageURL    *string   `json:"generatedImageUrl,omitempty" gorm:"column:generated_image_url"`
 	ErrorMessage         *string   `json:"errorMessage,omitempty"`
 }
 

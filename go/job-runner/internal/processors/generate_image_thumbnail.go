@@ -26,7 +26,7 @@ const (
 	thumbnailSize = 192
 )
 
-// GenerateImageThumbnailProcessor creates smaller thumbnail images for characters and points of interest.
+// GenerateImageThumbnailProcessor creates smaller thumbnail images for characters, points of interest, and bases.
 type GenerateImageThumbnailProcessor struct {
 	dbClient  db.DbClient
 	awsClient aws.AWSClient
@@ -81,6 +81,20 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 			}
 			sourceUrl = strings.TrimSpace(poi.ImageUrl)
 		}
+	case jobs.ThumbnailEntityBase:
+		if payload.EntityID == uuid.Nil {
+			return fmt.Errorf("missing entity ID")
+		}
+		if sourceUrl == "" {
+			base, err := p.dbClient.Base().FindByID(ctx, payload.EntityID)
+			if err != nil {
+				return fmt.Errorf("failed to find base: %w", err)
+			}
+			if base == nil {
+				return fmt.Errorf("base not found")
+			}
+			sourceUrl = strings.TrimSpace(base.ImageURL)
+		}
 	case jobs.ThumbnailEntityStatic:
 		// Use provided source URL only.
 	default:
@@ -128,6 +142,10 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 			ThumbnailURL: thumbnailUrl,
 		}); err != nil {
 			return fmt.Errorf("failed to update point of interest thumbnail: %w", err)
+		}
+	case jobs.ThumbnailEntityBase:
+		if err := p.dbClient.Base().UpdateThumbnailURL(ctx, payload.EntityID, thumbnailUrl); err != nil {
+			return fmt.Errorf("failed to update base thumbnail: %w", err)
 		}
 	case jobs.ThumbnailEntityStatic:
 		// No-op: static thumbnail is uploaded only.
