@@ -41,6 +41,7 @@ type client struct {
 	scenarioTemplateGenerationJobHandle  *scenarioTemplateGenerationJobHandle
 	challengeTemplateGenerationJobHandle *challengeTemplateGenerationJobHandle
 	zoneFlavorGenerationJobHandle        *zoneFlavorGenerationJobHandle
+	baseDescriptionGenerationJobHandle   *baseDescriptionGenerationJobHandle
 	spellHandle                          *spellHandler
 	userSpellHandle                      *userSpellHandler
 	inventoryItemHandle                  *inventoryItemHandler
@@ -199,6 +200,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		scenarioTemplateGenerationJobHandle:  &scenarioTemplateGenerationJobHandle{db: db},
 		challengeTemplateGenerationJobHandle: &challengeTemplateGenerationJobHandle{db: db},
 		zoneFlavorGenerationJobHandle:        &zoneFlavorGenerationJobHandle{db: db},
+		baseDescriptionGenerationJobHandle:   &baseDescriptionGenerationJobHandle{db: db},
 		spellHandle:                          &spellHandler{db: db},
 		userSpellHandle:                      &userSpellHandler{db: db},
 		inventoryItemHandle:                  &inventoryItemHandler{db: db},
@@ -532,6 +534,10 @@ func (c *client) ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJob
 
 func (c *client) ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle {
 	return c.zoneFlavorGenerationJobHandle
+}
+
+func (c *client) BaseDescriptionGenerationJob() BaseDescriptionGenerationJobHandle {
+	return c.baseDescriptionGenerationJobHandle
 }
 
 func (c *client) Spell() SpellHandle {

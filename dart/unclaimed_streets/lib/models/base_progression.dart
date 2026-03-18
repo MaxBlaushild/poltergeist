@@ -133,12 +133,14 @@ class BaseProgressionSnapshot {
     required this.resources,
     required this.structures,
     required this.activeDailyEffects,
+    required this.canManage,
   });
 
   final BasePin? base;
   final List<BaseResourceBalanceData> resources;
   final List<UserBaseStructureData> structures;
   final List<BaseDailyEffectData> activeDailyEffects;
+  final bool canManage;
 
   factory BaseProgressionSnapshot.fromJson(Map<String, dynamic> json) {
     final rawBase = json['base'];
@@ -181,6 +183,7 @@ class BaseProgressionSnapshot {
                 )
                 .toList()
           : const <BaseDailyEffectData>[],
+      canManage: json['canManage'] == true,
     );
   }
 }

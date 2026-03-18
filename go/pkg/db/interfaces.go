@@ -38,6 +38,7 @@ type DbClient interface {
 	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
 	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
 	ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle
+	BaseDescriptionGenerationJob() BaseDescriptionGenerationJobHandle
 	Spell() SpellHandle
 	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
@@ -429,6 +430,14 @@ type ZoneFlavorGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneFlavorGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ZoneFlavorGenerationJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneFlavorGenerationJob, error)
+}
+
+type BaseDescriptionGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.BaseDescriptionGenerationJob) error
+	Update(ctx context.Context, job *models.BaseDescriptionGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BaseDescriptionGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.BaseDescriptionGenerationJob, error)
+	FindByBaseID(ctx context.Context, baseID uuid.UUID, limit int) ([]models.BaseDescriptionGenerationJob, error)
 }
 
 type SpellHandle interface {
@@ -1094,9 +1103,11 @@ type HealingFountainHandle interface {
 
 type BaseHandle interface {
 	UpsertForUser(ctx context.Context, userID uuid.UUID, latitude float64, longitude float64) (*models.Base, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Base, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Base, error)
 	FindAll(ctx context.Context) ([]models.Base, error)
+	UpdateDescription(ctx context.Context, id uuid.UUID, description string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

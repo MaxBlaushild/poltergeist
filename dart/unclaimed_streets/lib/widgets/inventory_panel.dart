@@ -11,8 +11,10 @@ import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
 import '../models/user.dart';
+import '../models/base_progression.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
+import '../services/base_service.dart';
 import '../services/media_service.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
@@ -41,6 +43,16 @@ const _equipmentSlots = <String>[
   'off_hand',
   'ring_left',
   'ring_right',
+];
+
+const _baseMaterialKeys = <String>[
+  'timber',
+  'stone',
+  'iron',
+  'herbs',
+  'monster_parts',
+  'arcane_dust',
+  'relic_shards',
 ];
 
 const _equipmentSlotLabels = <String, String>{
@@ -98,6 +110,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   List<EquippedItem> _equipment = [];
   Map<String, EquippedItem> _equipmentBySlot = {};
   Map<String, List<EquippedItem>> _equipmentByOwnedId = {};
+  List<BaseResourceBalanceData> _baseResources = [];
   bool _loading = true;
   bool _using = false;
   String? _error;
@@ -147,12 +160,17 @@ class _InventoryPanelState extends State<InventoryPanel>
       final itemsFuture = svc.getInventoryItems();
       final ownedFuture = svc.getOwnedInventoryItems();
       final equipmentFuture = svc.getEquipment();
+      final baseFuture = context.read<BaseService>().getMyBase();
       try {
         await authProvider.refresh();
       } catch (_) {}
       final items = await itemsFuture;
       final owned = await ownedFuture;
       final equipment = await equipmentFuture;
+      BaseProgressionSnapshot? baseSnapshot;
+      try {
+        baseSnapshot = await baseFuture;
+      } catch (_) {}
       if (!mounted) return;
       final filteredOwned = owned.where((o) => o.quantity > 0).toList();
       final maxPageIndex = filteredOwned.isEmpty
@@ -172,6 +190,8 @@ class _InventoryPanelState extends State<InventoryPanel>
           equipmentByOwnedId[entry.ownedInventoryItemId]!.add(entry);
         }
         _equipmentByOwnedId = equipmentByOwnedId;
+        _baseResources =
+            baseSnapshot?.resources ?? const <BaseResourceBalanceData>[];
         _pageIndex = nextPageIndex;
         if (_selected != null) {
           final stillOwned = _owned.any((o) => o.id == _selected!.id);
@@ -388,6 +408,106 @@ class _InventoryPanelState extends State<InventoryPanel>
       default:
         return null;
     }
+  }
+
+  IconData _materialIcon(String key) {
+    switch (key) {
+      case 'timber':
+        return Icons.park;
+      case 'stone':
+        return Icons.landscape;
+      case 'iron':
+        return Icons.hardware;
+      case 'herbs':
+        return Icons.local_florist;
+      case 'monster_parts':
+        return Icons.pets;
+      case 'arcane_dust':
+        return Icons.auto_awesome;
+      case 'relic_shards':
+        return Icons.diamond;
+      default:
+        return Icons.inventory_2;
+    }
+  }
+
+  Color _materialAccentColor(String key) {
+    switch (key) {
+      case 'timber':
+        return const Color(0xFF8D6E63);
+      case 'stone':
+        return const Color(0xFF78909C);
+      case 'iron':
+        return const Color(0xFF546E7A);
+      case 'herbs':
+        return const Color(0xFF43A047);
+      case 'monster_parts':
+        return const Color(0xFFC62828);
+      case 'arcane_dust':
+        return const Color(0xFF6A5ACD);
+      case 'relic_shards':
+        return const Color(0xFF00897B);
+      default:
+        return const Color(0xFF616161);
+    }
+  }
+
+  Widget _buildCurrencyBadge({
+    required BuildContext context,
+    required IconData icon,
+    required Color accentColor,
+    required String value,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accentColor, width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildInventoryResourceBadges(BuildContext context, int gold) {
+    final badges = <Widget>[
+      _buildCurrencyBadge(
+        context: context,
+        icon: Icons.monetization_on,
+        accentColor: Colors.amber.shade700,
+        value: '$gold',
+      ),
+    ];
+
+    final resourceAmounts = <String, int>{
+      for (final resource in _baseResources)
+        resource.resourceKey: resource.amount,
+    };
+
+    for (final resourceKey in _baseMaterialKeys) {
+      badges.add(
+        _buildCurrencyBadge(
+          context: context,
+          icon: _materialIcon(resourceKey),
+          accentColor: _materialAccentColor(resourceKey),
+          value: '${resourceAmounts[resourceKey] ?? 0}',
+        ),
+      );
+    }
+    return badges;
   }
 
   Future<void> _loadOutfitStatus(
@@ -822,6 +942,9 @@ class _InventoryPanelState extends State<InventoryPanel>
     final gold = user?.gold ?? 0;
     final showDetail = _selected != null;
     final inv = showDetail ? _itemFor(_selected!) : null;
+    final resourceBadges = user != null
+        ? _buildInventoryResourceBadges(context, gold)
+        : const <Widget>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -854,61 +977,26 @@ class _InventoryPanelState extends State<InventoryPanel>
             ),
           ),
         if (showDetail || user != null)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (showDetail && inv != null)
-                Expanded(
-                  child: Text(
-                    inv.name,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              else
-                const SizedBox.shrink(),
+                Text(
+                  inv.name,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
               if (user != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: showDetail && inv != null ? 12 : 0,
                   ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.amber.shade400,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.monetization_on,
-                        size: 20,
-                        color: Colors.amber.shade700,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'GOLD',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: Colors.amber.shade800,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$gold',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                  child: Wrap(
+                    alignment: WrapAlignment.start,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: resourceBadges,
                   ),
                 ),
             ],

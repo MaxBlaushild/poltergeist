@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
 import '../screens/create_poi_screen.dart';
+import '../screens/base_management_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/layout_shell.dart';
 import '../screens/logout_screen.dart';
@@ -83,6 +84,14 @@ GoRouter createRouter({
             path: '/create-point-of-interest',
             pageBuilder: (_, state) =>
                 const NoTransitionPage(child: CreatePoiScreen()),
+          ),
+          GoRoute(
+            path: '/base-management/:id',
+            pageBuilder: (_, state) => NoTransitionPage(
+              child: BaseManagementScreen(
+                baseId: state.pathParameters['id'] ?? '',
+              ),
+            ),
           ),
           GoRoute(
             path: '/character/:id',

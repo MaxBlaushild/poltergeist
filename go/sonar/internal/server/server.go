@@ -268,6 +268,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use-outfit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useOutfitItem))
 	r.GET("/sonar/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getVisibleBases))
+	r.GET("/sonar/bases/:id/progression", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseProgression))
 	r.GET("/sonar/base/me", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBase))
 	r.GET("/sonar/base/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBaseResources))
 	r.GET("/sonar/base/catalog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCatalog))
@@ -524,6 +525,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
 	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
+	r.GET("/sonar/admin/base-description-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDescriptionGenerationJobs))
+	r.POST("/sonar/admin/bases/:id/generate-description", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createBaseDescriptionGenerationJob))
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
@@ -7362,6 +7365,9 @@ func (s *server) useItem(ctx *gin.Context) {
 				"error": err.Error(),
 			})
 			return
+		}
+		if base != nil {
+			s.queueBaseDescriptionGenerationFromItemUse(ctx, base.ID)
 		}
 		ctx.JSON(http.StatusOK, gin.H{
 			"message": "base created successfully",

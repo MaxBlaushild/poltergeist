@@ -33,6 +33,7 @@ func serializeBase(base *models.Base) gin.H {
 		"owner":        owner,
 		"latitude":     base.Latitude,
 		"longitude":    base.Longitude,
+		"description":  base.Description,
 		"thumbnailUrl": staticThumbnailURL(baseDiscoveredIconKey),
 		"createdAt":    base.CreatedAt,
 		"updatedAt":    base.UpdatedAt,

@@ -11,6 +11,13 @@ class BaseService {
     return BaseProgressionSnapshot.fromJson(data);
   }
 
+  Future<BaseProgressionSnapshot> getBaseById(String baseId) async {
+    final data = await _api.get<Map<String, dynamic>>(
+      '/sonar/bases/$baseId/progression',
+    );
+    return BaseProgressionSnapshot.fromJson(data);
+  }
+
   Future<List<BaseStructureDefinitionData>> getCatalog() async {
     final data = await _api.get<Map<String, dynamic>>('/sonar/base/catalog');
     final raw = data['structures'];

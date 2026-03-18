@@ -69,6 +69,21 @@ func (h *baseHandle) FindByUserID(ctx context.Context, userID uuid.UUID) (*model
 	return &base, nil
 }
 
+func (h *baseHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Base, error) {
+	var base models.Base
+	err := h.db.WithContext(ctx).
+		Preload("User").
+		Where("id = ?", id).
+		First(&base).Error
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &base, nil
+}
+
 func (h *baseHandle) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Base, error) {
 	if len(userIDs) == 0 {
 		return []models.Base{}, nil
@@ -93,6 +108,16 @@ func (h *baseHandle) FindAll(ctx context.Context) ([]models.Base, error) {
 		return nil, err
 	}
 	return bases, nil
+}
+
+func (h *baseHandle) UpdateDescription(ctx context.Context, id uuid.UUID, description string) error {
+	return h.db.WithContext(ctx).
+		Model(&models.Base{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"description": description,
+			"updated_at":  time.Now(),
+		}).Error
 }
 
 func (h *baseHandle) Delete(ctx context.Context, id uuid.UUID) error {

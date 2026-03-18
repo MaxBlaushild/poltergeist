@@ -134,30 +134,26 @@ func serializeBaseStructureDefinitions(definitions []models.BaseStructureDefinit
 	return response
 }
 
-func (s *server) loadCurrentUserBaseSnapshot(ctx *gin.Context, userID string) (gin.H, error) {
-	parsedUserID, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	base, err := s.dbClient.Base().FindByUserID(ctx, parsedUserID)
-	if err != nil {
-		return nil, err
-	}
-
-	balances, err := s.dbClient.BaseResourceBalance().FindByUserID(ctx, parsedUserID)
-	if err != nil {
-		return nil, err
-	}
-
-	activeDailyStates, err := s.dbClient.UserBaseDailyState().FindActiveByUserID(ctx, parsedUserID, time.Now())
-	if err != nil {
-		return nil, err
-	}
-
+func (s *server) loadBaseSnapshot(ctx *gin.Context, base *models.Base, canManage bool) (gin.H, error) {
 	structures := []models.UserBaseStructure{}
 	if base != nil {
+		var err error
 		structures, err = s.dbClient.UserBaseStructure().FindByBaseID(ctx, base.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	balances := []models.BaseResourceBalance{}
+	activeDailyStates := []models.UserBaseDailyState{}
+	if base != nil && canManage {
+		var err error
+		balances, err = s.dbClient.BaseResourceBalance().FindByUserID(ctx, base.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		activeDailyStates, err = s.dbClient.UserBaseDailyState().FindActiveByUserID(ctx, base.UserID, time.Now())
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +169,22 @@ func (s *server) loadCurrentUserBaseSnapshot(ctx *gin.Context, userID string) (g
 		"resources":          serializeBaseResourceBalances(balances),
 		"structures":         serializeUserBaseStructures(structures),
 		"activeDailyEffects": serializeUserBaseDailyStates(activeDailyStates),
+		"canManage":          canManage,
 	}, nil
+}
+
+func (s *server) loadCurrentUserBaseSnapshot(ctx *gin.Context, userID string) (gin.H, error) {
+	parsedUserID, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	base, err := s.dbClient.Base().FindByUserID(ctx, parsedUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.loadBaseSnapshot(ctx, base, true)
 }
 
 func extractBaseStructurePrerequisites(config models.MetadataJSONB) map[string]int {
@@ -329,6 +340,50 @@ func (s *server) getCurrentUserBase(ctx *gin.Context) {
 		return
 	}
 	snapshot, err := s.loadCurrentUserBaseSnapshot(ctx, user.ID.String())
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, snapshot)
+}
+
+func (s *server) getBaseProgression(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	baseID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || baseID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base ID"})
+		return
+	}
+
+	base, err := s.dbClient.Base().FindByID(ctx, baseID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if base == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "base not found"})
+		return
+	}
+
+	canManage := base.UserID == user.ID
+	if !canManage {
+		areFriends, err := s.dbClient.Friend().Exists(ctx, user.ID, base.UserID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !areFriends {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this base"})
+			return
+		}
+	}
+
+	snapshot, err := s.loadBaseSnapshot(ctx, base, canManage)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

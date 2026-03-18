@@ -45,6 +45,7 @@ class BasePin {
   final BaseOwner owner;
   final double latitude;
   final double longitude;
+  final String description;
   final String thumbnailUrl;
 
   const BasePin({
@@ -53,6 +54,7 @@ class BasePin {
     required this.owner,
     required this.latitude,
     required this.longitude,
+    required this.description,
     required this.thumbnailUrl,
   });
 
@@ -69,6 +71,7 @@ class BasePin {
       owner: BaseOwner.fromJson(ownerMap),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      description: json['description']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
     );
   }

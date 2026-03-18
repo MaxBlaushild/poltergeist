@@ -7614,8 +7614,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) =>
-          BasePanel(base: base, onClose: () => Navigator.of(context).pop()),
+      builder: (context) => BasePanel(
+        base: base,
+        onClose: () => Navigator.of(context).pop(),
+        onEnterBase: () => context.push('/base-management/${base.id}'),
+      ),
     );
   }
 

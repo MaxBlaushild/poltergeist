@@ -9,14 +9,15 @@ import (
 )
 
 type Base struct {
-	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	UserID    uuid.UUID `json:"userId"`
-	User      User      `json:"user"`
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Geometry  string    `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	ID          uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	UserID      uuid.UUID `json:"userId"`
+	User        User      `json:"user"`
+	Latitude    float64   `json:"latitude"`
+	Longitude   float64   `json:"longitude"`
+	Geometry    string    `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Description *string   `json:"description,omitempty"`
 }
 
 func (Base) TableName() string {
