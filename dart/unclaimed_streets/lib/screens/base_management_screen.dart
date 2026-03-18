@@ -162,6 +162,18 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
     return true;
   }
 
+  BaseStructureLevelVisualData? _visualForLevel(
+    BaseStructureDefinitionData definition,
+    int level,
+  ) {
+    for (final visual in definition.levelVisuals) {
+      if (visual.level == level) {
+        return visual;
+      }
+    }
+    return null;
+  }
+
   String _friendlyResourceName(String key) {
     switch (key) {
       case 'arcane_dust':
@@ -241,6 +253,13 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
     final canAfford = _canAfford(costs);
     final isBusy = _busyStructureKey == definition.key;
     final canManage = _snapshot?.canManage == true;
+    final displayLevel = isBuilt ? currentLevel : nextLevel;
+    final displayVisual = _visualForLevel(definition, displayLevel);
+    final visualUrl = (displayVisual?.imageUrl.trim().isNotEmpty ?? false)
+        ? displayVisual!.imageUrl.trim()
+        : (displayVisual?.thumbnailUrl.trim().isNotEmpty ?? false)
+        ? displayVisual!.thumbnailUrl.trim()
+        : '';
     final actionLabel = isMaxed
         ? 'Max level'
         : isBuilt
@@ -267,6 +286,35 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (visualUrl.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: AspectRatio(
+                aspectRatio: 1.45,
+                child: Image.network(
+                  visualUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => _buildRoomImagePlaceholder(
+                    theme,
+                    definition,
+                    displayLevel,
+                  ),
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return _buildRoomImagePlaceholder(
+                      theme,
+                      definition,
+                      displayLevel,
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ] else ...[
+            _buildRoomImagePlaceholder(theme, definition, displayLevel),
+            const SizedBox(height: 14),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -389,6 +437,43 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomImagePlaceholder(
+    ThemeData theme,
+    BaseStructureDefinitionData definition,
+    int displayLevel,
+  ) {
+    return Container(
+      height: 164,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            definition.name,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Level $displayLevel preview coming soon',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );

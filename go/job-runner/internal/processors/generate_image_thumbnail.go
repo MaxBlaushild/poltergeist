@@ -26,7 +26,7 @@ const (
 	thumbnailSize = 192
 )
 
-// GenerateImageThumbnailProcessor creates smaller thumbnail images for characters, points of interest, and bases.
+// GenerateImageThumbnailProcessor creates smaller thumbnail images for characters, points of interest, bases, and base room art.
 type GenerateImageThumbnailProcessor struct {
 	dbClient  db.DbClient
 	awsClient aws.AWSClient
@@ -95,6 +95,20 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 			}
 			sourceUrl = strings.TrimSpace(base.ImageURL)
 		}
+	case jobs.ThumbnailEntityBaseStructureLevel:
+		if payload.EntityID == uuid.Nil {
+			return fmt.Errorf("missing entity ID")
+		}
+		if sourceUrl == "" {
+			visual, err := p.dbClient.BaseStructureLevelVisual().FindByID(ctx, payload.EntityID)
+			if err != nil {
+				return fmt.Errorf("failed to find base structure level visual: %w", err)
+			}
+			if visual == nil {
+				return fmt.Errorf("base structure level visual not found")
+			}
+			sourceUrl = strings.TrimSpace(visual.ImageURL)
+		}
 	case jobs.ThumbnailEntityStatic:
 		// Use provided source URL only.
 	default:
@@ -146,6 +160,10 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 	case jobs.ThumbnailEntityBase:
 		if err := p.dbClient.Base().UpdateThumbnailURL(ctx, payload.EntityID, thumbnailUrl); err != nil {
 			return fmt.Errorf("failed to update base thumbnail: %w", err)
+		}
+	case jobs.ThumbnailEntityBaseStructureLevel:
+		if err := p.dbClient.BaseStructureLevelVisual().UpdateThumbnailURL(ctx, payload.EntityID, thumbnailUrl); err != nil {
+			return fmt.Errorf("failed to update base structure level thumbnail: %w", err)
 		}
 	case jobs.ThumbnailEntityStatic:
 		// No-op: static thumbnail is uploaded only.

@@ -45,6 +45,46 @@ func serializeBaseStructureLevelCost(cost models.BaseStructureLevelCost) gin.H {
 	}
 }
 
+func serializeBaseStructureLevelVisual(visual models.BaseStructureLevelVisual) gin.H {
+	return gin.H{
+		"id":                    visual.ID,
+		"structureDefinitionId": visual.StructureDefinitionID,
+		"level":                 visual.Level,
+		"imageUrl":              visual.ImageURL,
+		"thumbnailUrl":          visual.ThumbnailURL,
+		"imageGenerationStatus": visual.ImageGenerationStatus,
+		"imageGenerationError":  visual.ImageGenerationError,
+		"createdAt":             visual.CreatedAt,
+		"updatedAt":             visual.UpdatedAt,
+	}
+}
+
+func buildSerializedBaseStructureLevelVisuals(definition models.BaseStructureDefinition) []gin.H {
+	byLevel := make(map[int]models.BaseStructureLevelVisual, len(definition.LevelVisuals))
+	for _, visual := range definition.LevelVisuals {
+		byLevel[visual.Level] = visual
+	}
+	visuals := make([]gin.H, 0, max(definition.MaxLevel, 1))
+	for level := 1; level <= max(definition.MaxLevel, 1); level++ {
+		if visual, ok := byLevel[level]; ok {
+			visuals = append(visuals, serializeBaseStructureLevelVisual(visual))
+			continue
+		}
+		visuals = append(visuals, gin.H{
+			"id":                    nil,
+			"structureDefinitionId": definition.ID,
+			"level":                 level,
+			"imageUrl":              "",
+			"thumbnailUrl":          "",
+			"imageGenerationStatus": models.BaseStructureImageGenerationStatusNone,
+			"imageGenerationError":  nil,
+			"createdAt":             nil,
+			"updatedAt":             nil,
+		})
+	}
+	return visuals
+}
+
 func serializeBaseStructureDefinition(definition models.BaseStructureDefinition) gin.H {
 	levelCosts := make([]gin.H, 0, len(definition.LevelCosts))
 	for _, cost := range definition.LevelCosts {
@@ -67,6 +107,7 @@ func serializeBaseStructureDefinition(definition models.BaseStructureDefinition)
 		"createdAt":    definition.CreatedAt,
 		"updatedAt":    definition.UpdatedAt,
 		"levelCosts":   levelCosts,
+		"levelVisuals": buildSerializedBaseStructureLevelVisuals(definition),
 	}
 }
 
@@ -431,6 +472,13 @@ func (s *server) getBaseCatalog(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"structures": serializeBaseStructureDefinitions(definitions),
 	})
+}
+
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (s *server) buildBaseStructure(ctx *gin.Context) {

@@ -104,6 +104,7 @@ type client struct {
 	baseResourceBalanceHandle            *baseResourceBalanceHandle
 	baseResourceLedgerHandle             *baseResourceLedgerHandle
 	baseStructureDefinitionHandle        *baseStructureDefinitionHandle
+	baseStructureLevelVisualHandle       *baseStructureLevelVisualHandle
 	userBaseStructureHandle              *userBaseStructureHandle
 	userBaseDailyStateHandle             *userBaseDailyStateHandle
 	challengeHandle                      *challengeHandle
@@ -271,6 +272,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		baseResourceBalanceHandle:            &baseResourceBalanceHandle{db: db},
 		baseResourceLedgerHandle:             &baseResourceLedgerHandle{db: db},
 		baseStructureDefinitionHandle:        &baseStructureDefinitionHandle{db: db},
+		baseStructureLevelVisualHandle:       &baseStructureLevelVisualHandle{db: db},
 		userBaseStructureHandle:              &userBaseStructureHandle{db: db},
 		userBaseDailyStateHandle:             &userBaseDailyStateHandle{db: db},
 		challengeHandle:                      &challengeHandle{db: db},
@@ -706,6 +708,10 @@ func (c *client) BaseResourceLedger() BaseResourceLedgerHandle {
 
 func (c *client) BaseStructureDefinition() BaseStructureDefinitionHandle {
 	return c.baseStructureDefinitionHandle
+}
+
+func (c *client) BaseStructureLevelVisual() BaseStructureLevelVisualHandle {
+	return c.baseStructureLevelVisualHandle
 }
 
 func (c *client) UserBaseStructure() UserBaseStructureHandle {

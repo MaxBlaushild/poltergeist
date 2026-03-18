@@ -32,9 +32,30 @@ type BaseDescriptionGenerationJob = {
   baseId: string;
   status?: string;
   generatedDescription?: string;
+  generatedImageUrl?: string;
   errorMessage?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+type BaseStructureLevelVisual = {
+  id?: string | null;
+  level: number;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
+};
+
+type BaseStructureDefinition = {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  category?: string;
+  maxLevel: number;
+  active?: boolean;
+  levelVisuals?: BaseStructureLevelVisual[];
 };
 
 const defaultBaseIconPrompt =
@@ -42,6 +63,7 @@ const defaultBaseIconPrompt =
 
 const staticStatusClassName = (status?: string) => {
   switch ((status || '').toLowerCase()) {
+    case 'complete':
     case 'completed':
       return 'bg-emerald-600';
     case 'in_progress':
@@ -99,12 +121,21 @@ export const Bases = () => {
   const [iconError, setIconError] = useState<string | null>(null);
   const [iconPreviewNonce, setIconPreviewNonce] = useState(Date.now());
   const [isIconLightboxOpen, setIsIconLightboxOpen] = useState(false);
+  const [baseImageLightbox, setBaseImageLightbox] = useState<{
+    src: string;
+    alt: string;
+  } | null>(null);
   const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
   const [regeneratingBaseId, setRegeneratingBaseId] = useState<string | null>(null);
   const [baseMessage, setBaseMessage] = useState<string | null>(null);
   const [descriptionJobsByBaseId, setDescriptionJobsByBaseId] = useState<
     Record<string, BaseDescriptionGenerationJob>
   >({});
+  const [structures, setStructures] = useState<BaseStructureDefinition[]>([]);
+  const [structureLoading, setStructureLoading] = useState(true);
+  const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<string | null>(
+    null
+  );
 
   const fetchBases = useCallback(async () => {
     try {
@@ -264,9 +295,56 @@ export const Bases = () => {
     [apiClient, fetchDescriptionJobs]
   );
 
+  const fetchStructures = useCallback(async () => {
+    try {
+      setStructureLoading(true);
+      const response = await apiClient.get<{ structures?: BaseStructureDefinition[] }>(
+        '/sonar/admin/base-structures'
+      );
+      setStructures(Array.isArray(response?.structures) ? response.structures : []);
+    } catch (err) {
+      console.error('Failed to load base structures', err);
+      setError('Failed to load base structures.');
+    } finally {
+      setStructureLoading(false);
+    }
+  }, [apiClient]);
+
+  const handleGenerateRoomImage = useCallback(
+    async (structure: BaseStructureDefinition, level: number) => {
+      const jobKey = `${structure.id}:${level}`;
+      try {
+        setGeneratingRoomImageKey(jobKey);
+        setError(null);
+        setBaseMessage(null);
+        const updated = await apiClient.post<BaseStructureDefinition>(
+          `/sonar/admin/base-structures/${structure.id}/levels/${level}/generate-image`
+        );
+        setStructures((prev) =>
+          prev.map((record) => (record.id === structure.id ? updated : record))
+        );
+        setBaseMessage(`Queued ${structure.name} level ${level} image generation.`);
+      } catch (err) {
+        console.error('Failed to queue base room image generation', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to queue base room image generation.';
+        setError(message);
+      } finally {
+        setGeneratingRoomImageKey(null);
+      }
+    },
+    [apiClient]
+  );
+
   useEffect(() => {
     void fetchBases();
   }, [fetchBases]);
+
+  useEffect(() => {
+    void fetchStructures();
+  }, [fetchStructures]);
 
   useEffect(() => {
     void refreshIconStatus();
@@ -290,15 +368,23 @@ export const Bases = () => {
     const hasPendingJobs = Object.values(descriptionJobsByBaseId).some((job) =>
       ['queued', 'in_progress'].includes((job.status || '').toLowerCase())
     );
-    if (!hasPendingJobs) {
+    const hasPendingRoomImages = structures.some((structure) =>
+      (structure.levelVisuals || []).some((visual) =>
+        ['queued', 'in_progress'].includes(
+          (visual.imageGenerationStatus || '').toLowerCase()
+        )
+      )
+    );
+    if (!hasPendingJobs && !hasPendingRoomImages) {
       return;
     }
     const interval = window.setInterval(() => {
       void fetchDescriptionJobs();
       void fetchBases();
+      void fetchStructures();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [descriptionJobsByBaseId, fetchBases, fetchDescriptionJobs]);
+  }, [descriptionJobsByBaseId, fetchBases, fetchDescriptionJobs, fetchStructures, structures]);
 
   if (loading) {
     return <div className="m-10">Loading bases...</div>;
@@ -433,6 +519,31 @@ export const Bases = () => {
         </div>
       ) : null}
 
+      {baseImageLightbox ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
+          onClick={() => setBaseImageLightbox(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] rounded-lg bg-white p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setBaseImageLightbox(null)}
+              className="absolute right-3 top-3 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white hover:bg-black/80"
+            >
+              Close
+            </button>
+            <img
+              src={baseImageLightbox.src}
+              alt={baseImageLightbox.alt}
+              className="max-h-[80vh] max-w-[80vw] rounded object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
@@ -444,6 +555,139 @@ export const Bases = () => {
         </div>
       ) : null}
 
+      <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Base Room Images</h2>
+            <p className="mt-1 text-xs text-gray-600">
+              Queue level-by-level room art for the base management screen.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void fetchStructures()}
+            disabled={structureLoading}
+            className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {structureLoading ? 'Refreshing...' : 'Refresh Rooms'}
+          </button>
+        </div>
+
+        {structureLoading ? (
+          <div className="mt-4 text-sm text-gray-500">Loading room images...</div>
+        ) : structures.length === 0 ? (
+          <div className="mt-4 text-sm text-gray-500">No base rooms found.</div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {structures.map((structure) => (
+              <div
+                key={structure.id}
+                className="rounded border border-gray-200 bg-gray-50 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      {structure.name}
+                    </h3>
+                    <p className="mt-1 text-xs uppercase tracking-wide text-gray-500">
+                      {(structure.category || 'room').trim() || 'room'}
+                    </p>
+                    {structure.description?.trim() ? (
+                      <p className="mt-2 max-w-3xl text-sm text-gray-600">
+                        {structure.description.trim()}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                      structure.active === false
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {structure.active === false ? 'Inactive' : 'Active'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {(structure.levelVisuals || []).map((visual) => {
+                    const previewUrl =
+                      visual.thumbnailUrl?.trim() || visual.imageUrl?.trim() || '';
+                    const visualKey = `${structure.id}:${visual.level}`;
+                    const isPending = ['queued', 'in_progress'].includes(
+                      (visual.imageGenerationStatus || '').toLowerCase()
+                    );
+                    return (
+                      <div
+                        key={visualKey}
+                        className="rounded border border-gray-200 bg-white p-3 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-gray-900">
+                            Level {visual.level}
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+                              visual.imageGenerationStatus
+                            )}`}
+                          >
+                            {visual.imageGenerationStatus || 'none'}
+                          </span>
+                        </div>
+                        <div className="mt-3">
+                          {previewUrl ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setBaseImageLightbox({
+                                  src: visual.imageUrl?.trim() || previewUrl,
+                                  alt: `${structure.name} level ${visual.level}`,
+                                })
+                              }
+                              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                              title="Open large room image"
+                            >
+                              <img
+                                src={previewUrl}
+                                alt={`${structure.name} level ${visual.level}`}
+                                className="h-36 w-full rounded object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <div className="flex h-36 w-full items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                              No image yet
+                            </div>
+                          )}
+                        </div>
+                        {visual.imageGenerationError ? (
+                          <p className="mt-3 text-xs text-red-700">
+                            {visual.imageGenerationError}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleGenerateRoomImage(structure, visual.level)
+                            }
+                            disabled={generatingRoomImageKey === visualKey || isPending}
+                            className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {generatingRoomImageKey === visualKey
+                              ? 'Queueing...'
+                              : 'Generate Image'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-3">
         {records.length === 0 ? (
           <div className="rounded border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500 shadow-sm">
@@ -452,6 +696,11 @@ export const Bases = () => {
         ) : (
           records.map((record) => {
             const latestJob = descriptionJobsByBaseId[record.id];
+            const generatedImageUrl = (
+              record.imageUrl?.trim() ||
+              latestJob?.generatedImageUrl?.trim() ||
+              ''
+            );
             return (
               <div
                 key={record.id}
@@ -472,7 +721,27 @@ export const Bases = () => {
                   Updated {formatDate(record.updatedAt)}
                 </div>
               </div>
-              {record.thumbnailUrl?.trim() ? (
+              {generatedImageUrl ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBaseImageLightbox({
+                        src: generatedImageUrl,
+                        alt: `${ownerLabel(record)} base`,
+                      })
+                    }
+                    className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    title="Open large base image"
+                  >
+                    <img
+                      src={generatedImageUrl}
+                      alt={`${ownerLabel(record)} base`}
+                      className="h-40 w-full max-w-xs rounded object-cover"
+                    />
+                  </button>
+                </div>
+              ) : record.thumbnailUrl?.trim() ? (
                 <div className="mt-3">
                   <img
                     src={record.thumbnailUrl}

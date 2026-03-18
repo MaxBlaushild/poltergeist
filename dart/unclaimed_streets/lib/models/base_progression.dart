@@ -37,6 +37,32 @@ class BaseStructureCostData {
   }
 }
 
+class BaseStructureLevelVisualData {
+  const BaseStructureLevelVisualData({
+    required this.level,
+    required this.imageUrl,
+    required this.thumbnailUrl,
+    required this.imageGenerationStatus,
+    required this.imageGenerationError,
+  });
+
+  final int level;
+  final String imageUrl;
+  final String thumbnailUrl;
+  final String imageGenerationStatus;
+  final String? imageGenerationError;
+
+  factory BaseStructureLevelVisualData.fromJson(Map<String, dynamic> json) {
+    return BaseStructureLevelVisualData(
+      level: (json['level'] as num?)?.toInt() ?? 0,
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      imageGenerationStatus: json['imageGenerationStatus']?.toString() ?? '',
+      imageGenerationError: json['imageGenerationError']?.toString(),
+    );
+  }
+}
+
 class BaseStructureDefinitionData {
   const BaseStructureDefinitionData({
     required this.key,
@@ -48,6 +74,7 @@ class BaseStructureDefinitionData {
     required this.effectType,
     required this.prereqConfig,
     required this.levelCosts,
+    required this.levelVisuals,
   });
 
   final String key;
@@ -59,6 +86,7 @@ class BaseStructureDefinitionData {
   final String effectType;
   final Map<String, dynamic> prereqConfig;
   final List<BaseStructureCostData> levelCosts;
+  final List<BaseStructureLevelVisualData> levelVisuals;
 
   factory BaseStructureDefinitionData.fromJson(Map<String, dynamic> json) {
     final rawCosts = json['levelCosts'];
@@ -72,6 +100,7 @@ class BaseStructureDefinitionData {
               )
               .toList()
         : const <BaseStructureCostData>[];
+    final rawVisuals = json['levelVisuals'];
     final rawPrereq = json['prereqConfig'];
     return BaseStructureDefinitionData(
       key: json['key']?.toString() ?? '',
@@ -87,6 +116,16 @@ class BaseStructureDefinitionData {
           ? Map<String, dynamic>.from(rawPrereq)
           : const <String, dynamic>{},
       levelCosts: costs,
+      levelVisuals: rawVisuals is List
+          ? rawVisuals
+                .whereType<Map>()
+                .map(
+                  (e) => BaseStructureLevelVisualData.fromJson(
+                    Map<String, dynamic>.from(e),
+                  ),
+                )
+                .toList()
+          : const <BaseStructureLevelVisualData>[],
     );
   }
 }

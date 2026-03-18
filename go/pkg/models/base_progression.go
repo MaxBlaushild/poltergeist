@@ -27,6 +27,14 @@ const (
 	BaseStructureEffectRewardBias      BaseStructureEffectType = "reward_bias"
 )
 
+const (
+	BaseStructureImageGenerationStatusNone       = "none"
+	BaseStructureImageGenerationStatusQueued     = "queued"
+	BaseStructureImageGenerationStatusInProgress = "in_progress"
+	BaseStructureImageGenerationStatusComplete   = "complete"
+	BaseStructureImageGenerationStatusFailed     = "failed"
+)
+
 type BaseResourceDelta struct {
 	ResourceKey BaseResourceKey `json:"resourceKey"`
 	Amount      int             `json:"amount"`
@@ -59,21 +67,22 @@ func (BaseResourceLedger) TableName() string {
 }
 
 type BaseStructureDefinition struct {
-	ID           uuid.UUID                `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt    time.Time                `json:"createdAt"`
-	UpdatedAt    time.Time                `json:"updatedAt"`
-	Key          string                   `json:"key"`
-	Name         string                   `json:"name"`
-	Description  string                   `json:"description"`
-	Category     string                   `json:"category"`
-	MaxLevel     int                      `json:"maxLevel" gorm:"column:max_level"`
-	SortOrder    int                      `json:"sortOrder" gorm:"column:sort_order"`
-	ImageURL     string                   `json:"imageUrl" gorm:"column:image_url"`
-	EffectType   BaseStructureEffectType  `json:"effectType" gorm:"column:effect_type"`
-	EffectConfig MetadataJSONB            `json:"effectConfig" gorm:"column:effect_config;type:jsonb"`
-	PrereqConfig MetadataJSONB            `json:"prereqConfig" gorm:"column:prereq_config;type:jsonb"`
-	Active       bool                     `json:"active"`
-	LevelCosts   []BaseStructureLevelCost `json:"levelCosts,omitempty" gorm:"foreignKey:StructureDefinitionID"`
+	ID           uuid.UUID                  `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt    time.Time                  `json:"createdAt"`
+	UpdatedAt    time.Time                  `json:"updatedAt"`
+	Key          string                     `json:"key"`
+	Name         string                     `json:"name"`
+	Description  string                     `json:"description"`
+	Category     string                     `json:"category"`
+	MaxLevel     int                        `json:"maxLevel" gorm:"column:max_level"`
+	SortOrder    int                        `json:"sortOrder" gorm:"column:sort_order"`
+	ImageURL     string                     `json:"imageUrl" gorm:"column:image_url"`
+	EffectType   BaseStructureEffectType    `json:"effectType" gorm:"column:effect_type"`
+	EffectConfig MetadataJSONB              `json:"effectConfig" gorm:"column:effect_config;type:jsonb"`
+	PrereqConfig MetadataJSONB              `json:"prereqConfig" gorm:"column:prereq_config;type:jsonb"`
+	Active       bool                       `json:"active"`
+	LevelCosts   []BaseStructureLevelCost   `json:"levelCosts,omitempty" gorm:"foreignKey:StructureDefinitionID"`
+	LevelVisuals []BaseStructureLevelVisual `json:"levelVisuals,omitempty" gorm:"foreignKey:StructureDefinitionID"`
 }
 
 func (BaseStructureDefinition) TableName() string {
@@ -92,6 +101,22 @@ type BaseStructureLevelCost struct {
 
 func (BaseStructureLevelCost) TableName() string {
 	return "base_structure_level_costs"
+}
+
+type BaseStructureLevelVisual struct {
+	ID                    uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+	StructureDefinitionID uuid.UUID `json:"structureDefinitionId" gorm:"column:structure_definition_id;type:uuid"`
+	Level                 int       `json:"level"`
+	ImageURL              string    `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL          string    `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ImageGenerationStatus string    `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string   `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+}
+
+func (BaseStructureLevelVisual) TableName() string {
+	return "base_structure_level_visuals"
 }
 
 type UserBaseStructure struct {

@@ -30,6 +30,7 @@ const (
 	GenerateChallengeTemplatesTaskType         = "generate_challenge_templates"
 	GenerateZoneFlavorTaskType                 = "generate_zone_flavor"
 	GenerateBaseDescriptionTaskType            = "generate_base_description"
+	GenerateBaseStructureLevelImageTaskType    = "generate_base_structure_level_image"
 	GenerateImageThumbnailTaskType             = "generate_image_thumbnail"
 	QueueThumbnailBackfillTaskType             = "queue_thumbnail_backfill"
 	SeedTreasureChestsTaskType                 = "seed_treasure_chests"
@@ -75,11 +76,12 @@ const (
 )
 
 const (
-	ThumbnailEntityCharacter       = "character"
-	ThumbnailEntityPointOfInterest = "point_of_interest"
-	ThumbnailEntityBase            = "base"
-	ThumbnailEntityStatic          = "static"
-	ThumbnailBucket                = "crew-profile-icons"
+	ThumbnailEntityCharacter          = "character"
+	ThumbnailEntityPointOfInterest    = "point_of_interest"
+	ThumbnailEntityBase               = "base"
+	ThumbnailEntityBaseStructureLevel = "base_structure_level"
+	ThumbnailEntityStatic             = "static"
+	ThumbnailBucket                   = "crew-profile-icons"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
@@ -91,6 +93,11 @@ type GenerateQuestForZoneTaskPayload struct {
 
 type GenerateBaseDescriptionTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateBaseStructureLevelImageTaskPayload struct {
+	StructureDefinitionID uuid.UUID `json:"structureDefinitionId"`
+	Level                 int       `json:"level"`
 }
 
 type CreateProfilePictureTaskPayload struct {

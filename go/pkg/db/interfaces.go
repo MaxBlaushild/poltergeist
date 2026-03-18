@@ -109,6 +109,7 @@ type DbClient interface {
 	BaseResourceBalance() BaseResourceBalanceHandle
 	BaseResourceLedger() BaseResourceLedgerHandle
 	BaseStructureDefinition() BaseStructureDefinitionHandle
+	BaseStructureLevelVisual() BaseStructureLevelVisualHandle
 	UserBaseStructure() UserBaseStructureHandle
 	UserBaseDailyState() UserBaseDailyStateHandle
 	Challenge() ChallengeHandle
@@ -1123,7 +1124,17 @@ type BaseResourceLedgerHandle interface {
 
 type BaseStructureDefinitionHandle interface {
 	FindAllActive(ctx context.Context) ([]models.BaseStructureDefinition, error)
+	FindAll(ctx context.Context) ([]models.BaseStructureDefinition, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BaseStructureDefinition, error)
 	FindActiveByKey(ctx context.Context, key string) (*models.BaseStructureDefinition, error)
+}
+
+type BaseStructureLevelVisualHandle interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BaseStructureLevelVisual, error)
+	FindByDefinitionIDAndLevel(ctx context.Context, definitionID uuid.UUID, level int) (*models.BaseStructureLevelVisual, error)
+	Upsert(ctx context.Context, visual *models.BaseStructureLevelVisual) error
+	Update(ctx context.Context, id uuid.UUID, updates *models.BaseStructureLevelVisual) error
+	UpdateThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error
 }
 
 type UserBaseStructureHandle interface {
