@@ -100,6 +100,11 @@ type client struct {
 	treasureChestHandle                  *treasureChestHandle
 	healingFountainHandle                *healingFountainHandle
 	baseHandle                           *baseHandle
+	baseResourceBalanceHandle            *baseResourceBalanceHandle
+	baseResourceLedgerHandle             *baseResourceLedgerHandle
+	baseStructureDefinitionHandle        *baseStructureDefinitionHandle
+	userBaseStructureHandle              *userBaseStructureHandle
+	userBaseDailyStateHandle             *userBaseDailyStateHandle
 	challengeHandle                      *challengeHandle
 	monsterTemplateHandle                *monsterTemplateHandle
 	monsterHandle                        *monsterHandle
@@ -261,6 +266,11 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		treasureChestHandle:                  &treasureChestHandle{db: db},
 		healingFountainHandle:                &healingFountainHandle{db: db},
 		baseHandle:                           &baseHandle{db: db},
+		baseResourceBalanceHandle:            &baseResourceBalanceHandle{db: db},
+		baseResourceLedgerHandle:             &baseResourceLedgerHandle{db: db},
+		baseStructureDefinitionHandle:        &baseStructureDefinitionHandle{db: db},
+		userBaseStructureHandle:              &userBaseStructureHandle{db: db},
+		userBaseDailyStateHandle:             &userBaseDailyStateHandle{db: db},
 		challengeHandle:                      &challengeHandle{db: db},
 		monsterTemplateHandle:                &monsterTemplateHandle{db: db},
 		monsterHandle:                        &monsterHandle{db: db},
@@ -678,6 +688,26 @@ func (c *client) HealingFountain() HealingFountainHandle {
 
 func (c *client) Base() BaseHandle {
 	return c.baseHandle
+}
+
+func (c *client) BaseResourceBalance() BaseResourceBalanceHandle {
+	return c.baseResourceBalanceHandle
+}
+
+func (c *client) BaseResourceLedger() BaseResourceLedgerHandle {
+	return c.baseResourceLedgerHandle
+}
+
+func (c *client) BaseStructureDefinition() BaseStructureDefinitionHandle {
+	return c.baseStructureDefinitionHandle
+}
+
+func (c *client) UserBaseStructure() UserBaseStructureHandle {
+	return c.userBaseStructureHandle
+}
+
+func (c *client) UserBaseDailyState() UserBaseDailyStateHandle {
+	return c.userBaseDailyStateHandle
 }
 
 func (c *client) Challenge() ChallengeHandle {

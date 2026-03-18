@@ -11,7 +11,7 @@ func TestNormalizeInventorySetRarityTier(t *testing.T) {
 		{input: " uncommon ", expected: "Uncommon"},
 		{input: "EPIC", expected: "Epic"},
 		{input: "mythic", expected: "Mythic"},
-		{input: "Not Droppable", expected: ""},
+		{input: "Not Droppable", expected: "Not Droppable"},
 		{input: "", expected: ""},
 	}
 

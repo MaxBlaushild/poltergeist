@@ -42,7 +42,16 @@ func (h *baseHandle) UpsertForUser(ctx context.Context, userID uuid.UUID, latitu
 		return nil, err
 	}
 
-	return h.FindByUserID(ctx, userID)
+	base, err := h.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if base != nil {
+		if err := (&userBaseStructureHandle{db: h.db}).EnsureBuilt(ctx, base.ID, userID, "hearth", 1); err != nil {
+			return nil, err
+		}
+	}
+	return base, nil
 }
 
 func (h *baseHandle) FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error) {
@@ -84,4 +93,8 @@ func (h *baseHandle) FindAll(ctx context.Context) ([]models.Base, error) {
 		return nil, err
 	}
 	return bases, nil
+}
+
+func (h *baseHandle) Delete(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.Base{}, "id = ?", id).Error
 }

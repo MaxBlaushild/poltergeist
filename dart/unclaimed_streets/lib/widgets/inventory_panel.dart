@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,8 +15,10 @@ import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../services/media_service.dart';
 import '../services/inventory_service.dart';
+import '../services/poi_service.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
+import '../providers/base_placement_provider.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
@@ -63,7 +66,6 @@ class InventoryPanel extends StatefulWidget {
   const InventoryPanel({
     super.key,
     required this.onClose,
-    this.onCreateBaseRequested,
     this.closeLocked = false,
     this.tutorialDialogue = const [],
     this.requiredEquipItemIds = const [],
@@ -74,8 +76,6 @@ class InventoryPanel extends StatefulWidget {
   });
 
   final VoidCallback onClose;
-  final Future<void> Function(OwnedInventoryItem owned, InventoryItem item)?
-  onCreateBaseRequested;
   final bool closeLocked;
   final List<String> tutorialDialogue;
   final List<int> requiredEquipItemIds;
@@ -720,10 +720,40 @@ class _InventoryPanelState extends State<InventoryPanel>
 
   Future<void> _use(OwnedInventoryItem owned) async {
     final item = _itemFor(owned);
-    final createBaseHandler = widget.onCreateBaseRequested;
-    if (item != null && item.consumeCreateBase && createBaseHandler != null) {
+    if (item != null && item.consumeCreateBase) {
+      final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+      var hasExistingBase = false;
+      if (userId.isNotEmpty) {
+        try {
+          final bases = await context.read<PoiService>().getVisibleBases();
+          hasExistingBase = bases.any((base) => base.userId == userId);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      if (!hasExistingBase) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Use Home Base Kit'),
+            content: const Text(
+              "Bases will provide you with a safe haven to rest and grow your power. Choose their location carefully! You can't move them later.",
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Got it'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+      }
+      final router = GoRouter.of(context);
+      context.read<BasePlacementProvider>().requestPlacement(owned, item);
       widget.onClose();
-      await createBaseHandler(owned, item);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        router.go('/single-player');
+      });
       return;
     }
 

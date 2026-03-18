@@ -268,6 +268,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use-outfit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useOutfitItem))
 	r.GET("/sonar/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getVisibleBases))
+	r.GET("/sonar/base/me", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBase))
+	r.GET("/sonar/base/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBaseResources))
+	r.GET("/sonar/base/catalog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCatalog))
+	r.POST("/sonar/base/structures/:key/build", middleware.WithAuthentication(s.authClient, s.livenessClient, s.buildBaseStructure))
+	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
 	r.POST("/sonar/equipment/equip", middleware.WithAuthentication(s.authClient, s.livenessClient, s.equipInventoryItem))
@@ -519,6 +524,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
 	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
+	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
 	r.POST("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterTemplate))
@@ -2342,6 +2348,15 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
 		return
 	}
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
 	log.Printf("turnInQuest: userId=%s questId=%s", user.ID, questID.String())
 
 	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
@@ -2380,6 +2395,23 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	log.Printf("turnInQuest: rewards awarded userId=%s questId=%s gold=%d items=%d spells=%d", user.ID, questID.String(), goldAwarded, len(itemsAwarded), len(spellsAwarded))
+	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
+		ctx,
+		user.ID,
+		baseResourceGrantsForQuest(
+			quest.RewardMode,
+			quest.RandomRewardSize,
+			goldAwarded,
+			len(itemsAwarded),
+			len(spellsAwarded),
+		),
+		"quest_turn_in",
+		&questID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := s.dbClient.QuestAcceptanceV2().MarkTurnedIn(ctx, acceptance.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2387,7 +2419,8 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 	}
 
 	resp := gin.H{
-		"goldAwarded": goldAwarded,
+		"goldAwarded":          goldAwarded,
+		"baseResourcesAwarded": serializeBaseResourceDeltas(baseResourcesAwarded),
 	}
 	if len(itemsAwarded) > 0 {
 		resp["itemsAwarded"] = itemsAwarded
@@ -8227,6 +8260,8 @@ func normalizeInventorySetRarityTier(value string) string {
 		return "Epic"
 	case "mythic":
 		return "Mythic"
+	case "not droppable":
+		return "Not Droppable"
 	default:
 		return ""
 	}
@@ -8417,7 +8452,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 	rarity := normalizeInventorySetRarityTier(requestBody.RarityTier)
 	if strings.TrimSpace(requestBody.RarityTier) != "" && rarity == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "rarityTier must be one of: Common, Uncommon, Epic, Mythic",
+			"error": "rarityTier must be one of: Common, Uncommon, Epic, Mythic, Not Droppable",
 		})
 		return
 	}
@@ -10496,6 +10531,24 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	baseResourcesAwarded, err := s.awardBaseResourcesToParticipants(
+		ctx,
+		participantIDs,
+		user.ID,
+		baseResourceGrantsForChallenge(
+			challenge.RewardMode,
+			challenge.RandomRewardSize,
+			rewardExperience,
+			rewardGold,
+			len(rewardItems),
+		),
+		"challenge",
+		&challenge.ID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if len(rewardItemChoices) > 0 {
 		for _, participantID := range participantIDs {
 			if err := s.dbClient.Challenge().UpsertItemChoicePending(ctx, participantID, challenge.ID); err != nil {
@@ -10506,20 +10559,21 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	}
 
 	response := map[string]interface{}{
-		"challengeId":       challenge.ID.String(),
-		"successful":        true,
-		"reason":            successReason,
-		"questCompleted":    false,
-		"score":             scoreValue,
-		"difficulty":        difficultyValue,
-		"combinedScore":     combinedValue,
-		"statTags":          statTags,
-		"statValues":        statValues,
-		"rewardExperience":  rewardExperience,
-		"rewardGold":        rewardGold,
-		"itemsAwarded":      itemsAwarded,
-		"itemChoiceRewards": s.hydrateItemAwarded(ctx, scenarioRewardChoicesToItemAwarded(rewardItemChoices)),
-		"spellsAwarded":     spellsAwarded,
+		"challengeId":          challenge.ID.String(),
+		"successful":           true,
+		"reason":               successReason,
+		"questCompleted":       false,
+		"score":                scoreValue,
+		"difficulty":           difficultyValue,
+		"combinedScore":        combinedValue,
+		"statTags":             statTags,
+		"statValues":           statValues,
+		"rewardExperience":     rewardExperience,
+		"rewardGold":           rewardGold,
+		"itemsAwarded":         itemsAwarded,
+		"baseResourcesAwarded": serializeBaseResourceDeltas(baseResourcesAwarded),
+		"itemChoiceRewards":    s.hydrateItemAwarded(ctx, scenarioRewardChoicesToItemAwarded(rewardItemChoices)),
+		"spellsAwarded":        spellsAwarded,
 	}
 	completePartySubmission(response)
 	ctx.JSON(http.StatusOK, response)
@@ -14258,6 +14312,24 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
+		ctx,
+		user.ID,
+		baseResourceGrantsForTreasureChest(
+			treasureChest.RewardMode,
+			treasureChest.RandomRewardSize,
+			rewardExperience,
+			rewardGold,
+			len(rewardItems),
+			treasureChest.UnlockTier,
+		),
+		"treasure_chest",
+		&treasureChest.ID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Record opening
 	opening := &models.UserTreasureChestOpening{
@@ -14276,15 +14348,16 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message":          "treasure chest opened successfully",
-		"unlockMethod":     unlockMethodForResponse(unlockItemID, unlockSpellID),
-		"rewardMode":       rewardMode,
-		"randomRewardSize": rewardSize,
-		"rewardExperience": rewardExperience,
-		"rewardGold":       rewardGold,
-		"itemsAwarded":     itemsAwarded,
-		"spellsAwarded":    spellsAwarded,
-		"user":             updatedUser,
+		"message":              "treasure chest opened successfully",
+		"unlockMethod":         unlockMethodForResponse(unlockItemID, unlockSpellID),
+		"rewardMode":           rewardMode,
+		"randomRewardSize":     rewardSize,
+		"rewardExperience":     rewardExperience,
+		"rewardGold":           rewardGold,
+		"itemsAwarded":         itemsAwarded,
+		"baseResourcesAwarded": serializeBaseResourceDeltas(baseResourcesAwarded),
+		"spellsAwarded":        spellsAwarded,
+		"user":                 updatedUser,
 	})
 }
 
@@ -14436,6 +14509,7 @@ type scenarioPerformResponse struct {
 	RewardExperience       int                            `json:"rewardExperience"`
 	RewardGold             int                            `json:"rewardGold"`
 	ItemsAwarded           []models.ItemAwarded           `json:"itemsAwarded"`
+	BaseResourcesAwarded   []models.BaseResourceDelta     `json:"baseResourcesAwarded"`
 	ItemChoiceRewards      []models.ItemAwarded           `json:"itemChoiceRewards"`
 	SpellsAwarded          []models.SpellAwarded          `json:"spellsAwarded"`
 }
@@ -16423,6 +16497,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 	success := totalScore >= threshold
 
 	itemsAwarded := []models.ItemAwarded{}
+	baseResourcesAwarded := []models.BaseResourceDelta{}
 	spellsAwarded := []models.SpellAwarded{}
 	appliedFailurePenalty := scenarioAppliedFailurePenalty{
 		Statuses: []scenarioAppliedFailureStatus{},
@@ -16469,6 +16544,24 @@ func (s *server) performScenario(ctx *gin.Context) {
 					return
 				}
 			}
+		}
+		baseResourcesAwarded, err = s.awardBaseResourcesToParticipants(
+			ctx,
+			participantIDs,
+			user.ID,
+			baseResourceGrantsForScenario(
+				scenarioRewardMode,
+				scenarioRandomRewardSize,
+				rewardExperience,
+				rewardGold,
+				len(rewardItems)+len(rewardSpells),
+			),
+			"scenario",
+			&scenario.ID,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 		successReward := resolveScenarioSuccessReward(scenario, selectedOption)
 		appliedSuccessReward, err = s.applyScenarioSuccessReward(ctx, user.ID, successReward)
@@ -16648,19 +16741,21 @@ func (s *server) performScenario(ctx *gin.Context) {
 		RewardExperience:       rewardExperience,
 		RewardGold:             rewardGold,
 		ItemsAwarded:           itemsAwarded,
+		BaseResourcesAwarded:   baseResourcesAwarded,
 		ItemChoiceRewards:      s.hydrateItemAwarded(ctx, scenarioRewardChoicesToItemAwarded(rewardItemChoices)),
 		SpellsAwarded:          spellsAwarded,
 	}
 	if partyID != nil && partyLockAcquired {
 		payload := map[string]interface{}{
-			"successful":       response.Successful,
-			"reason":           response.Reason,
-			"outcomeText":      response.OutcomeText,
-			"scenarioId":       response.ScenarioID.String(),
-			"rewardExperience": response.RewardExperience,
-			"rewardGold":       response.RewardGold,
-			"itemsAwarded":     response.ItemsAwarded,
-			"spellsAwarded":    response.SpellsAwarded,
+			"successful":           response.Successful,
+			"reason":               response.Reason,
+			"outcomeText":          response.OutcomeText,
+			"scenarioId":           response.ScenarioID.String(),
+			"rewardExperience":     response.RewardExperience,
+			"rewardGold":           response.RewardGold,
+			"itemsAwarded":         response.ItemsAwarded,
+			"baseResourcesAwarded": response.BaseResourcesAwarded,
+			"spellsAwarded":        response.SpellsAwarded,
 		}
 		raw, err := json.Marshal(response)
 		if err != nil {

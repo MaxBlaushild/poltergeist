@@ -91,3 +91,23 @@ func (s *server) getAllBases(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, response)
 }
+
+func (s *server) deleteBase(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	baseID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || baseID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base ID"})
+		return
+	}
+
+	if err := s.dbClient.Base().Delete(ctx, baseID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "base deleted"})
+}

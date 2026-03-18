@@ -15,6 +15,7 @@ import 'services/friend_service.dart';
 import 'services/location_service.dart';
 import 'services/media_service.dart';
 import 'services/activity_service.dart';
+import 'services/base_service.dart';
 import 'services/chat_service.dart';
 import 'services/character_stats_service.dart';
 import 'services/feedback_service.dart';
@@ -27,6 +28,7 @@ import 'services/tags_service.dart';
 import 'services/user_level_service.dart';
 import 'services/user_character_service.dart';
 import 'providers/activity_feed_provider.dart';
+import 'providers/base_placement_provider.dart';
 import 'providers/completed_task_provider.dart';
 import 'providers/discoveries_provider.dart';
 import 'providers/inventory_modal_provider.dart';
@@ -65,6 +67,7 @@ class SonarApp extends StatelessWidget {
     final partyService = PartyService(apiClient);
     final friendService = FriendService(apiClient);
     final activityService = ActivityService(apiClient);
+    final baseService = BaseService(apiClient);
     final chatService = ChatService(apiClient);
     final characterStatsService = CharacterStatsService(apiClient);
     final feedbackService = FeedbackService(apiClient);
@@ -81,6 +84,7 @@ class SonarApp extends StatelessWidget {
     final tagsProvider = TagsProvider(tagsService);
     final questFilterProvider = QuestFilterProvider();
     final inventoryModalProvider = InventoryModalProvider();
+    final basePlacementProvider = BasePlacementProvider();
     final completedTaskProvider = CompletedTaskProvider();
     final zoneProvider = ZoneProvider();
     final discoveriesProvider = DiscoveriesProvider(poiService, authProvider);
@@ -106,6 +110,7 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
         Provider<MediaService>.value(value: mediaService),
         Provider<FeedbackService>.value(value: feedbackService),
+        Provider<BaseService>.value(value: baseService),
         Provider<PoiService>.value(value: poiService),
         Provider<InventoryService>.value(value: inventoryService),
         Provider<UserCharacterService>.value(value: userCharacterService),
@@ -135,6 +140,9 @@ class SonarApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<InventoryModalProvider>.value(
           value: inventoryModalProvider,
+        ),
+        ChangeNotifierProvider<BasePlacementProvider>.value(
+          value: basePlacementProvider,
         ),
         ChangeNotifierProvider<CompletedTaskProvider>.value(
           value: completedTaskProvider,

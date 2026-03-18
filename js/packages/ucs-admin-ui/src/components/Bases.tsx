@@ -85,6 +85,9 @@ export const Bases = () => {
   const [iconMessage, setIconMessage] = useState<string | null>(null);
   const [iconError, setIconError] = useState<string | null>(null);
   const [iconPreviewNonce, setIconPreviewNonce] = useState(Date.now());
+  const [isIconLightboxOpen, setIsIconLightboxOpen] = useState(false);
+  const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
+  const [baseMessage, setBaseMessage] = useState<string | null>(null);
 
   const fetchBases = useCallback(async () => {
     try {
@@ -174,6 +177,33 @@ export const Bases = () => {
       setIconBusy(false);
     }
   }, [apiClient, refreshIconStatus]);
+
+  const handleDeleteBase = useCallback(
+    async (record: BaseRecord) => {
+      const owner = ownerLabel(record);
+      const confirmed = window.confirm(
+        `Delete ${owner}'s base? This will remove the base pin from the map.`
+      );
+      if (!confirmed) return;
+
+      try {
+        setDeletingBaseId(record.id);
+        setError(null);
+        setBaseMessage(null);
+        await apiClient.delete(`/sonar/admin/bases/${record.id}`);
+        setRecords((prev) => prev.filter((base) => base.id !== record.id));
+        setBaseMessage(`Deleted ${owner}'s base.`);
+      } catch (err) {
+        console.error('Failed to delete base', err);
+        const message =
+          err instanceof Error ? err.message : 'Failed to delete base.';
+        setError(message);
+      } finally {
+        setDeletingBaseId(null);
+      }
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     void fetchBases();
@@ -276,11 +306,18 @@ export const Bases = () => {
 
         {iconExists ? (
           <div className="mt-4 flex justify-center rounded border border-dashed border-gray-300 bg-gray-50 p-4">
-            <img
-              src={`${iconUrl}?v=${iconPreviewNonce}`}
-              alt="Base icon preview"
-              className="h-28 w-28 rounded object-contain"
-            />
+            <button
+              type="button"
+              onClick={() => setIsIconLightboxOpen(true)}
+              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              title="Open large preview"
+            >
+              <img
+                src={`${iconUrl}?v=${iconPreviewNonce}`}
+                alt="Base icon preview"
+                className="h-28 w-28 rounded object-contain"
+              />
+            </button>
           </div>
         ) : (
           <div className="mt-4 rounded border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
@@ -294,9 +331,39 @@ export const Bases = () => {
         {iconError ? <p className="mt-3 text-sm text-red-700">{iconError}</p> : null}
       </section>
 
+      {isIconLightboxOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
+          onClick={() => setIsIconLightboxOpen(false)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] rounded-lg bg-white p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsIconLightboxOpen(false)}
+              className="absolute right-3 top-3 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white hover:bg-black/80"
+            >
+              Close
+            </button>
+            <img
+              src={`${iconUrl}?v=${iconPreviewNonce}`}
+              alt="Large base icon preview"
+              className="max-h-[80vh] max-w-[80vw] rounded object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      ) : null}
+      {baseMessage ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {baseMessage}
         </div>
       ) : null}
 
@@ -330,6 +397,16 @@ export const Bases = () => {
                 <div>Latitude: {record.latitude.toFixed(6)}</div>
                 <div>Longitude: {record.longitude.toFixed(6)}</div>
                 <div>User ID: {record.userId}</div>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteBase(record)}
+                  disabled={deletingBaseId === record.id}
+                  className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingBaseId === record.id ? 'Deleting...' : 'Delete Base'}
+                </button>
               </div>
             </div>
           ))

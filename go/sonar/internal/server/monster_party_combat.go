@@ -1553,6 +1553,31 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		if err != nil {
 			return nil, err
 		}
+		rewardMode := monster.RewardMode
+		rewardSize := monster.RandomRewardSize
+		sourceType := "monster"
+		sourceID := monster.ID
+		if encounter != nil {
+			rewardMode = encounter.RewardMode
+			rewardSize = encounter.RandomRewardSize
+			sourceType = "monster_encounter"
+			sourceID = encounter.ID
+		}
+		if _, err := s.awardBaseResourcesToUser(
+			ctx,
+			participant.UserID,
+			baseResourceGrantsForMonster(
+				rewardMode,
+				rewardSize,
+				rewardExperience,
+				rewardGold,
+				len(resolvedItemRewards),
+			),
+			sourceType,
+			&sourceID,
+		); err != nil {
+			return nil, err
+		}
 		log.Printf(
 			"[monster-rewards][finalize][awarded] battle=%s user=%s itemsAwarded=%d rewardExperience=%d rewardGold=%d",
 			battle.ID,

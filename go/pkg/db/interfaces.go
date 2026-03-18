@@ -105,6 +105,11 @@ type DbClient interface {
 	TreasureChest() TreasureChestHandle
 	HealingFountain() HealingFountainHandle
 	Base() BaseHandle
+	BaseResourceBalance() BaseResourceBalanceHandle
+	BaseResourceLedger() BaseResourceLedgerHandle
+	BaseStructureDefinition() BaseStructureDefinitionHandle
+	UserBaseStructure() UserBaseStructureHandle
+	UserBaseDailyState() UserBaseDailyStateHandle
 	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
@@ -1092,6 +1097,31 @@ type BaseHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Base, error)
 	FindAll(ctx context.Context) ([]models.Base, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type BaseResourceBalanceHandle interface {
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.BaseResourceBalance, error)
+	GrantToUser(ctx context.Context, userID uuid.UUID, deltas []models.BaseResourceDelta, sourceType string, sourceID *uuid.UUID, notes *string) error
+}
+
+type BaseResourceLedgerHandle interface {
+	ListRecentByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]models.BaseResourceLedger, error)
+}
+
+type BaseStructureDefinitionHandle interface {
+	FindAllActive(ctx context.Context) ([]models.BaseStructureDefinition, error)
+	FindActiveByKey(ctx context.Context, key string) (*models.BaseStructureDefinition, error)
+}
+
+type UserBaseStructureHandle interface {
+	FindByBaseID(ctx context.Context, baseID uuid.UUID) ([]models.UserBaseStructure, error)
+	EnsureBuilt(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int) error
+	UpsertLevelWithCost(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, costs []models.BaseResourceDelta) (*models.UserBaseStructure, error)
+}
+
+type UserBaseDailyStateHandle interface {
+	FindActiveByUserID(ctx context.Context, userID uuid.UUID, asOf time.Time) ([]models.UserBaseDailyState, error)
 }
 
 type ChallengeHandle interface {

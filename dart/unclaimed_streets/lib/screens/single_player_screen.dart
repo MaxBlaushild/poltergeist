@@ -31,6 +31,7 @@ import '../models/tutorial.dart';
 import '../models/zone.dart';
 import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/base_placement_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
@@ -200,6 +201,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   QuestLogProvider? _questLogProvider;
   MapFocusProvider? _mapFocusProvider;
   CompletedTaskProvider? _completedTaskProvider;
+  BasePlacementProvider? _basePlacementProvider;
   Map<String, dynamic>? _lastHandledCompletionModal;
   Timer? _questGlowTimer;
   bool _isQuestGlowPulsing = false;
@@ -258,6 +260,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   InventoryItem? _pendingBaseInventoryItem;
   LatLng? _pendingBaseSelection;
   bool _creatingBase = false;
+  Symbol? _basePlacementPreviewSymbol;
+  Uint8List? _basePlacementPreviewBytes;
 
   @override
   void initState() {
@@ -279,6 +283,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _mapFocusProvider?.addListener(_onMapFocusRequest);
       _completedTaskProvider = context.read<CompletedTaskProvider>();
       _completedTaskProvider?.addListener(_onCompletedTaskModalChanged);
+      _basePlacementProvider = context.read<BasePlacementProvider>();
+      _basePlacementProvider?.addListener(_onBasePlacementRequested);
       context.read<TutorialReplayProvider>().addListener(
         _onTutorialReplayRequested,
       );
@@ -289,6 +295,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       unawaited(context.read<PartyProvider>().fetchParty());
       unawaited(_loadTutorialStatus(force: true));
       _onTutorialReplayRequested();
+      _onBasePlacementRequested();
     });
   }
 
@@ -322,6 +329,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
     try {
       _completedTaskProvider?.removeListener(_onCompletedTaskModalChanged);
+    } catch (_) {}
+    try {
+      _basePlacementProvider?.removeListener(_onBasePlacementRequested);
     } catch (_) {}
     try {
       context.read<TutorialReplayProvider>().removeListener(
@@ -1216,6 +1226,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _challengeCircles = [];
       _challengeSymbolById.clear();
       _challengeCircleById.clear();
+      _basePlacementPreviewSymbol = null;
+      _basePlacementPreviewBytes = null;
       _challengePolygonLines = [];
       _challengePolygonFills = [];
       _challengePolygonLineById.clear();
@@ -1261,6 +1273,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (_questLogNeedsOverlayApply) {
       _questLogNeedsOverlayApply = false;
       _applyQuestLogOverlaysIfChanged();
+    }
+    if (_isPlacingBase) {
+      unawaited(_hideMarkersForBasePlacement());
+      unawaited(_refreshBasePlacementPreview());
     }
     _animateToUserLocationIfReady();
   }
@@ -1608,6 +1624,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshBaseSymbols();
+        if (_isPlacingBase) {
+          await _hideMarkersForBasePlacement();
+          await _refreshBasePlacementPreview();
+        }
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadBases error: $e');
@@ -3583,6 +3603,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       setState(() {
         _pendingBaseSelection = coordinates;
       });
+      unawaited(_refreshBasePlacementPreview());
       return;
     }
     final zone = context.read<ZoneProvider>().findZoneAtCoordinate(
@@ -3590,6 +3611,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       coordinates.longitude,
     );
     _selectZone(zone);
+  }
+
+  void _onBasePlacementRequested() {
+    final request = _basePlacementProvider?.pendingRequest;
+    if (request == null || !mounted) return;
+    _basePlacementProvider?.clearRequest();
+    unawaited(
+      _beginBasePlacement(request.ownedInventoryItem, request.inventoryItem),
+    );
   }
 
   void _showPointOfInterestPanel(PointOfInterest poi, bool hasDiscovered) {
@@ -6599,7 +6629,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         !_mapLoadFailed &&
         _mapController != null &&
         _zones.isNotEmpty &&
-        !_markersAdded) {
+        !_markersAdded &&
+        !_isPlacingBase) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         unawaited(_addPoiMarkers());
@@ -6711,135 +6742,141 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               ),
             ),
           if (_styleLoaded && !_mapLoadFailed) ...[
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: PointerInterceptor(
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (event) {
-                    if (kDebugMode) {
-                      debugPrint(
-                        'SinglePlayer: top controls pointer down at ${event.position}',
-                      );
-                    }
-                  },
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                      child: SizedBox(
-                        width: double.infinity,
+            if (!_isPlacingBase)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: PointerInterceptor(
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (event) {
+                      if (kDebugMode) {
+                        debugPrint(
+                          'SinglePlayer: top controls pointer down at ${event.position}',
+                        );
+                      }
+                    },
+                    child: SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                         child: SizedBox(
-                          height: overlayButtonStackHeight,
-                          child: Align(
-                            alignment: Alignment.topLeft,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Consumer<ActivityFeedProvider>(
-                                  builder: (context, feed, _) {
-                                    final hasUnseen =
-                                        feed.unseenActivities.isNotEmpty;
-                                    return Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        _OverlayButton(
-                                          icon: Icons.campaign,
-                                          onTap: () {
-                                            if (kDebugMode) {
-                                              debugPrint(
-                                                'SinglePlayer: notifications tapped',
-                                              );
-                                            }
-                                            _showActivityFeed(context);
-                                          },
-                                        ),
-                                        if (hasUnseen)
-                                          Positioned(
-                                            top: -2,
-                                            right: -2,
-                                            child: Container(
-                                              width: 10,
-                                              height: 10,
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFB87333),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.surface,
-                                                  width: 1,
-                                                ),
-                                                boxShadow: const [
-                                                  BoxShadow(
-                                                    color: Colors.black26,
-                                                    blurRadius: 4,
-                                                    offset: Offset(0, 2),
+                          width: double.infinity,
+                          child: SizedBox(
+                            height: overlayButtonStackHeight,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Consumer<ActivityFeedProvider>(
+                                    builder: (context, feed, _) {
+                                      final hasUnseen =
+                                          feed.unseenActivities.isNotEmpty;
+                                      return Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          _OverlayButton(
+                                            icon: Icons.campaign,
+                                            onTap: () {
+                                              if (kDebugMode) {
+                                                debugPrint(
+                                                  'SinglePlayer: notifications tapped',
+                                                );
+                                              }
+                                              _showActivityFeed(context);
+                                            },
+                                          ),
+                                          if (hasUnseen)
+                                            Positioned(
+                                              top: -2,
+                                              right: -2,
+                                              child: Container(
+                                                width: 10,
+                                                height: 10,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFFB87333,
                                                   ),
-                                                ],
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.surface,
+                                                    width: 1,
+                                                  ),
+                                                  boxShadow: const [
+                                                    BoxShadow(
+                                                      color: Colors.black26,
+                                                      blurRadius: 4,
+                                                      offset: Offset(0, 2),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Consumer2<QuestFilterProvider, TagsProvider>(
+                                    builder: (context, filters, tags, _) {
+                                      final hasActiveFilters =
+                                          filters.enableTagFilter &&
+                                          tags.selectedTagIds.isNotEmpty;
+                                      return Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          _OverlayButton(
+                                            icon: Icons.tune,
+                                            onTap: () {
+                                              if (kDebugMode) {
+                                                debugPrint(
+                                                  'SinglePlayer: filters tapped',
+                                                );
+                                              }
+                                              _showTagFilter(context);
+                                            },
                                           ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 12),
-                                Consumer2<QuestFilterProvider, TagsProvider>(
-                                  builder: (context, filters, tags, _) {
-                                    final hasActiveFilters =
-                                        filters.enableTagFilter &&
-                                        tags.selectedTagIds.isNotEmpty;
-                                    return Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        _OverlayButton(
-                                          icon: Icons.tune,
-                                          onTap: () {
-                                            if (kDebugMode) {
-                                              debugPrint(
-                                                'SinglePlayer: filters tapped',
-                                              );
-                                            }
-                                            _showTagFilter(context);
-                                          },
-                                        ),
-                                        if (hasActiveFilters)
-                                          Positioned(
-                                            top: -2,
-                                            right: -2,
-                                            child: Container(
-                                              width: 10,
-                                              height: 10,
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF5C542),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(
-                                                  color: Colors.white,
-                                                  width: 1,
-                                                ),
-                                                boxShadow: const [
-                                                  BoxShadow(
-                                                    color: Colors.black26,
-                                                    blurRadius: 4,
-                                                    offset: Offset(0, 2),
+                                          if (hasActiveFilters)
+                                            Positioned(
+                                              top: -2,
+                                              right: -2,
+                                              child: Container(
+                                                width: 10,
+                                                height: 10,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFFF5C542,
                                                   ),
-                                                ],
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 1,
+                                                  ),
+                                                  boxShadow: const [
+                                                    BoxShadow(
+                                                      color: Colors.black26,
+                                                      blurRadius: 4,
+                                                      offset: Offset(0, 2),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 12),
-                                _OverlayButton(
-                                  icon: Icons.my_location,
-                                  onTap: _centerOnUserLocation,
-                                ),
-                              ],
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _OverlayButton(
+                                    icon: Icons.my_location,
+                                    onTap: _centerOnUserLocation,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -6848,8 +6885,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
               ),
-            ),
-            if (hasPartyMapStrip || hasTrackedQuestOverlay)
+            if (!_isPlacingBase && (hasPartyMapStrip || hasTrackedQuestOverlay))
               Positioned(
                 top: 0,
                 right: 16,
@@ -6943,8 +6979,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           const SizedBox(height: 8),
                           Text(
                             _pendingBaseSelection == null
-                                ? 'Tap anywhere on the map to choose where your base should appear.'
-                                : 'Selected location: ${_pendingBaseSelection!.latitude.toStringAsFixed(5)}, ${_pendingBaseSelection!.longitude.toStringAsFixed(5)}. Tap elsewhere to move it before confirming.',
+                                ? 'Tap anywhere on the map to place your base pin.'
+                                : 'Does this location look correct? Tap elsewhere to move it.',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 14),
@@ -6967,9 +7003,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                       ? null
                                       : _confirmBasePlacement,
                                   child: Text(
-                                    _creatingBase
-                                        ? 'Creating...'
-                                        : 'Confirm location',
+                                    _creatingBase ? 'Creating...' : 'Continue',
                                   ),
                                 ),
                               ),
@@ -6981,27 +7015,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
               ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: PointerInterceptor(
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: ZoneWidget(
-                        controller: _zoneWidgetController,
-                        expandUpwards: true,
-                        expandedHeight: 260,
+            if (!_isPlacingBase)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: PointerInterceptor(
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: ZoneWidget(
+                          controller: _zoneWidgetController,
+                          expandUpwards: true,
+                          expandedHeight: 260,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
           if (_questSubmissionPhase != QuestSubmissionOverlayPhase.hidden)
             Positioned.fill(
@@ -7584,6 +7619,124 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  Future<void> _hideMarkersForBasePlacement() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    Future<void> removeSymbols(List<Symbol> symbols) async {
+      if (symbols.isEmpty) return;
+      try {
+        await c.removeSymbols(symbols);
+      } catch (_) {}
+      symbols.clear();
+    }
+
+    Future<void> removeCircleMap(
+      Map<String, Circle> circles,
+      List<Circle> backingList,
+    ) async {
+      if (circles.isEmpty) return;
+      for (final circle in circles.values.toList()) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+      }
+      circles.clear();
+      backingList.clear();
+    }
+
+    await removeSymbols(_poiSymbols);
+    _poiSymbolById.clear();
+    await removeSymbols(_questPoiHighlightSymbols);
+    _questPoiPulseTimer?.cancel();
+    _questPoiPulseTimer = null;
+    await removeSymbols(_characterSymbols);
+    _characterSymbolsById.clear();
+    await removeSymbols(_chestSymbols);
+    _chestSymbolById.clear();
+    await removeCircleMap(_chestCircleById, _chestCircles);
+    await removeSymbols(_healingFountainSymbols);
+    _healingFountainSymbolById.clear();
+    await removeCircleMap(_healingFountainCircleById, _healingFountainCircles);
+    await removeSymbols(_baseSymbols);
+    _baseSymbolById.clear();
+    await removeCircleMap(_baseCircleById, _baseCircles);
+    await removeSymbols(_scenarioSymbols);
+    _scenarioSymbolById.clear();
+    await removeCircleMap(_scenarioCircleById, _scenarioCircles);
+    await removeSymbols(_monsterSymbols);
+    _monsterSymbolById.clear();
+    await removeCircleMap(_monsterCircleById, _monsterCircles);
+    await removeSymbols(_challengeSymbols);
+    _challengeSymbolById.clear();
+    await removeCircleMap(_challengeCircleById, _challengeCircles);
+    _markersAdded = false;
+  }
+
+  Future<void> _restoreMarkersAfterBasePlacement() async {
+    if (!_styleLoaded || _mapController == null) return;
+    await _addPoiMarkers();
+    await _refreshDiscoveredPoiMarkers();
+    _applyQuestLogOverlaysIfChanged();
+  }
+
+  Future<void> _clearBasePlacementPreview() async {
+    final c = _mapController;
+    final symbol = _basePlacementPreviewSymbol;
+    _basePlacementPreviewSymbol = null;
+    if (c == null || symbol == null) return;
+    try {
+      await c.removeSymbols([symbol]);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshBasePlacementPreview() async {
+    if (!_isPlacingBase || _pendingBaseSelection == null) {
+      await _clearBasePlacementPreview();
+      return;
+    }
+
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    _basePlacementPreviewBytes ??= await loadPoiThumbnail(
+      _baseDiscoveredImageUrl,
+    );
+    final previewBytes = _basePlacementPreviewBytes;
+    if (previewBytes == null) return;
+
+    const imageId = 'base_placement_preview_v4';
+    await _ensureMapImage(c, imageId, previewBytes);
+
+    final selection = _pendingBaseSelection!;
+    final existing = _basePlacementPreviewSymbol;
+    if (existing == null) {
+      final symbol = await c.addSymbol(
+        SymbolOptions(
+          geometry: selection,
+          iconImage: imageId,
+          iconSize: 0.88,
+          iconOpacity: 1,
+          iconHaloColor: '#f5c542',
+          iconHaloWidth: 1.2,
+          iconAnchor: 'center',
+          zIndex: 7,
+        ),
+        const {'type': 'basePlacementPreview'},
+      );
+      if (!mounted) return;
+      _basePlacementPreviewSymbol = symbol;
+      return;
+    }
+
+    try {
+      await c.updateSymbol(
+        existing,
+        SymbolOptions(geometry: selection, iconImage: imageId, iconOpacity: 1),
+      );
+    } catch (_) {}
+  }
+
   Future<void> _beginBasePlacement(
     OwnedInventoryItem owned,
     InventoryItem item,
@@ -7595,6 +7748,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _pendingBaseSelection = null;
       _creatingBase = false;
     });
+    _zoneWidgetController.close();
+    final loc = context.read<LocationProvider>().location;
+    final mapController = _mapController;
+    if (loc != null && mapController != null) {
+      final lat = loc.latitude;
+      final lng = loc.longitude;
+      if (lat.isFinite && lng.isFinite && lat.abs() <= 90 && lng.abs() <= 180) {
+        try {
+          await mapController.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(target: LatLng(lat, lng), zoom: 15.5),
+            ),
+            duration: const Duration(milliseconds: 450),
+          );
+        } catch (_) {}
+      }
+    }
+    await _hideMarkersForBasePlacement();
+    await _refreshBasePlacementPreview();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Tap the map to choose where to establish your base.'),
@@ -7604,12 +7776,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _cancelBasePlacement() {
     if (!mounted) return;
+    final wasPlacingBase = _isPlacingBase;
     setState(() {
       _pendingBaseOwnedInventoryItemId = null;
       _pendingBaseInventoryItem = null;
       _pendingBaseSelection = null;
       _creatingBase = false;
     });
+    if (wasPlacingBase) {
+      unawaited(_clearBasePlacementPreview());
+      unawaited(_restoreMarkersAfterBasePlacement());
+    }
   }
 
   Future<void> _confirmBasePlacement() async {
@@ -7623,11 +7800,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(existingBase == null ? 'Establish base?' : 'Move base?'),
+        title: Text(
+          existingBase == null ? 'Establish base here?' : 'Move base here?',
+        ),
         content: Text(
           existingBase == null
               ? 'This will consume the item and place your base at the selected location.'
-              : 'This will consume the item and move your current base to the selected location.',
+              : 'This will consume the item and move your current base pin to the selected location.',
         ),
         actions: [
           TextButton(
@@ -7636,7 +7815,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm'),
+            child: const Text('Submit'),
           ),
         ],
       ),
@@ -9025,9 +9204,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: InventoryPanel(
                     onClose: () => Navigator.of(context).pop(),
-                    onCreateBaseRequested: (owned, item) async {
-                      await _beginBasePlacement(owned, item);
-                    },
                   ),
                 ),
               ),

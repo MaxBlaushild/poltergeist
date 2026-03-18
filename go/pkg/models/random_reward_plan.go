@@ -169,6 +169,9 @@ func filterRewardItems(items []InventoryItem, level int, equippable bool) []Inve
 		if item.ID <= 0 || item.IsCaptureType || item.Archived {
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(item.RarityTier), "Not Droppable") {
+			continue
+		}
 		itemIsEquippable := strings.TrimSpace(derefRewardString(item.EquipSlot)) != ""
 		if equippable != itemIsEquippable {
 			continue

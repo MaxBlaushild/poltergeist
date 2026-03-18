@@ -89,6 +89,15 @@ type AdminMapPin = {
   draggable: boolean;
 };
 
+const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
+  pointOfInterest: 'point of interest',
+  treasureChest: 'treasure chest',
+  healingFountain: 'healing fountain',
+  scenario: 'scenario',
+  monster: 'monster encounter',
+  challenge: 'challenge',
+};
+
 const chestImageUrl =
   'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 const poiMysteryImageUrl =
@@ -688,9 +697,15 @@ export const Zone = () => {
   const [movingPinId, setMovingPinId] = useState<string | null>(null);
   const [pinMoveStatus, setPinMoveStatus] = useState<string | null>(null);
   const [pinMoveError, setPinMoveError] = useState<string | null>(null);
+  const [deletingPinId, setDeletingPinId] = useState<string | null>(null);
+  const [pinDeleteStatus, setPinDeleteStatus] = useState<string | null>(null);
+  const [pinDeleteError, setPinDeleteError] = useState<string | null>(null);
   const [pinLocationOverrides, setPinLocationOverrides] = useState<
     Record<string, [number, number]>
   >({});
+  const [deletedPointOfInterestIds, setDeletedPointOfInterestIds] = useState<
+    Set<string>
+  >(new Set());
   const [queueingZoneFlavor, setQueueingZoneFlavor] = useState(false);
   const [zoneFlavorJobs, setZoneFlavorJobs] = useState<ZoneFlavorGenerationJob[]>([]);
   const [zoneFlavorJobsError, setZoneFlavorJobsError] = useState<string | null>(null);
@@ -728,7 +743,11 @@ export const Zone = () => {
     setIsEditingPins(false);
     setPinMoveStatus(null);
     setPinMoveError(null);
+    setPinDeleteStatus(null);
+    setPinDeleteError(null);
+    setDeletingPinId(null);
     setPinLocationOverrides({});
+    setDeletedPointOfInterestIds(new Set());
   }, [id]);
 
   useEffect(() => {
@@ -826,6 +845,8 @@ export const Zone = () => {
   const toggleBoundaryEditing = () => {
     setPinMoveError(null);
     setPinMoveStatus(null);
+    setPinDeleteError(null);
+    setPinDeleteStatus(null);
     setIsEditingBoundary((prev) => {
       const next = !prev;
       if (next) {
@@ -838,6 +859,8 @@ export const Zone = () => {
   const togglePinEditing = () => {
     setPinMoveError(null);
     setPinMoveStatus(null);
+    setPinDeleteError(null);
+    setPinDeleteStatus(null);
     setIsEditingPins((prev) => {
       const next = !prev;
       if (next) {
@@ -912,6 +935,66 @@ export const Zone = () => {
     }
   };
 
+  const handleDeletePin = async (pin: AdminMapPin) => {
+    const noun = pinDeleteLabelByKind[pin.kind];
+    const confirmed = window.confirm(
+      `Delete ${pin.name} and remove this ${noun} from the zone?`
+    );
+    if (!confirmed) return;
+
+    setDeletingPinId(pin.id);
+    setPinDeleteError(null);
+    setPinDeleteStatus(`Deleting ${pin.name}...`);
+
+    try {
+      switch (pin.kind) {
+        case 'pointOfInterest':
+          await apiClient.delete(`/sonar/pointsOfInterest/${pin.entityId}`);
+          setDeletedPointOfInterestIds((prev) => {
+            const next = new Set(prev);
+            next.add(pin.entityId);
+            return next;
+          });
+          break;
+        case 'treasureChest':
+          await apiClient.delete(`/sonar/treasure-chests/${pin.entityId}`);
+          setTreasureChests((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
+        case 'healingFountain':
+          await apiClient.delete(`/sonar/healing-fountains/${pin.entityId}`);
+          setHealingFountains((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
+        case 'scenario':
+          await apiClient.delete(`/sonar/scenarios/${pin.entityId}`);
+          setScenarios((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
+        case 'monster':
+          await apiClient.delete(`/sonar/monster-encounters/${pin.entityId}`);
+          setMonsterEncounters((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
+        case 'challenge':
+          await apiClient.delete(`/sonar/challenges/${pin.entityId}`);
+          setChallenges((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
+        default:
+          break;
+      }
+
+      setPinLocationOverrides((prev) => {
+        if (!(pin.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[pin.id];
+        return next;
+      });
+      setPinDeleteStatus(`${pin.name} deleted.`);
+    } catch (error) {
+      console.error('Error deleting pin entity:', error);
+      setPinDeleteError(`Unable to delete ${pin.name} right now.`);
+    } finally {
+      setDeletingPinId(null);
+    }
+  };
+
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -949,6 +1032,7 @@ export const Zone = () => {
   };
 
   const filteredPoints = pointsOfInterest.filter(point => 
+    !deletedPointOfInterestIds.has(point.id) &&
     point.name.toLowerCase().includes(nameFilter.toLowerCase())
   );
   const latestZoneFlavorJob = zoneFlavorJobs[0];
@@ -967,6 +1051,9 @@ export const Zone = () => {
 
     const poiPins = pointsOfInterest
       .map((point) => {
+        if (deletedPointOfInterestIds.has(point.id)) {
+          return null;
+        }
         const latitude = Number(point.lat);
         const longitude = Number(point.lng);
         if (!isValidCoordinate(latitude, longitude)) {
@@ -1087,7 +1174,7 @@ export const Zone = () => {
       ...monsterPins,
       ...challengePins,
     ];
-  }, [pointsOfInterest, treasureChests, healingFountains, scenarios, monsterEncounters, challenges, pinLocationOverrides]);
+  }, [pointsOfInterest, treasureChests, healingFountains, scenarios, monsterEncounters, challenges, pinLocationOverrides, deletedPointOfInterestIds]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -1335,11 +1422,84 @@ export const Zone = () => {
             challenges stay locked to their polygon editor.
           </p>
         ) : null}
+        {pinDeleteError ? (
+          <p className="mt-2 text-sm text-red-600">{pinDeleteError}</p>
+        ) : null}
+        {pinDeleteStatus ? (
+          <p className="mt-2 text-sm text-slate-600">
+            {deletingPinId ? 'Deleting pin...' : pinDeleteStatus}
+          </p>
+        ) : null}
         {isEditingBoundary && (
           <p className="text-sm text-gray-600 mt-2">
             Click on the map to add boundary points. The gameplay pins stay visible for context, but they won&apos;t intercept clicks while boundary editing is on.
           </p>
         )}
+        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+                Zone Pins
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Delete a pin here to remove the underlying entity from this zone.
+              </p>
+            </div>
+            <div className="text-sm text-slate-500">{mapPins.length} total</div>
+          </div>
+          {mapPins.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">No in-zone pins found.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {mapPins.map((pin) => (
+                <div
+                  key={pin.id}
+                  className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={pin.imageUrl || markerStyleByKind[pin.kind].fallbackImage}
+                      alt={pin.name}
+                      className="h-12 w-12 rounded-full border object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: markerStyleByKind[pin.kind].ring }}
+                        />
+                        <div className="truncate font-medium text-slate-900">
+                          {pin.name}
+                        </div>
+                      </div>
+                      <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                        {markerStyleByKind[pin.kind].fullLabel}
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        {pin.coordinates[1].toFixed(5)}, {pin.coordinates[0].toFixed(5)}
+                      </div>
+                      {!pin.draggable ? (
+                        <div className="mt-1 text-xs text-amber-700">
+                          Location locked to polygon geometry
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePin(pin)}
+                      disabled={deletingPinId === pin.id}
+                      className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingPinId === pin.id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mb-4">
