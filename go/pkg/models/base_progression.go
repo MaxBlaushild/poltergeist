@@ -1,6 +1,9 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +20,31 @@ const (
 	BaseResourceMonsterParts BaseResourceKey = "monster_parts"
 	BaseResourceRelicShards  BaseResourceKey = "relic_shards"
 )
+
+func NormalizeBaseResourceKey(raw string) BaseResourceKey {
+	switch BaseResourceKey(strings.ToLower(strings.TrimSpace(raw))) {
+	case BaseResourceTimber:
+		return BaseResourceTimber
+	case BaseResourceStone:
+		return BaseResourceStone
+	case BaseResourceIron:
+		return BaseResourceIron
+	case BaseResourceHerbs:
+		return BaseResourceHerbs
+	case BaseResourceArcaneDust:
+		return BaseResourceArcaneDust
+	case BaseResourceMonsterParts:
+		return BaseResourceMonsterParts
+	case BaseResourceRelicShards:
+		return BaseResourceRelicShards
+	default:
+		return ""
+	}
+}
+
+func IsValidBaseResourceKey(raw string) bool {
+	return NormalizeBaseResourceKey(raw) != ""
+}
 
 type BaseStructureEffectType string
 
@@ -38,6 +66,37 @@ const (
 type BaseResourceDelta struct {
 	ResourceKey BaseResourceKey `json:"resourceKey"`
 	Amount      int             `json:"amount"`
+}
+
+type BaseMaterialRewards []BaseResourceDelta
+
+func (r BaseMaterialRewards) Value() (driver.Value, error) {
+	if r == nil {
+		return json.Marshal([]BaseResourceDelta{})
+	}
+	return json.Marshal(r)
+}
+
+func (r *BaseMaterialRewards) Scan(value interface{}) error {
+	if value == nil {
+		*r = BaseMaterialRewards{}
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		*r = BaseMaterialRewards{}
+		return nil
+	}
+	if len(bytes) == 0 {
+		*r = BaseMaterialRewards{}
+		return nil
+	}
+	return json.Unmarshal(bytes, r)
 }
 
 type BaseResourceBalance struct {

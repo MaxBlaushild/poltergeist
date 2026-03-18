@@ -17,6 +17,11 @@ export interface QuestSpellReward {
   spell?: Spell;
 }
 
+export interface QuestMaterialReward {
+  resourceKey: string;
+  amount: number;
+}
+
 export interface Quest {
   id: string;
   createdAt: string;
@@ -36,6 +41,7 @@ export interface Quest {
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience?: number;
   gold?: number;
+  materialRewards?: QuestMaterialReward[];
   itemRewards?: QuestItemReward[];
   spellRewards?: QuestSpellReward[];
   nodes?: QuestNode[];

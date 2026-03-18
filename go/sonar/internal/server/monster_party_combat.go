@@ -31,10 +31,11 @@ type monsterBattleParticipantSummary struct {
 }
 
 type monsterBattleParticipantRewardSummary struct {
-	UserID           uuid.UUID            `json:"userId"`
-	RewardExperience int                  `json:"rewardExperience"`
-	RewardGold       int                  `json:"rewardGold"`
-	ItemsAwarded     []models.ItemAwarded `json:"itemsAwarded"`
+	UserID               uuid.UUID                  `json:"userId"`
+	RewardExperience     int                        `json:"rewardExperience"`
+	RewardGold           int                        `json:"rewardGold"`
+	ItemsAwarded         []models.ItemAwarded       `json:"itemsAwarded"`
+	BaseResourcesAwarded []models.BaseResourceDelta `json:"baseResourcesAwarded"`
 }
 
 type monsterBattleInviteSummary struct {
@@ -1362,10 +1363,11 @@ func (s *server) monsterBattleDetailResponse(
 			JoinedAt:    participant.JoinedAt,
 		})
 		participantRewards = append(participantRewards, monsterBattleParticipantRewardSummary{
-			UserID:           participant.UserID,
-			RewardExperience: participant.RewardExperience,
-			RewardGold:       participant.RewardGold,
-			ItemsAwarded:     append([]models.ItemAwarded{}, participant.ItemsAwarded...),
+			UserID:               participant.UserID,
+			RewardExperience:     participant.RewardExperience,
+			RewardGold:           participant.RewardGold,
+			ItemsAwarded:         append([]models.ItemAwarded{}, participant.ItemsAwarded...),
+			BaseResourcesAwarded: append([]models.BaseResourceDelta{}, participant.BaseResourcesAwarded...),
 		})
 	}
 
@@ -1554,28 +1556,27 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			return nil, err
 		}
 		rewardMode := monster.RewardMode
-		rewardSize := monster.RandomRewardSize
 		sourceType := "monster"
 		sourceID := monster.ID
+		materialRewards := monster.MaterialRewards
 		if encounter != nil {
 			rewardMode = encounter.RewardMode
-			rewardSize = encounter.RandomRewardSize
 			sourceType = "monster_encounter"
 			sourceID = encounter.ID
+			materialRewards = encounter.MaterialRewards
 		}
-		if _, err := s.awardBaseResourcesToUser(
+		baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 			ctx,
 			participant.UserID,
-			baseResourceGrantsForMonster(
+			resolveBaseMaterialRewards(
 				rewardMode,
-				rewardSize,
-				rewardExperience,
-				rewardGold,
-				len(resolvedItemRewards),
+				materialRewards,
+				fmt.Sprintf("%s:%s:user:%s:materials", sourceType, sourceID, participant.UserID),
 			),
 			sourceType,
 			&sourceID,
-		); err != nil {
+		)
+		if err != nil {
 			return nil, err
 		}
 		log.Printf(
@@ -1593,6 +1594,7 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			rewardExperience,
 			rewardGold,
 			itemsAwarded,
+			baseResourcesAwarded,
 		); err != nil {
 			return nil, err
 		}

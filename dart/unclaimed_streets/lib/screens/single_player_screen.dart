@@ -8950,6 +8950,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           'monsterName': monster.name,
           'rewardExperience': result.rewardExperience,
           'rewardGold': result.rewardGold,
+          'baseResourcesAwarded': result.baseResourcesAwarded,
           'itemsAwarded': result.itemsAwarded,
         },
       );
@@ -9108,6 +9109,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     .toList(),
                 'rewardExperience': result.rewardExperience,
                 'rewardGold': result.rewardGold,
+                'baseResourcesAwarded': result.baseResourcesAwarded,
                 'itemsAwarded': result.itemsAwarded,
                 'itemChoiceRewards': result.itemChoiceRewards,
                 'spellsAwarded': result.spellsAwarded

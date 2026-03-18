@@ -19,6 +19,7 @@ type TreasureChest struct {
 	RewardMode       RewardMode          `json:"rewardMode" gorm:"column:reward_mode"`
 	RandomRewardSize RandomRewardSize    `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	RewardExperience int                 `json:"rewardExperience" gorm:"column:reward_experience"`
+	MaterialRewards  BaseMaterialRewards `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	Gold             *int                `json:"gold"`
 	Geometry         string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Invalidated      bool                `json:"invalidated"`

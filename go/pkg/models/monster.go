@@ -38,6 +38,7 @@ type Monster struct {
 	RandomRewardSize            RandomRewardSize    `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	RewardExperience            int                 `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                  int                 `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards             BaseMaterialRewards `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	ImageGenerationStatus       string              `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError        *string             `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 	ItemRewards                 []MonsterItemReward `json:"itemRewards" gorm:"foreignKey:MonsterID"`

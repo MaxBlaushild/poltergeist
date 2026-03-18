@@ -30,6 +30,7 @@ class MonsterBattleResult {
     required this.playerManaRemaining,
     this.rewardExperience = 0,
     this.rewardGold = 0,
+    this.baseResourcesAwarded = const <Map<String, dynamic>>[],
     this.itemsAwarded = const <Map<String, dynamic>>[],
   });
 
@@ -38,6 +39,7 @@ class MonsterBattleResult {
   final int playerManaRemaining;
   final int rewardExperience;
   final int rewardGold;
+  final List<Map<String, dynamic>> baseResourcesAwarded;
   final List<Map<String, dynamic>> itemsAwarded;
 }
 
@@ -284,6 +286,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _pendingLocalDamage = 0;
   int _victoryRewardExperience = 0;
   int _victoryRewardGold = 0;
+  List<Map<String, dynamic>> _victoryBaseResourcesAwarded =
+      const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _victoryItemsAwarded =
       const <Map<String, dynamic>>[];
   bool _partySelfResourceSyncInFlight = false;
@@ -1485,8 +1489,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                 .map((entry) => Map<String, dynamic>.from(entry))
                 .toList(growable: false)
           : const <Map<String, dynamic>>[];
+      final rawBaseResources = reward['baseResourcesAwarded'];
+      final baseResources = rawBaseResources is List
+          ? rawBaseResources
+                .whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList(growable: false)
+          : const <Map<String, dynamic>>[];
       _victoryRewardExperience = _parseIntValue(reward['rewardExperience']);
       _victoryRewardGold = _parseIntValue(reward['rewardGold']);
+      _victoryBaseResourcesAwarded = baseResources;
       _victoryItemsAwarded = items;
       return;
     }
@@ -3402,6 +3414,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final rewardGold = widget.isPartyBattle
         ? _victoryRewardGold
         : widget.encounter.totalRewardGold;
+    final baseResourcesAwarded = widget.isPartyBattle
+        ? List<Map<String, dynamic>>.from(_victoryBaseResourcesAwarded)
+        : const <Map<String, dynamic>>[];
     final itemsAwarded = widget.isPartyBattle
         ? List<Map<String, dynamic>>.from(_victoryItemsAwarded)
         : _fallbackVictoryItemsAwarded();
@@ -3435,6 +3450,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             ? rewardExperience
             : 0,
         rewardGold: outcome == MonsterBattleOutcome.victory ? rewardGold : 0,
+        baseResourcesAwarded: outcome == MonsterBattleOutcome.victory
+            ? baseResourcesAwarded
+            : const <Map<String, dynamic>>[],
         itemsAwarded: outcome == MonsterBattleOutcome.victory
             ? itemsAwarded
             : const <Map<String, dynamic>>[],

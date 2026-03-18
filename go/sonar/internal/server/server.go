@@ -2403,12 +2403,10 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		user.ID,
-		baseResourceGrantsForQuest(
+		resolveBaseMaterialRewards(
 			quest.RewardMode,
-			quest.RandomRewardSize,
-			goldAwarded,
-			len(itemsAwarded),
-			len(spellsAwarded),
+			quest.MaterialRewards,
+			fmt.Sprintf("quest:%s:user:%s:materials", quest.ID, user.ID),
 		),
 		"quest_turn_in",
 		&questID,
@@ -3495,6 +3493,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		RandomRewardSize      string     `json:"randomRewardSize"`
 		RewardExperience      *int       `json:"rewardExperience"`
 		Gold                  *int       `json:"gold"`
+		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
@@ -3521,6 +3520,11 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
 		return
 	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	acceptanceDialogue := models.StringArray(requestBody.AcceptanceDialogue)
 	if acceptanceDialogue == nil {
@@ -3543,6 +3547,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		RandomRewardSize:      models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
 		RewardExperience:      0,
 		Gold:                  0,
+		MaterialRewards:       materialRewards,
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
@@ -3556,7 +3561,8 @@ func (s *server) createQuest(ctx *gin.Context) {
 			quest.Gold > 0 ||
 				quest.RewardExperience > 0 ||
 				(requestBody.ItemRewards != nil && len(*requestBody.ItemRewards) > 0) ||
-				(requestBody.SpellRewards != nil && len(*requestBody.SpellRewards) > 0)
+				(requestBody.SpellRewards != nil && len(*requestBody.SpellRewards) > 0) ||
+				len(materialRewards) > 0
 		if hasExplicitRewardConfig {
 			rewardMode = models.RewardModeExplicit
 		}
@@ -3657,6 +3663,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		RandomRewardSize      string     `json:"randomRewardSize"`
 		RewardExperience      *int       `json:"rewardExperience"`
 		Gold                  *int       `json:"gold"`
+		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
@@ -3676,6 +3683,11 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -3711,6 +3723,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
 	}
+	quest.MaterialRewards = materialRewards
 	if strings.TrimSpace(requestBody.RewardMode) == "" {
 		if strings.TrimSpace(string(quest.RewardMode)) == "" {
 			quest.RewardMode = models.RewardModeRandom
@@ -10543,12 +10556,10 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx,
 		participantIDs,
 		user.ID,
-		baseResourceGrantsForChallenge(
+		resolveBaseMaterialRewards(
 			challenge.RewardMode,
-			challenge.RandomRewardSize,
-			rewardExperience,
-			rewardGold,
-			len(rewardItems),
+			challenge.MaterialRewards,
+			fmt.Sprintf("challenge:%s:user:%s:materials", challenge.ID, user.ID),
 		),
 		"challenge",
 		&challenge.ID,
@@ -13838,6 +13849,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		RandomRewardSize string  `json:"randomRewardSize"`
 		RewardExperience int     `json:"rewardExperience"`
 		Gold             *int    `json:"gold"`
+		MaterialRewards  []baseMaterialRewardPayload `json:"materialRewards"`
 		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
@@ -13852,6 +13864,11 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	zoneID, err := uuid.Parse(requestBody.ZoneID)
 	if err != nil {
@@ -13860,7 +13877,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 	}
 	rewardMode := models.NormalizeRewardMode(requestBody.RewardMode)
 	if strings.TrimSpace(requestBody.RewardMode) == "" {
-		if requestBody.RewardExperience > 0 || (requestBody.Gold != nil && *requestBody.Gold > 0) || len(requestBody.Items) > 0 {
+		if requestBody.RewardExperience > 0 || (requestBody.Gold != nil && *requestBody.Gold > 0) || len(requestBody.Items) > 0 || len(materialRewards) > 0 {
 			rewardMode = models.RewardModeExplicit
 		} else {
 			rewardMode = models.RewardModeRandom
@@ -13886,6 +13903,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		RandomRewardSize: randomRewardSize,
 		RewardExperience: rewardExperience,
 		Gold:             rewardGold,
+		MaterialRewards:  materialRewards,
 		Invalidated:      false,
 	}
 
@@ -13942,6 +13960,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		RandomRewardSize string   `json:"randomRewardSize"`
 		RewardExperience *int     `json:"rewardExperience"`
 		Gold             *int     `json:"gold"`
+		MaterialRewards  []baseMaterialRewardPayload `json:"materialRewards"`
 		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
@@ -13956,6 +13975,11 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	updates := &models.TreasureChest{
 		ID:               treasureChestID,
@@ -13964,6 +13988,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		RewardMode:       existingChest.RewardMode,
 		RandomRewardSize: existingChest.RandomRewardSize,
 		RewardExperience: existingChest.RewardExperience,
+		MaterialRewards:  existingChest.MaterialRewards,
 	}
 
 	if requestBody.Latitude != nil && requestBody.Longitude != nil {
@@ -13993,11 +14018,12 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	} else {
 		updates.Gold = existingChest.Gold
 	}
+	updates.MaterialRewards = materialRewards
 	if strings.TrimSpace(requestBody.RewardMode) != "" {
 		updates.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
 	}
 	if strings.TrimSpace(string(updates.RewardMode)) == "" {
-		if (updates.Gold != nil && *updates.Gold > 0) || updates.RewardExperience > 0 || len(existingChest.Items) > 0 || len(requestBody.Items) > 0 {
+		if (updates.Gold != nil && *updates.Gold > 0) || updates.RewardExperience > 0 || len(existingChest.Items) > 0 || len(requestBody.Items) > 0 || len(materialRewards) > 0 {
 			updates.RewardMode = models.RewardModeExplicit
 		} else {
 			updates.RewardMode = models.RewardModeRandom
@@ -14323,13 +14349,10 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		user.ID,
-		baseResourceGrantsForTreasureChest(
+		resolveBaseMaterialRewards(
 			treasureChest.RewardMode,
-			treasureChest.RandomRewardSize,
-			rewardExperience,
-			rewardGold,
-			len(rewardItems),
-			treasureChest.UnlockTier,
+			treasureChest.MaterialRewards,
+			fmt.Sprintf("treasure_chest:%s:user:%s:materials", treasureChest.ID, user.ID),
 		),
 		"treasure_chest",
 		&treasureChest.ID,
@@ -14410,6 +14433,7 @@ type scenarioOptionPayload struct {
 	Difficulty                *int                           `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience"`
 	RewardGold                int                            `json:"rewardGold"`
+	MaterialRewards           []baseMaterialRewardPayload    `json:"materialRewards"`
 	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
 	FailureHealthDrainValue   int                            `json:"failureHealthDrainValue"`
 	FailureManaDrainType      string                         `json:"failureManaDrainType"`
@@ -14456,6 +14480,7 @@ type scenarioUpsertRequest struct {
 	Difficulty                *int                           `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience"`
 	RewardGold                int                            `json:"rewardGold"`
+	MaterialRewards           []baseMaterialRewardPayload    `json:"materialRewards"`
 	OpenEnded                 bool                           `json:"openEnded"`
 	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel"`
 	RecurrenceFrequency       *string                        `json:"recurrenceFrequency"`
@@ -14650,6 +14675,9 @@ func normalizeScenarioSuccessRewardMode(raw string, openEnded bool) (models.Scen
 func scenarioOptionsHaveExplicitRewards(options []scenarioOptionPayload) bool {
 	for _, option := range options {
 		if option.RewardExperience > 0 || option.RewardGold > 0 {
+			return true
+		}
+		if len(option.MaterialRewards) > 0 {
 			return true
 		}
 		if len(option.ItemRewards) > 0 || len(option.ItemChoiceRewards) > 0 || len(option.SpellRewards) > 0 {
@@ -15317,11 +15345,16 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	if body.RewardExperience < 0 || body.RewardGold < 0 {
 		return nil, nil, nil, nil, nil, fmt.Errorf("reward values must be zero or greater")
 	}
+	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
 		hasExplicitRewardConfig :=
 			body.RewardExperience > 0 ||
 				body.RewardGold > 0 ||
+				len(materialRewards) > 0 ||
 				len(body.ItemRewards) > 0 ||
 				len(body.ItemChoiceRewards) > 0 ||
 				len(body.SpellRewards) > 0 ||
@@ -15343,7 +15376,7 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	}
 	if rewardMode == models.RewardModeExplicit &&
 		!body.OpenEnded &&
-		(body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 || len(body.ItemChoiceRewards) > 0 || len(body.SpellRewards) > 0) {
+		(body.RewardExperience > 0 || body.RewardGold > 0 || len(materialRewards) > 0 || len(body.ItemRewards) > 0 || len(body.ItemChoiceRewards) > 0 || len(body.SpellRewards) > 0) {
 		return nil, nil, nil, nil, nil, fmt.Errorf("scenario-level rewards are only for open-ended scenarios")
 	}
 	failurePenaltyMode, err := normalizeScenarioFailurePenaltyMode(body.FailurePenaltyMode, body.OpenEnded)
@@ -15425,6 +15458,7 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 		Difficulty:                difficulty,
 		RewardExperience:          body.RewardExperience,
 		RewardGold:                body.RewardGold,
+		MaterialRewards:           materialRewards,
 		OpenEnded:                 body.OpenEnded,
 		FailurePenaltyMode:        failurePenaltyMode,
 		FailureHealthDrainType:    failureHealthDrainType,
@@ -15460,6 +15494,13 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 		}
 		if optionPayload.RewardExperience < 0 || optionPayload.RewardGold < 0 {
 			return nil, nil, nil, nil, nil, fmt.Errorf("option reward values must be zero or greater")
+		}
+		optionMaterialRewards, err := parseBaseMaterialRewards(
+			optionPayload.MaterialRewards,
+			fmt.Sprintf("options[%d].materialRewards", len(options)),
+		)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
 		}
 		optionFailureHealthDrainType, err := normalizeScenarioFailureDrainType(optionPayload.FailureHealthDrainType)
 		if err != nil {
@@ -15575,6 +15616,7 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 			Difficulty:                optionDifficulty,
 			RewardExperience:          optionPayload.RewardExperience,
 			RewardGold:                optionPayload.RewardGold,
+			MaterialRewards:           optionMaterialRewards,
 			FailureHealthDrainType:    optionFailureHealthDrainType,
 			FailureHealthDrainValue:   optionFailureHealthDrainValue,
 			FailureManaDrainType:      optionFailureManaDrainType,
@@ -16557,12 +16599,17 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx,
 			participantIDs,
 			user.ID,
-			baseResourceGrantsForScenario(
+			resolveBaseMaterialRewards(
 				scenarioRewardMode,
-				scenarioRandomRewardSize,
-				rewardExperience,
-				rewardGold,
-				len(rewardItems)+len(rewardSpells),
+				func() models.BaseMaterialRewards {
+					if !scenario.OpenEnded &&
+						scenario.SuccessRewardMode == models.ScenarioSuccessRewardModeIndividual &&
+						selectedOption != nil {
+						return selectedOption.MaterialRewards
+					}
+					return scenario.MaterialRewards
+				}(),
+				fmt.Sprintf("scenario:%s:user:%s:materials", scenario.ID, user.ID),
 			),
 			"scenario",
 			&scenario.ID,

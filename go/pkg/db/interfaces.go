@@ -764,6 +764,7 @@ type MonsterBattleParticipantHandle interface {
 		rewardExperience int,
 		rewardGold int,
 		itemsAwarded []models.ItemAwarded,
+		baseResourcesAwarded []models.BaseResourceDelta,
 	) error
 	DeleteByBattleAndUser(ctx context.Context, battleID uuid.UUID, userID uuid.UUID) error
 	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error

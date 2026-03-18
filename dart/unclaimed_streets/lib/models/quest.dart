@@ -47,6 +47,23 @@ class QuestSpellReward {
   }
 }
 
+class QuestMaterialReward {
+  final String resourceKey;
+  final int amount;
+
+  const QuestMaterialReward({
+    required this.resourceKey,
+    required this.amount,
+  });
+
+  factory QuestMaterialReward.fromJson(Map<String, dynamic> json) {
+    return QuestMaterialReward(
+      resourceKey: json['resourceKey']?.toString() ?? '',
+      amount: (json['amount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class Quest {
   static const rewardModeExplicit = 'explicit';
   static const rewardModeRandom = 'random';
@@ -68,6 +85,7 @@ class Quest {
   final String? recurrenceFrequency;
   final DateTime? nextRecurrenceAt;
   final int gold;
+  final List<QuestMaterialReward> materialRewards;
   final List<QuestItemReward> itemRewards;
   final List<QuestSpellReward> spellRewards;
   final List<QuestNode> nodes;
@@ -92,6 +110,7 @@ class Quest {
     this.recurrenceFrequency,
     this.nextRecurrenceAt,
     this.gold = 0,
+    this.materialRewards = const [],
     this.itemRewards = const [],
     this.spellRewards = const [],
     this.nodes = const [],
@@ -125,6 +144,22 @@ class Quest {
           ? DateTime.tryParse(json['nextRecurrenceAt'] as String)
           : null,
       gold: (json['gold'] as num?)?.toInt() ?? 0,
+      materialRewards:
+          (json['materialRewards'] as List<dynamic>?)
+              ?.map((e) {
+                if (e is Map<String, dynamic>) {
+                  return QuestMaterialReward.fromJson(e);
+                }
+                if (e is Map) {
+                  return QuestMaterialReward.fromJson(
+                    Map<String, dynamic>.from(e),
+                  );
+                }
+                return null;
+              })
+              .whereType<QuestMaterialReward>()
+              .toList() ??
+          const [],
       itemRewards:
           (json['itemRewards'] as List<dynamic>?)
               ?.map((e) => QuestItemReward.fromJson(e as Map<String, dynamic>))

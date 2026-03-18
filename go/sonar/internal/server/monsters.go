@@ -270,6 +270,7 @@ type monsterUpsertRequest struct {
 	RandomRewardSize            string                     `json:"randomRewardSize"`
 	RewardExperience            int                        `json:"rewardExperience"`
 	RewardGold                  int                        `json:"rewardGold"`
+	MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
 	ItemRewards                 []monsterRewardItemPayload `json:"itemRewards"`
 }
 
@@ -283,6 +284,7 @@ type monsterEncounterUpsertRequest struct {
 	RandomRewardSize    string                     `json:"randomRewardSize"`
 	RewardExperience    int                        `json:"rewardExperience"`
 	RewardGold          int                        `json:"rewardGold"`
+	MaterialRewards     []baseMaterialRewardPayload `json:"materialRewards"`
 	ItemRewards         []monsterRewardItemPayload `json:"itemRewards"`
 	ScaleWithUserLevel  bool                       `json:"scaleWithUserLevel"`
 	RecurrenceFrequency *string                    `json:"recurrenceFrequency"`
@@ -367,6 +369,7 @@ type monsterResponse struct {
 	RandomRewardSize            models.RandomRewardSize    `json:"randomRewardSize"`
 	RewardExperience            int                        `json:"rewardExperience"`
 	RewardGold                  int                        `json:"rewardGold"`
+	MaterialRewards             models.BaseMaterialRewards `json:"materialRewards"`
 	ItemRewards                 []models.MonsterItemReward `json:"itemRewards"`
 	ImageGenerationStatus       string                     `json:"imageGenerationStatus"`
 	ImageGenerationError        *string                    `json:"imageGenerationError,omitempty"`
@@ -406,6 +409,7 @@ type monsterEncounterResponse struct {
 	RandomRewardSize            models.RandomRewardSize          `json:"randomRewardSize"`
 	RewardExperience            int                              `json:"rewardExperience"`
 	RewardGold                  int                              `json:"rewardGold"`
+	MaterialRewards             models.BaseMaterialRewards       `json:"materialRewards"`
 	ItemRewards                 []monsterRewardItemPayload       `json:"itemRewards"`
 	ScaleWithUserLevel          bool                             `json:"scaleWithUserLevel"`
 	RecurringMonsterEncounterID *uuid.UUID                       `json:"recurringMonsterEncounterId,omitempty"`
@@ -630,6 +634,7 @@ func (s *server) monsterEncounterResponseFrom(
 		RandomRewardSize:            rewardSize,
 		RewardExperience:            rewardExperience,
 		RewardGold:                  rewardGold,
+		MaterialRewards:             encounter.MaterialRewards,
 		ItemRewards:                 itemRewards,
 		ScaleWithUserLevel:          encounter.ScaleWithUserLevel,
 		RecurringMonsterEncounterID: encounter.RecurringMonsterEncounterID,
@@ -788,6 +793,7 @@ func monsterResponseFrom(
 		RandomRewardSize:      monster.RandomRewardSize,
 		RewardExperience:      monster.RewardExperience,
 		RewardGold:            monster.RewardGold,
+		MaterialRewards:       monster.MaterialRewards,
 		ItemRewards:           monster.ItemRewards,
 		ImageGenerationStatus: monster.ImageGenerationStatus,
 		ImageGenerationError:  monster.ImageGenerationError,
@@ -1144,9 +1150,13 @@ func (s *server) parseMonsterUpsertRequest(
 	if body.RewardGold < 0 {
 		return nil, nil, fmt.Errorf("rewardGold must be zero or greater")
 	}
+	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
+	if err != nil {
+		return nil, nil, err
+	}
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
-		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 {
+		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 || len(materialRewards) > 0 {
 			rewardMode = models.RewardModeExplicit
 		}
 	}
@@ -1256,6 +1266,7 @@ func (s *server) parseMonsterUpsertRequest(
 		RandomRewardSize:            randomRewardSize,
 		RewardExperience:            body.RewardExperience,
 		RewardGold:                  body.RewardGold,
+		MaterialRewards:             materialRewards,
 		ImageGenerationStatus:       models.MonsterImageGenerationStatusNone,
 	}
 	return monster, itemRewards, nil
@@ -1285,10 +1296,14 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 	if body.RewardGold < 0 {
 		return nil, nil, fmt.Errorf("rewardGold must be zero or greater")
 	}
+	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
+	if err != nil {
+		return nil, nil, err
+	}
 
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
-		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 {
+		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 || len(materialRewards) > 0 {
 			rewardMode = models.RewardModeExplicit
 		}
 	}
@@ -1401,6 +1416,7 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		RandomRewardSize:   randomRewardSize,
 		RewardExperience:   body.RewardExperience,
 		RewardGold:         body.RewardGold,
+		MaterialRewards:    materialRewards,
 		ItemRewards:        itemRewards,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
 		ZoneID:             zoneID,

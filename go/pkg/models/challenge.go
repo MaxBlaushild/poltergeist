@@ -40,6 +40,7 @@ type Challenge struct {
 	RandomRewardSize     RandomRewardSize            `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	RewardExperience     int                         `json:"rewardExperience" gorm:"column:reward_experience"`
 	Reward               int                         `json:"reward"`
+	MaterialRewards      BaseMaterialRewards         `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	InventoryItemID      *int                        `json:"inventoryItemId" gorm:"column:inventory_item_id"`
 	ItemChoiceRewards    []ChallengeItemChoiceReward `json:"itemChoiceRewards" gorm:"foreignKey:ChallengeID"`
 	SubmissionType       QuestNodeSubmissionType     `json:"submissionType" gorm:"type:text;default:photo"`

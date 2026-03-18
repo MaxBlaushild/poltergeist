@@ -389,6 +389,27 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     }
   }
 
+  String _materialRewardLabel(String resourceKey) {
+    switch (resourceKey.trim()) {
+      case 'timber':
+        return 'Timber';
+      case 'stone':
+        return 'Stone';
+      case 'iron':
+        return 'Iron';
+      case 'herbs':
+        return 'Herbs';
+      case 'monster_parts':
+        return 'Monster Parts';
+      case 'arcane_dust':
+        return 'Arcane Dust';
+      case 'relic_shards':
+        return 'Relic Shards';
+      default:
+        return resourceKey.trim().isEmpty ? 'Material' : resourceKey.trim();
+    }
+  }
+
   Widget _buildRandomRewardNotice(BuildContext context, Quest quest) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -550,6 +571,19 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
+              if (quest.materialRewards.isNotEmpty)
+                ...quest.materialRewards.map((reward) {
+                  if (reward.amount <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '+${reward.amount} ${_materialRewardLabel(reward.resourceKey)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  );
+                }),
               if (quest.itemRewards.isNotEmpty)
                 ...quest.itemRewards.map((reward) {
                   final itemName = reward.inventoryItem?.name ?? 'Item';
@@ -577,11 +611,13 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 }),
               if (quest.hasRandomRewards &&
                   quest.gold <= 0 &&
+                  quest.materialRewards.isEmpty &&
                   quest.itemRewards.isEmpty &&
                   quest.spellRewards.isEmpty)
                 _buildRandomRewardNotice(context, quest),
               if (quest.gold <= 0 &&
                   !quest.hasRandomRewards &&
+                  quest.materialRewards.isEmpty &&
                   quest.itemRewards.isEmpty &&
                   quest.spellRewards.isEmpty)
                 Text(

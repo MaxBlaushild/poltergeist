@@ -3,6 +3,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { PointOfInterest, Spell } from '@poltergeist/types';
+import {
+  MaterialRewardsEditor,
+  MaterialRewardForm,
+} from './MaterialRewardsEditor.tsx';
 
 type ScenarioRewardItem = {
   inventoryItemId: number;
@@ -45,6 +49,7 @@ type ScenarioOption = {
   difficulty?: number | null;
   rewardExperience: number;
   rewardGold: number;
+  materialRewards: MaterialRewardForm[];
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: number;
   failureManaDrainType: ScenarioFailureDrainType;
@@ -76,6 +81,7 @@ type ScenarioRecord = {
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience: number;
   rewardGold: number;
+  materialRewards: MaterialRewardForm[];
   openEnded: boolean;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
@@ -111,6 +117,7 @@ type ScenarioFormState = {
   randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   rewardGold: string;
+  materialRewards: MaterialRewardForm[];
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: string;
@@ -217,6 +224,7 @@ const emptyOption = (): ScenarioOption => ({
   difficulty: null,
   rewardExperience: 0,
   rewardGold: 0,
+  materialRewards: [],
   failureHealthDrainType: 'none',
   failureHealthDrainValue: 0,
   failureManaDrainType: 'none',
@@ -247,6 +255,7 @@ const emptyFormState = (): ScenarioFormState => ({
   randomRewardSize: 'small',
   rewardExperience: '0',
   rewardGold: '0',
+  materialRewards: [],
   failurePenaltyMode: 'shared',
   failureHealthDrainType: 'none',
   failureHealthDrainValue: '0',
@@ -1043,6 +1052,10 @@ export const Scenarios = () => {
           : 'small',
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
+      materialRewards: (record.materialRewards ?? []).map((reward) => ({
+        resourceKey: reward.resourceKey,
+        amount: reward.amount ?? 1,
+      })),
       failurePenaltyMode: normalizeFailurePenaltyMode(
         record.failurePenaltyMode
       ),
@@ -1073,6 +1086,10 @@ export const Scenarios = () => {
         record.options.length > 0
           ? record.options.map((option) => ({
               ...option,
+              materialRewards: (option.materialRewards ?? []).map((reward) => ({
+                resourceKey: reward.resourceKey,
+                amount: reward.amount ?? 1,
+              })),
               successText:
                 option.successText?.trim() ||
                 'Your approach works, and momentum turns in your favor.',
@@ -1179,6 +1196,10 @@ export const Scenarios = () => {
         form.openEnded && form.rewardMode === 'explicit'
           ? parseIntValue(form.rewardGold)
           : 0,
+      materialRewards:
+        form.openEnded && form.rewardMode === 'explicit'
+          ? form.materialRewards
+          : [],
       failurePenaltyMode: scenarioPenaltyMode,
       successRewardMode,
       failureHealthDrainType: form.failureHealthDrainType,
@@ -1214,6 +1235,7 @@ export const Scenarios = () => {
             difficulty: option.difficulty,
             rewardExperience: option.rewardExperience,
             rewardGold: option.rewardGold,
+            materialRewards: option.materialRewards,
             failureHealthDrainType: useOptionPenalties
               ? option.failureHealthDrainType
               : 'none',
@@ -3295,6 +3317,15 @@ export const Scenarios = () => {
                     />
                   </label>
                 </div>
+                <div className="mb-4">
+                  <MaterialRewardsEditor
+                    value={form.materialRewards}
+                    onChange={(materialRewards) =>
+                      setForm((prev) => ({ ...prev, materialRewards }))
+                    }
+                    disabled={form.rewardMode !== 'explicit'}
+                  />
+                </div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-medium">Item Rewards</div>
                   <button
@@ -3712,6 +3743,16 @@ export const Scenarios = () => {
                           min={0}
                         />
                       </label>
+                    </div>
+
+                    <div className="mt-3">
+                      <MaterialRewardsEditor
+                        value={option.materialRewards}
+                        onChange={(materialRewards) =>
+                          updateOption(optionIndex, { materialRewards })
+                        }
+                        title="Option Material Rewards"
+                      />
                     </div>
 
                     <div className="mt-3">

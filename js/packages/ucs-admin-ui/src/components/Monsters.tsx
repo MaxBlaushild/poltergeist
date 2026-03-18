@@ -3,6 +3,11 @@ import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Spell } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import {
+  MaterialRewardsEditor,
+  MaterialRewardForm,
+  summarizeMaterialRewards,
+} from './MaterialRewardsEditor.tsx';
 
 type DamageAffinity =
   | 'physical'
@@ -90,6 +95,7 @@ type MonsterRecord = {
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience: number;
   rewardGold: number;
+  materialRewards?: MaterialRewardForm[];
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
   itemRewards: MonsterRewardItem[];
@@ -113,6 +119,7 @@ type MonsterEncounterRecord = {
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience: number;
   rewardGold: number;
+  materialRewards?: MaterialRewardForm[];
   itemRewards: MonsterRewardItem[];
   scaleWithUserLevel: boolean;
   recurrenceFrequency?: string | null;
@@ -228,6 +235,7 @@ type MonsterFormState = {
   randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   rewardGold: string;
+  materialRewards: MaterialRewardForm[];
   itemRewards: MonsterFormItem[];
 };
 
@@ -241,6 +249,7 @@ type MonsterEncounterFormState = {
   randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   rewardGold: string;
+  materialRewards: MaterialRewardForm[];
   itemRewards: MonsterFormItem[];
   scaleWithUserLevel: boolean;
   recurrenceFrequency: string;
@@ -399,6 +408,7 @@ const emptyMonsterForm = (): MonsterFormState => ({
   randomRewardSize: 'small',
   rewardExperience: '0',
   rewardGold: '0',
+  materialRewards: [],
   itemRewards: [],
 });
 
@@ -433,6 +443,10 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
       : 'small',
   rewardExperience: String(monster.rewardExperience ?? 0),
   rewardGold: String(monster.rewardGold ?? 0),
+  materialRewards: (monster.materialRewards ?? []).map((reward) => ({
+    resourceKey: reward.resourceKey,
+    amount: reward.amount ?? 1,
+  })),
   itemRewards: (monster.itemRewards ?? []).map((reward) => ({
     inventoryItemId: String(reward.inventoryItemId),
     quantity: String(reward.quantity),
@@ -461,6 +475,7 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
   rewardGold:
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
+  materialRewards: form.rewardMode === 'explicit' ? form.materialRewards : [],
   itemRewards:
     form.rewardMode === 'explicit'
       ? form.itemRewards
@@ -482,6 +497,7 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   randomRewardSize: 'small',
   rewardExperience: '0',
   rewardGold: '0',
+  materialRewards: [],
   itemRewards: [],
   scaleWithUserLevel: false,
   recurrenceFrequency: '',
@@ -507,6 +523,10 @@ const monsterEncounterFormFromRecord = (
       : 'small',
   rewardExperience: String(encounter.rewardExperience ?? 0),
   rewardGold: String(encounter.rewardGold ?? 0),
+  materialRewards: (encounter.materialRewards ?? []).map((reward) => ({
+    resourceKey: reward.resourceKey,
+    amount: reward.amount ?? 1,
+  })),
   itemRewards: (encounter.itemRewards ?? []).map((reward) => ({
     inventoryItemId: String(reward.inventoryItemId),
     quantity: String(reward.quantity),
@@ -535,6 +555,7 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
   rewardGold:
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
+  materialRewards: form.rewardMode === 'explicit' ? form.materialRewards : [],
   itemRewards:
     form.rewardMode === 'explicit'
       ? form.itemRewards
@@ -2553,6 +2574,12 @@ export const Monsters = () => {
                                     monster.itemRewards?.length ?? 0
                                   }`}
                             </p>
+                            {monster.materialRewards &&
+                            monster.materialRewards.length > 0 ? (
+                              <p className="text-xs text-gray-500">
+                                {summarizeMaterialRewards(monster.materialRewards)}
+                              </p>
+                            ) : null}
                             <p className="text-xs text-gray-500 mt-1">
                               Image generation:{' '}
                               {formatGenerationStatus(
@@ -2718,6 +2745,14 @@ export const Monsters = () => {
                                     encounter.itemRewards?.length ?? 0
                                   }`}
                             </p>
+                            {encounter.materialRewards &&
+                            encounter.materialRewards.length > 0 ? (
+                              <p className="text-xs text-gray-500">
+                                {summarizeMaterialRewards(
+                                  encounter.materialRewards
+                                )}
+                              </p>
+                            ) : null}
                             {encounter.recurrenceFrequency ? (
                               <p className="text-sm text-indigo-700">
                                 Recurs {encounter.recurrenceFrequency}
@@ -3353,6 +3388,14 @@ export const Monsters = () => {
                 </label>
               </div>
 
+              <MaterialRewardsEditor
+                value={monsterForm.materialRewards}
+                onChange={(materialRewards) =>
+                  setMonsterForm((prev) => ({ ...prev, materialRewards }))
+                }
+                disabled={monsterForm.rewardMode !== 'explicit'}
+              />
+
               <div className="border border-gray-200 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">Item Rewards</h3>
@@ -3434,7 +3477,7 @@ export const Monsters = () => {
 
               {monsterForm.rewardMode === 'random' ? (
                 <p className="text-xs text-gray-500">
-                  Random rewards ignore explicit XP, gold, and item rewards.
+                  Random rewards ignore explicit XP, gold, material, and item rewards.
                 </p>
               ) : null}
 
@@ -3653,6 +3696,15 @@ export const Monsters = () => {
                   />
                 </label>
               </div>
+
+              <MaterialRewardsEditor
+                value={encounterForm.materialRewards}
+                onChange={(materialRewards) =>
+                  setEncounterForm((prev) => ({ ...prev, materialRewards }))
+                }
+                disabled={encounterForm.rewardMode !== 'explicit'}
+                title="Encounter Material Rewards"
+              />
 
               <div className="border border-gray-200 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">

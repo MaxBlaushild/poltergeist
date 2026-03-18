@@ -3,6 +3,11 @@ import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { PointOfInterest } from '@poltergeist/types';
+import {
+  MaterialRewardsEditor,
+  MaterialRewardForm,
+  summarizeMaterialRewards,
+} from './MaterialRewardsEditor.tsx';
 
 type ChallengeRecord = {
   id: string;
@@ -19,6 +24,7 @@ type ChallengeRecord = {
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience?: number;
   reward: number;
+  materialRewards?: MaterialRewardForm[];
   inventoryItemId?: number | null;
   submissionType: 'photo' | 'text' | 'video';
   difficulty: number;
@@ -44,6 +50,7 @@ type ChallengeFormState = {
   randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   reward: string;
+  materialRewards: MaterialRewardForm[];
   inventoryItemId: string;
   submissionType: 'photo' | 'text' | 'video';
   difficulty: string;
@@ -282,6 +289,7 @@ const emptyForm = (): ChallengeFormState => ({
   randomRewardSize: 'small',
   rewardExperience: '0',
   reward: '0',
+  materialRewards: [],
   inventoryItemId: '',
   submissionType: 'photo',
   difficulty: '0',
@@ -333,6 +341,10 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
       : 'small',
   rewardExperience: String(record.rewardExperience ?? 0),
   reward: String(record.reward ?? 0),
+  materialRewards: (record.materialRewards ?? []).map((reward) => ({
+    resourceKey: reward.resourceKey,
+    amount: reward.amount ?? 1,
+  })),
   inventoryItemId:
     record.inventoryItemId !== undefined && record.inventoryItemId !== null
       ? String(record.inventoryItemId)
@@ -1035,6 +1047,8 @@ export const Challenges = () => {
             ? parseIntSafe(form.rewardExperience, 0)
             : 0,
         reward: rewardMode === 'explicit' ? parseIntSafe(form.reward, 0) : 0,
+        materialRewards:
+          rewardMode === 'explicit' ? form.materialRewards : [],
         inventoryItemId:
           rewardMode === 'explicit'
             ? parseOptionalInt(form.inventoryItemId)
@@ -1530,6 +1544,12 @@ export const Challenges = () => {
                     ) : (
                       <div>
                         XP {record.rewardExperience ?? 0} · Gold {record.reward}
+                        {record.materialRewards &&
+                        record.materialRewards.length > 0 ? (
+                          <div className="text-xs text-gray-600">
+                            {summarizeMaterialRewards(record.materialRewards)}
+                          </div>
+                        ) : null}
                         {record.inventoryItemId ? (
                           <div className="text-xs text-gray-600">
                             Item #{record.inventoryItemId}
@@ -1839,9 +1859,19 @@ export const Challenges = () => {
 
               {form.rewardMode === 'random' ? (
                 <div className="text-xs text-gray-500 md:col-span-2">
-                  Random rewards ignore explicit XP, gold, and item fields.
+                  Random rewards ignore explicit XP, gold, material, and item fields.
                 </div>
               ) : null}
+
+              <div className="md:col-span-2">
+                <MaterialRewardsEditor
+                  value={form.materialRewards}
+                  onChange={(materialRewards) =>
+                    setForm((prev) => ({ ...prev, materialRewards }))
+                  }
+                  disabled={form.rewardMode !== 'explicit'}
+                />
+              </div>
 
               <label className="text-sm">
                 Proficiency (Optional)

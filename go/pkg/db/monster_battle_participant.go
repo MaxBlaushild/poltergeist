@@ -77,10 +77,15 @@ func (h *monsterBattleParticipantHandler) UpdateRewards(
 	rewardExperience int,
 	rewardGold int,
 	itemsAwarded []models.ItemAwarded,
+	baseResourcesAwarded []models.BaseResourceDelta,
 ) error {
 	items := models.MonsterBattleItemAwards{}
 	if len(itemsAwarded) > 0 {
 		items = append(items, itemsAwarded...)
+	}
+	baseResources := models.BaseMaterialRewards{}
+	if len(baseResourcesAwarded) > 0 {
+		baseResources = append(baseResources, baseResourcesAwarded...)
 	}
 	return h.db.WithContext(ctx).
 		Model(&models.MonsterBattleParticipant{}).
@@ -89,6 +94,7 @@ func (h *monsterBattleParticipantHandler) UpdateRewards(
 			"reward_experience": rewardExperience,
 			"reward_gold":       rewardGold,
 			"items_awarded":     items,
+			"base_resources_awarded": baseResources,
 			"updated_at":        time.Now(),
 		}).Error
 }

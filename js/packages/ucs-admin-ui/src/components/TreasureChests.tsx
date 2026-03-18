@@ -3,6 +3,12 @@ import { TreasureChest } from '@poltergeist/types';
 import React, { useState, useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import {
+  MaterialRewardsEditor,
+  emptyMaterialReward,
+  normalizeMaterialRewards,
+  summarizeMaterialRewards,
+} from './MaterialRewardsEditor.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -73,6 +79,7 @@ export const TreasureChests = () => {
     randomRewardSize: 'small' as 'small' | 'medium' | 'large',
     rewardExperience: '' as string | number,
     gold: '' as string | number,
+    materialRewards: [] as ReturnType<typeof emptyMaterialReward>[],
     items: [] as TreasureChestItemForm[],
   });
 
@@ -91,6 +98,7 @@ export const TreasureChests = () => {
       randomRewardSize: 'small',
       rewardExperience: '',
       gold: '',
+      materialRewards: [],
       items: [],
     });
     setZoneQuery('');
@@ -154,6 +162,7 @@ export const TreasureChests = () => {
       randomRewardSize: 'small',
       rewardExperience: '',
       gold: '',
+      materialRewards: [],
       items: [],
     });
     setZoneQuery('');
@@ -219,6 +228,10 @@ export const TreasureChests = () => {
               ? undefined
               : parseInt(formData.gold.toString(), 10)
             : undefined,
+        materialRewards:
+          formData.rewardMode === 'explicit'
+            ? normalizeMaterialRewards(formData.materialRewards)
+            : [],
         items: formData.rewardMode === 'explicit' ? formData.items : [],
       };
 
@@ -260,8 +273,12 @@ export const TreasureChests = () => {
       if (formData.rewardMode === 'explicit') {
         if (formData.gold !== '')
           submitData.gold = parseInt(formData.gold.toString(), 10);
+        submitData.materialRewards = normalizeMaterialRewards(
+          formData.materialRewards
+        );
         submitData.items = formData.items;
       } else {
+        submitData.materialRewards = [];
         submitData.items = [];
       }
 
@@ -416,6 +433,10 @@ export const TreasureChests = () => {
         chest.gold !== null && chest.gold !== undefined
           ? chest.gold.toString()
           : '',
+      materialRewards: (chest.materialRewards ?? []).map((reward) => ({
+        resourceKey: reward.resourceKey,
+        amount: reward.amount ?? 1,
+      })),
       items: chest.items.map((item) => ({
         inventoryItemId: item.inventoryItemId,
         quantity: item.quantity,
@@ -833,6 +854,14 @@ export const TreasureChests = () => {
                 )}
 
               {chest.rewardMode === 'explicit' &&
+                chest.materialRewards &&
+                chest.materialRewards.length > 0 && (
+                  <p style={{ margin: '5px 0', color: '#666' }}>
+                    Materials: {summarizeMaterialRewards(chest.materialRewards)}
+                  </p>
+                )}
+
+              {chest.rewardMode === 'explicit' &&
                 chest.items &&
                 chest.items.length > 0 && (
                   <div style={{ marginTop: '10px' }}>
@@ -1181,6 +1210,20 @@ export const TreasureChests = () => {
                 />
               )}
             </div>
+
+            {formData.rewardMode === 'explicit' && (
+              <div style={{ marginBottom: '15px' }}>
+                <MaterialRewardsEditor
+                  value={formData.materialRewards}
+                  onChange={(materialRewards) =>
+                    setFormData({
+                      ...formData,
+                      materialRewards,
+                    })
+                  }
+                />
+              </div>
+            )}
 
             {formData.rewardMode === 'explicit' && (
               <div style={{ marginBottom: '15px' }}>

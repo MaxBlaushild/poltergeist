@@ -42,6 +42,7 @@ type challengeUpsertRequest struct {
 	RandomRewardSize    string                      `json:"randomRewardSize"`
 	RewardExperience    int                         `json:"rewardExperience"`
 	Reward              int                         `json:"reward"`
+	MaterialRewards     []baseMaterialRewardPayload `json:"materialRewards"`
 	InventoryItemID     *int                        `json:"inventoryItemId"`
 	ItemChoiceRewards   []scenarioRewardItemPayload `json:"itemChoiceRewards"`
 	SubmissionType      string                      `json:"submissionType"`
@@ -95,6 +96,10 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	if body.Reward < 0 {
 		return nil, nil, fmt.Errorf("reward must be zero or greater")
 	}
+	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
+	if err != nil {
+		return nil, nil, err
+	}
 	if body.Difficulty < 0 {
 		return nil, nil, fmt.Errorf("difficulty must be zero or greater")
 	}
@@ -142,7 +147,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	}
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
-		if body.RewardExperience > 0 || body.Reward > 0 || body.InventoryItemID != nil || len(itemChoiceRewards) > 0 {
+		if body.RewardExperience > 0 || body.Reward > 0 || body.InventoryItemID != nil || len(itemChoiceRewards) > 0 || len(materialRewards) > 0 {
 			rewardMode = models.RewardModeExplicit
 		}
 	}
@@ -162,6 +167,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		RandomRewardSize:   randomRewardSize,
 		RewardExperience:   body.RewardExperience,
 		Reward:             body.Reward,
+		MaterialRewards:    materialRewards,
 		InventoryItemID:    body.InventoryItemID,
 		SubmissionType:     submissionType,
 		Difficulty:         body.Difficulty,

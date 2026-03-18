@@ -52,6 +52,7 @@ type MonsterBattleParticipant struct {
 	RewardExperience int                     `json:"rewardExperience" gorm:"column:reward_experience;default:0"`
 	RewardGold       int                     `json:"rewardGold" gorm:"column:reward_gold;default:0"`
 	ItemsAwarded     MonsterBattleItemAwards `json:"itemsAwarded" gorm:"column:items_awarded;type:jsonb;default:'[]'"`
+	BaseResourcesAwarded BaseMaterialRewards `json:"baseResourcesAwarded" gorm:"column:base_resources_awarded;type:jsonb;default:'[]'"`
 
 	User User `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }

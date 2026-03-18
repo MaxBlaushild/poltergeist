@@ -93,6 +93,7 @@ type MonsterEncounter struct {
 	RandomRewardSize            RandomRewardSize            `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	RewardExperience            int                         `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                  int                         `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards             BaseMaterialRewards         `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	ItemRewards                 MonsterEncounterRewardItems `json:"itemRewards" gorm:"column:item_rewards_json;type:jsonb;default:'[]'"`
 	Members                     []MonsterEncounterMember    `json:"members" gorm:"foreignKey:MonsterEncounterID"`
 }

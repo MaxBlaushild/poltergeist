@@ -11,6 +11,11 @@ export interface TreasureChestItem {
   quantity: number;
 }
 
+export interface TreasureChestMaterialReward {
+  resourceKey: string;
+  amount: number;
+}
+
 export interface TreasureChest {
   id: string;
   createdAt: Date;
@@ -23,6 +28,7 @@ export interface TreasureChest {
   randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: number;
   gold: number | null;
+  materialRewards?: TreasureChestMaterialReward[];
   geometry: string;
   unlockTier: number | null;
   items: TreasureChestItem[];

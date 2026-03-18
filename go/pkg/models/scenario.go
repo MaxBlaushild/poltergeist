@@ -34,6 +34,7 @@ type Scenario struct {
 	Difficulty                int                            `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                int                            `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards           BaseMaterialRewards            `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	OpenEnded                 bool                           `json:"openEnded" gorm:"column:open_ended"`
 	FailurePenaltyMode        ScenarioFailurePenaltyMode     `json:"failurePenaltyMode" gorm:"column:failure_penalty_mode"`
 	FailureHealthDrainType    ScenarioFailureDrainType       `json:"failureHealthDrainType" gorm:"column:failure_health_drain_type"`

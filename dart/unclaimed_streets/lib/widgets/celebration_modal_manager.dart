@@ -121,6 +121,7 @@ class CelebrationModalManager extends StatelessWidget {
       case 'questCompleted':
         final questName = data['questName'] as String? ?? 'Quest';
         final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
+        final baseResourcesAwarded = _baseResourcesFromData(data);
         final itemsAwarded =
             (data['itemsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
@@ -138,6 +139,7 @@ class CelebrationModalManager extends StatelessWidget {
             Text(questName, style: Theme.of(context).textTheme.titleMedium),
         ];
         if (goldAwarded > 0 ||
+            baseResourcesAwarded.isNotEmpty ||
             itemsAwarded.isNotEmpty ||
             spellsAwarded.isNotEmpty) {
           if (rewards.isNotEmpty) {
@@ -147,6 +149,7 @@ class CelebrationModalManager extends StatelessWidget {
             _buildRewardSection(
               context,
               gold: goldAwarded,
+              materials: baseResourcesAwarded,
               items: itemsAwarded,
               spells: spellsAwarded,
             ),
@@ -164,6 +167,7 @@ class CelebrationModalManager extends StatelessWidget {
             (data['rewardGold'] as num?)?.toInt() ??
             (data['goldAwarded'] as num?)?.toInt() ??
             0;
+        final baseResourcesAwarded = _baseResourcesFromData(data);
         final itemsAwarded =
             (data['itemsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
@@ -180,6 +184,7 @@ class CelebrationModalManager extends StatelessWidget {
             context,
             experience: rewardExperience,
             gold: goldAwarded,
+            materials: baseResourcesAwarded,
             items: itemsAwarded,
             emptyMessage: 'No loot this time.',
           ),
@@ -276,6 +281,7 @@ class CelebrationModalManager extends StatelessWidget {
         final rewardExperience =
             (data['rewardExperience'] as num?)?.toInt() ?? 0;
         final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+        final baseResourcesAwarded = _baseResourcesFromData(data);
         final itemsAwarded =
             (data['itemsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
@@ -289,6 +295,7 @@ class CelebrationModalManager extends StatelessWidget {
             context,
             experience: rewardExperience,
             gold: rewardGold,
+            materials: baseResourcesAwarded,
             items: itemsAwarded,
             emptyMessage: 'No loot this time.',
           ),
@@ -339,6 +346,7 @@ class CelebrationModalManager extends StatelessWidget {
     final threshold = (data['threshold'] as num?)?.toInt() ?? 0;
     final rewardExperience = (data['rewardExperience'] as num?)?.toInt() ?? 0;
     final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+    final baseResourcesAwarded = _baseResourcesFromData(data);
     final failureHealthDrained =
         (data['failureHealthDrained'] as num?)?.toInt() ?? 0;
     final failureManaDrained =
@@ -656,6 +664,7 @@ class CelebrationModalManager extends StatelessWidget {
           ],
           if (rewardExperience > 0 ||
               rewardGold > 0 ||
+              baseResourcesAwarded.isNotEmpty ||
               itemsAwarded.isNotEmpty ||
               spellsAwarded.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -670,6 +679,7 @@ class CelebrationModalManager extends StatelessWidget {
               context,
               experience: rewardExperience,
               gold: rewardGold,
+              materials: baseResourcesAwarded,
               items: itemsAwarded,
               spells: spellsAwarded,
             ),
@@ -692,6 +702,7 @@ class CelebrationModalManager extends StatelessWidget {
     final combinedScore = (data['combinedScore'] as num?)?.toInt() ?? 0;
     final rewardExperience = (data['rewardExperience'] as num?)?.toInt() ?? 0;
     final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+    final baseResourcesAwarded = _baseResourcesFromData(data);
     final statTags =
         (data['statTags'] as List<dynamic>?)
             ?.map((value) => value.toString().trim())
@@ -949,6 +960,7 @@ class CelebrationModalManager extends StatelessWidget {
           ],
           if (rewardExperience > 0 ||
               rewardGold > 0 ||
+              baseResourcesAwarded.isNotEmpty ||
               itemsAwarded.isNotEmpty ||
               spellsAwarded.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -963,6 +975,7 @@ class CelebrationModalManager extends StatelessWidget {
               context,
               experience: rewardExperience,
               gold: rewardGold,
+              materials: baseResourcesAwarded,
               items: itemsAwarded,
               spells: spellsAwarded,
             ),
@@ -1172,10 +1185,98 @@ class CelebrationModalManager extends StatelessWidget {
     return value > 0 ? '+$value' : '$value';
   }
 
+  List<Map<String, dynamic>> _baseResourcesFromData(Map<String, dynamic> data) {
+    return (data['baseResourcesAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .where(
+              (entry) =>
+                  (entry['resourceKey']?.toString().trim().isNotEmpty ??
+                      false) &&
+                  ((entry['amount'] as num?)?.toInt() ?? 0) > 0,
+            )
+            .toList(growable: false) ??
+        const <Map<String, dynamic>>[];
+  }
+
+  String _materialLabel(String resourceKey) {
+    switch (resourceKey.trim().toLowerCase()) {
+      case 'timber':
+        return 'Timber';
+      case 'stone':
+        return 'Stone';
+      case 'iron':
+        return 'Iron';
+      case 'herbs':
+        return 'Herbs';
+      case 'monster_parts':
+        return 'Monster Parts';
+      case 'arcane_dust':
+        return 'Arcane Dust';
+      case 'relic_shards':
+        return 'Relic Shards';
+      default:
+        if (resourceKey.trim().isEmpty) return 'Material';
+        final parts = resourceKey
+            .trim()
+            .split('_')
+            .where((part) => part.isNotEmpty)
+            .map(
+              (part) =>
+                  '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+            )
+            .toList(growable: false);
+        return parts.isEmpty ? 'Material' : parts.join(' ');
+    }
+  }
+
+  IconData _materialIcon(String resourceKey) {
+    switch (resourceKey.trim().toLowerCase()) {
+      case 'timber':
+        return Icons.park;
+      case 'stone':
+        return Icons.landscape;
+      case 'iron':
+        return Icons.hardware;
+      case 'herbs':
+        return Icons.local_florist;
+      case 'monster_parts':
+        return Icons.pets;
+      case 'arcane_dust':
+        return Icons.auto_awesome;
+      case 'relic_shards':
+        return Icons.diamond;
+      default:
+        return Icons.inventory_2;
+    }
+  }
+
+  Color _materialColor(String resourceKey) {
+    switch (resourceKey.trim().toLowerCase()) {
+      case 'timber':
+        return const Color(0xFF8D6E63);
+      case 'stone':
+        return const Color(0xFF78909C);
+      case 'iron':
+        return const Color(0xFF546E7A);
+      case 'herbs':
+        return const Color(0xFF43A047);
+      case 'monster_parts':
+        return const Color(0xFFC62828);
+      case 'arcane_dust':
+        return const Color(0xFF6A5ACD);
+      case 'relic_shards':
+        return const Color(0xFF00897B);
+      default:
+        return const Color(0xFF616161);
+    }
+  }
+
   Widget _buildRewardSection(
     BuildContext context, {
     int experience = 0,
     int gold = 0,
+    List<Map<String, dynamic>> materials = const [],
     List<Map<String, dynamic>> items = const [],
     List<Map<String, dynamic>> spells = const [],
     String? emptyMessage,
@@ -1208,6 +1309,21 @@ class CelebrationModalManager extends StatelessWidget {
           icon: Icons.monetization_on,
           iconColor: Colors.amber.shade800,
           backgroundColor: Colors.amber.shade100,
+        ),
+      );
+    }
+    for (final material in materials) {
+      final resourceKey = material['resourceKey']?.toString() ?? '';
+      final amount = (material['amount'] as num?)?.toInt() ?? 0;
+      if (amount <= 0) continue;
+      final accentColor = _materialColor(resourceKey);
+      addReward(
+        _buildRewardRow(
+          context,
+          label: '+$amount ${_materialLabel(resourceKey)}',
+          icon: _materialIcon(resourceKey),
+          iconColor: accentColor,
+          backgroundColor: accentColor.withValues(alpha: 0.12),
         ),
       );
     }

@@ -175,12 +175,22 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
         (response['goldAwarded'] as num?)?.toInt() ??
         0;
     final itemsAwarded = _itemsAwardedFromResponse(response);
+    final baseResourcesAwarded =
+        (response['baseResourcesAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
 
-    if (rewardExperience > 0 || rewardGold > 0 || itemsAwarded.isNotEmpty) {
+    if (rewardExperience > 0 ||
+        rewardGold > 0 ||
+        itemsAwarded.isNotEmpty ||
+        baseResourcesAwarded.isNotEmpty) {
       return {
         'rewardExperience': rewardExperience,
         'rewardGold': rewardGold,
         'goldAwarded': rewardGold,
+        'baseResourcesAwarded': baseResourcesAwarded,
         'itemsAwarded': itemsAwarded,
       };
     }
@@ -200,6 +210,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       'rewardExperience': 0,
       'rewardGold': math.max(0, widget.treasureChest.gold ?? 0),
       'goldAwarded': math.max(0, widget.treasureChest.gold ?? 0),
+      'baseResourcesAwarded': baseResourcesAwarded,
       'itemsAwarded': fallbackItemsAwarded,
     };
   }

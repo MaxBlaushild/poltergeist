@@ -22,6 +22,11 @@ import * as wellknown from 'wellknown';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useCandidates } from '@poltergeist/hooks';
 import { Link } from 'react-router-dom';
+import {
+  MaterialRewardsEditor,
+  emptyMaterialReward,
+  normalizeMaterialRewards,
+} from './MaterialRewardsEditor.tsx';
 import './questArchetypeTheme.css';
 import './questsTheme.css';
 
@@ -138,6 +143,7 @@ const emptyQuestForm = {
   randomRewardSize: 'small' as 'small' | 'medium' | 'large',
   rewardExperience: 0,
   gold: 0,
+  materialRewards: [] as ReturnType<typeof emptyMaterialReward>[],
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
   spellRewards: [] as { spellId: string }[],
 };
@@ -1760,6 +1766,10 @@ export const Quests = () => {
             : 0,
         gold:
           questForm.rewardMode === 'explicit' ? Number(questForm.gold) || 0 : 0,
+        materialRewards:
+          questForm.rewardMode === 'explicit'
+            ? normalizeMaterialRewards(questForm.materialRewards)
+            : [],
         itemRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.itemRewards
@@ -1810,6 +1820,10 @@ export const Quests = () => {
             : 0,
         gold:
           questForm.rewardMode === 'explicit' ? Number(questForm.gold) || 0 : 0,
+        materialRewards:
+          questForm.rewardMode === 'explicit'
+            ? normalizeMaterialRewards(questForm.materialRewards)
+            : [],
         itemRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.itemRewards
@@ -2181,6 +2195,10 @@ export const Quests = () => {
         (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
       rewardExperience: quest.rewardExperience ?? 0,
       gold: quest.gold ?? 0,
+      materialRewards: (quest.materialRewards ?? []).map((reward) => ({
+        resourceKey: reward.resourceKey,
+        amount: reward.amount ?? 1,
+      })),
       itemRewards: (quest.itemRewards ?? []).map((reward) => ({
         inventoryItemId: reward.inventoryItemId
           ? String(reward.inventoryItemId)
@@ -3201,9 +3219,18 @@ export const Quests = () => {
               </div>
               {questForm.rewardMode === 'random' && (
                 <div className="md:col-span-2 text-xs text-gray-500">
-                  Random rewards ignore explicit gold/item/spell fields.
+                  Random rewards ignore explicit gold/material/item/spell fields.
                 </div>
               )}
+              <div className="md:col-span-2">
+                <MaterialRewardsEditor
+                  value={questForm.materialRewards}
+                  onChange={(materialRewards) =>
+                    setQuestForm((prev) => ({ ...prev, materialRewards }))
+                  }
+                  disabled={questForm.rewardMode !== 'explicit'}
+                />
+              </div>
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-sm font-medium text-gray-700">
@@ -3686,9 +3713,18 @@ export const Quests = () => {
                   </div>
                   {questForm.rewardMode === 'random' && (
                     <div className="md:col-span-2 text-xs text-gray-500">
-                      Random rewards ignore explicit gold/item/spell fields.
+                      Random rewards ignore explicit gold/material/item/spell fields.
                     </div>
                   )}
+                  <div className="md:col-span-2">
+                    <MaterialRewardsEditor
+                      value={questForm.materialRewards}
+                      onChange={(materialRewards) =>
+                        setQuestForm((prev) => ({ ...prev, materialRewards }))
+                      }
+                      disabled={questForm.rewardMode !== 'explicit'}
+                    />
+                  </div>
                   <div className="md:col-span-2">
                     <div className="flex items-center justify-between">
                       <label className="block text-sm font-medium text-gray-700">

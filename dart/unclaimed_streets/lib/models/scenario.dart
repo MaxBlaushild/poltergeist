@@ -257,6 +257,7 @@ class ScenarioPerformResult {
   final List<ScenarioAppliedFailureStatus> successStatusesApplied;
   final int rewardExperience;
   final int rewardGold;
+  final List<Map<String, dynamic>> baseResourcesAwarded;
   final List<Map<String, dynamic>> itemsAwarded;
   final List<Map<String, dynamic>> itemChoiceRewards;
   final List<Spell> spellsAwarded;
@@ -283,6 +284,7 @@ class ScenarioPerformResult {
     this.successStatusesApplied = const [],
     required this.rewardExperience,
     required this.rewardGold,
+    this.baseResourcesAwarded = const [],
     this.itemsAwarded = const [],
     this.itemChoiceRewards = const [],
     this.spellsAwarded = const [],
@@ -352,6 +354,12 @@ class ScenarioPerformResult {
       successStatusesApplied: successStatuses,
       rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
       rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      baseResourcesAwarded:
+          (json['baseResourcesAwarded'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList() ??
+          const [],
       itemsAwarded:
           (json['itemsAwarded'] as List<dynamic>?)
               ?.whereType<Map>()

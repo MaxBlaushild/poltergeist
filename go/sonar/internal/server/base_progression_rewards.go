@@ -2,10 +2,30 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
+	"math/rand"
+	"sort"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 )
+
+type baseMaterialRewardPayload struct {
+	ResourceKey string `json:"resourceKey"`
+	Amount      int    `json:"amount"`
+}
+
+var baseMaterialRewardKeyOrder = []models.BaseResourceKey{
+	models.BaseResourceTimber,
+	models.BaseResourceStone,
+	models.BaseResourceIron,
+	models.BaseResourceHerbs,
+	models.BaseResourceMonsterParts,
+	models.BaseResourceArcaneDust,
+	models.BaseResourceRelicShards,
+}
 
 func serializeBaseResourceDeltas(deltas []models.BaseResourceDelta) []map[string]interface{} {
 	response := make([]map[string]interface{}, 0, len(deltas))
@@ -19,6 +39,107 @@ func serializeBaseResourceDeltas(deltas []models.BaseResourceDelta) []map[string
 		})
 	}
 	return response
+}
+
+func parseBaseMaterialRewards(
+	input []baseMaterialRewardPayload,
+	fieldName string,
+) (models.BaseMaterialRewards, error) {
+	normalized := make([]models.BaseResourceDelta, 0, len(input))
+	for idx, entry := range input {
+		resourceKey := models.NormalizeBaseResourceKey(entry.ResourceKey)
+		if resourceKey == "" && strings.TrimSpace(entry.ResourceKey) == "" && entry.Amount == 0 {
+			continue
+		}
+		if resourceKey == "" {
+			return nil, fmt.Errorf("%s[%d].resourceKey is invalid", fieldName, idx)
+		}
+		if entry.Amount <= 0 {
+			return nil, fmt.Errorf("%s[%d].amount must be positive", fieldName, idx)
+		}
+		normalized = append(normalized, models.BaseResourceDelta{
+			ResourceKey: resourceKey,
+			Amount:      entry.Amount,
+		})
+	}
+	return models.BaseMaterialRewards(normalizeBaseMaterialRewards(normalized)), nil
+}
+
+func normalizeBaseMaterialRewards(input []models.BaseResourceDelta) []models.BaseResourceDelta {
+	if len(input) == 0 {
+		return []models.BaseResourceDelta{}
+	}
+	totals := map[models.BaseResourceKey]int{}
+	for _, delta := range input {
+		resourceKey := models.NormalizeBaseResourceKey(string(delta.ResourceKey))
+		if resourceKey == "" || delta.Amount <= 0 {
+			continue
+		}
+		totals[resourceKey] += delta.Amount
+	}
+	if len(totals) == 0 {
+		return []models.BaseResourceDelta{}
+	}
+
+	response := make([]models.BaseResourceDelta, 0, len(totals))
+	for _, resourceKey := range baseMaterialRewardKeyOrder {
+		if totals[resourceKey] <= 0 {
+			continue
+		}
+		response = append(response, models.BaseResourceDelta{
+			ResourceKey: resourceKey,
+			Amount:      totals[resourceKey],
+		})
+		delete(totals, resourceKey)
+	}
+	if len(totals) > 0 {
+		extraKeys := make([]string, 0, len(totals))
+		for resourceKey := range totals {
+			extraKeys = append(extraKeys, string(resourceKey))
+		}
+		sort.Strings(extraKeys)
+		for _, rawKey := range extraKeys {
+			resourceKey := models.BaseResourceKey(rawKey)
+			response = append(response, models.BaseResourceDelta{
+				ResourceKey: resourceKey,
+				Amount:      totals[resourceKey],
+			})
+		}
+	}
+	return response
+}
+
+func randomBaseMaterialRewardSeed(seed string) int64 {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(strings.TrimSpace(seed)))
+	value := int64(hasher.Sum64())
+	if value == 0 {
+		return 1
+	}
+	return value
+}
+
+func buildRandomBaseMaterialRewards(seed string) []models.BaseResourceDelta {
+	rng := rand.New(rand.NewSource(randomBaseMaterialRewardSeed(seed)))
+	if rng.Float64() >= 0.5 {
+		return []models.BaseResourceDelta{}
+	}
+	resourceKey := baseMaterialRewardKeyOrder[rng.Intn(len(baseMaterialRewardKeyOrder))]
+	return []models.BaseResourceDelta{{
+		ResourceKey: resourceKey,
+		Amount:      1 + rng.Intn(3),
+	}}
+}
+
+func resolveBaseMaterialRewards(
+	rewardMode models.RewardMode,
+	explicit models.BaseMaterialRewards,
+	randomSeed string,
+) []models.BaseResourceDelta {
+	if models.NormalizeRewardMode(string(rewardMode)) == models.RewardModeRandom {
+		return buildRandomBaseMaterialRewards(randomSeed)
+	}
+	return normalizeBaseMaterialRewards(explicit)
 }
 
 func (s *server) awardBaseResourcesToUser(
@@ -59,133 +180,4 @@ func (s *server) awardBaseResourcesToParticipants(
 		}
 	}
 	return submitterAwarded, nil
-}
-
-func baseRewardTierFromResolvedRewards(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardExperience int,
-	rewardGold int,
-	itemCount int,
-) int {
-	if models.NormalizeRewardMode(string(rewardMode)) == models.RewardModeRandom {
-		switch models.NormalizeRandomRewardSize(string(rewardSize)) {
-		case models.RandomRewardSizeLarge:
-			return 3
-		case models.RandomRewardSizeMedium:
-			return 2
-		default:
-			return 1
-		}
-	}
-	switch {
-	case rewardExperience >= 600 || rewardGold >= 225 || itemCount >= 2:
-		return 3
-	case rewardExperience >= 250 || rewardGold >= 90 || itemCount >= 1:
-		return 2
-	default:
-		return 1
-	}
-}
-
-func baseResourceGrantsForScenario(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardExperience int,
-	rewardGold int,
-	itemCount int,
-) []models.BaseResourceDelta {
-	tier := baseRewardTierFromResolvedRewards(rewardMode, rewardSize, rewardExperience, rewardGold, itemCount)
-	grants := []models.BaseResourceDelta{
-		{ResourceKey: models.BaseResourceHerbs, Amount: tier * 2},
-		{ResourceKey: models.BaseResourceArcaneDust, Amount: tier},
-	}
-	if tier >= 3 {
-		grants = append(grants, models.BaseResourceDelta{
-			ResourceKey: models.BaseResourceRelicShards,
-			Amount:      1,
-		})
-	}
-	return grants
-}
-
-func baseResourceGrantsForChallenge(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardExperience int,
-	rewardGold int,
-	itemCount int,
-) []models.BaseResourceDelta {
-	tier := baseRewardTierFromResolvedRewards(rewardMode, rewardSize, rewardExperience, rewardGold, itemCount)
-	return []models.BaseResourceDelta{
-		{ResourceKey: models.BaseResourceTimber, Amount: tier},
-		{ResourceKey: models.BaseResourceArcaneDust, Amount: tier},
-	}
-}
-
-func baseResourceGrantsForMonster(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardExperience int,
-	rewardGold int,
-	itemCount int,
-) []models.BaseResourceDelta {
-	tier := baseRewardTierFromResolvedRewards(rewardMode, rewardSize, rewardExperience, rewardGold, itemCount)
-	return []models.BaseResourceDelta{
-		{ResourceKey: models.BaseResourceMonsterParts, Amount: tier * 2},
-		{ResourceKey: models.BaseResourceIron, Amount: tier},
-	}
-}
-
-func baseResourceGrantsForTreasureChest(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardExperience int,
-	rewardGold int,
-	itemCount int,
-	unlockTier *int,
-) []models.BaseResourceDelta {
-	tier := baseRewardTierFromResolvedRewards(rewardMode, rewardSize, rewardExperience, rewardGold, itemCount)
-	if unlockTier != nil {
-		switch {
-		case *unlockTier >= 76:
-			tier = max(tier, 3)
-		case *unlockTier >= 26:
-			tier = max(tier, 2)
-		default:
-			tier = max(tier, 1)
-		}
-	}
-	grants := []models.BaseResourceDelta{
-		{ResourceKey: models.BaseResourceTimber, Amount: tier},
-		{ResourceKey: models.BaseResourceStone, Amount: tier},
-	}
-	if unlockTier != nil {
-		grants = append(grants, models.BaseResourceDelta{
-			ResourceKey: models.BaseResourceIron,
-			Amount:      max(1, tier-1),
-		})
-	}
-	return grants
-}
-
-func baseResourceGrantsForQuest(
-	rewardMode models.RewardMode,
-	rewardSize models.RandomRewardSize,
-	rewardGold int,
-	itemCount int,
-	spellCount int,
-) []models.BaseResourceDelta {
-	tier := baseRewardTierFromResolvedRewards(rewardMode, rewardSize, 0, rewardGold, itemCount+spellCount)
-	grants := []models.BaseResourceDelta{
-		{ResourceKey: models.BaseResourceTimber, Amount: tier * 2},
-		{ResourceKey: models.BaseResourceStone, Amount: tier * 2},
-	}
-	if tier >= 2 {
-		grants = append(grants, models.BaseResourceDelta{
-			ResourceKey: models.BaseResourceRelicShards,
-			Amount:      1,
-		})
-	}
-	return grants
 }

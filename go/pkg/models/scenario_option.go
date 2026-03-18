@@ -19,6 +19,7 @@ type ScenarioOption struct {
 	Difficulty                *int                             `json:"difficulty"`
 	RewardExperience          int                              `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                int                              `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards           BaseMaterialRewards              `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
 	FailureHealthDrainType    ScenarioFailureDrainType         `json:"failureHealthDrainType" gorm:"column:failure_health_drain_type"`
 	FailureHealthDrainValue   int                              `json:"failureHealthDrainValue" gorm:"column:failure_health_drain_value"`
 	FailureManaDrainType      ScenarioFailureDrainType         `json:"failureManaDrainType" gorm:"column:failure_mana_drain_type"`
