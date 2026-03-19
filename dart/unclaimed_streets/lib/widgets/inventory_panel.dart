@@ -113,6 +113,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   List<BaseResourceBalanceData> _baseResources = [];
   bool _loading = true;
   bool _using = false;
+  bool _baseResourcesRefreshInFlight = false;
   String? _error;
   OwnedInventoryItem? _selected;
   OutfitGeneration? _outfitGeneration;
@@ -121,6 +122,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   Timer? _outfitPoller;
   final Set<String> _dismissedOutfitStatuses = {};
   int _pageIndex = 0;
+  DateTime? _lastBaseResourcesLoadedAt;
   late final AnimationController _outfitPulseController;
 
   @override
@@ -160,16 +162,17 @@ class _InventoryPanelState extends State<InventoryPanel>
       final itemsFuture = svc.getInventoryItems();
       final ownedFuture = svc.getOwnedInventoryItems();
       final equipmentFuture = svc.getEquipment();
-      final baseFuture = context.read<BaseService>().getMyBase();
+      final baseResourcesFuture = context.read<BaseService>().getResourceBalances();
       try {
         await authProvider.refresh();
       } catch (_) {}
       final items = await itemsFuture;
       final owned = await ownedFuture;
       final equipment = await equipmentFuture;
-      BaseProgressionSnapshot? baseSnapshot;
+      List<BaseResourceBalanceData> baseResources =
+          const <BaseResourceBalanceData>[];
       try {
-        baseSnapshot = await baseFuture;
+        baseResources = await baseResourcesFuture;
       } catch (_) {}
       if (!mounted) return;
       final filteredOwned = owned.where((o) => o.quantity > 0).toList();
@@ -190,8 +193,8 @@ class _InventoryPanelState extends State<InventoryPanel>
           equipmentByOwnedId[entry.ownedInventoryItemId]!.add(entry);
         }
         _equipmentByOwnedId = equipmentByOwnedId;
-        _baseResources =
-            baseSnapshot?.resources ?? const <BaseResourceBalanceData>[];
+        _baseResources = baseResources;
+        _lastBaseResourcesLoadedAt = DateTime.now();
         _pageIndex = nextPageIndex;
         if (_selected != null) {
           final stillOwned = _owned.any((o) => o.id == _selected!.id);
@@ -211,6 +214,30 @@ class _InventoryPanelState extends State<InventoryPanel>
           _error = e.toString();
         });
       }
+    }
+  }
+
+  bool _shouldRefreshBaseResources() {
+    final lastLoadedAt = _lastBaseResourcesLoadedAt;
+    if (lastLoadedAt == null) return true;
+    return DateTime.now().difference(lastLoadedAt) >
+        const Duration(seconds: 5);
+  }
+
+  Future<void> _refreshBaseResources() async {
+    if (_baseResourcesRefreshInFlight) return;
+    _baseResourcesRefreshInFlight = true;
+    try {
+      final balances = await context.read<BaseService>().getResourceBalances();
+      if (!mounted) return;
+      setState(() {
+        _baseResources = balances;
+        _lastBaseResourcesLoadedAt = DateTime.now();
+      });
+    } catch (_) {
+      _lastBaseResourcesLoadedAt = DateTime.now();
+    } finally {
+      _baseResourcesRefreshInFlight = false;
     }
   }
 
@@ -452,32 +479,120 @@ class _InventoryPanelState extends State<InventoryPanel>
     }
   }
 
+  String _currencyLabel(String key) {
+    switch (key) {
+      case 'gold':
+        return 'Gold';
+      case 'timber':
+        return 'Timber';
+      case 'stone':
+        return 'Stone';
+      case 'iron':
+        return 'Iron';
+      case 'herbs':
+        return 'Herbs';
+      case 'monster_parts':
+        return 'Monster Parts';
+      case 'arcane_dust':
+        return 'Arcane Dust';
+      case 'relic_shards':
+        return 'Relic Shards';
+      default:
+        return 'Currency';
+    }
+  }
+
+  String _currencyDescription(String key) {
+    switch (key) {
+      case 'gold':
+        return 'Gold is your main spending currency. Use it for shops, services, and other costs across the world.';
+      case 'timber':
+        return 'Timber is a base-building material used for constructing and upgrading rooms and fixtures at your base.';
+      case 'stone':
+        return 'Stone is a sturdy construction material used for tougher structural upgrades in your base.';
+      case 'iron':
+        return 'Iron is used for stronger base upgrades, workshop improvements, and heavier construction projects.';
+      case 'herbs':
+        return 'Herbs are used for alchemy-focused rooms and restorative upgrades tied to healing and brewing.';
+      case 'monster_parts':
+        return 'Monster Parts are harvested from battle and spent on martial, trophy, and hunting-themed base improvements.';
+      case 'arcane_dust':
+        return 'Arcane Dust fuels magical and knowledge-focused base upgrades, especially anything mystical or enchanted.';
+      case 'relic_shards':
+        return 'Relic Shards are rare materials reserved for high-tier and more specialized base upgrades.';
+      default:
+        return 'This currency can be spent on progression systems and upgrades.';
+    }
+  }
+
+  Future<void> _showCurrencyInfo(BuildContext context, String key) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        final accentColor = key == 'gold'
+            ? Colors.amber.shade700
+            : _materialAccentColor(key);
+        final icon = key == 'gold'
+            ? Icons.monetization_on
+            : _materialIcon(key);
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(icon, color: accentColor),
+              const SizedBox(width: 10),
+              Expanded(child: Text(_currencyLabel(key))),
+            ],
+          ),
+          content: Text(
+            _currencyDescription(key),
+            style: theme.textTheme.bodyMedium,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildCurrencyBadge({
     required BuildContext context,
     required IconData icon,
     required Color accentColor,
     required String value,
+    required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: accentColor, width: 1.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: accentColor),
-          const SizedBox(width: 6),
-          Text(
-            value,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accentColor, width: 1.5),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: accentColor),
+              const SizedBox(width: 6),
+              Text(
+                value,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -489,6 +604,7 @@ class _InventoryPanelState extends State<InventoryPanel>
         icon: Icons.monetization_on,
         accentColor: Colors.amber.shade700,
         value: '$gold',
+        onTap: () => _showCurrencyInfo(context, 'gold'),
       ),
     ];
 
@@ -504,6 +620,7 @@ class _InventoryPanelState extends State<InventoryPanel>
           icon: _materialIcon(resourceKey),
           accentColor: _materialAccentColor(resourceKey),
           value: '${resourceAmounts[resourceKey] ?? 0}',
+          onTap: () => _showCurrencyInfo(context, resourceKey),
         ),
       );
     }
@@ -942,6 +1059,12 @@ class _InventoryPanelState extends State<InventoryPanel>
     final gold = user?.gold ?? 0;
     final showDetail = _selected != null;
     final inv = showDetail ? _itemFor(_selected!) : null;
+    if (user != null && !_loading && _shouldRefreshBaseResources()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _loading || !_shouldRefreshBaseResources()) return;
+        unawaited(_refreshBaseResources());
+      });
+    }
     final resourceBadges = user != null
         ? _buildInventoryResourceBadges(context, gold)
         : const <Widget>[];

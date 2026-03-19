@@ -134,15 +134,21 @@ class UserBaseStructureData {
   const UserBaseStructureData({
     required this.structureKey,
     required this.level,
+    required this.gridX,
+    required this.gridY,
   });
 
   final String structureKey;
   final int level;
+  final int gridX;
+  final int gridY;
 
   factory UserBaseStructureData.fromJson(Map<String, dynamic> json) {
     return UserBaseStructureData(
       structureKey: json['structureKey']?.toString() ?? '',
       level: (json['level'] as num?)?.toInt() ?? 0,
+      gridX: (json['gridX'] as num?)?.toInt() ?? 0,
+      gridY: (json['gridY'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -172,6 +178,7 @@ class BaseProgressionSnapshot {
     required this.resources,
     required this.structures,
     required this.activeDailyEffects,
+    required this.grassTileUrl,
     required this.canManage,
   });
 
@@ -179,6 +186,7 @@ class BaseProgressionSnapshot {
   final List<BaseResourceBalanceData> resources;
   final List<UserBaseStructureData> structures;
   final List<BaseDailyEffectData> activeDailyEffects;
+  final String grassTileUrl;
   final bool canManage;
 
   factory BaseProgressionSnapshot.fromJson(Map<String, dynamic> json) {
@@ -222,6 +230,7 @@ class BaseProgressionSnapshot {
                 )
                 .toList()
           : const <BaseDailyEffectData>[],
+      grassTileUrl: json['grassTileUrl']?.toString() ?? '',
       canManage: json['canManage'] == true,
     );
   }

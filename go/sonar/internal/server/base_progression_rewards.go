@@ -121,14 +121,23 @@ func randomBaseMaterialRewardSeed(seed string) int64 {
 
 func buildRandomBaseMaterialRewards(seed string) []models.BaseResourceDelta {
 	rng := rand.New(rand.NewSource(randomBaseMaterialRewardSeed(seed)))
-	if rng.Float64() >= 0.5 {
-		return []models.BaseResourceDelta{}
-	}
-	resourceKey := baseMaterialRewardKeyOrder[rng.Intn(len(baseMaterialRewardKeyOrder))]
-	return []models.BaseResourceDelta{{
-		ResourceKey: resourceKey,
+	firstIndex := rng.Intn(len(baseMaterialRewardKeyOrder))
+	rewards := []models.BaseResourceDelta{{
+		ResourceKey: baseMaterialRewardKeyOrder[firstIndex],
 		Amount:      1 + rng.Intn(3),
 	}}
+	if len(baseMaterialRewardKeyOrder) <= 1 || rng.Float64() >= 0.5 {
+		return rewards
+	}
+	secondIndex := rng.Intn(len(baseMaterialRewardKeyOrder) - 1)
+	if secondIndex >= firstIndex {
+		secondIndex++
+	}
+	rewards = append(rewards, models.BaseResourceDelta{
+		ResourceKey: baseMaterialRewardKeyOrder[secondIndex],
+		Amount:      1 + rng.Intn(3),
+	})
+	return rewards
 }
 
 func resolveBaseMaterialRewards(

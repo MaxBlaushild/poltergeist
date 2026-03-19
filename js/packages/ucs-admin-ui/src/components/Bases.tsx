@@ -61,6 +61,9 @@ type BaseStructureDefinition = {
 const defaultBaseIconPrompt =
   'A discovered adventurer base marker in a retro 16-bit fantasy MMORPG style. Top-down map-ready icon art, sturdy camp or homestead sigil, welcoming hearth glow, no text, no logos, centered composition, crisp outlines, limited palette.';
 
+const defaultBaseGrassPrompt =
+  'A seamless top-down grass terrain tile for a retro 16-bit fantasy MMORPG base builder. Overhead view, softly varied green blades, subtle earth patches, crisp pixel edges, no structures, no text, no logos, tileable and clean.';
+
 const staticStatusClassName = (status?: string) => {
   switch ((status || '').toLowerCase()) {
     case 'complete':
@@ -121,6 +124,20 @@ export const Bases = () => {
   const [iconError, setIconError] = useState<string | null>(null);
   const [iconPreviewNonce, setIconPreviewNonce] = useState(Date.now());
   const [isIconLightboxOpen, setIsIconLightboxOpen] = useState(false);
+  const [grassPrompt, setGrassPrompt] = useState(defaultBaseGrassPrompt);
+  const [grassUrl, setGrassUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-grass-tile.png'
+  );
+  const [grassStatus, setGrassStatus] = useState<string>('unknown');
+  const [grassExists, setGrassExists] = useState(false);
+  const [grassRequestedAt, setGrassRequestedAt] = useState<string | null>(null);
+  const [grassLastModified, setGrassLastModified] = useState<string | null>(null);
+  const [grassStatusLoading, setGrassStatusLoading] = useState(false);
+  const [grassBusy, setGrassBusy] = useState(false);
+  const [grassMessage, setGrassMessage] = useState<string | null>(null);
+  const [grassError, setGrassError] = useState<string | null>(null);
+  const [grassPreviewNonce, setGrassPreviewNonce] = useState(Date.now());
+  const [isGrassLightboxOpen, setIsGrassLightboxOpen] = useState(false);
   const [baseImageLightbox, setBaseImageLightbox] = useState<{
     src: string;
     alt: string;
@@ -225,6 +242,87 @@ export const Bases = () => {
       setIconBusy(false);
     }
   }, [apiClient, refreshIconStatus]);
+
+  const refreshGrassStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setGrassStatusLoading(true);
+        setGrassError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/base-grass/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setGrassUrl(url);
+        }
+        setGrassStatus((response?.status || 'unknown').trim() || 'unknown');
+        setGrassExists(Boolean(response?.exists));
+        setGrassRequestedAt(response?.requestedAt ? response.requestedAt : null);
+        setGrassLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setGrassPreviewNonce(Date.now());
+        if (showMessage) {
+          setGrassMessage('Base grass tile status refreshed.');
+        }
+      } catch (err) {
+        console.error('Failed to load base grass tile status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load base grass tile status.';
+        setGrassError(message);
+      } finally {
+        setGrassStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const handleGenerateGrass = useCallback(async () => {
+    const prompt = grassPrompt.trim();
+    if (!prompt) {
+      setGrassError('Prompt is required.');
+      return;
+    }
+    try {
+      setGrassBusy(true);
+      setGrassError(null);
+      setGrassMessage(null);
+      await apiClient.post('/sonar/admin/thumbnails/base-grass', { prompt });
+      setGrassMessage('Base grass tile queued for generation.');
+      await refreshGrassStatus();
+    } catch (err) {
+      console.error('Failed to generate base grass tile', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate base grass tile.';
+      setGrassError(message);
+    } finally {
+      setGrassBusy(false);
+    }
+  }, [apiClient, grassPrompt, refreshGrassStatus]);
+
+  const handleDeleteGrass = useCallback(async () => {
+    try {
+      setGrassBusy(true);
+      setGrassError(null);
+      setGrassMessage(null);
+      await apiClient.delete('/sonar/admin/thumbnails/base-grass');
+      setGrassMessage('Base grass tile deleted.');
+      await refreshGrassStatus();
+    } catch (err) {
+      console.error('Failed to delete base grass tile', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete base grass tile.';
+      setGrassError(message);
+    } finally {
+      setGrassBusy(false);
+    }
+  }, [apiClient, refreshGrassStatus]);
 
   const handleDeleteBase = useCallback(
     async (record: BaseRecord) => {
@@ -351,6 +449,10 @@ export const Bases = () => {
   }, [refreshIconStatus]);
 
   useEffect(() => {
+    void refreshGrassStatus();
+  }, [refreshGrassStatus]);
+
+  useEffect(() => {
     void fetchDescriptionJobs();
   }, [fetchDescriptionJobs]);
 
@@ -363,6 +465,16 @@ export const Bases = () => {
     }, 4000);
     return () => window.clearInterval(interval);
   }, [iconStatus, refreshIconStatus]);
+
+  useEffect(() => {
+    if (grassStatus !== 'queued' && grassStatus !== 'in_progress') {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshGrassStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [grassStatus, refreshGrassStatus]);
 
   useEffect(() => {
     const hasPendingJobs = Object.values(descriptionJobsByBaseId).some((job) =>
@@ -404,8 +516,8 @@ export const Bases = () => {
       </div>
 
       <p className="text-sm text-gray-600">
-        Bases are player-owned map pins created in the app. They all share one
-        generated icon.
+        Bases are player-owned map pins created in the app. Shared generated art
+        assets for the map icon and the base board grass tile are managed here.
       </p>
 
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
@@ -494,6 +606,94 @@ export const Bases = () => {
         {iconError ? <p className="mt-3 text-sm text-red-700">{iconError}</p> : null}
       </section>
 
+      <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Base Grass Tile</h2>
+            <p className="mt-1 text-xs text-gray-600">
+              Requested: {formatDate(grassRequestedAt ?? undefined)}
+            </p>
+            <p className="text-xs text-gray-600">
+              Last updated: {formatDate(grassLastModified ?? undefined)}
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+              grassStatus
+            )}`}
+          >
+            {grassStatus || 'unknown'}
+          </span>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void refreshGrassStatus(true)}
+            disabled={grassStatusLoading}
+            className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {grassStatusLoading ? 'Refreshing...' : 'Refresh Status'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleGenerateGrass()}
+            disabled={grassBusy || grassStatusLoading}
+            className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {grassBusy ? 'Working...' : 'Generate Grass Tile'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDeleteGrass()}
+            disabled={grassBusy || grassStatusLoading}
+            className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {grassBusy ? 'Working...' : 'Delete Grass Tile'}
+          </button>
+        </div>
+
+        <label className="mt-4 block text-sm font-medium text-gray-700">
+          Prompt
+          <textarea
+            value={grassPrompt}
+            onChange={(e) => setGrassPrompt(e.target.value)}
+            rows={4}
+            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <p className="mt-3 break-all text-xs text-gray-600">URL: {grassUrl}</p>
+
+        {grassExists ? (
+          <div className="mt-4 flex justify-center rounded border border-dashed border-gray-300 bg-gray-50 p-4">
+            <button
+              type="button"
+              onClick={() => setIsGrassLightboxOpen(true)}
+              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              title="Open large preview"
+            >
+              <img
+                src={`${grassUrl}?v=${grassPreviewNonce}`}
+                alt="Base grass tile preview"
+                className="h-28 w-28 rounded object-cover"
+              />
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 rounded border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
+            No generated grass tile found yet.
+          </div>
+        )}
+
+        {grassMessage ? (
+          <p className="mt-3 text-sm text-emerald-700">{grassMessage}</p>
+        ) : null}
+        {grassError ? (
+          <p className="mt-3 text-sm text-red-700">{grassError}</p>
+        ) : null}
+      </section>
+
       {isIconLightboxOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
@@ -513,6 +713,31 @@ export const Bases = () => {
             <img
               src={`${iconUrl}?v=${iconPreviewNonce}`}
               alt="Large base icon preview"
+              className="max-h-[80vh] max-w-[80vw] rounded object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isGrassLightboxOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
+          onClick={() => setIsGrassLightboxOpen(false)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] rounded-lg bg-white p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsGrassLightboxOpen(false)}
+              className="absolute right-3 top-3 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white hover:bg-black/80"
+            >
+              Close
+            </button>
+            <img
+              src={`${grassUrl}?v=${grassPreviewNonce}`}
+              alt="Large base grass tile preview"
               className="max-h-[80vh] max-w-[80vw] rounded object-contain"
             />
           </div>

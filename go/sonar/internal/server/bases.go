@@ -40,6 +40,9 @@ func serializeBase(base *models.Base) gin.H {
 			if strings.TrimSpace(base.ThumbnailURL) != "" {
 				return base.ThumbnailURL
 			}
+			if strings.TrimSpace(base.ImageURL) != "" {
+				return base.ImageURL
+			}
 			return staticThumbnailURL(baseDiscoveredIconKey)
 		}(),
 		"createdAt": base.CreatedAt,

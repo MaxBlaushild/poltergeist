@@ -60,6 +60,7 @@ const (
 	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
 	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
 	baseDiscoveredIconKey              = "thumbnails/placeholders/base-discovered.png"
+	baseGrassTileKey                   = "thumbnails/placeholders/base-grass-tile.png"
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
@@ -69,6 +70,7 @@ const (
 	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
 	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
 	baseDiscoveredStatusKey            = "admin:thumbnails:base-discovered:requested-at"
+	baseGrassTileStatusKey             = "admin:thumbnails:base-grass-tile:requested-at"
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
@@ -78,6 +80,7 @@ const (
 	characterUndiscoveredIconText      = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	healingFountainDiscoveredIconText  = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
 	baseDiscoveredIconText             = "A discovered adventurer base marker in a retro 16-bit fantasy MMORPG style. Top-down map-ready icon art, sturdy camp or homestead sigil, welcoming hearth glow, no text, no logos, centered composition, crisp outlines, limited palette."
+	baseGrassTileText                  = "A seamless top-down grass terrain tile for a retro 16-bit fantasy MMORPG base builder. Overhead view, softly varied green blades, subtle earth patches, crisp pixel edges, no structures, no text, no logos, tileable and clean."
 	userProfilePlaceholderText         = "A polished fantasy RPG profile portrait avatar. Head-and-shoulders, centered composition, expressive face, clean background, no text, no logos, game-ready artwork."
 	staticThumbnailJobTimeout          = 10 * time.Minute
 	staticThumbnailStatusTTL           = 2 * time.Hour
@@ -274,6 +277,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/base/catalog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCatalog))
 	r.POST("/sonar/base/structures/:key/build", middleware.WithAuthentication(s.authClient, s.livenessClient, s.buildBaseStructure))
 	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
+	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
 	r.POST("/sonar/equipment/equip", middleware.WithAuthentication(s.authClient, s.livenessClient, s.equipInventoryItem))
@@ -381,6 +385,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseDiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseGrassTile))
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
@@ -389,6 +394,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/base/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/base-grass/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseGrassTileStatus))
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
@@ -397,6 +403,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -3481,18 +3488,18 @@ func (s *server) getQuest(ctx *gin.Context) {
 
 func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
-		Name                  string     `json:"name"`
-		Description           string     `json:"description"`
-		AcceptanceDialogue    []string   `json:"acceptanceDialogue"`
-		ImageURL              string     `json:"imageUrl"`
-		ZoneID                *uuid.UUID `json:"zoneId"`
-		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
-		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
-		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
-		RewardMode            string     `json:"rewardMode"`
-		RandomRewardSize      string     `json:"randomRewardSize"`
-		RewardExperience      *int       `json:"rewardExperience"`
-		Gold                  *int       `json:"gold"`
+		Name                  string                      `json:"name"`
+		Description           string                      `json:"description"`
+		AcceptanceDialogue    []string                    `json:"acceptanceDialogue"`
+		ImageURL              string                      `json:"imageUrl"`
+		ZoneID                *uuid.UUID                  `json:"zoneId"`
+		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
+		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
+		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
+		RewardMode            string                      `json:"rewardMode"`
+		RandomRewardSize      string                      `json:"randomRewardSize"`
+		RewardExperience      *int                        `json:"rewardExperience"`
+		Gold                  *int                        `json:"gold"`
 		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -3651,18 +3658,18 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                  string     `json:"name"`
-		Description           string     `json:"description"`
-		AcceptanceDialogue    *[]string  `json:"acceptanceDialogue"`
-		ImageURL              string     `json:"imageUrl"`
-		ZoneID                *uuid.UUID `json:"zoneId"`
-		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
-		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
-		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
-		RewardMode            string     `json:"rewardMode"`
-		RandomRewardSize      string     `json:"randomRewardSize"`
-		RewardExperience      *int       `json:"rewardExperience"`
-		Gold                  *int       `json:"gold"`
+		Name                  string                      `json:"name"`
+		Description           string                      `json:"description"`
+		AcceptanceDialogue    *[]string                   `json:"acceptanceDialogue"`
+		ImageURL              string                      `json:"imageUrl"`
+		ZoneID                *uuid.UUID                  `json:"zoneId"`
+		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
+		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
+		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
+		RewardMode            string                      `json:"rewardMode"`
+		RandomRewardSize      string                      `json:"randomRewardSize"`
+		RewardExperience      *int                        `json:"rewardExperience"`
+		Gold                  *int                        `json:"gold"`
 		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -6876,6 +6883,10 @@ func (s *server) generateBaseDiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, baseDiscoveredIconText, baseDiscoveredIconKey, baseDiscoveredStatusKey)
 }
 
+func (s *server) generateBaseGrassTile(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, baseGrassTileText, baseGrassTileKey, baseGrassTileStatusKey)
+}
+
 func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
 	status, exists, requestedAt, lastModified, err := s.readStaticThumbnailStatus(ctx, destinationKey, statusKey)
 	if err != nil {
@@ -6922,6 +6933,10 @@ func (s *server) getHealingFountainDiscoveredIconStatus(ctx *gin.Context) {
 
 func (s *server) getBaseDiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+}
+
+func (s *server) getBaseGrassTileStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, baseGrassTileKey, baseGrassTileStatusKey)
 }
 
 func (s *server) applyUserProfilePlaceholderToUsersWithoutPictures(ctx *gin.Context, profilePictureURL string) (int, error) {
@@ -7043,6 +7058,10 @@ func (s *server) deleteHealingFountainDiscoveredIcon(ctx *gin.Context) {
 
 func (s *server) deleteBaseDiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+}
+
+func (s *server) deleteBaseGrassTile(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, baseGrassTileKey, baseGrassTileStatusKey)
 }
 
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
@@ -13841,14 +13860,14 @@ func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
 
 func (s *server) createTreasureChest(ctx *gin.Context) {
 	var requestBody struct {
-		Latitude         float64 `json:"latitude" binding:"required"`
-		Longitude        float64 `json:"longitude" binding:"required"`
-		ZoneID           string  `json:"zoneId" binding:"required"`
-		UnlockTier       *int    `json:"unlockTier"`
-		RewardMode       string  `json:"rewardMode"`
-		RandomRewardSize string  `json:"randomRewardSize"`
-		RewardExperience int     `json:"rewardExperience"`
-		Gold             *int    `json:"gold"`
+		Latitude         float64                     `json:"latitude" binding:"required"`
+		Longitude        float64                     `json:"longitude" binding:"required"`
+		ZoneID           string                      `json:"zoneId" binding:"required"`
+		UnlockTier       *int                        `json:"unlockTier"`
+		RewardMode       string                      `json:"rewardMode"`
+		RandomRewardSize string                      `json:"randomRewardSize"`
+		RewardExperience int                         `json:"rewardExperience"`
+		Gold             *int                        `json:"gold"`
 		MaterialRewards  []baseMaterialRewardPayload `json:"materialRewards"`
 		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -13952,14 +13971,14 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Latitude         *float64 `json:"latitude"`
-		Longitude        *float64 `json:"longitude"`
-		ZoneID           *string  `json:"zoneId"`
-		UnlockTier       *int     `json:"unlockTier"`
-		RewardMode       string   `json:"rewardMode"`
-		RandomRewardSize string   `json:"randomRewardSize"`
-		RewardExperience *int     `json:"rewardExperience"`
-		Gold             *int     `json:"gold"`
+		Latitude         *float64                    `json:"latitude"`
+		Longitude        *float64                    `json:"longitude"`
+		ZoneID           *string                     `json:"zoneId"`
+		UnlockTier       *int                        `json:"unlockTier"`
+		RewardMode       string                      `json:"rewardMode"`
+		RandomRewardSize string                      `json:"randomRewardSize"`
+		RewardExperience *int                        `json:"rewardExperience"`
+		Gold             *int                        `json:"gold"`
 		MaterialRewards  []baseMaterialRewardPayload `json:"materialRewards"`
 		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`

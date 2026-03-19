@@ -4812,22 +4812,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (!base.latitude.isFinite || !base.longitude.isFinite) continue;
       if (base.latitude == 0.0 && base.longitude == 0.0) continue;
 
+      final baseMarkerImageUrl = base.imageUrl.isNotEmpty
+          ? base.imageUrl
+          : (base.thumbnailUrl.isNotEmpty
+                ? base.thumbnailUrl
+                : _baseDiscoveredImageUrl);
+
       Uint8List? imageBytes;
       try {
-        imageBytes = await loadPoiThumbnail(
-          base.thumbnailUrl.isNotEmpty
-              ? base.thumbnailUrl
-              : _baseDiscoveredImageUrl,
-        );
+        imageBytes = await loadPoiThumbnail(baseMarkerImageUrl);
       } catch (_) {}
 
       if (imageBytes != null) {
-        final imageKey =
-            (base.thumbnailUrl.isNotEmpty
-                    ? base.thumbnailUrl
-                    : _baseDiscoveredImageUrl)
-                .hashCode
-                .abs();
+        final imageKey = baseMarkerImageUrl.hashCode.abs();
         final imageId = 'base_${base.id}_${imageKey}_$_mapThumbnailVersion';
         await _ensureMapImage(c, imageId, imageBytes);
 
@@ -7617,7 +7614,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => BasePanel(
         base: base,
         onClose: () => Navigator.of(context).pop(),
-        onEnterBase: () => context.push('/base-management/${base.id}'),
       ),
     );
   }

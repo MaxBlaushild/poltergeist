@@ -6,6 +6,22 @@ class BaseService {
 
   final ApiClient _api;
 
+  Future<List<BaseResourceBalanceData>> getResourceBalances() async {
+    final data = await _api.get<Map<String, dynamic>>('/sonar/base/resources');
+    final rawBalances = data['balances'];
+    if (rawBalances is! List) {
+      return const <BaseResourceBalanceData>[];
+    }
+    return rawBalances
+        .whereType<Map>()
+        .map(
+          (entry) => BaseResourceBalanceData.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<BaseProgressionSnapshot> getMyBase() async {
     final data = await _api.get<Map<String, dynamic>>('/sonar/base/me');
     return BaseProgressionSnapshot.fromJson(data);
@@ -34,9 +50,14 @@ class BaseService {
         .toList();
   }
 
-  Future<BaseProgressionSnapshot> buildStructure(String key) async {
+  Future<BaseProgressionSnapshot> buildStructure(
+    String key, {
+    required int gridX,
+    required int gridY,
+  }) async {
     final data = await _api.post<Map<String, dynamic>>(
       '/sonar/base/structures/$key/build',
+      data: <String, dynamic>{'gridX': gridX, 'gridY': gridY},
     );
     return BaseProgressionSnapshot.fromJson(data);
   }
@@ -44,6 +65,24 @@ class BaseService {
   Future<BaseProgressionSnapshot> upgradeStructure(String key) async {
     final data = await _api.post<Map<String, dynamic>>(
       '/sonar/base/structures/$key/upgrade',
+    );
+    return BaseProgressionSnapshot.fromJson(data);
+  }
+
+  Future<BaseProgressionSnapshot> moveRooms({
+    required String anchorStructureKey,
+    required List<String> structureKeys,
+    required int targetGridX,
+    required int targetGridY,
+  }) async {
+    final data = await _api.post<Map<String, dynamic>>(
+      '/sonar/base/layout/move',
+      data: <String, dynamic>{
+        'anchorStructureKey': anchorStructureKey,
+        'structureKeys': structureKeys,
+        'targetGridX': targetGridX,
+        'targetGridY': targetGridY,
+      },
     );
     return BaseProgressionSnapshot.fromJson(data);
   }

@@ -178,6 +178,11 @@ func (BaseStructureLevelVisual) TableName() string {
 	return "base_structure_level_visuals"
 }
 
+type BaseGridPosition struct {
+	GridX int `json:"gridX"`
+	GridY int `json:"gridY"`
+}
+
 type UserBaseStructure struct {
 	ID           uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	CreatedAt    time.Time `json:"createdAt"`
@@ -186,6 +191,8 @@ type UserBaseStructure struct {
 	UserID       uuid.UUID `json:"userId" gorm:"column:user_id;type:uuid"`
 	StructureKey string    `json:"structureKey" gorm:"column:structure_key"`
 	Level        int       `json:"level"`
+	GridX        int       `json:"gridX" gorm:"column:grid_x"`
+	GridY        int       `json:"gridY" gorm:"column:grid_y"`
 }
 
 func (UserBaseStructure) TableName() string {

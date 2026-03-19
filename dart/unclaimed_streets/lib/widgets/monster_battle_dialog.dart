@@ -286,6 +286,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _pendingLocalDamage = 0;
   int _victoryRewardExperience = 0;
   int _victoryRewardGold = 0;
+  bool _hasCachedVictoryRewards = false;
   List<Map<String, dynamic>> _victoryBaseResourcesAwarded =
       const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _victoryItemsAwarded =
@@ -1468,7 +1469,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   void _cacheVictoryRewardsFromPayload(Map<String, dynamic>? payload) {
     if (payload == null || payload.isEmpty) return;
-    if (!widget.isPartyBattle) return;
     final detailRaw = payload['battleDetail'];
     final detail = detailRaw is Map<String, dynamic>
         ? detailRaw
@@ -1498,6 +1498,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           : const <Map<String, dynamic>>[];
       _victoryRewardExperience = _parseIntValue(reward['rewardExperience']);
       _victoryRewardGold = _parseIntValue(reward['rewardGold']);
+      _hasCachedVictoryRewards = true;
       _victoryBaseResourcesAwarded = baseResources;
       _victoryItemsAwarded = items;
       return;
@@ -2424,7 +2425,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     if (monsterId.isEmpty) return null;
     try {
       final poiService = context.read<PoiService>();
-      return await poiService.applyMonsterBattleDamage(monsterId, damage);
+      final response = await poiService.applyMonsterBattleDamage(
+        monsterId,
+        damage,
+      );
+      _cacheVictoryRewardsFromPayload(response);
+      return response;
     } catch (_) {
       // Keep local combat responsive if the server sync fails.
       return null;
@@ -3407,17 +3413,27 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _busy = false;
       _battleLog.add(summary);
     });
+    final useCachedVictoryRewards =
+        outcome == MonsterBattleOutcome.victory && _hasCachedVictoryRewards;
     final postBattleHealthRemaining = math.max(1, _playerHealth);
-    final rewardExperience = widget.isPartyBattle
+    final rewardExperience = useCachedVictoryRewards
+        ? _victoryRewardExperience
+        : widget.isPartyBattle
         ? _victoryRewardExperience
         : widget.encounter.totalRewardExperience;
-    final rewardGold = widget.isPartyBattle
+    final rewardGold = useCachedVictoryRewards
+        ? _victoryRewardGold
+        : widget.isPartyBattle
         ? _victoryRewardGold
         : widget.encounter.totalRewardGold;
-    final baseResourcesAwarded = widget.isPartyBattle
+    final baseResourcesAwarded = useCachedVictoryRewards
+        ? List<Map<String, dynamic>>.from(_victoryBaseResourcesAwarded)
+        : widget.isPartyBattle
         ? List<Map<String, dynamic>>.from(_victoryBaseResourcesAwarded)
         : const <Map<String, dynamic>>[];
-    final itemsAwarded = widget.isPartyBattle
+    final itemsAwarded = useCachedVictoryRewards
+        ? List<Map<String, dynamic>>.from(_victoryItemsAwarded)
+        : widget.isPartyBattle
         ? List<Map<String, dynamic>>.from(_victoryItemsAwarded)
         : _fallbackVictoryItemsAwarded();
     debugPrint(

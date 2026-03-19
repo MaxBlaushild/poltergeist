@@ -4,12 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+const (
+	baseGridSize   = 5
+	baseGridCenter = 2
 )
 
 func serializeBaseResourceBalance(balance models.BaseResourceBalance) gin.H {
@@ -118,6 +125,8 @@ func serializeUserBaseStructure(structure models.UserBaseStructure) gin.H {
 		"userId":       structure.UserID,
 		"structureKey": structure.StructureKey,
 		"level":        structure.Level,
+		"gridX":        structure.GridX,
+		"gridY":        structure.GridY,
 		"createdAt":    structure.CreatedAt,
 		"updatedAt":    structure.UpdatedAt,
 	}
@@ -210,6 +219,7 @@ func (s *server) loadBaseSnapshot(ctx *gin.Context, base *models.Base, canManage
 		"resources":          serializeBaseResourceBalances(balances),
 		"structures":         serializeUserBaseStructures(structures),
 		"activeDailyEffects": serializeUserBaseDailyStates(activeDailyStates),
+		"grassTileUrl":       staticThumbnailURL(baseGrassTileKey),
 		"canManage":          canManage,
 	}, nil
 }
@@ -279,6 +289,142 @@ func levelCostsForTargetLevel(definition *models.BaseStructureDefinition, target
 	return costs
 }
 
+func isWithinBaseGrid(gridX int, gridY int) bool {
+	return gridX >= 0 && gridX < baseGridSize && gridY >= 0 && gridY < baseGridSize
+}
+
+func isAdjacentBaseCell(a models.BaseGridPosition, b models.BaseGridPosition) bool {
+	dx := a.GridX - b.GridX
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := a.GridY - b.GridY
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx+dy == 1
+}
+
+func isConnectedBaseLayout(positions map[string]models.BaseGridPosition) bool {
+	if len(positions) <= 1 {
+		return true
+	}
+	startKey := ""
+	if _, ok := positions["hearth"]; ok {
+		startKey = "hearth"
+	} else {
+		for key := range positions {
+			startKey = key
+			break
+		}
+	}
+	if startKey == "" {
+		return true
+	}
+	visited := map[string]bool{}
+	queue := []string{startKey}
+	visited[startKey] = true
+	for len(queue) > 0 {
+		currentKey := queue[0]
+		queue = queue[1:]
+		currentPosition := positions[currentKey]
+		for otherKey, otherPosition := range positions {
+			if visited[otherKey] {
+				continue
+			}
+			if isAdjacentBaseCell(currentPosition, otherPosition) {
+				visited[otherKey] = true
+				queue = append(queue, otherKey)
+			}
+		}
+	}
+	return len(visited) == len(positions)
+}
+
+func canBuildBaseStructureAt(structures []models.UserBaseStructure, gridX int, gridY int) bool {
+	if !isWithinBaseGrid(gridX, gridY) {
+		return false
+	}
+	target := models.BaseGridPosition{GridX: gridX, GridY: gridY}
+	hasNeighbor := false
+	for _, structure := range structures {
+		if structure.GridX == gridX && structure.GridY == gridY {
+			return false
+		}
+		if isAdjacentBaseCell(
+			target,
+			models.BaseGridPosition{GridX: structure.GridX, GridY: structure.GridY},
+		) {
+			hasNeighbor = true
+		}
+	}
+	return hasNeighbor
+}
+
+func projectedBaseMovePositions(
+	structures []models.UserBaseStructure,
+	selectedKeys []string,
+	anchorStructureKey string,
+	targetGridX int,
+	targetGridY int,
+) (map[string]models.BaseGridPosition, error) {
+	if !isWithinBaseGrid(targetGridX, targetGridY) {
+		return nil, fmt.Errorf("target position is outside the base grid")
+	}
+	if len(selectedKeys) == 0 {
+		return nil, fmt.Errorf("at least one structure is required")
+	}
+
+	structureByKey := map[string]models.UserBaseStructure{}
+	for _, structure := range structures {
+		structureByKey[structure.StructureKey] = structure
+	}
+	anchor, ok := structureByKey[anchorStructureKey]
+	if !ok {
+		return nil, fmt.Errorf("anchor structure was not found")
+	}
+
+	selectedSet := map[string]bool{}
+	for _, key := range selectedKeys {
+		if key == "" {
+			continue
+		}
+		if _, exists := structureByKey[key]; !exists {
+			return nil, fmt.Errorf("structure %s was not found", key)
+		}
+		selectedSet[key] = true
+	}
+	selectedSet[anchorStructureKey] = true
+
+	deltaX := targetGridX - anchor.GridX
+	deltaY := targetGridY - anchor.GridY
+	projected := make(map[string]models.BaseGridPosition, len(structures))
+	occupied := map[string]string{}
+	for _, structure := range structures {
+		position := models.BaseGridPosition{GridX: structure.GridX, GridY: structure.GridY}
+		if selectedSet[structure.StructureKey] {
+			position = models.BaseGridPosition{
+				GridX: structure.GridX + deltaX,
+				GridY: structure.GridY + deltaY,
+			}
+		}
+		if !isWithinBaseGrid(position.GridX, position.GridY) {
+			return nil, fmt.Errorf("the selected rooms do not fit there")
+		}
+		cellKey := fmt.Sprintf("%d:%d", position.GridX, position.GridY)
+		if existingKey, exists := occupied[cellKey]; exists && existingKey != structure.StructureKey {
+			return nil, fmt.Errorf("the selected rooms overlap another room")
+		}
+		occupied[cellKey] = structure.StructureKey
+		projected[structure.StructureKey] = position
+	}
+
+	if !isConnectedBaseLayout(projected) {
+		return nil, fmt.Errorf("the moved rooms must stay connected to the rest of the base")
+	}
+	return projected, nil
+}
+
 func (s *server) mutateBaseStructure(ctx *gin.Context, isUpgrade bool) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -317,6 +463,18 @@ func (s *server) mutateBaseStructure(ctx *gin.Context, isUpgrade bool) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	var buildRequest struct {
+		GridX *int `json:"gridX"`
+		GridY *int `json:"gridY"`
+	}
+	if !isUpgrade {
+		if err := ctx.ShouldBindJSON(&buildRequest); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	structureLevels := map[string]int{}
 	currentLevel := 0
 	for _, structure := range structures {
@@ -335,6 +493,12 @@ func (s *server) mutateBaseStructure(ctx *gin.Context, isUpgrade bool) {
 		targetLevel = currentLevel + 1
 	} else if currentLevel > 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "structure is already built"})
+		return
+	} else if buildRequest.GridX == nil || buildRequest.GridY == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "gridX and gridY are required"})
+		return
+	} else if !canBuildBaseStructureAt(structures, *buildRequest.GridX, *buildRequest.GridY) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "new rooms can only be built on an empty tile adjacent to your existing base"})
 		return
 	}
 
@@ -359,6 +523,8 @@ func (s *server) mutateBaseStructure(ctx *gin.Context, isUpgrade bool) {
 		structureKey,
 		targetLevel,
 		levelCostsForTargetLevel(definition, targetLevel),
+		buildRequest.GridX,
+		buildRequest.GridY,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -425,6 +591,88 @@ func (s *server) getBaseProgression(ctx *gin.Context) {
 	}
 
 	snapshot, err := s.loadBaseSnapshot(ctx, base, canManage)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, snapshot)
+}
+
+func (s *server) moveBaseLayout(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	base, err := s.dbClient.Base().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if base == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "you need a base before you can move rooms"})
+		return
+	}
+
+	var request struct {
+		AnchorStructureKey string   `json:"anchorStructureKey"`
+		StructureKeys      []string `json:"structureKeys"`
+		TargetGridX        int      `json:"targetGridX"`
+		TargetGridY        int      `json:"targetGridY"`
+	}
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	request.AnchorStructureKey = strings.TrimSpace(request.AnchorStructureKey)
+	if request.AnchorStructureKey == "" {
+		request.AnchorStructureKey = strings.TrimSpace(ctx.Query("anchorStructureKey"))
+	}
+	if request.AnchorStructureKey == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "anchorStructureKey is required"})
+		return
+	}
+
+	structureKeySet := map[string]bool{}
+	selectedKeys := make([]string, 0, len(request.StructureKeys)+1)
+	for _, key := range request.StructureKeys {
+		key = strings.TrimSpace(key)
+		if key == "" || structureKeySet[key] {
+			continue
+		}
+		structureKeySet[key] = true
+		selectedKeys = append(selectedKeys, key)
+	}
+	if !structureKeySet[request.AnchorStructureKey] {
+		selectedKeys = append(selectedKeys, request.AnchorStructureKey)
+	}
+	sort.Strings(selectedKeys)
+
+	structures, err := s.dbClient.UserBaseStructure().FindByBaseID(ctx, base.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	projected, err := projectedBaseMovePositions(
+		structures,
+		selectedKeys,
+		request.AnchorStructureKey,
+		request.TargetGridX,
+		request.TargetGridY,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.UserBaseStructure().MoveMany(ctx, base.ID, user.ID, projected); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	snapshot, err := s.loadCurrentUserBaseSnapshot(ctx, user.ID.String())
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -47,7 +47,7 @@ func (h *baseHandle) UpsertForUser(ctx context.Context, userID uuid.UUID, latitu
 		return nil, err
 	}
 	if base != nil {
-		if err := (&userBaseStructureHandle{db: h.db}).EnsureBuilt(ctx, base.ID, userID, "hearth", 1); err != nil {
+		if err := (&userBaseStructureHandle{db: h.db}).EnsureBuilt(ctx, base.ID, userID, "hearth", 1, 2, 2); err != nil {
 			return nil, err
 		}
 	}

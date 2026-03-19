@@ -231,6 +231,8 @@ func (h *userBaseStructureHandle) FindByBaseID(ctx context.Context, baseID uuid.
 	var structures []models.UserBaseStructure
 	if err := h.db.WithContext(ctx).
 		Where("base_id = ?", baseID).
+		Order("grid_y ASC").
+		Order("grid_x ASC").
 		Order("created_at ASC").
 		Order("structure_key ASC").
 		Find(&structures).Error; err != nil {
@@ -239,7 +241,7 @@ func (h *userBaseStructureHandle) FindByBaseID(ctx context.Context, baseID uuid.
 	return structures, nil
 }
 
-func (h *userBaseStructureHandle) EnsureBuilt(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int) error {
+func (h *userBaseStructureHandle) EnsureBuilt(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, gridX int, gridY int) error {
 	if baseID == uuid.Nil || userID == uuid.Nil || structureKey == "" || level <= 0 {
 		return nil
 	}
@@ -252,14 +254,22 @@ func (h *userBaseStructureHandle) EnsureBuilt(ctx context.Context, baseID uuid.U
 		UserID:       userID,
 		StructureKey: structureKey,
 		Level:        level,
+		GridX:        gridX,
+		GridY:        gridY,
 	}
 	return h.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "base_id"}, {Name: "structure_key"}},
-		DoNothing: true,
+		Columns: []clause.Column{{Name: "base_id"}, {Name: "structure_key"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"level":      level,
+			"user_id":    userID,
+			"grid_x":     gridX,
+			"grid_y":     gridY,
+			"updated_at": now,
+		}),
 	}).Create(structure).Error
 }
 
-func (h *userBaseStructureHandle) UpsertLevelWithCost(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, costs []models.BaseResourceDelta) (*models.UserBaseStructure, error) {
+func (h *userBaseStructureHandle) UpsertLevelWithCost(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, costs []models.BaseResourceDelta, gridX *int, gridY *int) (*models.UserBaseStructure, error) {
 	normalizedCosts := normalizeBaseResourceDeltas(costs)
 	if baseID == uuid.Nil || userID == uuid.Nil || structureKey == "" || level <= 0 {
 		return nil, fmt.Errorf("invalid base structure update")
@@ -309,13 +319,22 @@ func (h *userBaseStructureHandle) UpsertLevelWithCost(ctx context.Context, baseI
 			StructureKey: structureKey,
 			Level:        level,
 		}
+		assignments := map[string]interface{}{
+			"level":      level,
+			"updated_at": now,
+			"user_id":    userID,
+		}
+		if gridX != nil {
+			upserted.GridX = *gridX
+			assignments["grid_x"] = *gridX
+		}
+		if gridY != nil {
+			upserted.GridY = *gridY
+			assignments["grid_y"] = *gridY
+		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "base_id"}, {Name: "structure_key"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"level":      level,
-				"updated_at": now,
-				"user_id":    userID,
-			}),
+			Columns:   []clause.Column{{Name: "base_id"}, {Name: "structure_key"}},
+			DoUpdates: clause.Assignments(assignments),
 		}).Create(upserted).Error; err != nil {
 			return err
 		}
@@ -325,6 +344,48 @@ func (h *userBaseStructureHandle) UpsertLevelWithCost(ctx context.Context, baseI
 		return nil, err
 	}
 	return &structure, nil
+}
+
+func (h *userBaseStructureHandle) MoveMany(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, positions map[string]models.BaseGridPosition) error {
+	if baseID == uuid.Nil || userID == uuid.Nil || len(positions) == 0 {
+		return fmt.Errorf("invalid base structure move")
+	}
+	now := time.Now()
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		index := 0
+		for structureKey := range positions {
+			result := tx.Model(&models.UserBaseStructure{}).
+				Where("base_id = ? AND user_id = ? AND structure_key = ?", baseID, userID, structureKey).
+				Updates(map[string]interface{}{
+					"grid_x":     -(index + 1000),
+					"grid_y":     -(index + 1000),
+					"updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("structure %s was not found", structureKey)
+			}
+			index++
+		}
+		for structureKey, position := range positions {
+			result := tx.Model(&models.UserBaseStructure{}).
+				Where("base_id = ? AND user_id = ? AND structure_key = ?", baseID, userID, structureKey).
+				Updates(map[string]interface{}{
+					"grid_x":     position.GridX,
+					"grid_y":     position.GridY,
+					"updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("structure %s was not found", structureKey)
+			}
+		}
+		return nil
+	})
 }
 
 type userBaseDailyStateHandle struct {
