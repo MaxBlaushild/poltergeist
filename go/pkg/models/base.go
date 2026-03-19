@@ -14,6 +14,7 @@ type Base struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 	UserID       uuid.UUID `json:"userId"`
 	User         User      `json:"user"`
+	Name         *string   `json:"name,omitempty"`
 	Latitude     float64   `json:"latitude"`
 	Longitude    float64   `json:"longitude"`
 	Geometry     string    `json:"geometry" gorm:"type:geometry(Point,4326)"`

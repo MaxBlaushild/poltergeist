@@ -178,7 +178,7 @@ class BaseProgressionSnapshot {
     required this.resources,
     required this.structures,
     required this.activeDailyEffects,
-    required this.grassTileUrl,
+    required this.grassTileUrls,
     required this.canManage,
   });
 
@@ -186,7 +186,7 @@ class BaseProgressionSnapshot {
   final List<BaseResourceBalanceData> resources;
   final List<UserBaseStructureData> structures;
   final List<BaseDailyEffectData> activeDailyEffects;
-  final String grassTileUrl;
+  final Map<String, String> grassTileUrls;
   final bool canManage;
 
   factory BaseProgressionSnapshot.fromJson(Map<String, dynamic> json) {
@@ -194,6 +194,7 @@ class BaseProgressionSnapshot {
     final rawResources = json['resources'];
     final rawStructures = json['structures'];
     final rawEffects = json['activeDailyEffects'];
+    final rawGrassTileUrls = json['grassTileUrls'];
     return BaseProgressionSnapshot(
       base: rawBase is Map<String, dynamic>
           ? BasePin.fromJson(rawBase)
@@ -230,7 +231,15 @@ class BaseProgressionSnapshot {
                 )
                 .toList()
           : const <BaseDailyEffectData>[],
-      grassTileUrl: json['grassTileUrl']?.toString() ?? '',
+      grassTileUrls: rawGrassTileUrls is Map<String, dynamic>
+          ? rawGrassTileUrls.map(
+              (key, value) => MapEntry(key, value?.toString() ?? ''),
+            )
+          : rawGrassTileUrls is Map
+          ? Map<String, dynamic>.from(
+              rawGrassTileUrls,
+            ).map((key, value) => MapEntry(key, value?.toString() ?? ''))
+          : const <String, String>{},
       canManage: json['canManage'] == true,
     );
   }

@@ -31,6 +31,7 @@ func serializeBase(base *models.Base) gin.H {
 	return gin.H{
 		"id":          base.ID,
 		"userId":      base.UserID,
+		"name":        base.Name,
 		"owner":       owner,
 		"latitude":    base.Latitude,
 		"longitude":   base.Longitude,
@@ -48,6 +49,14 @@ func serializeBase(base *models.Base) gin.H {
 		"createdAt": base.CreatedAt,
 		"updatedAt": base.UpdatedAt,
 	}
+}
+
+func trimmedNullableString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (s *server) getVisibleBases(ctx *gin.Context) {
@@ -101,6 +110,69 @@ func (s *server) getAllBases(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) updateCurrentUserBase(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	base, err := s.dbClient.Base().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if base == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "you need a base before you can edit its details"})
+		return
+	}
+
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if len(name) > 80 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "base name must be 80 characters or fewer"})
+		return
+	}
+
+	description := strings.TrimSpace(body.Description)
+	if len(description) > 500 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "base description must be 500 characters or fewer"})
+		return
+	}
+
+	if err := s.dbClient.Base().UpdateDetails(
+		ctx,
+		base.ID,
+		trimmedNullableString(name),
+		trimmedNullableString(description),
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedBase, err := s.dbClient.Base().FindByID(ctx, base.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	snapshot, err := s.loadBaseSnapshot(ctx, updatedBase, true)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, snapshot)
 }
 
 func (s *server) deleteBase(ctx *gin.Context) {

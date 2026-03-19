@@ -42,6 +42,7 @@ class BaseOwner {
 class BasePin {
   final String id;
   final String userId;
+  final String name;
   final BaseOwner owner;
   final double latitude;
   final double longitude;
@@ -52,6 +53,7 @@ class BasePin {
   const BasePin({
     required this.id,
     required this.userId,
+    required this.name,
     required this.owner,
     required this.latitude,
     required this.longitude,
@@ -70,6 +72,7 @@ class BasePin {
     return BasePin(
       id: json['id']?.toString() ?? '',
       userId: json['userId']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
       owner: BaseOwner.fromJson(ownerMap),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,

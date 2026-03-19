@@ -45,14 +45,27 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   bool _loading = true;
   String? _error;
   String? _busyStructureKey;
+  bool _editingBaseDetails = false;
+  bool _savingBaseDetails = false;
+  _GridCell? _buildSelectionCell;
   String? _moveAnchorStructureKey;
   Set<String> _moveStructureKeys = const <String>{};
   _GridCell? _moveTargetCell;
+  final TextEditingController _baseNameController = TextEditingController();
+  final TextEditingController _baseDescriptionController =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _baseNameController.dispose();
+    _baseDescriptionController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -73,6 +86,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
         _loading = false;
       });
+      _syncBaseEditorsToSnapshot();
       _syncMoveStateToSnapshot();
     } catch (e) {
       if (!mounted) return;
@@ -81,6 +95,17 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         _error = e.toString();
       });
     }
+  }
+
+  void _syncBaseEditorsToSnapshot() {
+    final base = _snapshot?.base;
+    if (base == null) {
+      _baseNameController.text = '';
+      _baseDescriptionController.text = '';
+      return;
+    }
+    _baseNameController.text = base.name;
+    _baseDescriptionController.text = base.description;
   }
 
   void _syncMoveStateToSnapshot() {
@@ -179,6 +204,41 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       if (!mounted) return;
       setState(() {
         _busyStructureKey = null;
+        _error = e.toString();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _saveBaseDetails() async {
+    if (_snapshot?.canManage != true) return;
+    setState(() {
+      _savingBaseDetails = true;
+      _error = null;
+    });
+    try {
+      final nextSnapshot = await context
+          .read<BaseService>()
+          .updateMyBaseDetails(
+            name: _baseNameController.text,
+            description: _baseDescriptionController.text,
+          );
+      if (!mounted) return;
+      setState(() {
+        _snapshot = nextSnapshot;
+        _editingBaseDetails = false;
+        _savingBaseDetails = false;
+      });
+      _syncBaseEditorsToSnapshot();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Base details updated.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _savingBaseDetails = false;
         _error = e.toString();
       });
       ScaffoldMessenger.of(
@@ -324,6 +384,48 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     return _friendlyResourceName(key);
   }
 
+  IconData _materialIcon(String key) {
+    switch (key) {
+      case 'timber':
+        return Icons.park;
+      case 'stone':
+        return Icons.landscape;
+      case 'iron':
+        return Icons.hardware;
+      case 'herbs':
+        return Icons.local_florist;
+      case 'monster_parts':
+        return Icons.pets;
+      case 'arcane_dust':
+        return Icons.auto_awesome;
+      case 'relic_shards':
+        return Icons.diamond;
+      default:
+        return Icons.inventory_2;
+    }
+  }
+
+  Color _materialAccentColor(String key) {
+    switch (key) {
+      case 'timber':
+        return const Color(0xFF8D6E63);
+      case 'stone':
+        return const Color(0xFF78909C);
+      case 'iron':
+        return const Color(0xFF546E7A);
+      case 'herbs':
+        return const Color(0xFF43A047);
+      case 'monster_parts':
+        return const Color(0xFFC62828);
+      case 'arcane_dust':
+        return const Color(0xFF6A5ACD);
+      case 'relic_shards':
+        return const Color(0xFF00897B);
+      default:
+        return const Color(0xFF616161);
+    }
+  }
+
   bool _isWithinGrid(int gridX, int gridY) {
     return gridX >= 0 &&
         gridX < _baseGridSize &&
@@ -448,7 +550,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     });
   }
 
-  Future<void> _showBuildOptions(_GridCell cell) async {
+  void _showBuildOptions(_GridCell cell) {
     if (!_snapshot!.canManage) return;
     final options = _buildOptionsForCell(cell);
     if (options.isEmpty) {
@@ -459,26 +561,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       );
       return;
     }
-    final selected = await showModalBottomSheet<BaseStructureDefinitionData>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => _BuildRoomSheet(
-        cell: cell,
-        options: options,
-        friendlyResourceName: _friendlyResourceName,
-        canAfford: _canAfford,
-        costsForLevel: _costsForLevel,
-        prerequisiteText: _prerequisiteText,
-        hasMetPrerequisites: _hasMetPrerequisites,
-      ),
-    );
-    if (selected == null) return;
-    await _mutateStructure(
-      selected,
-      false,
-      gridX: cell.gridX,
-      gridY: cell.gridY,
-    );
+    setState(() {
+      _buildSelectionCell = cell;
+    });
   }
 
   Future<void> _showRoomDetails(UserBaseStructureData structure) async {
@@ -493,7 +578,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         canManage: _snapshot?.canManage == true,
         isBusy: _busyStructureKey == definition.key,
         isMaxed: structure.level >= definition.maxLevel,
-        friendlyResourceName: _friendlyResourceName,
+        resourceAmounts: _resourceAmounts,
+        materialIcon: _materialIcon,
+        materialAccentColor: _materialAccentColor,
         costs: _costsForLevel(definition, structure.level + 1),
         canAffordUpgrade: _canAfford(
           _costsForLevel(definition, structure.level + 1),
@@ -545,6 +632,173 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
+  Widget _buildCostBadge(ThemeData theme, BaseStructureCostData cost) {
+    final available = _resourceAmounts[cost.resourceKey] ?? 0;
+    final hasEnough = available >= cost.amount;
+    final accentColor = hasEnough
+        ? _materialAccentColor(cost.resourceKey)
+        : theme.colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accentColor, width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_materialIcon(cost.resourceKey), size: 18, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            '$available / ${cost.amount}',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: accentColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBuildSelectionView(
+    ThemeData theme,
+    List<BaseStructureDefinitionData> options,
+  ) {
+    final selectedCell = _buildSelectionCell;
+    if (selectedCell == null) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: () {
+                setState(() {
+                  _buildSelectionCell = null;
+                });
+              },
+              icon: const Icon(Icons.arrow_back),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Choose a room to add on this tile.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        ...options.map((definition) {
+          final costs = _costsForLevel(definition, 1);
+          final isAffordable = _canAfford(costs);
+          final hasPrereqs = _hasMetPrerequisites(definition);
+          final isBusy = _busyStructureKey == definition.key;
+          final previewVisual = _visualForLevel(definition, 1);
+          final previewImageUrl =
+              (previewVisual?.imageUrl.trim().isNotEmpty ?? false)
+              ? previewVisual!.imageUrl.trim()
+              : (previewVisual?.thumbnailUrl.trim().isNotEmpty ?? false)
+              ? previewVisual!.thumbnailUrl.trim()
+              : '';
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (previewImageUrl.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 1.45,
+                      child: Image.network(
+                        previewImageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            _RoomFallbackLabel(title: definition.name),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text(
+                  definition.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(definition.description),
+                if (!hasPrereqs) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Requires ${_prerequisiteText(definition)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+                if (costs.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: costs
+                        .map((cost) => _buildCostBadge(theme, cost))
+                        .toList(),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: hasPrereqs && isAffordable && !isBusy
+                        ? () async {
+                            await _mutateStructure(
+                              definition,
+                              false,
+                              gridX: selectedCell.gridX,
+                              gridY: selectedCell.gridY,
+                            );
+                            if (!mounted) return;
+                            setState(() {
+                              _buildSelectionCell = null;
+                            });
+                          }
+                        : null,
+                    child: isBusy
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            hasPrereqs && isAffordable
+                                ? 'Build ${definition.name}'
+                                : !hasPrereqs
+                                ? 'Locked'
+                                : 'Need More Materials',
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildGrid(ThemeData theme) {
     final snapshot = _snapshot;
     if (snapshot == null) return const SizedBox.shrink();
@@ -587,7 +841,8 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                       height: tileSize,
                       child: _BaseGridTile(
                         tileSize: tileSize,
-                        grassTileUrl: snapshot.grassTileUrl,
+                        grassTileUrl:
+                            snapshot.grassTileUrls['$column:$row'] ?? '',
                         structure: structure,
                         definition: structure == null
                             ? null
@@ -599,6 +854,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                                 structure.level,
                               ),
                         showPlus:
+                            snapshot.canManage &&
                             structure == null &&
                             _moveAnchorStructureKey == null &&
                             isAdjacentBuildCell,
@@ -763,10 +1019,146 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
+  Widget _buildBaseFlavorSection(ThemeData theme) {
+    final snapshot = _snapshot;
+    final base = snapshot?.base;
+    if (snapshot == null || base == null) {
+      return const SizedBox.shrink();
+    }
+
+    final baseName = base.name.trim();
+    final description = base.description.trim();
+    final hasFlavor = baseName.isNotEmpty || description.isNotEmpty;
+    if (!snapshot.canManage && !hasFlavor) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.22,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: _editingBaseDetails && snapshot.canManage
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Edit Base Flavor',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _baseNameController,
+                  enabled: !_savingBaseDetails,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Base name',
+                    hintText: 'Give your base a name',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _baseDescriptionController,
+                  enabled: !_savingBaseDetails,
+                  textCapitalization: TextCapitalization.sentences,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Base description',
+                    hintText: 'Describe what makes this base yours',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _savingBaseDetails
+                            ? null
+                            : () {
+                                _syncBaseEditorsToSnapshot();
+                                setState(() {
+                                  _editingBaseDetails = false;
+                                });
+                              },
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _savingBaseDetails ? null : _saveBaseDetails,
+                        child: _savingBaseDetails
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (baseName.isNotEmpty)
+                  Text(
+                    baseName,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                if (baseName.isNotEmpty && description.isNotEmpty)
+                  const SizedBox(height: 8),
+                Text(
+                  description.isNotEmpty
+                      ? description
+                      : snapshot.canManage
+                      ? 'Give your base a name and description so it feels like home.'
+                      : 'This base has not been described yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                ),
+                if (snapshot.canManage) ...[
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _syncBaseEditorsToSnapshot();
+                        setState(() {
+                          _editingBaseDetails = true;
+                        });
+                      },
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Edit Details'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final snapshot = _snapshot;
+    final buildSelectionCell = _buildSelectionCell;
+    final buildOptions = buildSelectionCell == null
+        ? const <BaseStructureDefinitionData>[]
+        : _buildOptionsForCell(buildSelectionCell);
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -808,7 +1200,10 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                 style: theme.textTheme.bodyLarge,
               ),
             )
+          else if (buildSelectionCell != null)
+            _buildBuildSelectionView(theme, buildOptions)
           else ...[
+            _buildBaseFlavorSection(theme),
             _buildGrid(theme),
             _buildMoveControls(theme),
             if (snapshot!.canManage) ...[
@@ -981,126 +1376,6 @@ class _RoomFallbackLabel extends StatelessWidget {
   }
 }
 
-class _BuildRoomSheet extends StatelessWidget {
-  const _BuildRoomSheet({
-    required this.cell,
-    required this.options,
-    required this.friendlyResourceName,
-    required this.canAfford,
-    required this.costsForLevel,
-    required this.prerequisiteText,
-    required this.hasMetPrerequisites,
-  });
-
-  final _GridCell cell;
-  final List<BaseStructureDefinitionData> options;
-  final String Function(String key) friendlyResourceName;
-  final bool Function(List<BaseStructureCostData>) canAfford;
-  final List<BaseStructureCostData> Function(
-    BaseStructureDefinitionData definition,
-    int level,
-  )
-  costsForLevel;
-  final String Function(BaseStructureDefinitionData definition)
-  prerequisiteText;
-  final bool Function(BaseStructureDefinitionData definition)
-  hasMetPrerequisites;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Build At (${cell.gridX + 1}, ${cell.gridY + 1})',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a room to add on this tile.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            ...options.map((definition) {
-              final costs = costsForLevel(definition, 1);
-              final isAffordable = canAfford(costs);
-              final hasPrereqs = hasMetPrerequisites(definition);
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      definition.name,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(definition.description),
-                    if (!hasPrereqs) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Requires ${prerequisiteText(definition)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: costs
-                          .map(
-                            (cost) => Chip(
-                              label: Text(
-                                '${friendlyResourceName(cost.resourceKey)} ${cost.amount}',
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: hasPrereqs && isAffordable
-                            ? () => Navigator.of(context).pop(definition)
-                            : null,
-                        child: Text(
-                          hasPrereqs && isAffordable
-                              ? 'Build ${definition.name}'
-                              : !hasPrereqs
-                              ? 'Locked'
-                              : 'Need More Materials',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _RoomDetailsSheet extends StatelessWidget {
   const _RoomDetailsSheet({
     required this.definition,
@@ -1108,7 +1383,9 @@ class _RoomDetailsSheet extends StatelessWidget {
     required this.canManage,
     required this.isBusy,
     required this.isMaxed,
-    required this.friendlyResourceName,
+    required this.resourceAmounts,
+    required this.materialIcon,
+    required this.materialAccentColor,
     required this.costs,
     required this.canAffordUpgrade,
     required this.visual,
@@ -1120,7 +1397,9 @@ class _RoomDetailsSheet extends StatelessWidget {
   final bool canManage;
   final bool isBusy;
   final bool isMaxed;
-  final String Function(String key) friendlyResourceName;
+  final Map<String, int> resourceAmounts;
+  final IconData Function(String key) materialIcon;
+  final Color Function(String key) materialAccentColor;
   final List<BaseStructureCostData> costs;
   final bool canAffordUpgrade;
   final BaseStructureLevelVisualData? visual;
@@ -1134,6 +1413,37 @@ class _RoomDetailsSheet extends StatelessWidget {
       return visual!.thumbnailUrl.trim();
     }
     return '';
+  }
+
+  Widget _buildCostBadge(BuildContext context, BaseStructureCostData cost) {
+    final theme = Theme.of(context);
+    final available = resourceAmounts[cost.resourceKey] ?? 0;
+    final hasEnough = available >= cost.amount;
+    final accentColor = hasEnough
+        ? materialAccentColor(cost.resourceKey)
+        : theme.colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accentColor, width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(materialIcon(cost.resourceKey), size: 18, color: accentColor),
+          const SizedBox(width: 6),
+          Text(
+            '$available / ${cost.amount}',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: accentColor,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1200,13 +1510,7 @@ class _RoomDetailsSheet extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: costs
-                    .map(
-                      (cost) => Chip(
-                        label: Text(
-                          '${friendlyResourceName(cost.resourceKey)} ${cost.amount}',
-                        ),
-                      ),
-                    )
+                    .map((cost) => _buildCostBadge(context, cost))
                     .toList(),
               ),
             ],

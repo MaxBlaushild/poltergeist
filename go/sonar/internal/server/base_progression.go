@@ -184,6 +184,17 @@ func serializeBaseStructureDefinitions(definitions []models.BaseStructureDefinit
 	return response
 }
 
+func buildBaseGrassTileURLs() gin.H {
+	urls := gin.H{}
+	for gridY := 0; gridY < baseGridSize; gridY++ {
+		for gridX := 0; gridX < baseGridSize; gridX++ {
+			_, destinationKey, _ := baseGrassTileConfig(gridX, gridY)
+			urls[fmt.Sprintf("%d:%d", gridX, gridY)] = staticThumbnailURL(destinationKey)
+		}
+	}
+	return urls
+}
+
 func (s *server) loadBaseSnapshot(ctx *gin.Context, base *models.Base, canManage bool) (gin.H, error) {
 	structures := []models.UserBaseStructure{}
 	if base != nil {
@@ -219,7 +230,7 @@ func (s *server) loadBaseSnapshot(ctx *gin.Context, base *models.Base, canManage
 		"resources":          serializeBaseResourceBalances(balances),
 		"structures":         serializeUserBaseStructures(structures),
 		"activeDailyEffects": serializeUserBaseDailyStates(activeDailyStates),
-		"grassTileUrl":       staticThumbnailURL(baseGrassTileKey),
+		"grassTileUrls":      buildBaseGrassTileURLs(),
 		"canManage":          canManage,
 	}, nil
 }

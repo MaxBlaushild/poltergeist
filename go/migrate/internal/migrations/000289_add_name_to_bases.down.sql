@@ -1,0 +1,2 @@
+ALTER TABLE bases
+DROP COLUMN IF EXISTS name;

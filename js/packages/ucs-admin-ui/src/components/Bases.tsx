@@ -58,6 +58,17 @@ type BaseStructureDefinition = {
   levelVisuals?: BaseStructureLevelVisual[];
 };
 
+type BaseGrassTileStatus = {
+  gridX: number;
+  gridY: number;
+  status?: string;
+  exists?: boolean;
+  thumbnailUrl?: string;
+  requestedAt?: string;
+  lastModified?: string;
+  prompt?: string;
+};
+
 const defaultBaseIconPrompt =
   'A discovered adventurer base marker in a retro 16-bit fantasy MMORPG style. Top-down map-ready icon art, sturdy camp or homestead sigil, welcoming hearth glow, no text, no logos, centered composition, crisp outlines, limited palette.';
 
@@ -104,6 +115,11 @@ const secondaryOwnerLabel = (record: BaseRecord) => {
   return name;
 };
 
+const grassTileKey = (gridX: number, gridY: number) => `${gridX}:${gridY}`;
+
+const defaultGrassPromptForCell = (gridX: number, gridY: number) =>
+  `${defaultBaseGrassPrompt} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
+
 export const Bases = () => {
   const { apiClient } = useAPI();
   const [records, setRecords] = useState<BaseRecord[]>([]);
@@ -124,14 +140,11 @@ export const Bases = () => {
   const [iconError, setIconError] = useState<string | null>(null);
   const [iconPreviewNonce, setIconPreviewNonce] = useState(Date.now());
   const [isIconLightboxOpen, setIsIconLightboxOpen] = useState(false);
+  const [grassTilesByKey, setGrassTilesByKey] = useState<
+    Record<string, BaseGrassTileStatus>
+  >({});
+  const [selectedGrassKey, setSelectedGrassKey] = useState('0:0');
   const [grassPrompt, setGrassPrompt] = useState(defaultBaseGrassPrompt);
-  const [grassUrl, setGrassUrl] = useState(
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-grass-tile.png'
-  );
-  const [grassStatus, setGrassStatus] = useState<string>('unknown');
-  const [grassExists, setGrassExists] = useState(false);
-  const [grassRequestedAt, setGrassRequestedAt] = useState<string | null>(null);
-  const [grassLastModified, setGrassLastModified] = useState<string | null>(null);
   const [grassStatusLoading, setGrassStatusLoading] = useState(false);
   const [grassBusy, setGrassBusy] = useState(false);
   const [grassMessage, setGrassMessage] = useState<string | null>(null);
@@ -248,29 +261,23 @@ export const Bases = () => {
       try {
         setGrassStatusLoading(true);
         setGrassError(null);
-        const response = await apiClient.get<StaticThumbnailResponse>(
-          '/sonar/admin/thumbnails/base-grass/status'
+        const response = await apiClient.get<{ tiles?: BaseGrassTileStatus[] }>(
+          '/sonar/admin/thumbnails/base-grass'
         );
-        const url = (response?.thumbnailUrl || '').trim();
-        if (url) {
-          setGrassUrl(url);
-        }
-        setGrassStatus((response?.status || 'unknown').trim() || 'unknown');
-        setGrassExists(Boolean(response?.exists));
-        setGrassRequestedAt(response?.requestedAt ? response.requestedAt : null);
-        setGrassLastModified(
-          response?.lastModified ? response.lastModified : null
-        );
+        const tiles = Array.isArray(response?.tiles) ? response.tiles : [];
+        const next: Record<string, BaseGrassTileStatus> = {};
+        tiles.forEach((tile) => {
+          next[grassTileKey(tile.gridX, tile.gridY)] = tile;
+        });
+        setGrassTilesByKey(next);
         setGrassPreviewNonce(Date.now());
         if (showMessage) {
-          setGrassMessage('Base grass tile status refreshed.');
+          setGrassMessage('Base grass tiles refreshed.');
         }
       } catch (err) {
-        console.error('Failed to load base grass tile status', err);
+        console.error('Failed to load base grass tiles', err);
         const message =
-          err instanceof Error
-            ? err.message
-            : 'Failed to load base grass tile status.';
+          err instanceof Error ? err.message : 'Failed to load base grass tiles.';
         setGrassError(message);
       } finally {
         setGrassStatusLoading(false);
@@ -285,12 +292,17 @@ export const Bases = () => {
       setGrassError('Prompt is required.');
       return;
     }
+    const [gridXText, gridYText] = selectedGrassKey.split(':');
+    const gridX = Number(gridXText);
+    const gridY = Number(gridYText);
     try {
       setGrassBusy(true);
       setGrassError(null);
       setGrassMessage(null);
-      await apiClient.post('/sonar/admin/thumbnails/base-grass', { prompt });
-      setGrassMessage('Base grass tile queued for generation.');
+      await apiClient.post(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`, {
+        prompt,
+      });
+      setGrassMessage(`Grass tile (${gridX + 1}, ${gridY + 1}) queued for generation.`);
       await refreshGrassStatus();
     } catch (err) {
       console.error('Failed to generate base grass tile', err);
@@ -302,15 +314,18 @@ export const Bases = () => {
     } finally {
       setGrassBusy(false);
     }
-  }, [apiClient, grassPrompt, refreshGrassStatus]);
+  }, [apiClient, grassPrompt, refreshGrassStatus, selectedGrassKey]);
 
   const handleDeleteGrass = useCallback(async () => {
+    const [gridXText, gridYText] = selectedGrassKey.split(':');
+    const gridX = Number(gridXText);
+    const gridY = Number(gridYText);
     try {
       setGrassBusy(true);
       setGrassError(null);
       setGrassMessage(null);
-      await apiClient.delete('/sonar/admin/thumbnails/base-grass');
-      setGrassMessage('Base grass tile deleted.');
+      await apiClient.delete(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`);
+      setGrassMessage(`Grass tile (${gridX + 1}, ${gridY + 1}) deleted.`);
       await refreshGrassStatus();
     } catch (err) {
       console.error('Failed to delete base grass tile', err);
@@ -322,7 +337,7 @@ export const Bases = () => {
     } finally {
       setGrassBusy(false);
     }
-  }, [apiClient, refreshGrassStatus]);
+  }, [apiClient, refreshGrassStatus, selectedGrassKey]);
 
   const handleDeleteBase = useCallback(
     async (record: BaseRecord) => {
@@ -453,6 +468,18 @@ export const Bases = () => {
   }, [refreshGrassStatus]);
 
   useEffect(() => {
+    const selected = grassTilesByKey[selectedGrassKey];
+    if (selected?.prompt?.trim()) {
+      setGrassPrompt(selected.prompt.trim());
+      return;
+    }
+    const [gridXText, gridYText] = selectedGrassKey.split(':');
+    setGrassPrompt(
+      defaultGrassPromptForCell(Number(gridXText), Number(gridYText))
+    );
+  }, [grassTilesByKey, selectedGrassKey]);
+
+  useEffect(() => {
     void fetchDescriptionJobs();
   }, [fetchDescriptionJobs]);
 
@@ -467,14 +494,17 @@ export const Bases = () => {
   }, [iconStatus, refreshIconStatus]);
 
   useEffect(() => {
-    if (grassStatus !== 'queued' && grassStatus !== 'in_progress') {
+    const hasPendingGrassTiles = Object.values(grassTilesByKey).some((tile) =>
+      ['queued', 'in_progress'].includes((tile.status || '').toLowerCase())
+    );
+    if (!hasPendingGrassTiles) {
       return;
     }
     const interval = window.setInterval(() => {
       void refreshGrassStatus();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [grassStatus, refreshGrassStatus]);
+  }, [grassTilesByKey, refreshGrassStatus]);
 
   useEffect(() => {
     const hasPendingJobs = Object.values(descriptionJobsByBaseId).some((job) =>
@@ -501,6 +531,18 @@ export const Bases = () => {
   if (loading) {
     return <div className="m-10">Loading bases...</div>;
   }
+
+  const selectedGrassTile = grassTilesByKey[selectedGrassKey];
+  const selectedGrassUrl =
+    selectedGrassTile?.thumbnailUrl?.trim() ||
+    `https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-grass-${selectedGrassKey.replace(
+      ':',
+      '-'
+    )}.png`;
+  const selectedGrassStatus = (selectedGrassTile?.status || 'unknown').trim() || 'unknown';
+  const selectedGrassExists = Boolean(selectedGrassTile?.exists);
+  const selectedGrassRequestedAt = selectedGrassTile?.requestedAt || null;
+  const selectedGrassLastModified = selectedGrassTile?.lastModified || null;
 
   return (
     <div className="m-10 space-y-6">
@@ -609,82 +651,131 @@ export const Bases = () => {
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Base Grass Tile</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Base Grass Tiles</h2>
             <p className="mt-1 text-xs text-gray-600">
-              Requested: {formatDate(grassRequestedAt ?? undefined)}
-            </p>
-            <p className="text-xs text-gray-600">
-              Last updated: {formatDate(grassLastModified ?? undefined)}
+              Generate and manage one top-down grass tile per board coordinate.
             </p>
           </div>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
-              grassStatus
-            )}`}
-          >
-            {grassStatus || 'unknown'}
-          </span>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => void refreshGrassStatus(true)}
             disabled={grassStatusLoading}
             className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {grassStatusLoading ? 'Refreshing...' : 'Refresh Status'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleGenerateGrass()}
-            disabled={grassBusy || grassStatusLoading}
-            className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {grassBusy ? 'Working...' : 'Generate Grass Tile'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDeleteGrass()}
-            disabled={grassBusy || grassStatusLoading}
-            className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {grassBusy ? 'Working...' : 'Delete Grass Tile'}
+            {grassStatusLoading ? 'Refreshing...' : 'Refresh Grid'}
           </button>
         </div>
 
-        <label className="mt-4 block text-sm font-medium text-gray-700">
-          Prompt
-          <textarea
-            value={grassPrompt}
-            onChange={(e) => setGrassPrompt(e.target.value)}
-            rows={4}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-          />
-        </label>
+        <div className="mt-4 grid gap-1 rounded border border-gray-200 bg-gray-50 p-3 md:w-fit">
+          {Array.from({ length: 5 }).map((_, gridY) => (
+            <div key={gridY} className="flex gap-1">
+              {Array.from({ length: 5 }).map((_, gridX) => {
+                const key = grassTileKey(gridX, gridY);
+                const tile = grassTilesByKey[key];
+                const status = (tile?.status || 'unknown').trim() || 'unknown';
+                const isSelected = selectedGrassKey === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedGrassKey(key)}
+                    className={`flex h-14 w-14 flex-col items-center justify-center rounded border text-[10px] font-semibold ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                    title={`Tile (${gridX + 1}, ${gridY + 1})`}
+                  >
+                    <span>{gridX + 1},{gridY + 1}</span>
+                    <span
+                      className={`mt-1 h-2 w-2 rounded-full ${staticStatusClassName(
+                        status
+                      )}`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
 
-        <p className="mt-3 break-all text-xs text-gray-600">URL: {grassUrl}</p>
+        <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">
+                Tile ({Number(selectedGrassKey.split(':')[0]) + 1},{' '}
+                {Number(selectedGrassKey.split(':')[1]) + 1})
+              </h3>
+              <p className="mt-1 text-xs text-gray-600">
+                Requested: {formatDate(selectedGrassRequestedAt ?? undefined)}
+              </p>
+              <p className="text-xs text-gray-600">
+                Last updated: {formatDate(selectedGrassLastModified ?? undefined)}
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+                selectedGrassStatus
+              )}`}
+            >
+              {selectedGrassStatus}
+            </span>
+          </div>
 
-        {grassExists ? (
-          <div className="mt-4 flex justify-center rounded border border-dashed border-gray-300 bg-gray-50 p-4">
+          <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => setIsGrassLightboxOpen(true)}
-              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              title="Open large preview"
+              onClick={() => void handleGenerateGrass()}
+              disabled={grassBusy || grassStatusLoading}
+              className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <img
-                src={`${grassUrl}?v=${grassPreviewNonce}`}
-                alt="Base grass tile preview"
-                className="h-28 w-28 rounded object-cover"
-              />
+              {grassBusy ? 'Working...' : 'Generate Tile'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteGrass()}
+              disabled={grassBusy || grassStatusLoading}
+              className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {grassBusy ? 'Working...' : 'Delete Tile'}
             </button>
           </div>
-        ) : (
-          <div className="mt-4 rounded border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
-            No generated grass tile found yet.
-          </div>
-        )}
+
+          <label className="mt-4 block text-sm font-medium text-gray-700">
+            Prompt
+            <textarea
+              value={grassPrompt}
+              onChange={(e) => setGrassPrompt(e.target.value)}
+              rows={4}
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <p className="mt-3 break-all text-xs text-gray-600">
+            URL: {selectedGrassUrl}
+          </p>
+
+          {selectedGrassExists ? (
+            <div className="mt-4 flex justify-center rounded border border-dashed border-gray-300 bg-white p-4">
+              <button
+                type="button"
+                onClick={() => setIsGrassLightboxOpen(true)}
+                className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                title="Open large preview"
+              >
+                <img
+                  src={`${selectedGrassUrl}?v=${grassPreviewNonce}`}
+                  alt="Base grass tile preview"
+                  className="h-28 w-28 rounded object-cover"
+                />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 rounded border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500">
+              No generated grass tile found for this coordinate yet.
+            </div>
+          )}
+        </div>
 
         {grassMessage ? (
           <p className="mt-3 text-sm text-emerald-700">{grassMessage}</p>
@@ -736,7 +827,7 @@ export const Bases = () => {
               Close
             </button>
             <img
-              src={`${grassUrl}?v=${grassPreviewNonce}`}
+              src={`${selectedGrassUrl}?v=${grassPreviewNonce}`}
               alt="Large base grass tile preview"
               className="max-h-[80vh] max-w-[80vw] rounded object-contain"
             />

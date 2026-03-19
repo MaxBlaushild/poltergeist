@@ -110,6 +110,17 @@ func (h *baseHandle) FindAll(ctx context.Context) ([]models.Base, error) {
 	return bases, nil
 }
 
+func (h *baseHandle) UpdateDetails(ctx context.Context, id uuid.UUID, name *string, description *string) error {
+	return h.db.WithContext(ctx).
+		Model(&models.Base{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"name":        name,
+			"description": description,
+			"updated_at":  time.Now(),
+		}).Error
+}
+
 func (h *baseHandle) UpdateFlavor(ctx context.Context, id uuid.UUID, description string, imageURL string) error {
 	return h.db.WithContext(ctx).
 		Model(&models.Base{}).

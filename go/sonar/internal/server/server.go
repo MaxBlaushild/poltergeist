@@ -60,7 +60,7 @@ const (
 	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
 	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
 	baseDiscoveredIconKey              = "thumbnails/placeholders/base-discovered.png"
-	baseGrassTileKey                   = "thumbnails/placeholders/base-grass-tile.png"
+	baseGrassTileKeyPrefix             = "thumbnails/placeholders/base-grass"
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
@@ -70,7 +70,7 @@ const (
 	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
 	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
 	baseDiscoveredStatusKey            = "admin:thumbnails:base-discovered:requested-at"
-	baseGrassTileStatusKey             = "admin:thumbnails:base-grass-tile:requested-at"
+	baseGrassTileStatusKeyPrefix       = "admin:thumbnails:base-grass"
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
@@ -273,6 +273,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getVisibleBases))
 	r.GET("/sonar/bases/:id/progression", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseProgression))
 	r.GET("/sonar/base/me", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBase))
+	r.PUT("/sonar/base/me", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCurrentUserBase))
 	r.GET("/sonar/base/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentUserBaseResources))
 	r.GET("/sonar/base/catalog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCatalog))
 	r.POST("/sonar/base/structures/:key/build", middleware.WithAuthentication(s.authClient, s.livenessClient, s.buildBaseStructure))
@@ -385,7 +386,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseDiscoveredIcon))
-	r.POST("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseGrassTile))
+	r.GET("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listBaseGrassTiles))
+	r.POST("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseGrassTile))
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
@@ -394,7 +396,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/base/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDiscoveredIconStatus))
-	r.GET("/sonar/admin/thumbnails/base-grass/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseGrassTileStatus))
+	r.GET("/sonar/admin/thumbnails/base-grass/:gridX/:gridY/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseGrassTileStatus))
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
@@ -403,7 +405,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
-	r.DELETE("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
+	r.DELETE("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -6795,6 +6797,33 @@ func monsterEncounterUndiscoveredThumbnailConfig(rawEncounterType string) (promp
 	}
 }
 
+func parseBaseGrassCoordinate(ctx *gin.Context) (int, int, error) {
+	gridX, err := strconv.Atoi(strings.TrimSpace(ctx.Param("gridX")))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid gridX")
+	}
+	gridY, err := strconv.Atoi(strings.TrimSpace(ctx.Param("gridY")))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid gridY")
+	}
+	if gridX < 0 || gridX >= 5 || gridY < 0 || gridY >= 5 {
+		return 0, 0, fmt.Errorf("grid coordinates must be between 0 and %d", 4)
+	}
+	return gridX, gridY, nil
+}
+
+func baseGrassTileConfig(gridX int, gridY int) (string, string, string) {
+	prompt := fmt.Sprintf(
+		"%s Subtle variation for base grid coordinate (%d,%d), so neighboring tiles feel related but not identical.",
+		baseGrassTileText,
+		gridX,
+		gridY,
+	)
+	destinationKey := fmt.Sprintf("%s-%d-%d.png", baseGrassTileKeyPrefix, gridX, gridY)
+	statusKey := fmt.Sprintf("%s:%d:%d:requested-at", baseGrassTileStatusKeyPrefix, gridX, gridY)
+	return prompt, destinationKey, statusKey
+}
+
 func (s *server) queueGeneratedStaticThumbnail(ctx *gin.Context, defaultPrompt string, destinationKey string, statusKey string) {
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
@@ -6884,7 +6913,13 @@ func (s *server) generateBaseDiscoveredIcon(ctx *gin.Context) {
 }
 
 func (s *server) generateBaseGrassTile(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, baseGrassTileText, baseGrassTileKey, baseGrassTileStatusKey)
+	gridX, gridY, err := parseBaseGrassCoordinate(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	prompt, destinationKey, statusKey := baseGrassTileConfig(gridX, gridY)
+	s.queueGeneratedStaticThumbnail(ctx, prompt, destinationKey, statusKey)
 }
 
 func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
@@ -6936,7 +6971,13 @@ func (s *server) getBaseDiscoveredIconStatus(ctx *gin.Context) {
 }
 
 func (s *server) getBaseGrassTileStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, baseGrassTileKey, baseGrassTileStatusKey)
+	gridX, gridY, err := parseBaseGrassCoordinate(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	_, destinationKey, statusKey := baseGrassTileConfig(gridX, gridY)
+	s.getStaticThumbnailStatus(ctx, destinationKey, statusKey)
 }
 
 func (s *server) applyUserProfilePlaceholderToUsersWithoutPictures(ctx *gin.Context, profilePictureURL string) (int, error) {
@@ -7061,7 +7102,49 @@ func (s *server) deleteBaseDiscoveredIcon(ctx *gin.Context) {
 }
 
 func (s *server) deleteBaseGrassTile(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, baseGrassTileKey, baseGrassTileStatusKey)
+	gridX, gridY, err := parseBaseGrassCoordinate(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	_, destinationKey, statusKey := baseGrassTileConfig(gridX, gridY)
+	s.deleteStaticThumbnail(ctx, destinationKey, statusKey)
+}
+
+func (s *server) listBaseGrassTiles(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	tiles := make([]gin.H, 0, 25)
+	for gridY := 0; gridY < 5; gridY++ {
+		for gridX := 0; gridX < 5; gridX++ {
+			prompt, destinationKey, statusKey := baseGrassTileConfig(gridX, gridY)
+			status, exists, requestedAt, lastModified, err := s.readStaticThumbnailStatus(ctx, destinationKey, statusKey)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			tile := gin.H{
+				"gridX":        gridX,
+				"gridY":        gridY,
+				"status":       status,
+				"exists":       exists,
+				"thumbnailUrl": staticThumbnailURL(destinationKey),
+				"prompt":       prompt,
+			}
+			if lastModified != nil {
+				tile["lastModified"] = lastModified.UTC().Format(time.RFC3339Nano)
+			}
+			if requestedAt != nil {
+				tile["requestedAt"] = requestedAt.UTC().Format(time.RFC3339Nano)
+			}
+			tiles = append(tiles, tile)
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"tiles": tiles})
 }
 
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
