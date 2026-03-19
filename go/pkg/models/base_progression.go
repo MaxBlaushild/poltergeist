@@ -126,22 +126,24 @@ func (BaseResourceLedger) TableName() string {
 }
 
 type BaseStructureDefinition struct {
-	ID           uuid.UUID                  `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt    time.Time                  `json:"createdAt"`
-	UpdatedAt    time.Time                  `json:"updatedAt"`
-	Key          string                     `json:"key"`
-	Name         string                     `json:"name"`
-	Description  string                     `json:"description"`
-	Category     string                     `json:"category"`
-	MaxLevel     int                        `json:"maxLevel" gorm:"column:max_level"`
-	SortOrder    int                        `json:"sortOrder" gorm:"column:sort_order"`
-	ImageURL     string                     `json:"imageUrl" gorm:"column:image_url"`
-	EffectType   BaseStructureEffectType    `json:"effectType" gorm:"column:effect_type"`
-	EffectConfig MetadataJSONB              `json:"effectConfig" gorm:"column:effect_config;type:jsonb"`
-	PrereqConfig MetadataJSONB              `json:"prereqConfig" gorm:"column:prereq_config;type:jsonb"`
-	Active       bool                       `json:"active"`
-	LevelCosts   []BaseStructureLevelCost   `json:"levelCosts,omitempty" gorm:"foreignKey:StructureDefinitionID"`
-	LevelVisuals []BaseStructureLevelVisual `json:"levelVisuals,omitempty" gorm:"foreignKey:StructureDefinitionID"`
+	ID                 uuid.UUID                  `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt          time.Time                  `json:"createdAt"`
+	UpdatedAt          time.Time                  `json:"updatedAt"`
+	Key                string                     `json:"key"`
+	Name               string                     `json:"name"`
+	Description        string                     `json:"description"`
+	Category           string                     `json:"category"`
+	MaxLevel           int                        `json:"maxLevel" gorm:"column:max_level"`
+	SortOrder          int                        `json:"sortOrder" gorm:"column:sort_order"`
+	ImageURL           string                     `json:"imageUrl" gorm:"column:image_url"`
+	ImagePrompt        string                     `json:"imagePrompt" gorm:"column:image_prompt"`
+	TopDownImagePrompt string                     `json:"topDownImagePrompt" gorm:"column:top_down_image_prompt"`
+	EffectType         BaseStructureEffectType    `json:"effectType" gorm:"column:effect_type"`
+	EffectConfig       MetadataJSONB              `json:"effectConfig" gorm:"column:effect_config;type:jsonb"`
+	PrereqConfig       MetadataJSONB              `json:"prereqConfig" gorm:"column:prereq_config;type:jsonb"`
+	Active             bool                       `json:"active"`
+	LevelCosts         []BaseStructureLevelCost   `json:"levelCosts,omitempty" gorm:"foreignKey:StructureDefinitionID"`
+	LevelVisuals       []BaseStructureLevelVisual `json:"levelVisuals,omitempty" gorm:"foreignKey:StructureDefinitionID"`
 }
 
 func (BaseStructureDefinition) TableName() string {

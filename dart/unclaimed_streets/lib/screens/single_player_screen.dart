@@ -104,6 +104,7 @@ const _standardMarkerThumbnailSize = 0.75;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
 const _poiAssociationCoordinatePrecision = 4;
+const _pinSelectionHitRadiusPx = 34.0;
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
 const _stamenWatercolorApiKey = String.fromEnvironment(
@@ -218,6 +219,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _monsterRefreshSequence = Future<void>.value();
   Future<void> _challengeRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
+  DateTime? _lastFeatureTapAt;
+  Point<double>? _lastFeatureTapPoint;
   Set<String> _lastQuestTurnInCharacterIds = <String>{};
   Map<String, String> _lastTrackedQuestObjectiveSignatures = <String, String>{};
   bool _hasTrackedQuestObjectiveSnapshot = false;
@@ -2355,6 +2358,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
+  TreasureChest? _treasureChestById(String id) {
+    for (final chest in _treasureChests) {
+      if (chest.id == id) return chest;
+    }
+    return null;
+  }
+
   MonsterEncounter? _monsterById(String id) {
     for (final monster in _monsters) {
       if (monster.id == id) return monster;
@@ -3391,193 +3401,483 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _setupTapHandlers(MapLibreMapController c) {
-    c.onCircleTapped.add((circle) {
-      final raw = circle.data;
-      if (raw == null) return;
-      final data = Map<String, dynamic>.from(raw);
-      final type = data['type'] as String?;
-      final idStr = data['id']?.toString();
-      if (type == null || idStr == null || idStr.isEmpty) return;
-      if (type == 'character') {
-        final ch = _characters.where((x) => x.id == idStr).toList();
-        if (ch.isNotEmpty) {
-          _showCharacterPanel(ch.first);
-        }
-        return;
-      }
-      if (type == 'chest') {
-        final tc = _treasureChests.where((t) => t.id == idStr).toList();
-        if (tc.isNotEmpty) {
-          _showTreasureChestPanel(tc.first);
-        }
-        return;
-      }
-      if (type == 'healingFountain') {
-        final fountain = _healingFountainById(idStr);
-        if (fountain != null) {
-          _showHealingFountainPanel(fountain);
-        }
-        return;
-      }
-      if (type == 'base') {
-        final base = _baseById(idStr);
-        if (base != null) {
-          _showBasePanel(base);
-        }
-        return;
-      }
-      if (type == 'scenario') {
-        final scenario = _scenarioById(idStr);
-        if (scenario != null) {
-          _showScenarioPanel(scenario);
-        }
-        return;
-      }
-      if (type == 'monster') {
-        final monster = _monsterById(idStr);
-        if (monster != null) {
-          _showMonsterPanel(monster);
-        }
-        return;
-      }
-      if (type == 'challenge') {
-        final challenge = _challengeById(idStr);
-        if (challenge != null) {
-          _showChallengePanel(challenge);
-        }
-        return;
-      }
-      if (type == 'poi') {
-        final pois = _pois.where((p) => p.id == idStr).toList();
-        if (pois.isNotEmpty && mounted) {
-          _showPointOfInterestPanel(
-            pois.first,
-            context.read<DiscoveriesProvider>().hasDiscovered(idStr),
-          );
-        }
-      }
+    c.onFeatureTapped.add((point, _, _, _, annotation) {
+      unawaited(_handleFeatureTap(point, annotation));
     });
-    c.onSymbolTapped.add((symbol) {
-      try {
-        debugPrint('SinglePlayer: onSymbolTapped');
-        final raw = symbol.data;
-        if (raw == null) {
-          debugPrint('SinglePlayer: symbol tap data is null');
-          return;
+  }
+
+  Future<void> _handleFeatureTap(
+    Point<double> point,
+    Annotation? annotation,
+  ) async {
+    final data = _annotationData(annotation);
+    if (data == null || data.isEmpty) return;
+    final type = data['type']?.toString();
+    final idStr = data['id']?.toString();
+    if (type == null || idStr == null || idStr.isEmpty) return;
+
+    _registerFeatureTap(point);
+
+    if (_isSelectablePinType(type)) {
+      final handled = await _maybeHandlePinTap(
+        point,
+        preferredType: type,
+        preferredId: idStr,
+      );
+      if (handled || !mounted) return;
+    }
+
+    _openMapPinByTypeAndId(type, idStr);
+  }
+
+  Map<String, dynamic>? _annotationData(Annotation? annotation) {
+    final raw = switch (annotation) {
+      Symbol symbol => symbol.data,
+      Circle circle => circle.data,
+      Fill fill => fill.data,
+      Line line => line.data,
+      _ => null,
+    };
+    if (raw is! Map) return null;
+    return Map<String, dynamic>.from(raw);
+  }
+
+  void _registerFeatureTap(Point<double> point) {
+    _lastFeatureTapAt = DateTime.now();
+    _lastFeatureTapPoint = point;
+  }
+
+  bool _shouldIgnoreMapClickForRecentFeatureTap(Point<double> point) {
+    final lastAt = _lastFeatureTapAt;
+    final lastPoint = _lastFeatureTapPoint;
+    if (lastAt == null || lastPoint == null) return false;
+    if (DateTime.now().difference(lastAt) > const Duration(milliseconds: 250)) {
+      return false;
+    }
+    final dx = point.x - lastPoint.x;
+    final dy = point.y - lastPoint.y;
+    return math.sqrt(dx * dx + dy * dy) <= 8;
+  }
+
+  bool _isSelectablePinType(String type) {
+    switch (type) {
+      case 'poi':
+      case 'poiBorder':
+      case 'character':
+      case 'chest':
+      case 'healingFountain':
+      case 'base':
+      case 'scenario':
+      case 'monster':
+      case 'challenge':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  Future<bool> _maybeHandlePinTap(
+    Point<double> point, {
+    String? preferredType,
+    String? preferredId,
+  }) async {
+    final candidates = await _pinSelectionCandidatesForPoint(
+      point,
+      preferredType: preferredType,
+      preferredId: preferredId,
+    );
+    if (!mounted || candidates.isEmpty) return false;
+    if (candidates.length == 1) {
+      _openMapPinByTypeAndId(candidates.first.type, candidates.first.id);
+      return true;
+    }
+    _showPinSelectionSheet(candidates);
+    return true;
+  }
+
+  Future<List<_MapPinSelectionCandidate>> _pinSelectionCandidatesForPoint(
+    Point<double> point, {
+    String? preferredType,
+    String? preferredId,
+  }) async {
+    final controller = _mapController;
+    if (controller == null || !_styleLoaded) return const [];
+
+    final annotations = <_MapPinAnnotationSeed>[];
+
+    void addSymbolSeeds(Iterable<Symbol> symbols) {
+      for (final symbol in symbols) {
+        final data = _annotationData(symbol);
+        if (data == null) continue;
+        final type = data['type']?.toString();
+        final id = data['id']?.toString();
+        final geometry = symbol.options.geometry;
+        final opacity = symbol.options.iconOpacity ?? 1.0;
+        if (type == null ||
+            id == null ||
+            id.isEmpty ||
+            !_isSelectablePinType(type) ||
+            geometry == null ||
+            opacity <= 0.05) {
+          continue;
         }
-        final data = Map<String, dynamic>.from(raw);
-        if (data.isEmpty) {
-          debugPrint('SinglePlayer: symbol tap data is null or not Map');
-          return;
-        }
-        final type = data['type'] as String?;
-        final idStr = data['id']?.toString();
-        if (type == null || idStr == null || idStr.isEmpty) return;
-        if (type == 'chest') {
-          final tc = _treasureChests.where((t) => t.id == idStr).toList();
-          if (tc.isNotEmpty && mounted) {
-            _showTreasureChestPanel(tc.first);
-          }
-          return;
-        }
-        if (type == 'healingFountain') {
-          final fountain = _healingFountainById(idStr);
-          if (fountain != null && mounted) {
-            _showHealingFountainPanel(fountain);
-          }
-          return;
-        }
-        if (type == 'base') {
-          final base = _baseById(idStr);
-          if (base != null && mounted) {
-            _showBasePanel(base);
-          }
-          return;
-        }
-        if (type == 'scenario') {
-          final scenario = _scenarioById(idStr);
-          if (scenario != null && mounted) {
-            _showScenarioPanel(scenario);
-          }
-          return;
-        }
-        if (type == 'monster') {
-          final monster = _monsterById(idStr);
-          if (monster != null && mounted) {
-            _showMonsterPanel(monster);
-          }
-          return;
-        }
-        if (type == 'challenge') {
-          final challenge = _challengeById(idStr);
-          if (challenge != null && mounted) {
-            _showChallengePanel(challenge);
-          }
-          return;
-        }
-        if (type == 'character') {
-          final ch = _characters.where((x) => x.id == idStr).toList();
-          if (ch.isNotEmpty) {
-            _showCharacterPanel(ch.first);
-          }
-          return;
-        }
-        if (type == 'poiBorder') {
-          final pois = _pois.where((p) => p.id == idStr).toList();
-          if (pois.isNotEmpty && mounted) {
-            _showPointOfInterestPanel(
-              pois.first,
-              context.read<DiscoveriesProvider>().hasDiscovered(idStr),
-            );
-          }
-          return;
-        }
-        if (type != 'poi') {
-          debugPrint('SinglePlayer: symbol tap skip type=$type id=$idStr');
-          return;
-        }
-        final pois = _pois.where((p) => p.id == idStr).toList();
-        if (pois.isEmpty) {
-          debugPrint('SinglePlayer: symbol tap POI not found id=$idStr');
-          return;
-        }
-        debugPrint(
-          'SinglePlayer: symbol tap POI found id=$idStr mounted=$mounted',
+        annotations.add(
+          _MapPinAnnotationSeed(
+            type: type,
+            id: id,
+            geometry: geometry,
+            hitRadiusPx: _pinSelectionHitRadiusPx,
+          ),
         );
-        if (!mounted) {
-          debugPrint('SinglePlayer: symbol tap unmounted');
-          return;
+      }
+    }
+
+    void addCircleSeeds(Iterable<Circle> circles) {
+      for (final circle in circles) {
+        final data = _annotationData(circle);
+        if (data == null) continue;
+        final type = data['type']?.toString();
+        final id = data['id']?.toString();
+        final geometry = circle.options.geometry;
+        final opacity = circle.options.circleOpacity ?? 1.0;
+        if (type == null ||
+            id == null ||
+            id.isEmpty ||
+            !_isSelectablePinType(type) ||
+            geometry == null ||
+            opacity <= 0.05) {
+          continue;
         }
-        debugPrint('SinglePlayer: showing POI panel ${pois.first.name}');
-        _showPointOfInterestPanel(
-          pois.first,
-          context.read<DiscoveriesProvider>().hasDiscovered(idStr),
+        annotations.add(
+          _MapPinAnnotationSeed(
+            type: type,
+            id: id,
+            geometry: geometry,
+            hitRadiusPx: math.max(
+              _pinSelectionHitRadiusPx,
+              (circle.options.circleRadius ?? 0) + 10,
+            ),
+          ),
         );
-      } catch (e, st) {
-        debugPrint('SinglePlayer: symbol tap error: $e');
-        debugPrint('SinglePlayer: symbol tap stack: $st');
       }
-    });
-    c.onFillTapped.add((fill) {
-      final raw = fill.data;
-      if (raw == null) return;
-      final data = Map<String, dynamic>.from(raw);
-      final type = data['type'] as String?;
-      final idStr = data['id']?.toString();
-      if (type == 'zone' && idStr != null && idStr.isNotEmpty) {
-        _selectZoneById(idStr);
+    }
+
+    addSymbolSeeds(_poiSymbols);
+    addSymbolSeeds(_characterSymbols);
+    addSymbolSeeds(_chestSymbols);
+    addSymbolSeeds(_healingFountainSymbols);
+    addSymbolSeeds(_baseSymbols);
+    addSymbolSeeds(_scenarioSymbols);
+    addSymbolSeeds(_monsterSymbols);
+    addSymbolSeeds(_challengeSymbols);
+
+    addCircleSeeds(_chestCircles);
+    addCircleSeeds(_healingFountainCircles);
+    addCircleSeeds(_baseCircles);
+    addCircleSeeds(_scenarioCircles);
+    addCircleSeeds(_monsterCircles);
+    addCircleSeeds(_challengeCircles);
+
+    if (annotations.isEmpty) return const [];
+
+    final screenPoints = await controller.toScreenLocationBatch(
+      annotations.map((annotation) => annotation.geometry),
+    );
+    if (!mounted) return const [];
+
+    final bestByKey = <String, _MapPinSelectionCandidate>{};
+    for (var i = 0; i < annotations.length && i < screenPoints.length; i++) {
+      final annotation = annotations[i];
+      final screenPoint = screenPoints[i];
+      final dx = screenPoint.x.toDouble() - point.x;
+      final dy = screenPoint.y.toDouble() - point.y;
+      final distance = math.sqrt(dx * dx + dy * dy);
+      if (distance > annotation.hitRadiusPx) continue;
+
+      final candidate = _buildPinSelectionCandidate(
+        annotation.type,
+        annotation.id,
+        distance,
+      );
+      if (candidate == null) continue;
+
+      final key = '${candidate.type}:${candidate.id}';
+      final existing = bestByKey[key];
+      if (existing == null || candidate.distance < existing.distance) {
+        bestByKey[key] = candidate;
       }
+    }
+
+    final candidates = bestByKey.values.toList();
+    candidates.sort((a, b) {
+      final aPreferred = a.type == preferredType && a.id == preferredId;
+      final bPreferred = b.type == preferredType && b.id == preferredId;
+      if (aPreferred != bPreferred) return aPreferred ? -1 : 1;
+      final distanceCompare = a.distance.compareTo(b.distance);
+      if (distanceCompare != 0) return distanceCompare;
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
     });
-    c.onLineTapped.add((line) {
-      final raw = line.data;
-      if (raw == null) return;
-      final data = Map<String, dynamic>.from(raw);
-      final type = data['type'] as String?;
-      final idStr = data['id']?.toString();
-      if (type == 'zone' && idStr != null && idStr.isNotEmpty) {
-        _selectZoneById(idStr);
+    return candidates;
+  }
+
+  _MapPinSelectionCandidate? _buildPinSelectionCandidate(
+    String type,
+    String id,
+    double distance,
+  ) {
+    switch (type) {
+      case 'poi':
+      case 'poiBorder':
+        final poi = _poiById(id);
+        if (poi == null) return null;
+        final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
+          poi.id,
+        );
+        return _MapPinSelectionCandidate(
+          type: 'poi',
+          id: poi.id,
+          title: poi.name.trim().isNotEmpty
+              ? poi.name.trim()
+              : 'Point of Interest',
+          subtitle: hasDiscovered
+              ? 'Point of interest'
+              : 'Undiscovered point of interest',
+          icon: Icons.place_outlined,
+          distance: distance,
+        );
+      case 'character':
+        final character = _characterById(id);
+        if (character == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: character.name.trim().isNotEmpty
+              ? character.name.trim()
+              : 'Character',
+          subtitle: 'Character',
+          icon: Icons.person_outline,
+          distance: distance,
+        );
+      case 'chest':
+        final chest = _treasureChestById(id);
+        if (chest == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: 'Treasure Chest',
+          subtitle: 'Chest',
+          icon: Icons.inventory_2_outlined,
+          distance: distance,
+        );
+      case 'healingFountain':
+        final fountain = _healingFountainById(id);
+        if (fountain == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: fountain.name.trim().isNotEmpty
+              ? fountain.name.trim()
+              : 'Healing Fountain',
+          subtitle: 'Healing fountain',
+          icon: Icons.water_drop_outlined,
+          distance: distance,
+        );
+      case 'base':
+        final base = _baseById(id);
+        if (base == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: base.name.trim().isNotEmpty ? base.name.trim() : 'Base',
+          subtitle: 'Base',
+          icon: Icons.home_work_outlined,
+          distance: distance,
+        );
+      case 'scenario':
+        final scenario = _scenarioById(id);
+        if (scenario == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: _compactSelectionLabel(scenario.prompt, fallback: 'Scenario'),
+          subtitle: 'Scenario',
+          icon: Icons.auto_awesome_outlined,
+          distance: distance,
+        );
+      case 'monster':
+        final monster = _monsterById(id);
+        if (monster == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: monster.name.trim().isNotEmpty
+              ? monster.name.trim()
+              : 'Monster',
+          subtitle: 'Monster encounter',
+          icon: Icons.pets_outlined,
+          distance: distance,
+        );
+      case 'challenge':
+        final challenge = _challengeById(id);
+        if (challenge == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: _compactSelectionLabel(
+            challenge.question,
+            fallback: 'Challenge',
+          ),
+          subtitle: 'Challenge',
+          icon: Icons.quiz_outlined,
+          distance: distance,
+        );
+      default:
+        return null;
+    }
+  }
+
+  String _compactSelectionLabel(String value, {required String fallback}) {
+    final compact = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.isEmpty) return fallback;
+    if (compact.length <= 72) return compact;
+    return '${compact.substring(0, 69).trimRight()}...';
+  }
+
+  void _showPinSelectionSheet(List<_MapPinSelectionCandidate> candidates) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Choose a pin',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'A few pins are close enough to this tap that the selection is ambiguous.',
+                  style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      sheetContext,
+                    ).colorScheme.onSurface.withValues(alpha: 0.75),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (itemContext, index) {
+                      final candidate = candidates[index];
+                      return Material(
+                        color: Colors.transparent,
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          tileColor: Theme.of(itemContext)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.45),
+                          leading: Icon(candidate.icon),
+                          title: Text(candidate.title),
+                          subtitle: Text(candidate.subtitle),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              _openMapPinByTypeAndId(
+                                candidate.type,
+                                candidate.id,
+                              );
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openMapPinByTypeAndId(String type, String idStr) {
+    if (!mounted || idStr.isEmpty) return;
+    if (type == 'zone') {
+      _selectZoneById(idStr);
+      return;
+    }
+    if (type == 'character') {
+      final character = _characterById(idStr);
+      if (character != null) {
+        _showCharacterPanel(character);
       }
-    });
+      return;
+    }
+    if (type == 'chest') {
+      final chest = _treasureChestById(idStr);
+      if (chest != null) {
+        _showTreasureChestPanel(chest);
+      }
+      return;
+    }
+    if (type == 'healingFountain') {
+      final fountain = _healingFountainById(idStr);
+      if (fountain != null) {
+        _showHealingFountainPanel(fountain);
+      }
+      return;
+    }
+    if (type == 'base') {
+      final base = _baseById(idStr);
+      if (base != null) {
+        _showBasePanel(base);
+      }
+      return;
+    }
+    if (type == 'scenario') {
+      final scenario = _scenarioById(idStr);
+      if (scenario != null) {
+        _showScenarioPanel(scenario);
+      }
+      return;
+    }
+    if (type == 'monster') {
+      final monster = _monsterById(idStr);
+      if (monster != null) {
+        _showMonsterPanel(monster);
+      }
+      return;
+    }
+    if (type == 'challenge') {
+      final challenge = _challengeById(idStr);
+      if (challenge != null) {
+        _showChallengePanel(challenge);
+      }
+      return;
+    }
+    if (type != 'poi' && type != 'poiBorder') return;
+    final poi = _poiById(idStr);
+    if (poi == null) return;
+    _showPointOfInterestPanel(
+      poi,
+      context.read<DiscoveriesProvider>().hasDiscovered(idStr),
+    );
   }
 
   void _selectZone(Zone? zone) {
@@ -3606,6 +3906,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       unawaited(_refreshBasePlacementPreview());
       return;
     }
+    unawaited(_handleMapClickAsync(point, coordinates));
+  }
+
+  Future<void> _handleMapClickAsync(
+    Point<double> point,
+    LatLng coordinates,
+  ) async {
+    if (_shouldIgnoreMapClickForRecentFeatureTap(point)) return;
+    final handledPinTap = await _maybeHandlePinTap(point);
+    if (handledPinTap || !mounted) return;
     final zone = context.read<ZoneProvider>().findZoneAtCoordinate(
       coordinates.latitude,
       coordinates.longitude,
@@ -7611,10 +7921,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => BasePanel(
-        base: base,
-        onClose: () => Navigator.of(context).pop(),
-      ),
+      builder: (context) =>
+          BasePanel(base: base, onClose: () => Navigator.of(context).pop()),
     );
   }
 
@@ -9470,6 +9778,38 @@ class _OverlayButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MapPinAnnotationSeed {
+  const _MapPinAnnotationSeed({
+    required this.type,
+    required this.id,
+    required this.geometry,
+    required this.hitRadiusPx,
+  });
+
+  final String type;
+  final String id;
+  final LatLng geometry;
+  final double hitRadiusPx;
+}
+
+class _MapPinSelectionCandidate {
+  const _MapPinSelectionCandidate({
+    required this.type,
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.distance,
+  });
+
+  final String type;
+  final String id;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final double distance;
 }
 
 class _PoiSymbolRequest {

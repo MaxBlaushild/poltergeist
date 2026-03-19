@@ -59,6 +59,8 @@ type BaseStructureDefinition = {
   category?: string;
   maxLevel: number;
   active?: boolean;
+  imagePrompt?: string;
+  topDownImagePrompt?: string;
   levelVisuals?: BaseStructureLevelVisual[];
 };
 
@@ -185,6 +187,12 @@ export const Bases = () => {
   );
   const [generatingTopDownRoomImageKey, setGeneratingTopDownRoomImageKey] =
     useState<string | null>(null);
+  const [savingStructurePromptId, setSavingStructurePromptId] = useState<string | null>(
+    null
+  );
+  const [structurePromptDrafts, setStructurePromptDrafts] = useState<
+    Record<string, { imagePrompt: string; topDownImagePrompt: string }>
+  >({});
 
   const fetchBases = useCallback(async () => {
     try {
@@ -549,6 +557,46 @@ export const Bases = () => {
       }
     },
     [apiClient]
+  );
+
+  const handleSaveStructurePrompts = useCallback(
+    async (structure: BaseStructureDefinition) => {
+      const draft = structurePromptDrafts[structure.id] || {
+        imagePrompt: structure.imagePrompt || '',
+        topDownImagePrompt: structure.topDownImagePrompt || '',
+      };
+      try {
+        setSavingStructurePromptId(structure.id);
+        setError(null);
+        setBaseMessage(null);
+        const updated = await apiClient.put<BaseStructureDefinition>(
+          `/sonar/admin/base-structures/${structure.id}/prompts`,
+          {
+            imagePrompt: draft.imagePrompt,
+            topDownImagePrompt: draft.topDownImagePrompt,
+          }
+        );
+        setStructures((prev) =>
+          prev.map((record) => (record.id === structure.id ? updated : record))
+        );
+        setStructurePromptDrafts((prev) => ({
+          ...prev,
+          [structure.id]: {
+            imagePrompt: updated.imagePrompt || '',
+            topDownImagePrompt: updated.topDownImagePrompt || '',
+          },
+        }));
+        setBaseMessage(`Saved prompt overrides for ${structure.name}.`);
+      } catch (err) {
+        console.error('Failed to save base structure prompts', err);
+        const message =
+          err instanceof Error ? err.message : 'Failed to save base structure prompts.';
+        setError(message);
+      } finally {
+        setSavingStructurePromptId(null);
+      }
+    },
+    [apiClient, structurePromptDrafts]
   );
 
   useEffect(() => {
@@ -1102,6 +1150,79 @@ export const Bases = () => {
                   >
                     {structure.active === false ? 'Inactive' : 'Active'}
                   </span>
+                </div>
+
+                <div className="mt-4 rounded border border-gray-200 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Prompt Overrides
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-600">
+                        These saved prompts will be used for future room image jobs.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveStructurePrompts(structure)}
+                      disabled={savingStructurePromptId === structure.id}
+                      className="rounded bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingStructurePromptId === structure.id
+                        ? 'Saving...'
+                        : 'Save Prompts'}
+                    </button>
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Card View Prompt
+                      <textarea
+                        value={
+                          structurePromptDrafts[structure.id]?.imagePrompt ??
+                          structure.imagePrompt ??
+                          ''
+                        }
+                        onChange={(event) =>
+                          setStructurePromptDrafts((prev) => ({
+                            ...prev,
+                            [structure.id]: {
+                              imagePrompt: event.target.value,
+                              topDownImagePrompt:
+                                prev[structure.id]?.topDownImagePrompt ??
+                                structure.topDownImagePrompt ??
+                                '',
+                            },
+                          }))
+                        }
+                        rows={5}
+                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Top-Down Prompt
+                      <textarea
+                        value={
+                          structurePromptDrafts[structure.id]?.topDownImagePrompt ??
+                          structure.topDownImagePrompt ??
+                          ''
+                        }
+                        onChange={(event) =>
+                          setStructurePromptDrafts((prev) => ({
+                            ...prev,
+                            [structure.id]: {
+                              imagePrompt:
+                                prev[structure.id]?.imagePrompt ??
+                                structure.imagePrompt ??
+                                '',
+                              topDownImagePrompt: event.target.value,
+                            },
+                          }))
+                        }
+                        rows={7}
+                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

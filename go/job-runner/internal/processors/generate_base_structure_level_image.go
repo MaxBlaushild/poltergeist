@@ -45,7 +45,7 @@ Rules:
 `
 
 const baseStructureLevelTopDownImagePromptTemplate = `
-Create art direction for a fantasy MMORPG base room tile viewed from directly overhead.
+Create art direction for a fantasy MMORPG base room interior tile viewed from directly overhead.
 
 Room context:
 - room name: %s
@@ -58,15 +58,20 @@ Room context:
 Rules:
 - Match the established base grass tile style:
   - retro 16-bit fantasy RPG pixel art
-  - orthographic top-down view
+  - strict orthographic top-down view
   - crisp outlines
   - readable silhouette
   - limited palette
   - tile-friendly composition
-- This image should feel like it belongs on the same board as the top-down grass tiles.
-- Show a room footprint, roofline, yard, shrine, forge, garden, or chamber clearly from above.
+- This should be the inside of the room, not the outside of a building.
+- Think of the interior of a building in an early JRPG: open-ceiling cutaway room, visible floor, furniture and fixtures seen from directly above, walls around the edges.
+- Do not show any roof, exterior facade, surrounding grass, outdoor terrain, or outside environment.
+- The camera should be straight overhead, like looking down into the room after the roof has been removed. No angle, no perspective, no three-quarter view, no isometric view.
+- The entirety of the image should be the room interior itself. Do not show framing margins, empty background, or any space outside the room.
+- The boundaries of the image should align with the room's interior walls or room edges so the room fills the full square tile.
+- Compose it like a navigable top-down game interior tile: floor, furnishings, workstations, shrine pieces, hearths, shelves, or equipment arranged within the room.
 - The room should look modest at low levels and more elaborate, fortified, or refined at higher levels.
-- Fill the square with the room environment. No empty studio background, no framing card treatment.
+- Fill the square with the room interior. No empty studio background, no framing card treatment.
 - No text, no logos, no UI, no modern objects.
 `
 
@@ -129,16 +134,7 @@ func (p *GenerateBaseStructureLevelImageProcessor) ProcessTask(ctx context.Conte
 	if view == baseStructureImageViewTopDown {
 		promptTemplate = baseStructureLevelTopDownImagePromptTemplate
 	}
-	prompt := fmt.Sprintf(
-		promptTemplate,
-		strings.TrimSpace(definition.Name),
-		strings.TrimSpace(definition.Category),
-		strings.TrimSpace(definition.Description),
-		strings.TrimSpace(string(definition.EffectType)),
-		payload.Level,
-		maxInt(definition.MaxLevel, 1),
-		baseStructureLevelProgressionCue(payload.Level, definition.MaxLevel),
-	)
+	prompt := buildBaseStructureLevelPrompt(definition, payload.Level, view, promptTemplate)
 
 	request := deep_priest.GenerateImageRequest{Prompt: prompt}
 	deep_priest.ApplyGenerateImageDefaults(&request)
@@ -278,6 +274,34 @@ func normalizeBaseStructureImageView(raw string) string {
 	default:
 		return baseStructureImageViewCard
 	}
+}
+
+func buildBaseStructureLevelPrompt(
+	definition *models.BaseStructureDefinition,
+	level int,
+	view string,
+	fallbackTemplate string,
+) string {
+	if definition == nil {
+		return ""
+	}
+	if view == baseStructureImageViewTopDown {
+		if prompt := strings.TrimSpace(definition.TopDownImagePrompt); prompt != "" {
+			return prompt
+		}
+	} else if prompt := strings.TrimSpace(definition.ImagePrompt); prompt != "" {
+		return prompt
+	}
+	return fmt.Sprintf(
+		fallbackTemplate,
+		strings.TrimSpace(definition.Name),
+		strings.TrimSpace(definition.Category),
+		strings.TrimSpace(definition.Description),
+		strings.TrimSpace(string(definition.EffectType)),
+		level,
+		maxInt(definition.MaxLevel, 1),
+		baseStructureLevelProgressionCue(level, definition.MaxLevel),
+	)
 }
 
 func setBaseStructureVisualStateInProgress(visual *models.BaseStructureLevelVisual, view string) {

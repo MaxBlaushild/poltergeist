@@ -1129,6 +1129,7 @@ type BaseStructureDefinitionHandle interface {
 	FindAll(ctx context.Context) ([]models.BaseStructureDefinition, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.BaseStructureDefinition, error)
 	FindActiveByKey(ctx context.Context, key string) (*models.BaseStructureDefinition, error)
+	UpdatePrompts(ctx context.Context, id uuid.UUID, imagePrompt string, topDownImagePrompt string) error
 }
 
 type BaseStructureLevelVisualHandle interface {

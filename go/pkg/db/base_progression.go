@@ -156,6 +156,17 @@ func (h *baseStructureDefinitionHandle) FindActiveByKey(ctx context.Context, key
 	return &definition, nil
 }
 
+func (h *baseStructureDefinitionHandle) UpdatePrompts(ctx context.Context, id uuid.UUID, imagePrompt string, topDownImagePrompt string) error {
+	return h.db.WithContext(ctx).
+		Model(&models.BaseStructureDefinition{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"image_prompt":          imagePrompt,
+			"top_down_image_prompt": topDownImagePrompt,
+			"updated_at":            time.Now(),
+		}).Error
+}
+
 type baseStructureLevelVisualHandle struct {
 	db *gorm.DB
 }

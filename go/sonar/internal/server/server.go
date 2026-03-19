@@ -538,6 +538,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/bases/:id/generate-description", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createBaseDescriptionGenerationJob))
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/admin/base-structures", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminBaseStructures))
+	r.PUT("/sonar/admin/base-structures/:id/prompts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructurePrompts))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelImage))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-top-down-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelTopDownImage))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))

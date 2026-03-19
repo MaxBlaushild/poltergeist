@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -29,6 +30,53 @@ func (s *server) getAdminBaseStructures(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"structures": serializeBaseStructureDefinitions(definitions),
 	})
+}
+
+func (s *server) updateBaseStructurePrompts(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	definitionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || definitionID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base structure definition ID"})
+		return
+	}
+
+	var body struct {
+		ImagePrompt        string `json:"imagePrompt"`
+		TopDownImagePrompt string `json:"topDownImagePrompt"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	imagePrompt := strings.TrimSpace(body.ImagePrompt)
+	topDownImagePrompt := strings.TrimSpace(body.TopDownImagePrompt)
+	if len(imagePrompt) > 8000 || len(topDownImagePrompt) > 8000 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "prompts must be 8000 characters or fewer"})
+		return
+	}
+
+	if err := s.dbClient.BaseStructureDefinition().UpdatePrompts(
+		ctx,
+		definitionID,
+		imagePrompt,
+		topDownImagePrompt,
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	definition, err := s.dbClient.BaseStructureDefinition().FindByID(ctx, definitionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, serializeBaseStructureDefinition(*definition))
 }
 
 func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {

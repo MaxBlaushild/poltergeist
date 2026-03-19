@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/base.dart';
 import '../models/base_progression.dart';
 import '../services/base_service.dart';
 import '../widgets/paper_texture.dart';
@@ -8,19 +9,43 @@ import '../widgets/paper_texture.dart';
 const int _baseGridSize = 5;
 const Color _roomBorderColor = Color(0xFF7B5A3B);
 const Color _grassFallbackColor = Color(0xFF7AA65A);
+const Color _buildSlotPlusColor = Color(0xE6100C08);
 
-class BaseManagementScreen extends StatelessWidget {
+class BaseManagementScreen extends StatefulWidget {
   const BaseManagementScreen({super.key, required this.baseId});
 
   final String baseId;
 
   @override
+  State<BaseManagementScreen> createState() => _BaseManagementScreenState();
+}
+
+class _BaseManagementScreenState extends State<BaseManagementScreen> {
+  final GlobalKey<_BaseManagementContentState> _contentKey =
+      GlobalKey<_BaseManagementContentState>();
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final contentState = _contentKey.currentState;
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(title: const Text('Your Base')),
-      body: PaperSheet(child: BaseManagementContent(baseId: baseId)),
+      appBar: AppBar(
+        centerTitle: true,
+        title:
+            contentState?.buildHeaderTitle(theme) ?? const Text('Your Base'),
+      ),
+      body: PaperSheet(
+        child: BaseManagementContent(
+          key: _contentKey,
+          baseId: widget.baseId,
+          onHeaderChanged: () {
+            if (mounted) {
+              setState(() {});
+            }
+          },
+        ),
+      ),
     );
   }
 }
@@ -29,10 +54,12 @@ class BaseManagementContent extends StatefulWidget {
   const BaseManagementContent({
     super.key,
     required this.baseId,
+    this.onHeaderChanged,
     this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 32),
   });
 
   final String baseId;
+  final VoidCallback? onHeaderChanged;
   final EdgeInsets padding;
 
   @override
@@ -46,17 +73,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   String? _error;
   String? _busyStructureKey;
   bool _editingBaseName = false;
-  bool _editingBaseDescription = false;
   bool _savingBaseDetails = false;
+  bool _selectingMoveAnchor = false;
   _GridCell? _buildSelectionCell;
   String? _moveAnchorStructureKey;
   Set<String> _moveStructureKeys = const <String>{};
   _GridCell? _moveTargetCell;
   final TextEditingController _baseNameController = TextEditingController();
-  final TextEditingController _baseDescriptionController =
-      TextEditingController();
   final FocusNode _baseNameFocusNode = FocusNode();
-  final FocusNode _baseDescriptionFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -67,9 +91,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   @override
   void dispose() {
     _baseNameController.dispose();
-    _baseDescriptionController.dispose();
     _baseNameFocusNode.dispose();
-    _baseDescriptionFocusNode.dispose();
     super.dispose();
   }
 
@@ -93,12 +115,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       });
       _syncBaseEditorsToSnapshot();
       _syncMoveStateToSnapshot();
+      _notifyHeaderChanged();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = e.toString();
       });
+      _notifyHeaderChanged();
     }
   }
 
@@ -106,11 +130,13 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     final base = _snapshot?.base;
     if (base == null) {
       _baseNameController.text = '';
-      _baseDescriptionController.text = '';
       return;
     }
     _baseNameController.text = base.name;
-    _baseDescriptionController.text = base.description;
+  }
+
+  void _notifyHeaderChanged() {
+    widget.onHeaderChanged?.call();
   }
 
   void _syncMoveStateToSnapshot() {
@@ -228,16 +254,16 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           .read<BaseService>()
           .updateMyBaseDetails(
             name: _baseNameController.text,
-            description: _baseDescriptionController.text,
+            description: _snapshot?.base?.description ?? '',
           );
       if (!mounted) return;
       setState(() {
         _snapshot = nextSnapshot;
         _editingBaseName = false;
-        _editingBaseDescription = false;
         _savingBaseDetails = false;
       });
       _syncBaseEditorsToSnapshot();
+      _notifyHeaderChanged();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Base details updated.')));
@@ -247,6 +273,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         _savingBaseDetails = false;
         _error = e.toString();
       });
+      _notifyHeaderChanged();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -255,15 +282,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
 
   void _beginInlineEdit({
     required bool editingName,
-    required bool editingDescription,
     required TextEditingController controller,
     required FocusNode focusNode,
   }) {
     if (_savingBaseDetails) return;
     setState(() {
       _editingBaseName = editingName;
-      _editingBaseDescription = editingDescription;
     });
+    _notifyHeaderChanged();
     controller.selection = TextSelection.collapsed(
       offset: controller.text.length,
     );
@@ -278,13 +304,98 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     setState(() {
       _editingBaseName = false;
     });
+    _notifyHeaderChanged();
   }
 
-  void _cancelBaseDescriptionEdit() {
-    _baseDescriptionController.text = _snapshot?.base?.description ?? '';
-    setState(() {
-      _editingBaseDescription = false;
-    });
+  String _ownerBaseTitle(BasePin base) {
+    final username = base.owner.username.trim();
+    if (username.isNotEmpty) {
+      return "$username's Base";
+    }
+    final name = base.owner.name.trim();
+    if (name.isNotEmpty) {
+      return "$name's Base";
+    }
+    return 'Your Base';
+  }
+
+  Widget buildHeaderTitle(ThemeData theme) {
+    final snapshot = _snapshot;
+    final base = snapshot?.base;
+    if (snapshot == null || base == null) {
+      return const Text('Your Base');
+    }
+
+    if (_editingBaseName) {
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          SizedBox(
+            width: 220,
+            child: TextField(
+              controller: _baseNameController,
+              focusNode: _baseNameFocusNode,
+              enabled: !_savingBaseDetails,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: _savingBaseDetails ? null : (_) => _saveBaseDetails(),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: _ownerBaseTitle(base),
+              ),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          if (snapshot.canManage)
+            _InlineEditActions(
+              editing: true,
+              saving: _savingBaseDetails,
+              editTooltip: 'Edit base name',
+              confirmTooltip: 'Save base details',
+              cancelTooltip: 'Cancel name edit',
+              onEdit: () {},
+              onConfirm: _saveBaseDetails,
+              onCancel: _cancelBaseNameEdit,
+            ),
+        ],
+      );
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: _ownerBaseTitle(base)),
+          if (snapshot.canManage)
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: _InlineEditActions(
+                  editing: false,
+                  saving: _savingBaseDetails,
+                  editTooltip: 'Edit base name',
+                  confirmTooltip: 'Save base details',
+                  cancelTooltip: 'Cancel name edit',
+                  onEdit: () => _beginInlineEdit(
+                    editingName: true,
+                    controller: _baseNameController,
+                    focusNode: _baseNameFocusNode,
+                  ),
+                  onConfirm: _saveBaseDetails,
+                  onCancel: _cancelBaseNameEdit,
+                ),
+              ),
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+    );
   }
 
   Map<String, int> get _resourceAmounts {
@@ -507,15 +618,27 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     final structure = _structureByKey[structureKey];
     if (structure == null) return;
     setState(() {
+      _selectingMoveAnchor = false;
       _moveAnchorStructureKey = structureKey;
       _moveStructureKeys = <String>{structureKey};
       _moveTargetCell = _GridCell(structure.gridX, structure.gridY);
     });
   }
 
+  void _beginMoveAnchorSelection() {
+    if (_snapshot?.canManage != true || _structureByKey.isEmpty) return;
+    setState(() {
+      _selectingMoveAnchor = true;
+      _moveAnchorStructureKey = null;
+      _moveStructureKeys = const <String>{};
+      _moveTargetCell = null;
+    });
+  }
+
   void _cancelMoveMode() {
     if (!mounted) return;
     setState(() {
+      _selectingMoveAnchor = false;
       _moveAnchorStructureKey = null;
       _moveStructureKeys = const <String>{};
       _moveTargetCell = null;
@@ -609,7 +732,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   Future<void> _showRoomDetails(UserBaseStructureData structure) async {
     final definition = _definitionForKey(structure.structureKey);
     if (definition == null) return;
-    final shouldStartMove = await showModalBottomSheet<bool>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => _RoomDetailsSheet(
@@ -636,39 +759,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
               }
             : null,
       ),
-    );
-    if (shouldStartMove == true) {
-      _startMoveMode(structure.structureKey);
-    }
-  }
-
-  Widget _buildMaterialStrip(ThemeData theme) {
-    final snapshot = _snapshot;
-    if (snapshot == null) return const SizedBox.shrink();
-    final resources = snapshot.resources;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: resources
-          .map(
-            (resource) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-              ),
-              child: Text(
-                '${_friendlyResourceName(resource.resourceKey)}: ${resource.amount}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          )
-          .toList(),
     );
   }
 
@@ -839,6 +929,50 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
+  Widget _buildBaseStats(ThemeData theme) {
+    final snapshot = _snapshot;
+    if (snapshot == null) return const SizedBox.shrink();
+
+    final roomCount = snapshot.structures.length;
+    final highestLevel = snapshot.structures.isEmpty
+        ? 0
+        : snapshot.structures
+              .map((structure) => structure.level)
+              .reduce((a, b) => a > b ? a : b);
+    final expansionSites = _adjacentBuildCellKeys.length;
+    final activeEffects = snapshot.activeDailyEffects.length;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          _BaseStatCard(
+            icon: Icons.home_work_outlined,
+            label: 'Rooms',
+            value: '$roomCount',
+          ),
+          _BaseStatCard(
+            icon: Icons.north_east_outlined,
+            label: 'Expansion Sites',
+            value: '$expansionSites',
+          ),
+          _BaseStatCard(
+            icon: Icons.stacked_line_chart,
+            label: 'Highest Level',
+            value: highestLevel > 0 ? 'Lv $highestLevel' : 'None',
+          ),
+          _BaseStatCard(
+            icon: Icons.auto_awesome_outlined,
+            label: 'Active Effects',
+            value: '$activeEffects',
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGrid(ThemeData theme) {
     final snapshot = _snapshot;
     if (snapshot == null) return const SizedBox.shrink();
@@ -911,6 +1045,12 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                             });
                             return;
                           }
+                          if (_selectingMoveAnchor) {
+                            if (structure != null) {
+                              _startMoveMode(structure.structureKey);
+                            }
+                            return;
+                          }
                           if (structure != null) {
                             _showRoomDetails(structure);
                             return;
@@ -933,7 +1073,57 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
 
   Widget _buildMoveControls(ThemeData theme) {
     final anchorKey = _moveAnchorStructureKey;
-    if (anchorKey == null) return const SizedBox.shrink();
+    final canManage = _snapshot?.canManage == true;
+    if (!canManage || _structureByKey.isEmpty) return const SizedBox.shrink();
+
+    if (anchorKey == null) {
+      return Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.28,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Move Rooms',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _selectingMoveAnchor
+                  ? 'Tap a room on the grid to choose what you want to move.'
+                  : 'Reposition a room or a linked cluster without opening an individual room panel.',
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: _selectingMoveAnchor
+                  ? OutlinedButton(
+                      onPressed: _busyStructureKey == null
+                          ? _cancelMoveMode
+                          : null,
+                      child: const Text('Cancel'),
+                    )
+                  : FilledButton(
+                      onPressed: _busyStructureKey == null
+                          ? _beginMoveAnchorSelection
+                          : null,
+                      child: const Text('Select Room To Move'),
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(top: 14),
       padding: const EdgeInsets.all(14),
@@ -1059,137 +1249,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
-  Widget _buildBaseFlavorSection(ThemeData theme) {
-    final snapshot = _snapshot;
-    final base = snapshot?.base;
-    if (snapshot == null || base == null) {
-      return const SizedBox.shrink();
-    }
-
-    final baseName = base.name.trim();
-    final description = base.description.trim();
-    final hasFlavor = baseName.isNotEmpty || description.isNotEmpty;
-    if (!snapshot.canManage && !hasFlavor) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.22,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _editingBaseName
-                    ? TextField(
-                        controller: _baseNameController,
-                        focusNode: _baseNameFocusNode,
-                        enabled: !_savingBaseDetails,
-                        textCapitalization: TextCapitalization.words,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: _savingBaseDetails
-                            ? null
-                            : (_) => _saveBaseDetails(),
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          hintText: 'Give your base a name',
-                        ),
-                      )
-                    : Text(
-                        baseName.isNotEmpty ? baseName : 'Unnamed Base',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontStyle: baseName.isNotEmpty
-                              ? FontStyle.normal
-                              : FontStyle.italic,
-                        ),
-                      ),
-              ),
-              if (snapshot.canManage)
-                _InlineEditActions(
-                  editing: _editingBaseName,
-                  saving: _savingBaseDetails,
-                  editTooltip: 'Edit base name',
-                  confirmTooltip: 'Save base details',
-                  cancelTooltip: 'Cancel name edit',
-                  onEdit: () => _beginInlineEdit(
-                    editingName: true,
-                    editingDescription: _editingBaseDescription,
-                    controller: _baseNameController,
-                    focusNode: _baseNameFocusNode,
-                  ),
-                  onConfirm: _saveBaseDetails,
-                  onCancel: _cancelBaseNameEdit,
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _editingBaseDescription
-                    ? TextField(
-                        controller: _baseDescriptionController,
-                        focusNode: _baseDescriptionFocusNode,
-                        enabled: !_savingBaseDetails,
-                        textCapitalization: TextCapitalization.sentences,
-                        minLines: 3,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          hintText: 'Describe what makes this base yours',
-                        ),
-                      )
-                    : Text(
-                        description.isNotEmpty
-                            ? description
-                            : snapshot.canManage
-                            ? 'Give your base a name and description so it feels like home.'
-                            : 'This base has not been described yet.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.4,
-                          fontStyle: description.isNotEmpty
-                              ? FontStyle.normal
-                              : FontStyle.italic,
-                        ),
-                      ),
-              ),
-              if (snapshot.canManage)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: _InlineEditActions(
-                    editing: _editingBaseDescription,
-                    saving: _savingBaseDetails,
-                    editTooltip: 'Edit base description',
-                    confirmTooltip: 'Save base details',
-                    cancelTooltip: 'Cancel description edit',
-                    onEdit: () => _beginInlineEdit(
-                      editingName: _editingBaseName,
-                      editingDescription: true,
-                      controller: _baseDescriptionController,
-                      focusNode: _baseDescriptionFocusNode,
-                    ),
-                    onConfirm: _saveBaseDetails,
-                    onCancel: _cancelBaseDescriptionEdit,
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1242,20 +1301,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           else if (buildSelectionCell != null)
             _buildBuildSelectionView(theme, buildOptions)
           else ...[
-            _buildBaseFlavorSection(theme),
+            _buildBaseStats(theme),
             _buildGrid(theme),
             _buildMoveControls(theme),
-            if (snapshot!.canManage) ...[
-              const SizedBox(height: 18),
-              Text(
-                'Materials',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              _buildMaterialStrip(theme),
-            ],
             _buildActiveEffects(theme),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1301,6 +1349,8 @@ class _InlineEditActions extends StatelessWidget {
         tooltip: editTooltip,
         onPressed: saving ? null : onEdit,
         icon: const Icon(Icons.edit_outlined, size: 20),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
         visualDensity: VisualDensity.compact,
       );
     }
@@ -1312,12 +1362,14 @@ class _InlineEditActions extends StatelessWidget {
           tooltip: cancelTooltip,
           onPressed: saving ? null : onCancel,
           icon: const Icon(Icons.close, size: 20),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
           visualDensity: VisualDensity.compact,
         ),
         if (saving)
           const SizedBox(
-            width: 36,
-            height: 36,
+            width: 28,
+            height: 28,
             child: Center(
               child: SizedBox(
                 width: 16,
@@ -1331,9 +1383,62 @@ class _InlineEditActions extends StatelessWidget {
             tooltip: confirmTooltip,
             onPressed: onConfirm,
             icon: const Icon(Icons.check, size: 20),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
             visualDensity: VisualDensity.compact,
           ),
       ],
+    );
+  }
+}
+
+class _BaseStatCard extends StatelessWidget {
+  const _BaseStatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      constraints: const BoxConstraints(minWidth: 132),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1407,7 +1512,7 @@ class _BaseGridTile extends StatelessWidget {
               Center(
                 child: Icon(
                   Icons.add,
-                  color: _roomBorderColor.withValues(alpha: 0.38),
+                  color: _buildSlotPlusColor,
                   size: tileSize * 0.28,
                 ),
               ),
@@ -1638,16 +1743,6 @@ class _RoomDetailsSheet extends StatelessWidget {
                         ),
                 ),
               ),
-            if (canManage) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Move Room'),
-                ),
-              ),
-            ],
           ],
         ),
       ),
