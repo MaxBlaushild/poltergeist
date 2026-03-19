@@ -8,44 +8,45 @@ import (
 )
 
 const (
-	GenerateQuestForZoneTaskType               = "generate_quest_for_zone"
-	QueueQuestGenerationsTaskType              = "queue_quest_generations"
-	CreateProfilePictureTaskType               = "create_profile_picture"
-	GenerateOutfitProfilePictureTaskType       = "generate_outfit_profile_picture"
-	GenerateInventoryItemImageTaskType         = "generate_inventory_item_image"
-	GenerateSpellIconTaskType                  = "generate_spell_icon"
-	GenerateSpellsBulkTaskType                 = "generate_spells_bulk"
-	GenerateSpellProgressionFromPromptTaskType = "generate_spell_progression_from_prompt"
-	GenerateMonsterImageTaskType               = "generate_monster_image"
-	GenerateMonsterTemplateImageTaskType       = "generate_monster_template_image"
-	GenerateMonsterTemplatesBulkTaskType       = "generate_monster_templates_bulk"
-	GenerateCharacterImageTaskType             = "generate_character_image"
-	GeneratePointOfInterestImageTaskType       = "generate_point_of_interest_image"
-	GenerateScenarioImageTaskType              = "generate_scenario_image"
-	GenerateTutorialImageTaskType              = "generate_tutorial_image"
-	GenerateChallengeImageTaskType             = "generate_challenge_image"
-	GenerateScenarioTaskType                   = "generate_scenario"
-	GenerateChallengesTaskType                 = "generate_challenges"
-	GenerateScenarioTemplatesTaskType          = "generate_scenario_templates"
-	GenerateChallengeTemplatesTaskType         = "generate_challenge_templates"
-	GenerateZoneFlavorTaskType                 = "generate_zone_flavor"
-	GenerateBaseDescriptionTaskType            = "generate_base_description"
-	GenerateBaseStructureLevelImageTaskType    = "generate_base_structure_level_image"
-	GenerateImageThumbnailTaskType             = "generate_image_thumbnail"
-	QueueThumbnailBackfillTaskType             = "queue_thumbnail_backfill"
-	SeedTreasureChestsTaskType                 = "seed_treasure_chests"
-	CalculateTrendingDestinationsTaskType      = "calculate_trending_destinations"
-	ProcessRecurringQuestsTaskType             = "process_recurring_quests"
-	ProcessRecurringStandaloneContentTaskType  = "process_recurring_standalone_content"
-	CleanupOrphanedQuestActionsTaskType        = "cleanup_orphaned_quest_actions"
-	CheckBlockchainTransactionsTaskType        = "check_blockchain_transactions"
-	ImportPointOfInterestTaskType              = "import_point_of_interest"
-	ImportZonesForMetroTaskType                = "import_zones_for_metro"
-	MonitorPolymarketTradesTaskType            = "monitor_polymarket_trades"
-	SeedZoneDraftTaskType                      = "seed_zone_draft"
-	ApplyZoneSeedDraftTaskType                 = "apply_zone_seed_draft"
-	ShuffleZoneSeedChallengeTaskType           = "shuffle_zone_seed_challenge"
-	ShuffleQuestNodeChallengeTaskType          = "shuffle_quest_node_challenge"
+	GenerateQuestForZoneTaskType                   = "generate_quest_for_zone"
+	QueueQuestGenerationsTaskType                  = "queue_quest_generations"
+	CreateProfilePictureTaskType                   = "create_profile_picture"
+	GenerateOutfitProfilePictureTaskType           = "generate_outfit_profile_picture"
+	GenerateInventoryItemImageTaskType             = "generate_inventory_item_image"
+	GenerateSpellIconTaskType                      = "generate_spell_icon"
+	GenerateSpellsBulkTaskType                     = "generate_spells_bulk"
+	GenerateSpellProgressionFromPromptTaskType     = "generate_spell_progression_from_prompt"
+	GenerateMonsterImageTaskType                   = "generate_monster_image"
+	GenerateMonsterTemplateImageTaskType           = "generate_monster_template_image"
+	GenerateMonsterTemplatesBulkTaskType           = "generate_monster_templates_bulk"
+	GenerateCharacterImageTaskType                 = "generate_character_image"
+	GeneratePointOfInterestImageTaskType           = "generate_point_of_interest_image"
+	GenerateScenarioImageTaskType                  = "generate_scenario_image"
+	GenerateTutorialImageTaskType                  = "generate_tutorial_image"
+	GenerateChallengeImageTaskType                 = "generate_challenge_image"
+	GenerateScenarioTaskType                       = "generate_scenario"
+	GenerateChallengesTaskType                     = "generate_challenges"
+	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
+	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
+	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
+	GenerateBaseDescriptionTaskType                = "generate_base_description"
+	GenerateBaseStructureLevelImageTaskType        = "generate_base_structure_level_image"
+	GenerateBaseStructureLevelTopDownImageTaskType = "generate_base_structure_level_top_down_image"
+	GenerateImageThumbnailTaskType                 = "generate_image_thumbnail"
+	QueueThumbnailBackfillTaskType                 = "queue_thumbnail_backfill"
+	SeedTreasureChestsTaskType                     = "seed_treasure_chests"
+	CalculateTrendingDestinationsTaskType          = "calculate_trending_destinations"
+	ProcessRecurringQuestsTaskType                 = "process_recurring_quests"
+	ProcessRecurringStandaloneContentTaskType      = "process_recurring_standalone_content"
+	CleanupOrphanedQuestActionsTaskType            = "cleanup_orphaned_quest_actions"
+	CheckBlockchainTransactionsTaskType            = "check_blockchain_transactions"
+	ImportPointOfInterestTaskType                  = "import_point_of_interest"
+	ImportZonesForMetroTaskType                    = "import_zones_for_metro"
+	MonitorPolymarketTradesTaskType                = "monitor_polymarket_trades"
+	SeedZoneDraftTaskType                          = "seed_zone_draft"
+	ApplyZoneSeedDraftTaskType                     = "apply_zone_seed_draft"
+	ShuffleZoneSeedChallengeTaskType               = "shuffle_zone_seed_challenge"
+	ShuffleQuestNodeChallengeTaskType              = "shuffle_quest_node_challenge"
 )
 
 const (
@@ -76,12 +77,13 @@ const (
 )
 
 const (
-	ThumbnailEntityCharacter          = "character"
-	ThumbnailEntityPointOfInterest    = "point_of_interest"
-	ThumbnailEntityBase               = "base"
-	ThumbnailEntityBaseStructureLevel = "base_structure_level"
-	ThumbnailEntityStatic             = "static"
-	ThumbnailBucket                   = "crew-profile-icons"
+	ThumbnailEntityCharacter                 = "character"
+	ThumbnailEntityPointOfInterest           = "point_of_interest"
+	ThumbnailEntityBase                      = "base"
+	ThumbnailEntityBaseStructureLevel        = "base_structure_level"
+	ThumbnailEntityBaseStructureLevelTopDown = "base_structure_level_top_down"
+	ThumbnailEntityStatic                    = "static"
+	ThumbnailBucket                          = "crew-profile-icons"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
@@ -98,6 +100,7 @@ type GenerateBaseDescriptionTaskPayload struct {
 type GenerateBaseStructureLevelImageTaskPayload struct {
 	StructureDefinitionID uuid.UUID `json:"structureDefinitionId"`
 	Level                 int       `json:"level"`
+	View                  string    `json:"view,omitempty"`
 }
 
 type CreateProfilePictureTaskPayload struct {

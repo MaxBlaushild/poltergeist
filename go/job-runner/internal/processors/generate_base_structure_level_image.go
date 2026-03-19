@@ -44,6 +44,32 @@ Rules:
 - Prefer a clean background and a centered composition suitable for a management screen card.
 `
 
+const baseStructureLevelTopDownImagePromptTemplate = `
+Create art direction for a fantasy MMORPG base room tile viewed from directly overhead.
+
+Room context:
+- room name: %s
+- room category: %s
+- room description: %s
+- room effect type: %s
+- room level: %d of %d
+- progression cue: %s
+
+Rules:
+- Match the established base grass tile style:
+  - retro 16-bit fantasy RPG pixel art
+  - orthographic top-down view
+  - crisp outlines
+  - readable silhouette
+  - limited palette
+  - tile-friendly composition
+- This image should feel like it belongs on the same board as the top-down grass tiles.
+- Show a room footprint, roofline, yard, shrine, forge, garden, or chamber clearly from above.
+- The room should look modest at low levels and more elaborate, fortified, or refined at higher levels.
+- Fill the square with the room environment. No empty studio background, no framing card treatment.
+- No text, no logos, no UI, no modern objects.
+`
+
 type GenerateBaseStructureLevelImageProcessor struct {
 	dbClient         db.DbClient
 	deepPriestClient deep_priest.DeepPriest
@@ -79,6 +105,7 @@ func (p *GenerateBaseStructureLevelImageProcessor) ProcessTask(ctx context.Conte
 	if payload.Level <= 0 {
 		return fmt.Errorf("level must be positive")
 	}
+	view := normalizeBaseStructureImageView(payload.View)
 
 	definition, err := p.dbClient.BaseStructureDefinition().FindByID(ctx, payload.StructureDefinitionID)
 	if err != nil {
@@ -93,14 +120,17 @@ func (p *GenerateBaseStructureLevelImageProcessor) ProcessTask(ctx context.Conte
 		return err
 	}
 
-	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusInProgress
-	visual.ImageGenerationError = nil
+	setBaseStructureVisualStateInProgress(visual, view)
 	if err := p.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual); err != nil {
 		return fmt.Errorf("failed to mark base structure level visual in progress: %w", err)
 	}
 
+	promptTemplate := baseStructureLevelImagePromptTemplate
+	if view == baseStructureImageViewTopDown {
+		promptTemplate = baseStructureLevelTopDownImagePromptTemplate
+	}
 	prompt := fmt.Sprintf(
-		baseStructureLevelImagePromptTemplate,
+		promptTemplate,
 		strings.TrimSpace(definition.Name),
 		strings.TrimSpace(definition.Category),
 		strings.TrimSpace(definition.Description),
@@ -115,28 +145,25 @@ func (p *GenerateBaseStructureLevelImageProcessor) ProcessTask(ctx context.Conte
 
 	imagePayload, err := p.deepPriestClient.GenerateImage(request)
 	if err != nil {
-		return p.markFailed(ctx, visual, err)
+		return p.markFailed(ctx, visual, view, err)
 	}
 
 	imageBytes, err := decodeCharacterImagePayload(imagePayload)
 	if err != nil {
-		return p.markFailed(ctx, visual, err)
+		return p.markFailed(ctx, visual, view, err)
 	}
 
-	imageURL, err := p.uploadImage(definition.ID, payload.Level, imageBytes)
+	imageURL, err := p.uploadImage(definition.ID, payload.Level, view, imageBytes)
 	if err != nil {
-		return p.markFailed(ctx, visual, err)
+		return p.markFailed(ctx, visual, view, err)
 	}
 
-	visual.ImageURL = imageURL
-	visual.ThumbnailURL = ""
-	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusComplete
-	visual.ImageGenerationError = nil
+	setBaseStructureVisualStateComplete(visual, view, imageURL)
 	if err := p.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual); err != nil {
 		return fmt.Errorf("failed to update base structure level visual image: %w", err)
 	}
 
-	p.enqueueThumbnailTask(visual.ID, imageURL)
+	p.enqueueThumbnailTask(visual.ID, imageURL, view)
 
 	return nil
 }
@@ -155,12 +182,13 @@ func (p *GenerateBaseStructureLevelImageProcessor) findOrCreateVisual(
 	}
 	now := time.Now()
 	visual = &models.BaseStructureLevelVisual{
-		ID:                    uuid.New(),
-		CreatedAt:             now,
-		UpdatedAt:             now,
-		StructureDefinitionID: definitionID,
-		Level:                 level,
-		ImageGenerationStatus: models.BaseStructureImageGenerationStatusQueued,
+		ID:                           uuid.New(),
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
+		StructureDefinitionID:        definitionID,
+		Level:                        level,
+		ImageGenerationStatus:        models.BaseStructureImageGenerationStatusQueued,
+		TopDownImageGenerationStatus: models.BaseStructureImageGenerationStatusNone,
 	}
 	if err := p.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual); err != nil {
 		return nil, fmt.Errorf("failed to create base structure level visual: %w", err)
@@ -175,12 +203,11 @@ func (p *GenerateBaseStructureLevelImageProcessor) findOrCreateVisual(
 func (p *GenerateBaseStructureLevelImageProcessor) markFailed(
 	ctx context.Context,
 	visual *models.BaseStructureLevelVisual,
+	view string,
 	err error,
 ) error {
 	if visual != nil {
-		errMsg := err.Error()
-		visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
-		visual.ImageGenerationError = &errMsg
+		setBaseStructureVisualStateFailed(visual, view, err)
 		if updateErr := p.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual); updateErr != nil {
 			log.Printf("Failed to mark base structure level image generation failed: %v", updateErr)
 		}
@@ -191,6 +218,7 @@ func (p *GenerateBaseStructureLevelImageProcessor) markFailed(
 func (p *GenerateBaseStructureLevelImageProcessor) uploadImage(
 	definitionID uuid.UUID,
 	level int,
+	view string,
 	imageBytes []byte,
 ) (string, error) {
 	if len(imageBytes) == 0 {
@@ -204,25 +232,28 @@ func (p *GenerateBaseStructureLevelImageProcessor) uploadImage(
 	if err != nil {
 		return "", err
 	}
-	imageName := fmt.Sprintf(
-		"base-structures/%s-level-%d-%d.%s",
-		definitionID.String(),
-		level,
-		time.Now().UnixNano(),
-		imageExtension,
-	)
+	imagePrefix := "base-structures"
+	if view == baseStructureImageViewTopDown {
+		imagePrefix = "base-structures/top-down"
+	}
+	imageName := fmt.Sprintf("%s/%s-level-%d-%d.%s", imagePrefix, definitionID.String(), level, time.Now().UnixNano(), imageExtension)
 	return p.awsClient.UploadImageToS3("crew-points-of-interest", imageName, imageBytes)
 }
 
 func (p *GenerateBaseStructureLevelImageProcessor) enqueueThumbnailTask(
 	visualID uuid.UUID,
 	imageURL string,
+	view string,
 ) {
 	if p.asyncClient == nil || visualID == uuid.Nil || strings.TrimSpace(imageURL) == "" {
 		return
 	}
+	entityType := jobs.ThumbnailEntityBaseStructureLevel
+	if view == baseStructureImageViewTopDown {
+		entityType = jobs.ThumbnailEntityBaseStructureLevelTopDown
+	}
 	payloadBytes, err := json.Marshal(jobs.GenerateImageThumbnailTaskPayload{
-		EntityType: jobs.ThumbnailEntityBaseStructureLevel,
+		EntityType: entityType,
 		EntityID:   visualID,
 		SourceUrl:  imageURL,
 	})
@@ -233,6 +264,55 @@ func (p *GenerateBaseStructureLevelImageProcessor) enqueueThumbnailTask(
 	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
 		log.Printf("Failed to enqueue base structure level thumbnail task: %v", err)
 	}
+}
+
+const (
+	baseStructureImageViewCard    = "card"
+	baseStructureImageViewTopDown = "top_down"
+)
+
+func normalizeBaseStructureImageView(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case baseStructureImageViewTopDown:
+		return baseStructureImageViewTopDown
+	default:
+		return baseStructureImageViewCard
+	}
+}
+
+func setBaseStructureVisualStateInProgress(visual *models.BaseStructureLevelVisual, view string) {
+	if view == baseStructureImageViewTopDown {
+		visual.TopDownImageGenerationStatus = models.BaseStructureImageGenerationStatusInProgress
+		visual.TopDownImageGenerationError = nil
+		return
+	}
+	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusInProgress
+	visual.ImageGenerationError = nil
+}
+
+func setBaseStructureVisualStateComplete(visual *models.BaseStructureLevelVisual, view string, imageURL string) {
+	if view == baseStructureImageViewTopDown {
+		visual.TopDownImageURL = imageURL
+		visual.TopDownThumbnailURL = ""
+		visual.TopDownImageGenerationStatus = models.BaseStructureImageGenerationStatusComplete
+		visual.TopDownImageGenerationError = nil
+		return
+	}
+	visual.ImageURL = imageURL
+	visual.ThumbnailURL = ""
+	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusComplete
+	visual.ImageGenerationError = nil
+}
+
+func setBaseStructureVisualStateFailed(visual *models.BaseStructureLevelVisual, view string, err error) {
+	errMsg := err.Error()
+	if view == baseStructureImageViewTopDown {
+		visual.TopDownImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
+		visual.TopDownImageGenerationError = &errMsg
+		return
+	}
+	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
+	visual.ImageGenerationError = &errMsg
 }
 
 func baseStructureLevelProgressionCue(level int, maxLevel int) string {

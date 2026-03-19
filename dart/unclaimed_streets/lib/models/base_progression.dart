@@ -44,6 +44,10 @@ class BaseStructureLevelVisualData {
     required this.thumbnailUrl,
     required this.imageGenerationStatus,
     required this.imageGenerationError,
+    required this.topDownImageUrl,
+    required this.topDownThumbnailUrl,
+    required this.topDownImageGenerationStatus,
+    required this.topDownImageGenerationError,
   });
 
   final int level;
@@ -51,6 +55,10 @@ class BaseStructureLevelVisualData {
   final String thumbnailUrl;
   final String imageGenerationStatus;
   final String? imageGenerationError;
+  final String topDownImageUrl;
+  final String topDownThumbnailUrl;
+  final String topDownImageGenerationStatus;
+  final String? topDownImageGenerationError;
 
   factory BaseStructureLevelVisualData.fromJson(Map<String, dynamic> json) {
     return BaseStructureLevelVisualData(
@@ -59,6 +67,12 @@ class BaseStructureLevelVisualData {
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       imageGenerationStatus: json['imageGenerationStatus']?.toString() ?? '',
       imageGenerationError: json['imageGenerationError']?.toString(),
+      topDownImageUrl: json['topDownImageUrl']?.toString() ?? '',
+      topDownThumbnailUrl: json['topDownThumbnailUrl']?.toString() ?? '',
+      topDownImageGenerationStatus:
+          json['topDownImageGenerationStatus']?.toString() ?? '',
+      topDownImageGenerationError: json['topDownImageGenerationError']
+          ?.toString(),
     );
   }
 }

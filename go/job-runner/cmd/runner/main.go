@@ -188,6 +188,7 @@ func main() {
 	mux.Handle(jobs.GenerateTutorialImageTaskType, &generateTutorialImageProcessor)
 	mux.Handle(jobs.GenerateChallengeImageTaskType, &generateChallengeImageProcessor)
 	mux.Handle(jobs.GenerateBaseStructureLevelImageTaskType, &generateBaseStructureLevelImageProcessor)
+	mux.Handle(jobs.GenerateBaseStructureLevelTopDownImageTaskType, &generateBaseStructureLevelImageProcessor)
 	mux.Handle(jobs.GenerateScenarioTaskType, &generateScenarioProcessor)
 	mux.Handle(jobs.GenerateChallengesTaskType, &generateChallengesProcessor)
 	mux.Handle(jobs.GenerateScenarioTemplatesTaskType, &generateScenarioTemplatesProcessor)

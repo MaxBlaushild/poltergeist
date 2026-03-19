@@ -163,15 +163,19 @@ func (BaseStructureLevelCost) TableName() string {
 }
 
 type BaseStructureLevelVisual struct {
-	ID                    uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt             time.Time `json:"createdAt"`
-	UpdatedAt             time.Time `json:"updatedAt"`
-	StructureDefinitionID uuid.UUID `json:"structureDefinitionId" gorm:"column:structure_definition_id;type:uuid"`
-	Level                 int       `json:"level"`
-	ImageURL              string    `json:"imageUrl" gorm:"column:image_url"`
-	ThumbnailURL          string    `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	ImageGenerationStatus string    `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
-	ImageGenerationError  *string   `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	ID                           uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt                    time.Time `json:"createdAt"`
+	UpdatedAt                    time.Time `json:"updatedAt"`
+	StructureDefinitionID        uuid.UUID `json:"structureDefinitionId" gorm:"column:structure_definition_id;type:uuid"`
+	Level                        int       `json:"level"`
+	ImageURL                     string    `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL                 string    `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ImageGenerationStatus        string    `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError         *string   `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	TopDownImageURL              string    `json:"topDownImageUrl" gorm:"column:top_down_image_url"`
+	TopDownThumbnailURL          string    `json:"topDownThumbnailUrl" gorm:"column:top_down_thumbnail_url"`
+	TopDownImageGenerationStatus string    `json:"topDownImageGenerationStatus" gorm:"column:top_down_image_generation_status"`
+	TopDownImageGenerationError  *string   `json:"topDownImageGenerationError,omitempty" gorm:"column:top_down_image_generation_error"`
 }
 
 func (BaseStructureLevelVisual) TableName() string {

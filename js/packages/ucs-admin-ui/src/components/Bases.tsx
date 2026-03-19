@@ -45,6 +45,10 @@ type BaseStructureLevelVisual = {
   thumbnailUrl?: string;
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
+  topDownImageUrl?: string;
+  topDownThumbnailUrl?: string;
+  topDownImageGenerationStatus?: string;
+  topDownImageGenerationError?: string | null;
 };
 
 type BaseStructureDefinition = {
@@ -120,6 +124,18 @@ const grassTileKey = (gridX: number, gridY: number) => `${gridX}:${gridY}`;
 const defaultGrassPromptForCell = (gridX: number, gridY: number) =>
   `${defaultBaseGrassPrompt} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
 
+const buildGrassPromptForCell = (
+  basePrompt: string,
+  gridX: number,
+  gridY: number
+) => {
+  const trimmed = basePrompt.trim();
+  if (!trimmed) {
+    return defaultGrassPromptForCell(gridX, gridY);
+  }
+  return `${trimmed} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
+};
+
 export const Bases = () => {
   const { apiClient } = useAPI();
   const [records, setRecords] = useState<BaseRecord[]>([]);
@@ -144,9 +160,10 @@ export const Bases = () => {
     Record<string, BaseGrassTileStatus>
   >({});
   const [selectedGrassKey, setSelectedGrassKey] = useState('0:0');
+  const [selectedGrassKeys, setSelectedGrassKeys] = useState<string[]>(['0:0']);
   const [grassPrompt, setGrassPrompt] = useState(defaultBaseGrassPrompt);
   const [grassStatusLoading, setGrassStatusLoading] = useState(false);
-  const [grassBusy, setGrassBusy] = useState(false);
+  const [grassBusyKeys, setGrassBusyKeys] = useState<string[]>([]);
   const [grassMessage, setGrassMessage] = useState<string | null>(null);
   const [grassError, setGrassError] = useState<string | null>(null);
   const [grassPreviewNonce, setGrassPreviewNonce] = useState(Date.now());
@@ -166,6 +183,8 @@ export const Bases = () => {
   const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<string | null>(
     null
   );
+  const [generatingTopDownRoomImageKey, setGeneratingTopDownRoomImageKey] =
+    useState<string | null>(null);
 
   const fetchBases = useCallback(async () => {
     try {
@@ -286,23 +305,46 @@ export const Bases = () => {
     [apiClient]
   );
 
-  const handleGenerateGrass = useCallback(async () => {
-    const prompt = grassPrompt.trim();
-    if (!prompt) {
-      setGrassError('Prompt is required.');
+  const handleGenerateGrass = useCallback(async (keys?: string[]) => {
+    const targetKeys = Array.from(
+      new Set((keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean))
+    );
+    if (targetKeys.length === 0) {
+      setGrassError('Select at least one tile.');
       return;
     }
-    const [gridXText, gridYText] = selectedGrassKey.split(':');
-    const gridX = Number(gridXText);
-    const gridY = Number(gridYText);
+    const runnableKeys = targetKeys.filter((key) => !grassBusyKeys.includes(key));
+    if (runnableKeys.length === 0) {
+      return;
+    }
     try {
-      setGrassBusy(true);
       setGrassError(null);
       setGrassMessage(null);
-      await apiClient.post(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`, {
-        prompt,
-      });
-      setGrassMessage(`Grass tile (${gridX + 1}, ${gridY + 1}) queued for generation.`);
+      setGrassBusyKeys((prev) => Array.from(new Set([...prev, ...runnableKeys])));
+      const results = await Promise.allSettled(
+        runnableKeys.map(async (key) => {
+          const [gridXText, gridYText] = key.split(':');
+          const gridX = Number(gridXText);
+          const gridY = Number(gridYText);
+          await apiClient.post(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`, {
+            prompt: buildGrassPromptForCell(grassPrompt, gridX, gridY),
+          });
+          return key;
+        })
+      );
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failedCount = results.length - successCount;
+      if (failedCount === 0) {
+        setGrassMessage(
+          successCount === 1
+            ? '1 grass tile queued for generation.'
+            : `${successCount} grass tiles queued for generation.`
+        );
+      } else {
+        setGrassMessage(
+          `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} queued, ${failedCount} failed.`
+        );
+      }
       await refreshGrassStatus();
     } catch (err) {
       console.error('Failed to generate base grass tile', err);
@@ -312,20 +354,48 @@ export const Bases = () => {
           : 'Failed to generate base grass tile.';
       setGrassError(message);
     } finally {
-      setGrassBusy(false);
+      setGrassBusyKeys((prev) => prev.filter((key) => !runnableKeys.includes(key)));
     }
-  }, [apiClient, grassPrompt, refreshGrassStatus, selectedGrassKey]);
+  }, [apiClient, grassBusyKeys, grassPrompt, refreshGrassStatus, selectedGrassKeys]);
 
-  const handleDeleteGrass = useCallback(async () => {
-    const [gridXText, gridYText] = selectedGrassKey.split(':');
-    const gridX = Number(gridXText);
-    const gridY = Number(gridYText);
+  const handleDeleteGrass = useCallback(async (keys?: string[]) => {
+    const targetKeys = Array.from(
+      new Set((keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean))
+    );
+    if (targetKeys.length === 0) {
+      setGrassError('Select at least one tile.');
+      return;
+    }
+    const runnableKeys = targetKeys.filter((key) => !grassBusyKeys.includes(key));
+    if (runnableKeys.length === 0) {
+      return;
+    }
     try {
-      setGrassBusy(true);
       setGrassError(null);
       setGrassMessage(null);
-      await apiClient.delete(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`);
-      setGrassMessage(`Grass tile (${gridX + 1}, ${gridY + 1}) deleted.`);
+      setGrassBusyKeys((prev) => Array.from(new Set([...prev, ...runnableKeys])));
+      const results = await Promise.allSettled(
+        runnableKeys.map(async (key) => {
+          const [gridXText, gridYText] = key.split(':');
+          const gridX = Number(gridXText);
+          const gridY = Number(gridYText);
+          await apiClient.delete(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`);
+          return key;
+        })
+      );
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failedCount = results.length - successCount;
+      if (failedCount === 0) {
+        setGrassMessage(
+          successCount === 1
+            ? '1 grass tile deleted.'
+            : `${successCount} grass tiles deleted.`
+        );
+      } else {
+        setGrassMessage(
+          `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} deleted, ${failedCount} failed.`
+        );
+      }
       await refreshGrassStatus();
     } catch (err) {
       console.error('Failed to delete base grass tile', err);
@@ -335,9 +405,9 @@ export const Bases = () => {
           : 'Failed to delete base grass tile.';
       setGrassError(message);
     } finally {
-      setGrassBusy(false);
+      setGrassBusyKeys((prev) => prev.filter((key) => !runnableKeys.includes(key)));
     }
-  }, [apiClient, refreshGrassStatus, selectedGrassKey]);
+  }, [apiClient, grassBusyKeys, refreshGrassStatus, selectedGrassKeys]);
 
   const handleDeleteBase = useCallback(
     async (record: BaseRecord) => {
@@ -451,6 +521,36 @@ export const Bases = () => {
     [apiClient]
   );
 
+  const handleGenerateTopDownRoomImage = useCallback(
+    async (structure: BaseStructureDefinition, level: number) => {
+      const jobKey = `${structure.id}:${level}`;
+      try {
+        setGeneratingTopDownRoomImageKey(jobKey);
+        setError(null);
+        setBaseMessage(null);
+        const updated = await apiClient.post<BaseStructureDefinition>(
+          `/sonar/admin/base-structures/${structure.id}/levels/${level}/generate-top-down-image`
+        );
+        setStructures((prev) =>
+          prev.map((record) => (record.id === structure.id ? updated : record))
+        );
+        setBaseMessage(
+          `Queued ${structure.name} level ${level} top-down image generation.`
+        );
+      } catch (err) {
+        console.error('Failed to queue base room top-down image generation', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to queue base room top-down image generation.';
+        setError(message);
+      } finally {
+        setGeneratingTopDownRoomImageKey(null);
+      }
+    },
+    [apiClient]
+  );
+
   useEffect(() => {
     void fetchBases();
   }, [fetchBases]);
@@ -514,6 +614,9 @@ export const Bases = () => {
       (structure.levelVisuals || []).some((visual) =>
         ['queued', 'in_progress'].includes(
           (visual.imageGenerationStatus || '').toLowerCase()
+        ) ||
+        ['queued', 'in_progress'].includes(
+          (visual.topDownImageGenerationStatus || '').toLowerCase()
         )
       )
     );
@@ -533,6 +636,13 @@ export const Bases = () => {
   }
 
   const selectedGrassTile = grassTilesByKey[selectedGrassKey];
+  const selectedGrassCount = selectedGrassKeys.length;
+  const selectedGrassSummary = selectedGrassKeys
+    .map((key) => {
+      const [gridXText, gridYText] = key.split(':');
+      return `(${Number(gridXText) + 1}, ${Number(gridYText) + 1})`;
+    })
+    .join(', ');
   const selectedGrassUrl =
     selectedGrassTile?.thumbnailUrl?.trim() ||
     `https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-grass-${selectedGrassKey.replace(
@@ -653,7 +763,7 @@ export const Bases = () => {
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Base Grass Tiles</h2>
             <p className="mt-1 text-xs text-gray-600">
-              Generate and manage one top-down grass tile per board coordinate.
+              Click tiles to build a batch. The last tile you click is the one shown in the detail panel.
             </p>
           </div>
           <button
@@ -674,24 +784,40 @@ export const Bases = () => {
                 const tile = grassTilesByKey[key];
                 const status = (tile?.status || 'unknown').trim() || 'unknown';
                 const isSelected = selectedGrassKey === key;
+                const isInBatch = selectedGrassKeys.includes(key);
+                const isBusy = grassBusyKeys.includes(key);
                 return (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setSelectedGrassKey(key)}
+                    onClick={() => {
+                      setSelectedGrassKey(key);
+                      setSelectedGrassKeys((prev) =>
+                        prev.includes(key)
+                          ? prev.filter((entry) => entry !== key)
+                          : [...prev, key]
+                      );
+                    }}
                     className={`flex h-14 w-14 flex-col items-center justify-center rounded border text-[10px] font-semibold ${
-                      isSelected
+                      isSelected && isInBatch
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
+                        : isSelected
+                        ? 'border-sky-500 bg-sky-50 text-sky-700'
+                        : isInBatch
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
                         : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
                     }`}
                     title={`Tile (${gridX + 1}, ${gridY + 1})`}
                   >
                     <span>{gridX + 1},{gridY + 1}</span>
-                    <span
-                      className={`mt-1 h-2 w-2 rounded-full ${staticStatusClassName(
-                        status
-                      )}`}
-                    />
+                    <div className="mt-1 flex items-center gap-1">
+                      <span
+                        className={`h-2 w-2 rounded-full ${staticStatusClassName(
+                          status
+                        )}`}
+                      />
+                      {isBusy ? <span className="text-[8px] uppercase">Q</span> : null}
+                    </div>
                   </button>
                 );
               })}
@@ -701,6 +827,59 @@ export const Bases = () => {
 
         <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Batch selection
+              </p>
+              <p className="mt-1 text-sm text-gray-900">
+                {selectedGrassCount === 0
+                  ? 'No tiles selected.'
+                  : `${selectedGrassCount} tile${selectedGrassCount === 1 ? '' : 's'} selected`}
+              </p>
+              {selectedGrassCount > 0 ? (
+                <p className="mt-1 max-w-xl text-xs text-gray-600">
+                  {selectedGrassSummary}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateGrass(selectedGrassKeys)}
+                  disabled={selectedGrassCount === 0}
+                  className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {selectedGrassCount <= 1
+                    ? 'Generate Selected'
+                    : `Generate ${selectedGrassCount} Tiles`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteGrass(selectedGrassKeys)}
+                  disabled={selectedGrassCount === 0}
+                  className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {selectedGrassCount <= 1
+                    ? 'Delete Selected'
+                    : `Delete ${selectedGrassCount} Tiles`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGrassKeys(selectedGrassKey ? [selectedGrassKey] : [])}
+                  disabled={selectedGrassCount <= 1}
+                  className="rounded bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Keep Only Focused Tile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGrassKeys([])}
+                  disabled={selectedGrassCount === 0}
+                  className="rounded bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-900">
                 Tile ({Number(selectedGrassKey.split(':')[0]) + 1},{' '}
@@ -726,18 +905,18 @@ export const Bases = () => {
             <button
               type="button"
               onClick={() => void handleGenerateGrass()}
-              disabled={grassBusy || grassStatusLoading}
+              disabled={grassBusyKeys.includes(selectedGrassKey)}
               className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {grassBusy ? 'Working...' : 'Generate Tile'}
+              {grassBusyKeys.includes(selectedGrassKey) ? 'Working...' : 'Generate Focused Tile'}
             </button>
             <button
               type="button"
               onClick={() => void handleDeleteGrass()}
-              disabled={grassBusy || grassStatusLoading}
+              disabled={grassBusyKeys.includes(selectedGrassKey)}
               className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {grassBusy ? 'Working...' : 'Delete Tile'}
+              {grassBusyKeys.includes(selectedGrassKey) ? 'Working...' : 'Delete Focused Tile'}
             </button>
           </div>
 
@@ -929,9 +1108,16 @@ export const Bases = () => {
                   {(structure.levelVisuals || []).map((visual) => {
                     const previewUrl =
                       visual.thumbnailUrl?.trim() || visual.imageUrl?.trim() || '';
+                    const topDownPreviewUrl =
+                      visual.topDownThumbnailUrl?.trim() ||
+                      visual.topDownImageUrl?.trim() ||
+                      '';
                     const visualKey = `${structure.id}:${visual.level}`;
                     const isPending = ['queued', 'in_progress'].includes(
                       (visual.imageGenerationStatus || '').toLowerCase()
+                    );
+                    const isTopDownPending = ['queued', 'in_progress'].includes(
+                      (visual.topDownImageGenerationStatus || '').toLowerCase()
                     );
                     return (
                       <div
@@ -950,49 +1136,125 @@ export const Bases = () => {
                             {visual.imageGenerationStatus || 'none'}
                           </span>
                         </div>
-                        <div className="mt-3">
-                          {previewUrl ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setBaseImageLightbox({
-                                  src: visual.imageUrl?.trim() || previewUrl,
-                                  alt: `${structure.name} level ${visual.level}`,
-                                })
-                              }
-                              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                              title="Open large room image"
-                            >
-                              <img
-                                src={previewUrl}
-                                alt={`${structure.name} level ${visual.level}`}
-                                className="h-36 w-full rounded object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex h-36 w-full items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
-                              No image yet
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Card View
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+                                  visual.imageGenerationStatus
+                                )}`}
+                              >
+                                {visual.imageGenerationStatus || 'none'}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                        {visual.imageGenerationError ? (
-                          <p className="mt-3 text-xs text-red-700">
-                            {visual.imageGenerationError}
-                          </p>
-                        ) : null}
-                        <div className="mt-3 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void handleGenerateRoomImage(structure, visual.level)
-                            }
-                            disabled={generatingRoomImageKey === visualKey || isPending}
-                            className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {generatingRoomImageKey === visualKey
-                              ? 'Queueing...'
-                              : 'Generate Image'}
-                          </button>
+                            {previewUrl ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBaseImageLightbox({
+                                    src: visual.imageUrl?.trim() || previewUrl,
+                                    alt: `${structure.name} level ${visual.level} card view`,
+                                  })
+                                }
+                                className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                title="Open large room image"
+                              >
+                                <img
+                                  src={previewUrl}
+                                  alt={`${structure.name} level ${visual.level} card view`}
+                                  className="h-36 w-full rounded object-cover"
+                                />
+                              </button>
+                            ) : (
+                              <div className="flex h-36 w-full items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                                No image yet
+                              </div>
+                            )}
+                            {visual.imageGenerationError ? (
+                              <p className="mt-3 text-xs text-red-700">
+                                {visual.imageGenerationError}
+                              </p>
+                            ) : null}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleGenerateRoomImage(structure, visual.level)
+                                }
+                                disabled={generatingRoomImageKey === visualKey || isPending}
+                                className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {generatingRoomImageKey === visualKey
+                                  ? 'Queueing...'
+                                  : 'Generate Card View'}
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Top-Down View
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+                                  visual.topDownImageGenerationStatus
+                                )}`}
+                              >
+                                {visual.topDownImageGenerationStatus || 'none'}
+                              </span>
+                            </div>
+                            {topDownPreviewUrl ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBaseImageLightbox({
+                                    src: visual.topDownImageUrl?.trim() || topDownPreviewUrl,
+                                    alt: `${structure.name} level ${visual.level} top-down view`,
+                                  })
+                                }
+                                className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                title="Open large top-down room image"
+                              >
+                                <img
+                                  src={topDownPreviewUrl}
+                                  alt={`${structure.name} level ${visual.level} top-down view`}
+                                  className="h-36 w-full rounded object-cover"
+                                />
+                              </button>
+                            ) : (
+                              <div className="flex h-36 w-full items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+                                No top-down image yet
+                              </div>
+                            )}
+                            {visual.topDownImageGenerationError ? (
+                              <p className="mt-3 text-xs text-red-700">
+                                {visual.topDownImageGenerationError}
+                              </p>
+                            ) : null}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleGenerateTopDownRoomImage(
+                                    structure,
+                                    visual.level
+                                  )
+                                }
+                                disabled={
+                                  generatingTopDownRoomImageKey === visualKey ||
+                                  isTopDownPending
+                                }
+                                className="rounded bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {generatingTopDownRoomImageKey === visualKey
+                                  ? 'Queueing...'
+                                  : 'Generate Top-Down'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );

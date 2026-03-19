@@ -32,6 +32,14 @@ func (s *server) getAdminBaseStructures(ctx *gin.Context) {
 }
 
 func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {
+	s.generateBaseStructureLevelVisual(ctx, "")
+}
+
+func (s *server) generateBaseStructureLevelTopDownImage(ctx *gin.Context) {
+	s.generateBaseStructureLevelVisual(ctx, "top_down")
+}
+
+func (s *server) generateBaseStructureLevelVisual(ctx *gin.Context, view string) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -78,15 +86,22 @@ func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {
 	}
 	if visual == nil {
 		visual = &models.BaseStructureLevelVisual{
-			ID:                    uuid.New(),
-			CreatedAt:             now,
-			UpdatedAt:             now,
-			StructureDefinitionID: definitionID,
-			Level:                 level,
+			ID:                           uuid.New(),
+			CreatedAt:                    now,
+			UpdatedAt:                    now,
+			StructureDefinitionID:        definitionID,
+			Level:                        level,
+			ImageGenerationStatus:        models.BaseStructureImageGenerationStatusNone,
+			TopDownImageGenerationStatus: models.BaseStructureImageGenerationStatusNone,
 		}
 	}
-	visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusQueued
-	visual.ImageGenerationError = nil
+	if view == "top_down" {
+		visual.TopDownImageGenerationStatus = models.BaseStructureImageGenerationStatusQueued
+		visual.TopDownImageGenerationError = nil
+	} else {
+		visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusQueued
+		visual.ImageGenerationError = nil
+	}
 	if err := s.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -95,15 +110,25 @@ func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {
 	payload, err := json.Marshal(jobs.GenerateBaseStructureLevelImageTaskPayload{
 		StructureDefinitionID: definitionID,
 		Level:                 level,
+		View:                  view,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateBaseStructureLevelImageTaskType, payload)); err != nil {
+	taskType := jobs.GenerateBaseStructureLevelImageTaskType
+	if view == "top_down" {
+		taskType = jobs.GenerateBaseStructureLevelTopDownImageTaskType
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(taskType, payload)); err != nil {
 		errMsg := err.Error()
-		visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
-		visual.ImageGenerationError = &errMsg
+		if view == "top_down" {
+			visual.TopDownImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
+			visual.TopDownImageGenerationError = &errMsg
+		} else {
+			visual.ImageGenerationStatus = models.BaseStructureImageGenerationStatusFailed
+			visual.ImageGenerationError = &errMsg
+		}
 		_ = s.dbClient.BaseStructureLevelVisual().Upsert(ctx, visual)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
 		return

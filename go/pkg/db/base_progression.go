@@ -193,11 +193,15 @@ func (h *baseStructureLevelVisualHandle) Upsert(ctx context.Context, visual *mod
 	return h.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "structure_definition_id"}, {Name: "level"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"image_url":               visual.ImageURL,
-			"thumbnail_url":           visual.ThumbnailURL,
-			"image_generation_status": visual.ImageGenerationStatus,
-			"image_generation_error":  visual.ImageGenerationError,
-			"updated_at":              now,
+			"image_url":                        visual.ImageURL,
+			"thumbnail_url":                    visual.ThumbnailURL,
+			"image_generation_status":          visual.ImageGenerationStatus,
+			"image_generation_error":           visual.ImageGenerationError,
+			"top_down_image_url":               visual.TopDownImageURL,
+			"top_down_thumbnail_url":           visual.TopDownThumbnailURL,
+			"top_down_image_generation_status": visual.TopDownImageGenerationStatus,
+			"top_down_image_generation_error":  visual.TopDownImageGenerationError,
+			"updated_at":                       now,
 		}),
 	}).Create(visual).Error
 }
@@ -220,6 +224,16 @@ func (h *baseStructureLevelVisualHandle) UpdateThumbnailURL(ctx context.Context,
 		Updates(map[string]interface{}{
 			"thumbnail_url": thumbnailURL,
 			"updated_at":    time.Now(),
+		}).Error
+}
+
+func (h *baseStructureLevelVisualHandle) UpdateTopDownThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error {
+	return h.db.WithContext(ctx).
+		Model(&models.BaseStructureLevelVisual{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"top_down_thumbnail_url": thumbnailURL,
+			"updated_at":             time.Now(),
 		}).Error
 }
 

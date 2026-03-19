@@ -54,15 +54,19 @@ func serializeBaseStructureLevelCost(cost models.BaseStructureLevelCost) gin.H {
 
 func serializeBaseStructureLevelVisual(visual models.BaseStructureLevelVisual) gin.H {
 	return gin.H{
-		"id":                    visual.ID,
-		"structureDefinitionId": visual.StructureDefinitionID,
-		"level":                 visual.Level,
-		"imageUrl":              visual.ImageURL,
-		"thumbnailUrl":          visual.ThumbnailURL,
-		"imageGenerationStatus": visual.ImageGenerationStatus,
-		"imageGenerationError":  visual.ImageGenerationError,
-		"createdAt":             visual.CreatedAt,
-		"updatedAt":             visual.UpdatedAt,
+		"id":                           visual.ID,
+		"structureDefinitionId":        visual.StructureDefinitionID,
+		"level":                        visual.Level,
+		"imageUrl":                     visual.ImageURL,
+		"thumbnailUrl":                 visual.ThumbnailURL,
+		"imageGenerationStatus":        visual.ImageGenerationStatus,
+		"imageGenerationError":         visual.ImageGenerationError,
+		"topDownImageUrl":              visual.TopDownImageURL,
+		"topDownThumbnailUrl":          visual.TopDownThumbnailURL,
+		"topDownImageGenerationStatus": visual.TopDownImageGenerationStatus,
+		"topDownImageGenerationError":  visual.TopDownImageGenerationError,
+		"createdAt":                    visual.CreatedAt,
+		"updatedAt":                    visual.UpdatedAt,
 	}
 }
 
@@ -78,15 +82,19 @@ func buildSerializedBaseStructureLevelVisuals(definition models.BaseStructureDef
 			continue
 		}
 		visuals = append(visuals, gin.H{
-			"id":                    nil,
-			"structureDefinitionId": definition.ID,
-			"level":                 level,
-			"imageUrl":              "",
-			"thumbnailUrl":          "",
-			"imageGenerationStatus": models.BaseStructureImageGenerationStatusNone,
-			"imageGenerationError":  nil,
-			"createdAt":             nil,
-			"updatedAt":             nil,
+			"id":                           nil,
+			"structureDefinitionId":        definition.ID,
+			"level":                        level,
+			"imageUrl":                     "",
+			"thumbnailUrl":                 "",
+			"imageGenerationStatus":        models.BaseStructureImageGenerationStatusNone,
+			"imageGenerationError":         nil,
+			"topDownImageUrl":              "",
+			"topDownThumbnailUrl":          "",
+			"topDownImageGenerationStatus": models.BaseStructureImageGenerationStatusNone,
+			"topDownImageGenerationError":  nil,
+			"createdAt":                    nil,
+			"updatedAt":                    nil,
 		})
 	}
 	return visuals

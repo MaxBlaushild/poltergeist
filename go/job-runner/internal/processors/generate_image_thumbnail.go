@@ -109,6 +109,20 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 			}
 			sourceUrl = strings.TrimSpace(visual.ImageURL)
 		}
+	case jobs.ThumbnailEntityBaseStructureLevelTopDown:
+		if payload.EntityID == uuid.Nil {
+			return fmt.Errorf("missing entity ID")
+		}
+		if sourceUrl == "" {
+			visual, err := p.dbClient.BaseStructureLevelVisual().FindByID(ctx, payload.EntityID)
+			if err != nil {
+				return fmt.Errorf("failed to find base structure level visual: %w", err)
+			}
+			if visual == nil {
+				return fmt.Errorf("base structure level visual not found")
+			}
+			sourceUrl = strings.TrimSpace(visual.TopDownImageURL)
+		}
 	case jobs.ThumbnailEntityStatic:
 		// Use provided source URL only.
 	default:
@@ -164,6 +178,10 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 	case jobs.ThumbnailEntityBaseStructureLevel:
 		if err := p.dbClient.BaseStructureLevelVisual().UpdateThumbnailURL(ctx, payload.EntityID, thumbnailUrl); err != nil {
 			return fmt.Errorf("failed to update base structure level thumbnail: %w", err)
+		}
+	case jobs.ThumbnailEntityBaseStructureLevelTopDown:
+		if err := p.dbClient.BaseStructureLevelVisual().UpdateTopDownThumbnailURL(ctx, payload.EntityID, thumbnailUrl); err != nil {
+			return fmt.Errorf("failed to update base structure level top-down thumbnail: %w", err)
 		}
 	case jobs.ThumbnailEntityStatic:
 		// No-op: static thumbnail is uploaded only.
@@ -267,6 +285,10 @@ func thumbnailKey(entityType string, entityID uuid.UUID) string {
 		prefix = "points-of-interest"
 	case jobs.ThumbnailEntityStatic:
 		prefix = "static"
+	case jobs.ThumbnailEntityBaseStructureLevel:
+		prefix = "base-structure-level"
+	case jobs.ThumbnailEntityBaseStructureLevelTopDown:
+		prefix = "base-structure-level-top-down"
 	}
 	return fmt.Sprintf("thumbnails/%s/%s-%d.png", prefix, entityID.String(), time.Now().UnixNano())
 }

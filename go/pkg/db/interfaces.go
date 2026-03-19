@@ -1137,6 +1137,7 @@ type BaseStructureLevelVisualHandle interface {
 	Upsert(ctx context.Context, visual *models.BaseStructureLevelVisual) error
 	Update(ctx context.Context, id uuid.UUID, updates *models.BaseStructureLevelVisual) error
 	UpdateThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error
+	UpdateTopDownThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error
 }
 
 type UserBaseStructureHandle interface {
