@@ -32,8 +32,7 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         centerTitle: true,
-        title:
-            contentState?.buildHeaderTitle(theme) ?? const Text('Your Base'),
+        title: contentState?.buildHeaderTitle(theme) ?? const Text('Your Base'),
       ),
       body: PaperSheet(
         child: BaseManagementContent(
@@ -74,11 +73,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   String? _busyStructureKey;
   bool _editingBaseName = false;
   bool _savingBaseDetails = false;
-  bool _selectingMoveAnchor = false;
   _GridCell? _buildSelectionCell;
-  String? _moveAnchorStructureKey;
-  Set<String> _moveStructureKeys = const <String>{};
-  _GridCell? _moveTargetCell;
   final TextEditingController _baseNameController = TextEditingController();
   final FocusNode _baseNameFocusNode = FocusNode();
 
@@ -114,7 +109,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         _loading = false;
       });
       _syncBaseEditorsToSnapshot();
-      _syncMoveStateToSnapshot();
       _notifyHeaderChanged();
     } catch (e) {
       if (!mounted) return;
@@ -137,26 +131,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
 
   void _notifyHeaderChanged() {
     widget.onHeaderChanged?.call();
-  }
-
-  void _syncMoveStateToSnapshot() {
-    final anchorKey = _moveAnchorStructureKey;
-    if (anchorKey == null) return;
-    final structure = _structureByKey[anchorKey];
-    if (structure == null) {
-      _cancelMoveMode();
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _moveStructureKeys = _moveStructureKeys
-          .where((key) => _structureByKey.containsKey(key))
-          .toSet();
-      if (!_moveStructureKeys.contains(anchorKey)) {
-        _moveStructureKeys = <String>{anchorKey, ..._moveStructureKeys};
-      }
-      _moveTargetCell = _GridCell(structure.gridX, structure.gridY);
-    });
   }
 
   Future<void> _mutateStructure(
@@ -192,7 +166,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           ),
         ),
       );
-      _syncMoveStateToSnapshot();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -205,32 +178,27 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     }
   }
 
-  Future<void> _moveSelectedRooms() async {
-    final anchorKey = _moveAnchorStructureKey;
-    final target = _moveTargetCell;
-    if (anchorKey == null || target == null || !_isCurrentMoveTargetValid) {
-      return;
-    }
+  Future<void> _destroyStructure(UserBaseStructureData structure) async {
     setState(() {
-      _busyStructureKey = anchorKey;
+      _busyStructureKey = structure.structureKey;
       _error = null;
     });
     try {
-      final nextSnapshot = await context.read<BaseService>().moveRooms(
-        anchorStructureKey: anchorKey,
-        structureKeys: _moveStructureKeys.toList(growable: false),
-        targetGridX: target.gridX,
-        targetGridY: target.gridY,
+      final nextSnapshot = await context.read<BaseService>().destroyStructure(
+        structure.structureKey,
       );
       if (!mounted) return;
       setState(() {
         _snapshot = nextSnapshot;
         _busyStructureKey = null;
       });
-      _cancelMoveMode();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Base rooms moved.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_friendlyStructureName(structure.structureKey)} destroyed.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -240,6 +208,42 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _confirmDestroyStructure(UserBaseStructureData structure) async {
+    final definition = _definitionForKey(structure.structureKey);
+    final roomName =
+        definition?.name ?? _friendlyStructureName(structure.structureKey);
+    final shouldDestroy = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text('Destroy Room?'),
+          content: Text(
+            'Are you sure you want to destroy $roomName? This cannot be undone and may fail if it would leave your base disconnected.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Destroy Room'),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldDestroy == true) {
+      await _destroyStructure(structure);
     }
   }
 
@@ -340,7 +344,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
               enabled: !_savingBaseDetails,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.done,
-              onSubmitted: _savingBaseDetails ? null : (_) => _saveBaseDetails(),
+              onSubmitted: _savingBaseDetails
+                  ? null
+                  : (_) => _saveBaseDetails(),
               decoration: InputDecoration(
                 isDense: true,
                 hintText: _ownerBaseTitle(base),
@@ -584,10 +590,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         gridY < _baseGridSize;
   }
 
-  bool _isAdjacent(_GridCell a, _GridCell b) {
-    return (a.gridX - b.gridX).abs() + (a.gridY - b.gridY).abs() == 1;
-  }
-
   Set<String> get _adjacentBuildCellKeys {
     final keys = <String>{};
     for (final structure in _structureByKey.values) {
@@ -612,105 +614,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       if ((_structureLevels[definition.key] ?? 0) > 0) return false;
       return _hasMetPrerequisites(definition);
     }).toList()..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-  }
-
-  void _startMoveMode(String structureKey) {
-    final structure = _structureByKey[structureKey];
-    if (structure == null) return;
-    setState(() {
-      _selectingMoveAnchor = false;
-      _moveAnchorStructureKey = structureKey;
-      _moveStructureKeys = <String>{structureKey};
-      _moveTargetCell = _GridCell(structure.gridX, structure.gridY);
-    });
-  }
-
-  void _beginMoveAnchorSelection() {
-    if (_snapshot?.canManage != true || _structureByKey.isEmpty) return;
-    setState(() {
-      _selectingMoveAnchor = true;
-      _moveAnchorStructureKey = null;
-      _moveStructureKeys = const <String>{};
-      _moveTargetCell = null;
-    });
-  }
-
-  void _cancelMoveMode() {
-    if (!mounted) return;
-    setState(() {
-      _selectingMoveAnchor = false;
-      _moveAnchorStructureKey = null;
-      _moveStructureKeys = const <String>{};
-      _moveTargetCell = null;
-    });
-  }
-
-  bool _canMoveSelectionTo(_GridCell targetCell) {
-    final anchorKey = _moveAnchorStructureKey;
-    if (anchorKey == null) return false;
-    final anchor = _structureByKey[anchorKey];
-    if (anchor == null) return false;
-
-    final deltaX = targetCell.gridX - anchor.gridX;
-    final deltaY = targetCell.gridY - anchor.gridY;
-    final occupiedByUnselected = <String>{};
-    for (final structure in _structureByKey.values) {
-      if (!_moveStructureKeys.contains(structure.structureKey)) {
-        occupiedByUnselected.add('${structure.gridX}:${structure.gridY}');
-      }
-    }
-
-    final projectedPositions = <String, _GridCell>{};
-    for (final structure in _structureByKey.values) {
-      final moving = _moveStructureKeys.contains(structure.structureKey);
-      final position = moving
-          ? _GridCell(structure.gridX + deltaX, structure.gridY + deltaY)
-          : _GridCell(structure.gridX, structure.gridY);
-      if (!_isWithinGrid(position.gridX, position.gridY)) {
-        return false;
-      }
-      final key = '${position.gridX}:${position.gridY}';
-      if (projectedPositions.containsKey(key)) return false;
-      if (moving && occupiedByUnselected.contains(key)) return false;
-      projectedPositions[key] = position;
-    }
-    return _isProjectedLayoutConnected(projectedPositions.values.toList());
-  }
-
-  bool _isProjectedLayoutConnected(List<_GridCell> cells) {
-    if (cells.length <= 1) return true;
-    final remaining = cells.toSet();
-    final queue = <_GridCell>[cells.first];
-    final visited = <_GridCell>{cells.first};
-    while (queue.isNotEmpty) {
-      final current = queue.removeAt(0);
-      for (final candidate in remaining) {
-        if (visited.contains(candidate)) continue;
-        if (_isAdjacent(current, candidate)) {
-          visited.add(candidate);
-          queue.add(candidate);
-        }
-      }
-    }
-    return visited.length == cells.length;
-  }
-
-  bool get _isCurrentMoveTargetValid {
-    final target = _moveTargetCell;
-    if (target == null) return false;
-    return _canMoveSelectionTo(target);
-  }
-
-  void _toggleLinkedRoom(String structureKey) {
-    final anchorKey = _moveAnchorStructureKey;
-    if (anchorKey == null || structureKey == anchorKey) return;
-    final next = Set<String>.from(_moveStructureKeys);
-    if (!next.add(structureKey)) {
-      next.remove(structureKey);
-    }
-    setState(() {
-      _moveStructureKeys = next;
-    });
   }
 
   void _showBuildOptions(_GridCell cell) {
@@ -756,6 +659,12 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
             ? () async {
                 Navigator.of(context).pop(false);
                 await _mutateStructure(definition, true);
+              }
+            : null,
+        onDestroy: _snapshot?.canManage == true
+            ? () async {
+                Navigator.of(context).pop();
+                await _confirmDestroyStructure(structure);
               }
             : null,
       ),
@@ -999,12 +908,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                   final isAdjacentBuildCell = adjacentBuildKeys.contains(
                     '$column:$row',
                   );
-                  final isMoveTarget = _moveTargetCell == cell;
-                  final moveOverlayColor = _moveAnchorStructureKey == null
-                      ? null
-                      : (_canMoveSelectionTo(cell)
-                            ? const Color(0x663FAE5A)
-                            : const Color(0x66C94B4B));
 
                   return Padding(
                     padding: EdgeInsets.only(
@@ -1030,27 +933,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                         showPlus:
                             snapshot.canManage &&
                             structure == null &&
-                            _moveAnchorStructureKey == null &&
                             isAdjacentBuildCell,
-                        moveOverlayColor: moveOverlayColor,
-                        isSelectedMoveTarget: isMoveTarget,
-                        isLockedRoom:
-                            structure != null &&
-                            _moveStructureKeys.contains(structure.structureKey),
                         canManage: snapshot.canManage,
                         onTap: () {
-                          if (_moveAnchorStructureKey != null) {
-                            setState(() {
-                              _moveTargetCell = cell;
-                            });
-                            return;
-                          }
-                          if (_selectingMoveAnchor) {
-                            if (structure != null) {
-                              _startMoveMode(structure.structureKey);
-                            }
-                            return;
-                          }
                           if (structure != null) {
                             _showRoomDetails(structure);
                             return;
@@ -1068,146 +953,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           }),
         );
       },
-    );
-  }
-
-  Widget _buildMoveControls(ThemeData theme) {
-    final anchorKey = _moveAnchorStructureKey;
-    final canManage = _snapshot?.canManage == true;
-    if (!canManage || _structureByKey.isEmpty) return const SizedBox.shrink();
-
-    if (anchorKey == null) {
-      return Container(
-        margin: const EdgeInsets.only(top: 14),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.28,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Move Rooms',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _selectingMoveAnchor
-                  ? 'Tap a room on the grid to choose what you want to move.'
-                  : 'Reposition a room or a linked cluster without opening an individual room panel.',
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: _selectingMoveAnchor
-                  ? OutlinedButton(
-                      onPressed: _busyStructureKey == null
-                          ? _cancelMoveMode
-                          : null,
-                      child: const Text('Cancel'),
-                    )
-                  : FilledButton(
-                      onPressed: _busyStructureKey == null
-                          ? _beginMoveAnchorSelection
-                          : null,
-                      child: const Text('Select Room To Move'),
-                    ),
-            ),
-          ],
-        ),
-      );
-    }
-    return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.28,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Move Rooms',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap other room chips to lock them into this move as a block, then tap a tile on the grid to choose the destination.',
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _structureByKey.values.map((structure) {
-              final isAnchor = structure.structureKey == anchorKey;
-              final selected = _moveStructureKeys.contains(
-                structure.structureKey,
-              );
-              return FilterChip(
-                label: Text(_friendlyStructureName(structure.structureKey)),
-                selected: selected,
-                onSelected: isAnchor
-                    ? null
-                    : (_) => _toggleLinkedRoom(structure.structureKey),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          if (_moveTargetCell != null)
-            Text(
-              _isCurrentMoveTargetValid
-                  ? 'That destination works. Confirm when you are ready.'
-                  : 'That destination would break the layout or overlap another room.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: _isCurrentMoveTargetValid
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.error,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _busyStructureKey == null ? _cancelMoveMode : null,
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed:
-                      _busyStructureKey == null && _isCurrentMoveTargetValid
-                      ? _moveSelectedRooms
-                      : null,
-                  child: _busyStructureKey == anchorKey
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Move Here'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -1303,7 +1048,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           else ...[
             _buildBaseStats(theme),
             _buildGrid(theme),
-            _buildMoveControls(theme),
             _buildActiveEffects(theme),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1451,9 +1195,6 @@ class _BaseGridTile extends StatelessWidget {
     required this.definition,
     required this.visual,
     required this.showPlus,
-    required this.moveOverlayColor,
-    required this.isSelectedMoveTarget,
-    required this.isLockedRoom,
     required this.canManage,
     required this.onTap,
   });
@@ -1464,9 +1205,6 @@ class _BaseGridTile extends StatelessWidget {
   final BaseStructureDefinitionData? definition;
   final BaseStructureLevelVisualData? visual;
   final bool showPlus;
-  final Color? moveOverlayColor;
-  final bool isSelectedMoveTarget;
-  final bool isLockedRoom;
   final bool canManage;
   final VoidCallback onTap;
 
@@ -1488,7 +1226,6 @@ class _BaseGridTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final hasRoom = structure != null && definition != null;
     return Material(
       color: Colors.transparent,
@@ -1507,7 +1244,6 @@ class _BaseGridTile extends StatelessWidget {
                           _RoomFallbackLabel(title: definition!.name),
                     )
                   : _RoomFallbackLabel(title: definition!.name),
-            if (moveOverlayColor != null) ColoredBox(color: moveOverlayColor!),
             if (showPlus)
               Center(
                 child: Icon(
@@ -1519,18 +1255,7 @@ class _BaseGridTile extends StatelessWidget {
             if (hasRoom)
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isLockedRoom
-                        ? theme.colorScheme.primary
-                        : _roomBorderColor,
-                    width: isLockedRoom ? 3 : 2,
-                  ),
-                ),
-              ),
-            if (isSelectedMoveTarget)
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 3),
+                  border: Border.all(color: _roomBorderColor, width: 2),
                 ),
               ),
           ],
@@ -1598,6 +1323,7 @@ class _RoomDetailsSheet extends StatelessWidget {
     required this.canAffordUpgrade,
     required this.visual,
     required this.onUpgrade,
+    required this.onDestroy,
   });
 
   final BaseStructureDefinitionData definition;
@@ -1612,6 +1338,7 @@ class _RoomDetailsSheet extends StatelessWidget {
   final bool canAffordUpgrade;
   final BaseStructureLevelVisualData? visual;
   final Future<void> Function()? onUpgrade;
+  final Future<void> Function()? onDestroy;
 
   String get _visualUrl {
     if (visual != null && visual!.imageUrl.trim().isNotEmpty) {
@@ -1743,6 +1470,20 @@ class _RoomDetailsSheet extends StatelessWidget {
                         ),
                 ),
               ),
+            if (canManage && onDestroy != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                  onPressed: isBusy ? null : () => onDestroy!.call(),
+                  child: const Text('Destroy Room'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

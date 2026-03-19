@@ -278,6 +278,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/base/catalog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCatalog))
 	r.POST("/sonar/base/structures/:key/build", middleware.WithAuthentication(s.authClient, s.livenessClient, s.buildBaseStructure))
 	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
+	r.DELETE("/sonar/base/structures/:key", middleware.WithAuthentication(s.authClient, s.livenessClient, s.destroyBaseStructure))
 	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
@@ -14634,6 +14635,7 @@ type scenarioPerformResponse struct {
 	StatValue              int                            `json:"statValue"`
 	Proficiencies          []string                       `json:"proficiencies"`
 	ProficiencyBonus       int                            `json:"proficiencyBonus"`
+	ResponseScore          int                            `json:"responseScore"`
 	CreativityBonus        int                            `json:"creativityBonus"`
 	Threshold              int                            `json:"threshold"`
 	TotalScore             int                            `json:"totalScore"`
@@ -14654,6 +14656,7 @@ type scenarioPerformResponse struct {
 type scenarioFreeformAssessment struct {
 	StatTag         string   `json:"statTag"`
 	Proficiencies   []string `json:"proficiencies"`
+	ResponseScore   int      `json:"responseScore"`
 	CreativityBonus int      `json:"creativityBonus"`
 	Reasoning       string   `json:"reasoning"`
 	SuccessText     string   `json:"successText"`
@@ -14678,6 +14681,9 @@ Pick the best primary DnD stat this response uses:
 - charisma
 
 Pick 0 to 3 short proficiencies (1-3 words each) this response demonstrates.
+Assign a responseScore integer from 1 to 20 for how effectively this response would solve the scenario:
+- 1 means it barely helps or is almost certain to fail
+- 20 means it is exceptionally effective and directly solves the situation
 Assign a creativityBonus integer from 0 to 10:
 - 0 means generic or weak
 - 10 means unusually creative and compelling
@@ -14686,6 +14692,7 @@ Return JSON only:
 {
   "statTag": "strength|dexterity|constitution|intelligence|wisdom|charisma",
   "proficiencies": ["string"],
+  "responseScore": 1,
   "creativityBonus": 0,
   "reasoning": "short string",
   "successText": "one or two short sentences describing what success looks like for this response",
@@ -15152,6 +15159,11 @@ func (s *server) assessScenarioFreeform(ctx context.Context, scenarioPrompt, res
 	assessment.Proficiencies = normalizeScenarioProficiencies(assessment.Proficiencies)
 	if len(assessment.Proficiencies) > 3 {
 		assessment.Proficiencies = assessment.Proficiencies[:3]
+	}
+	if assessment.ResponseScore < 1 {
+		assessment.ResponseScore = 1
+	} else if assessment.ResponseScore > 20 {
+		assessment.ResponseScore = 20
 	}
 	if assessment.CreativityBonus < 0 {
 		assessment.CreativityBonus = 0
@@ -16556,6 +16568,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 
 	statTag := "charisma"
 	proficiencies := []string{}
+	responseScore := 0
 	creativityBonus := 0
 	rewardExperience := 0
 	rewardGold := 0
@@ -16588,6 +16601,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 		statTag = assessment.StatTag
 		proficiencies = assessment.Proficiencies
+		responseScore = assessment.ResponseScore
 		creativityBonus = assessment.CreativityBonus
 		if assessment.Reasoning != "" {
 			reason = assessment.Reasoning
@@ -16647,7 +16661,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 		return
 	}
 
-	totalScore := roll + statValue + proficiencyBonus + creativityBonus
+	totalScore := roll + statValue + proficiencyBonus + responseScore + creativityBonus
 	success := totalScore >= threshold
 
 	itemsAwarded := []models.ItemAwarded{}
@@ -16801,6 +16815,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 			StatValue:         statValue,
 			ProficienciesUsed: models.StringArray(proficiencies),
 			ProficiencyBonus:  proficiencyBonus,
+			ResponseScore:     responseScore,
 			CreativityBonus:   creativityBonus,
 			Threshold:         threshold,
 			TotalScore:        totalScore,
@@ -16888,6 +16903,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 		StatValue:              statValue,
 		Proficiencies:          proficiencies,
 		ProficiencyBonus:       proficiencyBonus,
+		ResponseScore:          responseScore,
 		CreativityBonus:        creativityBonus,
 		Threshold:              threshold,
 		TotalScore:             totalScore,

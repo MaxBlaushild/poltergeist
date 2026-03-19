@@ -239,12 +239,15 @@ class _ScenarioPanelState extends State<ScenarioPanel>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    mysteryState ? 'Mysterious Scenario' : 'Scenario',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  if (mysteryState)
+                    Text(
+                      'Mysterious Scenario',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
                   IconButton(
                     onPressed: widget.onClose,
                     icon: const Icon(Icons.close),
@@ -554,6 +557,12 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                                     label: 'Proficiency',
                                     value: _result!.proficiencyBonus,
                                   ),
+                                  if (_result!.responseScore > 0)
+                                    _ScoreBreakdownChip(
+                                      icon: Icons.psychology_alt_rounded,
+                                      label: 'Response',
+                                      value: _result!.responseScore,
+                                    ),
                                   _ScoreBreakdownChip(
                                     icon: Icons.lightbulb_rounded,
                                     label: 'Creativity',
@@ -570,7 +579,9 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Your score combines the roll, the chosen stat, training, and any creativity bonus.',
+                                _result!.responseScore > 0
+                                    ? 'Your score combines the roll, the chosen stat, training, the AI response score, and any creativity bonus.'
+                                    : 'Your score combines the roll, the chosen stat, training, and any creativity bonus.',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),

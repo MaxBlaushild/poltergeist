@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -411,6 +412,22 @@ func (h *userBaseStructureHandle) MoveMany(ctx context.Context, baseID uuid.UUID
 		}
 		return nil
 	})
+}
+
+func (h *userBaseStructureHandle) DeleteByStructureKey(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string) error {
+	if baseID == uuid.Nil || userID == uuid.Nil || strings.TrimSpace(structureKey) == "" {
+		return fmt.Errorf("invalid base structure delete")
+	}
+	result := h.db.WithContext(ctx).
+		Where("base_id = ? AND user_id = ? AND structure_key = ?", baseID, userID, strings.TrimSpace(structureKey)).
+		Delete(&models.UserBaseStructure{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("structure %s was not found", structureKey)
+	}
+	return nil
 }
 
 type userBaseDailyStateHandle struct {

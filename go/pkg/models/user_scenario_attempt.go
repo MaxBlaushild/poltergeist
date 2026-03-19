@@ -22,6 +22,7 @@ type UserScenarioAttempt struct {
 	StatValue         int             `json:"statValue"`
 	ProficienciesUsed StringArray     `json:"proficienciesUsed" gorm:"column:proficiencies_used;type:jsonb"`
 	ProficiencyBonus  int             `json:"proficiencyBonus"`
+	ResponseScore     int             `json:"responseScore"`
 	CreativityBonus   int             `json:"creativityBonus"`
 	Threshold         int             `json:"threshold"`
 	TotalScore        int             `json:"totalScore"`

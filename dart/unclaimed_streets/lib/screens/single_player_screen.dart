@@ -104,7 +104,7 @@ const _standardMarkerThumbnailSize = 0.75;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
 const _poiAssociationCoordinatePrecision = 4;
-const _pinSelectionHitRadiusPx = 34.0;
+const _pinSelectionHitRadiusPx = 24.0;
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
 const _stamenWatercolorApiKey = String.fromEnvironment(
@@ -3639,10 +3639,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           title: poi.name.trim().isNotEmpty
               ? poi.name.trim()
               : 'Point of Interest',
-          subtitle: hasDiscovered
-              ? 'Point of interest'
-              : 'Undiscovered point of interest',
-          icon: Icons.place_outlined,
+          imageUrl: _poiSelectionImageUrl(poi, hasDiscovered: hasDiscovered),
           distance: distance,
         );
       case 'character':
@@ -3654,8 +3651,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           title: character.name.trim().isNotEmpty
               ? character.name.trim()
               : 'Character',
-          subtitle: 'Character',
-          icon: Icons.person_outline,
+          imageUrl: _characterSelectionImageUrl(character),
           distance: distance,
         );
       case 'chest':
@@ -3665,8 +3661,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           type: type,
           id: id,
           title: 'Treasure Chest',
-          subtitle: 'Chest',
-          icon: Icons.inventory_2_outlined,
+          imageUrl: _chestImageUrl,
           distance: distance,
         );
       case 'healingFountain':
@@ -3678,8 +3673,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           title: fountain.name.trim().isNotEmpty
               ? fountain.name.trim()
               : 'Healing Fountain',
-          subtitle: 'Healing fountain',
-          icon: Icons.water_drop_outlined,
+          imageUrl: _healingFountainImageUrl(fountain),
           distance: distance,
         );
       case 'base':
@@ -3689,8 +3683,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           type: type,
           id: id,
           title: base.name.trim().isNotEmpty ? base.name.trim() : 'Base',
-          subtitle: 'Base',
-          icon: Icons.home_work_outlined,
+          imageUrl: _baseSelectionImageUrl(base),
           distance: distance,
         );
       case 'scenario':
@@ -3700,8 +3693,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           type: type,
           id: id,
           title: _compactSelectionLabel(scenario.prompt, fallback: 'Scenario'),
-          subtitle: 'Scenario',
-          icon: Icons.auto_awesome_outlined,
+          imageUrl: _scenarioSelectionImageUrl(scenario),
           distance: distance,
         );
       case 'monster':
@@ -3713,8 +3705,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           title: monster.name.trim().isNotEmpty
               ? monster.name.trim()
               : 'Monster',
-          subtitle: 'Monster encounter',
-          icon: Icons.pets_outlined,
+          imageUrl: _monsterSelectionImageUrl(monster),
           distance: distance,
         );
       case 'challenge':
@@ -3727,8 +3718,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             challenge.question,
             fallback: 'Challenge',
           ),
-          subtitle: 'Challenge',
-          icon: Icons.quiz_outlined,
+          imageUrl: _challengeSelectionImageUrl(challenge),
           distance: distance,
         );
       default:
@@ -3743,70 +3733,148 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return '${compact.substring(0, 69).trimRight()}...';
   }
 
+  String _poiSelectionImageUrl(
+    PointOfInterest poi, {
+    required bool hasDiscovered,
+  }) {
+    if (!hasDiscovered) return _healingFountainFallbackImageUrl;
+    return _poiThumbnailSourceUrl(poi) ?? _healingFountainFallbackImageUrl;
+  }
+
+  String _characterSelectionImageUrl(Character character) {
+    final mapIcon = character.mapIconUrl?.trim() ?? '';
+    if (mapIcon.isNotEmpty) return mapIcon;
+    final thumbnail = character.thumbnailUrl?.trim() ?? '';
+    if (thumbnail.isNotEmpty) return thumbnail;
+    final dialogue = character.dialogueImageUrl?.trim() ?? '';
+    if (dialogue.isNotEmpty) return dialogue;
+    return _characterMysteryImageUrl;
+  }
+
+  String _baseSelectionImageUrl(BasePin base) {
+    if (base.imageUrl.trim().isNotEmpty) return base.imageUrl.trim();
+    if (base.thumbnailUrl.trim().isNotEmpty) return base.thumbnailUrl.trim();
+    return _baseDiscoveredImageUrl;
+  }
+
+  String _scenarioSelectionImageUrl(Scenario scenario) {
+    if (scenario.thumbnailUrl.trim().isNotEmpty) {
+      return scenario.thumbnailUrl.trim();
+    }
+    if (scenario.imageUrl.trim().isNotEmpty) return scenario.imageUrl.trim();
+    return _scenarioMysteryImageUrl;
+  }
+
+  String _monsterSelectionImageUrl(MonsterEncounter monster) {
+    if (monster.thumbnailUrl.trim().isNotEmpty) {
+      return monster.thumbnailUrl.trim();
+    }
+    if (monster.imageUrl.trim().isNotEmpty) return monster.imageUrl.trim();
+    return _monsterMysteryImageUrlForEncounterType(monster.encounterType);
+  }
+
+  String _challengeSelectionImageUrl(Challenge challenge) {
+    if (challenge.thumbnailUrl.trim().isNotEmpty) {
+      return challenge.thumbnailUrl.trim();
+    }
+    if (challenge.imageUrl.trim().isNotEmpty) return challenge.imageUrl.trim();
+    return _challengeMysteryImageUrl;
+  }
+
   void _showPinSelectionSheet(List<_MapPinSelectionCandidate> candidates) {
-    showModalBottomSheet<void>(
+    showDialog<void>(
       context: context,
-      useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Theme.of(dialogContext).colorScheme.surface,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Choose a pin',
-                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                  'Pick one',
+                  style: Theme.of(dialogContext).textTheme.titleLarge,
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'A few pins are close enough to this tap that the selection is ambiguous.',
-                  style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(
-                      sheetContext,
-                    ).colorScheme.onSurface.withValues(alpha: 0.75),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: candidates.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (itemContext, index) {
-                      final candidate = candidates[index];
-                      return Material(
-                        color: Colors.transparent,
-                        child: ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: 20),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  runAlignment: WrapAlignment.center,
+                  spacing: 14,
+                  runSpacing: 14,
+                  children: [
+                    for (final candidate in candidates)
+                      Tooltip(
+                        message: candidate.title,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(18),
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _openMapPinByTypeAndId(
+                                  candidate.type,
+                                  candidate.id,
+                                );
+                              });
+                            },
+                            child: Ink(
+                              width: 76,
+                              height: 76,
+                              decoration: BoxDecoration(
+                                color: Theme.of(dialogContext)
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withValues(alpha: 0.55),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    dialogContext,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.network(
+                                  candidate.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Theme.of(
+                                        dialogContext,
+                                      ).colorScheme.surfaceContainerHighest,
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        candidate.title.isNotEmpty
+                                            ? candidate.title
+                                                  .trimLeft()
+                                                  .substring(0, 1)
+                                                  .toUpperCase()
+                                            : '?',
+                                        style: Theme.of(
+                                          dialogContext,
+                                        ).textTheme.titleLarge,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
                           ),
-                          tileColor: Theme.of(itemContext)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.45),
-                          leading: Icon(candidate.icon),
-                          title: Text(candidate.title),
-                          subtitle: Text(candidate.subtitle),
-                          onTap: () {
-                            Navigator.of(sheetContext).pop();
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              _openMapPinByTypeAndId(
-                                candidate.type,
-                                candidate.id,
-                              );
-                            });
-                          },
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -9398,6 +9466,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 'statValue': result.statValue,
                 'proficiencies': result.proficiencies,
                 'proficiencyBonus': result.proficiencyBonus,
+                'responseScore': result.responseScore,
                 'creativityBonus': result.creativityBonus,
                 'totalScore': result.totalScore,
                 'threshold': result.threshold,
@@ -9799,16 +9868,14 @@ class _MapPinSelectionCandidate {
     required this.type,
     required this.id,
     required this.title,
-    required this.subtitle,
-    required this.icon,
+    required this.imageUrl,
     required this.distance,
   });
 
   final String type;
   final String id;
   final String title;
-  final String subtitle;
-  final IconData icon;
+  final String imageUrl;
   final double distance;
 }
 

@@ -246,6 +246,7 @@ class ScenarioPerformResult {
   final int statValue;
   final List<String> proficiencies;
   final int proficiencyBonus;
+  final int responseScore;
   final int creativityBonus;
   final int threshold;
   final int totalScore;
@@ -273,6 +274,7 @@ class ScenarioPerformResult {
     required this.statValue,
     this.proficiencies = const [],
     required this.proficiencyBonus,
+    required this.responseScore,
     required this.creativityBonus,
     required this.threshold,
     required this.totalScore,
@@ -341,6 +343,7 @@ class ScenarioPerformResult {
       statValue: (json['statValue'] as num?)?.toInt() ?? 0,
       proficiencies: proficiencies,
       proficiencyBonus: (json['proficiencyBonus'] as num?)?.toInt() ?? 0,
+      responseScore: (json['responseScore'] as num?)?.toInt() ?? 0,
       creativityBonus: (json['creativityBonus'] as num?)?.toInt() ?? 0,
       threshold: (json['threshold'] as num?)?.toInt() ?? 0,
       totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,

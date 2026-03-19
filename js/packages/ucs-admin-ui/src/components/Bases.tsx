@@ -61,6 +61,8 @@ type BaseStructureDefinition = {
   active?: boolean;
   imagePrompt?: string;
   topDownImagePrompt?: string;
+  resolvedImagePrompt?: string;
+  resolvedTopDownImagePrompt?: string;
   levelVisuals?: BaseStructureLevelVisual[];
 };
 
@@ -562,8 +564,9 @@ export const Bases = () => {
   const handleSaveStructurePrompts = useCallback(
     async (structure: BaseStructureDefinition) => {
       const draft = structurePromptDrafts[structure.id] || {
-        imagePrompt: structure.imagePrompt || '',
-        topDownImagePrompt: structure.topDownImagePrompt || '',
+        imagePrompt: structure.imagePrompt || structure.resolvedImagePrompt || '',
+        topDownImagePrompt:
+          structure.topDownImagePrompt || structure.resolvedTopDownImagePrompt || '',
       };
       try {
         setSavingStructurePromptId(structure.id);
@@ -1179,6 +1182,7 @@ export const Bases = () => {
                       <textarea
                         value={
                           structurePromptDrafts[structure.id]?.imagePrompt ??
+                          structure.resolvedImagePrompt ??
                           structure.imagePrompt ??
                           ''
                         }
@@ -1189,6 +1193,7 @@ export const Bases = () => {
                               imagePrompt: event.target.value,
                               topDownImagePrompt:
                                 prev[structure.id]?.topDownImagePrompt ??
+                                structure.resolvedTopDownImagePrompt ??
                                 structure.topDownImagePrompt ??
                                 '',
                             },
@@ -1203,6 +1208,7 @@ export const Bases = () => {
                       <textarea
                         value={
                           structurePromptDrafts[structure.id]?.topDownImagePrompt ??
+                          structure.resolvedTopDownImagePrompt ??
                           structure.topDownImagePrompt ??
                           ''
                         }
@@ -1212,6 +1218,7 @@ export const Bases = () => {
                             [structure.id]: {
                               imagePrompt:
                                 prev[structure.id]?.imagePrompt ??
+                                structure.resolvedImagePrompt ??
                                 structure.imagePrompt ??
                                 '',
                               topDownImagePrompt: event.target.value,

@@ -1146,6 +1146,7 @@ type UserBaseStructureHandle interface {
 	EnsureBuilt(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, gridX int, gridY int) error
 	UpsertLevelWithCost(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string, level int, costs []models.BaseResourceDelta, gridX *int, gridY *int) (*models.UserBaseStructure, error)
 	MoveMany(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, positions map[string]models.BaseGridPosition) error
+	DeleteByStructureKey(ctx context.Context, baseID uuid.UUID, userID uuid.UUID, structureKey string) error
 }
 
 type UserBaseDailyStateHandle interface {

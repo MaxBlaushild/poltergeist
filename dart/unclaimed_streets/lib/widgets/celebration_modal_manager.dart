@@ -99,7 +99,7 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Fully Restored!';
       case 'scenarioOutcome':
         final successful = data['successful'] == true;
-        return successful ? 'Scenario Success!' : 'Scenario Failed';
+        return successful ? 'Success!' : 'Failed!';
       case 'challengeOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Challenge Success!' : 'Challenge Failed';
@@ -341,6 +341,7 @@ class CelebrationModalManager extends StatelessWidget {
             .toList() ??
         const <String>[];
     final proficiencyBonus = (data['proficiencyBonus'] as num?)?.toInt() ?? 0;
+    final responseScore = (data['responseScore'] as num?)?.toInt() ?? 0;
     final creativityBonus = (data['creativityBonus'] as num?)?.toInt() ?? 0;
     final totalScore = (data['totalScore'] as num?)?.toInt() ?? 0;
     final threshold = (data['threshold'] as num?)?.toInt() ?? 0;
@@ -420,6 +421,15 @@ class CelebrationModalManager extends StatelessWidget {
         value: proficiencyBonus,
         color: Colors.teal.shade600,
       ),
+      if (responseScore > 0)
+        _ScenarioScoreSegment(
+          label: 'Response',
+          caption:
+              'AI estimate of how directly your answer solves the situation.',
+          icon: Icons.psychology_alt_rounded,
+          value: responseScore,
+          color: Colors.indigo.shade400,
+        ),
       _ScenarioScoreSegment(
         label: 'Creativity',
         caption: 'Bonus for a clever angle.',

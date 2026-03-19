@@ -80,6 +80,13 @@ class BaseService {
     return BaseProgressionSnapshot.fromJson(data);
   }
 
+  Future<BaseProgressionSnapshot> destroyStructure(String key) async {
+    final data = await _api.delete<Map<String, dynamic>>(
+      '/sonar/base/structures/$key',
+    );
+    return BaseProgressionSnapshot.fromJson(data);
+  }
+
   Future<BaseProgressionSnapshot> moveRooms({
     required String anchorStructureKey,
     required List<String> structureKeys,
