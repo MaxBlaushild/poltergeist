@@ -1130,6 +1130,7 @@ type BaseStructureDefinitionHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.BaseStructureDefinition, error)
 	FindActiveByKey(ctx context.Context, key string) (*models.BaseStructureDefinition, error)
 	UpdatePrompts(ctx context.Context, id uuid.UUID, imagePrompt string, topDownImagePrompt string) error
+	UpdateEffectConfig(ctx context.Context, id uuid.UUID, effectConfig models.MetadataJSONB) error
 }
 
 type BaseStructureLevelVisualHandle interface {
@@ -1151,6 +1152,7 @@ type UserBaseStructureHandle interface {
 
 type UserBaseDailyStateHandle interface {
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID, asOf time.Time) ([]models.UserBaseDailyState, error)
+	Upsert(ctx context.Context, state *models.UserBaseDailyState) error
 }
 
 type ChallengeHandle interface {
@@ -1163,6 +1165,9 @@ type ChallengeHandle interface {
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
 	ReplaceItemChoiceRewards(ctx context.Context, challengeID uuid.UUID, rewards []models.ChallengeItemChoiceReward) error
+	UpsertCompletion(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error
+	FindCompletionByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeCompletion, error)
+	FindCompletedChallengeIDsByUser(ctx context.Context, userID uuid.UUID, challengeIDs []uuid.UUID) ([]uuid.UUID, error)
 	UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error
 	FindItemChoicePendingByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeItemChoicePending, error)
 	DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error

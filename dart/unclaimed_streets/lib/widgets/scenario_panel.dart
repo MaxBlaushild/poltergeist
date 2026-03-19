@@ -560,7 +560,7 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                                   if (_result!.responseScore > 0)
                                     _ScoreBreakdownChip(
                                       icon: Icons.psychology_alt_rounded,
-                                      label: 'Response',
+                                      label: 'Execution',
                                       value: _result!.responseScore,
                                     ),
                                   _ScoreBreakdownChip(

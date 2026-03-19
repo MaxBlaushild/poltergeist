@@ -279,6 +279,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/base/structures/:key/build", middleware.WithAuthentication(s.authClient, s.livenessClient, s.buildBaseStructure))
 	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
 	r.DELETE("/sonar/base/structures/:key", middleware.WithAuthentication(s.authClient, s.livenessClient, s.destroyBaseStructure))
+	r.POST("/sonar/base/hearth/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useBaseHearth))
 	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
@@ -540,6 +541,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/admin/base-structures", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminBaseStructures))
 	r.PUT("/sonar/admin/base-structures/:id/prompts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructurePrompts))
+	r.PUT("/sonar/admin/base-structures/:id/hearth-recovery-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructureHearthRecoveryConfig))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelImage))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-top-down-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelTopDownImage))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
@@ -10341,6 +10343,21 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	if len(participants) > 0 {
 		participantIDs = partySubmissionParticipantIDs(participants)
 	}
+	for _, participantID := range participantIDs {
+		existingCompletion, err := s.dbClient.Challenge().FindCompletionByUserAndChallenge(ctx, participantID, challengeID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if existingCompletion != nil {
+			if participantID == user.ID {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge already completed"})
+			} else {
+				ctx.JSON(http.StatusConflict, gin.H{"error": "challenge already completed by your party"})
+			}
+			return
+		}
+	}
 
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
@@ -10679,6 +10696,12 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+		}
+	}
+	for _, participantID := range participantIDs {
+		if err := s.dbClient.Challenge().UpsertCompletion(ctx, participantID, challenge.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
 

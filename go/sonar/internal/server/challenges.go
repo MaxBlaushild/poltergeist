@@ -256,6 +256,19 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	challengeIDs := make([]uuid.UUID, 0, len(challenges))
+	for _, challenge := range challenges {
+		challengeIDs = append(challengeIDs, challenge.ID)
+	}
+	completedIDs, err := s.dbClient.Challenge().FindCompletedChallengeIDsByUser(ctx, user.ID, challengeIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	completedSet := make(map[uuid.UUID]struct{}, len(completedIDs))
+	for _, id := range completedIDs {
+		completedSet[id] = struct{}{}
+	}
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -263,6 +276,9 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 	}
 	response := make([]models.Challenge, 0, len(challenges))
 	for i := range challenges {
+		if _, completed := completedSet[challenges[i].ID]; completed {
+			continue
+		}
 		response = append(response, challengeWithScaledDifficulty(challenges[i], userLevel))
 	}
 	ctx.JSON(http.StatusOK, response)

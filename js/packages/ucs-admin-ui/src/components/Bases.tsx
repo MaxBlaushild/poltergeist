@@ -63,7 +63,13 @@ type BaseStructureDefinition = {
   topDownImagePrompt?: string;
   resolvedImagePrompt?: string;
   resolvedTopDownImagePrompt?: string;
+  effectConfig?: Record<string, unknown>;
   levelVisuals?: BaseStructureLevelVisual[];
+};
+
+type HearthRecoveryDraft = {
+  level2Statuses: string;
+  level3Statuses: string;
 };
 
 type BaseGrassTileStatus = {
@@ -140,6 +146,27 @@ const buildGrassPromptForCell = (
   return `${trimmed} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
 };
 
+const stringifyStatusConfig = (value: unknown) =>
+  JSON.stringify(Array.isArray(value) ? value : [], null, 2);
+
+const hearthRecoveryDraftFromStructure = (
+  structure: BaseStructureDefinition
+): HearthRecoveryDraft => {
+  const effectConfig =
+    structure.effectConfig && typeof structure.effectConfig === 'object'
+      ? structure.effectConfig
+      : {};
+  const byLevel =
+    effectConfig.hearthRecoveryStatusesByLevel &&
+    typeof effectConfig.hearthRecoveryStatusesByLevel === 'object'
+      ? (effectConfig.hearthRecoveryStatusesByLevel as Record<string, unknown>)
+      : {};
+  return {
+    level2Statuses: stringifyStatusConfig(byLevel['2']),
+    level3Statuses: stringifyStatusConfig(byLevel['3']),
+  };
+};
+
 export const Bases = () => {
   const { apiClient } = useAPI();
   const [records, setRecords] = useState<BaseRecord[]>([]);
@@ -194,6 +221,12 @@ export const Bases = () => {
   );
   const [structurePromptDrafts, setStructurePromptDrafts] = useState<
     Record<string, { imagePrompt: string; topDownImagePrompt: string }>
+  >({});
+  const [savingHearthRecoveryId, setSavingHearthRecoveryId] = useState<string | null>(
+    null
+  );
+  const [hearthRecoveryDrafts, setHearthRecoveryDrafts] = useState<
+    Record<string, HearthRecoveryDraft>
   >({});
 
   const fetchBases = useCallback(async () => {
@@ -600,6 +633,58 @@ export const Bases = () => {
       }
     },
     [apiClient, structurePromptDrafts]
+  );
+
+  const handleSaveHearthRecovery = useCallback(
+    async (structure: BaseStructureDefinition) => {
+      const draft =
+        hearthRecoveryDrafts[structure.id] || hearthRecoveryDraftFromStructure(structure);
+      let level2Statuses: unknown;
+      let level3Statuses: unknown;
+      try {
+        level2Statuses = JSON.parse(draft.level2Statuses || '[]');
+        level3Statuses = JSON.parse(draft.level3Statuses || '[]');
+      } catch (err) {
+        setError('Hearth recovery statuses must be valid JSON arrays.');
+        setBaseMessage(null);
+        return;
+      }
+
+      if (!Array.isArray(level2Statuses) || !Array.isArray(level3Statuses)) {
+        setError('Hearth recovery statuses must be JSON arrays.');
+        setBaseMessage(null);
+        return;
+      }
+
+      try {
+        setSavingHearthRecoveryId(structure.id);
+        setError(null);
+        setBaseMessage(null);
+        const updated = await apiClient.put<BaseStructureDefinition>(
+          `/sonar/admin/base-structures/${structure.id}/hearth-recovery-config`,
+          {
+            level2Statuses,
+            level3Statuses,
+          }
+        );
+        setStructures((prev) =>
+          prev.map((record) => (record.id === structure.id ? updated : record))
+        );
+        setHearthRecoveryDrafts((prev) => ({
+          ...prev,
+          [structure.id]: hearthRecoveryDraftFromStructure(updated),
+        }));
+        setBaseMessage(`Saved hearth recovery effects for ${structure.name}.`);
+      } catch (err) {
+        console.error('Failed to save hearth recovery config', err);
+        const message =
+          err instanceof Error ? err.message : 'Failed to save hearth recovery config.';
+        setError(message);
+      } finally {
+        setSavingHearthRecoveryId(null);
+      }
+    },
+    [apiClient, hearthRecoveryDrafts]
   );
 
   useEffect(() => {
@@ -1231,6 +1316,79 @@ export const Bases = () => {
                     </label>
                   </div>
                 </div>
+
+                {structure.key === 'hearth' ? (
+                  <div className="mt-4 rounded border border-gray-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">
+                          Hearth Recovery Effects
+                        </h4>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Rank 2 applies level 2 statuses. Rank 3 applies both level 2 and
+                          level 3 statuses. Use the same status-template JSON shape as scenario
+                          success or failure statuses.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveHearthRecovery(structure)}
+                        disabled={savingHearthRecoveryId === structure.id}
+                        className="rounded bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {savingHearthRecoveryId === structure.id
+                          ? 'Saving...'
+                          : 'Save Hearth Effects'}
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Rank 2 Statuses
+                        <textarea
+                          value={
+                            hearthRecoveryDrafts[structure.id]?.level2Statuses ??
+                            hearthRecoveryDraftFromStructure(structure).level2Statuses
+                          }
+                          onChange={(event) =>
+                            setHearthRecoveryDrafts((prev) => ({
+                              ...prev,
+                              [structure.id]: {
+                                level2Statuses: event.target.value,
+                                level3Statuses:
+                                  prev[structure.id]?.level3Statuses ??
+                                  hearthRecoveryDraftFromStructure(structure).level3Statuses,
+                              },
+                            }))
+                          }
+                          rows={12}
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono text-sm"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Rank 3 Extra Statuses
+                        <textarea
+                          value={
+                            hearthRecoveryDrafts[structure.id]?.level3Statuses ??
+                            hearthRecoveryDraftFromStructure(structure).level3Statuses
+                          }
+                          onChange={(event) =>
+                            setHearthRecoveryDrafts((prev) => ({
+                              ...prev,
+                              [structure.id]: {
+                                level2Statuses:
+                                  prev[structure.id]?.level2Statuses ??
+                                  hearthRecoveryDraftFromStructure(structure).level2Statuses,
+                                level3Statuses: event.target.value,
+                              },
+                            }))
+                          }
+                          rows={12}
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono text-sm"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {(structure.levelVisuals || []).map((visual) => {

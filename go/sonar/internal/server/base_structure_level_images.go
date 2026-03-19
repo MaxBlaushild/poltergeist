@@ -79,6 +79,75 @@ func (s *server) updateBaseStructurePrompts(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, serializeBaseStructureDefinition(*definition))
 }
 
+func (s *server) updateBaseStructureHearthRecoveryConfig(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	definitionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || definitionID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base structure definition ID"})
+		return
+	}
+
+	definition, err := s.dbClient.BaseStructureDefinition().FindByID(ctx, definitionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if definition == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "base structure definition not found"})
+		return
+	}
+	if strings.TrimSpace(definition.Key) != "hearth" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "hearth recovery config can only be updated for the hearth"})
+		return
+	}
+
+	var body struct {
+		Level2Statuses []scenarioFailureStatusPayload `json:"level2Statuses"`
+		Level3Statuses []scenarioFailureStatusPayload `json:"level3Statuses"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	level2Statuses, err := parseScenarioFailureStatusTemplates(body.Level2Statuses, "level2Statuses")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	level3Statuses, err := parseScenarioFailureStatusTemplates(body.Level3Statuses, "level3Statuses")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	effectConfig := definition.EffectConfig
+	if effectConfig == nil {
+		effectConfig = models.MetadataJSONB{}
+	}
+	effectConfig["hearthRecoveryStatusesByLevel"] = models.MetadataJSONB{
+		"2": level2Statuses,
+		"3": level3Statuses,
+	}
+
+	if err := s.dbClient.BaseStructureDefinition().UpdateEffectConfig(ctx, definitionID, effectConfig); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	definition, err = s.dbClient.BaseStructureDefinition().FindByID(ctx, definitionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, serializeBaseStructureDefinition(*definition))
+}
+
 func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {
 	s.generateBaseStructureLevelVisual(ctx, "")
 }

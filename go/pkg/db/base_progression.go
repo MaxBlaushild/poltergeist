@@ -168,6 +168,19 @@ func (h *baseStructureDefinitionHandle) UpdatePrompts(ctx context.Context, id uu
 		}).Error
 }
 
+func (h *baseStructureDefinitionHandle) UpdateEffectConfig(ctx context.Context, id uuid.UUID, effectConfig models.MetadataJSONB) error {
+	if effectConfig == nil {
+		effectConfig = models.MetadataJSONB{}
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.BaseStructureDefinition{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"effect_config": effectConfig,
+			"updated_at":    time.Now(),
+		}).Error
+}
+
 type baseStructureLevelVisualHandle struct {
 	db *gorm.DB
 }
@@ -445,6 +458,34 @@ func (h *userBaseDailyStateHandle) FindActiveByUserID(ctx context.Context, userI
 		return nil, err
 	}
 	return states, nil
+}
+
+func (h *userBaseDailyStateHandle) Upsert(ctx context.Context, state *models.UserBaseDailyState) error {
+	if state == nil {
+		return nil
+	}
+	now := time.Now()
+	if state.ID == uuid.Nil {
+		state.ID = uuid.New()
+	}
+	if state.CreatedAt.IsZero() {
+		state.CreatedAt = now
+	}
+	state.UpdatedAt = now
+	if state.StateJSON == nil {
+		state.StateJSON = models.MetadataJSONB{}
+	}
+	return h.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"},
+			{Name: "state_key"},
+			{Name: "resets_on"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"state_json": state.StateJSON,
+			"updated_at": state.UpdatedAt,
+		}),
+	}).Create(state).Error
 }
 
 func normalizeBaseResourceDeltas(deltas []models.BaseResourceDelta) []models.BaseResourceDelta {

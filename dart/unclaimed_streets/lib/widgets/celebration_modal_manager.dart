@@ -423,9 +423,8 @@ class CelebrationModalManager extends StatelessWidget {
       ),
       if (responseScore > 0)
         _ScenarioScoreSegment(
-          label: 'Response',
-          caption:
-              'AI estimate of how directly your answer solves the situation.',
+          label: 'Execution',
+          caption: 'How well you solved the problem.',
           icon: Icons.psychology_alt_rounded,
           value: responseScore,
           color: Colors.indigo.shade400,

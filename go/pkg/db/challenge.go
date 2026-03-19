@@ -175,6 +175,51 @@ func (h *challengeHandle) ReplaceItemChoiceRewards(ctx context.Context, challeng
 	})
 }
 
+func (h *challengeHandle) UpsertCompletion(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error {
+	now := time.Now()
+	record := models.UserChallengeCompletion{
+		ID:          uuid.New(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		UserID:      userID,
+		ChallengeID: challengeID,
+	}
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "challenge_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"updated_at": now}),
+		}).
+		Create(&record).Error
+}
+
+func (h *challengeHandle) FindCompletionByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeCompletion, error) {
+	var completion models.UserChallengeCompletion
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ? AND challenge_id = ?", userID, challengeID).
+		First(&completion).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &completion, nil
+}
+
+func (h *challengeHandle) FindCompletedChallengeIDsByUser(ctx context.Context, userID uuid.UUID, challengeIDs []uuid.UUID) ([]uuid.UUID, error) {
+	if len(challengeIDs) == 0 {
+		return nil, nil
+	}
+	var completedIDs []uuid.UUID
+	if err := h.db.WithContext(ctx).
+		Model(&models.UserChallengeCompletion{}).
+		Where("user_id = ?", userID).
+		Where("challenge_id IN ?", challengeIDs).
+		Pluck("challenge_id", &completedIDs).Error; err != nil {
+		return nil, err
+	}
+	return completedIDs, nil
+}
+
 func (h *challengeHandle) UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error {
 	now := time.Now()
 	record := models.UserChallengeItemChoicePending{

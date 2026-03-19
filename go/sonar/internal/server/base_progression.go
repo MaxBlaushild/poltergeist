@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	baseGridSize   = 5
-	baseGridCenter = 2
+	baseGridSize                    = 5
+	baseGridCenter                  = 2
+	baseDailyStateKeyHearthRecovery = "hearth_recovery"
 )
 
 const defaultBaseStructureImagePromptTemplate = `
@@ -592,6 +594,56 @@ func projectedBaseDestroyPositions(
 	return projected, nil
 }
 
+func todayBaseDailyResetDate(now time.Time) time.Time {
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+}
+
+func nextBaseDailyAvailability(now time.Time) time.Time {
+	return todayBaseDailyResetDate(now).Add(24 * time.Hour)
+}
+
+func hearthRecoveryStatusesByLevel(
+	config models.MetadataJSONB,
+	level int,
+) models.ScenarioFailureStatusTemplates {
+	if level < 2 {
+		return models.ScenarioFailureStatusTemplates{}
+	}
+	rawByLevel, ok := config["hearthRecoveryStatusesByLevel"]
+	if !ok {
+		return models.ScenarioFailureStatusTemplates{}
+	}
+	byLevel, ok := rawByLevel.(map[string]interface{})
+	if !ok {
+		if typed, typedOK := rawByLevel.(map[string]any); typedOK {
+			byLevel = typed
+		} else {
+			return models.ScenarioFailureStatusTemplates{}
+		}
+	}
+
+	collected := make(models.ScenarioFailureStatusTemplates, 0)
+	for _, currentLevel := range []int{2, 3} {
+		if currentLevel > level {
+			continue
+		}
+		rawStatuses, exists := byLevel[fmt.Sprintf("%d", currentLevel)]
+		if !exists {
+			continue
+		}
+		statusesJSON, err := json.Marshal(rawStatuses)
+		if err != nil {
+			continue
+		}
+		var statuses models.ScenarioFailureStatusTemplates
+		if err := json.Unmarshal(statusesJSON, &statuses); err != nil {
+			continue
+		}
+		collected = append(collected, statuses...)
+	}
+	return collected
+}
+
 func (s *server) mutateBaseStructure(ctx *gin.Context, isUpgrade bool) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -891,6 +943,139 @@ func (s *server) destroyBaseStructure(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	ctx.JSON(http.StatusOK, snapshot)
+}
+
+func (s *server) useBaseHearth(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	base, err := s.dbClient.Base().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if base == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "you need a base before you can use a hearth"})
+		return
+	}
+
+	hearthDefinition, err := s.dbClient.BaseStructureDefinition().FindActiveByKey(ctx, "hearth")
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "hearth definition not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	structures, err := s.dbClient.UserBaseStructure().FindByBaseID(ctx, base.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	hearthLevel := 0
+	for _, structure := range structures {
+		if structure.StructureKey == "hearth" {
+			hearthLevel = structure.Level
+			break
+		}
+	}
+	if hearthLevel <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "you need a hearth before you can rest at it"})
+		return
+	}
+
+	now := time.Now()
+	activeDailyStates, err := s.dbClient.UserBaseDailyState().FindActiveByUserID(ctx, user.ID, now)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, state := range activeDailyStates {
+		if state.StateKey != baseDailyStateKeyHearthRecovery {
+			continue
+		}
+		nextAvailableAt := nextBaseDailyAvailability(now)
+		if rawNext, ok := state.StateJSON["nextAvailableAt"]; ok {
+			if parsed, parseErr := time.Parse(time.RFC3339, fmt.Sprintf("%v", rawNext)); parseErr == nil {
+				nextAvailableAt = parsed
+			}
+		}
+		ctx.JSON(http.StatusTooManyRequests, gin.H{
+			"error":                    "hearth recovery has already been used today",
+			"lastUsedAt":               state.StateJSON["usedAt"],
+			"nextAvailableAt":          nextAvailableAt,
+			"cooldownSecondsRemaining": max(int(time.Until(nextAvailableAt).Seconds()), 0),
+			"availableNow":             false,
+		})
+		return
+	}
+
+	stats, maxHealth, maxMana, currentHealth, currentMana, err := s.getScenarioResourceState(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	healthRestored := stats.HealthDeficit
+	manaRestored := stats.ManaDeficit
+	if healthRestored > 0 || manaRestored > 0 {
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, user.ID, -healthRestored, -manaRestored); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		currentHealth = maxHealth
+		currentMana = maxMana
+	}
+
+	statusTemplates := hearthRecoveryStatusesByLevel(hearthDefinition.EffectConfig, hearthLevel)
+	appliedStatuses, err := s.applyMonsterBattleUserStatuses(ctx, []uuid.UUID{user.ID}, statusTemplates)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	nextAvailableAt := nextBaseDailyAvailability(now)
+	state := &models.UserBaseDailyState{
+		UserID:   user.ID,
+		StateKey: baseDailyStateKeyHearthRecovery,
+		StateJSON: models.MetadataJSONB{
+			"usedAt":          now.Format(time.RFC3339),
+			"nextAvailableAt": nextAvailableAt.Format(time.RFC3339),
+			"hearthLevel":     hearthLevel,
+			"statusesApplied": appliedStatuses,
+		},
+		ResetsOn: todayBaseDailyResetDate(now),
+	}
+	if err := s.dbClient.UserBaseDailyState().Upsert(ctx, state); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	snapshot, err := s.loadCurrentUserBaseSnapshot(ctx, user.ID.String())
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	snapshot["message"] = "hearth recovery used successfully"
+	snapshot["healthRestored"] = healthRestored
+	snapshot["manaRestored"] = manaRestored
+	snapshot["currentHealth"] = currentHealth
+	snapshot["maxHealth"] = maxHealth
+	snapshot["currentMana"] = currentMana
+	snapshot["maxMana"] = maxMana
+	snapshot["availableNow"] = false
+	snapshot["lastUsedAt"] = now
+	snapshot["nextAvailableAt"] = nextAvailableAt
+	snapshot["cooldownSecondsRemaining"] = int(time.Until(nextAvailableAt).Seconds())
+	snapshot["statusesApplied"] = appliedStatuses
+
 	ctx.JSON(http.StatusOK, snapshot)
 }
 

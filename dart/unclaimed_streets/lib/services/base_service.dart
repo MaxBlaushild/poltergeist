@@ -87,6 +87,10 @@ class BaseService {
     return BaseProgressionSnapshot.fromJson(data);
   }
 
+  Future<Map<String, dynamic>> useHearth() async {
+    return _api.post<Map<String, dynamic>>('/sonar/base/hearth/use');
+  }
+
   Future<BaseProgressionSnapshot> moveRooms({
     required String anchorStructureKey,
     required List<String> structureKeys,
