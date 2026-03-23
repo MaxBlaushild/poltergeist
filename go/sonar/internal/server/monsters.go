@@ -9,9 +9,11 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -254,44 +256,44 @@ type monsterRewardItemPayload struct {
 }
 
 type monsterUpsertRequest struct {
-	Name                        string                     `json:"name"`
-	Description                 string                     `json:"description"`
-	ImageURL                    string                     `json:"imageUrl"`
-	ThumbnailURL                string                     `json:"thumbnailUrl"`
-	ZoneID                      string                     `json:"zoneId"`
-	Latitude                    float64                    `json:"latitude"`
-	Longitude                   float64                    `json:"longitude"`
-	TemplateID                  string                     `json:"templateId"`
-	DominantHandInventoryItemID *int                       `json:"dominantHandInventoryItemId"`
-	OffHandInventoryItemID      *int                       `json:"offHandInventoryItemId"`
-	WeaponInventoryItemID       *int                       `json:"weaponInventoryItemId"`
-	Level                       int                        `json:"level"`
-	RewardMode                  string                     `json:"rewardMode"`
-	RandomRewardSize            string                     `json:"randomRewardSize"`
-	RewardExperience            int                        `json:"rewardExperience"`
-	RewardGold                  int                        `json:"rewardGold"`
+	Name                        string                      `json:"name"`
+	Description                 string                      `json:"description"`
+	ImageURL                    string                      `json:"imageUrl"`
+	ThumbnailURL                string                      `json:"thumbnailUrl"`
+	ZoneID                      string                      `json:"zoneId"`
+	Latitude                    float64                     `json:"latitude"`
+	Longitude                   float64                     `json:"longitude"`
+	TemplateID                  string                      `json:"templateId"`
+	DominantHandInventoryItemID *int                        `json:"dominantHandInventoryItemId"`
+	OffHandInventoryItemID      *int                        `json:"offHandInventoryItemId"`
+	WeaponInventoryItemID       *int                        `json:"weaponInventoryItemId"`
+	Level                       int                         `json:"level"`
+	RewardMode                  string                      `json:"rewardMode"`
+	RandomRewardSize            string                      `json:"randomRewardSize"`
+	RewardExperience            int                         `json:"rewardExperience"`
+	RewardGold                  int                         `json:"rewardGold"`
 	MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
-	ItemRewards                 []monsterRewardItemPayload `json:"itemRewards"`
+	ItemRewards                 []monsterRewardItemPayload  `json:"itemRewards"`
 }
 
 type monsterEncounterUpsertRequest struct {
-	Name                string                     `json:"name"`
-	Description         string                     `json:"description"`
-	ImageURL            string                     `json:"imageUrl"`
-	ThumbnailURL        string                     `json:"thumbnailUrl"`
-	EncounterType       string                     `json:"encounterType"`
-	RewardMode          string                     `json:"rewardMode"`
-	RandomRewardSize    string                     `json:"randomRewardSize"`
-	RewardExperience    int                        `json:"rewardExperience"`
-	RewardGold          int                        `json:"rewardGold"`
+	Name                string                      `json:"name"`
+	Description         string                      `json:"description"`
+	ImageURL            string                      `json:"imageUrl"`
+	ThumbnailURL        string                      `json:"thumbnailUrl"`
+	EncounterType       string                      `json:"encounterType"`
+	RewardMode          string                      `json:"rewardMode"`
+	RandomRewardSize    string                      `json:"randomRewardSize"`
+	RewardExperience    int                         `json:"rewardExperience"`
+	RewardGold          int                         `json:"rewardGold"`
 	MaterialRewards     []baseMaterialRewardPayload `json:"materialRewards"`
-	ItemRewards         []monsterRewardItemPayload `json:"itemRewards"`
-	ScaleWithUserLevel  bool                       `json:"scaleWithUserLevel"`
-	RecurrenceFrequency *string                    `json:"recurrenceFrequency"`
-	ZoneID              string                     `json:"zoneId"`
-	Latitude            float64                    `json:"latitude"`
-	Longitude           float64                    `json:"longitude"`
-	MonsterIDs          []string                   `json:"monsterIds"`
+	ItemRewards         []monsterRewardItemPayload  `json:"itemRewards"`
+	ScaleWithUserLevel  bool                        `json:"scaleWithUserLevel"`
+	RecurrenceFrequency *string                     `json:"recurrenceFrequency"`
+	ZoneID              string                      `json:"zoneId"`
+	Latitude            float64                     `json:"latitude"`
+	Longitude           float64                     `json:"longitude"`
+	MonsterIDs          []string                    `json:"monsterIds"`
 }
 
 type monsterBattleActionRequest struct {
@@ -422,6 +424,84 @@ type monsterEncounterResponse struct {
 	MonsterCount                int                              `json:"monsterCount"`
 	Members                     []monsterEncounterMemberResponse `json:"members"`
 	Monsters                    []monsterResponse                `json:"monsters"`
+}
+
+type paginatedMonsterTemplateResponse struct {
+	Items         []monsterTemplateResponse `json:"items"`
+	Total         int64                     `json:"total"`
+	Page          int                       `json:"page"`
+	PageSize      int                       `json:"pageSize"`
+	ActiveCount   int64                     `json:"activeCount"`
+	ArchivedCount int64                     `json:"archivedCount"`
+}
+
+type paginatedMonsterResponse struct {
+	Items    []monsterResponse `json:"items"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"pageSize"`
+}
+
+type paginatedMonsterEncounterResponse struct {
+	Items    []monsterEncounterResponse `json:"items"`
+	Total    int64                      `json:"total"`
+	Page     int                        `json:"page"`
+	PageSize int                        `json:"pageSize"`
+}
+
+const (
+	adminMonsterListDefaultPageSize = 25
+	adminMonsterListMaxPageSize     = 100
+)
+
+func clampAdminMonsterListPage(value int) int {
+	if value < 1 {
+		return 1
+	}
+	return value
+}
+
+func clampAdminMonsterListPageSize(value int) int {
+	if value <= 0 {
+		return adminMonsterListDefaultPageSize
+	}
+	if value > adminMonsterListMaxPageSize {
+		return adminMonsterListMaxPageSize
+	}
+	return value
+}
+
+func parseAdminMonsterListPage(ctx *gin.Context) int {
+	page, err := strconv.Atoi(strings.TrimSpace(ctx.DefaultQuery("page", "1")))
+	if err != nil {
+		return 1
+	}
+	return clampAdminMonsterListPage(page)
+}
+
+func parseAdminMonsterListPageSize(ctx *gin.Context) int {
+	pageSize, err := strconv.Atoi(strings.TrimSpace(
+		ctx.DefaultQuery("pageSize", strconv.Itoa(adminMonsterListDefaultPageSize)),
+	))
+	if err != nil {
+		return adminMonsterListDefaultPageSize
+	}
+	return clampAdminMonsterListPageSize(pageSize)
+}
+
+func parseOptionalArchivedFilter(raw string) (*bool, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "":
+		return nil, nil
+	case "true":
+		value := true
+		return &value, nil
+	case "false":
+		value := false
+		return &value, nil
+	default:
+		return nil, errors.New("archived must be true or false")
+	}
 }
 
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
@@ -1490,6 +1570,48 @@ func (s *server) getMonsterTemplates(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
+func (s *server) getAdminMonsterTemplates(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	archived, err := parseOptionalArchivedFilter(ctx.Query("archived"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.MonsterTemplate().ListAdmin(ctx, db.MonsterTemplateAdminListParams{
+		Page:        page,
+		PageSize:    pageSize,
+		Query:       ctx.Query("query"),
+		ZoneQuery:   ctx.Query("zoneQuery"),
+		Archived:    archived,
+		MonsterType: ctx.Query("monsterType"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := make([]monsterTemplateResponse, 0, len(result.Templates))
+	for i := range result.Templates {
+		items = append(items, *monsterTemplateResponseFrom(&result.Templates[i]))
+	}
+
+	ctx.JSON(http.StatusOK, paginatedMonsterTemplateResponse{
+		Items:         items,
+		Total:         result.Total,
+		Page:          page,
+		PageSize:      pageSize,
+		ActiveCount:   result.ActiveCount,
+		ArchivedCount: result.ArchivedCount,
+	})
+}
+
 func (s *server) getMonsterTemplate(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -2263,6 +2385,38 @@ func (s *server) getMonsters(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
+func (s *server) getAdminMonsters(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.Monster().ListAdmin(ctx, db.MonsterAdminListParams{
+		Page:      page,
+		PageSize:  pageSize,
+		Query:     ctx.Query("query"),
+		ZoneQuery: ctx.Query("zoneQuery"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := make([]monsterResponse, 0, len(result.Monsters))
+	for i := range result.Monsters {
+		items = append(items, monsterResponseFrom(&result.Monsters[i], models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil))
+	}
+
+	ctx.JSON(http.StatusOK, paginatedMonsterResponse{
+		Items:    items,
+		Total:    result.Total,
+		Page:     page,
+		PageSize: pageSize,
+	})
+}
+
 func (s *server) getMonsterEncounters(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -2285,6 +2439,44 @@ func (s *server) getMonsterEncounters(ctx *gin.Context) {
 		response = append(response, entry)
 	}
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getAdminMonsterEncounters(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.MonsterEncounter().ListAdmin(ctx, db.MonsterEncounterAdminListParams{
+		Page:      page,
+		PageSize:  pageSize,
+		Query:     ctx.Query("query"),
+		ZoneQuery: ctx.Query("zoneQuery"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := make([]monsterEncounterResponse, 0, len(result.Encounters))
+	for i := range result.Encounters {
+		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &result.Encounters[i], 1, false)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items = append(items, entry)
+	}
+
+	ctx.JSON(http.StatusOK, paginatedMonsterEncounterResponse{
+		Items:    items,
+		Total:    result.Total,
+		Page:     page,
+		PageSize: pageSize,
+	})
 }
 
 func (s *server) getMonsterEncounter(ctx *gin.Context) {

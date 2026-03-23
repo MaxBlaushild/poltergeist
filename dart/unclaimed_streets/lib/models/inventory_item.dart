@@ -36,6 +36,9 @@ class InventoryItem {
   final List<InventoryConsumeStatus> consumeStatusesToAdd;
   final List<String> consumeStatusesToRemove;
   final List<String> consumeSpellIds;
+  final List<String> consumeTeachRecipeIds;
+  final List<InventoryRecipe> alchemyRecipes;
+  final List<InventoryRecipe> workshopRecipes;
 
   const InventoryItem({
     required this.id,
@@ -75,6 +78,9 @@ class InventoryItem {
     this.consumeStatusesToAdd = const [],
     this.consumeStatusesToRemove = const [],
     this.consumeSpellIds = const [],
+    this.consumeTeachRecipeIds = const [],
+    this.alchemyRecipes = const [],
+    this.workshopRecipes = const [],
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -142,6 +148,79 @@ class InventoryItem {
               .where((entry) => entry.isNotEmpty)
               .toList() ??
           const [],
+      consumeTeachRecipeIds:
+          (json['consumeTeachRecipeIds'] as List<dynamic>?)
+              ?.map((entry) => entry.toString().trim())
+              .where((entry) => entry.isNotEmpty)
+              .toList() ??
+          const [],
+      alchemyRecipes:
+          (json['alchemyRecipes'] as List<dynamic>?)
+              ?.map(
+                (entry) =>
+                    InventoryRecipe.fromJson(entry as Map<String, dynamic>),
+              )
+              .where((entry) => entry.ingredients.isNotEmpty)
+              .toList() ??
+          const [],
+      workshopRecipes:
+          (json['workshopRecipes'] as List<dynamic>?)
+              ?.map(
+                (entry) =>
+                    InventoryRecipe.fromJson(entry as Map<String, dynamic>),
+              )
+              .where((entry) => entry.ingredients.isNotEmpty)
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+class InventoryRecipe {
+  final String id;
+  final int tier;
+  final bool isPublic;
+  final List<InventoryRecipeIngredient> ingredients;
+
+  const InventoryRecipe({
+    required this.id,
+    required this.tier,
+    required this.isPublic,
+    required this.ingredients,
+  });
+
+  factory InventoryRecipe.fromJson(Map<String, dynamic> json) {
+    return InventoryRecipe(
+      id: json['id']?.toString() ?? '',
+      tier: (json['tier'] as num?)?.toInt() ?? 1,
+      isPublic: json['isPublic'] == true,
+      ingredients:
+          (json['ingredients'] as List<dynamic>?)
+              ?.map(
+                (entry) => InventoryRecipeIngredient.fromJson(
+                  entry as Map<String, dynamic>,
+                ),
+              )
+              .where((entry) => entry.itemId > 0 && entry.quantity > 0)
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+class InventoryRecipeIngredient {
+  final int itemId;
+  final int quantity;
+
+  const InventoryRecipeIngredient({
+    required this.itemId,
+    required this.quantity,
+  });
+
+  factory InventoryRecipeIngredient.fromJson(Map<String, dynamic> json) {
+    return InventoryRecipeIngredient(
+      itemId: (json['itemId'] as num?)?.toInt() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
     );
   }
 }

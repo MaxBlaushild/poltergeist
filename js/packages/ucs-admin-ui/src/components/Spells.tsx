@@ -84,6 +84,24 @@ type BulkEffectCountsPayload = {
   removeDetrimentalStatuses: number;
 };
 
+type GenerateAbilityTomesResponse = {
+  items?: Array<{
+    abilityId: string;
+    abilityName: string;
+    abilityType?: string;
+    inventoryItemId: number;
+    tomeName: string;
+    action: 'created' | 'updated' | string;
+    imageQueued: boolean;
+    warning?: string | null;
+  }>;
+  createdCount: number;
+  updatedCount: number;
+  processedCount: number;
+  queuedImageCount: number;
+  warnings?: string[];
+};
+
 type BulkEffectCountsForm = {
   dealDamage: string;
   dealDamageAllEnemies: string;
@@ -185,6 +203,12 @@ const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const abilityLabelFromSpell = (spell: Spell) =>
+  spell.abilityType === 'technique' ? 'technique' : 'spell';
+
+const abilityRoutePrefixFromSpell = (spell: Spell) =>
+  spell.abilityType === 'technique' ? '/sonar/techniques' : '/sonar/spells';
 
 const DEFAULT_BULK_ABILITY_COUNT = '8';
 
@@ -405,7 +429,9 @@ const payloadFromForm = (form: SpellFormState) => {
     const statusesToApply = effect.statusesToApply
       .map(parseStatusTemplate)
       .filter((status): status is SpellStatusTemplate => status !== null)
-      .map((status) => normalizeStatusTemplateForEffectType(effectType, status));
+      .map((status) =>
+        normalizeStatusTemplateForEffectType(effectType, status)
+      );
     const statusesToRemove = effect.statusesToRemove
       .split(',')
       .map((value) => value.trim())
@@ -459,6 +485,10 @@ export const Spells = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingSpell, setEditingSpell] = useState<Spell | null>(null);
   const [form, setForm] = useState<SpellFormState>(emptyForm());
+  const [selectedAbilityIds, setSelectedAbilityIds] = useState<string[]>([]);
+  const [tomeBusy, setTomeBusy] = useState(false);
+  const [tomeError, setTomeError] = useState<string | null>(null);
+  const [tomeMessage, setTomeMessage] = useState<string | null>(null);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkAbilityCount, setBulkAbilityCount] = useState(
@@ -520,6 +550,12 @@ export const Spells = () => {
   }, [load]);
 
   useEffect(() => {
+    setSelectedAbilityIds((prev) =>
+      prev.filter((id) => spells.some((spell) => spell.id === id))
+    );
+  }, [spells]);
+
+  useEffect(() => {
     const hasPendingGeneration = spells.some((spell) =>
       ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
     );
@@ -544,6 +580,11 @@ export const Spells = () => {
       );
     });
   }, [search, spells]);
+
+  const filteredAbilityIds = useMemo(
+    () => filtered.map((spell) => spell.id),
+    [filtered]
+  );
 
   const openCreate = () => {
     setEditingSpell(null);
@@ -697,17 +738,21 @@ export const Spells = () => {
   };
 
   const handleGenerateProgression = async (spell: Spell) => {
+    const abilityLabel = abilityLabelFromSpell(spell);
+    const progressionEndpoint = `${abilityRoutePrefixFromSpell(
+      spell
+    )}/${spell.id}/generate-progression`;
     try {
       setGeneratingProgressionSpellId(spell.id);
       const result = await apiClient.post<{ createdCount?: number }>(
-        `/sonar/spells/${spell.id}/generate-progression`,
+        progressionEndpoint,
         {}
       );
       const createdCount =
         typeof result?.createdCount === 'number' ? result.createdCount : 0;
       if (createdCount > 0) {
         setBulkAbilityMessage(
-          `Generated ${createdCount} progression spell(s) from ${spell.name}.`
+          `Generated ${createdCount} progression ${abilityLabel}(s) from ${spell.name}.`
         );
       } else {
         setBulkAbilityMessage(
@@ -721,10 +766,71 @@ export const Spells = () => {
       setBulkAbilityError(
         err instanceof Error
           ? err.message
-          : 'Failed to generate spell progression.'
+          : `Failed to generate ${abilityLabel} progression.`
       );
     } finally {
       setGeneratingProgressionSpellId(null);
+    }
+  };
+
+  const toggleAbilitySelected = (abilityId: string) => {
+    setSelectedAbilityIds((prev) =>
+      prev.includes(abilityId)
+        ? prev.filter((id) => id !== abilityId)
+        : [...prev, abilityId]
+    );
+  };
+
+  const handleSelectFilteredAbilities = () => {
+    setSelectedAbilityIds((prev) =>
+      Array.from(new Set([...prev, ...filteredAbilityIds]))
+    );
+  };
+
+  const handleClearSelectedAbilities = () => {
+    setSelectedAbilityIds([]);
+  };
+
+  const handleGenerateTomes = async (abilityIds: string[]) => {
+    const normalizedAbilityIds = Array.from(
+      new Set(abilityIds.map((id) => id.trim()).filter(Boolean))
+    );
+    if (normalizedAbilityIds.length === 0) {
+      setTomeError('Select at least one ability to generate a tome.');
+      return;
+    }
+
+    try {
+      setTomeBusy(true);
+      setTomeError(null);
+      setTomeMessage(null);
+
+      const response = await apiClient.post<GenerateAbilityTomesResponse>(
+        '/sonar/abilities/generate-tomes',
+        { abilityIds: normalizedAbilityIds }
+      );
+
+      const warnings = response.warnings ?? [];
+      const warningSuffix =
+        warnings.length > 0
+          ? ` ${warnings.length} image job${warnings.length === 1 ? '' : 's'} failed to queue.`
+          : '';
+      setTomeMessage(
+        `Processed ${response.processedCount} tome${response.processedCount === 1 ? '' : 's'} (${response.createdCount} created, ${response.updatedCount} updated).${warningSuffix}`
+      );
+      if (normalizedAbilityIds.length > 1) {
+        setSelectedAbilityIds((prev) =>
+          prev.filter((id) => !normalizedAbilityIds.includes(id))
+        );
+      }
+      await load(true);
+    } catch (err) {
+      console.error('Failed to generate ability tomes', err);
+      setTomeError(
+        err instanceof Error ? err.message : 'Failed to generate ability tomes.'
+      );
+    } finally {
+      setTomeBusy(false);
     }
   };
 
@@ -1266,6 +1372,40 @@ export const Spells = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={handleSelectFilteredAbilities}
+              disabled={filteredAbilityIds.length === 0 || tomeBusy}
+            >
+              Select Filtered
+            </button>
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={handleClearSelectedAbilities}
+              disabled={selectedAbilityIds.length === 0 || tomeBusy}
+            >
+              Clear Selected
+            </button>
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={() => handleGenerateTomes(selectedAbilityIds)}
+              disabled={selectedAbilityIds.length === 0 || tomeBusy}
+            >
+              {tomeBusy
+                ? 'Queueing Tomes...'
+                : `Generate Tomes for Selected (${selectedAbilityIds.length})`}
+            </button>
+            <span className="text-xs text-gray-600">
+              {selectedAbilityIds.length} selected
+            </span>
+          </div>
+          {tomeMessage ? (
+            <p className="mt-2 text-sm text-emerald-700">{tomeMessage}</p>
+          ) : null}
+          {tomeError ? (
+            <p className="mt-2 text-sm text-red-700">{tomeError}</p>
+          ) : null}
         </div>
 
         {loading ? (
@@ -1278,6 +1418,7 @@ export const Spells = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((spell) => {
               const progressionLink = spell.progressionLinks?.[0];
+              const isSelected = selectedAbilityIds.includes(spell.id);
               return (
                 <div key={spell.id} className="qa-card">
                   <div className="flex items-start justify-between gap-3">
@@ -1294,7 +1435,9 @@ export const Spells = () => {
                       </div>
                       {progressionLink ? (
                         <div className="text-xs text-gray-500 mt-1">
-                          Spell Progression:{' '}
+                          {(spell.abilityType ?? 'spell') === 'technique'
+                            ? 'Technique Progression: '
+                            : 'Spell Progression: '}
                           {progressionLink.progression?.name ??
                             progressionLink.progressionId}{' '}
                           · Level Band {progressionLink.levelBand}
@@ -1307,13 +1450,24 @@ export const Spells = () => {
                         </div>
                       ) : null}
                     </div>
-                    {spell.iconUrl ? (
-                      <img
-                        src={spell.iconUrl}
-                        alt={spell.name}
-                        className="w-12 h-12 rounded-md object-cover border"
-                      />
-                    ) : null}
+                    <div className="flex flex-col items-end gap-2">
+                      <label className="inline-flex items-center gap-2 text-xs text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleAbilitySelected(spell.id)}
+                          disabled={tomeBusy}
+                        />
+                        Select
+                      </label>
+                      {spell.iconUrl ? (
+                        <img
+                          src={spell.iconUrl}
+                          alt={spell.name}
+                          className="w-12 h-12 rounded-md object-cover border"
+                        />
+                      ) : null}
+                    </div>
                   </div>
                   {spell.description ? (
                     <p className="text-sm text-gray-700 mt-3">
@@ -1352,14 +1506,18 @@ export const Spells = () => {
                     <button
                       className="qa-btn qa-btn-secondary"
                       onClick={() => handleGenerateProgression(spell)}
-                      disabled={
-                        generatingProgressionSpellId === spell.id ||
-                        (spell.abilityType ?? 'spell') === 'technique'
-                      }
+                      disabled={generatingProgressionSpellId === spell.id}
                     >
                       {generatingProgressionSpellId === spell.id
                         ? 'Generating...'
                         : 'Generate Level Bands'}
+                    </button>
+                    <button
+                      className="qa-btn qa-btn-secondary"
+                      onClick={() => handleGenerateTomes([spell.id])}
+                      disabled={tomeBusy}
+                    >
+                      {tomeBusy ? 'Queueing Tome...' : 'Generate Tome'}
                     </button>
                     <button
                       className="qa-btn qa-btn-danger"
@@ -1713,7 +1871,7 @@ export const Spells = () => {
                                           )
                                         }
                                       />
-                                  </label>
+                                    </label>
                                     <label className="text-xs">
                                       Status Effect Type
                                       <select

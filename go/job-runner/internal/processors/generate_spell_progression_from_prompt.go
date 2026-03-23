@@ -29,7 +29,7 @@ Return JSON only:
 {
   "spell": {
     "name": "2-4 words",
-    "description": "20-60 words",
+    "description": "one vivid sentence, 8-18 words",
     "effectText": "one concise sentence",
     "schoolOfMagic": "short label",
     "manaCost": 0-60,
@@ -39,6 +39,7 @@ Return JSON only:
 
 Rules:
 - Keep tone adventurous and original.
+- Make the description a single punchy one-liner, not a paragraph.
 - Keep it safe and suitable for a public game.
 - No copyrighted franchises or references.
 `
@@ -53,7 +54,7 @@ Return JSON only:
 {
   "spell": {
     "name": "2-4 words",
-    "description": "20-60 words",
+    "description": "one vivid sentence, 8-18 words",
     "effectText": "one concise sentence",
     "schoolOfMagic": "short label, usually Martial",
     "manaCost": 0,
@@ -65,6 +66,7 @@ Rules:
 - This is a technique, not a spell.
 - Keep it practical and grounded in physical execution.
 - manaCost must be 0.
+- Make the description a single punchy one-liner, not a paragraph.
 - Keep it safe and suitable for a public game.
 - No copyrighted franchises or references.
 `
@@ -1317,6 +1319,64 @@ func buildPromptSpellProgressionFlavorDescription(
 	}
 }
 
+func promptSpellProgressionIntensityWord(targetLevel int) string {
+	switch {
+	case targetLevel >= 70:
+		return "cataclysmic"
+	case targetLevel >= 50:
+		return "surging"
+	case targetLevel >= 25:
+		return "focused"
+	default:
+		return "quick"
+	}
+}
+
+func buildPromptSpellProgressionVariantFlavorDescription(
+	seed *models.Spell,
+	primaryEffect models.SpellEffectType,
+	targetLevel int,
+	abilityType models.SpellAbilityType,
+) string {
+	intensity := promptSpellProgressionIntensityWord(targetLevel)
+	if abilityType == models.SpellAbilityTypeTechnique {
+		switch primaryEffect {
+		case models.SpellEffectTypeRestoreLifePartyMember:
+			return fmt.Sprintf("A %s recovery form steadies one ally and restores their tempo.", intensity)
+		case models.SpellEffectTypeRestoreLifeAllParty:
+			return fmt.Sprintf("A %s rallying cadence renews the whole party in one motion.", intensity)
+		case models.SpellEffectTypeApplyBeneficialStatus:
+			return fmt.Sprintf("A %s combat stance hardens allied resolve and sharpens their edge.", intensity)
+		case models.SpellEffectTypeRemoveDetrimental:
+			return fmt.Sprintf("A %s reset strips away pressure and restores the team's control.", intensity)
+		case models.SpellEffectTypeDealDamageAllEnemies:
+			return fmt.Sprintf("A %s sweeping technique tears through nearby enemies in one brutal pass.", intensity)
+		default:
+			return fmt.Sprintf("A %s combat technique drives concentrated force into a single enemy.", intensity)
+		}
+	}
+
+	school := "arcane"
+	if seed != nil && strings.TrimSpace(seed.SchoolOfMagic) != "" {
+		school = strings.ToLower(strings.TrimSpace(seed.SchoolOfMagic))
+	}
+
+	switch primaryEffect {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return fmt.Sprintf("A %s restorative pulse knits one ally back together in seconds.", intensity)
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return fmt.Sprintf("A %s healing surge sweeps through the party and renews everyone it touches.", intensity)
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		return fmt.Sprintf("A %s invocation fills allies with heightened focus and fearless momentum.", intensity)
+	case models.SpellEffectTypeRemoveDetrimental:
+		return fmt.Sprintf("A %s cleansing pulse strips away harmful effects and restores clarity.", intensity)
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		return fmt.Sprintf("A %s wave of %s force engulfs every nearby foe at once.", intensity, school)
+	default:
+		return fmt.Sprintf("A %s burst of %s power slams into one foe with ruthless force.", intensity, school)
+	}
+}
+
 func buildPromptSpellProgressionVariant(
 	seed *models.Spell,
 	seedBand int,
@@ -1339,7 +1399,7 @@ func buildPromptSpellProgressionVariant(
 	if abilityType == models.SpellAbilityTypeTechnique {
 		manaCost = 0
 	}
-	description := buildPromptSpellProgressionFlavorDescription(seed, primaryEffect, abilityType)
+	description := buildPromptSpellProgressionVariantFlavorDescription(seed, primaryEffect, targetLevel, abilityType)
 	emptyError := ""
 	now := time.Now()
 	return &models.Spell{

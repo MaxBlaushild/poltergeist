@@ -16,6 +16,11 @@ type scenarioHandle struct {
 	db *gorm.DB
 }
 
+type scenarioAdminListRow struct {
+	ID        uuid.UUID `gorm:"column:id"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
 func normalizeScenarioFailurePenaltyDefaults(scenario *models.Scenario) {
 	if scenario == nil {
 		return
@@ -177,6 +182,117 @@ func (h *scenarioHandle) FindAll(ctx context.Context) ([]models.Scenario, error)
 		return nil, err
 	}
 	return scenarios, nil
+}
+
+func (h *scenarioHandle) adminListBaseQuery(
+	ctx context.Context,
+	params ScenarioAdminListParams,
+	userID *uuid.UUID,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).
+		Model(&models.Scenario{}).
+		Where("scenarios.retired_at IS NULL").
+		Joins("LEFT JOIN zones ON zones.id = scenarios.zone_id")
+
+	if userID == nil {
+		query = query.Where("scenarios.owner_user_id IS NULL")
+	} else {
+		query = query.Where(
+			"(scenarios.owner_user_id IS NULL OR scenarios.owner_user_id = ?)",
+			*userID,
+		)
+	}
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			`(
+				LOWER(scenarios.prompt) LIKE ?
+				OR LOWER(CAST(scenarios.id AS text)) LIKE ?
+				OR LOWER(COALESCE(zones.name, '')) LIKE ?
+			)`,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
+		searchTerm := "%" + normalizedZoneQuery + "%"
+		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", searchTerm)
+	}
+
+	return query
+}
+
+func (h *scenarioHandle) ListAdmin(
+	ctx context.Context,
+	params ScenarioAdminListParams,
+	userID *uuid.UUID,
+) (*ScenarioAdminListResult, error) {
+	var total int64
+	if err := h.adminListBaseQuery(ctx, params, userID).
+		Distinct("scenarios.id").
+		Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []scenarioAdminListRow{}
+	if err := h.adminListBaseQuery(ctx, params, userID).
+		Select("scenarios.id, scenarios.updated_at").
+		Distinct().
+		Order("scenarios.updated_at DESC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	scenarios := make([]models.Scenario, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.Scenario{}
+		if err := h.preloadBase(ctx).
+			Where("scenarios.id IN ?", ids).
+			Where("scenarios.retired_at IS NULL").
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		byID := make(map[uuid.UUID]models.Scenario, len(loaded))
+		for _, scenario := range loaded {
+			byID[scenario.ID] = scenario
+		}
+		for _, id := range ids {
+			scenario, ok := byID[id]
+			if ok {
+				scenarios = append(scenarios, scenario)
+			}
+		}
+	}
+
+	attempted := map[uuid.UUID]bool{}
+	if userID != nil && len(ids) > 0 {
+		var attempts []models.UserScenarioAttempt
+		if err := h.db.WithContext(ctx).
+			Select("scenario_id").
+			Where("user_id = ? AND scenario_id IN ?", *userID, ids).
+			Find(&attempts).Error; err != nil {
+			return nil, err
+		}
+		for _, attempt := range attempts {
+			attempted[attempt.ScenarioID] = true
+		}
+	}
+
+	return &ScenarioAdminListResult{
+		Scenarios:         scenarios,
+		AttemptedByUserID: attempted,
+		Total:             total,
+	}, nil
 }
 
 func (h *scenarioHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error) {

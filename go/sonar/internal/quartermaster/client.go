@@ -157,7 +157,10 @@ func inventoryItemHasConfiguredConsumeEffects(item *models.InventoryItem) bool {
 	if item.ConsumeRevivePartyMemberHealth > 0 || item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
 		return true
 	}
-	return len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0 || len(item.ConsumeSpellIDs) > 0
+	return len(item.ConsumeStatusesToAdd) > 0 ||
+		len(item.ConsumeStatusesToRemove) > 0 ||
+		len(item.ConsumeSpellIDs) > 0 ||
+		len(item.ConsumeTeachRecipeIDs) > 0
 }
 
 func (c *client) applyConfiguredConsumeEffects(

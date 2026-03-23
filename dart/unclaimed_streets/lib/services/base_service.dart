@@ -91,6 +91,22 @@ class BaseService {
     return _api.post<Map<String, dynamic>>('/sonar/base/hearth/use');
   }
 
+  Future<BaseCraftingRecipesResponse> getCraftingRecipes(String station) async {
+    final data = await _api.get<Map<String, dynamic>>(
+      '/sonar/base/crafting/$station/recipes',
+    );
+    return BaseCraftingRecipesResponse.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> craftRecipe(
+    String station,
+    String recipeId,
+  ) async {
+    return _api.post<Map<String, dynamic>>(
+      '/sonar/base/crafting/$station/recipes/$recipeId/craft',
+    );
+  }
+
   Future<BaseProgressionSnapshot> moveRooms({
     required String anchorStructureKey,
     required List<String> structureKeys,

@@ -1,4 +1,5 @@
 import 'base.dart';
+import 'inventory_item.dart';
 
 class BaseResourceBalanceData {
   const BaseResourceBalanceData({
@@ -182,6 +183,126 @@ class BaseDailyEffectData {
           : raw is Map
           ? Map<String, dynamic>.from(raw)
           : const <String, dynamic>{},
+    );
+  }
+}
+
+class BaseCraftingIngredientData {
+  const BaseCraftingIngredientData({
+    required this.item,
+    required this.quantity,
+    required this.ownedQuantity,
+  });
+
+  final InventoryItem item;
+  final int quantity;
+  final int ownedQuantity;
+
+  factory BaseCraftingIngredientData.fromJson(Map<String, dynamic> json) {
+    final rawItem = json['item'];
+    return BaseCraftingIngredientData(
+      item: rawItem is Map<String, dynamic>
+          ? InventoryItem.fromJson(rawItem)
+          : rawItem is Map
+          ? InventoryItem.fromJson(Map<String, dynamic>.from(rawItem))
+          : const InventoryItem(
+              id: 0,
+              name: '',
+              imageUrl: '',
+              flavorText: '',
+              effectText: '',
+            ),
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      ownedQuantity: (json['ownedQuantity'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class BaseCraftingRecipeData {
+  const BaseCraftingRecipeData({
+    required this.id,
+    required this.station,
+    required this.tier,
+    required this.isPublic,
+    required this.known,
+    required this.canCraft,
+    required this.resultItem,
+    required this.ingredients,
+  });
+
+  final String id;
+  final String station;
+  final int tier;
+  final bool isPublic;
+  final bool known;
+  final bool canCraft;
+  final InventoryItem resultItem;
+  final List<BaseCraftingIngredientData> ingredients;
+
+  factory BaseCraftingRecipeData.fromJson(Map<String, dynamic> json) {
+    final rawResultItem = json['resultItem'];
+    final rawIngredients = json['ingredients'];
+    return BaseCraftingRecipeData(
+      id: json['id']?.toString() ?? '',
+      station: json['station']?.toString() ?? '',
+      tier: (json['tier'] as num?)?.toInt() ?? 0,
+      isPublic: json['isPublic'] == true,
+      known: json['known'] == true,
+      canCraft: json['canCraft'] == true,
+      resultItem: rawResultItem is Map<String, dynamic>
+          ? InventoryItem.fromJson(rawResultItem)
+          : rawResultItem is Map
+          ? InventoryItem.fromJson(Map<String, dynamic>.from(rawResultItem))
+          : const InventoryItem(
+              id: 0,
+              name: '',
+              imageUrl: '',
+              flavorText: '',
+              effectText: '',
+            ),
+      ingredients: rawIngredients is List
+          ? rawIngredients
+                .whereType<Map>()
+                .map(
+                  (entry) => BaseCraftingIngredientData.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .toList(growable: false)
+          : const <BaseCraftingIngredientData>[],
+    );
+  }
+}
+
+class BaseCraftingRecipesResponse {
+  const BaseCraftingRecipesResponse({
+    required this.station,
+    required this.roomKey,
+    required this.roomTier,
+    required this.recipes,
+  });
+
+  final String station;
+  final String roomKey;
+  final int roomTier;
+  final List<BaseCraftingRecipeData> recipes;
+
+  factory BaseCraftingRecipesResponse.fromJson(Map<String, dynamic> json) {
+    final rawRecipes = json['recipes'];
+    return BaseCraftingRecipesResponse(
+      station: json['station']?.toString() ?? '',
+      roomKey: json['roomKey']?.toString() ?? '',
+      roomTier: (json['roomTier'] as num?)?.toInt() ?? 0,
+      recipes: rawRecipes is List
+          ? rawRecipes
+                .whereType<Map>()
+                .map(
+                  (entry) => BaseCraftingRecipeData.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .toList(growable: false)
+          : const <BaseCraftingRecipeData>[],
     );
   }
 }

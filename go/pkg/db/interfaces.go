@@ -42,6 +42,7 @@ type DbClient interface {
 	Spell() SpellHandle
 	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
+	UserLearnedRecipe() UserLearnedRecipeHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	Tutorial() TutorialHandle
 	AuditItem() AuditItemHandle
@@ -397,8 +398,20 @@ type ScenarioTemplateHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplate, error)
 	FindAll(ctx context.Context) ([]models.ScenarioTemplate, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplate, error)
+	ListAdmin(ctx context.Context, params ScenarioTemplateAdminListParams) (*ScenarioTemplateAdminListResult, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.ScenarioTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ScenarioTemplateAdminListParams struct {
+	Page     int
+	PageSize int
+	Query    string
+}
+
+type ScenarioTemplateAdminListResult struct {
+	Templates []models.ScenarioTemplate
+	Total     int64
 }
 
 type ChallengeTemplateHandle interface {
@@ -463,6 +476,7 @@ type UserSpellHandle interface {
 type InventoryItemHandle interface {
 	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
 	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
+	CraftUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, ingredients []models.InventoryRecipeIngredient) error
 	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
@@ -477,6 +491,11 @@ type InventoryItemHandle interface {
 	FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
 	UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error
 	DeleteInventoryItem(ctx context.Context, id int) error
+}
+
+type UserLearnedRecipeHandle interface {
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserLearnedRecipe, error)
+	Upsert(ctx context.Context, recipe *models.UserLearnedRecipe) error
 }
 
 type NewUserStarterConfigHandle interface {
@@ -1159,6 +1178,7 @@ type ChallengeHandle interface {
 	Create(ctx context.Context, challenge *models.Challenge) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Challenge, error)
 	FindAll(ctx context.Context) ([]models.Challenge, error)
+	ListAdmin(ctx context.Context, params ChallengeAdminListParams) (*ChallengeAdminListResult, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)
@@ -1178,6 +1198,7 @@ type ScenarioHandle interface {
 	Create(ctx context.Context, scenario *models.Scenario) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Scenario, error)
 	FindAll(ctx context.Context) ([]models.Scenario, error)
+	ListAdmin(ctx context.Context, params ScenarioAdminListParams, userID *uuid.UUID) (*ScenarioAdminListResult, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Scenario, error)
@@ -1197,10 +1218,36 @@ type ScenarioHandle interface {
 	FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 }
 
+type ChallengeAdminListParams struct {
+	Page      int
+	PageSize  int
+	Query     string
+	ZoneQuery string
+}
+
+type ChallengeAdminListResult struct {
+	Challenges []models.Challenge
+	Total      int64
+}
+
+type ScenarioAdminListParams struct {
+	Page      int
+	PageSize  int
+	Query     string
+	ZoneQuery string
+}
+
+type ScenarioAdminListResult struct {
+	Scenarios         []models.Scenario
+	AttemptedByUserID map[uuid.UUID]bool
+	Total             int64
+}
+
 type MonsterHandle interface {
 	Create(ctx context.Context, monster *models.Monster) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Monster, error)
 	FindAll(ctx context.Context) ([]models.Monster, error)
+	ListAdmin(ctx context.Context, params MonsterAdminListParams) (*MonsterAdminListResult, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error)
 	CountByTemplateID(ctx context.Context, templateID uuid.UUID) (int64, error)
@@ -1213,6 +1260,7 @@ type MonsterEncounterHandle interface {
 	Create(ctx context.Context, encounter *models.MonsterEncounter) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterEncounter, error)
 	FindAll(ctx context.Context) ([]models.MonsterEncounter, error)
+	ListAdmin(ctx context.Context, params MonsterEncounterAdminListParams) (*MonsterEncounterAdminListResult, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.MonsterEncounter, error)
@@ -1233,9 +1281,50 @@ type MonsterTemplateHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterTemplate, error)
 	FindAll(ctx context.Context) ([]models.MonsterTemplate, error)
 	FindAllActive(ctx context.Context) ([]models.MonsterTemplate, error)
+	ListAdmin(ctx context.Context, params MonsterTemplateAdminListParams) (*MonsterTemplateAdminListResult, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceSpells(ctx context.Context, templateID uuid.UUID, spells []models.MonsterTemplateSpell) error
+}
+
+type MonsterTemplateAdminListParams struct {
+	Page        int
+	PageSize    int
+	Query       string
+	ZoneQuery   string
+	Archived    *bool
+	MonsterType string
+}
+
+type MonsterTemplateAdminListResult struct {
+	Templates     []models.MonsterTemplate
+	Total         int64
+	ActiveCount   int64
+	ArchivedCount int64
+}
+
+type MonsterAdminListParams struct {
+	Page      int
+	PageSize  int
+	Query     string
+	ZoneQuery string
+}
+
+type MonsterAdminListResult struct {
+	Monsters []models.Monster
+	Total    int64
+}
+
+type MonsterEncounterAdminListParams struct {
+	Page      int
+	PageSize  int
+	Query     string
+	ZoneQuery string
+}
+
+type MonsterEncounterAdminListResult struct {
+	Encounters []models.MonsterEncounter
+	Total      int64
 }
 
 type DocumentHandle interface {

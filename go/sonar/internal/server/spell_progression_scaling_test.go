@@ -8,10 +8,10 @@ import (
 )
 
 func TestSpellProgressionTargetAmountIncreasesWithBand(t *testing.T) {
-	damage10 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 10)
-	damage25 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 25)
-	damage50 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 50)
-	damage70 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 70)
+	damage10 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 10, models.SpellAbilityTypeSpell)
+	damage25 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 25, models.SpellAbilityTypeSpell)
+	damage50 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 50, models.SpellAbilityTypeSpell)
+	damage70 := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 70, models.SpellAbilityTypeSpell)
 
 	if !(damage10 < damage25 && damage25 < damage50 && damage50 < damage70) {
 		t.Fatalf(
@@ -36,7 +36,7 @@ func TestSpellProgressionDamageFollowsLevelBaseline(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, tc.level)
+		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, tc.level, models.SpellAbilityTypeSpell)
 		if actual != tc.expected {
 			t.Fatalf("expected damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
 		}
@@ -55,7 +55,7 @@ func TestSpellProgressionAllEnemiesDamageFollowsLevelBaseline(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamageAllEnemies, tc.level)
+		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamageAllEnemies, tc.level, models.SpellAbilityTypeSpell)
 		if actual != tc.expected {
 			t.Fatalf("expected all-enemies damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
 		}
@@ -63,8 +63,8 @@ func TestSpellProgressionAllEnemiesDamageFollowsLevelBaseline(t *testing.T) {
 }
 
 func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
-	level25 := scaleSpellProgressionCombatAmount(55, models.SpellEffectTypeDealDamage, 25, 25)
-	level70 := scaleSpellProgressionCombatAmount(55, models.SpellEffectTypeDealDamage, 25, 70)
+	level25 := scaleSpellProgressionCombatAmount(55, models.SpellEffectTypeDealDamage, 25, 25, models.SpellAbilityTypeSpell)
+	level70 := scaleSpellProgressionCombatAmount(55, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeSpell)
 
 	if level70 <= level25+80 {
 		t.Fatalf(
@@ -79,6 +79,7 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		models.SpellEffectTypeDealDamage,
 		25,
 		50,
+		models.SpellAbilityTypeSpell,
 	)
 	if level50FromSmallSeed < 180 {
 		t.Fatalf(
@@ -92,6 +93,7 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		models.SpellEffectTypeDealDamage,
 		25,
 		70,
+		models.SpellAbilityTypeSpell,
 	)
 	if level70FromSmallSeed < 320 {
 		t.Fatalf(
@@ -102,10 +104,10 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 }
 
 func TestSpellProgressionManaCostScalesByBand(t *testing.T) {
-	level10 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 10)
-	level25 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 25)
-	level50 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 50)
-	level70 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70)
+	level10 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 10, models.SpellAbilityTypeSpell)
+	level25 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 25, models.SpellAbilityTypeSpell)
+	level50 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 50, models.SpellAbilityTypeSpell)
+	level70 := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeSpell)
 
 	if !(level10 < level25 && level25 < level50 && level50 < level70) {
 		t.Fatalf(
@@ -129,14 +131,27 @@ func TestSpellProgressionManaCostScalesByBand(t *testing.T) {
 }
 
 func TestSpellProgressionAllEnemiesManaCostExceedsSingleTarget(t *testing.T) {
-	singleTarget := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70)
-	allEnemies := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamageAllEnemies, 25, 70)
+	singleTarget := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeSpell)
+	allEnemies := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamageAllEnemies, 25, 70, models.SpellAbilityTypeSpell)
 	if allEnemies <= singleTarget {
 		t.Fatalf(
 			"expected all-enemies mana to exceed single-target mana at level 70, got aoe=%d single=%d",
 			allEnemies,
 			singleTarget,
 		)
+	}
+}
+
+func TestTechniqueProgressionUsesLowerDamageTargetsAndZeroMana(t *testing.T) {
+	techniqueDamage := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 50, models.SpellAbilityTypeTechnique)
+	spellDamage := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 50, models.SpellAbilityTypeSpell)
+	if techniqueDamage >= spellDamage {
+		t.Fatalf("expected techniques to target lower damage than spells, got technique=%d spell=%d", techniqueDamage, spellDamage)
+	}
+
+	techniqueMana := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeTechnique)
+	if techniqueMana != 0 {
+		t.Fatalf("expected techniques to remain mana-free, got %d", techniqueMana)
 	}
 }
 
@@ -170,8 +185,64 @@ func TestBuildSpellProgressionVariantUsesBandTargetLevel(t *testing.T) {
 		},
 	}
 
-	variant := buildSpellProgressionVariant(seed, 25, 42, map[string]struct{}{})
+	variant := buildSpellProgressionVariant(seed, 25, 42, map[string]struct{}{}, models.SpellAbilityTypeSpell)
 	if variant.AbilityLevel != 50 {
 		t.Fatalf("expected variant level to match the target band level, got %d", variant.AbilityLevel)
+	}
+}
+
+func TestBuildSpellProgressionVariantUsesBandSpecificDescription(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		ManaCost:      12,
+		Effects: models.SpellEffects{
+			{
+				Type:   models.SpellEffectTypeDealDamage,
+				Amount: 60,
+			},
+		},
+	}
+
+	lowVariant := buildSpellProgressionVariant(seed, 25, 10, map[string]struct{}{}, models.SpellAbilityTypeSpell)
+	highVariant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, models.SpellAbilityTypeSpell)
+
+	if lowVariant.Description == highVariant.Description {
+		t.Fatalf("expected progression descriptions to vary by band, got %q", lowVariant.Description)
+	}
+	if !strings.Contains(strings.ToLower(lowVariant.Description), "quick") {
+		t.Fatalf("expected low-band description to read as lighter intensity, got %q", lowVariant.Description)
+	}
+	if !strings.Contains(strings.ToLower(highVariant.Description), "cataclysmic") {
+		t.Fatalf("expected high-band description to read as higher intensity, got %q", highVariant.Description)
+	}
+}
+
+func TestBuildTechniqueProgressionVariantUsesTechniqueRules(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Iron Current",
+		AbilityType:   models.SpellAbilityTypeTechnique,
+		SchoolOfMagic: "Martial",
+		ManaCost:      0,
+		Effects: models.SpellEffects{
+			{
+				Type:   models.SpellEffectTypeDealDamage,
+				Amount: 45,
+			},
+		},
+	}
+
+	variant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, models.SpellAbilityTypeTechnique)
+	if variant.AbilityType != models.SpellAbilityTypeTechnique {
+		t.Fatalf("expected technique variant ability type, got %s", variant.AbilityType)
+	}
+	if variant.ManaCost != 0 {
+		t.Fatalf("expected technique progression mana cost to remain 0, got %d", variant.ManaCost)
+	}
+	if !strings.Contains(strings.ToLower(variant.Description), "cataclysmic") {
+		t.Fatalf("expected technique description to retain band intensity, got %q", variant.Description)
+	}
+	if strings.Contains(strings.ToLower(variant.Name), "nova") {
+		t.Fatalf("expected technique naming, got %q", variant.Name)
 	}
 }

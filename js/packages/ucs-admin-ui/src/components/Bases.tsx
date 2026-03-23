@@ -67,9 +67,27 @@ type BaseStructureDefinition = {
   levelVisuals?: BaseStructureLevelVisual[];
 };
 
+type HearthRecoveryStatusTemplate = {
+  name: string;
+  description: string;
+  effect: string;
+  effectType: string;
+  positive: boolean;
+  damagePerTick: number;
+  healthPerTick: number;
+  manaPerTick: number;
+  durationSeconds: number;
+  strengthMod: number;
+  dexterityMod: number;
+  constitutionMod: number;
+  intelligenceMod: number;
+  wisdomMod: number;
+  charismaMod: number;
+};
+
 type HearthRecoveryDraft = {
-  level2Statuses: string;
-  level3Statuses: string;
+  level2Statuses: HearthRecoveryStatusTemplate[];
+  level3Statuses: HearthRecoveryStatusTemplate[];
 };
 
 type BaseGrassTileStatus = {
@@ -122,6 +140,76 @@ const ownerLabel = (record: BaseRecord) => {
   return record.userId;
 };
 
+const statusEffectTypes = [
+  'stat_modifier',
+  'damage_over_time',
+  'health_over_time',
+  'mana_over_time',
+] as const;
+
+const emptyHearthRecoveryStatus = (): HearthRecoveryStatusTemplate => ({
+  name: '',
+  description: '',
+  effect: '',
+  effectType: 'stat_modifier',
+  positive: true,
+  damagePerTick: 0,
+  healthPerTick: 0,
+  manaPerTick: 0,
+  durationSeconds: 60,
+  strengthMod: 0,
+  dexterityMod: 0,
+  constitutionMod: 0,
+  intelligenceMod: 0,
+  wisdomMod: 0,
+  charismaMod: 0,
+});
+
+const parseIntValue = (value: string, fallback = 0) => {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const coerceString = (value: unknown) =>
+  typeof value === 'string' ? value : '';
+
+const coerceNumber = (value: unknown, fallback = 0) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const coerceBoolean = (value: unknown, fallback = true) =>
+  typeof value === 'boolean' ? value : fallback;
+
+const normalizeHearthRecoveryStatus = (
+  value: unknown
+): HearthRecoveryStatusTemplate => {
+  if (!value || typeof value !== 'object') {
+    return emptyHearthRecoveryStatus();
+  }
+  const status = value as Record<string, unknown>;
+  return {
+    name: coerceString(status.name),
+    description: coerceString(status.description),
+    effect: coerceString(status.effect),
+    effectType: coerceString(status.effectType) || 'stat_modifier',
+    positive: coerceBoolean(status.positive, true),
+    damagePerTick: coerceNumber(status.damagePerTick),
+    healthPerTick: coerceNumber(status.healthPerTick),
+    manaPerTick: coerceNumber(status.manaPerTick),
+    durationSeconds: coerceNumber(status.durationSeconds, 60),
+    strengthMod: coerceNumber(status.strengthMod),
+    dexterityMod: coerceNumber(status.dexterityMod),
+    constitutionMod: coerceNumber(status.constitutionMod),
+    intelligenceMod: coerceNumber(status.intelligenceMod),
+    wisdomMod: coerceNumber(status.wisdomMod),
+    charismaMod: coerceNumber(status.charismaMod),
+  };
+};
+
+const normalizeHearthRecoveryStatuses = (
+  value: unknown
+): HearthRecoveryStatusTemplate[] =>
+  Array.isArray(value) ? value.map(normalizeHearthRecoveryStatus) : [];
+
 const secondaryOwnerLabel = (record: BaseRecord) => {
   const username = record.owner?.username?.trim();
   const name = record.owner?.name?.trim();
@@ -146,9 +234,6 @@ const buildGrassPromptForCell = (
   return `${trimmed} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
 };
 
-const stringifyStatusConfig = (value: unknown) =>
-  JSON.stringify(Array.isArray(value) ? value : [], null, 2);
-
 const hearthRecoveryDraftFromStructure = (
   structure: BaseStructureDefinition
 ): HearthRecoveryDraft => {
@@ -162,8 +247,8 @@ const hearthRecoveryDraftFromStructure = (
       ? (effectConfig.hearthRecoveryStatusesByLevel as Record<string, unknown>)
       : {};
   return {
-    level2Statuses: stringifyStatusConfig(byLevel['2']),
-    level3Statuses: stringifyStatusConfig(byLevel['3']),
+    level2Statuses: normalizeHearthRecoveryStatuses(byLevel['2']),
+    level3Statuses: normalizeHearthRecoveryStatuses(byLevel['3']),
   };
 };
 
@@ -204,30 +289,49 @@ export const Bases = () => {
     alt: string;
   } | null>(null);
   const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
-  const [regeneratingBaseId, setRegeneratingBaseId] = useState<string | null>(null);
+  const [regeneratingBaseId, setRegeneratingBaseId] = useState<string | null>(
+    null
+  );
   const [baseMessage, setBaseMessage] = useState<string | null>(null);
   const [descriptionJobsByBaseId, setDescriptionJobsByBaseId] = useState<
     Record<string, BaseDescriptionGenerationJob>
   >({});
   const [structures, setStructures] = useState<BaseStructureDefinition[]>([]);
   const [structureLoading, setStructureLoading] = useState(true);
-  const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<string | null>(
-    null
-  );
+  const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<
+    string | null
+  >(null);
   const [generatingTopDownRoomImageKey, setGeneratingTopDownRoomImageKey] =
     useState<string | null>(null);
-  const [savingStructurePromptId, setSavingStructurePromptId] = useState<string | null>(
-    null
-  );
+  const [savingStructurePromptId, setSavingStructurePromptId] = useState<
+    string | null
+  >(null);
   const [structurePromptDrafts, setStructurePromptDrafts] = useState<
     Record<string, { imagePrompt: string; topDownImagePrompt: string }>
   >({});
-  const [savingHearthRecoveryId, setSavingHearthRecoveryId] = useState<string | null>(
-    null
-  );
+  const [savingHearthRecoveryId, setSavingHearthRecoveryId] = useState<
+    string | null
+  >(null);
   const [hearthRecoveryDrafts, setHearthRecoveryDrafts] = useState<
     Record<string, HearthRecoveryDraft>
   >({});
+
+  const updateHearthRecoveryDraft = useCallback(
+    (
+      structure: BaseStructureDefinition,
+      updater: (draft: HearthRecoveryDraft) => HearthRecoveryDraft
+    ) => {
+      setHearthRecoveryDrafts((prev) => {
+        const current =
+          prev[structure.id] ?? hearthRecoveryDraftFromStructure(structure);
+        return {
+          ...prev,
+          [structure.id]: updater(current),
+        };
+      });
+    },
+    []
+  );
 
   const fetchBases = useCallback(async () => {
     try {
@@ -268,7 +372,9 @@ export const Bases = () => {
       } catch (err) {
         console.error('Failed to load base icon status', err);
         const message =
-          err instanceof Error ? err.message : 'Failed to load base icon status.';
+          err instanceof Error
+            ? err.message
+            : 'Failed to load base icon status.';
         setIconError(message);
       } finally {
         setIconStatusLoading(false);
@@ -339,7 +445,9 @@ export const Bases = () => {
       } catch (err) {
         console.error('Failed to load base grass tiles', err);
         const message =
-          err instanceof Error ? err.message : 'Failed to load base grass tiles.';
+          err instanceof Error
+            ? err.message
+            : 'Failed to load base grass tiles.';
         setGrassError(message);
       } finally {
         setGrassStatusLoading(false);
@@ -348,109 +456,146 @@ export const Bases = () => {
     [apiClient]
   );
 
-  const handleGenerateGrass = useCallback(async (keys?: string[]) => {
-    const targetKeys = Array.from(
-      new Set((keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean))
-    );
-    if (targetKeys.length === 0) {
-      setGrassError('Select at least one tile.');
-      return;
-    }
-    const runnableKeys = targetKeys.filter((key) => !grassBusyKeys.includes(key));
-    if (runnableKeys.length === 0) {
-      return;
-    }
-    try {
-      setGrassError(null);
-      setGrassMessage(null);
-      setGrassBusyKeys((prev) => Array.from(new Set([...prev, ...runnableKeys])));
-      const results = await Promise.allSettled(
-        runnableKeys.map(async (key) => {
-          const [gridXText, gridYText] = key.split(':');
-          const gridX = Number(gridXText);
-          const gridY = Number(gridYText);
-          await apiClient.post(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`, {
-            prompt: buildGrassPromptForCell(grassPrompt, gridX, gridY),
-          });
-          return key;
-        })
+  const handleGenerateGrass = useCallback(
+    async (keys?: string[]) => {
+      const targetKeys = Array.from(
+        new Set(
+          (keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean)
+        )
       );
-      const successCount = results.filter((result) => result.status === 'fulfilled').length;
-      const failedCount = results.length - successCount;
-      if (failedCount === 0) {
-        setGrassMessage(
-          successCount === 1
-            ? '1 grass tile queued for generation.'
-            : `${successCount} grass tiles queued for generation.`
+      if (targetKeys.length === 0) {
+        setGrassError('Select at least one tile.');
+        return;
+      }
+      const runnableKeys = targetKeys.filter(
+        (key) => !grassBusyKeys.includes(key)
+      );
+      if (runnableKeys.length === 0) {
+        return;
+      }
+      try {
+        setGrassError(null);
+        setGrassMessage(null);
+        setGrassBusyKeys((prev) =>
+          Array.from(new Set([...prev, ...runnableKeys]))
         );
-      } else {
-        setGrassMessage(
-          `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} queued, ${failedCount} failed.`
+        const results = await Promise.allSettled(
+          runnableKeys.map(async (key) => {
+            const [gridXText, gridYText] = key.split(':');
+            const gridX = Number(gridXText);
+            const gridY = Number(gridYText);
+            await apiClient.post(
+              `/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`,
+              {
+                prompt: buildGrassPromptForCell(grassPrompt, gridX, gridY),
+              }
+            );
+            return key;
+          })
+        );
+        const successCount = results.filter(
+          (result) => result.status === 'fulfilled'
+        ).length;
+        const failedCount = results.length - successCount;
+        if (failedCount === 0) {
+          setGrassMessage(
+            successCount === 1
+              ? '1 grass tile queued for generation.'
+              : `${successCount} grass tiles queued for generation.`
+          );
+        } else {
+          setGrassMessage(
+            `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} queued, ${failedCount} failed.`
+          );
+        }
+        await refreshGrassStatus();
+      } catch (err) {
+        console.error('Failed to generate base grass tile', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to generate base grass tile.';
+        setGrassError(message);
+      } finally {
+        setGrassBusyKeys((prev) =>
+          prev.filter((key) => !runnableKeys.includes(key))
         );
       }
-      await refreshGrassStatus();
-    } catch (err) {
-      console.error('Failed to generate base grass tile', err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to generate base grass tile.';
-      setGrassError(message);
-    } finally {
-      setGrassBusyKeys((prev) => prev.filter((key) => !runnableKeys.includes(key)));
-    }
-  }, [apiClient, grassBusyKeys, grassPrompt, refreshGrassStatus, selectedGrassKeys]);
+    },
+    [
+      apiClient,
+      grassBusyKeys,
+      grassPrompt,
+      refreshGrassStatus,
+      selectedGrassKeys,
+    ]
+  );
 
-  const handleDeleteGrass = useCallback(async (keys?: string[]) => {
-    const targetKeys = Array.from(
-      new Set((keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean))
-    );
-    if (targetKeys.length === 0) {
-      setGrassError('Select at least one tile.');
-      return;
-    }
-    const runnableKeys = targetKeys.filter((key) => !grassBusyKeys.includes(key));
-    if (runnableKeys.length === 0) {
-      return;
-    }
-    try {
-      setGrassError(null);
-      setGrassMessage(null);
-      setGrassBusyKeys((prev) => Array.from(new Set([...prev, ...runnableKeys])));
-      const results = await Promise.allSettled(
-        runnableKeys.map(async (key) => {
-          const [gridXText, gridYText] = key.split(':');
-          const gridX = Number(gridXText);
-          const gridY = Number(gridYText);
-          await apiClient.delete(`/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`);
-          return key;
-        })
+  const handleDeleteGrass = useCallback(
+    async (keys?: string[]) => {
+      const targetKeys = Array.from(
+        new Set(
+          (keys && keys.length > 0 ? keys : selectedGrassKeys).filter(Boolean)
+        )
       );
-      const successCount = results.filter((result) => result.status === 'fulfilled').length;
-      const failedCount = results.length - successCount;
-      if (failedCount === 0) {
-        setGrassMessage(
-          successCount === 1
-            ? '1 grass tile deleted.'
-            : `${successCount} grass tiles deleted.`
+      if (targetKeys.length === 0) {
+        setGrassError('Select at least one tile.');
+        return;
+      }
+      const runnableKeys = targetKeys.filter(
+        (key) => !grassBusyKeys.includes(key)
+      );
+      if (runnableKeys.length === 0) {
+        return;
+      }
+      try {
+        setGrassError(null);
+        setGrassMessage(null);
+        setGrassBusyKeys((prev) =>
+          Array.from(new Set([...prev, ...runnableKeys]))
         );
-      } else {
-        setGrassMessage(
-          `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} deleted, ${failedCount} failed.`
+        const results = await Promise.allSettled(
+          runnableKeys.map(async (key) => {
+            const [gridXText, gridYText] = key.split(':');
+            const gridX = Number(gridXText);
+            const gridY = Number(gridYText);
+            await apiClient.delete(
+              `/sonar/admin/thumbnails/base-grass/${gridX}/${gridY}`
+            );
+            return key;
+          })
+        );
+        const successCount = results.filter(
+          (result) => result.status === 'fulfilled'
+        ).length;
+        const failedCount = results.length - successCount;
+        if (failedCount === 0) {
+          setGrassMessage(
+            successCount === 1
+              ? '1 grass tile deleted.'
+              : `${successCount} grass tiles deleted.`
+          );
+        } else {
+          setGrassMessage(
+            `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} deleted, ${failedCount} failed.`
+          );
+        }
+        await refreshGrassStatus();
+      } catch (err) {
+        console.error('Failed to delete base grass tile', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to delete base grass tile.';
+        setGrassError(message);
+      } finally {
+        setGrassBusyKeys((prev) =>
+          prev.filter((key) => !runnableKeys.includes(key))
         );
       }
-      await refreshGrassStatus();
-    } catch (err) {
-      console.error('Failed to delete base grass tile', err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to delete base grass tile.';
-      setGrassError(message);
-    } finally {
-      setGrassBusyKeys((prev) => prev.filter((key) => !runnableKeys.includes(key)));
-    }
-  }, [apiClient, grassBusyKeys, refreshGrassStatus, selectedGrassKeys]);
+    },
+    [apiClient, grassBusyKeys, refreshGrassStatus, selectedGrassKeys]
+  );
 
   const handleDeleteBase = useCallback(
     async (record: BaseRecord) => {
@@ -504,8 +649,12 @@ export const Bases = () => {
         setRegeneratingBaseId(record.id);
         setError(null);
         setBaseMessage(null);
-        await apiClient.post(`/sonar/admin/bases/${record.id}/generate-description`);
-        setBaseMessage(`Queued base flavor generation for ${ownerLabel(record)}.`);
+        await apiClient.post(
+          `/sonar/admin/bases/${record.id}/generate-description`
+        );
+        setBaseMessage(
+          `Queued base flavor generation for ${ownerLabel(record)}.`
+        );
         await fetchDescriptionJobs();
       } catch (err) {
         console.error('Failed to queue base description generation', err);
@@ -524,10 +673,12 @@ export const Bases = () => {
   const fetchStructures = useCallback(async () => {
     try {
       setStructureLoading(true);
-      const response = await apiClient.get<{ structures?: BaseStructureDefinition[] }>(
-        '/sonar/admin/base-structures'
+      const response = await apiClient.get<{
+        structures?: BaseStructureDefinition[];
+      }>('/sonar/admin/base-structures');
+      setStructures(
+        Array.isArray(response?.structures) ? response.structures : []
       );
-      setStructures(Array.isArray(response?.structures) ? response.structures : []);
     } catch (err) {
       console.error('Failed to load base structures', err);
       setError('Failed to load base structures.');
@@ -549,7 +700,9 @@ export const Bases = () => {
         setStructures((prev) =>
           prev.map((record) => (record.id === structure.id ? updated : record))
         );
-        setBaseMessage(`Queued ${structure.name} level ${level} image generation.`);
+        setBaseMessage(
+          `Queued ${structure.name} level ${level} image generation.`
+        );
       } catch (err) {
         console.error('Failed to queue base room image generation', err);
         const message =
@@ -581,7 +734,10 @@ export const Bases = () => {
           `Queued ${structure.name} level ${level} top-down image generation.`
         );
       } catch (err) {
-        console.error('Failed to queue base room top-down image generation', err);
+        console.error(
+          'Failed to queue base room top-down image generation',
+          err
+        );
         const message =
           err instanceof Error
             ? err.message
@@ -597,9 +753,12 @@ export const Bases = () => {
   const handleSaveStructurePrompts = useCallback(
     async (structure: BaseStructureDefinition) => {
       const draft = structurePromptDrafts[structure.id] || {
-        imagePrompt: structure.imagePrompt || structure.resolvedImagePrompt || '',
+        imagePrompt:
+          structure.imagePrompt || structure.resolvedImagePrompt || '',
         topDownImagePrompt:
-          structure.topDownImagePrompt || structure.resolvedTopDownImagePrompt || '',
+          structure.topDownImagePrompt ||
+          structure.resolvedTopDownImagePrompt ||
+          '',
       };
       try {
         setSavingStructurePromptId(structure.id);
@@ -626,7 +785,9 @@ export const Bases = () => {
       } catch (err) {
         console.error('Failed to save base structure prompts', err);
         const message =
-          err instanceof Error ? err.message : 'Failed to save base structure prompts.';
+          err instanceof Error
+            ? err.message
+            : 'Failed to save base structure prompts.';
         setError(message);
       } finally {
         setSavingStructurePromptId(null);
@@ -638,23 +799,8 @@ export const Bases = () => {
   const handleSaveHearthRecovery = useCallback(
     async (structure: BaseStructureDefinition) => {
       const draft =
-        hearthRecoveryDrafts[structure.id] || hearthRecoveryDraftFromStructure(structure);
-      let level2Statuses: unknown;
-      let level3Statuses: unknown;
-      try {
-        level2Statuses = JSON.parse(draft.level2Statuses || '[]');
-        level3Statuses = JSON.parse(draft.level3Statuses || '[]');
-      } catch (err) {
-        setError('Hearth recovery statuses must be valid JSON arrays.');
-        setBaseMessage(null);
-        return;
-      }
-
-      if (!Array.isArray(level2Statuses) || !Array.isArray(level3Statuses)) {
-        setError('Hearth recovery statuses must be JSON arrays.');
-        setBaseMessage(null);
-        return;
-      }
+        hearthRecoveryDrafts[structure.id] ||
+        hearthRecoveryDraftFromStructure(structure);
 
       try {
         setSavingHearthRecoveryId(structure.id);
@@ -663,8 +809,8 @@ export const Bases = () => {
         const updated = await apiClient.put<BaseStructureDefinition>(
           `/sonar/admin/base-structures/${structure.id}/hearth-recovery-config`,
           {
-            level2Statuses,
-            level3Statuses,
+            level2Statuses: draft.level2Statuses,
+            level3Statuses: draft.level3Statuses,
           }
         );
         setStructures((prev) =>
@@ -678,13 +824,289 @@ export const Bases = () => {
       } catch (err) {
         console.error('Failed to save hearth recovery config', err);
         const message =
-          err instanceof Error ? err.message : 'Failed to save hearth recovery config.';
+          err instanceof Error
+            ? err.message
+            : 'Failed to save hearth recovery config.';
         setError(message);
       } finally {
         setSavingHearthRecoveryId(null);
       }
     },
     [apiClient, hearthRecoveryDrafts]
+  );
+
+  const renderHearthStatusEditor = (
+    structure: BaseStructureDefinition,
+    rankLabel: string,
+    statuses: HearthRecoveryStatusTemplate[],
+    statusKey: 'level2Statuses' | 'level3Statuses'
+  ) => (
+    <div className="rounded border border-gray-200 bg-gray-50 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{rankLabel}</div>
+          <div className="text-xs text-gray-600">
+            {statusKey === 'level2Statuses'
+              ? 'Applied starting at hearth rank 2.'
+              : 'Added on top at hearth rank 3.'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            updateHearthRecoveryDraft(structure, (draft) => ({
+              ...draft,
+              [statusKey]: [...draft[statusKey], emptyHearthRecoveryStatus()],
+            }))
+          }
+          className="rounded bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+        >
+          Add Status
+        </button>
+      </div>
+
+      {statuses.length === 0 ? (
+        <div className="rounded border border-dashed border-gray-300 bg-white px-3 py-4 text-sm text-gray-500">
+          No statuses configured.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {statuses.map((status, statusIndex) => (
+            <div
+              key={`${statusKey}-${statusIndex}`}
+              className="rounded border border-gray-200 bg-white p-3"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-gray-900">
+                  {status.name.trim() || `Status ${statusIndex + 1}`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateHearthRecoveryDraft(structure, (draft) => ({
+                      ...draft,
+                      [statusKey]: draft[statusKey].filter(
+                        (_, index) => index !== statusIndex
+                      ),
+                    }))
+                  }
+                  className="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Name
+                  <input
+                    value={status.name}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          name: event.target.value,
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700">
+                  Duration (seconds)
+                  <input
+                    value={status.durationSeconds}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          durationSeconds: parseIntValue(event.target.value, 0),
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    type="number"
+                    min={1}
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700">
+                  Effect Type
+                  <select
+                    value={status.effectType}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          effectType: event.target.value,
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    {statusEffectTypes.map((effectType) => (
+                      <option key={effectType} value={effectType}>
+                        {effectType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 pt-7 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={status.positive}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          positive: event.target.checked,
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                  />
+                  Positive status
+                </label>
+                <label className="text-sm font-medium text-gray-700 md:col-span-2">
+                  Description
+                  <input
+                    value={status.description}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          description: event.target.value,
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 md:col-span-2">
+                  Effect Text
+                  <input
+                    value={status.effect}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          effect: event.target.value,
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="text-sm font-medium text-gray-700">
+                  Damage / Tick
+                  <input
+                    value={status.damagePerTick}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          damagePerTick: parseIntValue(event.target.value, 0),
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    type="number"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700">
+                  Health / Tick
+                  <input
+                    value={status.healthPerTick}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          healthPerTick: parseIntValue(event.target.value, 0),
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    type="number"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700">
+                  Mana / Tick
+                  <input
+                    value={status.manaPerTick}
+                    onChange={(event) =>
+                      updateHearthRecoveryDraft(structure, (draft) => {
+                        const nextStatuses = [...draft[statusKey]];
+                        nextStatuses[statusIndex] = {
+                          ...nextStatuses[statusIndex],
+                          manaPerTick: parseIntValue(event.target.value, 0),
+                        };
+                        return { ...draft, [statusKey]: nextStatuses };
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    type="number"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-6">
+                {[
+                  ['strengthMod', 'STR'],
+                  ['dexterityMod', 'DEX'],
+                  ['constitutionMod', 'CON'],
+                  ['intelligenceMod', 'INT'],
+                  ['wisdomMod', 'WIS'],
+                  ['charismaMod', 'CHA'],
+                ].map(([field, label]) => (
+                  <label
+                    key={`${statusKey}-${statusIndex}-${field}`}
+                    className="text-xs font-medium text-gray-700"
+                  >
+                    {label}
+                    <input
+                      value={
+                        status[
+                          field as keyof HearthRecoveryStatusTemplate
+                        ] as number
+                      }
+                      onChange={(event) =>
+                        updateHearthRecoveryDraft(structure, (draft) => {
+                          const nextStatuses = [...draft[statusKey]];
+                          nextStatuses[statusIndex] = {
+                            ...nextStatuses[statusIndex],
+                            [field]: parseIntValue(event.target.value, 0),
+                          };
+                          return { ...draft, [statusKey]: nextStatuses };
+                        })
+                      }
+                      className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                      type="number"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 
   useEffect(() => {
@@ -747,13 +1169,14 @@ export const Bases = () => {
       ['queued', 'in_progress'].includes((job.status || '').toLowerCase())
     );
     const hasPendingRoomImages = structures.some((structure) =>
-      (structure.levelVisuals || []).some((visual) =>
-        ['queued', 'in_progress'].includes(
-          (visual.imageGenerationStatus || '').toLowerCase()
-        ) ||
-        ['queued', 'in_progress'].includes(
-          (visual.topDownImageGenerationStatus || '').toLowerCase()
-        )
+      (structure.levelVisuals || []).some(
+        (visual) =>
+          ['queued', 'in_progress'].includes(
+            (visual.imageGenerationStatus || '').toLowerCase()
+          ) ||
+          ['queued', 'in_progress'].includes(
+            (visual.topDownImageGenerationStatus || '').toLowerCase()
+          )
       )
     );
     if (!hasPendingJobs && !hasPendingRoomImages) {
@@ -765,7 +1188,13 @@ export const Bases = () => {
       void fetchStructures();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [descriptionJobsByBaseId, fetchBases, fetchDescriptionJobs, fetchStructures, structures]);
+  }, [
+    descriptionJobsByBaseId,
+    fetchBases,
+    fetchDescriptionJobs,
+    fetchStructures,
+    structures,
+  ]);
 
   if (loading) {
     return <div className="m-10">Loading bases...</div>;
@@ -785,7 +1214,8 @@ export const Bases = () => {
       ':',
       '-'
     )}.png`;
-  const selectedGrassStatus = (selectedGrassTile?.status || 'unknown').trim() || 'unknown';
+  const selectedGrassStatus =
+    (selectedGrassTile?.status || 'unknown').trim() || 'unknown';
   const selectedGrassExists = Boolean(selectedGrassTile?.exists);
   const selectedGrassRequestedAt = selectedGrassTile?.requestedAt || null;
   const selectedGrassLastModified = selectedGrassTile?.lastModified || null;
@@ -811,7 +1241,9 @@ export const Bases = () => {
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Base Pin Icon</h2>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Base Pin Icon
+            </h2>
             <p className="mt-1 text-xs text-gray-600">
               Requested: {formatDate(iconRequestedAt ?? undefined)}
             </p>
@@ -891,15 +1323,20 @@ export const Bases = () => {
         {iconMessage ? (
           <p className="mt-3 text-sm text-emerald-700">{iconMessage}</p>
         ) : null}
-        {iconError ? <p className="mt-3 text-sm text-red-700">{iconError}</p> : null}
+        {iconError ? (
+          <p className="mt-3 text-sm text-red-700">{iconError}</p>
+        ) : null}
       </section>
 
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Base Grass Tiles</h2>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Base Grass Tiles
+            </h2>
             <p className="mt-1 text-xs text-gray-600">
-              Click tiles to build a batch. The last tile you click is the one shown in the detail panel.
+              Click tiles to build a batch. The last tile you click is the one
+              shown in the detail panel.
             </p>
           </div>
           <button
@@ -938,21 +1375,25 @@ export const Bases = () => {
                       isSelected && isInBatch
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
                         : isSelected
-                        ? 'border-sky-500 bg-sky-50 text-sky-700'
-                        : isInBatch
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                          ? 'border-sky-500 bg-sky-50 text-sky-700'
+                          : isInBatch
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
                     }`}
                     title={`Tile (${gridX + 1}, ${gridY + 1})`}
                   >
-                    <span>{gridX + 1},{gridY + 1}</span>
+                    <span>
+                      {gridX + 1},{gridY + 1}
+                    </span>
                     <div className="mt-1 flex items-center gap-1">
                       <span
                         className={`h-2 w-2 rounded-full ${staticStatusClassName(
                           status
                         )}`}
                       />
-                      {isBusy ? <span className="text-[8px] uppercase">Q</span> : null}
+                      {isBusy ? (
+                        <span className="text-[8px] uppercase">Q</span>
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -1000,7 +1441,11 @@ export const Bases = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedGrassKeys(selectedGrassKey ? [selectedGrassKey] : [])}
+                  onClick={() =>
+                    setSelectedGrassKeys(
+                      selectedGrassKey ? [selectedGrassKey] : []
+                    )
+                  }
                   disabled={selectedGrassCount <= 1}
                   className="rounded bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -1025,7 +1470,8 @@ export const Bases = () => {
                 Requested: {formatDate(selectedGrassRequestedAt ?? undefined)}
               </p>
               <p className="text-xs text-gray-600">
-                Last updated: {formatDate(selectedGrassLastModified ?? undefined)}
+                Last updated:{' '}
+                {formatDate(selectedGrassLastModified ?? undefined)}
               </p>
             </div>
             <span
@@ -1044,7 +1490,9 @@ export const Bases = () => {
               disabled={grassBusyKeys.includes(selectedGrassKey)}
               className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {grassBusyKeys.includes(selectedGrassKey) ? 'Working...' : 'Generate Focused Tile'}
+              {grassBusyKeys.includes(selectedGrassKey)
+                ? 'Working...'
+                : 'Generate Focused Tile'}
             </button>
             <button
               type="button"
@@ -1052,7 +1500,9 @@ export const Bases = () => {
               disabled={grassBusyKeys.includes(selectedGrassKey)}
               className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {grassBusyKeys.includes(selectedGrassKey) ? 'Working...' : 'Delete Focused Tile'}
+              {grassBusyKeys.includes(selectedGrassKey)
+                ? 'Working...'
+                : 'Delete Focused Tile'}
             </button>
           </div>
 
@@ -1189,7 +1639,9 @@ export const Bases = () => {
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Base Room Images</h2>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Base Room Images
+            </h2>
             <p className="mt-1 text-xs text-gray-600">
               Queue level-by-level room art for the base management screen.
             </p>
@@ -1205,7 +1657,9 @@ export const Bases = () => {
         </div>
 
         {structureLoading ? (
-          <div className="mt-4 text-sm text-gray-500">Loading room images...</div>
+          <div className="mt-4 text-sm text-gray-500">
+            Loading room images...
+          </div>
         ) : structures.length === 0 ? (
           <div className="mt-4 text-sm text-gray-500">No base rooms found.</div>
         ) : (
@@ -1247,7 +1701,8 @@ export const Bases = () => {
                         Prompt Overrides
                       </h4>
                       <p className="mt-1 text-xs text-gray-600">
-                        These saved prompts will be used for future room image jobs.
+                        These saved prompts will be used for future room image
+                        jobs.
                       </p>
                     </div>
                     <button
@@ -1292,7 +1747,8 @@ export const Bases = () => {
                       Top-Down Prompt
                       <textarea
                         value={
-                          structurePromptDrafts[structure.id]?.topDownImagePrompt ??
+                          structurePromptDrafts[structure.id]
+                            ?.topDownImagePrompt ??
                           structure.resolvedTopDownImagePrompt ??
                           structure.topDownImagePrompt ??
                           ''
@@ -1325,9 +1781,8 @@ export const Bases = () => {
                           Hearth Recovery Effects
                         </h4>
                         <p className="mt-1 text-xs text-gray-600">
-                          Rank 2 applies level 2 statuses. Rank 3 applies both level 2 and
-                          level 3 statuses. Use the same status-template JSON shape as scenario
-                          success or failure statuses.
+                          Rank 2 applies these statuses. Rank 3 applies both
+                          rank 2 and rank 3 statuses.
                         </p>
                       </div>
                       <button
@@ -1342,50 +1797,22 @@ export const Bases = () => {
                       </button>
                     </div>
                     <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Rank 2 Statuses
-                        <textarea
-                          value={
-                            hearthRecoveryDrafts[structure.id]?.level2Statuses ??
-                            hearthRecoveryDraftFromStructure(structure).level2Statuses
-                          }
-                          onChange={(event) =>
-                            setHearthRecoveryDrafts((prev) => ({
-                              ...prev,
-                              [structure.id]: {
-                                level2Statuses: event.target.value,
-                                level3Statuses:
-                                  prev[structure.id]?.level3Statuses ??
-                                  hearthRecoveryDraftFromStructure(structure).level3Statuses,
-                              },
-                            }))
-                          }
-                          rows={12}
-                          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono text-sm"
-                        />
-                      </label>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Rank 3 Extra Statuses
-                        <textarea
-                          value={
-                            hearthRecoveryDrafts[structure.id]?.level3Statuses ??
-                            hearthRecoveryDraftFromStructure(structure).level3Statuses
-                          }
-                          onChange={(event) =>
-                            setHearthRecoveryDrafts((prev) => ({
-                              ...prev,
-                              [structure.id]: {
-                                level2Statuses:
-                                  prev[structure.id]?.level2Statuses ??
-                                  hearthRecoveryDraftFromStructure(structure).level2Statuses,
-                                level3Statuses: event.target.value,
-                              },
-                            }))
-                          }
-                          rows={12}
-                          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono text-sm"
-                        />
-                      </label>
+                      {renderHearthStatusEditor(
+                        structure,
+                        'Rank 2 Statuses',
+                        hearthRecoveryDrafts[structure.id]?.level2Statuses ??
+                          hearthRecoveryDraftFromStructure(structure)
+                            .level2Statuses,
+                        'level2Statuses'
+                      )}
+                      {renderHearthStatusEditor(
+                        structure,
+                        'Rank 3 Extra Statuses',
+                        hearthRecoveryDrafts[structure.id]?.level3Statuses ??
+                          hearthRecoveryDraftFromStructure(structure)
+                            .level3Statuses,
+                        'level3Statuses'
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -1393,7 +1820,9 @@ export const Bases = () => {
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {(structure.levelVisuals || []).map((visual) => {
                     const previewUrl =
-                      visual.thumbnailUrl?.trim() || visual.imageUrl?.trim() || '';
+                      visual.thumbnailUrl?.trim() ||
+                      visual.imageUrl?.trim() ||
+                      '';
                     const topDownPreviewUrl =
                       visual.topDownThumbnailUrl?.trim() ||
                       visual.topDownImageUrl?.trim() ||
@@ -1468,9 +1897,15 @@ export const Bases = () => {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  void handleGenerateRoomImage(structure, visual.level)
+                                  void handleGenerateRoomImage(
+                                    structure,
+                                    visual.level
+                                  )
                                 }
-                                disabled={generatingRoomImageKey === visualKey || isPending}
+                                disabled={
+                                  generatingRoomImageKey === visualKey ||
+                                  isPending
+                                }
                                 className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {generatingRoomImageKey === visualKey
@@ -1497,7 +1932,9 @@ export const Bases = () => {
                                 type="button"
                                 onClick={() =>
                                   setBaseImageLightbox({
-                                    src: visual.topDownImageUrl?.trim() || topDownPreviewUrl,
+                                    src:
+                                      visual.topDownImageUrl?.trim() ||
+                                      topDownPreviewUrl,
                                     alt: `${structure.name} level ${visual.level} top-down view`,
                                   })
                                 }
@@ -1560,111 +1997,114 @@ export const Bases = () => {
         ) : (
           records.map((record) => {
             const latestJob = descriptionJobsByBaseId[record.id];
-            const generatedImageUrl = (
+            const generatedImageUrl =
               record.imageUrl?.trim() ||
               latestJob?.generatedImageUrl?.trim() ||
-              ''
-            );
+              '';
             return (
               <div
                 key={record.id}
                 className="rounded border border-gray-200 bg-white p-4 shadow-sm"
               >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    {ownerLabel(record)}
-                  </h3>
-                  {secondaryOwnerLabel(record) ? (
-                    <p className="text-xs text-gray-500">
-                      {secondaryOwnerLabel(record)}
-                    </p>
-                  ) : null}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      {ownerLabel(record)}
+                    </h3>
+                    {secondaryOwnerLabel(record) ? (
+                      <p className="text-xs text-gray-500">
+                        {secondaryOwnerLabel(record)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Updated {formatDate(record.updatedAt)}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  Updated {formatDate(record.updatedAt)}
+                {generatedImageUrl ? (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBaseImageLightbox({
+                          src: generatedImageUrl,
+                          alt: `${ownerLabel(record)} base`,
+                        })
+                      }
+                      className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      title="Open large base image"
+                    >
+                      <img
+                        src={generatedImageUrl}
+                        alt={`${ownerLabel(record)} base`}
+                        className="h-40 w-full max-w-xs rounded object-cover"
+                      />
+                    </button>
+                  </div>
+                ) : record.thumbnailUrl?.trim() ? (
+                  <div className="mt-3">
+                    <img
+                      src={record.thumbnailUrl}
+                      alt={`${ownerLabel(record)} base`}
+                      className="h-28 w-28 rounded object-cover"
+                    />
+                  </div>
+                ) : null}
+                {record.description?.trim() ? (
+                  <p className="mt-3 text-sm leading-6 text-gray-700">
+                    {record.description.trim()}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm italic text-gray-500">
+                    No description generated yet.
+                  </p>
+                )}
+                {latestJob ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`rounded-full px-2 py-1 font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
+                        latestJob.status
+                      )}`}
+                    >
+                      {latestJob.status || 'unknown'}
+                    </span>
+                    <span className="text-gray-500">
+                      {formatDate(latestJob.updatedAt)}
+                    </span>
+                    {latestJob.errorMessage ? (
+                      <span className="text-red-700">
+                        {latestJob.errorMessage}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-3">
+                  <div>Latitude: {record.latitude.toFixed(6)}</div>
+                  <div>Longitude: {record.longitude.toFixed(6)}</div>
+                  <div>User ID: {record.userId}</div>
                 </div>
-              </div>
-              {generatedImageUrl ? (
-                <div className="mt-3">
+                <div className="mt-4 flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() =>
-                      setBaseImageLightbox({
-                        src: generatedImageUrl,
-                        alt: `${ownerLabel(record)} base`,
-                      })
-                    }
-                    className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    title="Open large base image"
+                    onClick={() => void handleRegenerateDescription(record)}
+                    disabled={regeneratingBaseId === record.id}
+                    className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <img
-                      src={generatedImageUrl}
-                      alt={`${ownerLabel(record)} base`}
-                      className="h-40 w-full max-w-xs rounded object-cover"
-                    />
+                    {regeneratingBaseId === record.id
+                      ? 'Queueing...'
+                      : 'Regenerate Flavor'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteBase(record)}
+                    disabled={deletingBaseId === record.id}
+                    className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingBaseId === record.id
+                      ? 'Deleting...'
+                      : 'Delete Base'}
                   </button>
                 </div>
-              ) : record.thumbnailUrl?.trim() ? (
-                <div className="mt-3">
-                  <img
-                    src={record.thumbnailUrl}
-                    alt={`${ownerLabel(record)} base`}
-                    className="h-28 w-28 rounded object-cover"
-                  />
-                </div>
-              ) : null}
-              {record.description?.trim() ? (
-                <p className="mt-3 text-sm leading-6 text-gray-700">
-                  {record.description.trim()}
-                </p>
-              ) : (
-                <p className="mt-3 text-sm italic text-gray-500">
-                  No description generated yet.
-                </p>
-              )}
-              {latestJob ? (
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                  <span
-                    className={`rounded-full px-2 py-1 font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
-                      latestJob.status
-                    )}`}
-                  >
-                    {latestJob.status || 'unknown'}
-                  </span>
-                  <span className="text-gray-500">
-                    {formatDate(latestJob.updatedAt)}
-                  </span>
-                  {latestJob.errorMessage ? (
-                    <span className="text-red-700">{latestJob.errorMessage}</span>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-3">
-                <div>Latitude: {record.latitude.toFixed(6)}</div>
-                <div>Longitude: {record.longitude.toFixed(6)}</div>
-                <div>User ID: {record.userId}</div>
-              </div>
-              <div className="mt-4 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleRegenerateDescription(record)}
-                  disabled={regeneratingBaseId === record.id}
-                  className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {regeneratingBaseId === record.id
-                    ? 'Queueing...'
-                    : 'Regenerate Flavor'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteBase(record)}
-                  disabled={deletingBaseId === record.id}
-                  className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {deletingBaseId === record.id ? 'Deleting...' : 'Delete Base'}
-                </button>
-              </div>
               </div>
             );
           })

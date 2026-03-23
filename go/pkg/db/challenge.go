@@ -16,6 +16,11 @@ type challengeHandle struct {
 	db *gorm.DB
 }
 
+type challengeAdminListRow struct {
+	ID        uuid.UUID `gorm:"column:id"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
 func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
@@ -60,6 +65,93 @@ func (h *challengeHandle) FindAll(ctx context.Context) ([]models.Challenge, erro
 		return nil, err
 	}
 	return challenges, nil
+}
+
+func (h *challengeHandle) adminListBaseQuery(
+	ctx context.Context,
+	params ChallengeAdminListParams,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).
+		Model(&models.Challenge{}).
+		Where("challenges.retired_at IS NULL").
+		Joins("LEFT JOIN zones ON zones.id = challenges.zone_id")
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			`(
+				LOWER(challenges.question) LIKE ?
+				OR LOWER(COALESCE(challenges.description, '')) LIKE ?
+				OR LOWER(CAST(challenges.id AS text)) LIKE ?
+				OR LOWER(COALESCE(zones.name, '')) LIKE ?
+			)`,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
+		searchTerm := "%" + normalizedZoneQuery + "%"
+		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", searchTerm)
+	}
+
+	return query
+}
+
+func (h *challengeHandle) ListAdmin(
+	ctx context.Context,
+	params ChallengeAdminListParams,
+) (*ChallengeAdminListResult, error) {
+	var total int64
+	if err := h.adminListBaseQuery(ctx, params).
+		Distinct("challenges.id").
+		Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []challengeAdminListRow{}
+	if err := h.adminListBaseQuery(ctx, params).
+		Select("challenges.id, challenges.updated_at").
+		Distinct().
+		Order("challenges.updated_at DESC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	challenges := make([]models.Challenge, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.Challenge{}
+		if err := h.preloadBase(ctx).
+			Where("challenges.id IN ?", ids).
+			Where("challenges.retired_at IS NULL").
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		byID := make(map[uuid.UUID]models.Challenge, len(loaded))
+		for _, challenge := range loaded {
+			byID[challenge.ID] = challenge
+		}
+		for _, id := range ids {
+			challenge, ok := byID[id]
+			if ok {
+				challenges = append(challenges, challenge)
+			}
+		}
+	}
+
+	return &ChallengeAdminListResult{
+		Challenges: challenges,
+		Total:      total,
+	}, nil
 }
 
 func (h *challengeHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error) {

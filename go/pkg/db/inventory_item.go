@@ -3,11 +3,13 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type inventoryItemHandler struct {
@@ -132,6 +134,88 @@ func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInvent
 	return nil
 }
 
+func (h *inventoryItemHandler) CraftUserInventoryItem(
+	ctx context.Context,
+	userID uuid.UUID,
+	inventoryItemID int,
+	ingredients []models.InventoryRecipeIngredient,
+) error {
+	if inventoryItemID <= 0 {
+		return errors.New("crafted inventory item ID is required")
+	}
+	if len(ingredients) == 0 {
+		return errors.New("at least one ingredient is required")
+	}
+
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ownedByIngredientID := make(map[int]*models.OwnedInventoryItem, len(ingredients))
+		for _, ingredient := range ingredients {
+			if ingredient.ItemID <= 0 || ingredient.Quantity <= 0 {
+				return errors.New("invalid crafting ingredient")
+			}
+
+			owned := &models.OwnedInventoryItem{}
+			err := tx.
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ? AND inventory_item_id = ?", userID, ingredient.ItemID).
+				First(owned).Error
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("missing ingredient item %d", ingredient.ItemID)
+				}
+				return err
+			}
+			if owned.Quantity < ingredient.Quantity {
+				return fmt.Errorf("insufficient quantity for ingredient item %d", ingredient.ItemID)
+			}
+			ownedByIngredientID[ingredient.ItemID] = owned
+		}
+
+		for _, ingredient := range ingredients {
+			owned := ownedByIngredientID[ingredient.ItemID]
+			if owned == nil {
+				return fmt.Errorf("missing ingredient item %d", ingredient.ItemID)
+			}
+			owned.Quantity -= ingredient.Quantity
+			if owned.Quantity <= 0 {
+				if err := tx.Delete(owned).Error; err != nil {
+					return err
+				}
+				if err := tx.
+					Where("owned_inventory_item_id = ?", owned.ID).
+					Delete(&models.UserEquipment{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Save(owned).Error; err != nil {
+				return err
+			}
+		}
+
+		crafted := &models.OwnedInventoryItem{}
+		err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND inventory_item_id = ?", userID, inventoryItemID).
+			First(crafted).Error
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			crafted = &models.OwnedInventoryItem{
+				ID:              uuid.New(),
+				UserID:          &userID,
+				InventoryItemID: inventoryItemID,
+				Quantity:        1,
+			}
+			return tx.Create(crafted).Error
+		}
+
+		crafted.Quantity += 1
+		return tx.Save(crafted).Error
+	})
+}
+
 func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
 	newEffect := models.MatchInventoryItemEffect{
 		ID:              uuid.New(),
@@ -155,6 +239,15 @@ func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *mo
 	if item != nil {
 		if item.ItemLevel <= 0 {
 			item.ItemLevel = 1
+		}
+		if item.ConsumeTeachRecipeIDs == nil {
+			item.ConsumeTeachRecipeIDs = models.StringArray{}
+		}
+		if item.AlchemyRecipes == nil {
+			item.AlchemyRecipes = models.InventoryRecipes{}
+		}
+		if item.WorkshopRecipes == nil {
+			item.WorkshopRecipes = models.InventoryRecipes{}
 		}
 		if item.ConsumeStatusesToRemove == nil {
 			item.ConsumeStatusesToRemove = models.StringArray{}
@@ -205,6 +298,15 @@ func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, 
 	}
 	if value, exists := updates["consume_spell_ids"]; exists && value == nil {
 		updates["consume_spell_ids"] = models.StringArray{}
+	}
+	if value, exists := updates["consume_teach_recipe_ids"]; exists && value == nil {
+		updates["consume_teach_recipe_ids"] = models.StringArray{}
+	}
+	if value, exists := updates["alchemy_recipes"]; exists && value == nil {
+		updates["alchemy_recipes"] = models.InventoryRecipes{}
+	}
+	if value, exists := updates["workshop_recipes"]; exists && value == nil {
+		updates["workshop_recipes"] = models.InventoryRecipes{}
 	}
 	if value, exists := updates["internal_tags"]; exists && value == nil {
 		updates["internal_tags"] = models.StringArray{}

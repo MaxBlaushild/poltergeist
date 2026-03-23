@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,13 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
+
+type paginatedChallengeResponse struct {
+	Items    []models.Challenge `json:"items"`
+	Total    int64              `json:"total"`
+	Page     int                `json:"page"`
+	PageSize int                `json:"pageSize"`
+}
 
 var challengeValidStatTags = map[string]struct{}{
 	"strength":     {},
@@ -203,6 +211,33 @@ func (s *server) getChallenges(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, challenges)
+}
+
+func (s *server) getAdminChallenges(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.Challenge().ListAdmin(ctx, db.ChallengeAdminListParams{
+		Page:      page,
+		PageSize:  pageSize,
+		Query:     ctx.Query("query"),
+		ZoneQuery: ctx.Query("zoneQuery"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, paginatedChallengeResponse{
+		Items:    result.Challenges,
+		Total:    result.Total,
+		Page:     page,
+		PageSize: pageSize,
+	})
 }
 
 func (s *server) getChallenge(ctx *gin.Context) {

@@ -14,6 +14,11 @@ type monsterHandle struct {
 	db *gorm.DB
 }
 
+type monsterAdminListRow struct {
+	ID   uuid.UUID `gorm:"column:id"`
+	Name string    `gorm:"column:name"`
+}
+
 func (h *monsterHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
@@ -74,6 +79,92 @@ func (h *monsterHandle) FindAll(ctx context.Context) ([]models.Monster, error) {
 		return nil, err
 	}
 	return monsters, nil
+}
+
+func (h *monsterHandle) adminListBaseQuery(
+	ctx context.Context,
+	params MonsterAdminListParams,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).
+		Model(&models.Monster{}).
+		Joins("LEFT JOIN zones ON zones.id = monsters.zone_id").
+		Joins("LEFT JOIN monster_templates ON monster_templates.id = monsters.template_id")
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			`(
+				LOWER(monsters.name) LIKE ?
+				OR LOWER(monsters.description) LIKE ?
+				OR LOWER(COALESCE(zones.name, '')) LIKE ?
+				OR LOWER(COALESCE(monster_templates.name, '')) LIKE ?
+			)`,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
+		zoneSearchTerm := "%" + normalizedZoneQuery + "%"
+		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", zoneSearchTerm)
+	}
+
+	return query
+}
+
+func (h *monsterHandle) ListAdmin(
+	ctx context.Context,
+	params MonsterAdminListParams,
+) (*MonsterAdminListResult, error) {
+	var total int64
+	if err := h.adminListBaseQuery(ctx, params).
+		Distinct("monsters.id").
+		Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []monsterAdminListRow{}
+	if err := h.adminListBaseQuery(ctx, params).
+		Select("monsters.id, monsters.name").
+		Distinct().
+		Order("monsters.name ASC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	monsters := make([]models.Monster, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.Monster{}
+		if err := h.preloadBase(ctx).
+			Where("monsters.id IN ?", ids).
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		monstersByID := make(map[uuid.UUID]models.Monster, len(loaded))
+		for _, monster := range loaded {
+			monstersByID[monster.ID] = monster
+		}
+		for _, id := range ids {
+			monster, ok := monstersByID[id]
+			if ok {
+				monsters = append(monsters, monster)
+			}
+		}
+	}
+
+	return &MonsterAdminListResult{
+		Monsters: monsters,
+		Total:    total,
+	}, nil
 }
 
 func (h *monsterHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error) {

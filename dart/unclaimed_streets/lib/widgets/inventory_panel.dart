@@ -162,7 +162,9 @@ class _InventoryPanelState extends State<InventoryPanel>
       final itemsFuture = svc.getInventoryItems();
       final ownedFuture = svc.getOwnedInventoryItems();
       final equipmentFuture = svc.getEquipment();
-      final baseResourcesFuture = context.read<BaseService>().getResourceBalances();
+      final baseResourcesFuture = context
+          .read<BaseService>()
+          .getResourceBalances();
       try {
         await authProvider.refresh();
       } catch (_) {}
@@ -220,8 +222,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   bool _shouldRefreshBaseResources() {
     final lastLoadedAt = _lastBaseResourcesLoadedAt;
     if (lastLoadedAt == null) return true;
-    return DateTime.now().difference(lastLoadedAt) >
-        const Duration(seconds: 5);
+    return DateTime.now().difference(lastLoadedAt) > const Duration(seconds: 5);
   }
 
   Future<void> _refreshBaseResources() async {
@@ -290,7 +291,8 @@ class _InventoryPanelState extends State<InventoryPanel>
         inv.consumeCreateBase ||
         inv.consumeStatusesToAdd.isNotEmpty ||
         inv.consumeStatusesToRemove.isNotEmpty ||
-        inv.consumeSpellIds.isNotEmpty;
+        inv.consumeSpellIds.isNotEmpty ||
+        inv.consumeTeachRecipeIds.isNotEmpty;
   }
 
   bool _isOutfitItem(InventoryItem inv) {
@@ -533,9 +535,7 @@ class _InventoryPanelState extends State<InventoryPanel>
         final accentColor = key == 'gold'
             ? Colors.amber.shade700
             : _materialAccentColor(key);
-        final icon = key == 'gold'
-            ? Icons.monetization_on
-            : _materialIcon(key);
+        final icon = key == 'gold' ? Icons.monetization_on : _materialIcon(key);
         return AlertDialog(
           title: Row(
             children: [
@@ -1000,7 +1000,7 @@ class _InventoryPanelState extends State<InventoryPanel>
       _error = null;
     });
     try {
-      await context.read<InventoryService>().useItem(owned.id);
+      final response = await context.read<InventoryService>().useItem(owned.id);
       if (!mounted) return;
       await context.read<AuthProvider>().refresh();
       if (!mounted) return;
@@ -1008,6 +1008,22 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await _load();
       if (!mounted) return;
+      final rawLearnedRecipes = response['learnedRecipes'];
+      final learnedNames = rawLearnedRecipes is List
+          ? rawLearnedRecipes
+                .whereType<Map>()
+                .map((entry) => entry['itemName']?.toString().trim() ?? '')
+                .where((entry) => entry.isNotEmpty)
+                .toList(growable: false)
+          : const <String>[];
+      if (rawLearnedRecipes is List && rawLearnedRecipes.isNotEmpty) {
+        final summary = learnedNames.isNotEmpty
+            ? learnedNames.join(', ')
+            : '${rawLearnedRecipes.length} new recipe${rawLearnedRecipes.length == 1 ? '' : 's'}';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Learned $summary.')));
+      }
       final shouldCloseAfterTutorialProgress =
           _wouldCompleteTutorialAfterAction(usedInventoryItemId: item?.id);
       final onTutorialProgressChanged = widget.onTutorialProgressChanged;
@@ -1849,6 +1865,13 @@ class _InventoryPanelState extends State<InventoryPanel>
           icon: Icons.auto_awesome,
           label:
               'Grants ${inv.consumeSpellIds.length} spell${inv.consumeSpellIds.length == 1 ? '' : 's'}',
+        ),
+      if (inv.consumeTeachRecipeIds.isNotEmpty)
+        _buildMetaChip(
+          context,
+          icon: Icons.menu_book_outlined,
+          label:
+              'Teaches ${inv.consumeTeachRecipeIds.length} recipe${inv.consumeTeachRecipeIds.length == 1 ? '' : 's'}',
         ),
     ];
 

@@ -280,3 +280,42 @@ func TestBuildPromptSpellProgressionVariantUsesBandTargetLevel(t *testing.T) {
 		t.Fatalf("expected variant level to match the target band level, got %d", variant.AbilityLevel)
 	}
 }
+
+func TestBuildPromptSpellProgressionVariantUsesBandSpecificDescription(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		ManaCost:      12,
+		Effects: models.SpellEffects{
+			{
+				Type:   models.SpellEffectTypeDealDamage,
+				Amount: 60,
+			},
+		},
+	}
+
+	lowVariant := buildPromptSpellProgressionVariant(
+		seed,
+		25,
+		10,
+		map[string]struct{}{},
+		models.SpellAbilityTypeSpell,
+	)
+	highVariant := buildPromptSpellProgressionVariant(
+		seed,
+		25,
+		70,
+		map[string]struct{}{},
+		models.SpellAbilityTypeSpell,
+	)
+
+	if lowVariant.Description == highVariant.Description {
+		t.Fatalf("expected prompt progression descriptions to vary by band, got %q", lowVariant.Description)
+	}
+	if !strings.Contains(strings.ToLower(lowVariant.Description), "quick") {
+		t.Fatalf("expected low-band description to read as lighter intensity, got %q", lowVariant.Description)
+	}
+	if !strings.Contains(strings.ToLower(highVariant.Description), "cataclysmic") {
+		t.Fatalf("expected high-band description to read as higher intensity, got %q", highVariant.Description)
+	}
+}

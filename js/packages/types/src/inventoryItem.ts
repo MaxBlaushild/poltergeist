@@ -12,6 +12,18 @@ export type InventoryConsumeStatus = {
   charismaMod: number;
 };
 
+export type InventoryRecipeIngredient = {
+  itemId: number;
+  quantity: number;
+};
+
+export type InventoryRecipe = {
+  id: string;
+  tier: number;
+  isPublic: boolean;
+  ingredients: InventoryRecipeIngredient[];
+};
+
 type DamageAffinity =
   | 'physical'
   | 'piercing'
@@ -67,6 +79,9 @@ export type InventoryItem = {
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];
+  consumeTeachRecipeIds?: string[];
+  alchemyRecipes?: InventoryRecipe[];
+  workshopRecipes?: InventoryRecipe[];
   internalTags?: string[];
   imageGenerationStatus?: string;
   imageGenerationError?: string;
@@ -75,12 +90,12 @@ export type InventoryItem = {
 };
 
 export enum Rarity {
-  Common = "Common",
-  Uncommon = "Uncommon",
-  Epic = "Epic",
-  Mythic = "Mythic",
-  NotDroppable = "Not Droppable"
-};
+  Common = 'Common',
+  Uncommon = 'Uncommon',
+  Epic = 'Epic',
+  Mythic = 'Mythic',
+  NotDroppable = 'Not Droppable',
+}
 
 export enum ItemType {
   CipherOfTheLaughingMonkey = 1,
@@ -92,34 +107,32 @@ export enum ItemType {
   RustedMusket = 7,
   GoldCoin = 8,
   Dagger = 9,
-	Damage = 10,
-	Entseed = 11,
-	Ale = 12,
+  Damage = 10,
+  Entseed = 11,
+  Ale = 12,
   Witchflame = 13,
   WickedSpellbook = 14,
   CompassOfPeace = 15,
-};
+}
 
 export const ItemsUsabledInMenu = [
-	ItemType.WickedSpellbook,
-	ItemType.CipherOfTheLaughingMonkey,
-	ItemType.CortezsCutlass,
-	ItemType.RustedMusket,
-	ItemType.Dagger,
-	ItemType.Ale,
+  ItemType.WickedSpellbook,
+  ItemType.CipherOfTheLaughingMonkey,
+  ItemType.CortezsCutlass,
+  ItemType.RustedMusket,
+  ItemType.Dagger,
+  ItemType.Ale,
 ];
 
 export const PointOfInterestEffectingItems = [
-	ItemType.CipherOfTheLaughingMonkey,
+  ItemType.CipherOfTheLaughingMonkey,
 ];
 
-export const ItemsUsabledOnPointOfInterest = [
-	ItemType.GoldenTelescope,
-];
+export const ItemsUsabledOnPointOfInterest = [ItemType.GoldenTelescope];
 
 export const ItemsRequiringTeamId = [
-	ItemType.WickedSpellbook,
-	ItemType.CortezsCutlass,
-	ItemType.RustedMusket,
-	ItemType.Dagger,
+  ItemType.WickedSpellbook,
+  ItemType.CortezsCutlass,
+  ItemType.RustedMusket,
+  ItemType.Dagger,
 ];

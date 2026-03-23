@@ -1,6 +1,8 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:dio/dio.dart';
 
 import '../models/base.dart';
 import '../models/base_progression.dart';
@@ -12,6 +14,7 @@ const Color _roomBorderColor = Color(0xFF7B5A3B);
 const Color _grassFallbackColor = Color(0xFF7AA65A);
 const Color _buildSlotPlusColor = Color(0xE6100C08);
 const String _hearthRecoveryStateKey = 'hearth_recovery';
+const Duration _hearthRecoveryCooldownDuration = Duration(days: 1);
 
 class BaseManagementScreen extends StatefulWidget {
   const BaseManagementScreen({super.key, required this.baseId});
@@ -188,75 +191,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     }
   }
 
-  Future<void> _destroyStructure(UserBaseStructureData structure) async {
-    setState(() {
-      _busyStructureKey = structure.structureKey;
-      _error = null;
-    });
-    try {
-      final nextSnapshot = await context.read<BaseService>().destroyStructure(
-        structure.structureKey,
-      );
-      if (!mounted) return;
-      setState(() {
-        _snapshot = nextSnapshot;
-        _busyStructureKey = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_friendlyStructureName(structure.structureKey)} destroyed.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busyStructureKey = null;
-        _error = e.toString();
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
-    }
-  }
-
-  Future<void> _confirmDestroyStructure(UserBaseStructureData structure) async {
-    final definition = _definitionForKey(structure.structureKey);
-    final roomName =
-        definition?.name ?? _friendlyStructureName(structure.structureKey);
-    final shouldDestroy = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: const Text('Destroy Room?'),
-          content: Text(
-            'Are you sure you want to destroy $roomName? This cannot be undone and may fail if it would leave your base disconnected.',
-            style: theme.textTheme.bodyMedium,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.error,
-                foregroundColor: theme.colorScheme.onError,
-              ),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Destroy Room'),
-            ),
-          ],
-        );
-      },
-    );
-    if (shouldDestroy == true) {
-      await _destroyStructure(structure);
-    }
-  }
-
   Future<void> _saveBaseDetails() async {
     if (_snapshot?.canManage != true) return;
     setState(() {
@@ -333,6 +267,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     return 'Your Base';
   }
 
+  String _displayBaseTitle(BasePin base) {
+    final explicitName = base.name.trim();
+    if (explicitName.isNotEmpty) {
+      return explicitName;
+    }
+    return _ownerBaseTitle(base);
+  }
+
   Widget buildHeaderTitle(ThemeData theme) {
     final snapshot = _snapshot;
     final base = snapshot?.base;
@@ -359,7 +301,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                   : (_) => _saveBaseDetails(),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: _ownerBaseTitle(base),
+                hintText: _displayBaseTitle(base),
               ),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
@@ -384,7 +326,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     return Text.rich(
       TextSpan(
         children: [
-          TextSpan(text: _ownerBaseTitle(base)),
+          TextSpan(text: _displayBaseTitle(base)),
           if (snapshot.canManage)
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
@@ -767,12 +709,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                 ? () async {
                     Navigator.of(context).pop(false);
                     await _mutateStructure(definition, true);
-                  }
-                : null,
-            onDestroy: _snapshot?.canManage == true
-                ? () async {
-                    Navigator.of(context).pop();
-                    await _confirmDestroyStructure(structure);
                   }
                 : null,
           ),
@@ -1682,7 +1618,7 @@ class _RoomFallbackLabel extends StatelessWidget {
   }
 }
 
-class _RoomDetailsSheet extends StatelessWidget {
+class _RoomDetailsSheet extends StatefulWidget {
   const _RoomDetailsSheet({
     required this.definition,
     required this.structure,
@@ -1698,7 +1634,6 @@ class _RoomDetailsSheet extends StatelessWidget {
     required this.hearthRecoveryInfo,
     required this.onUseHearth,
     required this.onUpgrade,
-    required this.onDestroy,
   });
 
   final BaseStructureDefinitionData definition;
@@ -1715,7 +1650,6 @@ class _RoomDetailsSheet extends StatelessWidget {
   final _HearthRecoveryInfo? hearthRecoveryInfo;
   final Future<void> Function()? onUseHearth;
   final Future<void> Function()? onUpgrade;
-  final Future<void> Function()? onDestroy;
 
   String get _visualUrl {
     if (visual != null && visual!.imageUrl.trim().isNotEmpty) {
@@ -1727,12 +1661,232 @@ class _RoomDetailsSheet extends StatelessWidget {
     return '';
   }
 
+  @override
+  State<_RoomDetailsSheet> createState() => _RoomDetailsSheetState();
+}
+
+class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
+  Timer? _cooldownTicker;
+  BaseCraftingRecipesResponse? _craftingData;
+  bool _loadingCrafting = false;
+  String? _craftingError;
+  String? _craftingRecipeId;
+
+  String? get _craftingStation {
+    switch (widget.structure.structureKey) {
+      case 'alchemy_lab':
+        return 'alchemy';
+      case 'workshop':
+        return 'workshop';
+      default:
+        return null;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncCooldownTicker();
+    _loadCraftingIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RoomDetailsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final current = widget.hearthRecoveryInfo;
+    final previous = oldWidget.hearthRecoveryInfo;
+    if (current?.availableNow != previous?.availableNow ||
+        current?.nextAvailableAt != previous?.nextAvailableAt) {
+      _syncCooldownTicker();
+    }
+    if (widget.structure.structureKey != oldWidget.structure.structureKey ||
+        widget.structure.level != oldWidget.structure.level ||
+        widget.canManage != oldWidget.canManage) {
+      _loadCraftingIfNeeded(force: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cooldownTicker?.cancel();
+    super.dispose();
+  }
+
+  void _syncCooldownTicker() {
+    final hearthInfo = widget.hearthRecoveryInfo;
+    final shouldTick =
+        hearthInfo != null &&
+        !hearthInfo.availableNow &&
+        hearthInfo.nextAvailableAt != null;
+    if (!shouldTick) {
+      _cooldownTicker?.cancel();
+      _cooldownTicker = null;
+      return;
+    }
+    _cooldownTicker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final nextAvailableAt = widget.hearthRecoveryInfo?.nextAvailableAt;
+      if (nextAvailableAt == null || !nextAvailableAt.isAfter(DateTime.now())) {
+        _cooldownTicker?.cancel();
+        _cooldownTicker = null;
+      }
+      setState(() {});
+    });
+  }
+
+  Future<void> _loadCraftingIfNeeded({bool force = false}) async {
+    final station = _craftingStation;
+    if (station == null || !widget.canManage) {
+      if (!mounted) return;
+      setState(() {
+        _craftingData = null;
+        _loadingCrafting = false;
+        _craftingError = null;
+      });
+      return;
+    }
+    if (!force && (_loadingCrafting || _craftingData != null)) {
+      return;
+    }
+    setState(() {
+      _loadingCrafting = true;
+      _craftingError = null;
+    });
+    try {
+      final data = await context.read<BaseService>().getCraftingRecipes(
+        station,
+      );
+      if (!mounted) return;
+      setState(() {
+        _craftingData = data;
+        _loadingCrafting = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingCrafting = false;
+        _craftingError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _craftRecipe(BaseCraftingRecipeData recipe) async {
+    final station = _craftingStation;
+    if (station == null || _craftingRecipeId != null) return;
+    setState(() {
+      _craftingRecipeId = recipe.id;
+      _craftingError = null;
+    });
+    try {
+      final response = await context.read<BaseService>().craftRecipe(
+        station,
+        recipe.id,
+      );
+      if (!mounted) return;
+      await _loadCraftingIfNeeded(force: true);
+      if (!mounted) return;
+      final craftedName = response['craftedItem'] is Map
+          ? ((response['craftedItem'] as Map)['name']?.toString() ?? '')
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            craftedName.isNotEmpty ? 'Crafted $craftedName.' : 'Crafted item.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _craftingError = e.toString();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _craftingRecipeId = null;
+        });
+      }
+    }
+  }
+
+  double _cooldownProgress(_HearthRecoveryInfo hearthInfo, Duration remaining) {
+    final totalDuration =
+        hearthInfo.lastUsedAt != null && hearthInfo.nextAvailableAt != null
+        ? hearthInfo.nextAvailableAt!.difference(hearthInfo.lastUsedAt!)
+        : _hearthRecoveryCooldownDuration;
+    final totalSeconds = totalDuration.inSeconds > 0
+        ? totalDuration.inSeconds
+        : _hearthRecoveryCooldownDuration.inSeconds;
+    final clampedRemaining = remaining.inSeconds.clamp(0, totalSeconds);
+    return 1 - (clampedRemaining / totalSeconds);
+  }
+
+  String _formatReadyAt(BuildContext context, DateTime dateTime) {
+    final localizations = MaterialLocalizations.of(context);
+    final use24HourFormat =
+        MediaQuery.maybeOf(context)?.alwaysUse24HourFormat ?? false;
+    final date = localizations.formatMediumDate(dateTime);
+    final time = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(dateTime),
+      alwaysUse24HourFormat: use24HourFormat,
+    );
+    return '$date at $time';
+  }
+
+  Widget _buildCooldownCard(
+    BuildContext context,
+    _HearthRecoveryInfo hearthInfo,
+    Duration remaining,
+    DateTime nextAvailableAt,
+  ) {
+    final theme = Theme.of(context);
+    final progress = _cooldownProgress(hearthInfo, remaining);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hearth Recharging',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: theme.colorScheme.surface,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Ready again ${_formatReadyAt(context, nextAvailableAt)}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCostBadge(BuildContext context, BaseStructureCostData cost) {
     final theme = Theme.of(context);
-    final available = resourceAmounts[cost.resourceKey] ?? 0;
+    final available = widget.resourceAmounts[cost.resourceKey] ?? 0;
     final hasEnough = available >= cost.amount;
     final accentColor = hasEnough
-        ? materialAccentColor(cost.resourceKey)
+        ? widget.materialAccentColor(cost.resourceKey)
         : theme.colorScheme.error;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1744,7 +1898,11 @@ class _RoomDetailsSheet extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(materialIcon(cost.resourceKey), size: 18, color: accentColor),
+          Icon(
+            widget.materialIcon(cost.resourceKey),
+            size: 18,
+            color: accentColor,
+          ),
           const SizedBox(width: 6),
           Text(
             '$available / ${cost.amount}',
@@ -1758,10 +1916,131 @@ class _RoomDetailsSheet extends StatelessWidget {
     );
   }
 
+  Widget _buildIngredientChip(
+    BuildContext context,
+    BaseCraftingIngredientData ingredient,
+  ) {
+    final theme = Theme.of(context);
+    final hasEnough = ingredient.ownedQuantity >= ingredient.quantity;
+    final color = hasEnough
+        ? theme.colorScheme.primary
+        : theme.colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.7)),
+      ),
+      child: Text(
+        '${ingredient.item.name}: ${ingredient.ownedQuantity}/${ingredient.quantity}',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCraftingCard(
+    BuildContext context,
+    BaseCraftingRecipeData recipe,
+  ) {
+    final theme = Theme.of(context);
+    final imageUrl = recipe.resultItem.imageUrl.trim();
+    final busy = _craftingRecipeId == recipe.id;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              _RoomFallbackLabel(title: recipe.resultItem.name),
+                        )
+                      : _RoomFallbackLabel(title: recipe.resultItem.name),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recipe.resultItem.name,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tier ${recipe.tier} ${recipe.isPublic ? 'Public' : 'Private'} Recipe',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: recipe.ingredients
+                .map((ingredient) => _buildIngredientChip(context, ingredient))
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: busy || !recipe.canCraft
+                  ? null
+                  : () => _craftRecipe(recipe),
+              child: busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(recipe.canCraft ? 'Craft' : 'Need Ingredients'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hearthInfo = hearthRecoveryInfo;
+    final hearthInfo = widget.hearthRecoveryInfo;
+    final nextAvailableAt = hearthInfo?.nextAvailableAt;
+    final remaining = nextAvailableAt?.difference(DateTime.now());
+    final cooldownActive =
+        hearthInfo != null &&
+        !hearthInfo.availableNow &&
+        remaining != null &&
+        !remaining.isNegative;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -1769,45 +2048,45 @@ class _RoomDetailsSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              definition.name,
+              widget.definition.name,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              'Level ${structure.level} of ${definition.maxLevel}',
+              'Level ${widget.structure.level} of ${widget.definition.maxLevel}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
-            if (_visualUrl.isNotEmpty)
+            if (widget._visualUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: AspectRatio(
                   aspectRatio: 1.4,
                   child: Image.network(
-                    _visualUrl,
+                    widget._visualUrl,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) =>
-                        _RoomFallbackLabel(title: definition.name),
+                        _RoomFallbackLabel(title: widget.definition.name),
                   ),
                 ),
               ),
-            if (_visualUrl.isEmpty) ...[
+            if (widget._visualUrl.isEmpty) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: SizedBox(
                   height: 180,
                   width: double.infinity,
-                  child: _RoomFallbackLabel(title: definition.name),
+                  child: _RoomFallbackLabel(title: widget.definition.name),
                 ),
               ),
             ],
             const SizedBox(height: 16),
             Text(
-              definition.description,
+              widget.definition.description,
               style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
             ),
             if (hearthInfo != null) ...[
@@ -1822,32 +2101,22 @@ class _RoomDetailsSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Daily Hearth Recovery',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      hearthInfo.availableNow
-                          ? hearthInfo.hearthLevel >= 3
-                                ? 'Fully recover once per day and gain the rank 2 and rank 3 hearth blessings.'
-                                : hearthInfo.hearthLevel >= 2
-                                ? 'Fully recover once per day and gain the rank 2 hearth blessings.'
-                                : 'Fully recover once per day at this hearth.'
-                          : hearthInfo.nextAvailableAt != null
-                          ? 'Already used today. Available again on ${hearthInfo.formattedNextAvailableAt}.'
-                          : 'Already used today.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    if (hearthInfo.lastUsedAt != null) ...[
-                      const SizedBox(height: 6),
+                    if (hearthInfo.availableNow)
                       Text(
-                        'Last used ${hearthInfo.formattedLastUsedAt}.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                        hearthInfo.hearthLevel >= 3
+                            ? 'Fully recover once per day and gain the rank 2 and rank 3 hearth blessings.'
+                            : hearthInfo.hearthLevel >= 2
+                            ? 'Fully recover once per day and gain the rank 2 hearth blessings.'
+                            : 'Fully recover once per day at this hearth.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    if (cooldownActive) ...[
+                      if (hearthInfo.availableNow) const SizedBox(height: 14),
+                      _buildCooldownCard(
+                        context,
+                        hearthInfo,
+                        remaining,
+                        nextAvailableAt!,
                       ),
                     ],
                     if (hearthInfo.statusesApplied > 0) ...[
@@ -1859,11 +2128,71 @@ class _RoomDetailsSheet extends StatelessWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonal(
+                        onPressed:
+                            widget.isBusy ||
+                                !hearthInfo.availableNow ||
+                                widget.onUseHearth == null
+                            ? null
+                            : () => widget.onUseHearth!.call(),
+                        child: widget.isBusy
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                hearthInfo.availableNow
+                                    ? 'Make Full Recovery'
+                                    : hearthInfo.nextAvailableAt != null
+                                    ? hearthInfo.formattedNextAvailableLabel
+                                    : 'Available Tomorrow',
+                              ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
-            if (costs.isNotEmpty) ...[
+            if (_craftingStation != null && widget.canManage) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Crafting',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_loadingCrafting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_craftingError != null)
+                Text(
+                  _craftingError!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                )
+              else if ((_craftingData?.recipes.isEmpty ?? true))
+                Text(
+                  'No recipes are available here yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                ..._craftingData!.recipes.map(
+                  (recipe) => _buildCraftingCard(context, recipe),
+                ),
+            ],
+            if (widget.costs.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
                 'Upgrade Cost',
@@ -1875,71 +2204,37 @@ class _RoomDetailsSheet extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: costs
+                children: widget.costs
                     .map((cost) => _buildCostBadge(context, cost))
                     .toList(),
               ),
+              if (widget.canManage && !widget.isMaxed) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed:
+                        widget.isBusy ||
+                            !widget.canAffordUpgrade ||
+                            widget.onUpgrade == null
+                        ? null
+                        : () => widget.onUpgrade!.call(),
+                    child: widget.isBusy
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            widget.canAffordUpgrade
+                                ? 'Upgrade Room'
+                                : 'Need More Materials',
+                          ),
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 18),
-            if (hearthInfo != null)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonal(
-                  onPressed:
-                      isBusy || !hearthInfo.availableNow || onUseHearth == null
-                      ? null
-                      : () => onUseHearth!.call(),
-                  child: isBusy
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          hearthInfo.availableNow
-                              ? 'Make Full Recovery'
-                              : hearthInfo.nextAvailableAt != null
-                              ? hearthInfo.formattedNextAvailableLabel
-                              : 'Available Tomorrow',
-                        ),
-                ),
-              ),
-            if (hearthInfo != null && canManage && !isMaxed)
-              const SizedBox(height: 10),
-            if (canManage && !isMaxed)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: isBusy || !canAffordUpgrade || onUpgrade == null
-                      ? null
-                      : () => onUpgrade!.call(),
-                  child: isBusy
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          canAffordUpgrade
-                              ? 'Upgrade Room'
-                              : 'Need More Materials',
-                        ),
-                ),
-              ),
-            if (canManage && onDestroy != null) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                    side: BorderSide(color: theme.colorScheme.error),
-                  ),
-                  onPressed: isBusy ? null : () => onDestroy!.call(),
-                  child: const Text('Destroy Room'),
-                ),
-              ),
-            ],
           ],
         ),
       ),

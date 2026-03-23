@@ -1197,7 +1197,81 @@ func firstSpellDamageAffinity(spell *models.Spell) string {
 	return ""
 }
 
-func spellProgressionBandTerm(effectType models.SpellEffectType, levelBand int) string {
+func spellProgressionBandTerm(
+	effectType models.SpellEffectType,
+	levelBand int,
+	abilityType models.SpellAbilityType,
+) string {
+	if abilityType == models.SpellAbilityTypeTechnique {
+		switch effectType {
+		case models.SpellEffectTypeRestoreLifePartyMember:
+			switch levelBand {
+			case 10:
+				return "Recovery Form"
+			case 25:
+				return "Renewal Form"
+			case 50:
+				return "Battle Recovery"
+			default:
+				return "Grand Recovery"
+			}
+		case models.SpellEffectTypeRestoreLifeAllParty:
+			switch levelBand {
+			case 10:
+				return "Rally Stance"
+			case 25:
+				return "Rally Formation"
+			case 50:
+				return "War Anthem"
+			default:
+				return "Legend Rally"
+			}
+		case models.SpellEffectTypeApplyBeneficialStatus:
+			switch levelBand {
+			case 10:
+				return "Guard Stance"
+			case 25:
+				return "Warden Form"
+			case 50:
+				return "Fortress Form"
+			default:
+				return "Unbroken Form"
+			}
+		case models.SpellEffectTypeRemoveDetrimental:
+			switch levelBand {
+			case 10:
+				return "Shake Off"
+			case 25:
+				return "Clear Focus"
+			case 50:
+				return "Iron Focus"
+			default:
+				return "Perfect Focus"
+			}
+		case models.SpellEffectTypeDealDamageAllEnemies:
+			switch levelBand {
+			case 10:
+				return "Sweeping Form"
+			case 25:
+				return "Cyclone Form"
+			case 50:
+				return "War Tempest"
+			default:
+				return "Master Tempest"
+			}
+		default:
+			switch levelBand {
+			case 10:
+				return "Strike"
+			case 25:
+				return "Assault"
+			case 50:
+				return "Onslaught"
+			default:
+				return "Mastery"
+			}
+		}
+	}
 	switch effectType {
 	case models.SpellEffectTypeRestoreLifePartyMember:
 		switch levelBand {
@@ -1323,13 +1397,25 @@ func spellProgressionBandRatio(levelBand int, ratios map[int]float64) float64 {
 	return ratios[25]
 }
 
-func spellProgressionTargetAmount(effectType models.SpellEffectType, levelBand int) int {
+func spellProgressionTargetAmount(
+	effectType models.SpellEffectType,
+	levelBand int,
+	abilityType models.SpellAbilityType,
+) int {
 	normalizedBand := normalizeSpellProgressionBand(levelBand)
 	if effectType == models.SpellEffectTypeDealDamage {
-		return spellMaxInt(1, normalizedBand*5)
+		damagePerLevel := 5
+		if abilityType == models.SpellAbilityTypeTechnique {
+			damagePerLevel = 4
+		}
+		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
 	if effectType == models.SpellEffectTypeDealDamageAllEnemies {
-		return spellMaxInt(1, normalizedBand*4)
+		damagePerLevel := 4
+		if abilityType == models.SpellAbilityTypeTechnique {
+			damagePerLevel = 3
+		}
+		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
 
 	health := estimateSpellProgressionMonsterHealth(levelBand)
@@ -1356,12 +1442,22 @@ func spellProgressionTargetAmount(effectType models.SpellEffectType, levelBand i
 	default:
 		return 0
 	}
+	if abilityType == models.SpellAbilityTypeTechnique {
+		ratio *= 0.78
+	}
 	target := int(math.Round(float64(health) * ratio))
 	return spellMaxInt(1, target)
 }
 
-func spellProgressionTargetDamagePerTick(levelBand int) int {
-	directDamageTarget := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, levelBand)
+func spellProgressionTargetDamagePerTick(
+	levelBand int,
+	abilityType models.SpellAbilityType,
+) int {
+	directDamageTarget := spellProgressionTargetAmount(
+		models.SpellEffectTypeDealDamage,
+		levelBand,
+		abilityType,
+	)
 	return spellMaxInt(1, int(math.Round(float64(directDamageTarget)*0.2)))
 }
 
@@ -1370,12 +1466,13 @@ func scaleSpellProgressionCombatAmount(
 	effectType models.SpellEffectType,
 	seedBand int,
 	targetBand int,
+	abilityType models.SpellAbilityType,
 ) int {
 	if base == 0 {
 		return 0
 	}
 	legacy := scaleSpellProgressionValue(base, seedBand, targetBand, 1.15)
-	target := spellProgressionTargetAmount(effectType, targetBand)
+	target := spellProgressionTargetAmount(effectType, targetBand, abilityType)
 	if target <= 0 {
 		return legacy
 	}
@@ -1391,12 +1488,17 @@ func scaleSpellProgressionCombatAmount(
 	return legacy
 }
 
-func scaleSpellProgressionDamagePerTick(base int, seedBand int, targetBand int) int {
+func scaleSpellProgressionDamagePerTick(
+	base int,
+	seedBand int,
+	targetBand int,
+	abilityType models.SpellAbilityType,
+) int {
 	if base == 0 {
 		return 0
 	}
 	legacy := scaleSpellProgressionValue(base, seedBand, targetBand, 1.05)
-	target := spellProgressionTargetDamagePerTick(targetBand)
+	target := spellProgressionTargetDamagePerTick(targetBand, abilityType)
 	if target <= 0 {
 		return legacy
 	}
@@ -1443,7 +1545,14 @@ func estimateSpellProgressionPlayerMaxMana(levelBand int) int {
 	return spellMaxInt(20, estimatedMana)
 }
 
-func spellProgressionTargetManaCost(effectType models.SpellEffectType, targetBand int) int {
+func spellProgressionTargetManaCost(
+	effectType models.SpellEffectType,
+	targetBand int,
+	abilityType models.SpellAbilityType,
+) int {
+	if abilityType == models.SpellAbilityTypeTechnique {
+		return 0
+	}
 	playerMana := estimateSpellProgressionPlayerMaxMana(targetBand)
 
 	switch effectType {
@@ -1532,12 +1641,16 @@ func scaleSpellProgressionManaCost(
 	effectType models.SpellEffectType,
 	seedBand int,
 	targetBand int,
+	abilityType models.SpellAbilityType,
 ) int {
+	if abilityType == models.SpellAbilityTypeTechnique {
+		return 0
+	}
 	if baseMana <= 0 {
 		return 0
 	}
 	legacy := scaleSpellProgressionValue(baseMana, seedBand, targetBand, 1.25)
-	target := spellProgressionTargetManaCost(effectType, targetBand)
+	target := spellProgressionTargetManaCost(effectType, targetBand, abilityType)
 	if target < 1 {
 		target = 1
 	}
@@ -1572,6 +1685,7 @@ func buildScaledSpellProgressionEffects(
 	seedEffects models.SpellEffects,
 	seedBand int,
 	targetBand int,
+	abilityType models.SpellAbilityType,
 ) models.SpellEffects {
 	if len(seedEffects) == 0 {
 		return models.SpellEffects{}
@@ -1581,7 +1695,7 @@ func buildScaledSpellProgressionEffects(
 	for _, effect := range seedEffects {
 		next := models.SpellEffect{
 			Type:             effect.Type,
-			Amount:           scaleSpellProgressionCombatAmount(effect.Amount, effect.Type, seedBand, targetBand),
+			Amount:           scaleSpellProgressionCombatAmount(effect.Amount, effect.Type, seedBand, targetBand, abilityType),
 			Hits:             effect.Hits,
 			StatusesToRemove: append(models.StringArray(nil), effect.StatusesToRemove...),
 			EffectData:       cloneSpellEffectData(effect.EffectData),
@@ -1595,9 +1709,9 @@ func buildScaledSpellProgressionEffects(
 			for _, status := range effect.StatusesToApply {
 				scaledStatus := status
 				scaledStatus.DurationSeconds = spellMaxInt(1, scaleSpellProgressionValue(status.DurationSeconds, seedBand, targetBand, 0.35))
-				scaledStatus.DamagePerTick = scaleSpellProgressionDamagePerTick(status.DamagePerTick, seedBand, targetBand)
-				scaledStatus.HealthPerTick = scaleSpellProgressionDamagePerTick(status.HealthPerTick, seedBand, targetBand)
-				scaledStatus.ManaPerTick = scaleSpellProgressionDamagePerTick(status.ManaPerTick, seedBand, targetBand)
+				scaledStatus.DamagePerTick = scaleSpellProgressionDamagePerTick(status.DamagePerTick, seedBand, targetBand, abilityType)
+				scaledStatus.HealthPerTick = scaleSpellProgressionDamagePerTick(status.HealthPerTick, seedBand, targetBand, abilityType)
+				scaledStatus.ManaPerTick = scaleSpellProgressionDamagePerTick(status.ManaPerTick, seedBand, targetBand, abilityType)
 				scaledStatus.StrengthMod = scaleSpellProgressionValue(status.StrengthMod, seedBand, targetBand, 0.4)
 				scaledStatus.DexterityMod = scaleSpellProgressionValue(status.DexterityMod, seedBand, targetBand, 0.4)
 				scaledStatus.ConstitutionMod = scaleSpellProgressionValue(status.ConstitutionMod, seedBand, targetBand, 0.4)
@@ -1730,24 +1844,94 @@ func buildSpellProgressionFlavorDescription(
 	}
 }
 
+func spellProgressionIntensityWord(targetLevel int) string {
+	switch {
+	case targetLevel >= 70:
+		return "cataclysmic"
+	case targetLevel >= 50:
+		return "surging"
+	case targetLevel >= 25:
+		return "focused"
+	default:
+		return "quick"
+	}
+}
+
+func buildSpellProgressionVariantFlavorDescription(
+	seed *models.Spell,
+	primaryEffect models.SpellEffectType,
+	targetLevel int,
+	abilityType models.SpellAbilityType,
+) string {
+	intensity := spellProgressionIntensityWord(targetLevel)
+	if abilityType == models.SpellAbilityTypeTechnique {
+		switch primaryEffect {
+		case models.SpellEffectTypeRestoreLifePartyMember:
+			return fmt.Sprintf("A %s recovery form steadies one ally and restores their tempo.", intensity)
+		case models.SpellEffectTypeRestoreLifeAllParty:
+			return fmt.Sprintf("A %s rallying cadence renews the whole party in one motion.", intensity)
+		case models.SpellEffectTypeApplyBeneficialStatus:
+			return fmt.Sprintf("A %s combat stance hardens allied resolve and sharpens their edge.", intensity)
+		case models.SpellEffectTypeApplyDetrimentalStatus:
+			return fmt.Sprintf("A %s martial pressure point disrupts one foe's rhythm and balance.", intensity)
+		case models.SpellEffectTypeApplyDetrimentalAll:
+			return fmt.Sprintf("A %s sweeping technique throws every nearby foe off balance at once.", intensity)
+		case models.SpellEffectTypeRemoveDetrimental:
+			return fmt.Sprintf("A %s reset strips away pressure and restores the team's control.", intensity)
+		case models.SpellEffectTypeDealDamageAllEnemies:
+			return fmt.Sprintf("A %s sweeping technique tears through nearby enemies in one brutal pass.", intensity)
+		default:
+			return fmt.Sprintf("A %s combat technique drives concentrated force into a single enemy.", intensity)
+		}
+	}
+
+	school := "arcane"
+	if seed != nil && strings.TrimSpace(seed.SchoolOfMagic) != "" {
+		school = strings.ToLower(strings.TrimSpace(seed.SchoolOfMagic))
+	}
+
+	switch primaryEffect {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return fmt.Sprintf("A %s restorative pulse swiftly mends one ally and steadies their footing.", intensity)
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return fmt.Sprintf("A %s healing surge washes over the party and renews battered allies.", intensity)
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		return fmt.Sprintf("A %s invocation floods allies with sharpened focus and battle-ready resolve.", intensity)
+	case models.SpellEffectTypeApplyDetrimentalStatus:
+		return fmt.Sprintf("A %s hex settles onto one foe and steadily undermines their strength.", intensity)
+	case models.SpellEffectTypeApplyDetrimentalAll:
+		return fmt.Sprintf("A %s curse spills across the field and burdens every enemy it reaches.", intensity)
+	case models.SpellEffectTypeRemoveDetrimental:
+		return fmt.Sprintf("A %s cleansing pulse tears away harmful effects and restores control.", intensity)
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		return fmt.Sprintf("A %s wave of %s force erupts outward and engulfs every nearby foe.", intensity, school)
+	default:
+		return fmt.Sprintf("A %s blast of %s power crashes into one foe with punishing force.", intensity, school)
+	}
+}
+
 func buildSpellProgressionVariant(
 	seed *models.Spell,
 	seedBand int,
 	targetBand int,
 	usedNames map[string]struct{},
+	abilityType models.SpellAbilityType,
 ) *models.Spell {
 	targetLevel := spellProgressionTargetLevelForBand(targetBand)
 	primaryEffect := spellProgressionPrimaryEffectType(seed)
 	theme := spellProgressionTheme(seed)
-	bandTerm := spellProgressionBandTerm(primaryEffect, targetLevel)
+	bandTerm := spellProgressionBandTerm(primaryEffect, targetLevel, abilityType)
 	name := nextUniqueAbilityName(
 		fmt.Sprintf("%s %s", theme, bandTerm),
 		usedNames,
-		models.SpellAbilityTypeSpell,
+		abilityType,
 	)
-	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel)
-	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetLevel)
-	description := buildSpellProgressionFlavorDescription(seed, primaryEffect)
+	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel, abilityType)
+	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetLevel, abilityType)
+	if abilityType == models.SpellAbilityTypeTechnique {
+		manaCost = 0
+	}
+	description := buildSpellProgressionVariantFlavorDescription(seed, primaryEffect, targetLevel, abilityType)
 	emptyError := ""
 	now := time.Now()
 	return &models.Spell{
@@ -1759,11 +1943,11 @@ func buildSpellProgressionVariant(
 		IconURL:               "",
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
-		AbilityType:           models.SpellAbilityTypeSpell,
+		AbilityType:           abilityType,
 		AbilityLevel:          targetLevel,
 		EffectText:            buildSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
-		ManaCost:              spellMaxInt(manaCost, 1),
+		ManaCost:              manaCost,
 		Effects:               effects,
 	}
 }
@@ -2218,6 +2402,381 @@ func (s *server) generateTechniqueIcon(ctx *gin.Context) {
 	s.generateSpellIconForType(ctx, "technique", &abilityType)
 }
 
+type abilityTomePricingTier struct {
+	levelMax int
+	rarity   string
+	buyPrice int
+}
+
+var abilityTomePricingTiers = []abilityTomePricingTier{
+	{levelMax: 15, rarity: "Common", buyPrice: 150},
+	{levelMax: 30, rarity: "Uncommon", buyPrice: 350},
+	{levelMax: 50, rarity: "Epic", buyPrice: 900},
+	{levelMax: 100, rarity: "Mythic", buyPrice: 1800},
+}
+
+var abilityTomeStopwords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "as": {}, "at": {}, "by": {}, "for": {}, "from": {},
+	"in": {}, "into": {}, "of": {}, "on": {}, "or": {}, "that": {}, "the": {}, "their": {},
+	"through": {}, "to": {}, "up": {}, "with": {}, "your": {}, "one": {}, "all": {},
+}
+
+func abilityTomePricingTierForLevel(level int) abilityTomePricingTier {
+	if level < 1 {
+		level = 1
+	}
+	for _, tier := range abilityTomePricingTiers {
+		if level <= tier.levelMax {
+			return tier
+		}
+	}
+	return abilityTomePricingTiers[len(abilityTomePricingTiers)-1]
+}
+
+func tokenizeAbilityTomeText(value string) []string {
+	rawWords := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(value)), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	words := make([]string, 0, len(rawWords))
+	for _, word := range rawWords {
+		trimmed := strings.TrimSpace(word)
+		if trimmed == "" {
+			continue
+		}
+		words = append(words, trimmed)
+	}
+	return words
+}
+
+func abilityTomeKeywords(value string, maxWords int) []string {
+	if maxWords <= 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	keywords := make([]string, 0, maxWords)
+	for _, word := range tokenizeAbilityTomeText(value) {
+		if _, skip := abilityTomeStopwords[word]; skip {
+			continue
+		}
+		if _, exists := seen[word]; exists {
+			continue
+		}
+		seen[word] = struct{}{}
+		keywords = append(keywords, word)
+		if len(keywords) >= maxWords {
+			break
+		}
+	}
+	if len(keywords) > 0 {
+		return keywords
+	}
+	words := tokenizeAbilityTomeText(value)
+	if len(words) > maxWords {
+		return words[:maxWords]
+	}
+	return words
+}
+
+func abilityTomeCoverAdjective(ability *models.Spell) string {
+	if ability == nil {
+		return "weathered"
+	}
+	name := strings.ToLower(strings.TrimSpace(ability.Name))
+	school := strings.ToLower(strings.TrimSpace(ability.SchoolOfMagic))
+	switch {
+	case strings.Contains(name, "ember") || strings.Contains(name, "fire") || strings.Contains(school, "pyro"):
+		return "soot-dark"
+	case strings.Contains(name, "frost") || strings.Contains(name, "ice") || strings.Contains(school, "cryo"):
+		return "rime-lined"
+	case strings.Contains(name, "storm") || strings.Contains(name, "lightning") || strings.Contains(school, "tempest"):
+		return "storm-creased"
+	case strings.Contains(name, "shadow") || strings.Contains(name, "night") || strings.Contains(school, "shadow") || strings.Contains(school, "umbral"):
+		return "shadow-inked"
+	case strings.Contains(name, "radiant") || strings.Contains(name, "solar") || strings.Contains(school, "radiance") || strings.Contains(school, "holy"):
+		return "gold-filigreed"
+	case normalizeSpellAbilityType(string(ability.AbilityType)) == models.SpellAbilityTypeTechnique:
+		return "weathered"
+	default:
+		return "vellum-bound"
+	}
+}
+
+func buildAbilityTomeDescription(ability *models.Spell) string {
+	abilityType := normalizeSpellAbilityType(string(ability.AbilityType))
+	bookType := "grimoire"
+	binding := "aged leather"
+	detailSuffix := "sketches"
+	if abilityType == models.SpellAbilityTypeTechnique {
+		bookType = "manual"
+		binding = "corded canvas"
+		detailSuffix = "diagrams"
+	}
+
+	coverKeywords := abilityTomeKeywords(ability.Name, 2)
+	coverStamp := strings.Join(coverKeywords, "-")
+	if coverStamp == "" {
+		if abilityType == models.SpellAbilityTypeTechnique {
+			coverStamp = "drilled"
+		} else {
+			coverStamp = "runed"
+		}
+	}
+
+	detailSource := strings.TrimSpace(ability.Description)
+	if detailSource == "" {
+		detailSource = strings.TrimSpace(ability.EffectText)
+	}
+	detailKeywords := abilityTomeKeywords(detailSource, 3)
+	detailPhrase := strings.Join(detailKeywords, " ")
+	if detailPhrase == "" {
+		if abilityType == models.SpellAbilityTypeTechnique {
+			detailPhrase = "sparring notes"
+		} else {
+			detailPhrase = "arcane notes"
+		}
+	}
+
+	return fmt.Sprintf(
+		"A %s %s bound in %s, its cover stamped with %s flourishes and its margins crowded with %s %s.",
+		abilityTomeCoverAdjective(ability),
+		bookType,
+		binding,
+		coverStamp,
+		detailPhrase,
+		detailSuffix,
+	)
+}
+
+func buildAbilityTomeItem(ability *models.Spell) *models.InventoryItem {
+	level := 1
+	if ability != nil && ability.AbilityLevel > 0 {
+		level = ability.AbilityLevel
+	}
+	tier := abilityTomePricingTierForLevel(level)
+	abilityType := normalizeSpellAbilityType(string(ability.AbilityType))
+	internalTags := models.StringArray{
+		"tome",
+		"ability_tome",
+		fmt.Sprintf("%s_tome", abilityType),
+	}
+	return &models.InventoryItem{
+		Name:                    fmt.Sprintf("Tome of %s.", strings.TrimSpace(ability.Name)),
+		FlavorText:              buildAbilityTomeDescription(ability),
+		EffectText:              fmt.Sprintf("Consume to learn %s.", strings.TrimSpace(ability.Name)),
+		RarityTier:              tier.rarity,
+		BuyPrice:                intPtr(tier.buyPrice),
+		ItemLevel:               level,
+		ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
+		ConsumeStatusesToRemove: models.StringArray{},
+		ConsumeSpellIDs:         models.StringArray{ability.ID.String()},
+		ConsumeTeachRecipeIDs:   models.StringArray{},
+		AlchemyRecipes:          models.InventoryRecipes{},
+		WorkshopRecipes:         models.InventoryRecipes{},
+		InternalTags:            internalTags,
+		ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
+	}
+}
+
+func abilityTomeUpdateMap(item *models.InventoryItem) map[string]interface{} {
+	return map[string]interface{}{
+		"archived":                           false,
+		"name":                               item.Name,
+		"flavor_text":                        item.FlavorText,
+		"effect_text":                        item.EffectText,
+		"rarity_tier":                        item.RarityTier,
+		"buy_price":                          item.BuyPrice,
+		"unlock_tier":                        nil,
+		"unlock_locks_strength":              nil,
+		"item_level":                         item.ItemLevel,
+		"equip_slot":                         nil,
+		"strength_mod":                       0,
+		"dexterity_mod":                      0,
+		"constitution_mod":                   0,
+		"intelligence_mod":                   0,
+		"wisdom_mod":                         0,
+		"charisma_mod":                       0,
+		"hand_item_category":                 nil,
+		"handedness":                         nil,
+		"damage_min":                         nil,
+		"damage_max":                         nil,
+		"damage_affinity":                    nil,
+		"swipes_per_attack":                  nil,
+		"block_percentage":                   nil,
+		"damage_blocked":                     nil,
+		"spell_damage_bonus_percent":         nil,
+		"consume_health_delta":               0,
+		"consume_mana_delta":                 0,
+		"consume_revive_party_member_health": 0,
+		"consume_revive_all_downed_party_members_health": 0,
+		"consume_deal_damage":                            0,
+		"consume_deal_damage_hits":                       0,
+		"consume_deal_damage_all_enemies":                0,
+		"consume_deal_damage_all_enemies_hits":           0,
+		"consume_create_base":                            false,
+		"consume_statuses_to_add":                        item.ConsumeStatusesToAdd,
+		"consume_statuses_to_remove":                     item.ConsumeStatusesToRemove,
+		"consume_spell_ids":                              item.ConsumeSpellIDs,
+		"consume_teach_recipe_ids":                       item.ConsumeTeachRecipeIDs,
+		"alchemy_recipes":                                item.AlchemyRecipes,
+		"workshop_recipes":                               item.WorkshopRecipes,
+		"internal_tags":                                  item.InternalTags,
+		"image_generation_status":                        models.InventoryImageGenerationStatusQueued,
+		"image_generation_error":                         nil,
+	}
+}
+
+func parseAbilityIDList(input []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(input))
+	seen := map[uuid.UUID]struct{}{}
+	for idx, rawID := range input {
+		trimmed := strings.TrimSpace(rawID)
+		if trimmed == "" {
+			continue
+		}
+		parsed, err := uuid.Parse(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("abilityIds[%d] must be a valid UUID", idx)
+		}
+		if _, exists := seen[parsed]; exists {
+			continue
+		}
+		seen[parsed] = struct{}{}
+		ids = append(ids, parsed)
+	}
+	return ids, nil
+}
+
+func (s *server) generateAbilityTomes(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		AbilityIDs []string `json:"abilityIds"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	abilityIDs, err := parseAbilityIDList(requestBody.AbilityIDs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(abilityIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one ability ID is required"})
+		return
+	}
+
+	abilities, err := s.dbClient.Spell().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	abilityByID := make(map[uuid.UUID]models.Spell, len(abilities))
+	for _, ability := range abilities {
+		abilityByID[ability.ID] = ability
+	}
+
+	missingAbilityIDs := make([]string, 0)
+	for _, abilityID := range abilityIDs {
+		if _, exists := abilityByID[abilityID]; !exists {
+			missingAbilityIDs = append(missingAbilityIDs, abilityID.String())
+		}
+	}
+	if len(missingAbilityIDs) > 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error":             "some abilities were not found",
+			"missingAbilityIds": missingAbilityIDs,
+		})
+		return
+	}
+
+	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	existingByName := make(map[string]models.InventoryItem, len(existingItems))
+	for _, item := range existingItems {
+		key := strings.ToLower(strings.TrimSpace(item.Name))
+		if key == "" {
+			continue
+		}
+		existingByName[key] = item
+	}
+
+	processedItems := make([]gin.H, 0, len(abilityIDs))
+	warnings := make([]string, 0)
+	createdCount := 0
+	updatedCount := 0
+	queuedImageCount := 0
+
+	for _, abilityID := range abilityIDs {
+		ability := abilityByID[abilityID]
+		tome := buildAbilityTomeItem(&ability)
+		key := strings.ToLower(strings.TrimSpace(tome.Name))
+		action := "created"
+		inventoryItemID := tome.ID
+
+		if existing, exists := existingByName[key]; exists {
+			if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, existing.ID, abilityTomeUpdateMap(tome)); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			inventoryItemID = existing.ID
+			action = "updated"
+			updatedCount++
+		} else {
+			if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, tome); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			inventoryItemID = tome.ID
+			createdCount++
+		}
+
+		imageQueued := true
+		var warning *string
+		if err := s.enqueueInventoryItemImageGeneration(
+			ctx,
+			inventoryItemID,
+			tome.Name,
+			tome.FlavorText,
+			tome.RarityTier,
+		); err != nil {
+			imageQueued = false
+			errText := fmt.Sprintf("%s: %s", tome.Name, err.Error())
+			warnings = append(warnings, errText)
+			warning = &errText
+		} else {
+			queuedImageCount++
+		}
+
+		processedItems = append(processedItems, gin.H{
+			"abilityId":       ability.ID,
+			"abilityName":     ability.Name,
+			"abilityType":     ability.AbilityType,
+			"inventoryItemId": inventoryItemID,
+			"tomeName":        tome.Name,
+			"action":          action,
+			"imageQueued":     imageQueued,
+			"warning":         warning,
+		})
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"items":            processedItems,
+		"createdCount":     createdCount,
+		"updatedCount":     updatedCount,
+		"processedCount":   len(processedItems),
+		"queuedImageCount": queuedImageCount,
+		"warnings":         warnings,
+	})
+}
+
 func (s *server) generateSpellProgression(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -2239,8 +2798,9 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if normalizeSpellAbilityType(string(seedSpell.AbilityType)) != models.SpellAbilityTypeSpell {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "progressions are only supported for spells"})
+	abilityType := normalizeSpellAbilityType(string(seedSpell.AbilityType))
+	if abilityType != models.SpellAbilityTypeSpell && abilityType != models.SpellAbilityTypeTechnique {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "progressions are only supported for spells and techniques"})
 		return
 	}
 
@@ -2255,7 +2815,7 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			Name:        fmt.Sprintf("%s Progression", strings.TrimSpace(seedSpell.Name)),
-			AbilityType: models.SpellAbilityTypeSpell,
+			AbilityType: abilityType,
 		}
 		if strings.TrimSpace(progression.Name) == "Progression" {
 			progression.Name = fmt.Sprintf("%s Progression", spellProgressionTheme(seedSpell))
@@ -2340,7 +2900,7 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 		if _, occupied := occupiedBands[targetBand]; occupied {
 			continue
 		}
-		variant := buildSpellProgressionVariant(seedSpell, seedBand, targetBand, usedNames)
+		variant := buildSpellProgressionVariant(seedSpell, seedBand, targetBand, usedNames, abilityType)
 		if err := s.dbClient.Spell().Create(ctx, variant); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

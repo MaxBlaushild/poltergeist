@@ -6,7 +6,12 @@ import { useZonePointsOfInterest } from '../hooks/useZonePointsOfInterest.ts';
 import { usePlaceTypes } from '../hooks/usePlaceTypes.ts';
 import { useGeneratePointsOfInterest } from '../hooks/useGeneratePointsOfInterest.ts';
 import { useCandidates } from '@poltergeist/hooks';
-import { Candidate, TreasureChest } from '@poltergeist/types';
+import {
+  Candidate,
+  Character,
+  CharacterLocation,
+  TreasureChest,
+} from '@poltergeist/types';
 import { useQuestArchtypes } from '../hooks/useQuestArchtypes.ts';
 import { useAPI } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
@@ -73,6 +78,7 @@ type ChallengeRecord = {
 
 type AdminMapPinKind =
   | 'pointOfInterest'
+  | 'character'
   | 'treasureChest'
   | 'healingFountain'
   | 'scenario'
@@ -87,10 +93,13 @@ type AdminMapPin = {
   coordinates: [number, number];
   imageUrl: string;
   draggable: boolean;
+  locationIndex?: number;
+  dragHint?: string;
 };
 
 const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
   pointOfInterest: 'point of interest',
+  character: 'character',
   treasureChest: 'treasure chest',
   healingFountain: 'healing fountain',
   scenario: 'scenario',
@@ -102,6 +111,8 @@ const chestImageUrl =
   'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 const poiMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+const characterMysteryImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const scenarioMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
 const monsterMysteryImageUrl =
@@ -111,7 +122,13 @@ const healingFountainDiscoveredImageUrl =
 
 const markerStyleByKind: Record<
   AdminMapPinKind,
-  { ring: string; badge: string; shortLabel: string; fullLabel: string; fallbackImage: string }
+  {
+    ring: string;
+    badge: string;
+    shortLabel: string;
+    fullLabel: string;
+    fallbackImage: string;
+  }
 > = {
   pointOfInterest: {
     ring: '#2563eb',
@@ -119,6 +136,13 @@ const markerStyleByKind: Record<
     shortLabel: 'POI',
     fullLabel: 'Point of Interest',
     fallbackImage: poiMysteryImageUrl,
+  },
+  character: {
+    ring: '#ec4899',
+    badge: '#be185d',
+    shortLabel: 'NPC',
+    fullLabel: 'Character',
+    fallbackImage: characterMysteryImageUrl,
   },
   treasureChest: {
     ring: '#f59e0b',
@@ -254,9 +278,15 @@ const sortBoundaryPoints = (points: [number, number][]) => {
     return sortedPoints;
   }
 
-  const centroid = sortedPoints.reduce((acc, point) => {
-    return [acc[0] + point[0] / sortedPoints.length, acc[1] + point[1] / sortedPoints.length];
-  }, [0, 0]);
+  const centroid = sortedPoints.reduce(
+    (acc, point) => {
+      return [
+        acc[0] + point[0] / sortedPoints.length,
+        acc[1] + point[1] / sortedPoints.length,
+      ];
+    },
+    [0, 0]
+  );
 
   sortedPoints.sort((a, b) => {
     const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
@@ -315,7 +345,7 @@ const Map: React.FC<MapProps> = ({
         style: 'mapbox://styles/mapbox/streets-v12',
         center: center,
         zoom: 14,
-        interactive: true
+        interactive: true,
       });
 
       map.current.on('load', () => {
@@ -335,13 +365,17 @@ const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (map.current && mapLoaded && onMapClick) {
       map.current.dragPan.disable();
-      const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+      const canvasContainer = mapContainer.current?.querySelector(
+        '.mapboxgl-canvas-container'
+      );
       if (canvasContainer instanceof HTMLElement) {
         canvasContainer.style.cursor = 'default';
       }
     } else if (map.current && mapLoaded) {
       map.current.dragPan.enable();
-      const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+      const canvasContainer = mapContainer.current?.querySelector(
+        '.mapboxgl-canvas-container'
+      );
       if (canvasContainer instanceof HTMLElement) {
         canvasContainer.style.cursor = 'grab';
       }
@@ -371,16 +405,18 @@ const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (map.current && mapLoaded) {
       // Remove existing markers
-      boundaryMarkers.current.forEach(marker => marker.remove());
+      boundaryMarkers.current.forEach((marker) => marker.remove());
       boundaryMarkers.current = [];
 
-      const sortedPoints = boundaryPoints ? sortBoundaryPoints(boundaryPoints) : [];
+      const sortedPoints = boundaryPoints
+        ? sortBoundaryPoints(boundaryPoints)
+        : [];
       if (sortedPoints.length > 0) {
         // Add markers for the sorted points
-        sortedPoints.forEach(point => {
+        sortedPoints.forEach((point) => {
           const marker = new mapboxgl.Marker({
             color: '#DC2626',
-            draggable: false
+            draggable: false,
           })
             .setLngLat(point)
             .addTo(map.current!);
@@ -445,7 +481,12 @@ const Map: React.FC<MapProps> = ({
   }, [mapLoaded, onMapClick, onPinLocationChange, pinDragEnabled, pins]);
 
   useEffect(() => {
-    if (map.current && mapLoaded && boundaryPoints && boundaryPoints.length > 0) {
+    if (
+      map.current &&
+      mapLoaded &&
+      boundaryPoints &&
+      boundaryPoints.length > 0
+    ) {
       // Clean up existing boundary
       cleanupBoundary();
 
@@ -459,9 +500,9 @@ const Map: React.FC<MapProps> = ({
             properties: {},
             geometry: {
               type: 'Polygon',
-              coordinates: [sortedPoints]
-            }
-          }
+              coordinates: [sortedPoints],
+            },
+          },
         });
 
         map.current.addLayer({
@@ -471,8 +512,8 @@ const Map: React.FC<MapProps> = ({
           layout: {},
           paint: {
             'fill-color': '#DC2626',
-            'fill-opacity': 0.3
-          }
+            'fill-opacity': 0.3,
+          },
         });
 
         // Add boundary outline
@@ -483,8 +524,8 @@ const Map: React.FC<MapProps> = ({
           layout: {},
           paint: {
             'line-color': '#DC2626',
-            'line-width': 2
-          }
+            'line-width': 2,
+          },
         });
       }
     } else if (map.current && mapLoaded) {
@@ -527,27 +568,35 @@ const Map: React.FC<MapProps> = ({
         },
       });
 
-      map.current.addLayer({
-        id: 'all-zone-boundaries',
-        type: 'fill',
-        source: 'all-zone-boundaries',
-        layout: {},
-        paint: {
-          'fill-color': '#2563EB',
-          'fill-opacity': 0.18,
-        }
-      }, map.current.getLayer('zone-boundary') ? 'zone-boundary' : undefined);
+      map.current.addLayer(
+        {
+          id: 'all-zone-boundaries',
+          type: 'fill',
+          source: 'all-zone-boundaries',
+          layout: {},
+          paint: {
+            'fill-color': '#2563EB',
+            'fill-opacity': 0.18,
+          },
+        },
+        map.current.getLayer('zone-boundary') ? 'zone-boundary' : undefined
+      );
 
-      map.current.addLayer({
-        id: 'all-zone-boundaries-outline',
-        type: 'line',
-        source: 'all-zone-boundaries',
-        layout: {},
-        paint: {
-          'line-color': '#2563EB',
-          'line-width': 2,
-        }
-      }, map.current.getLayer('zone-boundary-outline') ? 'zone-boundary-outline' : undefined);
+      map.current.addLayer(
+        {
+          id: 'all-zone-boundaries-outline',
+          type: 'line',
+          source: 'all-zone-boundaries',
+          layout: {},
+          paint: {
+            'line-color': '#2563EB',
+            'line-width': 2,
+          },
+        },
+        map.current.getLayer('zone-boundary-outline')
+          ? 'zone-boundary-outline'
+          : undefined
+      );
     }
 
     return () => {
@@ -567,10 +616,7 @@ const Map: React.FC<MapProps> = ({
 
   return (
     <div className="relative w-full h-96 rounded-lg border border-gray-300 overflow-hidden">
-      <div
-        ref={mapContainer}
-        className="w-full h-full"
-      />
+      <div ref={mapContainer} className="w-full h-full" />
       {showBoundaryControls && (
         <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
           <button
@@ -594,7 +640,9 @@ const Map: React.FC<MapProps> = ({
             className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
             onClick={() => {
               if (!navigator.geolocation) {
-                setLocationError('Geolocation is not supported in this browser.');
+                setLocationError(
+                  'Geolocation is not supported in this browser.'
+                );
                 return;
               }
               setIsLocating(true);
@@ -652,10 +700,15 @@ export const Zone = () => {
     useZoneContext();
   const zone = zones.find((zone) => zone.id === id);
   const { pointsOfInterest, loading, error } = useZonePointsOfInterest(id!);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
-  const [healingFountains, setHealingFountains] = useState<HealingFountainRecord[]>([]);
+  const [healingFountains, setHealingFountains] = useState<
+    HealingFountainRecord[]
+  >([]);
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
-  const [monsterEncounters, setMonsterEncounters] = useState<MonsterEncounterRecord[]>([]);
+  const [monsterEncounters, setMonsterEncounters] = useState<
+    MonsterEncounterRecord[]
+  >([]);
   const [challenges, setChallenges] = useState<ChallengeRecord[]>([]);
   const [zoneMapPinsError, setZoneMapPinsError] = useState<string | null>(null);
   const {
@@ -707,8 +760,12 @@ export const Zone = () => {
     Set<string>
   >(new Set());
   const [queueingZoneFlavor, setQueueingZoneFlavor] = useState(false);
-  const [zoneFlavorJobs, setZoneFlavorJobs] = useState<ZoneFlavorGenerationJob[]>([]);
-  const [zoneFlavorJobsError, setZoneFlavorJobsError] = useState<string | null>(null);
+  const [zoneFlavorJobs, setZoneFlavorJobs] = useState<
+    ZoneFlavorGenerationJob[]
+  >([]);
+  const [zoneFlavorJobsError, setZoneFlavorJobsError] = useState<string | null>(
+    null
+  );
   const lastCompletedZoneFlavorJobIdRef = useRef<string | null>(null);
   const {
     candidates,
@@ -729,7 +786,11 @@ export const Zone = () => {
 
   useEffect(() => {
     if (zone?.points) {
-      setBoundaryPoints(zone.points.map(point => [point.longitude, point.latitude] as [number, number]));
+      setBoundaryPoints(
+        zone.points.map(
+          (point) => [point.longitude, point.latitude] as [number, number]
+        )
+      );
     }
   }, [zone]);
 
@@ -757,19 +818,26 @@ export const Zone = () => {
     const loadZoneMapPins = async () => {
       try {
         const [
+          fetchedCharacters,
           fetchedTreasureChests,
           fetchedHealingFountains,
           fetchedScenarios,
           fetchedMonsterEncounters,
           fetchedChallenges,
         ] = await Promise.all([
+          apiClient.get<Character[]>('/sonar/characters'),
           apiClient.get<TreasureChest[]>(`/sonar/zones/${id}/treasure-chests`),
-          apiClient.get<HealingFountainRecord[]>(`/sonar/zones/${id}/healing-fountains`),
+          apiClient.get<HealingFountainRecord[]>(
+            `/sonar/zones/${id}/healing-fountains`
+          ),
           apiClient.get<ScenarioRecord[]>(`/sonar/zones/${id}/scenarios`),
-          apiClient.get<MonsterEncounterRecord[]>(`/sonar/zones/${id}/monster-encounters`),
+          apiClient.get<MonsterEncounterRecord[]>(
+            `/sonar/zones/${id}/monster-encounters`
+          ),
           apiClient.get<ChallengeRecord[]>(`/sonar/zones/${id}/challenges`),
         ]);
         if (!active) return;
+        setCharacters(fetchedCharacters);
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
         setScenarios(fetchedScenarios);
@@ -779,12 +847,15 @@ export const Zone = () => {
       } catch (error) {
         console.error('Error fetching zone map pins:', error);
         if (!active) return;
+        setCharacters([]);
         setTreasureChests([]);
         setHealingFountains([]);
         setScenarios([]);
         setMonsterEncounters([]);
         setChallenges([]);
-        setZoneMapPinsError('Unable to load the full in-game pin set for this zone.');
+        setZoneMapPinsError(
+          'Unable to load the full in-game pin set for this zone.'
+        );
       }
     };
 
@@ -833,7 +904,7 @@ export const Zone = () => {
     if (zone) {
       try {
         await apiClient.post(`/sonar/zones/${zone.id}/boundary`, {
-          boundary: boundaryPoints
+          boundary: boundaryPoints,
         });
         setIsEditingBoundary(false);
       } catch (error) {
@@ -917,6 +988,51 @@ export const Zone = () => {
             longitude,
           });
           break;
+        case 'character': {
+          if (typeof pin.locationIndex !== 'number') {
+            throw new Error(
+              `Character pin ${pin.entityId} does not have a movable location index.`
+            );
+          }
+          const character = characters.find(
+            (entry) => entry.id === pin.entityId
+          );
+          if (!character) {
+            throw new Error(`Character ${pin.entityId} was not found.`);
+          }
+          const currentLocations: CharacterLocation[] =
+            character.locations ?? [];
+          if (
+            pin.locationIndex < 0 ||
+            pin.locationIndex >= currentLocations.length
+          ) {
+            throw new Error(
+              `Character ${pin.entityId} location index is out of bounds.`
+            );
+          }
+
+          const nextLocations = currentLocations.map((location, index) =>
+            index === pin.locationIndex
+              ? { ...location, latitude, longitude }
+              : location
+          );
+
+          await apiClient.put(`/sonar/characters/${pin.entityId}/locations`, {
+            locations: nextLocations.map((location) => ({
+              latitude: location.latitude,
+              longitude: location.longitude,
+            })),
+          });
+
+          setCharacters((prev) =>
+            prev.map((entry) =>
+              entry.id === pin.entityId
+                ? { ...entry, locations: nextLocations }
+                : entry
+            )
+          );
+          break;
+        }
         default:
           break;
       }
@@ -958,23 +1074,39 @@ export const Zone = () => {
           break;
         case 'treasureChest':
           await apiClient.delete(`/sonar/treasure-chests/${pin.entityId}`);
-          setTreasureChests((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          setTreasureChests((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
           break;
         case 'healingFountain':
           await apiClient.delete(`/sonar/healing-fountains/${pin.entityId}`);
-          setHealingFountains((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          setHealingFountains((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
           break;
         case 'scenario':
           await apiClient.delete(`/sonar/scenarios/${pin.entityId}`);
-          setScenarios((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          setScenarios((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
           break;
         case 'monster':
           await apiClient.delete(`/sonar/monster-encounters/${pin.entityId}`);
-          setMonsterEncounters((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          setMonsterEncounters((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
           break;
         case 'challenge':
           await apiClient.delete(`/sonar/challenges/${pin.entityId}`);
-          setChallenges((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          setChallenges((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
+          break;
+        case 'character':
+          await apiClient.delete(`/sonar/characters/${pin.entityId}`);
+          setCharacters((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
           break;
         default:
           break;
@@ -1021,7 +1153,10 @@ export const Zone = () => {
         '/sonar/admin/zone-flavor-generation-jobs',
         { zoneId: id }
       );
-      setZoneFlavorJobs((prev) => [queuedJob, ...prev.filter((job) => job.id !== queuedJob.id)]);
+      setZoneFlavorJobs((prev) => [
+        queuedJob,
+        ...prev.filter((job) => job.id !== queuedJob.id),
+      ]);
       setZoneFlavorJobsError(null);
     } catch (error) {
       console.error('Error queueing zone flavor job:', error);
@@ -1031,23 +1166,38 @@ export const Zone = () => {
     }
   };
 
-  const filteredPoints = pointsOfInterest.filter(point => 
-    !deletedPointOfInterestIds.has(point.id) &&
-    point.name.toLowerCase().includes(nameFilter.toLowerCase())
+  const filteredPoints = pointsOfInterest.filter(
+    (point) =>
+      !deletedPointOfInterestIds.has(point.id) &&
+      point.name.toLowerCase().includes(nameFilter.toLowerCase())
   );
   const latestZoneFlavorJob = zoneFlavorJobs[0];
   const allZoneBoundaries = zones
-    .filter((candidateZone) => candidateZone.id !== id && candidateZone.points.length > 0)
+    .filter(
+      (candidateZone) =>
+        candidateZone.id !== id && candidateZone.points.length > 0
+    )
     .map((candidateZone) =>
-      candidateZone.points.map((point) => [point.longitude, point.latitude] as [number, number])
+      candidateZone.points.map(
+        (point) => [point.longitude, point.latitude] as [number, number]
+      )
     );
   const mapPins = useMemo<AdminMapPin[]>(() => {
     const resolveCoordinates = (
       pinId: string,
       longitude: number,
       latitude: number
-    ): [number, number] =>
-      pinLocationOverrides[pinId] ?? [longitude, latitude];
+    ): [number, number] => pinLocationOverrides[pinId] ?? [longitude, latitude];
+    const sortedBoundaryPoints = sortBoundaryPoints(boundaryPoints);
+    const zonePolygon =
+      sortedBoundaryPoints.length >= 4
+        ? turf.polygon([sortedBoundaryPoints])
+        : null;
+    const pointOfInterestById = new Map(
+      pointsOfInterest
+        .filter((point) => !deletedPointOfInterestIds.has(point.id))
+        .map((point) => [point.id, point] as const)
+    );
 
     const poiPins = pointsOfInterest
       .map((point) => {
@@ -1065,7 +1215,11 @@ export const Zone = () => {
           entityId: point.id,
           kind: 'pointOfInterest' as const,
           name: point.name || 'Point of Interest',
-          coordinates: resolveCoordinates(`poi:${point.id}`, longitude, latitude),
+          coordinates: resolveCoordinates(
+            `poi:${point.id}`,
+            longitude,
+            latitude
+          ),
           imageUrl:
             point.thumbnailUrl?.trim() ||
             point.imageURL?.trim() ||
@@ -1081,7 +1235,9 @@ export const Zone = () => {
         id: `treasureChest:${chest.id}`,
         entityId: chest.id,
         kind: 'treasureChest' as const,
-        name: chest.unlockTier ? `Treasure Chest T${chest.unlockTier}` : 'Treasure Chest',
+        name: chest.unlockTier
+          ? `Treasure Chest T${chest.unlockTier}`
+          : 'Treasure Chest',
         coordinates: resolveCoordinates(
           `treasureChest:${chest.id}`,
           chest.longitude,
@@ -1092,7 +1248,9 @@ export const Zone = () => {
       }));
 
     const healingFountainPins = healingFountains
-      .filter((fountain) => isValidCoordinate(fountain.latitude, fountain.longitude))
+      .filter((fountain) =>
+        isValidCoordinate(fountain.latitude, fountain.longitude)
+      )
       .map((fountain) => ({
         id: `healingFountain:${fountain.id}`,
         entityId: fountain.id,
@@ -1110,7 +1268,9 @@ export const Zone = () => {
       }));
 
     const scenarioPins = scenarios
-      .filter((scenario) => isValidCoordinate(scenario.latitude, scenario.longitude))
+      .filter((scenario) =>
+        isValidCoordinate(scenario.latitude, scenario.longitude)
+      )
       .map((scenario) => ({
         id: `scenario:${scenario.id}`,
         entityId: scenario.id,
@@ -1129,7 +1289,9 @@ export const Zone = () => {
       }));
 
     const monsterPins = monsterEncounters
-      .filter((monster) => isValidCoordinate(monster.latitude, monster.longitude))
+      .filter((monster) =>
+        isValidCoordinate(monster.latitude, monster.longitude)
+      )
       .map((monster) => ({
         id: `monster:${monster.id}`,
         entityId: monster.id,
@@ -1148,7 +1310,9 @@ export const Zone = () => {
       }));
 
     const challengePins = challenges
-      .filter((challenge) => isValidCoordinate(challenge.latitude, challenge.longitude))
+      .filter((challenge) =>
+        isValidCoordinate(challenge.latitude, challenge.longitude)
+      )
       .map((challenge) => ({
         id: `challenge:${challenge.id}`,
         entityId: challenge.id,
@@ -1163,18 +1327,102 @@ export const Zone = () => {
           challenge.thumbnailUrl?.trim() ||
           challenge.imageUrl?.trim() ||
           markerStyleByKind.challenge.fallbackImage,
-        draggable: !(challenge.polygonPoints?.length && challenge.polygonPoints.length >= 3),
+        draggable: !(
+          challenge.polygonPoints?.length && challenge.polygonPoints.length >= 3
+        ),
       }));
+
+    const characterPins = characters.flatMap((character) => {
+      const pins: AdminMapPin[] = [];
+      const imageUrl =
+        character.thumbnailUrl?.trim() ||
+        character.mapIconUrl?.trim() ||
+        markerStyleByKind.character.fallbackImage;
+      const characterName = character.name?.trim() || 'Character';
+
+      if (character.pointOfInterestId) {
+        const point = pointOfInterestById.get(character.pointOfInterestId);
+        if (point) {
+          const latitude = Number(point.lat);
+          const longitude = Number(point.lng);
+          if (isValidCoordinate(latitude, longitude)) {
+            pins.push({
+              id: `character:${character.id}:poi`,
+              entityId: character.id,
+              kind: 'character',
+              name: characterName,
+              coordinates: resolveCoordinates(
+                `character:${character.id}:poi`,
+                longitude,
+                latitude
+              ),
+              imageUrl,
+              draggable: false,
+              dragHint: 'Location tied to point of interest',
+            });
+          }
+        }
+      }
+
+      if (!zonePolygon) {
+        return pins;
+      }
+
+      (character.locations ?? []).forEach((location, index) => {
+        if (!isValidCoordinate(location.latitude, location.longitude)) {
+          return;
+        }
+        const isInZone = turf.booleanPointInPolygon(
+          turf.point([location.longitude, location.latitude]),
+          zonePolygon
+        );
+        if (!isInZone) {
+          return;
+        }
+
+        pins.push({
+          id: `character:${character.id}:location:${index}`,
+          entityId: character.id,
+          kind: 'character',
+          name:
+            (character.locations?.length ?? 0) > 1
+              ? `${characterName} #${index + 1}`
+              : characterName,
+          coordinates: resolveCoordinates(
+            `character:${character.id}:location:${index}`,
+            location.longitude,
+            location.latitude
+          ),
+          imageUrl,
+          draggable: true,
+          locationIndex: index,
+        });
+      });
+
+      return pins;
+    });
 
     return [
       ...poiPins,
+      ...characterPins,
       ...treasureChestPins,
       ...healingFountainPins,
       ...scenarioPins,
       ...monsterPins,
       ...challengePins,
     ];
-  }, [pointsOfInterest, treasureChests, healingFountains, scenarios, monsterEncounters, challenges, pinLocationOverrides, deletedPointOfInterestIds]);
+  }, [
+    pointsOfInterest,
+    characters,
+    treasureChests,
+    healingFountains,
+    scenarios,
+    monsterEncounters,
+    challenges,
+    boundaryPoints,
+    pinLocationOverrides,
+    deletedPointOfInterestIds,
+  ]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -1266,13 +1514,18 @@ export const Zone = () => {
               )}
               {isZoneFlavorPendingStatus(latestZoneFlavorJob.status) && (
                 <p className="mt-2 text-emerald-700">
-                  The worker is generating a matched zone name and in-world flavor from this zone’s boundary coordinates.
+                  The worker is generating a matched zone name and in-world
+                  flavor from this zone’s boundary coordinates.
                 </p>
               )}
             </>
           )}
           {zoneFlavorJobsError && (
-            <p className={latestZoneFlavorJob ? 'mt-2 text-red-700' : 'text-red-700'}>
+            <p
+              className={
+                latestZoneFlavorJob ? 'mt-2 text-red-700' : 'text-red-700'
+              }
+            >
               {zoneFlavorJobsError}
             </p>
           )}
@@ -1283,7 +1536,7 @@ export const Zone = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-96">
             <h2 className="text-xl font-semibold mb-4">Edit Zone</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1330,7 +1583,7 @@ export const Zone = () => {
           </div>
         </div>
       )}
-      
+
       {/* Map Section */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -1386,6 +1639,7 @@ export const Zone = () => {
           {(
             [
               ['pointOfInterest', 'POI'],
+              ['character', 'Character'],
               ['treasureChest', 'Treasure Chest'],
               ['healingFountain', 'Healing Fountain'],
               ['scenario', 'Scenario'],
@@ -1432,7 +1686,9 @@ export const Zone = () => {
         ) : null}
         {isEditingBoundary && (
           <p className="text-sm text-gray-600 mt-2">
-            Click on the map to add boundary points. The gameplay pins stay visible for context, but they won&apos;t intercept clicks while boundary editing is on.
+            Click on the map to add boundary points. The gameplay pins stay
+            visible for context, but they won&apos;t intercept clicks while
+            boundary editing is on.
           </p>
         )}
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -1442,13 +1698,16 @@ export const Zone = () => {
                 Zone Pins
               </h3>
               <p className="mt-1 text-sm text-slate-500">
-                Delete a pin here to remove the underlying entity from this zone.
+                Delete a pin here to remove the underlying entity from this
+                zone.
               </p>
             </div>
             <div className="text-sm text-slate-500">{mapPins.length} total</div>
           </div>
           {mapPins.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No in-zone pins found.</p>
+            <p className="mt-4 text-sm text-slate-500">
+              No in-zone pins found.
+            </p>
           ) : (
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {mapPins.map((pin) => (
@@ -1458,7 +1717,10 @@ export const Zone = () => {
                 >
                   <div className="flex items-start gap-3">
                     <img
-                      src={pin.imageUrl || markerStyleByKind[pin.kind].fallbackImage}
+                      src={
+                        pin.imageUrl ||
+                        markerStyleByKind[pin.kind].fallbackImage
+                      }
                       alt={pin.name}
                       className="h-12 w-12 rounded-full border object-cover"
                     />
@@ -1466,7 +1728,9 @@ export const Zone = () => {
                       <div className="flex items-center gap-2">
                         <span
                           className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: markerStyleByKind[pin.kind].ring }}
+                          style={{
+                            backgroundColor: markerStyleByKind[pin.kind].ring,
+                          }}
                         />
                         <div className="truncate font-medium text-slate-900">
                           {pin.name}
@@ -1476,11 +1740,13 @@ export const Zone = () => {
                         {markerStyleByKind[pin.kind].fullLabel}
                       </div>
                       <div className="mt-2 text-xs text-slate-500">
-                        {pin.coordinates[1].toFixed(5)}, {pin.coordinates[0].toFixed(5)}
+                        {pin.coordinates[1].toFixed(5)},{' '}
+                        {pin.coordinates[0].toFixed(5)}
                       </div>
                       {!pin.draggable ? (
                         <div className="mt-1 text-xs text-amber-700">
-                          Location locked to polygon geometry
+                          {pin.dragHint ??
+                            'Location locked to polygon geometry'}
                         </div>
                       ) : null}
                     </div>
@@ -1553,11 +1819,9 @@ export const Zone = () => {
             <p className="text-gray-600 mb-3">
               Description: {point.description}
             </p>
+            <p className="text-gray-600 mb-3">Type: {point.originalName}</p>
             <p className="text-gray-600 mb-3">
-              Type: {point.originalName}
-            </p>
-            <p className="text-gray-600 mb-3">
-              Tags: {point.tags?.map(tag => tag.name).join(', ') || 'No tags'}
+              Tags: {point.tags?.map((tag) => tag.name).join(', ') || 'No tags'}
             </p>
             <p className="text-gray-600 mb-3">Latitude: {point.lat}</p>
             <p className="text-gray-600 mb-3">Longitude: {point.lng}</p>

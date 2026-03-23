@@ -45,6 +45,7 @@ type client struct {
 	spellHandle                          *spellHandler
 	userSpellHandle                      *userSpellHandler
 	inventoryItemHandle                  *inventoryItemHandler
+	userLearnedRecipeHandle              *userLearnedRecipeHandle
 	newUserStarterConfigHandle           *newUserStarterConfigHandle
 	tutorialHandle                       *tutorialHandle
 	auditItemHandle                      *auditItemHandler
@@ -205,6 +206,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		spellHandle:                          &spellHandler{db: db},
 		userSpellHandle:                      &userSpellHandler{db: db},
 		inventoryItemHandle:                  &inventoryItemHandler{db: db},
+		userLearnedRecipeHandle:              &userLearnedRecipeHandle{db: db},
 		newUserStarterConfigHandle:           &newUserStarterConfigHandle{db: db},
 		tutorialHandle:                       &tutorialHandle{db: db},
 		auditItemHandle:                      &auditItemHandler{db: db},
@@ -484,6 +486,10 @@ func (c *client) AuditItem() AuditItemHandle {
 
 func (c *client) InventoryItem() InventoryItemHandle {
 	return c.inventoryItemHandle
+}
+
+func (c *client) UserLearnedRecipe() UserLearnedRecipeHandle {
+	return c.userLearnedRecipeHandle
 }
 
 func (c *client) NewUserStarterConfig() NewUserStarterConfigHandle {

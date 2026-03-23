@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
 import { Spell } from '@poltergeist/types';
 
@@ -83,6 +89,62 @@ type ScenarioTemplateGenerationFormState = {
   openEnded: boolean;
 };
 
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const scenarioTemplateListPageSize = 25;
+
+const PaginationControls = ({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) => {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(total, page * pageSize);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+      <p className="text-sm text-gray-600">
+        {total === 0
+          ? 'No scenario templates.'
+          : `Showing ${start}-${end} of ${total} scenario templates`}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span className="text-sm text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const emptyFormState = (): ScenarioTemplateFormState => ({
   prompt: '',
   imageUrl: '',
@@ -117,7 +179,8 @@ const emptyGenerationForm = (): ScenarioTemplateGenerationFormState => ({
   openEnded: false,
 });
 
-const prettyJson = (value: unknown): string => JSON.stringify(value ?? [], null, 2);
+const prettyJson = (value: unknown): string =>
+  JSON.stringify(value ?? [], null, 2);
 
 const parseInteger = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
@@ -131,7 +194,9 @@ const formatDate = (value?: string | null): string => {
   return parsed.toLocaleString();
 };
 
-const formFromRecord = (record: ScenarioTemplateRecord): ScenarioTemplateFormState => ({
+const formFromRecord = (
+  record: ScenarioTemplateRecord
+): ScenarioTemplateFormState => ({
   prompt: record.prompt ?? '',
   imageUrl: record.imageUrl ?? '',
   thumbnailUrl: record.thumbnailUrl ?? '',
@@ -148,12 +213,14 @@ const formFromRecord = (record: ScenarioTemplateRecord): ScenarioTemplateFormSta
   failurePenaltyMode:
     record.failurePenaltyMode === 'individual' ? 'individual' : 'shared',
   failureHealthDrainType:
-    record.failureHealthDrainType === 'flat' || record.failureHealthDrainType === 'percent'
+    record.failureHealthDrainType === 'flat' ||
+    record.failureHealthDrainType === 'percent'
       ? record.failureHealthDrainType
       : 'none',
   failureHealthDrainValue: String(record.failureHealthDrainValue ?? 0),
   failureManaDrainType:
-    record.failureManaDrainType === 'flat' || record.failureManaDrainType === 'percent'
+    record.failureManaDrainType === 'flat' ||
+    record.failureManaDrainType === 'percent'
       ? record.failureManaDrainType
       : 'none',
   failureManaDrainValue: String(record.failureManaDrainValue ?? 0),
@@ -161,12 +228,14 @@ const formFromRecord = (record: ScenarioTemplateRecord): ScenarioTemplateFormSta
   successRewardMode:
     record.successRewardMode === 'individual' ? 'individual' : 'shared',
   successHealthRestoreType:
-    record.successHealthRestoreType === 'flat' || record.successHealthRestoreType === 'percent'
+    record.successHealthRestoreType === 'flat' ||
+    record.successHealthRestoreType === 'percent'
       ? record.successHealthRestoreType
       : 'none',
   successHealthRestoreValue: String(record.successHealthRestoreValue ?? 0),
   successManaRestoreType:
-    record.successManaRestoreType === 'flat' || record.successManaRestoreType === 'percent'
+    record.successManaRestoreType === 'flat' ||
+    record.successManaRestoreType === 'percent'
       ? record.successManaRestoreType
       : 'none',
   successManaRestoreValue: String(record.successManaRestoreValue ?? 0),
@@ -201,17 +270,29 @@ const buildPayloadFromForm = (form: ScenarioTemplateFormState) => ({
   failureHealthDrainValue: parseInteger(form.failureHealthDrainValue, 0),
   failureManaDrainType: form.failureManaDrainType,
   failureManaDrainValue: parseInteger(form.failureManaDrainValue, 0),
-  failureStatuses: parseJsonField<unknown[]>('Failure statuses', form.failureStatusesJson),
+  failureStatuses: parseJsonField<unknown[]>(
+    'Failure statuses',
+    form.failureStatusesJson
+  ),
   successRewardMode: form.successRewardMode,
   successHealthRestoreType: form.successHealthRestoreType,
   successHealthRestoreValue: parseInteger(form.successHealthRestoreValue, 0),
   successManaRestoreType: form.successManaRestoreType,
   successManaRestoreValue: parseInteger(form.successManaRestoreValue, 0),
-  successStatuses: parseJsonField<unknown[]>('Success statuses', form.successStatusesJson),
+  successStatuses: parseJsonField<unknown[]>(
+    'Success statuses',
+    form.successStatusesJson
+  ),
   options: parseJsonField<unknown[]>('Options', form.optionsJson),
   itemRewards: parseJsonField<unknown[]>('Item rewards', form.itemRewardsJson),
-  itemChoiceRewards: parseJsonField<unknown[]>('Item choice rewards', form.itemChoiceRewardsJson),
-  spellRewards: parseJsonField<unknown[]>('Spell rewards', form.spellRewardsJson),
+  itemChoiceRewards: parseJsonField<unknown[]>(
+    'Item choice rewards',
+    form.itemChoiceRewardsJson
+  ),
+  spellRewards: parseJsonField<unknown[]>(
+    'Spell rewards',
+    form.spellRewardsJson
+  ),
 });
 
 const jobStatusClassName = (status: string): string => {
@@ -234,6 +315,9 @@ export const ScenarioTemplates = () => {
   const [records, setRecords] = useState<ScenarioTemplateRecord[]>([]);
   const [jobs, setJobs] = useState<ScenarioTemplateGenerationJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -241,34 +325,63 @@ export const ScenarioTemplates = () => {
   const [form, setForm] = useState<ScenarioTemplateFormState>(emptyFormState());
   const [generationForm, setGenerationForm] =
     useState<ScenarioTemplateGenerationFormState>(emptyGenerationForm());
+  const deferredQuery = useDeferredValue(query);
 
-  const load = useCallback(async (suppressLoading = false) => {
-    try {
-      if (!suppressLoading) setLoading(true);
-      const [templateResp, jobResp, spellResp] = await Promise.all([
-        apiClient.get<ScenarioTemplateRecord[]>('/sonar/scenario-templates'),
-        apiClient.get<ScenarioTemplateGenerationJob[]>(
-          '/sonar/admin/scenario-template-generation-jobs?limit=20'
-        ),
-        apiClient.get<Spell[]>('/sonar/spells'),
-      ]);
-      setRecords(Array.isArray(templateResp) ? templateResp : []);
-      setJobs(Array.isArray(jobResp) ? jobResp : []);
-      setSpells(Array.isArray(spellResp) ? spellResp : []);
-    } catch (error) {
-      console.error('Failed to load scenario templates', error);
-      alert('Failed to load scenario templates.');
-    } finally {
-      if (!suppressLoading) setLoading(false);
-    }
-  }, [apiClient]);
+  const load = useCallback(
+    async (suppressLoading = false) => {
+      try {
+        if (!suppressLoading) setLoading(true);
+        const [templateResp, jobResp, spellResp] = await Promise.all([
+          apiClient.get<PaginatedResponse<ScenarioTemplateRecord>>(
+            '/sonar/admin/scenario-templates',
+            {
+              page,
+              pageSize: scenarioTemplateListPageSize,
+              query: deferredQuery.trim(),
+            }
+          ),
+          apiClient.get<ScenarioTemplateGenerationJob[]>(
+            '/sonar/admin/scenario-template-generation-jobs?limit=20'
+          ),
+          apiClient.get<Spell[]>('/sonar/spells'),
+        ]);
+        setRecords(
+          Array.isArray(templateResp?.items) ? templateResp.items : []
+        );
+        setTotal(templateResp?.total ?? 0);
+        setJobs(Array.isArray(jobResp) ? jobResp : []);
+        setSpells(Array.isArray(spellResp) ? spellResp : []);
+      } catch (error) {
+        console.error('Failed to load scenario templates', error);
+        alert('Failed to load scenario templates.');
+      } finally {
+        if (!suppressLoading) setLoading(false);
+      }
+    },
+    [apiClient, deferredQuery, page]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (!jobs.some((job) => ['queued', 'in_progress'].includes(job.status))) return;
+    setPage(1);
+  }, [query]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(total / scenarioTemplateListPageSize)
+    );
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, total]);
+
+  useEffect(() => {
+    if (!jobs.some((job) => ['queued', 'in_progress'].includes(job.status)))
+      return;
     const interval = window.setInterval(() => {
       void load(true);
     }, 5000);
@@ -314,24 +427,26 @@ export const ScenarioTemplates = () => {
     try {
       setSaving(true);
       const payload = buildPayloadFromForm(form);
-      const response = editing
-        ? await apiClient.put<ScenarioTemplateRecord>(
-            `/sonar/scenario-templates/${editing.id}`,
-            payload
-          )
-        : await apiClient.post<ScenarioTemplateRecord>(
-            '/sonar/scenario-templates',
-            payload
-          );
       if (editing) {
-        setRecords((prev) => prev.map((record) => (record.id === response.id ? response : record)));
+        await apiClient.put<ScenarioTemplateRecord>(
+          `/sonar/scenario-templates/${editing.id}`,
+          payload
+        );
       } else {
-        setRecords((prev) => [response, ...prev]);
+        await apiClient.post<ScenarioTemplateRecord>(
+          '/sonar/scenario-templates',
+          payload
+        );
       }
+      await load(true);
       closeModal();
     } catch (error) {
       console.error('Failed to save scenario template', error);
-      alert(error instanceof Error ? error.message : 'Failed to save scenario template.');
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save scenario template.'
+      );
     } finally {
       setSaving(false);
     }
@@ -341,7 +456,7 @@ export const ScenarioTemplates = () => {
     if (!window.confirm('Delete this scenario template?')) return;
     try {
       await apiClient.delete(`/sonar/scenario-templates/${record.id}`);
-      setRecords((prev) => prev.filter((entry) => entry.id !== record.id));
+      await load(true);
     } catch (error) {
       console.error('Failed to delete scenario template', error);
       alert('Failed to delete scenario template.');
@@ -402,7 +517,10 @@ export const ScenarioTemplates = () => {
             <input
               value={generationForm.count}
               onChange={(event) =>
-                setGenerationForm((prev) => ({ ...prev, count: event.target.value }))
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  count: event.target.value,
+                }))
               }
               className="mt-1 w-full rounded border p-2"
             />
@@ -432,9 +550,11 @@ export const ScenarioTemplates = () => {
           </div>
         </div>
         <div className="text-xs text-gray-500">
-          JSON reward IDs can reference inventory items like: {inventoryHint || 'none loaded'}
+          JSON reward IDs can reference inventory items like:{' '}
+          {inventoryHint || 'none loaded'}
           <br />
-          Spell reward IDs can reference spells like: {spellHint || 'none loaded'}
+          Spell reward IDs can reference spells like:{' '}
+          {spellHint || 'none loaded'}
         </div>
         <div className="space-y-3">
           {jobs.length === 0 ? (
@@ -445,10 +565,12 @@ export const ScenarioTemplates = () => {
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm">
                     <div className="font-medium">
-                      {job.openEnded ? 'Open-ended' : 'Choice-based'} x {job.count}
+                      {job.openEnded ? 'Open-ended' : 'Choice-based'} x{' '}
+                      {job.count}
                     </div>
                     <div className="text-gray-500">
-                      Created {job.createdCount} • queued {formatDate(job.createdAt)}
+                      Created {job.createdCount} • queued{' '}
+                      {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (
                       <div className="text-red-600">{job.errorMessage}</div>
@@ -469,6 +591,15 @@ export const ScenarioTemplates = () => {
       </section>
 
       <section className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="mb-4">
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by prompt or ID..."
+            className="w-full max-w-xl rounded border p-2"
+          />
+        </div>
         {loading ? (
           <p className="text-sm text-gray-500">Loading templates...</p>
         ) : records.length === 0 ? (
@@ -480,11 +611,15 @@ export const ScenarioTemplates = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
                     <div className="text-sm text-gray-500">
-                      {record.openEnded ? 'Open ended' : 'Choice based'} • difficulty {record.difficulty}
+                      {record.openEnded ? 'Open ended' : 'Choice based'} •
+                      difficulty {record.difficulty}
                     </div>
-                    <div className="font-medium whitespace-pre-wrap">{record.prompt}</div>
+                    <div className="font-medium whitespace-pre-wrap">
+                      {record.prompt}
+                    </div>
                     <div className="text-sm text-gray-500">
-                      Reward mode: {record.rewardMode ?? 'random'} • Updated {formatDate(record.updatedAt)}
+                      Reward mode: {record.rewardMode ?? 'random'} • Updated{' '}
+                      {formatDate(record.updatedAt)}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -506,6 +641,12 @@ export const ScenarioTemplates = () => {
                 </div>
               </div>
             ))}
+            <PaginationControls
+              page={page}
+              pageSize={scenarioTemplateListPageSize}
+              total={total}
+              onPageChange={setPage}
+            />
           </div>
         )}
       </section>
@@ -515,9 +656,15 @@ export const ScenarioTemplates = () => {
           <div className="w-full max-w-5xl rounded-lg bg-white p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">
-                {editing ? 'Edit Scenario Template' : 'Create Scenario Template'}
+                {editing
+                  ? 'Edit Scenario Template'
+                  : 'Create Scenario Template'}
               </h2>
-              <button type="button" onClick={closeModal} className="text-sm text-gray-500">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="text-sm text-gray-500"
+              >
                 Close
               </button>
             </div>
@@ -526,7 +673,9 @@ export const ScenarioTemplates = () => {
                 Prompt
                 <textarea
                   value={form.prompt}
-                  onChange={(event) => setForm((prev) => ({ ...prev, prompt: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, prompt: event.target.value }))
+                  }
                   rows={4}
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -535,7 +684,12 @@ export const ScenarioTemplates = () => {
                 Image URL
                 <input
                   value={form.imageUrl}
-                  onChange={(event) => setForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      imageUrl: event.target.value,
+                    }))
+                  }
                   className="mt-1 w-full rounded border p-2"
                 />
               </label>
@@ -543,7 +697,12 @@ export const ScenarioTemplates = () => {
                 Thumbnail URL
                 <input
                   value={form.thumbnailUrl}
-                  onChange={(event) => setForm((prev) => ({ ...prev, thumbnailUrl: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      thumbnailUrl: event.target.value,
+                    }))
+                  }
                   className="mt-1 w-full rounded border p-2"
                 />
               </label>
@@ -551,7 +710,12 @@ export const ScenarioTemplates = () => {
                 Difficulty
                 <input
                   value={form.difficulty}
-                  onChange={(event) => setForm((prev) => ({ ...prev, difficulty: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      difficulty: event.target.value,
+                    }))
+                  }
                   className="mt-1 w-full rounded border p-2"
                 />
               </label>
@@ -560,7 +724,10 @@ export const ScenarioTemplates = () => {
                 <input
                   value={form.rewardExperience}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, rewardExperience: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      rewardExperience: event.target.value,
+                    }))
                   }
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -569,7 +736,12 @@ export const ScenarioTemplates = () => {
                 Reward Gold
                 <input
                   value={form.rewardGold}
-                  onChange={(event) => setForm((prev) => ({ ...prev, rewardGold: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      rewardGold: event.target.value,
+                    }))
+                  }
                   className="mt-1 w-full rounded border p-2"
                 />
               </label>
@@ -596,7 +768,10 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      randomRewardSize: event.target.value as 'small' | 'medium' | 'large',
+                      randomRewardSize: event.target.value as
+                        | 'small'
+                        | 'medium'
+                        | 'large',
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -610,7 +785,12 @@ export const ScenarioTemplates = () => {
                 <input
                   type="checkbox"
                   checked={form.openEnded}
-                  onChange={(event) => setForm((prev) => ({ ...prev, openEnded: event.target.checked }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      openEnded: event.target.checked,
+                    }))
+                  }
                 />
                 Open ended
               </label>
@@ -619,7 +799,10 @@ export const ScenarioTemplates = () => {
                   type="checkbox"
                   checked={form.scaleWithUserLevel}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, scaleWithUserLevel: event.target.checked }))
+                    setForm((prev) => ({
+                      ...prev,
+                      scaleWithUserLevel: event.target.checked,
+                    }))
                   }
                 />
                 Scale with user level
@@ -634,7 +817,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      failurePenaltyMode: event.target.value as ScenarioFailurePenaltyMode,
+                      failurePenaltyMode: event.target
+                        .value as ScenarioFailurePenaltyMode,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -650,7 +834,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      successRewardMode: event.target.value as ScenarioSuccessRewardMode,
+                      successRewardMode: event.target
+                        .value as ScenarioSuccessRewardMode,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -666,7 +851,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      failureHealthDrainType: event.target.value as ScenarioFailureDrainType,
+                      failureHealthDrainType: event.target
+                        .value as ScenarioFailureDrainType,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -681,7 +867,10 @@ export const ScenarioTemplates = () => {
                 <input
                   value={form.failureHealthDrainValue}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, failureHealthDrainValue: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      failureHealthDrainValue: event.target.value,
+                    }))
                   }
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -693,7 +882,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      failureManaDrainType: event.target.value as ScenarioFailureDrainType,
+                      failureManaDrainType: event.target
+                        .value as ScenarioFailureDrainType,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -708,7 +898,10 @@ export const ScenarioTemplates = () => {
                 <input
                   value={form.failureManaDrainValue}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, failureManaDrainValue: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      failureManaDrainValue: event.target.value,
+                    }))
                   }
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -720,7 +913,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      successHealthRestoreType: event.target.value as ScenarioFailureDrainType,
+                      successHealthRestoreType: event.target
+                        .value as ScenarioFailureDrainType,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -735,7 +929,10 @@ export const ScenarioTemplates = () => {
                 <input
                   value={form.successHealthRestoreValue}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, successHealthRestoreValue: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      successHealthRestoreValue: event.target.value,
+                    }))
                   }
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -747,7 +944,8 @@ export const ScenarioTemplates = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      successManaRestoreType: event.target.value as ScenarioFailureDrainType,
+                      successManaRestoreType: event.target
+                        .value as ScenarioFailureDrainType,
                     }))
                   }
                   className="mt-1 w-full rounded border p-2"
@@ -762,7 +960,10 @@ export const ScenarioTemplates = () => {
                 <input
                   value={form.successManaRestoreValue}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, successManaRestoreValue: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      successManaRestoreValue: event.target.value,
+                    }))
                   }
                   className="mt-1 w-full rounded border p-2"
                 />
@@ -775,7 +976,10 @@ export const ScenarioTemplates = () => {
                 <textarea
                   value={form.failureStatusesJson}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, failureStatusesJson: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      failureStatusesJson: event.target.value,
+                    }))
                   }
                   rows={8}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
@@ -786,7 +990,10 @@ export const ScenarioTemplates = () => {
                 <textarea
                   value={form.successStatusesJson}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, successStatusesJson: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      successStatusesJson: event.target.value,
+                    }))
                   }
                   rows={8}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
@@ -796,7 +1003,12 @@ export const ScenarioTemplates = () => {
                 Options JSON
                 <textarea
                   value={form.optionsJson}
-                  onChange={(event) => setForm((prev) => ({ ...prev, optionsJson: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      optionsJson: event.target.value,
+                    }))
+                  }
                   rows={10}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
                 />
@@ -806,7 +1018,10 @@ export const ScenarioTemplates = () => {
                 <textarea
                   value={form.itemRewardsJson}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, itemRewardsJson: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      itemRewardsJson: event.target.value,
+                    }))
                   }
                   rows={8}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
@@ -817,7 +1032,10 @@ export const ScenarioTemplates = () => {
                 <textarea
                   value={form.itemChoiceRewardsJson}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, itemChoiceRewardsJson: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      itemChoiceRewardsJson: event.target.value,
+                    }))
                   }
                   rows={8}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
@@ -828,7 +1046,10 @@ export const ScenarioTemplates = () => {
                 <textarea
                   value={form.spellRewardsJson}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, spellRewardsJson: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      spellRewardsJson: event.target.value,
+                    }))
                   }
                   rows={8}
                   className="mt-1 w-full rounded border p-2 font-mono text-xs"
@@ -843,7 +1064,11 @@ export const ScenarioTemplates = () => {
             </div>
 
             <div className="flex justify-end gap-3">
-              <button type="button" onClick={closeModal} className="rounded border px-4 py-2">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded border px-4 py-2"
+              >
                 Cancel
               </button>
               <button
@@ -852,7 +1077,11 @@ export const ScenarioTemplates = () => {
                 disabled={saving}
                 className="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Template'}
+                {saving
+                  ? 'Saving...'
+                  : editing
+                    ? 'Save Changes'
+                    : 'Create Template'}
               </button>
             </div>
           </div>

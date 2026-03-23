@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -11,6 +12,11 @@ import (
 
 type monsterEncounterHandle struct {
 	db *gorm.DB
+}
+
+type monsterEncounterAdminListRow struct {
+	ID   uuid.UUID `gorm:"column:id"`
+	Name string    `gorm:"column:name"`
 }
 
 func (h *monsterEncounterHandle) preloadBase(ctx context.Context) *gorm.DB {
@@ -67,6 +73,95 @@ func (h *monsterEncounterHandle) FindAll(ctx context.Context) ([]models.MonsterE
 		return nil, err
 	}
 	return encounters, nil
+}
+
+func (h *monsterEncounterHandle) adminListBaseQuery(
+	ctx context.Context,
+	params MonsterEncounterAdminListParams,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).
+		Model(&models.MonsterEncounter{}).
+		Where("monster_encounters.retired_at IS NULL").
+		Joins("LEFT JOIN zones ON zones.id = monster_encounters.zone_id").
+		Joins("LEFT JOIN monster_encounter_members ON monster_encounter_members.monster_encounter_id = monster_encounters.id").
+		Joins("LEFT JOIN monsters member_monsters ON member_monsters.id = monster_encounter_members.monster_id")
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			`(
+				LOWER(monster_encounters.name) LIKE ?
+				OR LOWER(monster_encounters.description) LIKE ?
+				OR LOWER(COALESCE(zones.name, '')) LIKE ?
+				OR LOWER(COALESCE(member_monsters.name, '')) LIKE ?
+			)`,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
+		zoneSearchTerm := "%" + normalizedZoneQuery + "%"
+		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", zoneSearchTerm)
+	}
+
+	return query
+}
+
+func (h *monsterEncounterHandle) ListAdmin(
+	ctx context.Context,
+	params MonsterEncounterAdminListParams,
+) (*MonsterEncounterAdminListResult, error) {
+	var total int64
+	if err := h.adminListBaseQuery(ctx, params).
+		Distinct("monster_encounters.id").
+		Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []monsterEncounterAdminListRow{}
+	if err := h.adminListBaseQuery(ctx, params).
+		Select("monster_encounters.id, monster_encounters.name").
+		Distinct().
+		Order("monster_encounters.name ASC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	encounters := make([]models.MonsterEncounter, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.MonsterEncounter{}
+		if err := h.preloadBase(ctx).
+			Where("monster_encounters.id IN ?", ids).
+			Where("monster_encounters.retired_at IS NULL").
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		encountersByID := make(map[uuid.UUID]models.MonsterEncounter, len(loaded))
+		for _, encounter := range loaded {
+			encountersByID[encounter.ID] = encounter
+		}
+		for _, id := range ids {
+			encounter, ok := encountersByID[id]
+			if ok {
+				encounters = append(encounters, encounter)
+			}
+		}
+	}
+
+	return &MonsterEncounterAdminListResult{
+		Encounters: encounters,
+		Total:      total,
+	}, nil
 }
 
 func (h *monsterEncounterHandle) FindByZoneID(

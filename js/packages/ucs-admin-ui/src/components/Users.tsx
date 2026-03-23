@@ -1,12 +1,33 @@
 import { useAPI } from '@poltergeist/contexts';
-import { User, PointOfInterestDiscovery, PointOfInterestChallengeSubmission, ActivityFeed, PointOfInterest, InventoryItem, OwnedInventoryItem, UserLevel } from '@poltergeist/types';
+import {
+  User,
+  PointOfInterestDiscovery,
+  PointOfInterestChallengeSubmission,
+  ActivityFeed,
+  PointOfInterest,
+  InventoryItem,
+  OwnedInventoryItem,
+  UserLevel,
+} from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
+import { BASE_MATERIAL_OPTIONS } from './MaterialRewardsEditor.tsx';
 
 type AdminCharacterStats = {
   health: number;
   maxHealth: number;
   mana: number;
   maxMana: number;
+};
+
+type AdminMaterialBalance = {
+  resourceKey: string;
+  amount: number;
+  updatedAt?: string;
+};
+
+type AdminUserResourcesResponse = {
+  stats?: Partial<AdminCharacterStats> | null;
+  materials?: AdminMaterialBalance[] | null;
 };
 
 type CharacterProficiency = {
@@ -116,6 +137,9 @@ const statLabels: Record<string, string> = {
   charisma: 'CHA',
 };
 
+const createEmptyMaterialGrantAmounts = (): Record<string, string> =>
+  Object.fromEntries(BASE_MATERIAL_OPTIONS.map((option) => [option.value, '']));
+
 const formatTokenLabel = (value?: string | null) =>
   (value || '')
     .split('_')
@@ -130,15 +154,23 @@ export const Users = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [discoveries, setDiscoveries] = useState<PointOfInterestDiscovery[]>([]);
-  const [submissions, setSubmissions] = useState<PointOfInterestChallengeSubmission[]>([]);
+  const [discoveries, setDiscoveries] = useState<PointOfInterestDiscovery[]>(
+    []
+  );
+  const [submissions, setSubmissions] = useState<
+    PointOfInterestChallengeSubmission[]
+  >([]);
   const [activities, setActivities] = useState<ActivityFeed[]>([]);
-  const [selectedDiscoveries, setSelectedDiscoveries] = useState<Set<string>>(new Set());
+  const [selectedDiscoveries, setSelectedDiscoveries] = useState<Set<string>>(
+    new Set()
+  );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [showAddDiscoveryModal, setShowAddDiscoveryModal] = useState(false);
   const [availablePOIs, setAvailablePOIs] = useState<PointOfInterest[]>([]);
-  const [selectedPOIsToAdd, setSelectedPOIsToAdd] = useState<Set<string>>(new Set());
+  const [selectedPOIsToAdd, setSelectedPOIsToAdd] = useState<Set<string>>(
+    new Set()
+  );
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [editingGold, setEditingGold] = useState(false);
@@ -155,33 +187,59 @@ export const Users = () => {
   const [statusWisdomMod, setStatusWisdomMod] = useState('0');
   const [statusCharismaMod, setStatusCharismaMod] = useState('0');
   const [grantingStatus, setGrantingStatus] = useState(false);
-  const [statusGrantMessage, setStatusGrantMessage] = useState<string | null>(null);
-  const [statusGrantKind, setStatusGrantKind] = useState<'success' | 'error' | null>(null);
-  const [resourceStats, setResourceStats] = useState<AdminCharacterStats | null>(null);
+  const [statusGrantMessage, setStatusGrantMessage] = useState<string | null>(
+    null
+  );
+  const [statusGrantKind, setStatusGrantKind] = useState<
+    'success' | 'error' | null
+  >(null);
+  const [resourceStats, setResourceStats] =
+    useState<AdminCharacterStats | null>(null);
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceAmountHealth, setResourceAmountHealth] = useState('0');
   const [resourceAmountMana, setResourceAmountMana] = useState('0');
+  const [materialBalances, setMaterialBalances] = useState<
+    AdminMaterialBalance[]
+  >([]);
+  const [materialGrantAmounts, setMaterialGrantAmounts] = useState<
+    Record<string, string>
+  >(createEmptyMaterialGrantAmounts);
   const [resourceSubmitting, setResourceSubmitting] = useState(false);
   const [resourceMessage, setResourceMessage] = useState<string | null>(null);
-  const [resourceMessageKind, setResourceMessageKind] = useState<'success' | 'error' | null>(null);
-  const [selectedUserProfile, setSelectedUserProfile] = useState<UserCharacterProfileResponse | null>(null);
-  const [profilePlaceholderPrompt, setProfilePlaceholderPrompt] = useState(defaultUserPlaceholderPrompt);
-  const [profilePlaceholderStatus, setProfilePlaceholderStatus] = useState('unknown');
+  const [resourceMessageKind, setResourceMessageKind] = useState<
+    'success' | 'error' | null
+  >(null);
+  const [selectedUserProfile, setSelectedUserProfile] =
+    useState<UserCharacterProfileResponse | null>(null);
+  const [profilePlaceholderPrompt, setProfilePlaceholderPrompt] = useState(
+    defaultUserPlaceholderPrompt
+  );
+  const [profilePlaceholderStatus, setProfilePlaceholderStatus] =
+    useState('unknown');
   const [profilePlaceholderUrl, setProfilePlaceholderUrl] = useState('');
-  const [profilePlaceholderExists, setProfilePlaceholderExists] = useState(false);
-  const [profilePlaceholderRequestedAt, setProfilePlaceholderRequestedAt] = useState<string | null>(null);
-  const [profilePlaceholderLastModified, setProfilePlaceholderLastModified] = useState<string | null>(null);
-  const [profilePlaceholderMessage, setProfilePlaceholderMessage] = useState<string | null>(null);
-  const [profilePlaceholderError, setProfilePlaceholderError] = useState<string | null>(null);
+  const [profilePlaceholderExists, setProfilePlaceholderExists] =
+    useState(false);
+  const [profilePlaceholderRequestedAt, setProfilePlaceholderRequestedAt] =
+    useState<string | null>(null);
+  const [profilePlaceholderLastModified, setProfilePlaceholderLastModified] =
+    useState<string | null>(null);
+  const [profilePlaceholderMessage, setProfilePlaceholderMessage] = useState<
+    string | null
+  >(null);
+  const [profilePlaceholderError, setProfilePlaceholderError] = useState<
+    string | null
+  >(null);
   const [profilePlaceholderBusy, setProfilePlaceholderBusy] = useState(false);
-  const [profilePlaceholderStatusLoading, setProfilePlaceholderStatusLoading] = useState(false);
-  const [profilePlaceholderPreviewNonce, setProfilePlaceholderPreviewNonce] = useState(0);
+  const [profilePlaceholderStatusLoading, setProfilePlaceholderStatusLoading] =
+    useState(false);
+  const [profilePlaceholderPreviewNonce, setProfilePlaceholderPreviewNonce] =
+    useState(0);
 
   const applyUsersResponse = React.useCallback((nextUsers: User[]) => {
     setUsers(nextUsers);
     setFilteredUsers(nextUsers);
     setSelectedUser((prev) =>
-      prev ? nextUsers.find((user) => user.id === prev.id) ?? prev : prev
+      prev ? (nextUsers.find((user) => user.id === prev.id) ?? prev) : prev
     );
   }, []);
 
@@ -197,7 +255,9 @@ export const Users = () => {
         if (url) {
           setProfilePlaceholderUrl(url);
         }
-        setProfilePlaceholderStatus((response?.status || 'unknown').trim() || 'unknown');
+        setProfilePlaceholderStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
         setProfilePlaceholderExists(Boolean(response?.exists));
         setProfilePlaceholderRequestedAt(response?.requestedAt || null);
         setProfilePlaceholderLastModified(response?.lastModified || null);
@@ -231,7 +291,7 @@ export const Users = () => {
     if (searchQuery === '') {
       setFilteredUsers(users);
     } else {
-      const filtered = users.filter(user =>
+      const filtered = users.filter((user) =>
         user.username?.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredUsers(filtered);
@@ -269,7 +329,9 @@ export const Users = () => {
 
   const fetchPOIs = React.useCallback(async () => {
     try {
-      const response = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
+      const response = await apiClient.get<PointOfInterest[]>(
+        '/sonar/pointsOfInterest'
+      );
       setAvailablePOIs(response);
     } catch (error) {
       console.error('Error fetching POIs:', error);
@@ -281,12 +343,20 @@ export const Users = () => {
     void fetchPOIs();
   }, [fetchPOIs, fetchUsers]);
 
-  const normalizeResourceStats = (stats?: Partial<AdminCharacterStats> | null): AdminCharacterStats | null => {
+  const normalizeResourceStats = (
+    stats?: Partial<AdminCharacterStats> | null
+  ): AdminCharacterStats | null => {
     if (!stats) return null;
-    const health = Number.isFinite(stats.health as number) ? Number(stats.health) : 0;
-    const maxHealth = Number.isFinite(stats.maxHealth as number) ? Number(stats.maxHealth) : health;
+    const health = Number.isFinite(stats.health as number)
+      ? Number(stats.health)
+      : 0;
+    const maxHealth = Number.isFinite(stats.maxHealth as number)
+      ? Number(stats.maxHealth)
+      : health;
     const mana = Number.isFinite(stats.mana as number) ? Number(stats.mana) : 0;
-    const maxMana = Number.isFinite(stats.maxMana as number) ? Number(stats.maxMana) : mana;
+    const maxMana = Number.isFinite(stats.maxMana as number)
+      ? Number(stats.maxMana)
+      : mana;
     return {
       health,
       maxHealth: Math.max(maxHealth, 1),
@@ -295,11 +365,52 @@ export const Users = () => {
     };
   };
 
+  const normalizeMaterialBalances = (
+    balances?: AdminMaterialBalance[] | null
+  ): AdminMaterialBalance[] => {
+    const amountsByKey = new Map<string, AdminMaterialBalance>();
+    (balances ?? []).forEach((balance) => {
+      const key = (balance?.resourceKey || '').trim();
+      if (!key) return;
+      amountsByKey.set(key, {
+        resourceKey: key,
+        amount: Number.isFinite(balance.amount) ? Number(balance.amount) : 0,
+        updatedAt: balance.updatedAt,
+      });
+    });
+    return BASE_MATERIAL_OPTIONS.map((option) => ({
+      resourceKey: option.value,
+      amount: amountsByKey.get(option.value)?.amount ?? 0,
+      updatedAt: amountsByKey.get(option.value)?.updatedAt,
+    }));
+  };
+
+  const applyAdminUserResources = React.useCallback(
+    (payload?: AdminUserResourcesResponse | null) => {
+      setResourceStats(normalizeResourceStats(payload?.stats));
+      setMaterialBalances(normalizeMaterialBalances(payload?.materials));
+    },
+    []
+  );
+
+  const refreshSelectedUserResources = React.useCallback(
+    async (userId: string) => {
+      const resourcesRes = await apiClient.get<AdminUserResourcesResponse>(
+        `/sonar/admin/users/${userId}/resources`
+      );
+      applyAdminUserResources(resourcesRes);
+      return resourcesRes;
+    },
+    [apiClient, applyAdminUserResources]
+  );
+
   const refreshSelectedUserProfile = React.useCallback(
     async (userId: string) => {
-      const characterProfileRes = await apiClient.get<UserCharacterProfileResponse>(`/sonar/users/${userId}/character`);
+      const characterProfileRes =
+        await apiClient.get<UserCharacterProfileResponse>(
+          `/sonar/users/${userId}/character`
+        );
       setSelectedUserProfile(characterProfileRes);
-      setResourceStats(normalizeResourceStats(characterProfileRes?.stats));
       return characterProfileRes;
     },
     [apiClient]
@@ -325,29 +436,43 @@ export const Users = () => {
     setStatusGrantKind(null);
     setResourceAmountHealth('0');
     setResourceAmountMana('0');
+    setMaterialGrantAmounts(createEmptyMaterialGrantAmounts());
     setResourceMessage(null);
     setResourceMessageKind(null);
     setResourceStats(null);
+    setMaterialBalances([]);
     setSelectedUserProfile(null);
     setResourceLoading(true);
-    
+
     try {
-      const [discoveriesRes, submissionsRes, activitiesRes, characterProfileRes] = await Promise.all([
-        apiClient.get<PointOfInterestDiscovery[]>(`/sonar/users/${user.id}/discoveries`),
-        apiClient.get<PointOfInterestChallengeSubmission[]>(`/sonar/users/${user.id}/submissions`),
+      const [
+        discoveriesRes,
+        submissionsRes,
+        activitiesRes,
+        characterProfileRes,
+      ] = await Promise.all([
+        apiClient.get<PointOfInterestDiscovery[]>(
+          `/sonar/users/${user.id}/discoveries`
+        ),
+        apiClient.get<PointOfInterestChallengeSubmission[]>(
+          `/sonar/users/${user.id}/submissions`
+        ),
         apiClient.get<ActivityFeed[]>(`/sonar/users/${user.id}/activities`),
-        apiClient.get<UserCharacterProfileResponse>(`/sonar/users/${user.id}/character`)
+        apiClient.get<UserCharacterProfileResponse>(
+          `/sonar/users/${user.id}/character`
+        ),
+        refreshSelectedUserResources(user.id),
       ]);
-      
+
       setDiscoveries(discoveriesRes);
       setSubmissions(submissionsRes);
       setActivities(activitiesRes);
       setSelectedUserProfile(characterProfileRes);
-      setResourceStats(normalizeResourceStats(characterProfileRes?.stats));
     } catch (error) {
       console.error('Error fetching user details:', error);
       setSelectedUserProfile(null);
       setResourceStats(null);
+      setMaterialBalances([]);
     } finally {
       setResourceLoading(false);
     }
@@ -355,22 +480,27 @@ export const Users = () => {
 
   const updateUserGold = async () => {
     if (!selectedUser) return;
-    
+
     const goldAmount = parseInt(goldInputValue);
     if (isNaN(goldAmount) || goldAmount < 0) {
       alert('Please enter a valid gold amount (>= 0)');
       return;
     }
-    
+
     try {
-      const updatedUser = await apiClient.patch<User>(`/sonar/users/${selectedUser.id}/gold`, {
-        gold: goldAmount
-      });
-      
+      const updatedUser = await apiClient.patch<User>(
+        `/sonar/users/${selectedUser.id}/gold`,
+        {
+          gold: goldAmount,
+        }
+      );
+
       // Update the user in the users list
-      setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+      setUsers(users.map((u) => (u.id === selectedUser.id ? updatedUser : u)));
       setSelectedUser(updatedUser);
-      setSelectedUserProfile((prev) => prev ? { ...prev, user: updatedUser } : prev);
+      setSelectedUserProfile((prev) =>
+        prev ? { ...prev, user: updatedUser } : prev
+      );
       setEditingGold(false);
       setGoldInputValue('');
     } catch (error) {
@@ -449,7 +579,11 @@ export const Users = () => {
     return parsed;
   };
 
-  const adjustResources = async (healthDelta: number, manaDelta: number, successMessage: string) => {
+  const adjustResources = async (
+    healthDelta: number,
+    manaDelta: number,
+    successMessage: string
+  ) => {
     if (!selectedUser) return;
     if (healthDelta === 0 && manaDelta === 0) {
       setResourceMessage('Enter at least one non-zero amount.');
@@ -461,12 +595,15 @@ export const Users = () => {
       setResourceSubmitting(true);
       setResourceMessage(null);
       setResourceMessageKind(null);
-      const response = await apiClient.post<AdminCharacterStats>(`/sonar/admin/users/${selectedUser.id}/resources`, {
-        healthDelta,
-        manaDelta,
-      });
-      const nextResourceStats = normalizeResourceStats(response);
-      setResourceStats(nextResourceStats);
+      const response = await apiClient.post<AdminUserResourcesResponse>(
+        `/sonar/admin/users/${selectedUser.id}/resources`,
+        {
+          healthDelta,
+          manaDelta,
+        }
+      );
+      const nextResourceStats = normalizeResourceStats(response?.stats);
+      applyAdminUserResources(response);
       setSelectedUserProfile((prev) => {
         if (!prev || !prev.stats || !nextResourceStats) return prev;
         return {
@@ -503,6 +640,57 @@ export const Users = () => {
     await adjustResources(healthAmount, manaAmount, 'Resources restored.');
   };
 
+  const updateMaterialGrantAmount = (resourceKey: string, value: string) => {
+    setMaterialGrantAmounts((prev) => ({
+      ...prev,
+      [resourceKey]: value,
+    }));
+  };
+
+  const grantMaterials = async () => {
+    if (!selectedUser) return;
+
+    const materialRewards = BASE_MATERIAL_OPTIONS.map((option) => {
+      const parsed = parseInt(materialGrantAmounts[option.value] ?? '', 10);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return null;
+      }
+      return {
+        resourceKey: option.value,
+        amount: parsed,
+      };
+    }).filter(
+      (entry): entry is { resourceKey: string; amount: number } =>
+        entry !== null
+    );
+
+    if (materialRewards.length === 0) {
+      setResourceMessage('Enter at least one material amount greater than 0.');
+      setResourceMessageKind('error');
+      return;
+    }
+
+    try {
+      setResourceSubmitting(true);
+      setResourceMessage(null);
+      setResourceMessageKind(null);
+      const response = await apiClient.post<AdminUserResourcesResponse>(
+        `/sonar/admin/users/${selectedUser.id}/resources`,
+        { materialRewards }
+      );
+      applyAdminUserResources(response);
+      setMaterialGrantAmounts(createEmptyMaterialGrantAmounts());
+      setResourceMessage('Materials granted successfully.');
+      setResourceMessageKind('success');
+    } catch (error) {
+      console.error('Error granting materials:', error);
+      setResourceMessage('Failed to grant materials.');
+      setResourceMessageKind('error');
+    } finally {
+      setResourceSubmitting(false);
+    }
+  };
+
   const generateProfilePlaceholder = async () => {
     const prompt = profilePlaceholderPrompt.trim();
     if (!prompt) {
@@ -518,7 +706,9 @@ export const Users = () => {
         '/sonar/admin/users/profile-picture-placeholder',
         { prompt }
       );
-      setProfilePlaceholderMessage('Profile placeholder queued for generation.');
+      setProfilePlaceholderMessage(
+        'Profile placeholder queued for generation.'
+      );
       await refreshProfilePlaceholderStatus();
     } catch (error) {
       console.error('Error generating profile placeholder:', error);
@@ -534,10 +724,10 @@ export const Users = () => {
 
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
-    
+
     try {
       await apiClient.delete(`/sonar/users/${userToDelete.id}`);
-      setUsers(users.filter(u => u.id !== userToDelete.id));
+      setUsers(users.filter((u) => u.id !== userToDelete.id));
       if (selectedUser?.id === userToDelete.id) {
         setSelectedUser(null);
       }
@@ -559,7 +749,7 @@ export const Users = () => {
   };
 
   const selectAllUsers = () => {
-    setSelectedUsers(new Set(filteredUsers.map(u => u.id)));
+    setSelectedUsers(new Set(filteredUsers.map((u) => u.id)));
   };
 
   const clearUserSelection = () => {
@@ -567,20 +757,27 @@ export const Users = () => {
   };
 
   const getUsersWithoutUsernames = () => {
-    return filteredUsers.filter(user => !user.username || user.username.trim() === '');
+    return filteredUsers.filter(
+      (user) => !user.username || user.username.trim() === ''
+    );
   };
 
   const handleDeleteUsersWithoutUsernames = async () => {
     const usersWithoutUsernames = getUsersWithoutUsernames();
     if (usersWithoutUsernames.length === 0) return;
-    
+
     try {
       await apiClient.delete('/sonar/users', {
-        userIds: usersWithoutUsernames.map(u => u.id)
+        userIds: usersWithoutUsernames.map((u) => u.id),
       });
-      
-      setUsers(users.filter(u => usersWithoutUsernames.every(wu => wu.id !== u.id)));
-      if (selectedUser && usersWithoutUsernames.some(u => u.id === selectedUser.id)) {
+
+      setUsers(
+        users.filter((u) => usersWithoutUsernames.every((wu) => wu.id !== u.id))
+      );
+      if (
+        selectedUser &&
+        usersWithoutUsernames.some((u) => u.id === selectedUser.id)
+      ) {
         setSelectedUser(null);
       }
       setSelectedUsers(new Set());
@@ -591,13 +788,13 @@ export const Users = () => {
 
   const handleBulkDeleteUsers = async () => {
     if (selectedUsers.size === 0) return;
-    
+
     try {
       await apiClient.delete('/sonar/users', {
-        userIds: Array.from(selectedUsers)
+        userIds: Array.from(selectedUsers),
       });
-      
-      setUsers(users.filter(u => !selectedUsers.has(u.id)));
+
+      setUsers(users.filter((u) => !selectedUsers.has(u.id)));
       if (selectedUser && selectedUsers.has(selectedUser.id)) {
         setSelectedUser(null);
       }
@@ -620,15 +817,15 @@ export const Users = () => {
 
   const deleteSelectedDiscoveries = async () => {
     if (!selectedUser || selectedDiscoveries.size === 0) return;
-    
+
     try {
       await Promise.all(
-        Array.from(selectedDiscoveries).map(id =>
+        Array.from(selectedDiscoveries).map((id) =>
           apiClient.delete(`/sonar/users/${selectedUser.id}/discoveries/${id}`)
         )
       );
-      
-      setDiscoveries(discoveries.filter(d => !selectedDiscoveries.has(d.id)));
+
+      setDiscoveries(discoveries.filter((d) => !selectedDiscoveries.has(d.id)));
       setSelectedDiscoveries(new Set());
     } catch (error) {
       console.error('Error deleting discoveries:', error);
@@ -637,7 +834,7 @@ export const Users = () => {
 
   const deleteAllDiscoveries = async () => {
     if (!selectedUser) return;
-    
+
     try {
       await apiClient.delete(`/sonar/users/${selectedUser.id}/discoveries`);
       setDiscoveries([]);
@@ -659,14 +856,16 @@ export const Users = () => {
 
   const addSelectedDiscoveries = async () => {
     if (!selectedUser || selectedPOIsToAdd.size === 0) return;
-    
+
     try {
       await apiClient.post(`/sonar/users/${selectedUser.id}/discoveries`, {
-        pointOfInterestIds: Array.from(selectedPOIsToAdd)
+        pointOfInterestIds: Array.from(selectedPOIsToAdd),
       });
-      
+
       // Refresh discoveries
-      const discoveriesRes = await apiClient.get<PointOfInterestDiscovery[]>(`/sonar/users/${selectedUser.id}/discoveries`);
+      const discoveriesRes = await apiClient.get<PointOfInterestDiscovery[]>(
+        `/sonar/users/${selectedUser.id}/discoveries`
+      );
       setDiscoveries(discoveriesRes);
       setSelectedPOIsToAdd(new Set());
       setShowAddDiscoveryModal(false);
@@ -678,7 +877,7 @@ export const Users = () => {
   const deleteSubmission = async (submissionId: string) => {
     try {
       await apiClient.delete(`/sonar/submissions/${submissionId}`);
-      setSubmissions(submissions.filter(s => s.id !== submissionId));
+      setSubmissions(submissions.filter((s) => s.id !== submissionId));
     } catch (error) {
       console.error('Error deleting submission:', error);
     }
@@ -686,7 +885,7 @@ export const Users = () => {
 
   const deleteAllSubmissions = async () => {
     if (!selectedUser) return;
-    
+
     try {
       await apiClient.delete(`/sonar/users/${selectedUser.id}/submissions`);
       setSubmissions([]);
@@ -698,7 +897,7 @@ export const Users = () => {
   const deleteActivity = async (activityId: string) => {
     try {
       await apiClient.delete(`/sonar/activities/${activityId}`);
-      setActivities(activities.filter(a => a.id !== activityId));
+      setActivities(activities.filter((a) => a.id !== activityId));
     } catch (error) {
       console.error('Error deleting activity:', error);
     }
@@ -706,7 +905,7 @@ export const Users = () => {
 
   const deleteAllActivities = async () => {
     if (!selectedUser) return;
-    
+
     try {
       await apiClient.delete(`/sonar/users/${selectedUser.id}/activities`);
       setActivities([]);
@@ -725,14 +924,20 @@ export const Users = () => {
   const profileStats = selectedUserProfile?.stats;
   const profileLevel = selectedUserProfile?.userLevel;
   const profileEquipment = selectedUserProfile?.equipment ?? [];
-  const profileInventory = [...(selectedUserProfile?.inventory ?? [])].sort((left, right) => {
-    const leftEquipped = (left.equippedSlots?.length || 0) > 0 ? 1 : 0;
-    const rightEquipped = (right.equippedSlots?.length || 0) > 0 ? 1 : 0;
-    if (leftEquipped !== rightEquipped) return rightEquipped - leftEquipped;
-    const leftName = left.inventoryItem?.name || `Item #${left.ownedInventoryItem.inventoryItemId}`;
-    const rightName = right.inventoryItem?.name || `Item #${right.ownedInventoryItem.inventoryItemId}`;
-    return leftName.localeCompare(rightName);
-  });
+  const profileInventory = [...(selectedUserProfile?.inventory ?? [])].sort(
+    (left, right) => {
+      const leftEquipped = (left.equippedSlots?.length || 0) > 0 ? 1 : 0;
+      const rightEquipped = (right.equippedSlots?.length || 0) > 0 ? 1 : 0;
+      if (leftEquipped !== rightEquipped) return rightEquipped - leftEquipped;
+      const leftName =
+        left.inventoryItem?.name ||
+        `Item #${left.ownedInventoryItem.inventoryItemId}`;
+      const rightName =
+        right.inventoryItem?.name ||
+        `Item #${right.ownedInventoryItem.inventoryItemId}`;
+      return leftName.localeCompare(rightName);
+    }
+  );
   const statEntries = Object.entries(statLabels).map(([key, label]) => ({
     key,
     label,
@@ -744,7 +949,7 @@ export const Users = () => {
   return (
     <div className="p-4">
       <h1 className="text-3xl font-bold mb-6">User Management</h1>
-      
+
       {/* Search Bar */}
       <div className="mb-6">
         <div className="flex gap-4 items-center">
@@ -757,7 +962,9 @@ export const Users = () => {
           />
           {selectedUsers.size > 0 && (
             <div className="flex gap-2">
-              <span className="text-sm text-gray-600">{selectedUsers.size} selected</span>
+              <span className="text-sm text-gray-600">
+                {selectedUsers.size} selected
+              </span>
               <button
                 onClick={() => setShowBulkDeleteConfirm(true)}
                 className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
@@ -785,7 +992,8 @@ export const Users = () => {
               onClick={handleDeleteUsersWithoutUsernames}
               className="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600"
             >
-              Delete Users Without Usernames ({getUsersWithoutUsernames().length})
+              Delete Users Without Usernames (
+              {getUsersWithoutUsernames().length})
             </button>
           )}
         </div>
@@ -794,9 +1002,12 @@ export const Users = () => {
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Default Profile Placeholder</h2>
+            <h2 className="text-xl font-semibold">
+              Default Profile Placeholder
+            </h2>
             <p className="text-sm text-gray-600">
-              Applies the generated S3 image to every user whose profile image is blank.
+              Applies the generated S3 image to every user whose profile image
+              is blank.
             </p>
             <p className="text-xs text-gray-500 mt-1">
               Users without profile images: {usersWithoutProfilePicturesCount}
@@ -812,11 +1023,15 @@ export const Users = () => {
                   : 'bg-gray-600 hover:bg-gray-700'
               }`}
             >
-              {profilePlaceholderStatusLoading ? 'Refreshing...' : 'Refresh Status'}
+              {profilePlaceholderStatusLoading
+                ? 'Refreshing...'
+                : 'Refresh Status'}
             </button>
             <button
               onClick={generateProfilePlaceholder}
-              disabled={profilePlaceholderBusy || profilePlaceholderStatusLoading}
+              disabled={
+                profilePlaceholderBusy || profilePlaceholderStatusLoading
+              }
               className={`px-3 py-2 rounded text-white ${
                 profilePlaceholderBusy || profilePlaceholderStatusLoading
                   ? 'bg-gray-400 cursor-not-allowed'
@@ -831,7 +1046,9 @@ export const Users = () => {
         <div className="mt-4 rounded-lg border border-gray-200 p-4 space-y-4">
           <div className="flex flex-wrap items-start gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Generated Preview</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Generated Preview
+              </p>
               {profilePlaceholderExists ? (
                 <img
                   src={`${profilePlaceholderUrl}?v=${profilePlaceholderPreviewNonce}`}
@@ -876,7 +1093,9 @@ export const Users = () => {
             Generation Prompt
             <textarea
               value={profilePlaceholderPrompt}
-              onChange={(event) => setProfilePlaceholderPrompt(event.target.value)}
+              onChange={(event) =>
+                setProfilePlaceholderPrompt(event.target.value)
+              }
               placeholder="Prompt used to generate the shared user placeholder portrait."
               className="mt-1 min-h-[96px] w-full rounded-lg border border-gray-300 px-3 py-2"
             />
@@ -899,10 +1118,12 @@ export const Users = () => {
         {/* Users List */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-4 border-b">
-            <h2 className="text-xl font-semibold">Users ({filteredUsers.length})</h2>
+            <h2 className="text-xl font-semibold">
+              Users ({filteredUsers.length})
+            </h2>
           </div>
           <div className="overflow-y-auto max-h-[calc(100vh-200px)]">
-            {filteredUsers.map(user => (
+            {filteredUsers.map((user) => (
               <div
                 key={user.id}
                 className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${
@@ -917,17 +1138,23 @@ export const Users = () => {
                     onClick={(e) => e.stopPropagation()}
                     className="mt-1"
                   />
-                  <div 
+                  <div
                     className="flex-grow cursor-pointer"
                     onClick={() => selectUser(user)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="font-semibold">{user.username || 'No username'}</div>
+                      <div className="font-semibold">
+                        {user.username || 'No username'}
+                      </div>
                       <div className="bg-amber-100 border border-amber-400 rounded px-2 py-0.5">
-                        <span className="text-xs font-bold text-amber-600">🪙 {user.gold}</span>
+                        <span className="text-xs font-bold text-amber-600">
+                          🪙 {user.gold}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-sm text-gray-600">{user.phoneNumber}</div>
+                    <div className="text-sm text-gray-600">
+                      {user.phoneNumber}
+                    </div>
                     <div className="text-xs text-gray-500">
                       Created: {new Date(user.createdAt).toLocaleDateString()}
                     </div>
@@ -953,7 +1180,9 @@ export const Users = () => {
           {selectedUser ? (
             <div>
               <div className="p-4 border-b">
-                <h2 className="text-xl font-semibold">{selectedUser.username || 'User Details'}</h2>
+                <h2 className="text-xl font-semibold">
+                  {selectedUser.username || 'User Details'}
+                </h2>
                 <p className="text-sm text-gray-600">ID: {selectedUser.id}</p>
               </div>
 
@@ -971,20 +1200,30 @@ export const Users = () => {
                   <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
                     <div>
                       <div className="text-gray-500">Phone</div>
-                      <div className="font-medium text-gray-900">{selectedUser.phoneNumber || 'Unknown'}</div>
+                      <div className="font-medium text-gray-900">
+                        {selectedUser.phoneNumber || 'Unknown'}
+                      </div>
                     </div>
                     <div>
                       <div className="text-gray-500">Name</div>
-                      <div className="font-medium text-gray-900">{selectedUser.name || 'Unknown'}</div>
+                      <div className="font-medium text-gray-900">
+                        {selectedUser.name || 'Unknown'}
+                      </div>
                     </div>
                     <div>
                       <div className="text-gray-500">Party</div>
-                      <div className="font-medium text-gray-900">{selectedUser.partyId || 'None'}</div>
+                      <div className="font-medium text-gray-900">
+                        {selectedUser.partyId || 'None'}
+                      </div>
                     </div>
                     <div>
                       <div className="text-gray-500">Active</div>
                       <div className="font-medium text-gray-900">
-                        {selectedUser.isActive === null ? 'Unknown' : selectedUser.isActive ? 'Yes' : 'No'}
+                        {selectedUser.isActive === null
+                          ? 'Unknown'
+                          : selectedUser.isActive
+                            ? 'Yes'
+                            : 'No'}
                       </div>
                     </div>
                     <div>
@@ -1011,9 +1250,13 @@ export const Users = () => {
                     <div className="flex items-center gap-4">
                       <div className="bg-amber-100 border border-amber-400 rounded-lg p-4 flex items-center gap-3">
                         <div className="w-12 h-12 rounded-lg border border-amber-400 flex items-center justify-center">
-                          <span className="text-lg font-bold text-amber-600">GOLD</span>
+                          <span className="text-lg font-bold text-amber-600">
+                            GOLD
+                          </span>
                         </div>
-                        <span className="text-3xl font-bold text-gray-900">{selectedUser.gold}</span>
+                        <span className="text-3xl font-bold text-gray-900">
+                          {selectedUser.gold}
+                        </span>
                       </div>
                       <button
                         onClick={() => {
@@ -1057,16 +1300,25 @@ export const Users = () => {
                 {/* Resources Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-semibold">Health & Mana</h3>
+                    <h3 className="text-lg font-semibold">
+                      Resources & Materials
+                    </h3>
                   </div>
                   <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                    <div className="text-sm font-medium text-gray-700">
+                      Health & Mana
+                    </div>
                     {resourceLoading ? (
-                      <div className="text-sm text-gray-500">Loading resources...</div>
+                      <div className="text-sm text-gray-500">
+                        Loading resources...
+                      </div>
                     ) : resourceStats ? (
                       <div className="space-y-3">
                         <div>
                           <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium text-red-700">Health</span>
+                            <span className="font-medium text-red-700">
+                              Health
+                            </span>
                             <span className="text-gray-700">
                               {resourceStats.health} / {resourceStats.maxHealth}
                             </span>
@@ -1079,8 +1331,10 @@ export const Users = () => {
                                   0,
                                   Math.min(
                                     100,
-                                    (resourceStats.health / Math.max(resourceStats.maxHealth, 1)) * 100,
-                                  ),
+                                    (resourceStats.health /
+                                      Math.max(resourceStats.maxHealth, 1)) *
+                                      100
+                                  )
                                 )}%`,
                               }}
                             />
@@ -1089,7 +1343,9 @@ export const Users = () => {
 
                         <div>
                           <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium text-blue-700">Mana</span>
+                            <span className="font-medium text-blue-700">
+                              Mana
+                            </span>
                             <span className="text-gray-700">
                               {resourceStats.mana} / {resourceStats.maxMana}
                             </span>
@@ -1102,8 +1358,10 @@ export const Users = () => {
                                   0,
                                   Math.min(
                                     100,
-                                    (resourceStats.mana / Math.max(resourceStats.maxMana, 1)) * 100,
-                                  ),
+                                    (resourceStats.mana /
+                                      Math.max(resourceStats.maxMana, 1)) *
+                                      100
+                                  )
                                 )}%`,
                               }}
                             />
@@ -1111,30 +1369,93 @@ export const Users = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="text-sm text-gray-500">Resource values unavailable.</div>
+                      <div className="text-sm text-gray-500">
+                        Resource values unavailable.
+                      </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Health amount</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Health amount
+                        </label>
                         <input
                           type="number"
                           min="0"
                           value={resourceAmountHealth}
-                          onChange={(e) => setResourceAmountHealth(e.target.value)}
+                          onChange={(e) =>
+                            setResourceAmountHealth(e.target.value)
+                          }
                           className="w-full px-3 py-2 border rounded-lg"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Mana amount</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Mana amount
+                        </label>
                         <input
                           type="number"
                           min="0"
                           value={resourceAmountMana}
-                          onChange={(e) => setResourceAmountMana(e.target.value)}
+                          onChange={(e) =>
+                            setResourceAmountMana(e.target.value)
+                          }
                           className="w-full px-3 py-2 border rounded-lg"
                         />
                       </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-3">
+                      <div className="mb-3 text-sm font-medium text-gray-700">
+                        Materials
+                      </div>
+                      {resourceLoading ? (
+                        <div className="text-sm text-gray-500">
+                          Loading materials...
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                          {BASE_MATERIAL_OPTIONS.map((option) => {
+                            const currentAmount =
+                              materialBalances.find(
+                                (balance) =>
+                                  balance.resourceKey === option.value
+                              )?.amount ?? 0;
+                            return (
+                              <div
+                                key={option.value}
+                                className="rounded-lg border border-gray-200 bg-gray-50 p-3"
+                              >
+                                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                  {option.label}
+                                </div>
+                                <div className="mt-1 text-2xl font-bold text-gray-900">
+                                  {currentAmount}
+                                </div>
+                                <label className="mt-3 block text-xs font-medium text-gray-600">
+                                  Grant amount
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={
+                                      materialGrantAmounts[option.value] ?? ''
+                                    }
+                                    onChange={(e) =>
+                                      updateMaterialGrantAmount(
+                                        option.value,
+                                        e.target.value
+                                      )
+                                    }
+                                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                                    placeholder="0"
+                                  />
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {resourceMessage && (
@@ -1172,6 +1493,17 @@ export const Users = () => {
                       >
                         Restore
                       </button>
+                      <button
+                        onClick={grantMaterials}
+                        disabled={resourceSubmitting || resourceLoading}
+                        className={`px-4 py-2 rounded text-white ${
+                          resourceSubmitting || resourceLoading
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-amber-600 hover:bg-amber-700'
+                        }`}
+                      >
+                        Grant Materials
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1190,12 +1522,26 @@ export const Users = () => {
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                         {statEntries.map((entry) => (
-                          <div key={entry.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                            <div className="text-xs font-semibold text-gray-500">{entry.label}</div>
-                            <div className="mt-1 text-2xl font-bold text-gray-900">{entry.value}</div>
+                          <div
+                            key={entry.key}
+                            className="rounded-lg border border-gray-200 bg-gray-50 p-3"
+                          >
+                            <div className="text-xs font-semibold text-gray-500">
+                              {entry.label}
+                            </div>
+                            <div className="mt-1 text-2xl font-bold text-gray-900">
+                              {entry.value}
+                            </div>
                             <div className="mt-2 space-y-1 text-xs text-gray-600">
-                              <div>Equipment: {entry.equipmentBonus >= 0 ? '+' : ''}{entry.equipmentBonus}</div>
-                              <div>Status: {entry.statusBonus >= 0 ? '+' : ''}{entry.statusBonus}</div>
+                              <div>
+                                Equipment:{' '}
+                                {entry.equipmentBonus >= 0 ? '+' : ''}
+                                {entry.equipmentBonus}
+                              </div>
+                              <div>
+                                Status: {entry.statusBonus >= 0 ? '+' : ''}
+                                {entry.statusBonus}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1203,23 +1549,36 @@ export const Users = () => {
 
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                         <div className="rounded-lg border border-gray-200 p-3">
-                          <h4 className="mb-2 font-semibold text-gray-900">Proficiencies</h4>
+                          <h4 className="mb-2 font-semibold text-gray-900">
+                            Proficiencies
+                          </h4>
                           {profileStats.proficiencies?.length ? (
                             <div className="space-y-2">
                               {profileStats.proficiencies.map((proficiency) => (
-                                <div key={`${proficiency.proficiency}-${proficiency.level}`} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
-                                  <span className="text-gray-900">{proficiency.proficiency}</span>
-                                  <span className="font-medium text-gray-700">Lv. {proficiency.level}</span>
+                                <div
+                                  key={`${proficiency.proficiency}-${proficiency.level}`}
+                                  className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm"
+                                >
+                                  <span className="text-gray-900">
+                                    {proficiency.proficiency}
+                                  </span>
+                                  <span className="font-medium text-gray-700">
+                                    Lv. {proficiency.level}
+                                  </span>
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <div className="text-sm text-gray-500">No proficiencies recorded.</div>
+                            <div className="text-sm text-gray-500">
+                              No proficiencies recorded.
+                            </div>
                           )}
                         </div>
 
                         <div className="rounded-lg border border-gray-200 p-3">
-                          <h4 className="mb-2 font-semibold text-gray-900">Active Statuses</h4>
+                          <h4 className="mb-2 font-semibold text-gray-900">
+                            Active Statuses
+                          </h4>
                           {profileStats.statuses?.length ? (
                             <div className="space-y-2">
                               {profileStats.statuses.map((status) => (
@@ -1232,57 +1591,91 @@ export const Users = () => {
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="font-semibold text-gray-900">{status.name || formatTokenLabel(status.effectType)}</span>
+                                    <span className="font-semibold text-gray-900">
+                                      {status.name ||
+                                        formatTokenLabel(status.effectType)}
+                                    </span>
                                     <span className="text-xs text-gray-500">
-                                      until {status.expiresAt ? new Date(status.expiresAt).toLocaleString() : 'Unknown'}
+                                      until{' '}
+                                      {status.expiresAt
+                                        ? new Date(
+                                            status.expiresAt
+                                          ).toLocaleString()
+                                        : 'Unknown'}
                                     </span>
                                   </div>
                                   {status.description ? (
-                                    <div className="mt-1 text-gray-700">{status.description}</div>
+                                    <div className="mt-1 text-gray-700">
+                                      {status.description}
+                                    </div>
                                   ) : null}
                                   {status.effect ? (
-                                    <div className="mt-1 text-xs text-gray-600">{status.effect}</div>
+                                    <div className="mt-1 text-xs text-gray-600">
+                                      {status.effect}
+                                    </div>
                                   ) : null}
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <div className="text-sm text-gray-500">No active statuses.</div>
+                            <div className="text-sm text-gray-500">
+                              No active statuses.
+                            </div>
                           )}
                         </div>
                       </div>
 
                       <div className="rounded-lg border border-gray-200 p-3">
-                        <h4 className="mb-2 font-semibold text-gray-900">Abilities</h4>
+                        <h4 className="mb-2 font-semibold text-gray-900">
+                          Abilities
+                        </h4>
                         {profileStats.spells?.length ? (
                           <div className="space-y-2">
                             {profileStats.spells.map((spell) => (
-                              <div key={spell.id} className="rounded bg-gray-50 px-3 py-2 text-sm">
+                              <div
+                                key={spell.id}
+                                className="rounded bg-gray-50 px-3 py-2 text-sm"
+                              >
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
-                                    <div className="font-semibold text-gray-900">{spell.name}</div>
+                                    <div className="font-semibold text-gray-900">
+                                      {spell.name}
+                                    </div>
                                     <div className="text-xs text-gray-600">
-                                      {formatTokenLabel(spell.abilityType)} · Level {spell.abilityLevel} · Mana {spell.manaCost}
+                                      {formatTokenLabel(spell.abilityType)} ·
+                                      Level {spell.abilityLevel} · Mana{' '}
+                                      {spell.manaCost}
                                     </div>
                                   </div>
                                   <div className="text-right text-xs text-gray-600">
-                                    <div>Cooldown: {spell.cooldownTurnsRemaining || 0} turns</div>
-                                    <div>{spell.schoolOfMagic || 'No school'}</div>
+                                    <div>
+                                      Cooldown:{' '}
+                                      {spell.cooldownTurnsRemaining || 0} turns
+                                    </div>
+                                    <div>
+                                      {spell.schoolOfMagic || 'No school'}
+                                    </div>
                                   </div>
                                 </div>
                                 {spell.effectText ? (
-                                  <div className="mt-1 text-xs text-gray-700">{spell.effectText}</div>
+                                  <div className="mt-1 text-xs text-gray-700">
+                                    {spell.effectText}
+                                  </div>
                                 ) : null}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-sm text-gray-500">No abilities learned.</div>
+                          <div className="text-sm text-gray-500">
+                            No abilities learned.
+                          </div>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="text-sm text-gray-500">Character stats unavailable.</div>
+                    <div className="text-sm text-gray-500">
+                      Character stats unavailable.
+                    </div>
                   )}
                 </div>
 
@@ -1292,9 +1685,14 @@ export const Users = () => {
                   {profileEquipment.length ? (
                     <div className="space-y-2">
                       {profileEquipment.map((slot) => (
-                        <div key={`${slot.slot}-${slot.ownedInventoryItemId || 'empty'}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                        <div
+                          key={`${slot.slot}-${slot.ownedInventoryItemId || 'empty'}`}
+                          className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                        >
                           <div>
-                            <div className="font-semibold text-gray-900">{formatTokenLabel(slot.slot)}</div>
+                            <div className="font-semibold text-gray-900">
+                              {formatTokenLabel(slot.slot)}
+                            </div>
                             <div className="text-gray-600">
                               {slot.inventoryItem?.name || 'Empty'}
                             </div>
@@ -1302,14 +1700,19 @@ export const Users = () => {
                           {slot.inventoryItem ? (
                             <div className="text-right text-xs text-gray-600">
                               <div>Item #{slot.inventoryItem.id}</div>
-                              <div>{slot.inventoryItem.rarityTier || 'Unknown rarity'}</div>
+                              <div>
+                                {slot.inventoryItem.rarityTier ||
+                                  'Unknown rarity'}
+                              </div>
                             </div>
                           ) : null}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-gray-500">No equipment equipped.</div>
+                    <div className="text-sm text-gray-500">
+                      No equipment equipped.
+                    </div>
                   )}
                 </div>
 
@@ -1317,16 +1720,22 @@ export const Users = () => {
                 <div className="space-y-3 rounded-lg border border-gray-200 p-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold">Inventory</h3>
-                    <span className="text-sm text-gray-600">{profileInventory.length} items</span>
+                    <span className="text-sm text-gray-600">
+                      {profileInventory.length} items
+                    </span>
                   </div>
                   {profileInventory.length ? (
                     <div className="space-y-2">
                       {profileInventory.map((entry) => (
-                        <div key={entry.ownedInventoryItem.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm">
+                        <div
+                          key={entry.ownedInventoryItem.id}
+                          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm"
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="font-semibold text-gray-900">
-                                {entry.inventoryItem?.name || `Item #${entry.ownedInventoryItem.inventoryItemId}`}
+                                {entry.inventoryItem?.name ||
+                                  `Item #${entry.ownedInventoryItem.inventoryItemId}`}
                               </div>
                               <div className="text-xs text-gray-600">
                                 Quantity: {entry.ownedInventoryItem.quantity}
@@ -1335,14 +1744,25 @@ export const Users = () => {
                                   : ''}
                               </div>
                               {entry.inventoryItem?.effectText ? (
-                                <div className="mt-1 text-xs text-gray-700">{entry.inventoryItem.effectText}</div>
+                                <div className="mt-1 text-xs text-gray-700">
+                                  {entry.inventoryItem.effectText}
+                                </div>
                               ) : null}
                             </div>
                             <div className="text-right text-xs text-gray-600">
-                              <div>Item #{entry.ownedInventoryItem.inventoryItemId}</div>
-                              <div>{entry.inventoryItem?.rarityTier || 'Unknown rarity'}</div>
+                              <div>
+                                Item #{entry.ownedInventoryItem.inventoryItemId}
+                              </div>
+                              <div>
+                                {entry.inventoryItem?.rarityTier ||
+                                  'Unknown rarity'}
+                              </div>
                               {entry.inventoryItem?.equipSlot ? (
-                                <div>{formatTokenLabel(entry.inventoryItem.equipSlot)}</div>
+                                <div>
+                                  {formatTokenLabel(
+                                    entry.inventoryItem.equipSlot
+                                  )}
+                                </div>
                               ) : null}
                             </div>
                           </div>
@@ -1350,7 +1770,9 @@ export const Users = () => {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-gray-500">Inventory is empty.</div>
+                    <div className="text-sm text-gray-500">
+                      Inventory is empty.
+                    </div>
                   )}
                 </div>
 
@@ -1362,7 +1784,9 @@ export const Users = () => {
                   <div className="space-y-3 rounded-lg border border-gray-200 p-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Name
+                        </label>
                         <input
                           type="text"
                           value={statusName}
@@ -1372,19 +1796,25 @@ export const Users = () => {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Duration (minutes)
+                        </label>
                         <input
                           type="number"
                           min="1"
                           value={statusDurationMinutes}
-                          onChange={(e) => setStatusDurationMinutes(e.target.value)}
+                          onChange={(e) =>
+                            setStatusDurationMinutes(e.target.value)
+                          }
                           className="w-full px-3 py-2 border rounded-lg"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Description
+                      </label>
                       <input
                         type="text"
                         value={statusDescription}
@@ -1395,7 +1825,9 @@ export const Users = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Effect</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Effect
+                      </label>
                       <input
                         type="text"
                         value={statusEffect}
@@ -1406,7 +1838,9 @@ export const Users = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Type
+                      </label>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -1434,46 +1868,66 @@ export const Users = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Stat Modifiers</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Stat Modifiers
+                      </label>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">STR</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            STR
+                          </label>
                           <input
                             type="number"
                             value={statusStrengthMod}
-                            onChange={(e) => setStatusStrengthMod(e.target.value)}
+                            onChange={(e) =>
+                              setStatusStrengthMod(e.target.value)
+                            }
                             className="w-full px-2 py-2 border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">DEX</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            DEX
+                          </label>
                           <input
                             type="number"
                             value={statusDexterityMod}
-                            onChange={(e) => setStatusDexterityMod(e.target.value)}
+                            onChange={(e) =>
+                              setStatusDexterityMod(e.target.value)
+                            }
                             className="w-full px-2 py-2 border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">CON</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            CON
+                          </label>
                           <input
                             type="number"
                             value={statusConstitutionMod}
-                            onChange={(e) => setStatusConstitutionMod(e.target.value)}
+                            onChange={(e) =>
+                              setStatusConstitutionMod(e.target.value)
+                            }
                             className="w-full px-2 py-2 border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">INT</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            INT
+                          </label>
                           <input
                             type="number"
                             value={statusIntelligenceMod}
-                            onChange={(e) => setStatusIntelligenceMod(e.target.value)}
+                            onChange={(e) =>
+                              setStatusIntelligenceMod(e.target.value)
+                            }
                             className="w-full px-2 py-2 border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">WIS</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            WIS
+                          </label>
                           <input
                             type="number"
                             value={statusWisdomMod}
@@ -1482,11 +1936,15 @@ export const Users = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">CHA</label>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            CHA
+                          </label>
                           <input
                             type="number"
                             value={statusCharismaMod}
-                            onChange={(e) => setStatusCharismaMod(e.target.value)}
+                            onChange={(e) =>
+                              setStatusCharismaMod(e.target.value)
+                            }
                             className="w-full px-2 py-2 border rounded-lg"
                           />
                         </div>
@@ -1522,7 +1980,9 @@ export const Users = () => {
                 {/* Discoveries Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-semibold">Discoveries ({discoveries.length})</h3>
+                    <h3 className="text-lg font-semibold">
+                      Discoveries ({discoveries.length})
+                    </h3>
                     <div className="space-x-2">
                       <button
                         onClick={() => setShowAddDiscoveryModal(true)}
@@ -1549,16 +2009,23 @@ export const Users = () => {
                     </div>
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {discoveries.map(discovery => (
-                      <div key={discovery.id} className="flex items-center p-2 border rounded">
+                    {discoveries.map((discovery) => (
+                      <div
+                        key={discovery.id}
+                        className="flex items-center p-2 border rounded"
+                      >
                         <input
                           type="checkbox"
                           checked={selectedDiscoveries.has(discovery.id)}
-                          onChange={() => toggleDiscoverySelection(discovery.id)}
+                          onChange={() =>
+                            toggleDiscoverySelection(discovery.id)
+                          }
                           className="mr-3"
                         />
                         <div className="flex-grow">
-                          <div className="text-sm font-medium">{discovery.pointOfInterest?.name || 'Unknown POI'}</div>
+                          <div className="text-sm font-medium">
+                            {discovery.pointOfInterest?.name || 'Unknown POI'}
+                          </div>
                           <div className="text-xs text-gray-500">
                             {new Date(discovery.createdAt).toLocaleDateString()}
                           </div>
@@ -1566,7 +2033,9 @@ export const Users = () => {
                       </div>
                     ))}
                     {discoveries.length === 0 && (
-                      <div className="text-gray-500 text-sm text-center py-4">No discoveries</div>
+                      <div className="text-gray-500 text-sm text-center py-4">
+                        No discoveries
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1574,7 +2043,9 @@ export const Users = () => {
                 {/* Submissions Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-semibold">Submissions ({submissions.length})</h3>
+                    <h3 className="text-lg font-semibold">
+                      Submissions ({submissions.length})
+                    </h3>
                     {submissions.length > 0 && (
                       <button
                         onClick={deleteAllSubmissions}
@@ -1585,12 +2056,17 @@ export const Users = () => {
                     )}
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {submissions.map(submission => (
-                      <div key={submission.id} className="flex justify-between items-start p-2 border rounded">
+                    {submissions.map((submission) => (
+                      <div
+                        key={submission.id}
+                        className="flex justify-between items-start p-2 border rounded"
+                      >
                         <div className="flex-grow">
                           <div className="text-sm">{submission.text}</div>
                           <div className="text-xs text-gray-500">
-                            {new Date(submission.createdAt).toLocaleDateString()}
+                            {new Date(
+                              submission.createdAt
+                            ).toLocaleDateString()}
                           </div>
                         </div>
                         <button
@@ -1602,7 +2078,9 @@ export const Users = () => {
                       </div>
                     ))}
                     {submissions.length === 0 && (
-                      <div className="text-gray-500 text-sm text-center py-4">No submissions</div>
+                      <div className="text-gray-500 text-sm text-center py-4">
+                        No submissions
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1610,7 +2088,9 @@ export const Users = () => {
                 {/* Activities Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-semibold">Activities ({activities.length})</h3>
+                    <h3 className="text-lg font-semibold">
+                      Activities ({activities.length})
+                    </h3>
                     {activities.length > 0 && (
                       <button
                         onClick={deleteAllActivities}
@@ -1621,8 +2101,11 @@ export const Users = () => {
                     )}
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {activities.map(activity => (
-                      <div key={activity.id} className="flex justify-between items-start p-2 border rounded">
+                    {activities.map((activity) => (
+                      <div
+                        key={activity.id}
+                        className="flex justify-between items-start p-2 border rounded"
+                      >
                         <div className="flex-grow">
                           <div className="text-sm">{activity.activityType}</div>
                           <div className="text-xs text-gray-500">
@@ -1638,7 +2121,9 @@ export const Users = () => {
                       </div>
                     ))}
                     {activities.length === 0 && (
-                      <div className="text-gray-500 text-sm text-center py-4">No activities</div>
+                      <div className="text-gray-500 text-sm text-center py-4">
+                        No activities
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1658,7 +2143,9 @@ export const Users = () => {
           <div className="bg-white p-6 rounded-lg max-w-md">
             <h3 className="text-xl font-bold mb-4">Confirm Delete</h3>
             <p className="mb-6">
-              Are you sure you want to delete user <strong>{userToDelete?.username}</strong>? This action cannot be undone.
+              Are you sure you want to delete user{' '}
+              <strong>{userToDelete?.username}</strong>? This action cannot be
+              undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -1688,16 +2175,21 @@ export const Users = () => {
             <h3 className="text-xl font-bold mb-4">Add Discoveries</h3>
             <div className="mb-4">
               <div className="text-sm text-gray-600 mb-3">
-                Select points of interest to add as discoveries ({selectedPOIsToAdd.size} selected)
+                Select points of interest to add as discoveries (
+                {selectedPOIsToAdd.size} selected)
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {availablePOIs.map(poi => {
-                  const alreadyDiscovered = discoveries.some(d => d.pointOfInterestId === poi.id);
+                {availablePOIs.map((poi) => {
+                  const alreadyDiscovered = discoveries.some(
+                    (d) => d.pointOfInterestId === poi.id
+                  );
                   return (
                     <div
                       key={poi.id}
                       className={`flex items-center p-3 border rounded ${
-                        alreadyDiscovered ? 'bg-gray-100 opacity-50' : 'hover:bg-gray-50'
+                        alreadyDiscovered
+                          ? 'bg-gray-100 opacity-50'
+                          : 'hover:bg-gray-50'
                       }`}
                     >
                       <input
@@ -1709,9 +2201,13 @@ export const Users = () => {
                       />
                       <div className="flex-grow">
                         <div className="font-medium">{poi.name}</div>
-                        <div className="text-sm text-gray-600">{poi.description}</div>
+                        <div className="text-sm text-gray-600">
+                          {poi.description}
+                        </div>
                         {alreadyDiscovered && (
-                          <div className="text-xs text-green-600">Already discovered</div>
+                          <div className="text-xs text-green-600">
+                            Already discovered
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1751,7 +2247,10 @@ export const Users = () => {
           <div className="bg-white p-6 rounded-lg max-w-md">
             <h3 className="text-xl font-bold mb-4">Confirm Bulk Delete</h3>
             <p className="mb-6">
-              Are you sure you want to delete <strong>{selectedUsers.size} users</strong>? This action cannot be undone and will delete all their data including discoveries, submissions, activities, and relationships.
+              Are you sure you want to delete{' '}
+              <strong>{selectedUsers.size} users</strong>? This action cannot be
+              undone and will delete all their data including discoveries,
+              submissions, activities, and relationships.
             </p>
             <div className="flex gap-3 justify-end">
               <button

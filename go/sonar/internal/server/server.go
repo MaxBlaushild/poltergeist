@@ -243,6 +243,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory-items/bulk-archive", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkArchiveInventoryItems))
 	r.POST("/sonar/inventory-items/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteInventoryItems))
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
+	r.POST("/sonar/abilities/generate-tomes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateAbilityTomes))
 	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
 	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.POST("/sonar/spells/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueSpellProgressionFromPrompt))
@@ -262,6 +263,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/techniques/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueTechniqueProgressionFromPrompt))
 	r.GET("/sonar/techniques/progression-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellProgressionFromPromptStatus))
 	r.POST("/sonar/techniques/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTechniqueIcon))
+	r.POST("/sonar/techniques/:id/generate-progression", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellProgression))
 	r.POST("/sonar/techniques/:id/cast", middleware.WithAuthentication(s.authClient, s.livenessClient, s.castTechnique))
 	r.PUT("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTechnique))
 	r.DELETE("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTechnique))
@@ -280,6 +282,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
 	r.DELETE("/sonar/base/structures/:key", middleware.WithAuthentication(s.authClient, s.livenessClient, s.destroyBaseStructure))
 	r.POST("/sonar/base/hearth/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useBaseHearth))
+	r.GET("/sonar/base/crafting/:station/recipes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCraftingRecipes))
+	r.POST("/sonar/base/crafting/:station/recipes/:recipeID/craft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.craftBaseRecipe))
 	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
@@ -331,7 +335,14 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/tutorial/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTutorialImage))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
+	r.GET("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminUserResources))
 	r.POST("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAdjustUserResources))
+	r.GET("/sonar/admin/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterTemplates))
+	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsters))
+	r.GET("/sonar/admin/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterEncounters))
+	r.GET("/sonar/admin/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminChallenges))
+	r.GET("/sonar/admin/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarios))
+	r.GET("/sonar/admin/scenario-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarioTemplates))
 	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
 	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
@@ -7438,6 +7449,22 @@ func (s *server) useItem(ctx *gin.Context) {
 		})
 		return
 	}
+	learnedRecipes := []gin.H{}
+	if dbInventoryItem != nil && ownedInventoryItem.UserID != nil && len(dbInventoryItem.ConsumeTeachRecipeIDs) > 0 {
+		learnedRecipes, err = s.learnedRecipeDefinitionSummaries(
+			ctx,
+			*ownedInventoryItem.UserID,
+			&dbInventoryItem.ID,
+			&ownedInventoryItem.ID,
+			[]string(dbInventoryItem.ConsumeTeachRecipeIDs),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
 	if ownedInventoryItem.UserID != nil {
 		if err := s.dbClient.Tutorial().RecordUsedItem(ctx, *ownedInventoryItem.UserID, inventoryItem.ID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -7475,6 +7502,13 @@ func (s *server) useItem(ctx *gin.Context) {
 			})
 			return
 		}
+		if len(learnedRecipes) > 0 {
+			ctx.JSON(http.StatusOK, gin.H{
+				"result":         result,
+				"learnedRecipes": learnedRecipes,
+			})
+			return
+		}
 
 		ctx.JSON(http.StatusOK, result)
 		return
@@ -7492,14 +7526,16 @@ func (s *server) useItem(ctx *gin.Context) {
 			s.queueBaseDescriptionGenerationFromItemUse(ctx, base.ID)
 		}
 		ctx.JSON(http.StatusOK, gin.H{
-			"message": "base created successfully",
-			"base":    serializeBase(base),
+			"message":        "base created successfully",
+			"base":           serializeBase(base),
+			"learnedRecipes": learnedRecipes,
 		})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message": "item used successfully",
+		"message":        "item used successfully",
+		"learnedRecipes": learnedRecipes,
 	})
 }
 
@@ -7881,6 +7917,9 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
+		ConsumeTeachRecipeIDs                    []string                       `json:"consumeTeachRecipeIds"`
+		AlchemyRecipes                           []inventoryRecipePayload       `json:"alchemyRecipes"`
+		WorkshopRecipes                          []inventoryRecipePayload       `json:"workshopRecipes"`
 		InternalTags                             []string                       `json:"internalTags"`
 	}
 
@@ -7965,6 +8004,17 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	alchemyRecipes, workshopRecipes, consumeTeachRecipeIDs, err := s.parseInventoryRecipeConfiguration(
+		ctx,
+		requestBody.AlchemyRecipes,
+		requestBody.WorkshopRecipes,
+		requestBody.ConsumeTeachRecipeIDs,
+		nil,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
 	for idx, rawSpellID := range consumeSpellIDs {
 		spellID, _ := uuid.Parse(rawSpellID)
@@ -8018,6 +8068,9 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd:                     consumeStatusesToAdd,
 		ConsumeStatusesToRemove:                  consumeStatusesToRemove,
 		ConsumeSpellIDs:                          consumeSpellIDs,
+		ConsumeTeachRecipeIDs:                    consumeTeachRecipeIDs,
+		AlchemyRecipes:                           alchemyRecipes,
+		WorkshopRecipes:                          workshopRecipes,
 		InternalTags:                             internalTags,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
@@ -9842,6 +9895,9 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
+		ConsumeTeachRecipeIDs                    []string                       `json:"consumeTeachRecipeIds"`
+		AlchemyRecipes                           []inventoryRecipePayload       `json:"alchemyRecipes"`
+		WorkshopRecipes                          []inventoryRecipePayload       `json:"workshopRecipes"`
 		InternalTags                             []string                       `json:"internalTags"`
 	}
 
@@ -9929,6 +9985,17 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	alchemyRecipes, workshopRecipes, consumeTeachRecipeIDs, err := s.parseInventoryRecipeConfiguration(
+		ctx,
+		requestBody.AlchemyRecipes,
+		requestBody.WorkshopRecipes,
+		requestBody.ConsumeTeachRecipeIDs,
+		&existingItem.ID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
 	archived := existingItem.Archived
 	if requestBody.Archived != nil {
@@ -9986,6 +10053,9 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"consume_statuses_to_add":                        consumeStatusesToAdd,
 		"consume_statuses_to_remove":                     consumeStatusesToRemove,
 		"consume_spell_ids":                              consumeSpellIDs,
+		"consume_teach_recipe_ids":                       consumeTeachRecipeIDs,
+		"alchemy_recipes":                                alchemyRecipes,
+		"workshop_recipes":                               workshopRecipes,
 		"internal_tags":                                  internalTags,
 	}
 
@@ -12601,6 +12671,95 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, status)
 }
 
+func (s *server) adminUserResourcesResponse(
+	ctx *gin.Context,
+	userID uuid.UUID,
+) (gin.H, error) {
+	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, userLevel.Level); err != nil {
+		return nil, err
+	}
+
+	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	statusBonuses, statuses, err := s.getActiveStatusBonusesAndStatuses(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	materials, err := s.dbClient.BaseResourceBalance().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return gin.H{
+		"stats": characterStatsResponseFrom(
+			stats,
+			userLevel.Level,
+			proficiencies,
+			equipmentBonuses,
+			statusBonuses,
+			statuses,
+			spells,
+		),
+		"materials": serializeBaseResourceBalances(materials),
+	}, nil
+}
+
+func (s *server) getAdminUserResources(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	response, err := s.adminUserResourcesResponse(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
 func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 	_, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -12615,20 +12774,27 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		HealthDelta int  `json:"healthDelta"`
-		ManaDelta   int  `json:"manaDelta"`
-		Health      *int `json:"health"`
-		Mana        *int `json:"mana"`
+		HealthDelta     int                         `json:"healthDelta"`
+		ManaDelta       int                         `json:"manaDelta"`
+		Health          *int                        `json:"health"`
+		Mana            *int                        `json:"mana"`
+		MaterialRewards []baseMaterialRewardPayload `json:"materialRewards"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if requestBody.HealthDelta == 0 &&
 		requestBody.ManaDelta == 0 &&
 		requestBody.Health == nil &&
-		requestBody.Mana == nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one of healthDelta, manaDelta, health, or mana must be provided"})
+		requestBody.Mana == nil &&
+		len(materialRewards) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one of healthDelta, manaDelta, health, mana, or materialRewards must be provided"})
 		return
 	}
 
@@ -12665,7 +12831,7 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		return
 	}
 
-	statusBonuses, statuses, err := s.getActiveStatusBonusesAndStatuses(ctx, userID)
+	statusBonuses, _, err := s.getActiveStatusBonusesAndStatuses(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -12700,7 +12866,7 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		manaDeficitDelta = targetManaDeficit - stats.ManaDeficit
 	}
 
-	stats, err = s.dbClient.UserCharacterStats().AdjustResourceDeficits(
+	_, err = s.dbClient.UserCharacterStats().AdjustResourceDeficits(
 		ctx,
 		userID,
 		healthDeficitDelta,
@@ -12711,19 +12877,28 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		return
 	}
 
-	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	if len(materialRewards) > 0 {
+		notes := "Granted by admin user tools"
+		if err := s.dbClient.BaseResourceBalance().GrantToUser(
+			ctx,
+			userID,
+			materialRewards,
+			"admin_user_resource_adjustment",
+			nil,
+			&notes,
+		); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	response, err := s.adminUserResourcesResponse(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, userID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses, spells))
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) deleteUsers(ctx *gin.Context) {
@@ -16092,6 +16267,42 @@ func (s *server) getScenarios(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getAdminScenarios(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.Scenario().ListAdmin(ctx, db.ScenarioAdminListParams{
+		Page:      page,
+		PageSize:  pageSize,
+		Query:     ctx.Query("query"),
+		ZoneQuery: ctx.Query("zoneQuery"),
+	}, &user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := make([]scenarioWithUserStatus, len(result.Scenarios))
+	for i, scenario := range result.Scenarios {
+		response[i] = scenarioWithUserStatus{
+			Scenario:        scenario,
+			AttemptedByUser: result.AttemptedByUserID[scenario.ID],
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"items":    response,
+		"total":    result.Total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 func (s *server) getScenario(ctx *gin.Context) {

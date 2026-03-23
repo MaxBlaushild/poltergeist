@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -57,6 +58,123 @@ func (h *monsterTemplateHandle) FindAllActive(ctx context.Context) ([]models.Mon
 		return nil, err
 	}
 	return templates, nil
+}
+
+type monsterTemplateAdminListRow struct {
+	ID   uuid.UUID `gorm:"column:id"`
+	Name string    `gorm:"column:name"`
+}
+
+func (h *monsterTemplateHandle) adminListBaseQuery(
+	ctx context.Context,
+	params MonsterTemplateAdminListParams,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).Model(&models.MonsterTemplate{})
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			"(LOWER(monster_templates.name) LIKE ? OR LOWER(monster_templates.description) LIKE ?)",
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
+		zoneSearchTerm := "%" + normalizedZoneQuery + "%"
+		query = query.
+			Joins("JOIN monsters ON monsters.template_id = monster_templates.id").
+			Joins("JOIN zones ON zones.id = monsters.zone_id").
+			Where("LOWER(zones.name) LIKE ?", zoneSearchTerm)
+	}
+
+	switch normalizedType := strings.TrimSpace(strings.ToLower(params.MonsterType)); normalizedType {
+	case "", "all":
+	default:
+		query = query.Where(
+			"monster_templates.monster_type = ?",
+			models.NormalizeMonsterTemplateType(normalizedType),
+		)
+	}
+
+	return query
+}
+
+func (h *monsterTemplateHandle) ListAdmin(
+	ctx context.Context,
+	params MonsterTemplateAdminListParams,
+) (*MonsterTemplateAdminListResult, error) {
+	var total int64
+	countQuery := h.adminListBaseQuery(ctx, params)
+	if params.Archived != nil {
+		countQuery = countQuery.Where("monster_templates.archived = ?", *params.Archived)
+	}
+	if err := countQuery.Distinct("monster_templates.id").Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	var activeCount int64
+	if err := h.adminListBaseQuery(ctx, params).
+		Where("monster_templates.archived = ?", false).
+		Distinct("monster_templates.id").
+		Count(&activeCount).Error; err != nil {
+		return nil, err
+	}
+
+	var archivedCount int64
+	if err := h.adminListBaseQuery(ctx, params).
+		Where("monster_templates.archived = ?", true).
+		Distinct("monster_templates.id").
+		Count(&archivedCount).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []monsterTemplateAdminListRow{}
+	listQuery := h.adminListBaseQuery(ctx, params)
+	if params.Archived != nil {
+		listQuery = listQuery.Where("monster_templates.archived = ?", *params.Archived)
+	}
+	if err := listQuery.
+		Select("monster_templates.id, monster_templates.name").
+		Distinct().
+		Order("monster_templates.name ASC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	templates := make([]models.MonsterTemplate, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.MonsterTemplate{}
+		if err := h.preloadBase(ctx).
+			Where("monster_templates.id IN ?", ids).
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		templatesByID := make(map[uuid.UUID]models.MonsterTemplate, len(loaded))
+		for _, template := range loaded {
+			templatesByID[template.ID] = template
+		}
+		for _, id := range ids {
+			template, ok := templatesByID[id]
+			if ok {
+				templates = append(templates, template)
+			}
+		}
+	}
+
+	return &MonsterTemplateAdminListResult{
+		Templates:     templates,
+		Total:         total,
+		ActiveCount:   activeCount,
+		ArchivedCount: archivedCount,
+	}, nil
 }
 
 func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error {

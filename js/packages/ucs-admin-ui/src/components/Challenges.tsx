@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -94,6 +100,64 @@ type SelectOption = {
   value: string;
   label: string;
   secondary?: string;
+};
+
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const challengeListPageSize = 25;
+
+const PaginationControls = ({
+  page,
+  pageSize,
+  total,
+  label,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  label: string;
+  onPageChange: (page: number) => void;
+}) => {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(total, page * pageSize);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+      <p className="text-sm text-gray-600">
+        {total === 0
+          ? `No ${label}.`
+          : `Showing ${start}-${end} of ${total} ${label}`}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span className="text-sm text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const SearchableSelect = ({
@@ -376,6 +440,9 @@ export const Challenges = () => {
   const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<ChallengeRecord[]>([]);
   const [query, setQuery] = useState('');
+  const [zoneQuery, setZoneQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editingChallenge, setEditingChallenge] =
     useState<ChallengeRecord | null>(null);
@@ -410,6 +477,8 @@ export const Challenges = () => {
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<
     [number, number][]
   >([]);
+  const deferredQuery = useDeferredValue(query);
+  const deferredZoneQuery = useDeferredValue(zoneQuery);
 
   const loadPointsOfInterestForZone = useCallback(
     async (zoneId: string) => {
@@ -464,16 +533,24 @@ export const Challenges = () => {
     try {
       setLoading(true);
       setError(null);
-      const response =
-        await apiClient.get<ChallengeRecord[]>('/sonar/challenges');
-      setRecords(Array.isArray(response) ? response : []);
+      const response = await apiClient.get<PaginatedResponse<ChallengeRecord>>(
+        '/sonar/admin/challenges',
+        {
+          page,
+          pageSize: challengeListPageSize,
+          query: deferredQuery.trim(),
+          zoneQuery: deferredZoneQuery.trim(),
+        }
+      );
+      setRecords(Array.isArray(response?.items) ? response.items : []);
+      setTotal(response?.total ?? 0);
     } catch (err) {
       console.error('Failed to load challenges', err);
       setError('Failed to load challenges.');
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, deferredQuery, deferredZoneQuery, page]);
 
   const refreshChallengeById = useCallback(
     async (challengeId: string) => {
@@ -491,6 +568,17 @@ export const Challenges = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, zoneQuery]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(total / challengeListPageSize));
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, total]);
 
   const loadGenerationJobs = useCallback(async () => {
     try {
@@ -554,20 +642,7 @@ export const Challenges = () => {
       void load();
     }
   }, [generationJobs, load]);
-
-  const filteredRecords = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return records;
-    return records.filter((record) => {
-      const zoneName = zoneNameById.get(record.zoneId) ?? '';
-      return (
-        record.question.toLowerCase().includes(normalized) ||
-        (record.description ?? '').toLowerCase().includes(normalized) ||
-        zoneName.toLowerCase().includes(normalized) ||
-        record.id.toLowerCase().includes(normalized)
-      );
-    });
-  }, [query, records, zoneNameById]);
+  const filteredRecords = records;
   const selectedChallengeIdSet = useMemo(
     () => selectedChallengeIds,
     [selectedChallengeIds]
@@ -578,6 +653,20 @@ export const Challenges = () => {
       selectedChallengeIds.has(record.id)
     );
   }, [filteredRecords, selectedChallengeIds]);
+
+  useEffect(() => {
+    setSelectedChallengeIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(records.map((record) => record.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [records]);
 
   const allPointOfInterestNamesById = useMemo(() => {
     const byId = new Map<string, string>();
@@ -1047,8 +1136,7 @@ export const Challenges = () => {
             ? parseIntSafe(form.rewardExperience, 0)
             : 0,
         reward: rewardMode === 'explicit' ? parseIntSafe(form.reward, 0) : 0,
-        materialRewards:
-          rewardMode === 'explicit' ? form.materialRewards : [],
+        materialRewards: rewardMode === 'explicit' ? form.materialRewards : [],
         inventoryItemId:
           rewardMode === 'explicit'
             ? parseOptionalInt(form.inventoryItemId)
@@ -1090,20 +1178,14 @@ export const Challenges = () => {
       }
 
       if (editingChallenge) {
-        const updated = await apiClient.put<ChallengeRecord>(
+        await apiClient.put<ChallengeRecord>(
           `/sonar/challenges/${editingChallenge.id}`,
           payload
         );
-        setRecords((prev) =>
-          prev.map((record) => (record.id === updated.id ? updated : record))
-        );
       } else {
-        const created = await apiClient.post<ChallengeRecord>(
-          '/sonar/challenges',
-          payload
-        );
-        setRecords((prev) => [created, ...prev]);
+        await apiClient.post<ChallengeRecord>('/sonar/challenges', payload);
       }
+      await load();
       closeModal();
     } catch (err) {
       console.error('Failed to save challenge', err);
@@ -1118,13 +1200,13 @@ export const Challenges = () => {
     if (!window.confirm(`Delete challenge "${record.question}"?`)) return;
     try {
       await apiClient.delete(`/sonar/challenges/${record.id}`);
-      setRecords((prev) => prev.filter((entry) => entry.id !== record.id));
       setSelectedChallengeIds((prev) => {
         if (!prev.has(record.id)) return prev;
         const next = new Set(prev);
         next.delete(record.id);
         return next;
       });
+      await load();
     } catch (err) {
       console.error('Failed to delete challenge', err);
       alert('Failed to delete challenge.');
@@ -1202,9 +1284,6 @@ export const Challenges = () => {
       });
 
       if (deletedIds.size > 0) {
-        setRecords((prev) =>
-          prev.filter((record) => !deletedIds.has(record.id))
-        );
         setSelectedChallengeIds((prev) => {
           const next = new Set(prev);
           deletedIds.forEach((challengeId) => next.delete(challengeId));
@@ -1213,6 +1292,7 @@ export const Challenges = () => {
         if (editingChallenge && deletedIds.has(editingChallenge.id)) {
           closeModal();
         }
+        await load();
       }
 
       if (failedIds.length > 0) {
@@ -1291,12 +1371,20 @@ export const Challenges = () => {
       </div>
 
       <div className="mb-4">
-        <input
-          className="w-full max-w-xl border rounded-md p-2"
-          placeholder="Search by question, zone, or id"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className="flex flex-wrap gap-3">
+          <input
+            className="w-full max-w-xl border rounded-md p-2"
+            placeholder="Search by question, description, or id"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <input
+            className="w-full max-w-sm border rounded-md p-2"
+            placeholder="Search by zone"
+            value={zoneQuery}
+            onChange={(event) => setZoneQuery(event.target.value)}
+          />
+        </div>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
@@ -1625,6 +1713,13 @@ export const Challenges = () => {
           </tbody>
         </table>
       </div>
+      <PaginationControls
+        page={page}
+        pageSize={challengeListPageSize}
+        total={total}
+        label="challenges"
+        onPageChange={setPage}
+      />
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -1859,7 +1954,8 @@ export const Challenges = () => {
 
               {form.rewardMode === 'random' ? (
                 <div className="text-xs text-gray-500 md:col-span-2">
-                  Random rewards ignore explicit XP, gold, material, and item fields.
+                  Random rewards ignore explicit XP, gold, material, and item
+                  fields.
                 </div>
               ) : null}
 

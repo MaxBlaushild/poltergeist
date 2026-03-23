@@ -23,6 +23,18 @@ type InventoryConsumeStatus = {
   charismaMod: number;
 };
 
+type InventoryRecipeIngredientDraft = {
+  itemId: number;
+  quantity: number;
+};
+
+type InventoryRecipeDraft = {
+  id: string;
+  tier: number;
+  isPublic: boolean;
+  ingredients: InventoryRecipeIngredientDraft[];
+};
+
 type InventoryItemRecord = InventoryItem & {
   consumeHealthDelta?: number;
   consumeManaDelta?: number;
@@ -32,6 +44,9 @@ type InventoryItemRecord = InventoryItem & {
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];
+  consumeTeachRecipeIds?: string[];
+  alchemyRecipes?: InventoryRecipeDraft[];
+  workshopRecipes?: InventoryRecipeDraft[];
 };
 
 type InventorySetGenerationResponse = {
@@ -86,13 +101,67 @@ const normalizeConsumeStatus = (
     durationSeconds: Number.isFinite(status.durationSeconds)
       ? Number(status.durationSeconds)
       : base.durationSeconds,
-    strengthMod: Number.isFinite(status.strengthMod) ? Number(status.strengthMod) : 0,
-    dexterityMod: Number.isFinite(status.dexterityMod) ? Number(status.dexterityMod) : 0,
-    constitutionMod: Number.isFinite(status.constitutionMod) ? Number(status.constitutionMod) : 0,
-    intelligenceMod: Number.isFinite(status.intelligenceMod) ? Number(status.intelligenceMod) : 0,
+    strengthMod: Number.isFinite(status.strengthMod)
+      ? Number(status.strengthMod)
+      : 0,
+    dexterityMod: Number.isFinite(status.dexterityMod)
+      ? Number(status.dexterityMod)
+      : 0,
+    constitutionMod: Number.isFinite(status.constitutionMod)
+      ? Number(status.constitutionMod)
+      : 0,
+    intelligenceMod: Number.isFinite(status.intelligenceMod)
+      ? Number(status.intelligenceMod)
+      : 0,
     wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
-    charismaMod: Number.isFinite(status.charismaMod) ? Number(status.charismaMod) : 0,
+    charismaMod: Number.isFinite(status.charismaMod)
+      ? Number(status.charismaMod)
+      : 0,
     positive: status.positive ?? true,
+  };
+};
+
+const emptyRecipeIngredient = (): InventoryRecipeIngredientDraft => ({
+  itemId: 0,
+  quantity: 1,
+});
+
+const emptyRecipe = (): InventoryRecipeDraft => ({
+  id: '',
+  tier: 1,
+  isPublic: true,
+  ingredients: [emptyRecipeIngredient()],
+});
+
+const normalizeRecipeIngredient = (
+  ingredient?: Partial<InventoryRecipeIngredientDraft> | null
+): InventoryRecipeIngredientDraft => ({
+  itemId: Number.isFinite(ingredient?.itemId) ? Number(ingredient?.itemId) : 0,
+  quantity:
+    Number.isFinite(ingredient?.quantity) && Number(ingredient?.quantity) > 0
+      ? Number(ingredient?.quantity)
+      : 1,
+});
+
+const normalizeRecipe = (
+  recipe?: Partial<InventoryRecipeDraft> | null
+): InventoryRecipeDraft => {
+  const base = emptyRecipe();
+  const ingredients = (recipe?.ingredients ?? [])
+    .map((ingredient) => normalizeRecipeIngredient(ingredient))
+    .filter((ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0);
+
+  return {
+    ...base,
+    ...recipe,
+    id: (recipe?.id ?? '').trim(),
+    tier:
+      Number.isFinite(recipe?.tier) && Number(recipe?.tier) > 0
+        ? Number(recipe?.tier)
+        : 1,
+    isPublic: recipe?.isPublic ?? true,
+    ingredients:
+      ingredients.length > 0 ? ingredients : [emptyRecipeIngredient()],
   };
 };
 
@@ -183,7 +252,9 @@ const SearchableSelect = ({
       {open && (
         <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
           {filtered.length === 0 && (
-            <div className="px-3 py-2 text-sm text-gray-500">No matches found</div>
+            <div className="px-3 py-2 text-sm text-gray-500">
+              No matches found
+            </div>
           )}
           {filtered.map((option) => (
             <button
@@ -199,7 +270,9 @@ const SearchableSelect = ({
             >
               <span className="font-medium text-gray-900">{option.label}</span>
               {option.secondary && (
-                <span className="text-xs text-gray-500">{option.secondary}</span>
+                <span className="text-xs text-gray-500">
+                  {option.secondary}
+                </span>
               )}
             </button>
           ))}
@@ -337,7 +410,9 @@ const handCombatSummary = (item: InventoryItemRecord) => {
     item.damageMax !== null
   ) {
     const swipes = item.swipesPerAttack ?? 0;
-    details.push(`Damage: ${item.damageMin}-${item.damageMax} (${swipes} swipes)`);
+    details.push(
+      `Damage: ${item.damageMin}-${item.damageMax} (${swipes} swipes)`
+    );
   }
   if (item.damageAffinity) {
     details.push(`Affinity: ${item.damageAffinity}`);
@@ -348,7 +423,9 @@ const handCombatSummary = (item: InventoryItemRecord) => {
     item.damageBlocked !== undefined &&
     item.damageBlocked !== null
   ) {
-    details.push(`Block: ${item.blockPercentage}% / ${item.damageBlocked} damage`);
+    details.push(
+      `Block: ${item.blockPercentage}% / ${item.damageBlocked} damage`
+    );
   }
   if (
     item.spellDamageBonusPercent !== undefined &&
@@ -373,7 +450,9 @@ const consumeSummary = (
     details.push(`Mana on use: ${value > 0 ? '+' : ''}${value}`);
   }
   if ((item.consumeRevivePartyMemberHealth ?? 0) > 0) {
-    details.push(`Revive one party member to ${item.consumeRevivePartyMemberHealth} HP`);
+    details.push(
+      `Revive one party member to ${item.consumeRevivePartyMemberHealth} HP`
+    );
   }
   if ((item.consumeReviveAllDownedPartyMembersHealth ?? 0) > 0) {
     details.push(
@@ -381,13 +460,17 @@ const consumeSummary = (
     );
   }
   if ((item.consumeStatusesToAdd?.length ?? 0) > 0) {
-    details.push(`Adds statuses: ${item.consumeStatusesToAdd?.map((status) => status.name).join(', ')}`);
+    details.push(
+      `Adds statuses: ${item.consumeStatusesToAdd?.map((status) => status.name).join(', ')}`
+    );
   }
   if (item.consumeCreateBase) {
     details.push('Creates a player base on use');
   }
   if ((item.consumeStatusesToRemove?.length ?? 0) > 0) {
-    details.push(`Removes statuses: ${item.consumeStatusesToRemove?.join(', ')}`);
+    details.push(
+      `Removes statuses: ${item.consumeStatusesToRemove?.join(', ')}`
+    );
   }
   if ((item.consumeSpellIds?.length ?? 0) > 0) {
     details.push(
@@ -445,11 +528,17 @@ export const InventoryItems = () => {
   const [loading, setLoading] = useState(true);
   const [showCreateItem, setShowCreateItem] = useState(false);
   const [showGenerateItem, setShowGenerateItem] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItemRecord | null>(null);
+  const [editingItem, setEditingItem] = useState<InventoryItemRecord | null>(
+    null
+  );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<InventoryItemRecord | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItemRecord | null>(
+    null
+  );
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-  const [selectedItemIDs, setSelectedItemIDs] = useState<Set<number>>(new Set());
+  const [selectedItemIDs, setSelectedItemIDs] = useState<Set<number>>(
+    new Set()
+  );
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkEditBusy, setBulkEditBusy] = useState(false);
   const [bulkBuyPriceInput, setBulkBuyPriceInput] = useState('');
@@ -458,19 +547,25 @@ export const InventoryItems = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [useOutfitItem, setUseOutfitItem] = useState<InventoryItemRecord | null>(null);
+  const [useOutfitItem, setUseOutfitItem] =
+    useState<InventoryItemRecord | null>(null);
   const [useOutfitUser, setUseOutfitUser] = useState('');
   const [useOutfitSelfieUrl, setUseOutfitSelfieUrl] = useState('');
   const [useOutfitStatus, setUseOutfitStatus] = useState<string | null>(null);
-  const [useOutfitStatusKind, setUseOutfitStatusKind] = useState<'success' | 'error' | null>(null);
+  const [useOutfitStatusKind, setUseOutfitStatusKind] = useState<
+    'success' | 'error' | null
+  >(null);
   const [useOutfitSubmitting, setUseOutfitSubmitting] = useState(false);
-  const [setGenerationBusyIds, setSetGenerationBusyIds] = useState<Set<number>>(new Set());
+  const [setGenerationBusyIds, setSetGenerationBusyIds] = useState<Set<number>>(
+    new Set()
+  );
   const [bulkSetTargetLevel, setBulkSetTargetLevel] = useState('25');
   const [bulkSetMajorStat, setBulkSetMajorStat] = useState('strength');
   const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
   const [bulkSetRarityTier, setBulkSetRarityTier] = useState('auto');
   const [bulkSetGenerationBusy, setBulkSetGenerationBusy] = useState(false);
-  const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] = useState<Set<number>>(new Set());
+  const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] =
+    useState<Set<number>>(new Set());
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showFilters, setShowFilters] = useState(false);
@@ -535,6 +630,9 @@ export const InventoryItems = () => {
     consumeStatusesToAdd: [] as InventoryConsumeStatus[],
     consumeStatusesToRemove: [] as string[],
     consumeSpellIds: [] as string[],
+    consumeTeachRecipeIds: [] as string[],
+    alchemyRecipes: [] as InventoryRecipeDraft[],
+    workshopRecipes: [] as InventoryRecipeDraft[],
     internalTags: [] as string[],
   });
   const [internalTagsInput, setInternalTagsInput] = useState('');
@@ -561,13 +659,66 @@ export const InventoryItems = () => {
     });
   }, [users]);
 
+  const itemOptions = useMemo(() => {
+    return items
+      .filter((item) => !editingItem || item.id !== editingItem.id)
+      .map((item) => ({
+        value: String(item.id),
+        label: item.name,
+        secondary: `ID ${item.id}`,
+      }));
+  }, [editingItem, items]);
+
+  const recipeOptions = useMemo(() => {
+    const options = items.flatMap((item) => {
+      const stationRecipes = [
+        ...(item.alchemyRecipes ?? []).map((recipe) => ({
+          recipe,
+          stationLabel: 'Alchemy',
+        })),
+        ...(item.workshopRecipes ?? []).map((recipe) => ({
+          recipe,
+          stationLabel: 'Workshop',
+        })),
+      ];
+      return stationRecipes
+        .filter(({ recipe }) => recipe.id.trim() !== '')
+        .map(({ recipe, stationLabel }) => ({
+          value: recipe.id,
+          label: `${item.name} (${stationLabel} T${recipe.tier})`,
+          secondary: recipe.isPublic ? 'Public recipe' : 'Private recipe',
+        }));
+    });
+    const seen = new Set(options.map((option) => option.value));
+    const draftRecipes = [
+      ...(formData.alchemyRecipes ?? []).map((recipe) => ({
+        recipe,
+        stationLabel: 'Alchemy',
+      })),
+      ...(formData.workshopRecipes ?? []).map((recipe) => ({
+        recipe,
+        stationLabel: 'Workshop',
+      })),
+    ];
+    for (const { recipe, stationLabel } of draftRecipes) {
+      if (!recipe.id || seen.has(recipe.id)) continue;
+      options.push({
+        value: recipe.id,
+        label: `${formData.name || 'Current Item'} (${stationLabel} T${recipe.tier})`,
+        secondary: recipe.isPublic ? 'Public recipe' : 'Private recipe',
+      });
+      seen.add(recipe.id);
+    }
+    return options;
+  }, [formData.alchemyRecipes, formData.name, formData.workshopRecipes, items]);
+
   useEffect(() => {
     fetchItems();
     fetchSpells();
   }, []);
 
   useEffect(() => {
-    const hasPending = items.some(item =>
+    const hasPending = items.some((item) =>
       ['queued', 'in_progress'].includes(item.imageGenerationStatus || '')
     );
     if (!hasPending) return;
@@ -599,7 +750,9 @@ export const InventoryItems = () => {
 
   const fetchItems = async () => {
     try {
-      const response = await apiClient.get<InventoryItemRecord[]>('/sonar/inventory-items');
+      const response = await apiClient.get<InventoryItemRecord[]>(
+        '/sonar/inventory-items'
+      );
       setItems(response);
       setLoading(false);
     } catch (error) {
@@ -658,6 +811,9 @@ export const InventoryItems = () => {
       consumeStatusesToAdd: [],
       consumeStatusesToRemove: [],
       consumeSpellIds: [],
+      consumeTeachRecipeIds: [],
+      alchemyRecipes: [],
+      workshopRecipes: [],
       internalTags: [],
     });
     setInternalTagsInput('');
@@ -687,7 +843,10 @@ export const InventoryItems = () => {
       return next;
     }
     if (next.equipSlot === 'dominant_hand') {
-      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+      if (
+        next.handItemCategory !== 'weapon' &&
+        next.handItemCategory !== 'staff'
+      ) {
         next.handItemCategory = '';
       }
       if (next.handItemCategory === 'staff') {
@@ -695,7 +854,10 @@ export const InventoryItems = () => {
       }
     }
     if (next.equipSlot === 'off_hand') {
-      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+      if (
+        next.handItemCategory !== 'shield' &&
+        next.handItemCategory !== 'orb'
+      ) {
         next.handItemCategory = '';
       }
       next.handedness = 'one_handed';
@@ -712,7 +874,10 @@ export const InventoryItems = () => {
         return next;
       }
       if (slot === 'dominant_hand') {
-        if (next.handItemCategory === 'shield' || next.handItemCategory === 'orb') {
+        if (
+          next.handItemCategory === 'shield' ||
+          next.handItemCategory === 'orb'
+        ) {
           next.handItemCategory = '';
         }
         if (next.handItemCategory === 'staff') {
@@ -720,7 +885,10 @@ export const InventoryItems = () => {
         }
       }
       if (slot === 'off_hand') {
-        if (next.handItemCategory === 'weapon' || next.handItemCategory === 'staff') {
+        if (
+          next.handItemCategory === 'weapon' ||
+          next.handItemCategory === 'staff'
+        ) {
           next.handItemCategory = '';
         }
         next.handedness = 'one_handed';
@@ -760,11 +928,15 @@ export const InventoryItems = () => {
     }
 
     if (next.equipSlot === 'dominant_hand') {
-      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+      if (
+        next.handItemCategory !== 'weapon' &&
+        next.handItemCategory !== 'staff'
+      ) {
         next.handItemCategory = '';
       }
       if (!next.damageAffinity) {
-        next.damageAffinity = next.handItemCategory === 'staff' ? 'arcane' : 'physical';
+        next.damageAffinity =
+          next.handItemCategory === 'staff' ? 'arcane' : 'physical';
       }
       next.blockPercentage = undefined;
       next.damageBlocked = undefined;
@@ -777,7 +949,10 @@ export const InventoryItems = () => {
     }
 
     if (next.equipSlot === 'off_hand') {
-      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+      if (
+        next.handItemCategory !== 'shield' &&
+        next.handItemCategory !== 'orb'
+      ) {
         next.handItemCategory = '';
       }
       next.handedness = 'one_handed';
@@ -811,6 +986,47 @@ export const InventoryItems = () => {
           .filter((spellID) => spellID !== '')
       )
     );
+    next.alchemyRecipes = (next.alchemyRecipes ?? [])
+      .map((recipe) => normalizeRecipe(recipe))
+      .map((recipe) => ({
+        ...recipe,
+        ingredients: recipe.ingredients.filter(
+          (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+        ),
+      }))
+      .filter((recipe) => recipe.ingredients.length > 0);
+    next.workshopRecipes = (next.workshopRecipes ?? [])
+      .map((recipe) => normalizeRecipe(recipe))
+      .map((recipe) => ({
+        ...recipe,
+        ingredients: recipe.ingredients.filter(
+          (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+        ),
+      }))
+      .filter((recipe) => recipe.ingredients.length > 0);
+    const validRecipeIDs = new Set([
+      ...next.alchemyRecipes
+        .map((recipe) => recipe.id)
+        .filter((recipeID) => recipeID !== ''),
+      ...next.workshopRecipes
+        .map((recipe) => recipe.id)
+        .filter((recipeID) => recipeID !== ''),
+      ...items.flatMap((item) => [
+        ...(item.alchemyRecipes ?? [])
+          .map((recipe) => recipe.id)
+          .filter((recipeID) => recipeID !== ''),
+        ...(item.workshopRecipes ?? [])
+          .map((recipe) => recipe.id)
+          .filter((recipeID) => recipeID !== ''),
+      ]),
+    ]);
+    next.consumeTeachRecipeIds = Array.from(
+      new Set(
+        (next.consumeTeachRecipeIds ?? [])
+          .map((recipeID) => recipeID.trim())
+          .filter((recipeID) => recipeID !== '' && validRecipeIDs.has(recipeID))
+      )
+    );
     next.internalTags = parseInternalTagsInput(internalTagsInput);
 
     return next;
@@ -819,7 +1035,10 @@ export const InventoryItems = () => {
   const addConsumeStatusToAdd = () => {
     setFormData((prev) => ({
       ...prev,
-      consumeStatusesToAdd: [...prev.consumeStatusesToAdd, emptyConsumeStatus()],
+      consumeStatusesToAdd: [
+        ...prev.consumeStatusesToAdd,
+        emptyConsumeStatus(),
+      ],
     }));
   };
 
@@ -837,7 +1056,9 @@ export const InventoryItems = () => {
   const removeConsumeStatusToAdd = (index: number) => {
     setFormData((prev) => ({
       ...prev,
-      consumeStatusesToAdd: prev.consumeStatusesToAdd.filter((_, i) => i !== index),
+      consumeStatusesToAdd: prev.consumeStatusesToAdd.filter(
+        (_, i) => i !== index
+      ),
     }));
   };
 
@@ -859,7 +1080,9 @@ export const InventoryItems = () => {
   const removeConsumeStatusToRemove = (index: number) => {
     setFormData((prev) => ({
       ...prev,
-      consumeStatusesToRemove: prev.consumeStatusesToRemove.filter((_, i) => i !== index),
+      consumeStatusesToRemove: prev.consumeStatusesToRemove.filter(
+        (_, i) => i !== index
+      ),
     }));
   };
 
@@ -885,6 +1108,118 @@ export const InventoryItems = () => {
     }));
   };
 
+  const addTeachRecipeId = () => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeTeachRecipeIds: [...prev.consumeTeachRecipeIds, ''],
+    }));
+  };
+
+  const updateTeachRecipeId = (index: number, value: string) => {
+    setFormData((prev) => {
+      const recipeIDs = [...prev.consumeTeachRecipeIds];
+      recipeIDs[index] = value;
+      return { ...prev, consumeTeachRecipeIds: recipeIDs };
+    });
+  };
+
+  const removeTeachRecipeId = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeTeachRecipeIds: prev.consumeTeachRecipeIds.filter(
+        (_, i) => i !== index
+      ),
+    }));
+  };
+
+  const addRecipe = (kind: 'alchemyRecipes' | 'workshopRecipes') => {
+    setFormData((prev) => ({
+      ...prev,
+      [kind]: [...prev[kind], emptyRecipe()],
+    }));
+  };
+
+  const updateRecipe = (
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    index: number,
+    next: Partial<InventoryRecipeDraft>
+  ) => {
+    setFormData((prev) => {
+      const recipes = [...prev[kind]];
+      recipes[index] = { ...recipes[index], ...next };
+      return { ...prev, [kind]: recipes };
+    });
+  };
+
+  const removeRecipe = (
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    index: number
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((_, i) => i !== index),
+    }));
+  };
+
+  const addRecipeIngredient = (
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    recipeIndex: number
+  ) => {
+    setFormData((prev) => {
+      const recipes = [...prev[kind]];
+      recipes[recipeIndex] = {
+        ...recipes[recipeIndex],
+        ingredients: [
+          ...recipes[recipeIndex].ingredients,
+          emptyRecipeIngredient(),
+        ],
+      };
+      return { ...prev, [kind]: recipes };
+    });
+  };
+
+  const updateRecipeIngredient = (
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    recipeIndex: number,
+    ingredientIndex: number,
+    next: Partial<InventoryRecipeIngredientDraft>
+  ) => {
+    setFormData((prev) => {
+      const recipes = [...prev[kind]];
+      const recipe = recipes[recipeIndex];
+      const ingredients = [...recipe.ingredients];
+      ingredients[ingredientIndex] = {
+        ...ingredients[ingredientIndex],
+        ...next,
+      };
+      recipes[recipeIndex] = {
+        ...recipe,
+        ingredients,
+      };
+      return { ...prev, [kind]: recipes };
+    });
+  };
+
+  const removeRecipeIngredient = (
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    recipeIndex: number,
+    ingredientIndex: number
+  ) => {
+    setFormData((prev) => {
+      const recipes = [...prev[kind]];
+      const recipe = recipes[recipeIndex];
+      const remaining = recipe.ingredients.filter(
+        (_, i) => i !== ingredientIndex
+      );
+      recipes[recipeIndex] = {
+        ...recipe,
+        ingredients:
+          remaining.length > 0 ? remaining : [emptyRecipeIngredient()],
+      };
+      return { ...prev, [kind]: recipes };
+    });
+  };
+
   const handleEquipSlotChange = (slot: string) => {
     setFormData((prev) => {
       const next = { ...prev, equipSlot: slot };
@@ -892,7 +1227,10 @@ export const InventoryItems = () => {
         return { ...next, ...clearHandFields() };
       }
       if (slot === 'dominant_hand') {
-        if (next.handItemCategory === 'shield' || next.handItemCategory === 'orb') {
+        if (
+          next.handItemCategory === 'shield' ||
+          next.handItemCategory === 'orb'
+        ) {
           next.handItemCategory = '';
         }
         if (next.handItemCategory === 'staff') {
@@ -900,7 +1238,10 @@ export const InventoryItems = () => {
         }
       }
       if (slot === 'off_hand') {
-        if (next.handItemCategory === 'weapon' || next.handItemCategory === 'staff') {
+        if (
+          next.handItemCategory === 'weapon' ||
+          next.handItemCategory === 'staff'
+        ) {
           next.handItemCategory = '';
         }
         next.handedness = 'one_handed';
@@ -955,7 +1296,10 @@ export const InventoryItems = () => {
         const timestamp = Date.now();
         const imageKey = `inventory-items/${timestamp}-${Math.random().toString(36).substring(2, 15)}.${extension}`;
 
-        const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+        const presignedUrl = await getPresignedUploadURL(
+          'crew-points-of-interest',
+          imageKey
+        );
         if (!presignedUrl) {
           alert('Failed to get upload URL. Please try again.');
           return;
@@ -971,7 +1315,10 @@ export const InventoryItems = () => {
       }
 
       const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
-      const newItem = await apiClient.post<InventoryItemRecord>('/sonar/inventory-items', submitData);
+      const newItem = await apiClient.post<InventoryItemRecord>(
+        '/sonar/inventory-items',
+        submitData
+      );
       setItems([...items, newItem]);
       setShowCreateItem(false);
       resetForm();
@@ -988,12 +1335,20 @@ export const InventoryItems = () => {
     const next: InventoryItemRecord = {
       ...item,
       ...overrides,
-      consumeStatusesToAdd: (overrides.consumeStatusesToAdd ?? item.consumeStatusesToAdd ?? [])
+      consumeStatusesToAdd: (
+        overrides.consumeStatusesToAdd ??
+        item.consumeStatusesToAdd ??
+        []
+      )
         .map((status) => normalizeConsumeStatus(status))
         .filter((status) => status.name !== '' && status.durationSeconds > 0),
       consumeStatusesToRemove: Array.from(
         new Set(
-          (overrides.consumeStatusesToRemove ?? item.consumeStatusesToRemove ?? [])
+          (
+            overrides.consumeStatusesToRemove ??
+            item.consumeStatusesToRemove ??
+            []
+          )
             .map((name) => name.trim())
             .filter((name) => name !== '')
         )
@@ -1005,7 +1360,34 @@ export const InventoryItems = () => {
             .filter((spellID) => spellID !== '')
         )
       ),
-      internalTags: normalizeInternalTags(overrides.internalTags ?? item.internalTags),
+      consumeTeachRecipeIds: Array.from(
+        new Set(
+          (overrides.consumeTeachRecipeIds ?? item.consumeTeachRecipeIds ?? [])
+            .map((recipeID) => recipeID.trim())
+            .filter((recipeID) => recipeID !== '')
+        )
+      ),
+      alchemyRecipes: (overrides.alchemyRecipes ?? item.alchemyRecipes ?? [])
+        .map((recipe) => normalizeRecipe(recipe))
+        .map((recipe) => ({
+          ...recipe,
+          ingredients: recipe.ingredients.filter(
+            (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+          ),
+        }))
+        .filter((recipe) => recipe.ingredients.length > 0),
+      workshopRecipes: (overrides.workshopRecipes ?? item.workshopRecipes ?? [])
+        .map((recipe) => normalizeRecipe(recipe))
+        .map((recipe) => ({
+          ...recipe,
+          ingredients: recipe.ingredients.filter(
+            (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+          ),
+        }))
+        .filter((recipe) => recipe.ingredients.length > 0),
+      internalTags: normalizeInternalTags(
+        overrides.internalTags ?? item.internalTags
+      ),
     };
 
     if (!isHandEquipSlot(next.equipSlot ?? '')) {
@@ -1013,11 +1395,15 @@ export const InventoryItems = () => {
     }
 
     if (next.equipSlot === 'dominant_hand') {
-      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+      if (
+        next.handItemCategory !== 'weapon' &&
+        next.handItemCategory !== 'staff'
+      ) {
         next.handItemCategory = '';
       }
       if (!next.damageAffinity) {
-        next.damageAffinity = next.handItemCategory === 'staff' ? 'arcane' : 'physical';
+        next.damageAffinity =
+          next.handItemCategory === 'staff' ? 'arcane' : 'physical';
       }
       next.blockPercentage = undefined;
       next.damageBlocked = undefined;
@@ -1030,7 +1416,10 @@ export const InventoryItems = () => {
     }
 
     if (next.equipSlot === 'off_hand') {
-      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+      if (
+        next.handItemCategory !== 'shield' &&
+        next.handItemCategory !== 'orb'
+      ) {
         next.handItemCategory = '';
       }
       next.handedness = 'one_handed';
@@ -1052,7 +1441,7 @@ export const InventoryItems = () => {
 
   const handleUpdateItem = async () => {
     if (!editingItem) return;
-    
+
     try {
       let imageUrl = formData.imageUrl;
 
@@ -1065,7 +1454,10 @@ export const InventoryItems = () => {
         const timestamp = Date.now();
         const imageKey = `inventory-items/${timestamp}-${Math.random().toString(36).substring(2, 15)}.${extension}`;
 
-        const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+        const presignedUrl = await getPresignedUploadURL(
+          'crew-points-of-interest',
+          imageKey
+        );
         if (!presignedUrl) {
           alert('Failed to get upload URL. Please try again.');
           return;
@@ -1081,8 +1473,11 @@ export const InventoryItems = () => {
       }
 
       const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
-      const updatedItem = await apiClient.put<InventoryItemRecord>(`/sonar/inventory-items/${editingItem.id}`, submitData);
-      setItems(items.map(i => i.id === editingItem.id ? updatedItem : i));
+      const updatedItem = await apiClient.put<InventoryItemRecord>(
+        `/sonar/inventory-items/${editingItem.id}`,
+        submitData
+      );
+      setItems(items.map((i) => (i.id === editingItem.id ? updatedItem : i)));
       setEditingItem(null);
       resetForm();
     } catch (error) {
@@ -1094,31 +1489,44 @@ export const InventoryItems = () => {
   const handleGenerateItem = async () => {
     try {
       const normalized = normalizeGenerationDataForSubmit();
-      if (isHandEquipSlot(normalized.equipSlot) && (!normalized.handItemCategory || !normalized.handedness)) {
-        alert('For hand equipment generation, select both hand item type and handedness.');
+      if (
+        isHandEquipSlot(normalized.equipSlot) &&
+        (!normalized.handItemCategory || !normalized.handedness)
+      ) {
+        alert(
+          'For hand equipment generation, select both hand item type and handedness.'
+        );
         return;
       }
-      const newItem = await apiClient.post<InventoryItemRecord>('/sonar/inventory-items/generate', {
-        name: normalized.name,
-        description: normalized.description,
-        rarityTier: normalized.rarityTier,
-        equipSlot: normalized.equipSlot,
-        handItemCategory: normalized.handItemCategory,
-        handedness: normalized.handedness,
-      });
+      const newItem = await apiClient.post<InventoryItemRecord>(
+        '/sonar/inventory-items/generate',
+        {
+          name: normalized.name,
+          description: normalized.description,
+          rarityTier: normalized.rarityTier,
+          equipSlot: normalized.equipSlot,
+          handItemCategory: normalized.handItemCategory,
+          handedness: normalized.handedness,
+        }
+      );
       setItems([...items, newItem]);
       setShowGenerateItem(false);
       resetGenerationForm();
     } catch (error) {
       console.error('Error generating inventory item:', error);
-      alert('Error generating inventory item. Please check all required fields.');
+      alert(
+        'Error generating inventory item. Please check all required fields.'
+      );
     }
   };
 
   const handleRegenerateImage = async (item: InventoryItemRecord) => {
     try {
-      const updated = await apiClient.post<InventoryItemRecord>(`/sonar/inventory-items/${item.id}/regenerate`, {});
-      setItems(items.map(i => i.id === item.id ? updated : i));
+      const updated = await apiClient.post<InventoryItemRecord>(
+        `/sonar/inventory-items/${item.id}/regenerate`,
+        {}
+      );
+      setItems(items.map((i) => (i.id === item.id ? updated : i)));
     } catch (error) {
       console.error('Error regenerating inventory item image:', error);
       alert('Error regenerating inventory item image.');
@@ -1157,10 +1565,10 @@ export const InventoryItems = () => {
 
   const confirmDelete = async () => {
     if (!itemToDelete) return;
-    
+
     try {
       await apiClient.delete(`/sonar/inventory-items/${itemToDelete.id}`);
-      setItems(items.filter(i => i.id !== itemToDelete.id));
+      setItems(items.filter((i) => i.id !== itemToDelete.id));
       setSelectedItemIDs((prev) => {
         if (!prev.has(itemToDelete.id)) return prev;
         const next = new Set(prev);
@@ -1224,7 +1632,10 @@ export const InventoryItems = () => {
     if (ids.length === 0) return;
 
     try {
-      await apiClient.post('/sonar/inventory-items/bulk-archive', { ids, archived });
+      await apiClient.post('/sonar/inventory-items/bulk-archive', {
+        ids,
+        archived,
+      });
       const idSet = new Set(ids);
       setItems((prev) =>
         prev.map((item) => (idSet.has(item.id) ? { ...item, archived } : item))
@@ -1235,7 +1646,10 @@ export const InventoryItems = () => {
         return next;
       });
     } catch (error) {
-      console.error('Error updating archived state for inventory items:', error);
+      console.error(
+        'Error updating archived state for inventory items:',
+        error
+      );
       alert(`Error ${archived ? 'archiving' : 'restoring'} inventory items.`);
     }
   };
@@ -1249,7 +1663,9 @@ export const InventoryItems = () => {
     const hasTagChange = bulkTagAction !== 'none';
 
     if (!hasPriceChange && !hasTagChange) {
-      alert('Choose a buy price and/or a tag action before applying bulk edits.');
+      alert(
+        'Choose a buy price and/or a tag action before applying bulk edits.'
+      );
       return;
     }
 
@@ -1328,7 +1744,9 @@ export const InventoryItems = () => {
         {}
       );
 
-      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      const createdItems = Array.isArray(response.createdItems)
+        ? response.createdItems
+        : [];
       setItems((prev) => {
         const byId = new Map(prev.map((entry) => [entry.id, entry]));
         createdItems.forEach((created) => {
@@ -1337,11 +1755,17 @@ export const InventoryItems = () => {
         return Array.from(byId.values());
       });
 
-      const skippedCount = Array.isArray(response.skippedSlots) ? response.skippedSlots.length : 0;
-      const warningCount = Array.isArray(response.enqueueWarnings) ? response.enqueueWarnings.length : 0;
+      const skippedCount = Array.isArray(response.skippedSlots)
+        ? response.skippedSlots.length
+        : 0;
+      const warningCount = Array.isArray(response.enqueueWarnings)
+        ? response.enqueueWarnings.length
+        : 0;
       alert(
         `Set generation complete. Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
-          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+          (warningCount > 0
+            ? `, with ${warningCount} image queue warning(s).`
+            : '.')
       );
     } catch (error) {
       console.error('Error generating equipment set:', error);
@@ -1378,10 +1802,13 @@ export const InventoryItems = () => {
           targetLevel,
           majorStat: bulkSetMajorStat,
           minorStat: bulkSetMinorStat,
-          rarityTier: bulkSetRarityTier !== 'auto' ? bulkSetRarityTier : undefined,
+          rarityTier:
+            bulkSetRarityTier !== 'auto' ? bulkSetRarityTier : undefined,
         }
       );
-      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      const createdItems = Array.isArray(response.createdItems)
+        ? response.createdItems
+        : [];
       setItems((prev) => {
         const byId = new Map(prev.map((entry) => [entry.id, entry]));
         createdItems.forEach((created) => {
@@ -1390,12 +1817,18 @@ export const InventoryItems = () => {
         return Array.from(byId.values());
       });
 
-      const skippedCount = Array.isArray(response.skippedSlots) ? response.skippedSlots.length : 0;
-      const warningCount = Array.isArray(response.enqueueWarnings) ? response.enqueueWarnings.length : 0;
+      const skippedCount = Array.isArray(response.skippedSlots)
+        ? response.skippedSlots.length
+        : 0;
+      const warningCount = Array.isArray(response.enqueueWarnings)
+        ? response.enqueueWarnings.length
+        : 0;
       const resolvedRarity = response.rarityTier ?? 'Unknown';
       alert(
         `Generated ${resolvedRarity} set "${response.setTheme}". Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
-          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+          (warningCount > 0
+            ? `, with ${warningCount} image queue warning(s).`
+            : '.')
       );
     } catch (error) {
       console.error('Error generating stat-driven equipment set:', error);
@@ -1405,7 +1838,9 @@ export const InventoryItems = () => {
     }
   };
 
-  const handleGenerateConsumableQualities = async (item: InventoryItemRecord) => {
+  const handleGenerateConsumableQualities = async (
+    item: InventoryItemRecord
+  ) => {
     if (!canGenerateConsumableQualities(item)) {
       alert(
         'Only non-equippable consumables with effects and a quality prefix (Minor/Lesser/Greater/Major/Superior/Superb) can generate quality progression.'
@@ -1425,7 +1860,9 @@ export const InventoryItems = () => {
         {}
       );
 
-      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      const createdItems = Array.isArray(response.createdItems)
+        ? response.createdItems
+        : [];
       setItems((prev) => {
         const byId = new Map(prev.map((entry) => [entry.id, entry]));
         createdItems.forEach((created) => {
@@ -1442,7 +1879,9 @@ export const InventoryItems = () => {
         : 0;
       alert(
         `Consumable quality generation complete. Created ${createdItems.length} item(s), skipped ${skippedCount} quality tier(s)` +
-          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+          (warningCount > 0
+            ? `, with ${warningCount} image queue warning(s).`
+            : '.')
       );
     } catch (error) {
       console.error('Error generating consumable qualities:', error);
@@ -1496,6 +1935,13 @@ export const InventoryItems = () => {
       ),
       consumeStatusesToRemove: [...(item.consumeStatusesToRemove ?? [])],
       consumeSpellIds: [...(item.consumeSpellIds ?? [])],
+      consumeTeachRecipeIds: [...(item.consumeTeachRecipeIds ?? [])],
+      alchemyRecipes: (item.alchemyRecipes ?? []).map((recipe) =>
+        normalizeRecipe(recipe)
+      ),
+      workshopRecipes: (item.workshopRecipes ?? []).map((recipe) =>
+        normalizeRecipe(recipe)
+      ),
       internalTags: [...(item.internalTags ?? [])],
     });
     setInternalTagsInput((item.internalTags ?? []).join(', '));
@@ -1506,11 +1952,248 @@ export const InventoryItems = () => {
     }
   };
 
+  const renderRecipeEditor = (
+    label: string,
+    kind: 'alchemyRecipes' | 'workshopRecipes',
+    accentClass: string
+  ) => {
+    const recipes = formData[kind];
+    return (
+      <div style={{ marginBottom: '12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px',
+          }}
+        >
+          <label style={{ fontSize: '13px', fontWeight: 600 }}>{label}</label>
+          <button
+            type="button"
+            onClick={() => addRecipe(kind)}
+            className={`${accentClass} text-white px-2 py-1 rounded-md text-xs`}
+          >
+            Add Recipe
+          </button>
+        </div>
+        {recipes.length === 0 && (
+          <small style={{ color: '#666', fontSize: '12px' }}>
+            No recipes configured.
+          </small>
+        )}
+        {recipes.map((recipe, recipeIndex) => (
+          <div
+            key={`${kind}-${recipe.id || recipeIndex}`}
+            style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '10px',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '8px',
+                marginBottom: '10px',
+              }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '4px',
+                    fontSize: '12px',
+                  }}
+                >
+                  Tier
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={recipe.tier}
+                  onChange={(e) =>
+                    updateRecipe(kind, recipeIndex, {
+                      tier: parseInt(e.target.value, 10) || 1,
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}
+                />
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '4px',
+                    fontSize: '12px',
+                  }}
+                >
+                  Visibility
+                </label>
+                <select
+                  value={recipe.isPublic ? 'public' : 'private'}
+                  onChange={(e) =>
+                    updateRecipe(kind, recipeIndex, {
+                      isPublic: e.target.value === 'public',
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '4px',
+                    fontSize: '12px',
+                  }}
+                >
+                  Recipe ID
+                </label>
+                <input
+                  type="text"
+                  value={recipe.id}
+                  onChange={(e) =>
+                    updateRecipe(kind, recipeIndex, { id: e.target.value })
+                  }
+                  placeholder="Auto-generated if blank"
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '8px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '8px',
+                }}
+              >
+                <label style={{ fontSize: '12px', fontWeight: 600 }}>
+                  Ingredients
+                </label>
+                <button
+                  type="button"
+                  onClick={() => addRecipeIngredient(kind, recipeIndex)}
+                  className="bg-slate-700 text-white px-2 py-1 rounded-md text-xs"
+                >
+                  Add Ingredient
+                </button>
+              </div>
+              {recipe.ingredients.map((ingredient, ingredientIndex) => (
+                <div
+                  key={`${kind}-${recipeIndex}-ingredient-${ingredientIndex}`}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) 120px 86px',
+                    gap: '8px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <select
+                    value={
+                      ingredient.itemId > 0 ? String(ingredient.itemId) : ''
+                    }
+                    onChange={(e) =>
+                      updateRecipeIngredient(
+                        kind,
+                        recipeIndex,
+                        ingredientIndex,
+                        {
+                          itemId: parseInt(e.target.value, 10) || 0,
+                        }
+                      )
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    <option value="">Select ingredient item</option>
+                    {itemOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={ingredient.quantity}
+                    onChange={(e) =>
+                      updateRecipeIngredient(
+                        kind,
+                        recipeIndex,
+                        ingredientIndex,
+                        {
+                          quantity: parseInt(e.target.value, 10) || 1,
+                        }
+                      )
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                    onClick={() =>
+                      removeRecipeIngredient(kind, recipeIndex, ingredientIndex)
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                onClick={() => removeRecipe(kind, recipeIndex)}
+              >
+                Remove Recipe
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setImageFile(file);
-      
+
       // Create preview URL
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -1591,7 +2274,10 @@ export const InventoryItems = () => {
     { value: 'consumeHealthDelta', label: 'Use Health Delta' },
     { value: 'consumeManaDelta', label: 'Use Mana Delta' },
     { value: 'consumeRevivePartyMemberHealth', label: 'Revive One HP' },
-    { value: 'consumeReviveAllDownedPartyMembersHealth', label: 'Revive All HP' },
+    {
+      value: 'consumeReviveAllDownedPartyMembersHealth',
+      label: 'Revive All HP',
+    },
     { value: 'consumeSpellIds', label: 'Use Grants Spells' },
     { value: 'createdAt', label: 'Created At' },
     { value: 'updatedAt', label: 'Updated At' },
@@ -1646,7 +2332,9 @@ export const InventoryItems = () => {
         item.consumeReviveAllDownedPartyMembersHealth?.toString(),
         item.consumeStatusesToAdd?.map((status) => status.name).join(' '),
         item.consumeStatusesToRemove?.join(' '),
-        item.consumeSpellIds?.map((spellID) => spellNamesByID.get(spellID) ?? spellID).join(' '),
+        item.consumeSpellIds
+          ?.map((spellID) => spellNamesByID.get(spellID) ?? spellID)
+          .join(' '),
       ]
         .filter(Boolean)
         .join(' ')
@@ -1655,23 +2343,84 @@ export const InventoryItems = () => {
       if (query && !haystack.includes(query)) return false;
 
       if (filters.rarity && item.rarityTier !== filters.rarity) return false;
-      if (filters.equipSlot && (item.equipSlot ?? '') !== filters.equipSlot) return false;
-      if (filters.imageStatus && (item.imageGenerationStatus ?? '') !== filters.imageStatus) return false;
+      if (filters.equipSlot && (item.equipSlot ?? '') !== filters.equipSlot)
+        return false;
+      if (
+        filters.imageStatus &&
+        (item.imageGenerationStatus ?? '') !== filters.imageStatus
+      )
+        return false;
       if (filters.captureType === 'yes' && !item.isCaptureType) return false;
       if (filters.captureType === 'no' && item.isCaptureType) return false;
       if (filters.equippable === 'yes' && !item.equipSlot) return false;
       if (filters.equippable === 'no' && item.equipSlot) return false;
 
       if (!matchRange(item.id, filters.minId, filters.maxId)) return false;
-      if (!matchRange(item.buyPrice, filters.minBuyPrice, filters.maxBuyPrice)) return false;
-      if (!matchRange(item.unlockTier, filters.minUnlockTier, filters.maxUnlockTier)) return false;
+      if (!matchRange(item.buyPrice, filters.minBuyPrice, filters.maxBuyPrice))
+        return false;
+      if (
+        !matchRange(
+          item.unlockTier,
+          filters.minUnlockTier,
+          filters.maxUnlockTier
+        )
+      )
+        return false;
 
-      if (!matchRange(item.strengthMod ?? 0, filters.minStrength, filters.maxStrength, 0)) return false;
-      if (!matchRange(item.dexterityMod ?? 0, filters.minDexterity, filters.maxDexterity, 0)) return false;
-      if (!matchRange(item.constitutionMod ?? 0, filters.minConstitution, filters.maxConstitution, 0)) return false;
-      if (!matchRange(item.intelligenceMod ?? 0, filters.minIntelligence, filters.maxIntelligence, 0)) return false;
-      if (!matchRange(item.wisdomMod ?? 0, filters.minWisdom, filters.maxWisdom, 0)) return false;
-      if (!matchRange(item.charismaMod ?? 0, filters.minCharisma, filters.maxCharisma, 0)) return false;
+      if (
+        !matchRange(
+          item.strengthMod ?? 0,
+          filters.minStrength,
+          filters.maxStrength,
+          0
+        )
+      )
+        return false;
+      if (
+        !matchRange(
+          item.dexterityMod ?? 0,
+          filters.minDexterity,
+          filters.maxDexterity,
+          0
+        )
+      )
+        return false;
+      if (
+        !matchRange(
+          item.constitutionMod ?? 0,
+          filters.minConstitution,
+          filters.maxConstitution,
+          0
+        )
+      )
+        return false;
+      if (
+        !matchRange(
+          item.intelligenceMod ?? 0,
+          filters.minIntelligence,
+          filters.maxIntelligence,
+          0
+        )
+      )
+        return false;
+      if (
+        !matchRange(
+          item.wisdomMod ?? 0,
+          filters.minWisdom,
+          filters.maxWisdom,
+          0
+        )
+      )
+        return false;
+      if (
+        !matchRange(
+          item.charismaMod ?? 0,
+          filters.minCharisma,
+          filters.maxCharisma,
+          0
+        )
+      )
+        return false;
 
       return true;
     });
@@ -1702,7 +2451,15 @@ export const InventoryItems = () => {
     });
 
     return sorted;
-  }, [items, itemTab, searchQuery, filters, sortField, sortDirection, spellNamesByID]);
+  }, [
+    items,
+    itemTab,
+    searchQuery,
+    filters,
+    sortField,
+    sortDirection,
+    spellNamesByID,
+  ]);
 
   const activeItemCount = useMemo(
     () => items.filter((item) => !item.archived).length,
@@ -1713,12 +2470,20 @@ export const InventoryItems = () => {
     [items]
   );
 
-  const visibleItemIDs = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
+  const visibleItemIDs = useMemo(
+    () => visibleItems.map((item) => item.id),
+    [visibleItems]
+  );
   const selectedVisibleCount = useMemo(
-    () => visibleItems.reduce((count, item) => count + (selectedItemIDs.has(item.id) ? 1 : 0), 0),
+    () =>
+      visibleItems.reduce(
+        (count, item) => count + (selectedItemIDs.has(item.id) ? 1 : 0),
+        0
+      ),
     [visibleItems, selectedItemIDs]
   );
-  const allVisibleSelected = visibleItems.length > 0 && selectedVisibleCount === visibleItems.length;
+  const allVisibleSelected =
+    visibleItems.length > 0 && selectedVisibleCount === visibleItems.length;
   const hasSelectedItems = selectedItemIDs.size > 0;
 
   if (loading) {
@@ -1781,16 +2546,22 @@ export const InventoryItems = () => {
             onClick={() => setShowBulkDeleteConfirm(true)}
             disabled={!hasSelectedItems || bulkDeleteBusy}
           >
-            {bulkDeleteBusy ? 'Deleting...' : `Delete Selected (${selectedItemIDs.size})`}
+            {bulkDeleteBusy
+              ? 'Deleting...'
+              : `Delete Selected (${selectedItemIDs.size})`}
           </button>
         </div>
       </div>
 
       <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
-        <div className="mb-2 text-sm font-semibold text-gray-800">Generate Full Equippable Set</div>
+        <div className="mb-2 text-sm font-semibold text-gray-800">
+          Generate Full Equippable Set
+        </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <div>
-            <label className="mb-1 block text-xs text-gray-600">Target Level</label>
+            <label className="mb-1 block text-xs text-gray-600">
+              Target Level
+            </label>
             <input
               type="number"
               min={1}
@@ -1801,7 +2572,9 @@ export const InventoryItems = () => {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-gray-600">Major Stat</label>
+            <label className="mb-1 block text-xs text-gray-600">
+              Major Stat
+            </label>
             <select
               value={bulkSetMajorStat}
               onChange={(e) => setBulkSetMajorStat(e.target.value)}
@@ -1815,7 +2588,9 @@ export const InventoryItems = () => {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-gray-600">Minor Stat</label>
+            <label className="mb-1 block text-xs text-gray-600">
+              Minor Stat
+            </label>
             <select
               value={bulkSetMinorStat}
               onChange={(e) => setBulkSetMinorStat(e.target.value)}
@@ -1836,7 +2611,10 @@ export const InventoryItems = () => {
               className="w-full rounded-md border border-gray-300 p-2 text-sm"
             >
               {itemSetRarityOptions.map((option) => (
-                <option key={`bulk-set-rarity-${option.value}`} value={option.value}>
+                <option
+                  key={`bulk-set-rarity-${option.value}`}
+                  value={option.value}
+                >
                   {option.label}
                 </option>
               ))}
@@ -1849,12 +2627,14 @@ export const InventoryItems = () => {
               disabled={bulkSetGenerationBusy}
               className="w-full rounded-md bg-violet-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              {bulkSetGenerationBusy ? 'Generating Set...' : 'Generate Full Set'}
+              {bulkSetGenerationBusy
+                ? 'Generating Set...'
+                : 'Generate Full Set'}
             </button>
           </div>
         </div>
       </div>
-      
+
       {/* Search + Sort */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
         <div className="flex-1">
@@ -1880,7 +2660,9 @@ export const InventoryItems = () => {
           </select>
           <button
             type="button"
-            onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+            onClick={() =>
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+            }
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-44"
           >
             Direction: {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
@@ -1900,7 +2682,8 @@ export const InventoryItems = () => {
         <div className="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-gray-700">
-              Filters{activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
+              Filters
+              {activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
             </div>
             <button
               type="button"
@@ -1944,7 +2727,9 @@ export const InventoryItems = () => {
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
                 <select
                   value={filters.rarity}
-                  onChange={(e) => setFilters({ ...filters, rarity: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, rarity: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">All rarities</option>
@@ -1956,7 +2741,9 @@ export const InventoryItems = () => {
                 </select>
                 <select
                   value={filters.equipSlot}
-                  onChange={(e) => setFilters({ ...filters, equipSlot: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, equipSlot: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">All equip slots</option>
@@ -1968,7 +2755,9 @@ export const InventoryItems = () => {
                 </select>
                 <select
                   value={filters.equippable}
-                  onChange={(e) => setFilters({ ...filters, equippable: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, equippable: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">All items</option>
@@ -1977,7 +2766,9 @@ export const InventoryItems = () => {
                 </select>
                 <select
                   value={filters.captureType}
-                  onChange={(e) => setFilters({ ...filters, captureType: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, captureType: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">All capture types</option>
@@ -1986,7 +2777,9 @@ export const InventoryItems = () => {
                 </select>
                 <select
                   value={filters.imageStatus}
-                  onChange={(e) => setFilters({ ...filters, imageStatus: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, imageStatus: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">All image statuses</option>
@@ -2007,42 +2800,54 @@ export const InventoryItems = () => {
                   type="number"
                   placeholder="Min ID"
                   value={filters.minId}
-                  onChange={(e) => setFilters({ ...filters, minId: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minId: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max ID"
                   value={filters.maxId}
-                  onChange={(e) => setFilters({ ...filters, maxId: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxId: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min buy price"
                   value={filters.minBuyPrice}
-                  onChange={(e) => setFilters({ ...filters, minBuyPrice: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minBuyPrice: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max buy price"
                   value={filters.maxBuyPrice}
-                  onChange={(e) => setFilters({ ...filters, maxBuyPrice: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxBuyPrice: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min unlock tier"
                   value={filters.minUnlockTier}
-                  onChange={(e) => setFilters({ ...filters, minUnlockTier: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minUnlockTier: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max unlock tier"
                   value={filters.maxUnlockTier}
-                  onChange={(e) => setFilters({ ...filters, maxUnlockTier: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxUnlockTier: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
               </div>
@@ -2056,84 +2861,108 @@ export const InventoryItems = () => {
                   type="number"
                   placeholder="Min STR"
                   value={filters.minStrength}
-                  onChange={(e) => setFilters({ ...filters, minStrength: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minStrength: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max STR"
                   value={filters.maxStrength}
-                  onChange={(e) => setFilters({ ...filters, maxStrength: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxStrength: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min DEX"
                   value={filters.minDexterity}
-                  onChange={(e) => setFilters({ ...filters, minDexterity: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minDexterity: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max DEX"
                   value={filters.maxDexterity}
-                  onChange={(e) => setFilters({ ...filters, maxDexterity: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxDexterity: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min CON"
                   value={filters.minConstitution}
-                  onChange={(e) => setFilters({ ...filters, minConstitution: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minConstitution: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max CON"
                   value={filters.maxConstitution}
-                  onChange={(e) => setFilters({ ...filters, maxConstitution: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxConstitution: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min INT"
                   value={filters.minIntelligence}
-                  onChange={(e) => setFilters({ ...filters, minIntelligence: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minIntelligence: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max INT"
                   value={filters.maxIntelligence}
-                  onChange={(e) => setFilters({ ...filters, maxIntelligence: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxIntelligence: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min WIS"
                   value={filters.minWisdom}
-                  onChange={(e) => setFilters({ ...filters, minWisdom: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minWisdom: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max WIS"
                   value={filters.maxWisdom}
-                  onChange={(e) => setFilters({ ...filters, maxWisdom: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxWisdom: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Min CHA"
                   value={filters.minCharisma}
-                  onChange={(e) => setFilters({ ...filters, minCharisma: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, minCharisma: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
                   placeholder="Max CHA"
                   value={filters.maxCharisma}
-                  onChange={(e) => setFilters({ ...filters, maxCharisma: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, maxCharisma: e.target.value })
+                  }
                   className="w-full p-2 border rounded-md"
                 />
               </div>
@@ -2147,7 +2976,9 @@ export const InventoryItems = () => {
           <input
             type="checkbox"
             checked={allVisibleSelected}
-            onChange={(e) => toggleSelectAllVisible(e.target.checked, visibleItemIDs)}
+            onChange={(e) =>
+              toggleSelectAllVisible(e.target.checked, visibleItemIDs)
+            }
             className="h-4 w-4 cursor-pointer"
           />
           Select all visible ({visibleItems.length})
@@ -2163,7 +2994,9 @@ export const InventoryItems = () => {
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
-            <label className="mb-1 block text-xs text-gray-600">Set Buy Price</label>
+            <label className="mb-1 block text-xs text-gray-600">
+              Set Buy Price
+            </label>
             <input
               type="number"
               min={0}
@@ -2176,10 +3009,14 @@ export const InventoryItems = () => {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-gray-600">Tag Action</label>
+            <label className="mb-1 block text-xs text-gray-600">
+              Tag Action
+            </label>
             <select
               value={bulkTagAction}
-              onChange={(e) => setBulkTagAction(e.target.value as BulkTagAction)}
+              onChange={(e) =>
+                setBulkTagAction(e.target.value as BulkTagAction)
+              }
               disabled={bulkEditBusy || !hasSelectedItems}
               className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
             >
@@ -2213,38 +3050,54 @@ export const InventoryItems = () => {
               disabled={!hasSelectedItems || bulkEditBusy}
               className="w-full rounded-md bg-amber-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              {bulkEditBusy ? 'Applying...' : `Apply to ${selectedItemIDs.size} selected`}
+              {bulkEditBusy
+                ? 'Applying...'
+                : `Apply to ${selectedItemIDs.size} selected`}
             </button>
           </div>
         </div>
         <p className="mt-2 text-xs text-gray-600">
-          Leave buy price blank to keep current values. Tags are normalized to lowercase.
+          Leave buy price blank to keep current values. Tags are normalized to
+          lowercase.
         </p>
       </div>
 
       {/* Items Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-        gap: '20px',
-        padding: '20px'
-      }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: '20px',
+          padding: '20px',
+        }}
+      >
         {visibleItems.map((item) => (
-          <div 
+          <div
             key={item.id}
             style={{
               padding: '20px',
               border: '1px solid #ccc',
               borderRadius: '8px',
               backgroundColor: '#fff',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-              <h2 style={{ 
-                margin: '0 0 15px 0',
-                color: '#333'
-              }}>{item.name}</h2>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: '12px',
+              }}
+            >
+              <h2
+                style={{
+                  margin: '0 0 15px 0',
+                  color: '#333',
+                }}
+              >
+                {item.name}
+              </h2>
               <input
                 type="checkbox"
                 checked={selectedItemIDs.has(item.id)}
@@ -2254,23 +3107,33 @@ export const InventoryItems = () => {
               />
             </div>
 
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              ID: {item.id}
-            </p>
+            <p style={{ margin: '5px 0', color: '#666' }}>ID: {item.id}</p>
 
-            <p style={{ margin: '5px 0', color: item.archived ? '#92400e' : '#166534' }}>
+            <p
+              style={{
+                margin: '5px 0',
+                color: item.archived ? '#92400e' : '#166534',
+              }}
+            >
               Status: {item.archived ? 'Archived' : 'Active'}
             </p>
 
             <p style={{ margin: '5px 0', color: '#666' }}>
               Image Status: {formatGenerationStatus(item.imageGenerationStatus)}
             </p>
-            {item.imageGenerationStatus === 'failed' && item.imageGenerationError && (
-              <p style={{ margin: '5px 0', color: '#b91c1c', fontSize: '12px' }}>
-                Error: {item.imageGenerationError}
-              </p>
-            )}
-            
+            {item.imageGenerationStatus === 'failed' &&
+              item.imageGenerationError && (
+                <p
+                  style={{
+                    margin: '5px 0',
+                    color: '#b91c1c',
+                    fontSize: '12px',
+                  }}
+                >
+                  Error: {item.imageGenerationError}
+                </p>
+              )}
+
             <p style={{ margin: '5px 0', color: '#666' }}>
               Rarity: {item.rarityTier}
             </p>
@@ -2278,7 +3141,7 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Item Level: {item.itemLevel ?? 1}
             </p>
-            
+
             <p style={{ margin: '5px 0', color: '#666' }}>
               Capture Type: {item.isCaptureType ? 'Yes' : 'No'}
             </p>
@@ -2287,12 +3150,18 @@ export const InventoryItems = () => {
               Equip Slot: {equipSlotLabel(item.equipSlot)}
             </p>
             {handCombatSummary(item).map((line) => (
-              <p key={`${item.id}-${line}`} style={{ margin: '5px 0', color: '#666' }}>
+              <p
+                key={`${item.id}-${line}`}
+                style={{ margin: '5px 0', color: '#666' }}
+              >
                 {line}
               </p>
             ))}
             {consumeSummary(item, spellNamesByID).map((line) => (
-              <p key={`${item.id}-consume-${line}`} style={{ margin: '5px 0', color: '#666' }}>
+              <p
+                key={`${item.id}-consume-${line}`}
+                style={{ margin: '5px 0', color: '#666' }}
+              >
                 {line}
               </p>
             ))}
@@ -2307,7 +3176,7 @@ export const InventoryItems = () => {
                 Stat Mods: {statModSummary(item)}
               </p>
             )}
-            
+
             {item.buyPrice !== undefined && item.buyPrice !== null && (
               <p style={{ margin: '5px 0', color: '#666' }}>
                 Buy Price: {item.buyPrice} gold
@@ -2318,7 +3187,12 @@ export const InventoryItems = () => {
               <img
                 src={item.imageUrl}
                 alt={item.name}
-                style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 4, marginTop: '10px' }}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 120,
+                  borderRadius: 4,
+                  marginTop: '10px',
+                }}
               />
             )}
 
@@ -2338,7 +3212,9 @@ export const InventoryItems = () => {
                 Edit
               </button>
               <button
-                onClick={() => void handleSetItemsArchived([item.id], !item.archived)}
+                onClick={() =>
+                  void handleSetItemsArchived([item.id], !item.archived)
+                }
                 className="bg-slate-700 text-white px-4 py-2 rounded-md mr-2"
               >
                 {item.archived ? 'Restore' : 'Archive'}
@@ -2360,7 +3236,9 @@ export const InventoryItems = () => {
               <button
                 onClick={() => handleRegenerateImage(item)}
                 className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
-                disabled={['queued', 'in_progress'].includes(item.imageGenerationStatus || '')}
+                disabled={['queued', 'in_progress'].includes(
+                  item.imageGenerationStatus || ''
+                )}
               >
                 Regenerate Image
               </button>
@@ -2370,7 +3248,9 @@ export const InventoryItems = () => {
                   className="bg-orange-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
                   disabled={consumableGenerationBusyIds.has(item.id)}
                 >
-                  {consumableGenerationBusyIds.has(item.id) ? 'Generating Qualities...' : 'Generate Qualities'}
+                  {consumableGenerationBusyIds.has(item.id)
+                    ? 'Generating Qualities...'
+                    : 'Generate Qualities'}
                 </button>
               )}
               {item.equipSlot && (
@@ -2379,7 +3259,9 @@ export const InventoryItems = () => {
                   className="bg-violet-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
                   disabled={setGenerationBusyIds.has(item.id)}
                 >
-                  {setGenerationBusyIds.has(item.id) ? 'Generating Set...' : 'Generate Set'}
+                  {setGenerationBusyIds.has(item.id)
+                    ? 'Generating Set...'
+                    : 'Generate Set'}
                 </button>
               )}
               <button
@@ -2395,78 +3277,120 @@ export const InventoryItems = () => {
 
       {/* Create/Edit Item Modal */}
       {(showCreateItem || editingItem) && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '600px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
-            <h2>{editingItem ? 'Edit Inventory Item' : 'Create Inventory Item'}</h2>
-            
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '600px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
+            <h2>
+              {editingItem ? 'Edit Inventory Item' : 'Create Inventory Item'}
+            </h2>
+
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Name *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Name *:
+              </label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
                 required
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Image:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Image:
+              </label>
               <input
                 type="file"
                 accept="image/*"
                 ref={fileInputRef}
                 onChange={handleImageChange}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               {imagePreview && (
-                <img 
-                  src={imagePreview} 
-                  alt="Preview" 
-                  style={{ 
-                    maxWidth: '100%', 
-                    maxHeight: 200, 
-                    borderRadius: 4, 
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: 200,
+                    borderRadius: 4,
                     marginTop: '10px',
-                    objectFit: 'contain'
-                  }} 
+                    objectFit: 'contain',
+                  }}
                 />
               )}
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Flavor Text:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Flavor Text:
+              </label>
               <textarea
                 value={formData.flavorText}
-                onChange={(e) => setFormData({ ...formData, flavorText: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '60px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, flavorText: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  minHeight: '60px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Effect Text:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Effect Text:
+              </label>
               <textarea
                 value={formData.effectText}
-                onChange={(e) => setFormData({ ...formData, effectText: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '60px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, effectText: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  minHeight: '60px',
+                }}
               />
             </div>
 
@@ -2479,19 +3403,34 @@ export const InventoryItems = () => {
                 value={internalTagsInput}
                 onChange={(e) => setInternalTagsInput(e.target.value)}
                 placeholder="e.g. consumable, potion, healing, seed_drop_only"
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Used only for internal classification; not shown in player-facing gameplay UI.
+                Used only for internal classification; not shown in
+                player-facing gameplay UI.
               </small>
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Rarity Tier *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Rarity Tier *:
+              </label>
               <select
                 value={formData.rarityTier}
-                onChange={(e) => setFormData({ ...formData, rarityTier: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, rarityTier: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
                 required
               >
                 <option value={Rarity.Common}>Common</option>
@@ -2503,49 +3442,85 @@ export const InventoryItems = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
                 <input
                   type="checkbox"
                   checked={formData.isCaptureType}
-                  onChange={(e) => setFormData({ ...formData, isCaptureType: e.target.checked })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      isCaptureType: e.target.checked,
+                    })
+                  }
                 />
                 Is Capture Type
               </label>
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Buy Price (gold):</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Buy Price (gold):
+              </label>
               <input
                 type="number"
                 min="0"
                 value={formData.buyPrice !== undefined ? formData.buyPrice : ''}
-                onChange={(e) => setFormData({ 
-                  ...formData, 
-                  buyPrice: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
-                })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    buyPrice:
+                      e.target.value === ''
+                        ? undefined
+                        : parseInt(e.target.value, 10),
+                  })
+                }
                 placeholder="Leave empty if shops should not use a fixed buy price"
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Base vendor price. Shops sell for this amount before charisma discounts, and buy from players for half before charisma bonuses.
+                Base vendor price. Shops sell for this amount before charisma
+                discounts, and buy from players for half before charisma
+                bonuses.
               </small>
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Unlock Tier:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Unlock Tier:
+              </label>
               <input
                 type="number"
                 min="0"
-                value={formData.unlockTier !== undefined ? formData.unlockTier : ''}
-                onChange={(e) => setFormData({ 
-                  ...formData, 
-                  unlockTier: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
-                })}
+                value={
+                  formData.unlockTier !== undefined ? formData.unlockTier : ''
+                }
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    unlockTier:
+                      e.target.value === ''
+                        ? undefined
+                        : parseInt(e.target.value, 10),
+                  })
+                }
                 placeholder="Leave empty if no unlock tier required"
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Set the tier level required to unlock this item. Leave empty if no tier requirement.
+                Set the tier level required to unlock this item. Leave empty if
+                no tier requirement.
               </small>
             </div>
 
@@ -2572,15 +3547,23 @@ export const InventoryItems = () => {
                   })
                 }
                 placeholder="Leave empty if this item cannot unlock locks"
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Items with this effect can unlock chests or doors with lock strength less than or equal to this value.
+                Items with this effect can unlock chests or doors with lock
+                strength less than or equal to this value.
               </small>
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Item Level *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Item Level *:
+              </label>
               <input
                 type="number"
                 min="1"
@@ -2588,10 +3571,18 @@ export const InventoryItems = () => {
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    itemLevel: e.target.value === '' ? 1 : Math.max(1, parseInt(e.target.value, 10) || 1),
+                    itemLevel:
+                      e.target.value === ''
+                        ? 1
+                        : Math.max(1, parseInt(e.target.value, 10) || 1),
                   })
                 }
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
                 Used for balancing and progression. Must be at least 1.
@@ -2599,11 +3590,18 @@ export const InventoryItems = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Equip Slot:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Equip Slot:
+              </label>
               <select
                 value={formData.equipSlot}
                 onChange={(e) => handleEquipSlotChange(e.target.value)}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               >
                 {equipSlotOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -2612,37 +3610,86 @@ export const InventoryItems = () => {
                 ))}
               </select>
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Choose a slot to make the item equippable. Leave as not equippable for consumables.
+                Choose a slot to make the item equippable. Leave as not
+                equippable for consumables.
               </small>
             </div>
 
             {isHandEquipSlot(formData.equipSlot) && (
-              <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Hand Equipment Settings</label>
+              <div
+                style={{
+                  marginBottom: '15px',
+                  padding: '12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Hand Equipment Settings
+                </label>
 
                 <div style={{ marginBottom: '10px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Hand Item Type *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Hand Item Type *
+                  </label>
                   <select
                     value={formData.handItemCategory}
                     onChange={(e) => handleHandCategoryChange(e.target.value)}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   >
                     <option value="">Select hand item type</option>
-                    {(handItemCategoryOptions[formData.equipSlot] || []).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
+                    {(handItemCategoryOptions[formData.equipSlot] || []).map(
+                      (option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
 
                 <div style={{ marginBottom: '10px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Handedness *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Handedness *
+                  </label>
                   <select
                     value={formData.handedness}
-                    onChange={(e) => setFormData({ ...formData, handedness: e.target.value })}
-                    disabled={formData.equipSlot === 'off_hand' || formData.handItemCategory === 'staff'}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({ ...formData, handedness: e.target.value })
+                    }
+                    disabled={
+                      formData.equipSlot === 'off_hand' ||
+                      formData.handItemCategory === 'staff'
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   >
                     <option value="">Select handedness</option>
                     {handednessOptions.map((option) => (
@@ -2653,180 +3700,426 @@ export const InventoryItems = () => {
                   </select>
                 </div>
 
-	                {formData.equipSlot === 'dominant_hand' && (
-	                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '10px' }}>
-	                    <div>
-	                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Min *</label>
-	                      <input
-                        type="number"
-                        min="1"
-                        value={formData.damageMin !== undefined ? formData.damageMin : ''}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          damageMin: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                        })}
-                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                      />
-                    </div>
+                {formData.equipSlot === 'dominant_hand' && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(4, 1fr)',
+                      gap: '10px',
+                      marginBottom: '10px',
+                    }}
+                  >
                     <div>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Max *</label>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Damage Min *
+                      </label>
                       <input
                         type="number"
                         min="1"
-                        value={formData.damageMax !== undefined ? formData.damageMax : ''}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          damageMax: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                        })}
-                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        value={
+                          formData.damageMin !== undefined
+                            ? formData.damageMin
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            damageMin:
+                              e.target.value === ''
+                                ? undefined
+                                : parseInt(e.target.value, 10),
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Swipes / Attack *</label>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Damage Max *
+                      </label>
                       <input
                         type="number"
                         min="1"
-                        value={formData.swipesPerAttack !== undefined ? formData.swipesPerAttack : ''}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          swipesPerAttack: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                        })}
-	                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-	                      />
-	                    </div>
-	                    <div>
-	                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Affinity *</label>
-	                      <select
-	                        value={formData.damageAffinity ?? 'physical'}
-	                        onChange={(e) =>
-	                          setFormData({
-	                            ...formData,
-	                            damageAffinity: e.target.value,
-	                          })
-	                        }
-	                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-	                      >
-	                        {damageAffinityOptions.map((option) => (
-	                          <option key={option.value} value={option.value}>
-	                            {option.label}
-	                          </option>
-	                        ))}
-	                      </select>
-	                    </div>
-	                  </div>
-	                )}
+                        value={
+                          formData.damageMax !== undefined
+                            ? formData.damageMax
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            damageMax:
+                              e.target.value === ''
+                                ? undefined
+                                : parseInt(e.target.value, 10),
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Swipes / Attack *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={
+                          formData.swipesPerAttack !== undefined
+                            ? formData.swipesPerAttack
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            swipesPerAttack:
+                              e.target.value === ''
+                                ? undefined
+                                : parseInt(e.target.value, 10),
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Damage Affinity *
+                      </label>
+                      <select
+                        value={formData.damageAffinity ?? 'physical'}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            damageAffinity: e.target.value,
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        {damageAffinityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 {formData.handItemCategory === 'shield' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '10px' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: '10px',
+                      marginBottom: '10px',
+                    }}
+                  >
                     <div>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Block Percentage *</label>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Block Percentage *
+                      </label>
                       <input
                         type="number"
                         min="1"
                         max="100"
-                        value={formData.blockPercentage !== undefined ? formData.blockPercentage : ''}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          blockPercentage: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                        })}
-                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        value={
+                          formData.blockPercentage !== undefined
+                            ? formData.blockPercentage
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            blockPercentage:
+                              e.target.value === ''
+                                ? undefined
+                                : parseInt(e.target.value, 10),
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Blocked *</label>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Damage Blocked *
+                      </label>
                       <input
                         type="number"
                         min="1"
-                        value={formData.damageBlocked !== undefined ? formData.damageBlocked : ''}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          damageBlocked: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                        })}
-                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        value={
+                          formData.damageBlocked !== undefined
+                            ? formData.damageBlocked
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            damageBlocked:
+                              e.target.value === ''
+                                ? undefined
+                                : parseInt(e.target.value, 10),
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
                       />
                     </div>
                   </div>
                 )}
 
-                {(formData.handItemCategory === 'orb' || formData.handItemCategory === 'staff') && (
+                {(formData.handItemCategory === 'orb' ||
+                  formData.handItemCategory === 'staff') && (
                   <div>
-                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Spell Damage Bonus % *</label>
+                    <label
+                      style={{
+                        display: 'block',
+                        marginBottom: '4px',
+                        fontSize: '12px',
+                      }}
+                    >
+                      Spell Damage Bonus % *
+                    </label>
                     <input
                       type="number"
                       min="1"
-                      value={formData.spellDamageBonusPercent !== undefined ? formData.spellDamageBonusPercent : ''}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        spellDamageBonusPercent: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
-                      })}
-                      style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      value={
+                        formData.spellDamageBonusPercent !== undefined
+                          ? formData.spellDamageBonusPercent
+                          : ''
+                      }
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          spellDamageBonusPercent:
+                            e.target.value === ''
+                              ? undefined
+                              : parseInt(e.target.value, 10),
+                        })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
                     />
                   </div>
                 )}
               </div>
             )}
 
-            <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+            <div
+              style={{
+                marginBottom: '15px',
+                padding: '12px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '6px',
+              }}
+            >
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontWeight: 600,
+                }}
+              >
                 Consume Effects
               </label>
-              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '10px' }}>
-                Positive deltas restore resources. Revive values set HP when reviving.
+              <small
+                style={{
+                  color: '#666',
+                  fontSize: '12px',
+                  display: 'block',
+                  marginBottom: '10px',
+                }}
+              >
+                Positive deltas restore resources. Revive values set HP when
+                reviving.
               </small>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '12px' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '10px',
+                  marginBottom: '12px',
+                }}
+              >
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Health Delta</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Health Delta
+                  </label>
                   <input
                     type="number"
                     value={formData.consumeHealthDelta}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      consumeHealthDelta: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        consumeHealthDelta: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Mana Delta</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Mana Delta
+                  </label>
                   <input
                     type="number"
                     value={formData.consumeManaDelta}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      consumeManaDelta: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        consumeManaDelta: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
                     Revive Party Member HP
                   </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.consumeRevivePartyMemberHealth}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      consumeRevivePartyMemberHealth: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        consumeRevivePartyMemberHealth:
+                          parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
                     Revive All Downed HP
                   </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.consumeReviveAllDownedPartyMembersHealth}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      consumeReviveAllDownedPartyMembersHealth: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        consumeReviveAllDownedPartyMembersHealth:
+                          parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <label
@@ -2853,8 +4146,17 @@ export const InventoryItems = () => {
               </div>
 
               <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Statuses Added On Consume</label>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>
+                    Statuses Added On Consume
+                  </label>
                   <button
                     type="button"
                     onClick={addConsumeStatusToAdd}
@@ -2869,110 +4171,322 @@ export const InventoryItems = () => {
                   </small>
                 )}
                 {formData.consumeStatusesToAdd.map((status, statusIndex) => (
-                  <div key={`consume-add-${statusIndex}`} style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                  <div
+                    key={`consume-add-${statusIndex}`}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '8px',
+                        marginBottom: '8px',
+                      }}
+                    >
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Name</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          Name
+                        </label>
                         <input
                           type="text"
                           value={status.name}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { name: e.target.value })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              name: e.target.value,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Duration (seconds)</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          Duration (seconds)
+                        </label>
                         <input
                           type="number"
                           min="1"
                           value={status.durationSeconds}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { durationSeconds: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              durationSeconds:
+                                parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Description</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          Description
+                        </label>
                         <input
                           type="text"
                           value={status.description}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { description: e.target.value })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              description: e.target.value,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Effect</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          Effect
+                        </label>
                         <input
                           type="text"
                           value={status.effect}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { effect: e.target.value })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              effect: e.target.value,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '8px',
+                        marginBottom: '8px',
+                      }}
+                    >
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>STR</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          STR
+                        </label>
                         <input
                           type="number"
                           value={status.strengthMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { strengthMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              strengthMod: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>DEX</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          DEX
+                        </label>
                         <input
                           type="number"
                           value={status.dexterityMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { dexterityMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              dexterityMod: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>CON</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          CON
+                        </label>
                         <input
                           type="number"
                           value={status.constitutionMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { constitutionMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              constitutionMod:
+                                parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>INT</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          INT
+                        </label>
                         <input
                           type="number"
                           value={status.intelligenceMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { intelligenceMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              intelligenceMod:
+                                parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>WIS</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          WIS
+                        </label>
                         <input
                           type="number"
                           value={status.wisdomMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { wisdomMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              wisdomMod: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>CHA</label>
+                        <label
+                          style={{
+                            display: 'block',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          CHA
+                        </label>
                         <input
                           type="number"
                           value={status.charismaMod}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { charismaMod: parseInt(e.target.value, 10) || 0 })}
-                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              charismaMod: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
                         />
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '12px',
+                        }}
+                      >
                         <input
                           type="checkbox"
                           checked={status.positive}
-                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { positive: e.target.checked })}
+                          onChange={(e) =>
+                            updateConsumeStatusToAdd(statusIndex, {
+                              positive: e.target.checked,
+                            })
+                          }
                         />
                         Positive status
                       </label>
@@ -2989,8 +4503,17 @@ export const InventoryItems = () => {
               </div>
 
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Statuses Removed On Consume</label>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>
+                    Statuses Removed On Consume
+                  </label>
                   <button
                     type="button"
                     onClick={addConsumeStatusToRemove}
@@ -3005,13 +4528,23 @@ export const InventoryItems = () => {
                   </small>
                 )}
                 {formData.consumeStatusesToRemove.map((name, index) => (
-                  <div key={`consume-remove-${index}`} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                  <div
+                    key={`consume-remove-${index}`}
+                    style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}
+                  >
                     <input
                       type="text"
                       value={name}
                       placeholder="Status name (e.g. Poisoned)"
-                      onChange={(e) => updateConsumeStatusToRemove(index, e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      onChange={(e) =>
+                        updateConsumeStatusToRemove(index, e.target.value)
+                      }
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
                     />
                     <button
                       type="button"
@@ -3025,8 +4558,17 @@ export const InventoryItems = () => {
               </div>
 
               <div style={{ marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Spells Granted On Consume</label>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>
+                    Spells Granted On Consume
+                  </label>
                   <button
                     type="button"
                     onClick={addConsumeSpellId}
@@ -3041,11 +4583,21 @@ export const InventoryItems = () => {
                   </small>
                 )}
                 {formData.consumeSpellIds.map((spellID, index) => (
-                  <div key={`consume-spell-${index}`} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                  <div
+                    key={`consume-spell-${index}`}
+                    style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}
+                  >
                     <select
                       value={spellID}
-                      onChange={(e) => updateConsumeSpellId(index, e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      onChange={(e) =>
+                        updateConsumeSpellId(index, e.target.value)
+                      }
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
                     >
                       <option value="">Select spell</option>
                       {spells.map((spell) => (
@@ -3064,87 +4616,286 @@ export const InventoryItems = () => {
                   </div>
                 ))}
               </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>
+                    Recipes Learned On Consume
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addTeachRecipeId}
+                    className="bg-amber-600 text-white px-2 py-1 rounded-md text-xs"
+                  >
+                    Add Recipe
+                  </button>
+                </div>
+                {formData.consumeTeachRecipeIds.length === 0 && (
+                  <small style={{ color: '#666', fontSize: '12px' }}>
+                    No recipes will be taught.
+                  </small>
+                )}
+                {formData.consumeTeachRecipeIds.map((recipeID, index) => (
+                  <div
+                    key={`consume-teach-recipe-${index}`}
+                    style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}
+                  >
+                    <select
+                      value={recipeID}
+                      onChange={(e) =>
+                        updateTeachRecipeId(index, e.target.value)
+                      }
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      <option value="">Select recipe</option>
+                      {recipeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                      onClick={() => removeTeachRecipeId(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginBottom: '15px',
+                padding: '12px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '6px',
+              }}
+            >
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontWeight: 600,
+                }}
+              >
+                Crafting Recipes
+              </label>
+              <small
+                style={{
+                  color: '#666',
+                  fontSize: '12px',
+                  display: 'block',
+                  marginBottom: '10px',
+                }}
+              >
+                Public recipes unlock automatically at the required room tier.
+                Private recipes must be learned from an item first.
+              </small>
+
+              {renderRecipeEditor(
+                'Alchemy Recipes',
+                'alchemyRecipes',
+                'bg-emerald-600'
+              )}
+              {renderRecipeEditor(
+                'Workshop Recipes',
+                'workshopRecipes',
+                'bg-orange-600'
+              )}
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '8px' }}>Stat Modifiers (while equipped):</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>
+                Stat Modifiers (while equipped):
+              </label>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '10px',
+                }}
+              >
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Strength</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Strength
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.strengthMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      strengthMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        strengthMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Dexterity</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Dexterity
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.dexterityMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      dexterityMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        dexterityMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Constitution</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Constitution
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.constitutionMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      constitutionMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        constitutionMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Intelligence</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Intelligence
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.intelligenceMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      intelligenceMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        intelligenceMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Wisdom</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Wisdom
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.wisdomMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      wisdomMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        wisdomMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Charisma</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Charisma
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.charismaMod}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      charismaMod: parseInt(e.target.value, 10) || 0,
-                    })}
-                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        charismaMod: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   />
                 </div>
               </div>
@@ -3179,26 +4930,30 @@ export const InventoryItems = () => {
       )}
 
       {useOutfitItem && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '520px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '520px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Use Outfit</h2>
               <button
@@ -3210,7 +4965,10 @@ export const InventoryItems = () => {
             </div>
 
             <div className="mb-4 text-sm text-gray-600">
-              Selected item: <span className="font-medium text-gray-900">{useOutfitItem.name}</span>
+              Selected item:{' '}
+              <span className="font-medium text-gray-900">
+                {useOutfitItem.name}
+              </span>
             </div>
 
             <div className="mb-4">
@@ -3224,7 +4982,9 @@ export const InventoryItems = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">Selfie URL</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Selfie URL
+              </label>
               <input
                 type="text"
                 value={useOutfitSelfieUrl}
@@ -3249,7 +5009,9 @@ export const InventoryItems = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleUseOutfit}
-                disabled={!useOutfitUser || !useOutfitSelfieUrl || useOutfitSubmitting}
+                disabled={
+                  !useOutfitUser || !useOutfitSelfieUrl || useOutfitSubmitting
+                }
                 className="bg-indigo-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
               >
                 {useOutfitSubmitting ? 'Starting…' : 'Start Generation'}
@@ -3267,54 +5029,92 @@ export const InventoryItems = () => {
 
       {/* Generate Item Modal */}
       {showGenerateItem && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '500px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '500px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
             <h2>Generate Inventory Item</h2>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Name *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Name *:
+              </label>
               <input
                 type="text"
                 value={generationData.name}
-                onChange={(e) => setGenerationData({ ...generationData, name: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setGenerationData({ ...generationData, name: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
                 required
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Description:
+              </label>
               <textarea
                 value={generationData.description}
-                onChange={(e) => setGenerationData({ ...generationData, description: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '80px' }}
+                onChange={(e) =>
+                  setGenerationData({
+                    ...generationData,
+                    description: e.target.value,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  minHeight: '80px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Rarity Tier *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Rarity Tier *:
+              </label>
               <select
                 value={generationData.rarityTier}
-                onChange={(e) => setGenerationData({ ...generationData, rarityTier: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setGenerationData({
+                    ...generationData,
+                    rarityTier: e.target.value,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
                 required
               >
                 <option value={Rarity.Common}>Common</option>
@@ -3326,11 +5126,20 @@ export const InventoryItems = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Equip Slot:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Equip Slot:
+              </label>
               <select
                 value={generationData.equipSlot}
-                onChange={(e) => handleGenerationEquipSlotChange(e.target.value)}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  handleGenerationEquipSlotChange(e.target.value)
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               >
                 {equipSlotOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -3341,17 +5150,49 @@ export const InventoryItems = () => {
             </div>
 
             {isHandEquipSlot(generationData.equipSlot) && (
-              <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Generated Hand Equipment</label>
+              <div
+                style={{
+                  marginBottom: '15px',
+                  padding: '12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Generated Hand Equipment
+                </label>
                 <div style={{ marginBottom: '10px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Hand Item Type *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Hand Item Type *
+                  </label>
                   <select
                     value={generationData.handItemCategory}
-                    onChange={(e) => handleGenerationHandCategoryChange(e.target.value)}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      handleGenerationHandCategoryChange(e.target.value)
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   >
                     <option value="">Select hand item type</option>
-                    {(handItemCategoryOptions[generationData.equipSlot] || []).map((option) => (
+                    {(
+                      handItemCategoryOptions[generationData.equipSlot] || []
+                    ).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -3359,12 +5200,33 @@ export const InventoryItems = () => {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Handedness *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Handedness *
+                  </label>
                   <select
                     value={generationData.handedness}
-                    onChange={(e) => setGenerationData({ ...generationData, handedness: e.target.value })}
-                    disabled={generationData.equipSlot === 'off_hand' || generationData.handItemCategory === 'staff'}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    onChange={(e) =>
+                      setGenerationData({
+                        ...generationData,
+                        handedness: e.target.value,
+                      })
+                    }
+                    disabled={
+                      generationData.equipSlot === 'off_hand' ||
+                      generationData.handItemCategory === 'staff'
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
                   >
                     <option value="">Select handedness</option>
                     {handednessOptions.map((option) => (
@@ -3400,26 +5262,33 @@ export const InventoryItems = () => {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && itemToDelete && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '400px'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '400px',
+            }}
+          >
             <h2>Confirm Delete</h2>
-            <p>Are you sure you want to delete "{itemToDelete.name}"? This action cannot be undone.</p>
+            <p>
+              Are you sure you want to delete "{itemToDelete.name}"? This action
+              cannot be undone.
+            </p>
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <button
                 onClick={confirmDelete}
@@ -3443,27 +5312,32 @@ export const InventoryItems = () => {
 
       {/* Bulk Delete Confirmation Modal */}
       {showBulkDeleteConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '420px'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '420px',
+            }}
+          >
             <h2>Confirm Bulk Delete</h2>
             <p>
-              Delete {selectedItemIDs.size} selected inventory item(s)? This action cannot be undone.
+              Delete {selectedItemIDs.size} selected inventory item(s)? This
+              action cannot be undone.
             </p>
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <button

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -11,6 +12,11 @@ import (
 
 type scenarioTemplateHandle struct {
 	db *gorm.DB
+}
+
+type scenarioTemplateAdminListRow struct {
+	ID        uuid.UUID `gorm:"column:id"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
 func (h *scenarioTemplateHandle) Create(ctx context.Context, template *models.ScenarioTemplate) error {
@@ -52,6 +58,77 @@ func (h *scenarioTemplateHandle) FindRecent(ctx context.Context, limit int) ([]m
 		return nil, err
 	}
 	return templates, nil
+}
+
+func (h *scenarioTemplateHandle) adminListBaseQuery(
+	ctx context.Context,
+	params ScenarioTemplateAdminListParams,
+) *gorm.DB {
+	query := h.db.WithContext(ctx).Model(&models.ScenarioTemplate{})
+
+	if normalizedQuery := strings.TrimSpace(strings.ToLower(params.Query)); normalizedQuery != "" {
+		searchTerm := "%" + normalizedQuery + "%"
+		query = query.Where(
+			`(
+				LOWER(scenario_templates.prompt) LIKE ?
+				OR LOWER(CAST(scenario_templates.id AS text)) LIKE ?
+			)`,
+			searchTerm,
+			searchTerm,
+		)
+	}
+
+	return query
+}
+
+func (h *scenarioTemplateHandle) ListAdmin(
+	ctx context.Context,
+	params ScenarioTemplateAdminListParams,
+) (*ScenarioTemplateAdminListResult, error) {
+	var total int64
+	if err := h.adminListBaseQuery(ctx, params).Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	rows := []scenarioTemplateAdminListRow{}
+	if err := h.adminListBaseQuery(ctx, params).
+		Select("scenario_templates.id, scenario_templates.created_at").
+		Order("scenario_templates.created_at DESC").
+		Limit(params.PageSize).
+		Offset((params.Page - 1) * params.PageSize).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	templates := make([]models.ScenarioTemplate, 0, len(ids))
+	if len(ids) > 0 {
+		loaded := []models.ScenarioTemplate{}
+		if err := h.db.WithContext(ctx).
+			Where("id IN ?", ids).
+			Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		byID := make(map[uuid.UUID]models.ScenarioTemplate, len(loaded))
+		for _, template := range loaded {
+			byID[template.ID] = template
+		}
+		for _, id := range ids {
+			template, ok := byID[id]
+			if ok {
+				templates = append(templates, template)
+			}
+		}
+	}
+
+	return &ScenarioTemplateAdminListResult{
+		Templates: templates,
+		Total:     total,
+	}, nil
 }
 
 func (h *scenarioTemplateHandle) Update(ctx context.Context, id uuid.UUID, updates *models.ScenarioTemplate) error {

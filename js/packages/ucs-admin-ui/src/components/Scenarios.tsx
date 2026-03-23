@@ -1,5 +1,11 @@
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { PointOfInterest, Spell } from '@poltergeist/types';
@@ -170,6 +176,64 @@ type StaticThumbnailResponse = {
   requestedAt?: string;
   lastModified?: string;
   prompt?: string;
+};
+
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const scenarioListPageSize = 25;
+
+const PaginationControls = ({
+  page,
+  pageSize,
+  total,
+  label,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  label: string;
+  onPageChange: (page: number) => void;
+}) => {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(total, page * pageSize);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+      <p className="text-sm text-gray-600">
+        {total === 0
+          ? `No ${label}.`
+          : `Showing ${start}-${end} of ${total} ${label}`}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span className="text-sm text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const defaultScenarioUndiscoveredIconPrompt =
@@ -428,6 +492,9 @@ export const Scenarios = () => {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
   const [query, setQuery] = useState('');
+  const [zoneQuery, setZoneQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [generationForm, setGenerationForm] =
     useState<ScenarioGenerationFormState>(emptyGenerationFormState);
@@ -472,6 +539,8 @@ export const Scenarios = () => {
   const [scenarioUndiscoveredPrompt, setScenarioUndiscoveredPrompt] = useState(
     defaultScenarioUndiscoveredIconPrompt
   );
+  const deferredQuery = useDeferredValue(query);
+  const deferredZoneQuery = useDeferredValue(zoneQuery);
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -551,16 +620,24 @@ export const Scenarios = () => {
     try {
       setLoading(true);
       setError(null);
-      const response =
-        await apiClient.get<ScenarioRecord[]>('/sonar/scenarios');
-      setRecords(response);
+      const response = await apiClient.get<PaginatedResponse<ScenarioRecord>>(
+        '/sonar/admin/scenarios',
+        {
+          page,
+          pageSize: scenarioListPageSize,
+          query: deferredQuery.trim(),
+          zoneQuery: deferredZoneQuery.trim(),
+        }
+      );
+      setRecords(Array.isArray(response?.items) ? response.items : []);
+      setTotal(response?.total ?? 0);
     } catch (err) {
       console.error('Error loading scenarios:', err);
       setError('Failed to load scenarios.');
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, deferredQuery, deferredZoneQuery, page]);
 
   const refreshScenarioById = useCallback(
     async (scenarioId: string) => {
@@ -578,6 +655,17 @@ export const Scenarios = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, zoneQuery]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(total / scenarioListPageSize));
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, total]);
 
   useEffect(() => {
     let active = true;
@@ -679,6 +767,20 @@ export const Scenarios = () => {
       void load();
     }
   }, [generationJobs, load]);
+
+  useEffect(() => {
+    setSelectedScenarioIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(records.map((record) => record.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [records]);
 
   const setGenerationLocation = useCallback(
     (latitude: number, longitude: number) => {
@@ -969,19 +1071,7 @@ export const Scenarios = () => {
     generationForm.longitude,
   ]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter((record) => {
-      const zoneName =
-        zones.find((zone) => zone.id === record.zoneId)?.name ?? '';
-      return (
-        record.prompt.toLowerCase().includes(q) ||
-        zoneName.toLowerCase().includes(q) ||
-        record.id.toLowerCase().includes(q)
-      );
-    });
-  }, [query, records, zones]);
+  const filtered = records;
   const selectedScenarioIdSet = useMemo(
     () => selectedScenarioIds,
     [selectedScenarioIds]
@@ -1319,20 +1409,14 @@ export const Scenarios = () => {
       }
 
       if (editingId) {
-        const updated = await apiClient.put<ScenarioRecord>(
+        await apiClient.put<ScenarioRecord>(
           `/sonar/scenarios/${editingId}`,
           payload
         );
-        setRecords((prev) =>
-          prev.map((record) => (record.id === updated.id ? updated : record))
-        );
       } else {
-        const created = await apiClient.post<ScenarioRecord>(
-          '/sonar/scenarios',
-          payload
-        );
-        setRecords((prev) => [created, ...prev]);
+        await apiClient.post<ScenarioRecord>('/sonar/scenarios', payload);
       }
+      await load();
       closeModal();
     } catch (err) {
       console.error('Error saving scenario:', err);
@@ -1344,7 +1428,6 @@ export const Scenarios = () => {
     if (!deleteId) return;
     try {
       await apiClient.delete(`/sonar/scenarios/${deleteId}`);
-      setRecords((prev) => prev.filter((record) => record.id !== deleteId));
       setSelectedScenarioIds((prev) => {
         if (!prev.has(deleteId)) return prev;
         const next = new Set(prev);
@@ -1352,6 +1435,7 @@ export const Scenarios = () => {
         return next;
       });
       setDeleteId(null);
+      await load();
     } catch (err) {
       console.error('Error deleting scenario:', err);
       alert('Failed to delete scenario.');
@@ -1415,15 +1499,15 @@ export const Scenarios = () => {
 
     setBulkDeletingScenarios(true);
     try {
-      await apiClient.post('/sonar/scenarios/bulk-delete', { ids: selectedIds });
+      await apiClient.post('/sonar/scenarios/bulk-delete', {
+        ids: selectedIds,
+      });
       const deletedIds = new Set(selectedIds);
-      setRecords((prev) =>
-        prev.filter((record) => !deletedIds.has(record.id))
-      );
       setSelectedScenarioIds(new Set());
       if (editingId && deletedIds.has(editingId)) {
         closeModal();
       }
+      await load();
     } catch (err) {
       console.error('Failed to bulk delete scenarios', err);
       alert('Failed to delete selected scenarios.');
@@ -2851,13 +2935,22 @@ export const Scenarios = () => {
       {error && <div className="mb-3 text-red-600">{error}</div>}
 
       <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search scenarios by prompt, zone, or ID..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full p-2 border rounded-md"
-        />
+        <div className="flex flex-wrap gap-3">
+          <input
+            type="text"
+            placeholder="Search scenarios by prompt or ID..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full max-w-xl p-2 border rounded-md"
+          />
+          <input
+            type="text"
+            placeholder="Search by zone..."
+            value={zoneQuery}
+            onChange={(e) => setZoneQuery(e.target.value)}
+            className="w-full max-w-sm p-2 border rounded-md"
+          />
+        </div>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
@@ -2992,6 +3085,13 @@ export const Scenarios = () => {
           );
         })}
       </div>
+      <PaginationControls
+        page={page}
+        pageSize={scenarioListPageSize}
+        total={total}
+        label="scenarios"
+        onPageChange={setPage}
+      />
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">

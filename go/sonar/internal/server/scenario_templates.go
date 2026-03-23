@@ -8,12 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
+
+type paginatedScenarioTemplateResponse struct {
+	Items    []models.ScenarioTemplate `json:"items"`
+	Total    int64                     `json:"total"`
+	Page     int                       `json:"page"`
+	PageSize int                       `json:"pageSize"`
+}
 
 type scenarioTemplateUpsertRequest struct {
 	Prompt                    string                         `json:"prompt"`
@@ -309,6 +317,32 @@ func (s *server) getScenarioTemplates(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, templates)
+}
+
+func (s *server) getAdminScenarioTemplates(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	result, err := s.dbClient.ScenarioTemplate().ListAdmin(ctx, db.ScenarioTemplateAdminListParams{
+		Page:     page,
+		PageSize: pageSize,
+		Query:    ctx.Query("query"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, paginatedScenarioTemplateResponse{
+		Items:    result.Templates,
+		Total:    result.Total,
+		Page:     page,
+		PageSize: pageSize,
+	})
 }
 
 func (s *server) getScenarioTemplate(ctx *gin.Context) {

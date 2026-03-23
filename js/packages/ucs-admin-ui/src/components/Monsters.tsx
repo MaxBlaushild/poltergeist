@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Spell } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
@@ -175,6 +181,15 @@ type BulkMonsterTemplateStatus = {
   updatedAt?: string;
 };
 
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  activeCount?: number;
+  archivedCount?: number;
+};
+
 const defaultMonsterUndiscoveredIconPrompt =
   'A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
 const defaultBossUndiscoveredIconPrompt =
@@ -331,6 +346,59 @@ const parseOptionalInt = (value: string): number | undefined => {
   if (!trimmed) return undefined;
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const monsterListPageSize = 25;
+
+type PaginationControlsProps = {
+  page: number;
+  pageSize: number;
+  total: number;
+  label: string;
+  onPageChange: (page: number) => void;
+};
+
+const PaginationControls = ({
+  page,
+  pageSize,
+  total,
+  label,
+  onPageChange,
+}: PaginationControlsProps) => {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(total, page * pageSize);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3">
+      <p className="text-sm text-gray-600">
+        {total === 0
+          ? `No ${label}.`
+          : `Showing ${start}-${end} of ${total} ${label}`}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span className="text-sm text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const emptyTemplateForm = (): MonsterTemplateFormState => ({
@@ -685,17 +753,33 @@ export const Monsters = () => {
   const { zones } = useZoneContext();
 
   const [loading, setLoading] = useState(true);
+  const [referenceLoading, setReferenceLoading] = useState(true);
   const [templates, setTemplates] = useState<MonsterTemplateRecord[]>([]);
   const [records, setRecords] = useState<MonsterRecord[]>([]);
   const [encounters, setEncounters] = useState<MonsterEncounterRecord[]>([]);
+  const [templateOptions, setTemplateOptions] = useState<
+    MonsterTemplateRecord[]
+  >([]);
+  const [monsterOptions, setMonsterOptions] = useState<MonsterRecord[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [query, setQuery] = useState('');
+  const [zoneQuery, setZoneQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [bulkDeletingEncounters, setBulkDeletingEncounters] = useState(false);
   const [selectedEncounterIds, setSelectedEncounterIds] = useState<Set<string>>(
     new Set()
   );
+  const [templatePage, setTemplatePage] = useState(1);
+  const [monsterPage, setMonsterPage] = useState(1);
+  const [encounterPage, setEncounterPage] = useState(1);
+  const [templateTotal, setTemplateTotal] = useState(0);
+  const [monsterTotal, setMonsterTotal] = useState(0);
+  const [encounterTotal, setEncounterTotal] = useState(0);
+  const [activeTemplateCount, setActiveTemplateCount] = useState(0);
+  const [archivedTemplateCount, setArchivedTemplateCount] = useState(0);
+  const [templateOptionsLoaded, setTemplateOptionsLoaded] = useState(false);
+  const [monsterOptionsLoaded, setMonsterOptionsLoaded] = useState(false);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] =
@@ -764,47 +848,124 @@ export const Monsters = () => {
   const encounterMarkerRef = React.useRef<mapboxgl.Marker | null>(null);
   const encounterLatitudeRef = React.useRef(encounterForm.latitude);
   const encounterLongitudeRef = React.useRef(encounterForm.longitude);
+  const deferredQuery = useDeferredValue(query);
+  const deferredZoneQuery = useDeferredValue(zoneQuery);
 
-  const load = useCallback(
+  const loadReferenceData = useCallback(async () => {
+    try {
+      setReferenceLoading(true);
+      const [spellResp, inventoryResp] = await Promise.all([
+        apiClient.get<Spell[]>('/sonar/spells'),
+        apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
+      ]);
+      setSpells(Array.isArray(spellResp) ? spellResp : []);
+      setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
+    } catch (err) {
+      console.error('Failed to load monster admin reference data', err);
+      setError('Failed to load monster admin reference data.');
+    } finally {
+      setReferenceLoading(false);
+    }
+  }, [apiClient]);
+
+  const loadTemplateOptions = useCallback(async () => {
+    const response = await apiClient.get<MonsterTemplateRecord[]>(
+      '/sonar/monster-templates'
+    );
+    const nextTemplates = Array.isArray(response) ? response : [];
+    setTemplateOptions(nextTemplates);
+    setTemplateOptionsLoaded(true);
+    return nextTemplates;
+  }, [apiClient]);
+
+  const loadMonsterOptions = useCallback(async () => {
+    const response = await apiClient.get<MonsterRecord[]>('/sonar/monsters');
+    const nextMonsters = Array.isArray(response) ? response : [];
+    setMonsterOptions(nextMonsters);
+    setMonsterOptionsLoaded(true);
+    return nextMonsters;
+  }, [apiClient]);
+
+  const loadPagedData = useCallback(
     async (suppressLoading = false) => {
       try {
         if (!suppressLoading) {
           setLoading(true);
         }
         setError(null);
-        const [
-          templateResp,
-          monsterResp,
-          encounterResp,
-          spellResp,
-          inventoryResp,
-        ] = await Promise.all([
-          apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
-          apiClient.get<MonsterRecord[]>('/sonar/monsters'),
-          apiClient.get<MonsterEncounterRecord[]>('/sonar/monster-encounters'),
-          apiClient.get<Spell[]>('/sonar/spells'),
-          apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
+        const [templateResp, monsterResp, encounterResp] = await Promise.all([
+          apiClient.get<PaginatedResponse<MonsterTemplateRecord>>(
+            '/sonar/admin/monster-templates',
+            {
+              page: templatePage,
+              pageSize: monsterListPageSize,
+              query: deferredQuery.trim(),
+              zoneQuery: deferredZoneQuery.trim(),
+              archived: templateTab === 'archived',
+              monsterType:
+                templateTypeFilter === 'all' ? '' : templateTypeFilter,
+            }
+          ),
+          apiClient.get<PaginatedResponse<MonsterRecord>>(
+            '/sonar/admin/monsters',
+            {
+              page: monsterPage,
+              pageSize: monsterListPageSize,
+              query: deferredQuery.trim(),
+              zoneQuery: deferredZoneQuery.trim(),
+            }
+          ),
+          apiClient.get<PaginatedResponse<MonsterEncounterRecord>>(
+            '/sonar/admin/monster-encounters',
+            {
+              page: encounterPage,
+              pageSize: monsterListPageSize,
+              query: deferredQuery.trim(),
+              zoneQuery: deferredZoneQuery.trim(),
+            }
+          ),
         ]);
-        setTemplates(Array.isArray(templateResp) ? templateResp : []);
-        setRecords(Array.isArray(monsterResp) ? monsterResp : []);
-        setEncounters(Array.isArray(encounterResp) ? encounterResp : []);
-        setSpells(Array.isArray(spellResp) ? spellResp : []);
-        setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
+
+        setTemplates(
+          Array.isArray(templateResp?.items) ? templateResp.items : []
+        );
+        setRecords(Array.isArray(monsterResp?.items) ? monsterResp.items : []);
+        setEncounters(
+          Array.isArray(encounterResp?.items) ? encounterResp.items : []
+        );
+        setTemplateTotal(templateResp?.total ?? 0);
+        setMonsterTotal(monsterResp?.total ?? 0);
+        setEncounterTotal(encounterResp?.total ?? 0);
+        setActiveTemplateCount(templateResp?.activeCount ?? 0);
+        setArchivedTemplateCount(templateResp?.archivedCount ?? 0);
       } catch (err) {
-        console.error('Failed to load monsters/templates/encounters', err);
-        setError('Failed to load monsters/templates/encounters.');
+        console.error('Failed to load monster admin lists', err);
+        setError('Failed to load monster admin lists.');
       } finally {
         if (!suppressLoading) {
           setLoading(false);
         }
       }
     },
-    [apiClient]
+    [
+      apiClient,
+      deferredQuery,
+      deferredZoneQuery,
+      encounterPage,
+      monsterPage,
+      templatePage,
+      templateTab,
+      templateTypeFilter,
+    ]
   );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadReferenceData();
+  }, [loadReferenceData]);
+
+  useEffect(() => {
+    void loadPagedData();
+  }, [loadPagedData]);
 
   useEffect(() => {
     const hasPendingMonsterGeneration = records.some((record) =>
@@ -818,11 +979,51 @@ export const Monsters = () => {
     if (!hasPendingGeneration) return;
 
     const interval = window.setInterval(() => {
-      void load(true);
+      void loadPagedData(true);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [load, records, templates]);
+  }, [loadPagedData, records, templates]);
+
+  useEffect(() => {
+    setTemplatePage(1);
+    setMonsterPage(1);
+    setEncounterPage(1);
+  }, [query, zoneQuery]);
+
+  useEffect(() => {
+    setTemplatePage(1);
+  }, [templateTab, templateTypeFilter]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(templateTotal / monsterListPageSize)
+    );
+    if (templatePage > totalPages) {
+      setTemplatePage(totalPages);
+    }
+  }, [templatePage, templateTotal]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(monsterTotal / monsterListPageSize)
+    );
+    if (monsterPage > totalPages) {
+      setMonsterPage(totalPages);
+    }
+  }, [monsterPage, monsterTotal]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(encounterTotal / monsterListPageSize)
+    );
+    if (encounterPage > totalPages) {
+      setEncounterPage(totalPages);
+    }
+  }, [encounterPage, encounterTotal]);
 
   useEffect(() => {
     setSelectedTemplateIds((prev) => {
@@ -841,6 +1042,20 @@ export const Monsters = () => {
   useEffect(() => {
     setSelectedTemplateIds(new Set());
   }, [templateTab]);
+
+  useEffect(() => {
+    setSelectedEncounterIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(encounters.map((encounter) => encounter.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [encounters]);
 
   useEffect(() => {
     formLatitudeRef.current = monsterForm.latitude;
@@ -862,11 +1077,11 @@ export const Monsters = () => {
 
   const templateNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const template of templates) {
+    for (const template of templateOptions) {
       map.set(template.id, template.name);
     }
     return map;
-  }, [templates]);
+  }, [templateOptions]);
 
   const dominantHandItems = useMemo(() => {
     return inventoryItems.filter((item) => {
@@ -932,75 +1147,9 @@ export const Monsters = () => {
     [spells]
   );
 
-  const filteredTemplates = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return templates.filter((template) => {
-      if (templateTab === 'active' && template.archived) {
-        return false;
-      }
-      if (templateTab === 'archived' && !template.archived) {
-        return false;
-      }
-      const matchesType =
-        templateTypeFilter === 'all' ||
-        (template.monsterType ?? 'monster') === templateTypeFilter;
-      if (!matchesType) {
-        return false;
-      }
-      if (!normalized) {
-        return true;
-      }
-      return (
-        template.name.toLowerCase().includes(normalized) ||
-        template.description.toLowerCase().includes(normalized)
-      );
-    });
-  }, [query, templateTab, templateTypeFilter, templates]);
-
-  const activeTemplateCount = useMemo(
-    () => templates.filter((template) => !template.archived).length,
-    [templates]
-  );
-  const archivedTemplateCount = useMemo(
-    () => templates.filter((template) => template.archived).length,
-    [templates]
-  );
-
-  const filteredMonsters = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return records;
-    return records.filter((record) => {
-      const zoneName = zoneNameById.get(record.zoneId) ?? '';
-      const templateName =
-        record.template?.name ||
-        (record.templateId
-          ? templateNameById.get(record.templateId) ?? ''
-          : '');
-      return (
-        record.name.toLowerCase().includes(normalized) ||
-        record.description.toLowerCase().includes(normalized) ||
-        zoneName.toLowerCase().includes(normalized) ||
-        templateName.toLowerCase().includes(normalized)
-      );
-    });
-  }, [query, records, zoneNameById, templateNameById]);
-
-  const filteredEncounters = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return encounters;
-    return encounters.filter((encounter) => {
-      const zoneName = zoneNameById.get(encounter.zoneId) ?? '';
-      const memberNames = (encounter.members ?? [])
-        .map((member) => member.monster?.name ?? '')
-        .join(' ');
-      return (
-        encounter.name.toLowerCase().includes(normalized) ||
-        encounter.description.toLowerCase().includes(normalized) ||
-        zoneName.toLowerCase().includes(normalized) ||
-        memberNames.toLowerCase().includes(normalized)
-      );
-    });
-  }, [encounters, query, zoneNameById]);
+  const filteredTemplates = templates;
+  const filteredMonsters = records;
+  const filteredEncounters = encounters;
   const selectedEncounterIdSet = useMemo(
     () => selectedEncounterIds,
     [selectedEncounterIds]
@@ -1014,10 +1163,12 @@ export const Monsters = () => {
 
   const encounterMonsterOptions = useMemo(() => {
     if (!encounterForm.zoneId) {
-      return records;
+      return monsterOptions;
     }
-    return records.filter((monster) => monster.zoneId === encounterForm.zoneId);
-  }, [encounterForm.zoneId, records]);
+    return monsterOptions.filter(
+      (monster) => monster.zoneId === encounterForm.zoneId
+    );
+  }, [encounterForm.zoneId, monsterOptions]);
 
   const openCreateTemplate = () => {
     setEditingTemplate(null);
@@ -1068,18 +1219,23 @@ export const Monsters = () => {
           `/sonar/monster-templates/${editingTemplate.id}`,
           payload
         );
-        setTemplates((prev) =>
-          prev.map((template) =>
-            template.id === updated.id ? updated : template
-          )
-        );
+        if (templateOptionsLoaded) {
+          setTemplateOptions((prev) =>
+            prev.map((template) =>
+              template.id === updated.id ? updated : template
+            )
+          );
+        }
       } else {
         const created = await apiClient.post<MonsterTemplateRecord>(
           '/sonar/monster-templates',
           payload
         );
-        setTemplates((prev) => [created, ...prev]);
+        if (templateOptionsLoaded) {
+          setTemplateOptions((prev) => [created, ...prev]);
+        }
       }
+      await loadPagedData(true);
       closeTemplateModal();
     } catch (err) {
       console.error('Failed to save template', err);
@@ -1093,7 +1249,12 @@ export const Monsters = () => {
     if (!window.confirm(`Delete template "${template.name}"?`)) return;
     try {
       await apiClient.delete(`/sonar/monster-templates/${template.id}`);
-      setTemplates((prev) => prev.filter((entry) => entry.id !== template.id));
+      if (templateOptionsLoaded) {
+        setTemplateOptions((prev) =>
+          prev.filter((entry) => entry.id !== template.id)
+        );
+      }
+      await loadPagedData(true);
     } catch (err) {
       console.error('Failed to delete template', err);
       const message =
@@ -1121,20 +1282,25 @@ export const Monsters = () => {
         ids,
         archived,
       });
-      const idSet = new Set(ids);
-      setTemplates((prev) =>
-        prev.map((template) =>
-          idSet.has(template.id) ? { ...template, archived } : template
-        )
-      );
+      if (templateOptionsLoaded) {
+        const idSet = new Set(ids);
+        setTemplateOptions((prev) =>
+          prev.map((template) =>
+            idSet.has(template.id) ? { ...template, archived } : template
+          )
+        );
+      }
       setSelectedTemplateIds((prev) => {
         const next = new Set(prev);
         ids.forEach((id) => next.delete(id));
         return next;
       });
+      await loadPagedData(true);
     } catch (err) {
       console.error('Failed to update monster template archive state', err);
-      alert(`Failed to ${archived ? 'archive' : 'restore'} monster template(s).`);
+      alert(
+        `Failed to ${archived ? 'archive' : 'restore'} monster template(s).`
+      );
     }
   };
 
@@ -1156,7 +1322,7 @@ export const Monsters = () => {
               status.createdCount === 1 ? '' : 's'
             }.`
           );
-          await load(true);
+          await loadPagedData(true);
         } else if (status.status === 'failed') {
           setBulkTemplateBusy(false);
           setBulkTemplateMessage(null);
@@ -1174,7 +1340,7 @@ export const Monsters = () => {
         setBulkTemplateBusy(false);
       }
     },
-    [apiClient, bulkTemplateType, load]
+    [apiClient, bulkTemplateType, loadPagedData]
   );
 
   const handleBulkGenerateTemplates = async () => {
@@ -1203,7 +1369,7 @@ export const Monsters = () => {
             response.createdCount === 1 ? '' : 's'
           }.`
         );
-        await load(true);
+        await loadPagedData(true);
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -1240,7 +1406,7 @@ export const Monsters = () => {
         setBulkTemplateMessage(
           `Created 1 ${formatMonsterTemplateTypeLabel(monsterType)}.`
         );
-        await load(true);
+        await loadPagedData(true);
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -1258,23 +1424,49 @@ export const Monsters = () => {
     }
   };
 
-  const openCreateMonster = () => {
-    setEditingMonster(null);
-    setMonsterForm({
-      ...emptyMonsterForm(),
-      zoneId: zones[0]?.id ?? '',
-      templateId: templates[0]?.id ?? '',
-      dominantHandInventoryItemId: dominantHandItems[0]
-        ? String(dominantHandItems[0].id)
-        : '',
-    });
-    setShowMonsterModal(true);
+  const ensureTemplateOptionsLoaded = useCallback(async () => {
+    if (templateOptionsLoaded && templateOptions.length > 0) {
+      return templateOptions;
+    }
+    return loadTemplateOptions();
+  }, [loadTemplateOptions, templateOptions, templateOptionsLoaded]);
+
+  const ensureMonsterOptionsLoaded = useCallback(async () => {
+    if (monsterOptionsLoaded && monsterOptions.length > 0) {
+      return monsterOptions;
+    }
+    return loadMonsterOptions();
+  }, [loadMonsterOptions, monsterOptions, monsterOptionsLoaded]);
+
+  const openCreateMonster = async () => {
+    try {
+      const availableTemplates = await ensureTemplateOptionsLoaded();
+      setEditingMonster(null);
+      setMonsterForm({
+        ...emptyMonsterForm(),
+        zoneId: zones[0]?.id ?? '',
+        templateId: availableTemplates[0]?.id ?? '',
+        dominantHandInventoryItemId: dominantHandItems[0]
+          ? String(dominantHandItems[0].id)
+          : '',
+      });
+      setShowMonsterModal(true);
+    } catch (err) {
+      console.error('Failed to load template options', err);
+      alert('Failed to load monster template options.');
+    }
   };
 
-  const openEditMonster = (monster: MonsterRecord) => {
-    setEditingMonster(monster);
-    setMonsterForm(monsterFormFromRecord(monster));
-    setShowMonsterModal(true);
+  const openEditMonster = async (monster: MonsterRecord) => {
+    try {
+      await ensureTemplateOptionsLoaded();
+      setEditingMonster(monster);
+      setMonsterForm(monsterFormFromRecord(monster));
+      setShowMonsterModal(true);
+    } catch (err) {
+      console.error('Failed to load template options', err);
+      alert('Failed to load monster template options.');
+    }
   };
 
   const closeMonsterModal = () => {
@@ -1283,27 +1475,39 @@ export const Monsters = () => {
     setMonsterForm(emptyMonsterForm());
   };
 
-  const openCreateEncounter = () => {
-    const defaultZoneId = zones[0]?.id ?? '';
-    const defaultMonsters = records
-      .filter((monster) =>
-        defaultZoneId ? monster.zoneId === defaultZoneId : true
-      )
-      .slice(0, 3)
-      .map((monster) => monster.id);
-    setEditingEncounter(null);
-    setEncounterForm({
-      ...emptyMonsterEncounterForm(),
-      zoneId: defaultZoneId,
-      monsterIds: defaultMonsters,
-    });
-    setShowEncounterModal(true);
+  const openCreateEncounter = async () => {
+    try {
+      const availableMonsters = await ensureMonsterOptionsLoaded();
+      const defaultZoneId = zones[0]?.id ?? '';
+      const defaultMonsters = availableMonsters
+        .filter((monster) =>
+          defaultZoneId ? monster.zoneId === defaultZoneId : true
+        )
+        .slice(0, 3)
+        .map((monster) => monster.id);
+      setEditingEncounter(null);
+      setEncounterForm({
+        ...emptyMonsterEncounterForm(),
+        zoneId: defaultZoneId,
+        monsterIds: defaultMonsters,
+      });
+      setShowEncounterModal(true);
+    } catch (err) {
+      console.error('Failed to load monster options', err);
+      alert('Failed to load monsters for encounter editing.');
+    }
   };
 
-  const openEditEncounter = (encounter: MonsterEncounterRecord) => {
-    setEditingEncounter(encounter);
-    setEncounterForm(monsterEncounterFormFromRecord(encounter));
-    setShowEncounterModal(true);
+  const openEditEncounter = async (encounter: MonsterEncounterRecord) => {
+    try {
+      await ensureMonsterOptionsLoaded();
+      setEditingEncounter(encounter);
+      setEncounterForm(monsterEncounterFormFromRecord(encounter));
+      setShowEncounterModal(true);
+    } catch (err) {
+      console.error('Failed to load monster options', err);
+      alert('Failed to load monsters for encounter editing.');
+    }
   };
 
   const closeEncounterModal = () => {
@@ -1325,20 +1529,17 @@ export const Monsters = () => {
       }
 
       if (editingEncounter) {
-        const updated = await apiClient.put<MonsterEncounterRecord>(
+        await apiClient.put<MonsterEncounterRecord>(
           `/sonar/monster-encounters/${editingEncounter.id}`,
           payload
         );
-        setEncounters((prev) =>
-          prev.map((entry) => (entry.id === updated.id ? updated : entry))
-        );
       } else {
-        const created = await apiClient.post<MonsterEncounterRecord>(
+        await apiClient.post<MonsterEncounterRecord>(
           '/sonar/monster-encounters',
           payload
         );
-        setEncounters((prev) => [created, ...prev]);
       }
+      await loadPagedData(true);
       closeEncounterModal();
     } catch (err) {
       console.error('Failed to save monster encounter', err);
@@ -1355,15 +1556,13 @@ export const Monsters = () => {
     if (!window.confirm(`Delete encounter "${encounter.name}"?`)) return;
     try {
       await apiClient.delete(`/sonar/monster-encounters/${encounter.id}`);
-      setEncounters((prev) =>
-        prev.filter((entry) => entry.id !== encounter.id)
-      );
       setSelectedEncounterIds((prev) => {
         if (!prev.has(encounter.id)) return prev;
         const next = new Set(prev);
         next.delete(encounter.id);
         return next;
       });
+      await loadPagedData(true);
     } catch (err) {
       console.error('Failed to delete monster encounter', err);
       const message =
@@ -1445,9 +1644,6 @@ export const Monsters = () => {
       });
 
       if (deletedIds.size > 0) {
-        setEncounters((prev) =>
-          prev.filter((encounter) => !deletedIds.has(encounter.id))
-        );
         setSelectedEncounterIds((prev) => {
           const next = new Set(prev);
           deletedIds.forEach((encounterId) => next.delete(encounterId));
@@ -1456,6 +1652,7 @@ export const Monsters = () => {
         if (editingEncounter && deletedIds.has(editingEncounter.id)) {
           closeEncounterModal();
         }
+        await loadPagedData(true);
       }
 
       if (failedIds.length > 0) {
@@ -1499,20 +1696,17 @@ export const Monsters = () => {
       }
 
       if (editingMonster) {
-        const updated = await apiClient.put<MonsterRecord>(
+        await apiClient.put<MonsterRecord>(
           `/sonar/monsters/${editingMonster.id}`,
           payload
         );
-        setRecords((prev) =>
-          prev.map((record) => (record.id === updated.id ? updated : record))
-        );
       } else {
-        const created = await apiClient.post<MonsterRecord>(
-          '/sonar/monsters',
-          payload
-        );
-        setRecords((prev) => [created, ...prev]);
+        await apiClient.post<MonsterRecord>('/sonar/monsters', payload);
       }
+      if (monsterOptionsLoaded) {
+        await loadMonsterOptions();
+      }
+      await loadPagedData(true);
       closeMonsterModal();
     } catch (err) {
       console.error('Failed to save monster', err);
@@ -1526,7 +1720,12 @@ export const Monsters = () => {
     if (!window.confirm(`Delete monster "${monster.name}"?`)) return;
     try {
       await apiClient.delete(`/sonar/monsters/${monster.id}`);
-      setRecords((prev) => prev.filter((record) => record.id !== monster.id));
+      if (monsterOptionsLoaded) {
+        setMonsterOptions((prev) =>
+          prev.filter((record) => record.id !== monster.id)
+        );
+      }
+      await loadPagedData(true);
     } catch (err) {
       console.error('Failed to delete monster', err);
       alert('Failed to delete monster.');
@@ -2088,13 +2287,13 @@ export const Monsters = () => {
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
-                onClick={openCreateEncounter}
+                onClick={() => void openCreateEncounter()}
               >
                 Create Encounter
               </button>
               <button
                 className="qa-btn qa-btn-primary"
-                onClick={openCreateMonster}
+                onClick={() => void openCreateMonster()}
               >
                 Create Monster
               </button>
@@ -2191,14 +2390,18 @@ export const Monsters = () => {
                       </button>
                       <button
                         className="qa-btn qa-btn-secondary"
-                        onClick={() => void handleGenerateEncounterIcon(encounterType)}
+                        onClick={() =>
+                          void handleGenerateEncounterIcon(encounterType)
+                        }
                         disabled={iconState.busy || iconState.statusLoading}
                       >
                         {iconState.busy ? 'Working...' : 'Generate Icon'}
                       </button>
                       <button
                         className="qa-btn qa-btn-danger"
-                        onClick={() => void handleDeleteEncounterIcon(encounterType)}
+                        onClick={() =>
+                          void handleDeleteEncounterIcon(encounterType)
+                        }
                         disabled={iconState.busy || iconState.statusLoading}
                       >
                         {iconState.busy ? 'Working...' : 'Delete Icon'}
@@ -2251,9 +2454,15 @@ export const Monsters = () => {
           <div className="flex flex-wrap gap-3">
             <input
               className="min-w-[280px] flex-1 border border-gray-300 rounded-md p-2"
-              placeholder="Search monsters/templates..."
+              placeholder="Search names, descriptions, templates..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+            />
+            <input
+              className="min-w-[220px] flex-1 border border-gray-300 rounded-md p-2"
+              placeholder="Search by zone..."
+              value={zoneQuery}
+              onChange={(event) => setZoneQuery(event.target.value)}
             />
             <select
               className="rounded-md border border-gray-300 p-2"
@@ -2277,9 +2486,11 @@ export const Monsters = () => {
 
         {error && <div className="qa-card text-red-600">{error}</div>}
 
-        {loading ? <div className="qa-card">Loading...</div> : null}
+        {loading || referenceLoading ? (
+          <div className="qa-card">Loading...</div>
+        ) : null}
 
-        {!loading ? (
+        {!loading && !referenceLoading ? (
           <>
             <div className="qa-card">
               <h2 className="text-lg font-semibold mb-3">Monster Templates</h2>
@@ -2399,7 +2610,9 @@ export const Monsters = () => {
                               )}
                               {' · '}
                               Weak vs{' '}
-                              {formatAffinityLabel(template.weakAgainstAffinity)}
+                              {formatAffinityLabel(
+                                template.weakAgainstAffinity
+                              )}
                             </p>
                             <p className="text-sm text-gray-500 mt-1">
                               Spells:{' '}
@@ -2473,6 +2686,13 @@ export const Monsters = () => {
                   ))}
                 </div>
               )}
+              <PaginationControls
+                page={templatePage}
+                pageSize={monsterListPageSize}
+                total={templateTotal}
+                label="templates"
+                onPageChange={setTemplatePage}
+              />
             </div>
 
             <div className="qa-card">
@@ -2577,7 +2797,9 @@ export const Monsters = () => {
                             {monster.materialRewards &&
                             monster.materialRewards.length > 0 ? (
                               <p className="text-xs text-gray-500">
-                                {summarizeMaterialRewards(monster.materialRewards)}
+                                {summarizeMaterialRewards(
+                                  monster.materialRewards
+                                )}
                               </p>
                             ) : null}
                             <p className="text-xs text-gray-500 mt-1">
@@ -2605,7 +2827,7 @@ export const Monsters = () => {
                           </button>
                           <button
                             className="qa-btn qa-btn-secondary"
-                            onClick={() => openEditMonster(monster)}
+                            onClick={() => void openEditMonster(monster)}
                           >
                             Edit
                           </button>
@@ -2621,6 +2843,13 @@ export const Monsters = () => {
                   ))}
                 </div>
               )}
+              <PaginationControls
+                page={monsterPage}
+                pageSize={monsterListPageSize}
+                total={monsterTotal}
+                label="monsters"
+                onPageChange={setMonsterPage}
+              />
             </div>
 
             <div className="qa-card">
@@ -2781,7 +3010,7 @@ export const Monsters = () => {
                         <div className="flex flex-wrap gap-2">
                           <button
                             className="qa-btn qa-btn-secondary"
-                            onClick={() => openEditEncounter(encounter)}
+                            onClick={() => void openEditEncounter(encounter)}
                           >
                             Edit
                           </button>
@@ -2798,6 +3027,13 @@ export const Monsters = () => {
                   ))}
                 </div>
               )}
+              <PaginationControls
+                page={encounterPage}
+                pageSize={monsterListPageSize}
+                total={encounterTotal}
+                label="encounters"
+                onPageChange={setEncounterPage}
+              />
             </div>
           </>
         ) : null}
@@ -3121,7 +3357,7 @@ export const Monsters = () => {
                     }
                   >
                     <option value="">Select template</option>
-                    {templates.map((template) => (
+                    {templateOptions.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
                       </option>
@@ -3477,7 +3713,8 @@ export const Monsters = () => {
 
               {monsterForm.rewardMode === 'random' ? (
                 <p className="text-xs text-gray-500">
-                  Random rewards ignore explicit XP, gold, material, and item rewards.
+                  Random rewards ignore explicit XP, gold, material, and item
+                  rewards.
                 </p>
               ) : null}
 
@@ -3536,12 +3773,12 @@ export const Monsters = () => {
                     onChange={(event) =>
                       setEncounterForm((prev) => {
                         const zoneId = event.target.value;
-                        const zoneMonsters = records
+                        const zoneMonsters = monsterOptions
                           .filter((monster) => monster.zoneId === zoneId)
                           .slice(0, 9)
                           .map((monster) => monster.id);
                         const selectedInZone = prev.monsterIds.filter((id) =>
-                          records.some(
+                          monsterOptions.some(
                             (monster) =>
                               monster.id === id && monster.zoneId === zoneId
                           )
