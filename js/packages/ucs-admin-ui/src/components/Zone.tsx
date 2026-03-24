@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useZoneContext } from '@poltergeist/contexts';
 import { v4 as uuidv4 } from 'uuid';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useZonePointsOfInterest } from '../hooks/useZonePointsOfInterest.ts';
 import { usePlaceTypes } from '../hooks/usePlaceTypes.ts';
 import { useGeneratePointsOfInterest } from '../hooks/useGeneratePointsOfInterest.ts';
@@ -33,6 +33,15 @@ const parseInternalTagsInput = (value: string): string[] =>
         .filter((tag) => tag !== '')
     )
   );
+
+const normalizeZoneRouteKey = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
 
 interface MapProps {
   center: [number, number];
@@ -315,7 +324,7 @@ const sortBoundaryPoints = (points: [number, number][]) => {
   return sortedPoints;
 };
 
-const Map: React.FC<MapProps> = ({
+const ZoneMap: React.FC<MapProps> = ({
   center,
   onMapClick,
   boundaryPoints,
@@ -705,11 +714,25 @@ const isZoneFlavorPendingStatus = (status?: string | null) =>
 
 export const Zone = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { apiClient } = useAPI();
-  const { zones, createZone, deleteZone, editZone, refreshZones } =
-    useZoneContext();
-  const zone = zones.find((zone) => zone.id === id);
-  const { pointsOfInterest, loading, error } = useZonePointsOfInterest(id!);
+  const { zones, createZone, deleteZone, refreshZones } = useZoneContext();
+  const zone = useMemo(() => {
+    if (!id) {
+      return undefined;
+    }
+    const directMatch = zones.find((entry) => entry.id === id);
+    if (directMatch) {
+      return directMatch;
+    }
+    const normalizedRouteKey = normalizeZoneRouteKey(id);
+    return zones.find(
+      (entry) => normalizeZoneRouteKey(entry.name) === normalizedRouteKey
+    );
+  }, [id, zones]);
+  const resolvedZoneId = zone?.id ?? id ?? '';
+  const { pointsOfInterest, loading, error } =
+    useZonePointsOfInterest(resolvedZoneId);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
   const [healingFountains, setHealingFountains] = useState<
@@ -755,6 +778,7 @@ export const Zone = () => {
   const [isEditingBoundary, setIsEditingBoundary] = useState(false);
   const [isEditingPins, setIsEditingPins] = useState(false);
   const [isEditingZone, setIsEditingZone] = useState(false);
+  const [isSavingZone, setIsSavingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
   const [internalTagsInput, setInternalTagsInput] = useState(
@@ -794,8 +818,15 @@ export const Zone = () => {
     refreshPointOfInterest,
     importPointOfInterest,
     generateQuest,
-  } = useGeneratePointsOfInterest(id!);
+  } = useGeneratePointsOfInterest(resolvedZoneId);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!zone || !id || zone.id === id) {
+      return;
+    }
+    navigate(`/zones/${zone.id}`, { replace: true });
+  }, [id, navigate, zone]);
 
   useEffect(() => {
     if (zone?.points) {
@@ -823,10 +854,10 @@ export const Zone = () => {
     setDeletingPinId(null);
     setPinLocationOverrides({});
     setDeletedPointOfInterestIds(new Set());
-  }, [id]);
+  }, [resolvedZoneId]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!resolvedZoneId) return;
 
     let active = true;
     const loadZoneMapPins = async () => {
@@ -840,15 +871,21 @@ export const Zone = () => {
           fetchedChallenges,
         ] = await Promise.all([
           apiClient.get<Character[]>('/sonar/characters'),
-          apiClient.get<TreasureChest[]>(`/sonar/zones/${id}/treasure-chests`),
+          apiClient.get<TreasureChest[]>(
+            `/sonar/zones/${resolvedZoneId}/treasure-chests`
+          ),
           apiClient.get<HealingFountainRecord[]>(
-            `/sonar/zones/${id}/healing-fountains`
+            `/sonar/zones/${resolvedZoneId}/healing-fountains`
           ),
-          apiClient.get<ScenarioRecord[]>(`/sonar/zones/${id}/scenarios`),
+          apiClient.get<ScenarioRecord[]>(
+            `/sonar/zones/${resolvedZoneId}/scenarios`
+          ),
           apiClient.get<MonsterEncounterRecord[]>(
-            `/sonar/zones/${id}/monster-encounters`
+            `/sonar/zones/${resolvedZoneId}/monster-encounters`
           ),
-          apiClient.get<ChallengeRecord[]>(`/sonar/zones/${id}/challenges`),
+          apiClient.get<ChallengeRecord[]>(
+            `/sonar/zones/${resolvedZoneId}/challenges`
+          ),
         ]);
         if (!active) return;
         setCharacters(fetchedCharacters);
@@ -876,7 +913,7 @@ export const Zone = () => {
     const fetchZoneFlavorJobs = async () => {
       try {
         const response = await apiClient.get<ZoneFlavorGenerationJob[]>(
-          `/sonar/admin/zone-flavor-generation-jobs?zoneId=${id}&limit=10`
+          `/sonar/admin/zone-flavor-generation-jobs?zoneId=${resolvedZoneId}&limit=10`
         );
         if (!active) return;
         setZoneFlavorJobs(response);
@@ -895,7 +932,7 @@ export const Zone = () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [apiClient, id]);
+  }, [apiClient, resolvedZoneId]);
 
   useEffect(() => {
     const latestJob = zoneFlavorJobs[0];
@@ -1152,20 +1189,26 @@ export const Zone = () => {
   };
 
   const handleCandidateSelect = (candidate: Candidate) => {
-    importPointOfInterest(candidate.place_id, id!);
+    if (!resolvedZoneId) {
+      return;
+    }
+    importPointOfInterest(candidate.place_id, resolvedZoneId);
   };
 
   const handleGenerateQuest = async () => {
-    await apiClient.post(`/sonar/zones/${id}/questArchetypes`, {});
+    if (!resolvedZoneId) {
+      return;
+    }
+    await apiClient.post(`/sonar/zones/${resolvedZoneId}/questArchetypes`, {});
   };
 
   const handleGenerateZoneFlavor = async () => {
-    if (!id || queueingZoneFlavor) return;
+    if (!resolvedZoneId || queueingZoneFlavor) return;
     setQueueingZoneFlavor(true);
     try {
       const queuedJob = await apiClient.post<ZoneFlavorGenerationJob>(
         '/sonar/admin/zone-flavor-generation-jobs',
-        { zoneId: id }
+        { zoneId: resolvedZoneId }
       );
       setZoneFlavorJobs((prev) => [
         queuedJob,
@@ -1180,6 +1223,27 @@ export const Zone = () => {
     }
   };
 
+  const handleSaveZoneMetadata = async () => {
+    if (!resolvedZoneId) {
+      return;
+    }
+    setIsSavingZone(true);
+    try {
+      await apiClient.patch(`/sonar/zones/${resolvedZoneId}/edit`, {
+        name,
+        description,
+        internalTags: parseInternalTagsInput(internalTagsInput),
+      });
+      await refreshZones();
+      setIsEditingZone(false);
+    } catch (error) {
+      console.error('Error updating zone:', error);
+      window.alert('Unable to save zone changes right now.');
+    } finally {
+      setIsSavingZone(false);
+    }
+  };
+
   const filteredPoints = pointsOfInterest.filter(
     (point) =>
       !deletedPointOfInterestIds.has(point.id) &&
@@ -1189,7 +1253,7 @@ export const Zone = () => {
   const allZoneBoundaries = zones
     .filter(
       (candidateZone) =>
-        candidateZone.id !== id && candidateZone.points.length > 0
+        candidateZone.id !== resolvedZoneId && candidateZone.points.length > 0
     )
     .map((candidateZone) =>
       candidateZone.points.map(
@@ -1609,18 +1673,11 @@ export const Zone = () => {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  editZone(
-                    name,
-                    description,
-                    parseInternalTagsInput(internalTagsInput),
-                    zone.id
-                  );
-                  setIsEditingZone(false);
-                }}
+                onClick={handleSaveZoneMetadata}
                 className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                disabled={!resolvedZoneId || isSavingZone}
               >
-                Save Changes
+                {isSavingZone ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -1668,7 +1725,7 @@ export const Zone = () => {
             )}
           </div>
         </div>
-        <Map
+        <ZoneMap
           center={[zone.longitude, zone.latitude]}
           onMapClick={isEditingBoundary ? handleMapClick : undefined}
           boundaryPoints={boundaryPoints}
@@ -1989,7 +2046,10 @@ export const Zone = () => {
                 disabled={!selectedQuestArchtype}
                 onClick={() => {
                   if (selectedQuestArchtype) {
-                    generateQuest(id!, selectedQuestArchtype);
+                    if (!resolvedZoneId) {
+                      return;
+                    }
+                    generateQuest(resolvedZoneId, selectedQuestArchtype);
                     setIsGeneratingQuest(false);
                   }
                 }}
@@ -2156,7 +2216,7 @@ export const Zone = () => {
                         selectedExcludedPlaceTypes
                       ) {
                         generatePointsOfInterest(
-                          id!,
+                          resolvedZoneId,
                           selectedIncludedPlaceTypes,
                           selectedExcludedPlaceTypes,
                           numPlaces

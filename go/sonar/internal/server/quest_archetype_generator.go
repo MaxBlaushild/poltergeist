@@ -99,22 +99,32 @@ func (s *server) generateQuestArchetypeFromSteps(
 	}
 
 	var rootNodeID uuid.UUID
-	var previousNodeID *uuid.UUID
+	var previousNode *models.QuestArchetypeNode
+	var previousStep *normalizedQuestTemplateGeneratorStep
 	for idx, step := range steps {
-		nodeID, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, monsterTemplates)
+		node, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, monsterTemplates)
 		if err != nil {
 			return nil, err
 		}
 		if idx == 0 {
-			rootNodeID = nodeID
+			rootNodeID = node.ID
 		}
-		if previousNodeID != nil {
-			if err := s.linkGeneratedQuestTemplateNodes(ctx, *previousNodeID, nodeID); err != nil {
+		if previousNode != nil && previousStep != nil {
+			if err := s.linkGeneratedQuestTemplateNodes(
+				ctx,
+				requestBody.ThemePrompt,
+				idx-1,
+				*previousStep,
+				previousNode,
+				&step,
+				node.ID,
+			); err != nil {
 				return nil, err
 			}
 		}
-		nodeIDCopy := nodeID
-		previousNodeID = &nodeIDCopy
+		previousNode = node
+		stepCopy := step
+		previousStep = &stepCopy
 	}
 
 	name := buildGeneratedQuestTemplateName(requestBody.Name, requestBody.ThemePrompt, steps)
@@ -197,7 +207,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	stepIndex int,
 	step normalizedQuestTemplateGeneratorStep,
 	monsterTemplates []models.MonsterTemplate,
-) (uuid.UUID, error) {
+) (*models.QuestArchetypeNode, error) {
 	payload := questArchetypeNodePayload{
 		Difficulty: intPtr(0),
 	}
@@ -209,7 +219,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	case questTemplateGeneratorContentScenario:
 		template, err := s.createGeneratedScenarioTemplate(ctx, themePrompt, stepIndex, step)
 		if err != nil {
-			return uuid.Nil, err
+			return nil, err
 		}
 		payload.NodeType = string(models.QuestArchetypeNodeTypeScenario)
 		payload.ScenarioTemplateID = &template.ID
@@ -217,7 +227,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	case questTemplateGeneratorContentMonster:
 		templateIDs, err := selectGeneratedMonsterTemplateIDs(monsterTemplates, themePrompt, step)
 		if err != nil {
-			return uuid.Nil, err
+			return nil, err
 		}
 		payload.NodeType = string(models.QuestArchetypeNodeTypeMonsterEncounter)
 		payload.MonsterTemplateIDs = templateIDs
@@ -232,24 +242,37 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 		Difficulty: 0,
 	}
 	if err := s.applyQuestArchetypeNodePayload(ctx, node, payload, true); err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 	if err := s.dbClient.QuestArchetypeNode().Create(ctx, node); err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create quest template node")
+		return nil, fmt.Errorf("failed to create quest template node")
 	}
-	return node.ID, nil
+	return node, nil
 }
 
 func (s *server) linkGeneratedQuestTemplateNodes(
 	ctx *gin.Context,
-	parentNodeID uuid.UUID,
+	themePrompt string,
+	parentStepIndex int,
+	parentStep normalizedQuestTemplateGeneratorStep,
+	parentNode *models.QuestArchetypeNode,
+	childStep *normalizedQuestTemplateGeneratorStep,
 	childNodeID uuid.UUID,
 ) error {
+	var challengeTemplateID *uuid.UUID
+	if questArchetypeNodeRequiresChallengeTemplate(parentNode) {
+		template, err := s.createGeneratedChallengeTemplate(ctx, themePrompt, parentStepIndex, parentStep, childStep)
+		if err != nil {
+			return err
+		}
+		challengeTemplateID = &template.ID
+	}
 	challenge := &models.QuestArchetypeChallenge{
-		ID:             uuid.New(),
-		Reward:         0,
-		Difficulty:     0,
-		UnlockedNodeID: &childNodeID,
+		ID:                  uuid.New(),
+		ChallengeTemplateID: challengeTemplateID,
+		Reward:              0,
+		Difficulty:          0,
+		UnlockedNodeID:      &childNodeID,
 	}
 	if err := s.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
 		return fmt.Errorf("failed to create quest template link")
@@ -257,7 +280,7 @@ func (s *server) linkGeneratedQuestTemplateNodes(
 	return s.dbClient.QuestArchetypeNodeChallenge().Create(ctx, &models.QuestArchetypeNodeChallenge{
 		ID:                        uuid.New(),
 		QuestArchetypeChallengeID: challenge.ID,
-		QuestArchetypeNodeID:      parentNodeID,
+		QuestArchetypeNodeID:      parentNode.ID,
 	})
 }
 
@@ -323,6 +346,91 @@ func buildGeneratedScenarioTemplatePrompt(
 		theme,
 		stepIndex+1,
 	)
+}
+
+func (s *server) createGeneratedChallengeTemplate(
+	ctx *gin.Context,
+	themePrompt string,
+	stepIndex int,
+	step normalizedQuestTemplateGeneratorStep,
+	nextStep *normalizedQuestTemplateGeneratorStep,
+) (*models.ChallengeTemplate, error) {
+	if step.LocationArchetype == nil {
+		return nil, fmt.Errorf("generated challenge templates require a location archetype")
+	}
+	template := &models.ChallengeTemplate{
+		LocationArchetypeID: step.LocationArchetype.ID,
+		Question:            buildGeneratedChallengeTemplateQuestion(themePrompt, step, nextStep),
+		Description:         buildGeneratedChallengeTemplateDescription(themePrompt, step, nextStep),
+		ImageURL:            "",
+		ThumbnailURL:        "",
+		ScaleWithUserLevel:  false,
+		RewardMode:          models.RewardModeRandom,
+		RandomRewardSize:    models.RandomRewardSizeSmall,
+		RewardExperience:    0,
+		Reward:              0,
+		InventoryItemID:     nil,
+		ItemChoiceRewards:   models.ChallengeTemplateItemChoiceRewards{},
+		SubmissionType:      models.DefaultQuestNodeSubmissionType(),
+		Difficulty:          maxInt(0, 5+(stepIndex*2)),
+		StatTags:            models.StringArray{},
+		Proficiency:         nil,
+	}
+	if err := s.dbClient.ChallengeTemplate().Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to create generated challenge template")
+	}
+	return template, nil
+}
+
+func buildGeneratedChallengeTemplateQuestion(
+	themePrompt string,
+	step normalizedQuestTemplateGeneratorStep,
+	nextStep *normalizedQuestTemplateGeneratorStep,
+) string {
+	locationName := strings.TrimSpace(step.LocationArchetype.Name)
+	if locationName == "" {
+		locationName = "the site"
+	}
+	theme := strings.TrimSpace(themePrompt)
+	switch {
+	case nextStep != nil && nextStep.Content == questTemplateGeneratorContentScenario:
+		if theme != "" {
+			return fmt.Sprintf("Search %s for the clue that reveals the next turn in %s, then photograph what you find.", locationName, theme)
+		}
+		return fmt.Sprintf("Search %s for the clue that reveals the next turn, then photograph what you find.", locationName)
+	case nextStep != nil && nextStep.Content == questTemplateGeneratorContentMonster:
+		if theme != "" {
+			return fmt.Sprintf("Scout %s for signs of the threat tied to %s and capture proof of the danger ahead.", locationName, theme)
+		}
+		return fmt.Sprintf("Scout %s for signs of the threat ahead and capture proof of what you uncover.", locationName)
+	default:
+		if theme != "" {
+			return fmt.Sprintf("Investigate %s and capture proof of the lead tied to %s.", locationName, theme)
+		}
+		return fmt.Sprintf("Investigate %s and capture proof of the lead hidden there.", locationName)
+	}
+}
+
+func buildGeneratedChallengeTemplateDescription(
+	themePrompt string,
+	step normalizedQuestTemplateGeneratorStep,
+	nextStep *normalizedQuestTemplateGeneratorStep,
+) string {
+	locationName := strings.TrimSpace(step.LocationArchetype.Name)
+	if locationName == "" {
+		locationName = "this place"
+	}
+	theme := strings.TrimSpace(themePrompt)
+	if nextStep == nil {
+		if theme != "" {
+			return fmt.Sprintf("A generated field challenge grounded at %s and tuned to the trail surrounding %s.", locationName, theme)
+		}
+		return fmt.Sprintf("A generated field challenge grounded at %s.", locationName)
+	}
+	if theme != "" {
+		return fmt.Sprintf("A generated field challenge at %s that pushes the quest toward the next %s beat in %s.", locationName, nextStep.Content, theme)
+	}
+	return fmt.Sprintf("A generated field challenge at %s that pushes the quest toward the next %s beat.", locationName, nextStep.Content)
 }
 
 func buildGeneratedQuestTemplateName(

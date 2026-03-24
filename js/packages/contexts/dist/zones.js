@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, } from 'react';
 import RBush from 'rbush';
 import * as turf from '@turf/turf';
 import { useAPI, useLocation, useAuth } from '@poltergeist/contexts';
@@ -30,8 +30,16 @@ export const isXMetersAway = (poi1, poi2, x) => {
     const distance = calculateDistance(poi1, poi2);
     return distance < x;
 };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const normalizeZoneLookupKey = (value) => value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
 const ZoneContext = createContext(null);
-export const ZoneProvider = ({ children }) => {
+export const ZoneProvider = ({ children, }) => {
     const { apiClient } = useAPI();
     const { user } = useAuth();
     const [zones, setZones] = useState([]);
@@ -59,15 +67,17 @@ export const ZoneProvider = ({ children }) => {
         // Clear existing data
         spatialIndex.clear();
         // Insert new data
-        zones.forEach(zone => {
+        zones.forEach((zone) => {
             if (zone.points && zone.points.length > 0) {
                 // Convert points to [lng, lat] pairs
-                const points = zone.points.map(p => [p.longitude, p.latitude]);
+                const points = zone.points.map((p) => [p.longitude, p.latitude]);
                 // Create a polygon from the points
-                const polygon = turf.polygon([[
+                const polygon = turf.polygon([
+                    [
                         ...points,
-                        points[0] // Close the polygon
-                    ]]);
+                        points[0], // Close the polygon
+                    ],
+                ]);
                 // Get the bounding box of the polygon
                 const bbox = turf.bbox(polygon);
                 // Add to spatial index with bounding box and points
@@ -77,7 +87,7 @@ export const ZoneProvider = ({ children }) => {
                     maxX: bbox[2],
                     maxY: bbox[3],
                     zoneId: zone.id,
-                    points
+                    points,
                 });
             }
         });
@@ -96,18 +106,20 @@ export const ZoneProvider = ({ children }) => {
             minX: lng,
             minY: lat,
             maxX: lng,
-            maxY: lat
+            maxY: lat,
         });
         // Then check which of these zones actually contain the point
         for (const candidate of candidates) {
-            const polygon = turf.polygon([[
+            const polygon = turf.polygon([
+                [
                     ...candidate.points,
-                    candidate.points[0] // Close the polygon
-                ]]);
+                    candidate.points[0], // Close the polygon
+                ],
+            ]);
             const point = turf.point([lng, lat]);
             if (turf.booleanPointInPolygon(point, polygon)) {
                 // Find the full zone object from our zones array
-                return zones.find(z => z.id === candidate.zoneId) || null;
+                return zones.find((z) => z.id === candidate.zoneId) || null;
             }
         }
         return null;
@@ -116,7 +128,9 @@ export const ZoneProvider = ({ children }) => {
         if (!(location === null || location === void 0 ? void 0 : location.longitude) || !(location === null || location === void 0 ? void 0 : location.latitude)) {
             return;
         }
-        if (!selectedZone || !previousLocation.current || isXMetersAway(previousLocation.current, location, 100)) {
+        if (!selectedZone ||
+            !previousLocation.current ||
+            isXMetersAway(previousLocation.current, location, 100)) {
             const zone = findZoneAtCoordinate(location === null || location === void 0 ? void 0 : location.longitude, location === null || location === void 0 ? void 0 : location.latitude);
             if (zone) {
                 setSelectedZone(zone);
@@ -126,13 +140,13 @@ export const ZoneProvider = ({ children }) => {
     }, [location === null || location === void 0 ? void 0 : location.latitude, location === null || location === void 0 ? void 0 : location.longitude]);
     const createZone = (zone) => __awaiter(void 0, void 0, void 0, function* () {
         const response = yield apiClient.post('/sonar/zones', zone);
-        setZones(prev => [...prev, response]);
+        setZones((prev) => [...prev, response]);
         setSelectedZone(response);
     });
     const deleteZone = (zone) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             yield apiClient.delete(`/sonar/zones/${zone.id}`);
-            setZones(prev => prev.filter(z => z.id !== zone.id));
+            setZones((prev) => prev.filter((z) => z.id !== zone.id));
             if ((selectedZone === null || selectedZone === void 0 ? void 0 : selectedZone.id) === zone.id) {
                 setSelectedZone(null);
             }
@@ -141,9 +155,23 @@ export const ZoneProvider = ({ children }) => {
             console.error('Error deleting zone:', error);
         }
     });
-    const editZone = (name, description, id) => __awaiter(void 0, void 0, void 0, function* () {
-        const response = yield apiClient.patch(`/sonar/zones/${id}/edit`, { name, description });
-        setZones(prev => prev.map(z => z.id === id ? Object.assign(Object.assign({}, z), { name: response.name, description: response.description }) : z));
+    const editZone = (name, description, internalTags, id) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a, _b, _c;
+        const trimmedID = id.trim();
+        const resolvedZone = uuidPattern.test(trimmedID)
+            ? (_a = zones.find((zone) => zone.id === trimmedID)) !== null && _a !== void 0 ? _a : null
+            : (_b = zones.find((zone) => normalizeZoneLookupKey(zone.name) === normalizeZoneLookupKey(trimmedID))) !== null && _b !== void 0 ? _b : null;
+        const requestZoneID = (_c = resolvedZone === null || resolvedZone === void 0 ? void 0 : resolvedZone.id) !== null && _c !== void 0 ? _c : trimmedID;
+        const response = yield apiClient.patch(`/sonar/zones/${requestZoneID}/edit`, {
+            name,
+            description,
+            internalTags,
+        });
+        setZones((prev) => prev.map((z) => z.id === requestZoneID ||
+            (!uuidPattern.test(trimmedID) &&
+                normalizeZoneLookupKey(z.name) === normalizeZoneLookupKey(trimmedID))
+            ? response
+            : z));
     });
     return (_jsx(ZoneContext.Provider, Object.assign({ value: {
             zones,
@@ -153,7 +181,7 @@ export const ZoneProvider = ({ children }) => {
             deleteZone,
             findZoneAtCoordinate,
             editZone,
-            refreshZones
+            refreshZones,
         } }, { children: children })));
 };
 export const useZoneContext = () => {

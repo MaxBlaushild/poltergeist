@@ -35,6 +35,64 @@ func normalizeQuestTemplateAcceptanceDialogue(input []string) models.StringArray
 	return lines
 }
 
+func normalizeExplicitQuestTemplateContent(
+	name string,
+	description string,
+	acceptanceDialogue []string,
+) (string, string, models.StringArray, error) {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return "", "", nil, fmt.Errorf("name is required")
+	}
+	trimmedDescription := strings.TrimSpace(description)
+	if trimmedDescription == "" {
+		return "", "", nil, fmt.Errorf("description is required")
+	}
+	normalizedDialogue := normalizeQuestTemplateAcceptanceDialogue(acceptanceDialogue)
+	if len(normalizedDialogue) == 0 {
+		return "", "", nil, fmt.Errorf("acceptanceDialogue must include at least one line")
+	}
+	return trimmedName, trimmedDescription, normalizedDialogue, nil
+}
+
+func questArchetypeNodeRequiresChallengeTemplate(node *models.QuestArchetypeNode) bool {
+	if node == nil {
+		return false
+	}
+	return node.NodeType == models.QuestArchetypeNodeTypeLocation
+}
+
+func (s *server) validateQuestArchetypeChallengeTemplate(
+	ctx context.Context,
+	node *models.QuestArchetypeNode,
+	templateID *uuid.UUID,
+	requireTemplate bool,
+) (*models.ChallengeTemplate, error) {
+	if templateID == nil || *templateID == uuid.Nil {
+		if requireTemplate {
+			return nil, fmt.Errorf("challengeTemplateId is required for location nodes")
+		}
+		return nil, nil
+	}
+	if node != nil && node.NodeType != models.QuestArchetypeNodeTypeLocation {
+		return nil, fmt.Errorf("challengeTemplateId can only be used on location nodes")
+	}
+	template, err := s.dbClient.ChallengeTemplate().FindByID(ctx, *templateID)
+	if err != nil {
+		return nil, fmt.Errorf("challengeTemplateId could not be loaded")
+	}
+	if template == nil {
+		return nil, fmt.Errorf("challengeTemplateId could not be loaded")
+	}
+	if node != nil &&
+		node.LocationArchetypeID != nil &&
+		*node.LocationArchetypeID != uuid.Nil &&
+		template.LocationArchetypeID != *node.LocationArchetypeID {
+		return nil, fmt.Errorf("challengeTemplateId must match the node location archetype")
+	}
+	return template, nil
+}
+
 func normalizeQuestTemplateCharacterTags(input []string) models.StringArray {
 	return parseInventoryInternalTags(input)
 }

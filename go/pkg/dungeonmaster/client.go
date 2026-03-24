@@ -87,10 +87,6 @@ func (c *client) GenerateQuest(
 		questGiverCharacterID = resolvedQuestGiverID
 	}
 
-	locations := make([]string, 0)
-	descriptions := make([]string, 0)
-	challenges := make([]string, 0)
-
 	rewardMode := questArchType.RewardMode
 	if strings.TrimSpace(string(rewardMode)) == "" {
 		rewardMode = models.RewardModeRandom
@@ -158,7 +154,7 @@ func (c *client) GenerateQuest(
 	orderIndex := 0
 	nodeMap := make(map[uuid.UUID]uuid.UUID)
 	anchorMap := make(map[uuid.UUID]*questNodeAnchor)
-	if _, err := c.processQuestNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, usedPOIs, &orderIndex, nodeMap, anchorMap, nil); err != nil {
+	if _, err := c.processQuestNode(ctx, zone, &questArchType.Root, quest, usedPOIs, &orderIndex, nodeMap, anchorMap, nil); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
 		return nil, err
 	}
@@ -168,65 +164,6 @@ func (c *client) GenerateQuest(
 		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
 			log.Printf("Error deleting quest after reward application failure: %v", deleteErr)
 		}
-		return nil, err
-	}
-
-	shouldGenerateQuestCopy := strings.TrimSpace(questArchType.Name) == "" || strings.TrimSpace(questArchType.Description) == ""
-	questCopy := &QuestCopy{Name: quest.Name, Description: quest.Description}
-	if shouldGenerateQuestCopy {
-		log.Println("Generating quest copy")
-		questCopy, err = c.generateQuestCopy(ctx, locations, descriptions, challenges)
-		if err != nil {
-			log.Printf("Error generating quest copy: %v", err)
-			if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
-				log.Printf("Error deleting quest after copy generation failure: %v", deleteErr)
-			}
-			return nil, err
-		}
-	}
-
-	acceptanceDialogueValue := acceptanceDialogue
-	if len(acceptanceDialogueValue) == 0 {
-		generatedAcceptanceDialogue, err := c.generateQuestAcceptanceDialogue(ctx, questCopy, questGiverCharacterID, questArchType, locations, descriptions, challenges)
-		if err != nil {
-			log.Printf("Error generating quest acceptance dialogue: %v", err)
-		} else {
-			acceptanceDialogueValue = models.StringArray(generatedAcceptanceDialogue)
-		}
-	}
-	if acceptanceDialogueValue == nil {
-		acceptanceDialogueValue = models.StringArray{}
-	}
-
-	name := strings.TrimSpace(questArchType.Name)
-	if name == "" {
-		name = questCopy.Name
-	}
-	description := strings.TrimSpace(questArchType.Description)
-	if description == "" {
-		description = questCopy.Description
-	}
-
-	log.Println("Updating quest with generated content")
-	if err := c.dbClient.Quest().Update(ctx, quest.ID, &models.Quest{
-		Name:                  name,
-		Description:           description,
-		AcceptanceDialogue:    acceptanceDialogueValue,
-		ImageURL:              questArchType.ImageURL,
-		ZoneID:                quest.ZoneID,
-		QuestArchetypeID:      quest.QuestArchetypeID,
-		QuestGiverCharacterID: quest.QuestGiverCharacterID,
-		RecurringQuestID:      quest.RecurringQuestID,
-		RecurrenceFrequency:   quest.RecurrenceFrequency,
-		NextRecurrenceAt:      quest.NextRecurrenceAt,
-		RewardMode:            quest.RewardMode,
-		RandomRewardSize:      quest.RandomRewardSize,
-		RewardExperience:      quest.RewardExperience,
-		Gold:                  quest.Gold,
-		MaterialRewards:       quest.MaterialRewards,
-		UpdatedAt:             time.Now(),
-	}); err != nil {
-		log.Printf("Error updating quest: %v", err)
 		return nil, err
 	}
 
@@ -244,9 +181,6 @@ func (c *client) processQuestNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
-	locations *[]string,
-	descriptions *[]string,
-	challenges *[]string,
 	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	orderIndex *int,
@@ -262,9 +196,6 @@ func (c *client) processQuestNode(
 			ctx,
 			zone,
 			questArchTypeNode,
-			locations,
-			descriptions,
-			challenges,
 			quest,
 			usedPOIs,
 			orderIndex,
@@ -278,9 +209,6 @@ func (c *client) processQuestNode(
 			ctx,
 			zone,
 			questArchTypeNode,
-			locations,
-			descriptions,
-			challenges,
 			quest,
 			usedPOIs,
 			orderIndex,
@@ -293,9 +221,6 @@ func (c *client) processQuestNode(
 		ctx,
 		zone,
 		questArchTypeNode,
-		locations,
-		descriptions,
-		challenges,
 		quest,
 		usedPOIs,
 		orderIndex,
@@ -309,9 +234,6 @@ func (c *client) processQuestLocationNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
-	locations *[]string,
-	descriptions *[]string,
-	challenges *[]string,
 	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	orderIndex *int,
@@ -393,18 +315,14 @@ func (c *client) processQuestLocationNode(
 		(*orderIndex)++
 	}
 
-	*locations = append(*locations, pointOfInterest.Name)
-	*descriptions = append(*descriptions, pointOfInterest.Description)
-
 	for i, allotedChallenge := range questArchTypeNode.Challenges {
-		randomChallenge, err := questArchTypeNode.GetRandomChallenge()
+		resolvedChallenge, err := c.resolveQuestArchetypeLocationChallenge(
+			ctx,
+			questArchTypeNode,
+			&allotedChallenge,
+		)
 		if err != nil {
 			return currentAnchor, err
-		}
-		*challenges = append(*challenges, randomChallenge.Question)
-		proficiency := normalizeQuestProficiency(allotedChallenge.Proficiency)
-		if randomChallenge.Proficiency != nil {
-			proficiency = normalizeQuestProficiency(randomChallenge.Proficiency)
 		}
 		challenge := &models.QuestNodeChallenge{
 			ID:              uuid.New(),
@@ -412,13 +330,13 @@ func (c *client) processQuestLocationNode(
 			UpdatedAt:       time.Now(),
 			QuestNodeID:     questNodeID,
 			Tier:            i,
-			Question:        randomChallenge.Question,
+			Question:        resolvedChallenge.Question,
 			Reward:          allotedChallenge.Reward,
 			InventoryItemID: allotedChallenge.InventoryItemID,
-			Difficulty:      allotedChallenge.Difficulty,
-			StatTags:        models.StringArray{},
-			Proficiency:     proficiency,
-			SubmissionType:  randomChallenge.SubmissionType,
+			Difficulty:      resolvedChallenge.Difficulty,
+			StatTags:        resolvedChallenge.StatTags,
+			Proficiency:     resolvedChallenge.Proficiency,
+			SubmissionType:  resolvedChallenge.SubmissionType,
 		}
 		if err := c.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
 			return currentAnchor, err
@@ -428,7 +346,7 @@ func (c *client) processQuestLocationNode(
 			if err != nil {
 				return currentAnchor, err
 			}
-			if _, err := c.processQuestNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
+			if _, err := c.processQuestNode(ctx, zone, unlockedNode, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
 				return currentAnchor, err
 			}
 			childNodeID := nodeMap[unlockedNode.ID]
@@ -453,9 +371,6 @@ func (c *client) processQuestScenarioNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
-	locations *[]string,
-	descriptions *[]string,
-	challenges *[]string,
 	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	orderIndex *int,
@@ -479,9 +394,6 @@ func (c *client) processQuestScenarioNode(
 			nodeMap,
 			anchorMap,
 			currentAnchor,
-			locations,
-			descriptions,
-			challenges,
 			existingNodeID,
 		)
 	}
@@ -497,7 +409,7 @@ func (c *client) processQuestScenarioNode(
 		return previousAnchor, fmt.Errorf("scenario template %s not found", questArchTypeNode.ScenarioTemplateID.String())
 	}
 
-	currentAnchor, anchorPOI, err := c.resolveQuestNodeAnchor(
+	currentAnchor, _, err := c.resolveQuestNodeAnchor(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -578,14 +490,6 @@ func (c *client) processQuestScenarioNode(
 	anchorMap[questArchTypeNode.ID] = currentAnchor
 	(*orderIndex)++
 
-	locationLabel := "Scenario"
-	if anchorPOI != nil && strings.TrimSpace(anchorPOI.Name) != "" {
-		locationLabel = strings.TrimSpace(anchorPOI.Name)
-	}
-	*locations = append(*locations, locationLabel)
-	*descriptions = append(*descriptions, scenario.Prompt)
-	*challenges = append(*challenges, scenario.Prompt)
-
 	if err := c.attachQuestMonsterEncounterChildren(
 		ctx,
 		zone,
@@ -596,9 +500,6 @@ func (c *client) processQuestScenarioNode(
 		nodeMap,
 		anchorMap,
 		currentAnchor,
-		locations,
-		descriptions,
-		challenges,
 		questNodeID,
 	); err != nil {
 		return currentAnchor, err
@@ -611,9 +512,6 @@ func (c *client) processQuestMonsterEncounterNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
-	locations *[]string,
-	descriptions *[]string,
-	challenges *[]string,
 	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	orderIndex *int,
@@ -637,9 +535,6 @@ func (c *client) processQuestMonsterEncounterNode(
 			nodeMap,
 			anchorMap,
 			currentAnchor,
-			locations,
-			descriptions,
-			challenges,
 			existingNodeID,
 		)
 	}
@@ -668,8 +563,11 @@ func (c *client) processQuestMonsterEncounterNode(
 	if len(sourceTemplates) == 0 {
 		return previousAnchor, fmt.Errorf("monster encounter node requires at least one monster template")
 	}
+	if len(sourceTemplates) > 9 {
+		return previousAnchor, fmt.Errorf("monster encounter node cannot include more than 9 monster templates")
+	}
 
-	currentAnchor, anchorPOI, err := c.resolveQuestNodeAnchor(
+	currentAnchor, _, err := c.resolveQuestNodeAnchor(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -721,7 +619,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		}
 		createdMonsters = append(createdMonsters, monster)
 		members = append(members, models.MonsterEncounterMember{
-			Slot:      index,
+			Slot:      index + 1,
 			MonsterID: monster.ID,
 		})
 	}
@@ -771,14 +669,6 @@ func (c *client) processQuestMonsterEncounterNode(
 	anchorMap[questArchTypeNode.ID] = currentAnchor
 	(*orderIndex)++
 
-	locationLabel := encounter.Name
-	if anchorPOI != nil && strings.TrimSpace(anchorPOI.Name) != "" {
-		locationLabel = strings.TrimSpace(anchorPOI.Name)
-	}
-	*locations = append(*locations, locationLabel)
-	*descriptions = append(*descriptions, encounter.Description)
-	*challenges = append(*challenges, fmt.Sprintf("Defeat %d monsters.", len(sourceMonsters)))
-
 	if err := c.attachQuestMonsterEncounterChildren(
 		ctx,
 		zone,
@@ -789,9 +679,6 @@ func (c *client) processQuestMonsterEncounterNode(
 		nodeMap,
 		anchorMap,
 		currentAnchor,
-		locations,
-		descriptions,
-		challenges,
 		questNodeID,
 	); err != nil {
 		return currentAnchor, err
@@ -810,9 +697,6 @@ func (c *client) attachQuestMonsterEncounterChildren(
 	nodeMap map[uuid.UUID]uuid.UUID,
 	anchorMap map[uuid.UUID]*questNodeAnchor,
 	currentAnchor *questNodeAnchor,
-	locations *[]string,
-	descriptions *[]string,
-	challenges *[]string,
 	questNodeID uuid.UUID,
 ) error {
 	for _, archetypeChallenge := range questArchTypeNode.Challenges {
@@ -823,7 +707,7 @@ func (c *client) attachQuestMonsterEncounterChildren(
 		if err != nil {
 			return err
 		}
-		if _, err := c.processQuestNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
+		if _, err := c.processQuestNode(ctx, zone, unlockedNode, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
 			return err
 		}
 		childNodeID := nodeMap[unlockedNode.ID]
@@ -976,6 +860,84 @@ func deriveQuestEncounterType(monsters []models.Monster) models.MonsterEncounter
 		return models.MonsterEncounterTypeBoss
 	}
 	return models.MonsterEncounterTypeMonster
+}
+
+type resolvedQuestArchetypeLocationChallenge struct {
+	Question       string
+	SubmissionType models.QuestNodeSubmissionType
+	Difficulty     int
+	StatTags       models.StringArray
+	Proficiency    *string
+}
+
+func (c *client) resolveQuestArchetypeLocationChallenge(
+	ctx context.Context,
+	questArchTypeNode *models.QuestArchetypeNode,
+	allotedChallenge *models.QuestArchetypeChallenge,
+) (*resolvedQuestArchetypeLocationChallenge, error) {
+	if questArchTypeNode == nil {
+		return nil, fmt.Errorf("quest archetype node is required")
+	}
+	if allotedChallenge == nil {
+		return nil, fmt.Errorf("quest archetype challenge is required")
+	}
+	if allotedChallenge.ChallengeTemplate != nil {
+		return resolvedQuestArchetypeLocationChallengeFromTemplate(allotedChallenge.ChallengeTemplate)
+	}
+	if allotedChallenge.ChallengeTemplateID != nil && *allotedChallenge.ChallengeTemplateID != uuid.Nil {
+		template, err := c.dbClient.ChallengeTemplate().FindByID(ctx, *allotedChallenge.ChallengeTemplateID)
+		if err != nil {
+			return nil, err
+		}
+		if template == nil {
+			return nil, fmt.Errorf("challenge template %s not found", allotedChallenge.ChallengeTemplateID.String())
+		}
+		return resolvedQuestArchetypeLocationChallengeFromTemplate(template)
+	}
+
+	randomChallenge, err := questArchTypeNode.GetRandomChallenge()
+	if err != nil {
+		return nil, err
+	}
+	proficiency := normalizeQuestProficiency(allotedChallenge.Proficiency)
+	if randomChallenge.Proficiency != nil {
+		proficiency = normalizeQuestProficiency(randomChallenge.Proficiency)
+	}
+	submissionType := randomChallenge.SubmissionType
+	if !submissionType.IsValid() {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	return &resolvedQuestArchetypeLocationChallenge{
+		Question:       randomChallenge.Question,
+		SubmissionType: submissionType,
+		Difficulty:     allotedChallenge.Difficulty,
+		StatTags:       models.StringArray{},
+		Proficiency:    proficiency,
+	}, nil
+}
+
+func resolvedQuestArchetypeLocationChallengeFromTemplate(
+	template *models.ChallengeTemplate,
+) (*resolvedQuestArchetypeLocationChallenge, error) {
+	if template == nil {
+		return nil, fmt.Errorf("challenge template is required")
+	}
+	question := strings.TrimSpace(template.Question)
+	if question == "" {
+		return nil, fmt.Errorf("challenge template question is required")
+	}
+	submissionType := template.SubmissionType
+	if !submissionType.IsValid() {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	statTags := append(models.StringArray{}, template.StatTags...)
+	return &resolvedQuestArchetypeLocationChallenge{
+		Question:       question,
+		SubmissionType: submissionType,
+		Difficulty:     template.Difficulty,
+		StatTags:       statTags,
+		Proficiency:    normalizeQuestProficiency(template.Proficiency),
+	}, nil
 }
 
 func buildQuestEncounterName(monsters []models.Monster) string {

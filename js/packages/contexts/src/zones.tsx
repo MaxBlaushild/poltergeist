@@ -34,6 +34,18 @@ export const isXMetersAway = (poi1, poi2, x) => {
   return distance < x;
 };
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeZoneLookupKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+
 // Define the structure for R-tree nodes
 interface ZoneIndexNode {
   minX: number;
@@ -206,12 +218,31 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({
     internalTags: string[],
     id: string
   ) => {
-    const response = await apiClient.patch<Zone>(`/sonar/zones/${id}/edit`, {
+    const trimmedID = id.trim();
+    const resolvedZone =
+      uuidPattern.test(trimmedID)
+        ? zones.find((zone) => zone.id === trimmedID) ?? null
+        : zones.find(
+            (zone) => normalizeZoneLookupKey(zone.name) === normalizeZoneLookupKey(trimmedID)
+          ) ?? null;
+    const requestZoneID = resolvedZone?.id ?? trimmedID;
+    const response = await apiClient.patch<Zone>(
+      `/sonar/zones/${requestZoneID}/edit`,
+      {
       name,
       description,
       internalTags,
-    });
-    setZones((prev) => prev.map((z) => (z.id === id ? response : z)));
+      }
+    );
+    setZones((prev) =>
+      prev.map((z) =>
+        z.id === requestZoneID ||
+        (!uuidPattern.test(trimmedID) &&
+          normalizeZoneLookupKey(z.name) === normalizeZoneLookupKey(trimmedID))
+          ? response
+          : z
+      )
+    );
   };
 
   return (

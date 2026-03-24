@@ -19,6 +19,7 @@ func (h *questArchetypeChallengeHandle) Create(ctx context.Context, questArchety
 func (h *questArchetypeChallengeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeChallenge, error) {
 	var questArchetypeChallenge models.QuestArchetypeChallenge
 	if err := h.db.WithContext(ctx).
+		Preload("ChallengeTemplate").
 		Preload("UnlockedNode").
 		Preload("UnlockedNode.LocationArchetype").
 		Preload("UnlockedNode.ScenarioTemplate").
@@ -30,7 +31,9 @@ func (h *questArchetypeChallengeHandle) FindByID(ctx context.Context, id uuid.UU
 
 func (h *questArchetypeChallengeHandle) FindAll(ctx context.Context) ([]*models.QuestArchetypeChallenge, error) {
 	var questArchetypeChallenges []*models.QuestArchetypeChallenge
-	if err := h.db.WithContext(ctx).Find(&questArchetypeChallenges).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("ChallengeTemplate").
+		Find(&questArchetypeChallenges).Error; err != nil {
 		return nil, err
 	}
 	return questArchetypeChallenges, nil
@@ -47,6 +50,7 @@ func (h *questArchetypeChallengeHandle) Delete(ctx context.Context, id uuid.UUID
 func (h *questArchetypeChallengeHandle) FindAllByNodeID(ctx context.Context, nodeID uuid.UUID) ([]*models.QuestArchetypeChallenge, error) {
 	var questArchetypeNodeChallenges []*models.QuestArchetypeNodeChallenge
 	if err := h.db.WithContext(ctx).
+		Preload("QuestArchetypeChallenge.ChallengeTemplate").
 		Preload("QuestArchetypeChallenge.UnlockedNode").
 		Preload("QuestArchetypeChallenge.UnlockedNode.LocationArchetype").
 		Preload("QuestArchetypeChallenge.UnlockedNode.ScenarioTemplate").

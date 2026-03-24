@@ -7,12 +7,23 @@ export interface QuestArchetypeChallenge {
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
+    challengeTemplateId?: string | null;
+    challengeTemplate?: QuestArchetypeChallengeTemplate | null;
     reward: number;
     inventoryItemId?: number | null;
     proficiency?: string | null;
     difficulty?: number | null;
     unlockedNodeId?: string;
     unlockedNode?: QuestArchetypeNode;
+}
+export interface QuestArchetypeChallengeTemplate {
+    id: string;
+    locationArchetypeId: string;
+    question: string;
+    description?: string;
+    submissionType?: string;
+    difficulty?: number | null;
+    proficiency?: string | null;
 }
 export type QuestArchetypeNodeType = 'location' | 'monster_encounter' | 'scenario';
 export interface QuestArchetypeNodeEncounterItemReward {

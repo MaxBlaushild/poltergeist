@@ -77,7 +77,8 @@ type QuestArchetypesContextType = {
     inventoryItemId?: number | null,
     proficiency?: string | null,
     difficulty?: number | null,
-    unlockedNode?: QuestArchetypeNodeDraft | null
+    unlockedNode?: QuestArchetypeNodeDraft | null,
+    challengeTemplateId?: string | null
   ) => void;
   updateQuestArchetypeChallenge: (
     challengeId: string,
@@ -86,6 +87,7 @@ type QuestArchetypesContextType = {
       inventoryItemId?: number | null;
       proficiency?: string | null;
       difficulty?: number | null;
+      challengeTemplateId?: string | null;
     }
   ) => void;
   deleteQuestArchetypeChallenge: (challengeId: string) => void;
@@ -338,13 +340,15 @@ export const QuestArchetypesProvider = ({
     inventoryItemId?: number | null,
     proficiency?: string | null,
     difficulty?: number | null,
-    unlockedNode?: QuestArchetypeNodeDraft | null
+    unlockedNode?: QuestArchetypeNodeDraft | null,
+    challengeTemplateId?: string | null
   ) => {
     const payload: {
       reward: number;
       inventoryItemId?: number;
       proficiency?: string;
       difficulty?: number;
+      challengeTemplateId?: string;
       nodeType?: QuestArchetypeNodeType;
       locationArchetypeID?: string;
       scenarioTemplateId?: string | null;
@@ -397,6 +401,9 @@ export const QuestArchetypesProvider = ({
     if (difficulty !== undefined && difficulty !== null) {
       payload.difficulty = difficulty;
     }
+    if (challengeTemplateId && challengeTemplateId.trim().length > 0) {
+      payload.challengeTemplateId = challengeTemplateId.trim();
+    }
 
     await apiClient.post<QuestArchetypeChallenge>(
       `/sonar/questArchetypes/${questArchetypeId}/challenges`,
@@ -413,6 +420,7 @@ export const QuestArchetypesProvider = ({
       inventoryItemId?: number | null;
       proficiency?: string | null;
       difficulty?: number | null;
+      challengeTemplateId?: string | null;
     }
   ) => {
     await apiClient.patch(

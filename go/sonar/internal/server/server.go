@@ -1662,9 +1662,41 @@ func (s *server) getZoneReputation(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, reputation)
 }
 
+func normalizeZoneLookupKey(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "_", " ")
+	trimmed = strings.ReplaceAll(trimmed, "-", " ")
+	return strings.Join(strings.Fields(trimmed), " ")
+}
+
+func (s *server) resolveZoneID(ctx context.Context, raw string) (uuid.UUID, error) {
+	if zoneID, err := uuid.Parse(strings.TrimSpace(raw)); err == nil && zoneID != uuid.Nil {
+		return zoneID, nil
+	}
+	target := normalizeZoneLookupKey(raw)
+	if target == "" {
+		return uuid.Nil, fmt.Errorf("invalid zone ID")
+	}
+	zones, err := s.dbClient.Zone().FindAll(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	for _, zone := range zones {
+		if zone == nil {
+			continue
+		}
+		if normalizeZoneLookupKey(zone.Name) == target {
+			return zone.ID, nil
+		}
+	}
+	return uuid.Nil, fmt.Errorf("invalid zone ID")
+}
+
 func (s *server) editZone(ctx *gin.Context) {
-	zoneID := ctx.Param("id")
-	zoneIDUUID, err := uuid.Parse(zoneID)
+	zoneIDUUID, err := s.resolveZoneID(ctx, ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
 		return
@@ -2842,16 +2874,27 @@ func (s *server) getQuestArchetypeChallenges(ctx *gin.Context) {
 
 func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	id := ctx.Param("id")
-	questArchetypeIDUUID, err := uuid.Parse(id)
+	questArchetypeNodeID, err := uuid.Parse(id)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
 		return
 	}
 
+	parentNode, err := s.dbClient.QuestArchetypeNode().FindByID(ctx, questArchetypeNodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if parentNode == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype node not found"})
+		return
+	}
+
 	var requestBody struct {
-		Reward          int     `json:"reward"`
-		InventoryItemID *int    `json:"inventoryItemId"`
-		Proficiency     *string `json:"proficiency"`
+		Reward              int        `json:"reward"`
+		InventoryItemID     *int       `json:"inventoryItemId"`
+		Proficiency         *string    `json:"proficiency"`
+		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
 		questArchetypeNodePayload
 	}
 
@@ -2871,6 +2914,17 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 
 	if requestBody.Difficulty != nil && *requestBody.Difficulty < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
+		return
+	}
+
+	challengeTemplate, err := s.validateQuestArchetypeChallengeTemplate(
+		ctx,
+		parentNode,
+		requestBody.ChallengeTemplateID,
+		questArchetypeNodeRequiresChallengeTemplate(parentNode),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -2897,16 +2951,21 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	questArchetypeChallenge := &models.QuestArchetypeChallenge{
-		ID:              uuid.New(),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		Reward:          requestBody.Reward,
-		InventoryItemID: requestBody.InventoryItemID,
-		Proficiency:     requestBody.Proficiency,
-		Difficulty:      0,
-		UnlockedNodeID:  newNodeID,
+		ID:                  uuid.New(),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+		ChallengeTemplateID: nil,
+		Reward:              requestBody.Reward,
+		InventoryItemID:     requestBody.InventoryItemID,
+		Proficiency:         requestBody.Proficiency,
+		Difficulty:          0,
+		UnlockedNodeID:      newNodeID,
 	}
-	if requestBody.Difficulty != nil {
+	if challengeTemplate != nil {
+		questArchetypeChallenge.ChallengeTemplateID = &challengeTemplate.ID
+		questArchetypeChallenge.Proficiency = challengeTemplate.Proficiency
+		questArchetypeChallenge.Difficulty = challengeTemplate.Difficulty
+	} else if requestBody.Difficulty != nil {
 		questArchetypeChallenge.Difficulty = *requestBody.Difficulty
 	}
 
@@ -2921,7 +2980,7 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		CreatedAt:                 time.Now(),
 		UpdatedAt:                 time.Now(),
 		QuestArchetypeChallengeID: questArchetypeChallenge.ID,
-		QuestArchetypeNodeID:      questArchetypeIDUUID,
+		QuestArchetypeNodeID:      questArchetypeNodeID,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2939,10 +2998,11 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Reward          *int    `json:"reward"`
-		InventoryItemID *int    `json:"inventoryItemId"`
-		Proficiency     *string `json:"proficiency"`
-		Difficulty      *int    `json:"difficulty"`
+		Reward              *int       `json:"reward"`
+		InventoryItemID     *int       `json:"inventoryItemId"`
+		Proficiency         *string    `json:"proficiency"`
+		Difficulty          *int       `json:"difficulty"`
+		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2963,6 +3023,28 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 	if requestBody.Reward != nil {
 		existing.Reward = *requestBody.Reward
 	}
+	if requestBody.ChallengeTemplateID != nil {
+		challengeTemplate, err := s.validateQuestArchetypeChallengeTemplate(
+			ctx,
+			nil,
+			requestBody.ChallengeTemplateID,
+			false,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if challengeTemplate != nil {
+			existing.ChallengeTemplateID = &challengeTemplate.ID
+		} else {
+			existing.ChallengeTemplateID = nil
+		}
+		existing.ChallengeTemplate = challengeTemplate
+		if challengeTemplate != nil {
+			existing.Proficiency = challengeTemplate.Proficiency
+			existing.Difficulty = challengeTemplate.Difficulty
+		}
+	}
 	if requestBody.InventoryItemID != nil {
 		if *requestBody.InventoryItemID <= 0 {
 			existing.InventoryItemID = nil
@@ -2972,11 +3054,13 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		}
 	}
 	if requestBody.Proficiency != nil {
-		trimmed := strings.TrimSpace(*requestBody.Proficiency)
-		if trimmed == "" {
-			existing.Proficiency = nil
-		} else {
-			existing.Proficiency = &trimmed
+		if existing.ChallengeTemplateID == nil || *existing.ChallengeTemplateID == uuid.Nil {
+			trimmed := strings.TrimSpace(*requestBody.Proficiency)
+			if trimmed == "" {
+				existing.Proficiency = nil
+			} else {
+				existing.Proficiency = &trimmed
+			}
 		}
 	}
 	if requestBody.Difficulty != nil {
@@ -2984,7 +3068,9 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
 			return
 		}
-		existing.Difficulty = *requestBody.Difficulty
+		if existing.ChallengeTemplateID == nil || *existing.ChallengeTemplateID == uuid.Nil {
+			existing.Difficulty = *requestBody.Difficulty
+		}
 	}
 	existing.UpdatedAt = time.Now()
 
@@ -3171,6 +3257,15 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	name, description, acceptanceDialogue, err := normalizeExplicitQuestTemplateContent(
+		requestBody.Name,
+		requestBody.Description,
+		requestBody.AcceptanceDialogue,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	questArchetype, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchetypeIDUUID)
 	if err != nil {
@@ -3178,9 +3273,9 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
-	questArchetype.Name = requestBody.Name
-	questArchetype.Description = requestBody.Description
-	questArchetype.AcceptanceDialogue = normalizeQuestTemplateAcceptanceDialogue(requestBody.AcceptanceDialogue)
+	questArchetype.Name = name
+	questArchetype.Description = description
+	questArchetype.AcceptanceDialogue = acceptanceDialogue
 	questArchetype.ImageURL = requestBody.ImageURL
 	if requestBody.DefaultGold != nil {
 		questArchetype.DefaultGold = *requestBody.DefaultGold
@@ -4428,11 +4523,20 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	name, description, acceptanceDialogue, err := normalizeExplicitQuestTemplateContent(
+		requestBody.Name,
+		requestBody.Description,
+		requestBody.AcceptanceDialogue,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	questArchType := &models.QuestArchetype{
-		Name:                requestBody.Name,
-		Description:         requestBody.Description,
-		AcceptanceDialogue:  normalizeQuestTemplateAcceptanceDialogue(requestBody.AcceptanceDialogue),
+		Name:                name,
+		Description:         description,
+		AcceptanceDialogue:  acceptanceDialogue,
 		ImageURL:            requestBody.ImageURL,
 		RootID:              requestBody.RootID,
 		ID:                  uuid.New(),

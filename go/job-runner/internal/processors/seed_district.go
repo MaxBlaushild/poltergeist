@@ -412,7 +412,10 @@ func (p *SeedDistrictProcessor) ensureDistrictSeedAnchorPOI(
 		return nil, nil
 	}
 
-	if questArchetype != nil && questArchetype.Root.LocationArchetypeID != uuid.Nil {
+	if questArchetype != nil &&
+		questArchetype.Root.LocationArchetypeID != nil &&
+		*questArchetype.Root.LocationArchetypeID != uuid.Nil &&
+		questArchetype.Root.LocationArchetype != nil {
 		pois, err := p.locationSeeder.SeedPointsOfInterest(
 			ctx,
 			*zone,
