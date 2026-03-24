@@ -46,7 +46,7 @@ func TestBuildAbilityTomeItemForSpell(t *testing.T) {
 	}
 
 	item := buildAbilityTomeItem(ability)
-	if item.Name != "Tome of Ember Lance." {
+	if item.Name != "Tome of Ember Lance" {
 		t.Fatalf("expected tome name to match ability name, got %q", item.Name)
 	}
 	if item.ItemLevel != 25 {
@@ -65,7 +65,7 @@ func TestBuildAbilityTomeItemForSpell(t *testing.T) {
 	if !strings.Contains(description, "grimoire") {
 		t.Fatalf("expected spell tome description to look like a book, got %q", item.FlavorText)
 	}
-	if !strings.Contains(description, "ember-lance") {
+	if !strings.Contains(description, "\"ember lance\"") {
 		t.Fatalf("expected tome description to play on the spell name, got %q", item.FlavorText)
 	}
 	if !strings.Contains(description, "focused flame") {
@@ -97,10 +97,20 @@ func TestBuildAbilityTomeItemForTechnique(t *testing.T) {
 	if !strings.Contains(description, "manual") {
 		t.Fatalf("expected technique tome description to read like a manual, got %q", item.FlavorText)
 	}
-	if !strings.Contains(description, "iron-counter") {
+	if !strings.Contains(description, "\"iron counter\"") {
 		t.Fatalf("expected technique tome description to play on the ability name, got %q", item.FlavorText)
 	}
 	if !strings.Contains(description, "precise counterstrike") {
 		t.Fatalf("expected technique tome description to echo the ability description, got %q", item.FlavorText)
+	}
+}
+
+func TestBuildLegacyAbilityTomeName(t *testing.T) {
+	ability := &models.Spell{Name: "Ember Lance."}
+	if got := buildAbilityTomeName(ability); got != "Tome of Ember Lance" {
+		t.Fatalf("expected trimmed tome name without trailing punctuation, got %q", got)
+	}
+	if got := buildLegacyAbilityTomeName(ability); got != "Tome of Ember Lance." {
+		t.Fatalf("expected legacy tome name with trailing period, got %q", got)
 	}
 }

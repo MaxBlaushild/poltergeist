@@ -44,6 +44,7 @@ const (
 	ImportZonesForMetroTaskType                    = "import_zones_for_metro"
 	MonitorPolymarketTradesTaskType                = "monitor_polymarket_trades"
 	SeedZoneDraftTaskType                          = "seed_zone_draft"
+	SeedDistrictTaskType                           = "seed_district"
 	ApplyZoneSeedDraftTaskType                     = "apply_zone_seed_draft"
 	ShuffleZoneSeedChallengeTaskType               = "shuffle_zone_seed_challenge"
 	ShuffleQuestNodeChallengeTaskType              = "shuffle_quest_node_challenge"
@@ -91,6 +92,10 @@ type GenerateQuestForZoneTaskPayload struct {
 	QuestArchetypeID      uuid.UUID  `json:"quest_archetype_id"`
 	QuestGiverCharacterID *uuid.UUID `json:"quest_giver_character_id,omitempty"`
 	QuestGenerationJobID  *uuid.UUID `json:"quest_generation_job_id,omitempty"`
+}
+
+type SeedDistrictTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
 }
 
 type GenerateBaseDescriptionTaskPayload struct {

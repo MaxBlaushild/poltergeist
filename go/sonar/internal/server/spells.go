@@ -2477,6 +2477,27 @@ func abilityTomeKeywords(value string, maxWords int) []string {
 	return words
 }
 
+func trimAbilityTomeSentenceFragment(value string) string {
+	trimmed := strings.TrimSpace(value)
+	trimmed = strings.Trim(trimmed, " \t\r\n")
+	trimmed = strings.TrimRight(trimmed, ".!?;,:")
+	return strings.TrimSpace(trimmed)
+}
+
+func buildAbilityTomeName(ability *models.Spell) string {
+	name := "Unknown Ability"
+	if ability != nil {
+		if trimmed := trimAbilityTomeSentenceFragment(ability.Name); trimmed != "" {
+			name = trimmed
+		}
+	}
+	return fmt.Sprintf("Tome of %s", name)
+}
+
+func buildLegacyAbilityTomeName(ability *models.Spell) string {
+	return buildAbilityTomeName(ability) + "."
+}
+
 func abilityTomeCoverAdjective(ability *models.Spell) string {
 	if ability == nil {
 		return "weathered"
@@ -2501,49 +2522,73 @@ func abilityTomeCoverAdjective(ability *models.Spell) string {
 	}
 }
 
+func abilityTomeCoverFinish(ability *models.Spell) string {
+	if ability == nil {
+		return "inked"
+	}
+	name := strings.ToLower(strings.TrimSpace(ability.Name))
+	school := strings.ToLower(strings.TrimSpace(ability.SchoolOfMagic))
+	switch {
+	case strings.Contains(name, "ember") || strings.Contains(name, "fire") || strings.Contains(school, "pyro"):
+		return "copper foil"
+	case strings.Contains(name, "frost") || strings.Contains(name, "ice") || strings.Contains(school, "cryo"):
+		return "silver leaf"
+	case strings.Contains(name, "storm") || strings.Contains(name, "lightning") || strings.Contains(school, "tempest"):
+		return "blue-gold foil"
+	case strings.Contains(name, "shadow") || strings.Contains(name, "night") || strings.Contains(school, "shadow") || strings.Contains(school, "umbral"):
+		return "smoked silver"
+	case strings.Contains(name, "radiant") || strings.Contains(name, "solar") || strings.Contains(school, "radiance") || strings.Contains(school, "holy"):
+		return "sun-bright leaf"
+	case normalizeSpellAbilityType(string(ability.AbilityType)) == models.SpellAbilityTypeTechnique:
+		return "iron-black ink"
+	default:
+		return "gilded script"
+	}
+}
+
+func abilityTomeInteriorDetail(ability *models.Spell) string {
+	if ability == nil {
+		return "practical lessons"
+	}
+	source := trimAbilityTomeSentenceFragment(ability.Description)
+	if source == "" {
+		source = trimAbilityTomeSentenceFragment(ability.EffectText)
+	}
+	if source == "" {
+		if normalizeSpellAbilityType(string(ability.AbilityType)) == models.SpellAbilityTypeTechnique {
+			return "well-worn combat drills"
+		}
+		return "annotated magical exercises"
+	}
+	if normalizeSpellAbilityType(string(ability.AbilityType)) == models.SpellAbilityTypeTechnique {
+		return fmt.Sprintf("step-by-step diagrams for %s", strings.ToLower(source))
+	}
+	return fmt.Sprintf("margin notes on %s", strings.ToLower(source))
+}
+
 func buildAbilityTomeDescription(ability *models.Spell) string {
 	abilityType := normalizeSpellAbilityType(string(ability.AbilityType))
 	bookType := "grimoire"
 	binding := "aged leather"
-	detailSuffix := "sketches"
 	if abilityType == models.SpellAbilityTypeTechnique {
 		bookType = "manual"
 		binding = "corded canvas"
-		detailSuffix = "diagrams"
 	}
-
-	coverKeywords := abilityTomeKeywords(ability.Name, 2)
-	coverStamp := strings.Join(coverKeywords, "-")
-	if coverStamp == "" {
-		if abilityType == models.SpellAbilityTypeTechnique {
-			coverStamp = "drilled"
-		} else {
-			coverStamp = "runed"
-		}
-	}
-
-	detailSource := strings.TrimSpace(ability.Description)
-	if detailSource == "" {
-		detailSource = strings.TrimSpace(ability.EffectText)
-	}
-	detailKeywords := abilityTomeKeywords(detailSource, 3)
-	detailPhrase := strings.Join(detailKeywords, " ")
-	if detailPhrase == "" {
-		if abilityType == models.SpellAbilityTypeTechnique {
-			detailPhrase = "sparring notes"
-		} else {
-			detailPhrase = "arcane notes"
+	tomeName := "Unknown Ability"
+	if ability != nil {
+		if trimmed := trimAbilityTomeSentenceFragment(ability.Name); trimmed != "" {
+			tomeName = trimmed
 		}
 	}
 
 	return fmt.Sprintf(
-		"A %s %s bound in %s, its cover stamped with %s flourishes and its margins crowded with %s %s.",
+		"A %s %s bound in %s, titled %q in %s, with %s.",
 		abilityTomeCoverAdjective(ability),
 		bookType,
 		binding,
-		coverStamp,
-		detailPhrase,
-		detailSuffix,
+		tomeName,
+		abilityTomeCoverFinish(ability),
+		abilityTomeInteriorDetail(ability),
 	)
 }
 
@@ -2560,7 +2605,7 @@ func buildAbilityTomeItem(ability *models.Spell) *models.InventoryItem {
 		fmt.Sprintf("%s_tome", abilityType),
 	}
 	return &models.InventoryItem{
-		Name:                    fmt.Sprintf("Tome of %s.", strings.TrimSpace(ability.Name)),
+		Name:                    buildAbilityTomeName(ability),
 		FlavorText:              buildAbilityTomeDescription(ability),
 		EffectText:              fmt.Sprintf("Consume to learn %s.", strings.TrimSpace(ability.Name)),
 		RarityTier:              tier.rarity,
@@ -2718,10 +2763,15 @@ func (s *server) generateAbilityTomes(ctx *gin.Context) {
 		ability := abilityByID[abilityID]
 		tome := buildAbilityTomeItem(&ability)
 		key := strings.ToLower(strings.TrimSpace(tome.Name))
+		legacyKey := strings.ToLower(strings.TrimSpace(buildLegacyAbilityTomeName(&ability)))
 		action := "created"
 		inventoryItemID := tome.ID
 
-		if existing, exists := existingByName[key]; exists {
+		existing, exists := existingByName[key]
+		if !exists && legacyKey != key {
+			existing, exists = existingByName[legacyKey]
+		}
+		if exists {
 			if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, existing.ID, abilityTomeUpdateMap(tome)); err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return

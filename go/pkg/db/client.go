@@ -30,6 +30,8 @@ type client struct {
 	matchHandle                          *matchHandle
 	verificationCodeHandle               *verificationCodeHandler
 	pointOfInterestGroupHandle           *pointOfInterestGroupHandle
+	districtHandle                       *districtHandle
+	districtSeedJobHandle                *districtSeedJobHandle
 	pointOfInterestChallengeHandle       *pointOfInterestChallengeHandle
 	pointOfInterestImportHandle          *pointOfInterestImportHandle
 	zoneImportHandle                     *zoneImportHandle
@@ -63,6 +65,7 @@ type client struct {
 	questArchetypeChallengeHandle        *questArchetypeChallengeHandle
 	questArchetypeNodeChallengeHandle    *questArchetypeNodeChallengeHandle
 	questArchetypeItemRewardHandle       *questArchetypeItemRewardHandle
+	questArchetypeSpellRewardHandle      *questArchetypeSpellRewardHandle
 	zoneQuestArchetypeHandle             *zoneQuestArchetypeHandle
 	questGenerationJobHandle             *questGenerationJobHandle
 	trackedPointOfInterestGroupHandle    *trackedPointOfInterestGroupHandle
@@ -191,6 +194,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		matchHandle:                          &matchHandle{db: db},
 		verificationCodeHandle:               &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:           &pointOfInterestGroupHandle{db: db},
+		districtHandle:                       &districtHandle{db: db},
+		districtSeedJobHandle:                &districtSeedJobHandle{db: db},
 		pointOfInterestChallengeHandle:       &pointOfInterestChallengeHandle{db: db},
 		pointOfInterestImportHandle:          &pointOfInterestImportHandle{db: db},
 		zoneImportHandle:                     &zoneImportHandle{db: db},
@@ -224,6 +229,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questArchetypeChallengeHandle:        &questArchetypeChallengeHandle{db: db},
 		questArchetypeNodeChallengeHandle:    &questArchetypeNodeChallengeHandle{db: db},
 		questArchetypeItemRewardHandle:       &questArchetypeItemRewardHandle{db: db},
+		questArchetypeSpellRewardHandle:      &questArchetypeSpellRewardHandle{db: db},
 		zoneQuestArchetypeHandle:             &zoneQuestArchetypeHandle{db: db},
 		questGenerationJobHandle:             &questGenerationJobHandle{db: db},
 		trackedPointOfInterestGroupHandle:    &trackedPointOfInterestGroupHandle{db: db},
@@ -456,6 +462,10 @@ func (c *client) QuestArchetypeItemReward() QuestArchetypeItemRewardHandle {
 	return c.questArchetypeItemRewardHandle
 }
 
+func (c *client) QuestArchetypeSpellReward() QuestArchetypeSpellRewardHandle {
+	return c.questArchetypeSpellRewardHandle
+}
+
 func (c *client) Zone() ZoneHandle {
 	return c.zoneHandle
 }
@@ -558,6 +568,14 @@ func (c *client) UserSpell() UserSpellHandle {
 
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {
 	return c.pointOfInterestGroupHandle
+}
+
+func (c *client) District() DistrictHandle {
+	return c.districtHandle
+}
+
+func (c *client) DistrictSeedJob() DistrictSeedJobHandle {
+	return c.districtSeedJobHandle
 }
 
 func (c *client) VerificationCode() VerificationCodeHandle {

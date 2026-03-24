@@ -34,6 +34,7 @@ type Zone struct {
 	UpdatedAt      time.Time    `json:"updatedAt"`
 	Name           string       `json:"name"`
 	Description    string       `json:"description"`
+	InternalTags   StringArray  `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	Latitude       float64      `json:"latitude"`
 	Longitude      float64      `json:"longitude"`
 	ZoneImportID   *uuid.UUID   `json:"zoneImportId" gorm:"type:uuid"`

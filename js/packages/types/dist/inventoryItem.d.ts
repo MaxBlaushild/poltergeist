@@ -11,6 +11,16 @@ export type InventoryConsumeStatus = {
     wisdomMod: number;
     charismaMod: number;
 };
+export type InventoryRecipeIngredient = {
+    itemId: number;
+    quantity: number;
+};
+export type InventoryRecipe = {
+    id: string;
+    tier: number;
+    isPublic: boolean;
+    ingredients: InventoryRecipeIngredient[];
+};
 type DamageAffinity = 'physical' | 'piercing' | 'slashing' | 'bludgeoning' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
 export type InventoryItem = {
     id: number;
@@ -53,6 +63,9 @@ export type InventoryItem = {
     consumeStatusesToAdd?: InventoryConsumeStatus[];
     consumeStatusesToRemove?: string[];
     consumeSpellIds?: string[];
+    consumeTeachRecipeIds?: string[];
+    alchemyRecipes?: InventoryRecipe[];
+    workshopRecipes?: InventoryRecipe[];
     internalTags?: string[];
     imageGenerationStatus?: string;
     imageGenerationError?: string;

@@ -1,4 +1,4 @@
-import { Point } from "./point";
+import { Point } from './point';
 
 export type Zone = {
   id: string;
@@ -8,6 +8,7 @@ export type Zone = {
   createdAt: string;
   updatedAt: string;
   description: string;
+  internalTags?: string[];
   zoneImportId?: string | null;
   boundary: number[][];
   boundaryCoords: {

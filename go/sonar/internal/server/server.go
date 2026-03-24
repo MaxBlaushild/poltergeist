@@ -363,11 +363,21 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
+	r.GET("/sonar/districts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistricts))
+	r.GET("/sonar/districts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrict))
+	r.POST("/sonar/districts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createDistrict))
+	r.PATCH("/sonar/districts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateDistrict))
+	r.DELETE("/sonar/districts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteDistrict))
 	r.POST("/sonar/zones/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importZonesForMetro))
 	r.GET("/sonar/zones/imports", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImports))
 	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
 	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
 	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
+	r.POST("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createDistrictSeedJob))
+	r.GET("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJobs))
+	r.GET("/sonar/admin/district-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJob))
+	r.POST("/sonar/admin/district-seed-jobs/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryDistrictSeedJob))
+	r.DELETE("/sonar/admin/district-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteDistrictSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneSeedJobs))
 	r.POST("/sonar/admin/zone-seed-jobs/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJobs))
@@ -454,6 +464,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateLocationArchetype))
 	r.GET("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypes))
 	r.GET("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetype))
+	r.POST("/sonar/questArchetypes/generate-template", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeFromGenerator))
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
@@ -1660,8 +1671,9 @@ func (s *server) editZone(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
+		InternalTags []string `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1669,13 +1681,19 @@ func (s *server) editZone(ctx *gin.Context) {
 		return
 	}
 
-	err = s.dbClient.Zone().UpdateNameAndDescription(ctx, zoneIDUUID, requestBody.Name, requestBody.Description)
+	zone, err := s.dbClient.Zone().UpdateMetadata(
+		ctx,
+		zoneIDUUID,
+		requestBody.Name,
+		requestBody.Description,
+		parseZoneInternalTags(requestBody.InternalTags),
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "zone updated successfully"})
+	ctx.JSON(http.StatusOK, zone)
 }
 
 func (s *server) upsertZoneBoundary(ctx *gin.Context) {
@@ -2491,6 +2509,32 @@ func (s *server) createZoneQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
+	if requestBody.CharacterID != nil {
+		character, err := s.dbClient.Character().FindByID(ctx, *requestBody.CharacterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if character == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "character not found"})
+			return
+		}
+	}
+
+	resolvedCharacterID := requestBody.CharacterID
+	if resolvedCharacterID == nil {
+		questArchetype, err := s.dbClient.QuestArchetype().FindByID(ctx, requestBody.QuestArchetypeID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		resolvedCharacterID, err = s.resolveQuestTemplateCharacterID(ctx, requestBody.ZoneID, questArchetype)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	zoneQuestArchetype := &models.ZoneQuestArchetype{
 		ID:               uuid.New(),
 		CreatedAt:        time.Now(),
@@ -2498,7 +2542,7 @@ func (s *server) createZoneQuestArchetype(ctx *gin.Context) {
 		ZoneID:           requestBody.ZoneID,
 		QuestArchetypeID: requestBody.QuestArchetypeID,
 		NumberOfQuests:   requestBody.NumberOfQuests,
-		CharacterID:      requestBody.CharacterID,
+		CharacterID:      resolvedCharacterID,
 	}
 
 	err := s.dbClient.ZoneQuestArchetype().Create(ctx, zoneQuestArchetype)
@@ -2507,7 +2551,13 @@ func (s *server) createZoneQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, zoneQuestArchetype)
+	created, err := s.dbClient.ZoneQuestArchetype().FindByID(ctx, zoneQuestArchetype.ID)
+	if err != nil || created == nil {
+		ctx.JSON(http.StatusOK, zoneQuestArchetype)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, created)
 }
 
 func (s *server) updateZoneQuestArchetype(ctx *gin.Context) {
@@ -2617,6 +2667,12 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 		return
 	}
 
+	resolvedCharacterID, err := s.resolveZoneQuestArchetypeCharacterID(ctx, zoneQuestArchetype)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	job := &models.QuestGenerationJob{
 		ID:                    uuid.New(),
 		CreatedAt:             time.Now(),
@@ -2624,7 +2680,7 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 		ZoneQuestArchetypeID:  zoneQuestArchetype.ID,
 		ZoneID:                zoneQuestArchetype.ZoneID,
 		QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
-		QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
+		QuestGiverCharacterID: resolvedCharacterID,
 		Status:                models.QuestGenerationStatusQueued,
 		TotalCount:            zoneQuestArchetype.NumberOfQuests,
 		CompletedCount:        0,
@@ -2641,7 +2697,7 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 		payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
 			ZoneID:                zoneQuestArchetype.ZoneID,
 			QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
-			QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
+			QuestGiverCharacterID: resolvedCharacterID,
 			QuestGenerationJobID:  &job.ID,
 		})
 		if err != nil {
@@ -2745,10 +2801,15 @@ func (s *server) generateQuestArchetypesForZone(ctx *gin.Context) {
 	}
 
 	for _, zoneQuestArchetype := range zoneQuestArchetypes {
+		resolvedCharacterID, err := s.resolveZoneQuestArchetypeCharacterID(ctx, zoneQuestArchetype)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
 			ZoneID:                zoneIDUUID,
 			QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
-			QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
+			QuestGiverCharacterID: resolvedCharacterID,
 		})
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2788,11 +2849,10 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Reward              int        `json:"reward"`
-		InventoryItemID     *int       `json:"inventoryItemId"`
-		Proficiency         *string    `json:"proficiency"`
-		Difficulty          *int       `json:"difficulty"`
-		LocationArchetypeID *uuid.UUID `json:"locationArchetypeID"`
+		Reward          int     `json:"reward"`
+		InventoryItemID *int    `json:"inventoryItemId"`
+		Proficiency     *string `json:"proficiency"`
+		questArchetypeNodePayload
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2815,14 +2875,19 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var newNodeID *uuid.UUID
-	if requestBody.LocationArchetypeID != nil {
+	if requestBody.hasExplicitConfig() {
 		id := uuid.New()
 		newNodeID = &id
 		questArchetypeNode := &models.QuestArchetypeNode{
-			ID:                  *newNodeID,
-			CreatedAt:           time.Now(),
-			UpdatedAt:           time.Now(),
-			LocationArchetypeID: *requestBody.LocationArchetypeID,
+			ID:         *newNodeID,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+			NodeType:   models.QuestArchetypeNodeTypeLocation,
+			Difficulty: 0,
+		}
+		if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, requestBody.questArchetypeNodePayload, true); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 
 		if err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode); err != nil {
@@ -2971,28 +3036,22 @@ func (s *server) deleteQuestArchetypeChallenge(ctx *gin.Context) {
 }
 
 func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
-	var requestBody struct {
-		LocationArchetypeID uuid.UUID `json:"locationArchetypeID"`
-		Difficulty          *int      `json:"difficulty"`
-	}
+	var requestBody questArchetypeNodePayload
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if requestBody.Difficulty != nil && *requestBody.Difficulty < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
-		return
-	}
 	questArchetypeNode := &models.QuestArchetypeNode{
-		ID:                  uuid.New(),
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
-		LocationArchetypeID: requestBody.LocationArchetypeID,
-		Difficulty:          0,
+		ID:         uuid.New(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		NodeType:   models.QuestArchetypeNodeTypeLocation,
+		Difficulty: 0,
 	}
-	if requestBody.Difficulty != nil {
-		questArchetypeNode.Difficulty = *requestBody.Difficulty
+	if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, requestBody, true); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode)
@@ -3013,7 +3072,7 @@ func (s *server) updateQuestArchetypeNode(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Difficulty *int `json:"difficulty"`
+		questArchetypeNodePayload
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3031,12 +3090,9 @@ func (s *server) updateQuestArchetypeNode(ctx *gin.Context) {
 		return
 	}
 
-	if requestBody.Difficulty != nil {
-		if *requestBody.Difficulty < 0 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
-			return
-		}
-		questArchetypeNode.Difficulty = *requestBody.Difficulty
+	if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, requestBody.questArchetypeNodePayload, false); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	questArchetypeNode.UpdatedAt = time.Now()
 
@@ -3076,15 +3132,42 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	var requestBody struct {
-		Name        string `json:"name"`
-		DefaultGold *int   `json:"defaultGold"`
-		ItemRewards *[]struct {
-			InventoryItemID int `json:"inventoryItemId"`
-			Quantity        int `json:"quantity"`
-		} `json:"itemRewards"`
+		Name                string                              `json:"name"`
+		Description         string                              `json:"description"`
+		AcceptanceDialogue  []string                            `json:"acceptanceDialogue"`
+		ImageURL            string                              `json:"imageUrl"`
+		DefaultGold         *int                                `json:"defaultGold"`
+		RewardMode          string                              `json:"rewardMode"`
+		RandomRewardSize    string                              `json:"randomRewardSize"`
+		RewardExperience    *int                                `json:"rewardExperience"`
+		RecurrenceFrequency *string                             `json:"recurrenceFrequency"`
+		MaterialRewards     []baseMaterialRewardPayload         `json:"materialRewards"`
+		CharacterTags       []string                            `json:"characterTags"`
+		InternalTags        []string                            `json:"internalTags"`
+		ItemRewards         *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards        *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.DefaultGold != nil && *requestBody.DefaultGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "defaultGold must be zero or greater"})
+		return
+	}
+	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	recurrenceFrequency, err := normalizeQuestTemplateRecurrenceFrequency(requestBody.RecurrenceFrequency)
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -3096,9 +3179,26 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	}
 
 	questArchetype.Name = requestBody.Name
+	questArchetype.Description = requestBody.Description
+	questArchetype.AcceptanceDialogue = normalizeQuestTemplateAcceptanceDialogue(requestBody.AcceptanceDialogue)
+	questArchetype.ImageURL = requestBody.ImageURL
 	if requestBody.DefaultGold != nil {
 		questArchetype.DefaultGold = *requestBody.DefaultGold
 	}
+	if strings.TrimSpace(requestBody.RewardMode) == "" {
+		questArchetype.RewardMode = models.RewardModeRandom
+	} else {
+		questArchetype.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
+	}
+	questArchetype.RandomRewardSize = models.NormalizeRandomRewardSize(requestBody.RandomRewardSize)
+	if requestBody.RewardExperience != nil {
+		questArchetype.RewardExperience = *requestBody.RewardExperience
+	}
+	questArchetype.RecurrenceFrequency = recurrenceFrequency
+	questArchetype.MaterialRewards = materialRewards
+	questArchetype.CharacterTags = normalizeQuestTemplateCharacterTags(requestBody.CharacterTags)
+	questArchetype.InternalTags = normalizeQuestTemplateInternalTags(requestBody.InternalTags)
+	questArchetype.UpdatedAt = time.Now()
 
 	err = s.dbClient.QuestArchetype().Update(ctx, questArchetype)
 	if err != nil {
@@ -3106,21 +3206,19 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	if requestBody.ItemRewards != nil {
-		rewards := []models.QuestArchetypeItemReward{}
-		for _, reward := range *requestBody.ItemRewards {
-			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
-				continue
-			}
-			rewards = append(rewards, models.QuestArchetypeItemReward{
-				ID:               uuid.New(),
-				CreatedAt:        time.Now(),
-				UpdatedAt:        time.Now(),
-				QuestArchetypeID: questArchetype.ID,
-				InventoryItemID:  reward.InventoryItemID,
-				Quantity:         reward.Quantity,
-			})
-		}
+		rewards := buildQuestArchetypeItemRewards(questArchetype.ID, *requestBody.ItemRewards)
 		if err := s.dbClient.QuestArchetypeItemReward().ReplaceForQuestArchetype(ctx, questArchetype.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if requestBody.SpellRewards != nil {
+		rewards, err := buildQuestArchetypeSpellRewards(questArchetype.ID, *requestBody.SpellRewards)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.dbClient.QuestArchetypeSpellReward().ReplaceForQuestArchetype(ctx, questArchetype.ID, rewards); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -4290,13 +4388,21 @@ func (s *server) getQuestArchetype(ctx *gin.Context) {
 
 func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name        string    `json:"name"`
-		RootID      uuid.UUID `json:"rootID"`
-		DefaultGold *int      `json:"defaultGold"`
-		ItemRewards *[]struct {
-			InventoryItemID int `json:"inventoryItemId"`
-			Quantity        int `json:"quantity"`
-		} `json:"itemRewards"`
+		Name                string                              `json:"name"`
+		Description         string                              `json:"description"`
+		AcceptanceDialogue  []string                            `json:"acceptanceDialogue"`
+		ImageURL            string                              `json:"imageUrl"`
+		RootID              uuid.UUID                           `json:"rootID"`
+		DefaultGold         *int                                `json:"defaultGold"`
+		RewardMode          string                              `json:"rewardMode"`
+		RandomRewardSize    string                              `json:"randomRewardSize"`
+		RewardExperience    *int                                `json:"rewardExperience"`
+		RecurrenceFrequency *string                             `json:"recurrenceFrequency"`
+		MaterialRewards     []baseMaterialRewardPayload         `json:"materialRewards"`
+		CharacterTags       []string                            `json:"characterTags"`
+		InternalTags        []string                            `json:"internalTags"`
+		ItemRewards         *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards        *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4304,38 +4410,71 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
+	if requestBody.DefaultGold != nil && *requestBody.DefaultGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "defaultGold must be zero or greater"})
+		return
+	}
+	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	recurrenceFrequency, err := normalizeQuestTemplateRecurrenceFrequency(requestBody.RecurrenceFrequency)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	questArchType := &models.QuestArchetype{
-		Name:      requestBody.Name,
-		RootID:    requestBody.RootID,
-		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Name:                requestBody.Name,
+		Description:         requestBody.Description,
+		AcceptanceDialogue:  normalizeQuestTemplateAcceptanceDialogue(requestBody.AcceptanceDialogue),
+		ImageURL:            requestBody.ImageURL,
+		RootID:              requestBody.RootID,
+		ID:                  uuid.New(),
+		RewardMode:          models.RewardModeRandom,
+		RandomRewardSize:    models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
+		RewardExperience:    0,
+		RecurrenceFrequency: recurrenceFrequency,
+		MaterialRewards:     materialRewards,
+		CharacterTags:       normalizeQuestTemplateCharacterTags(requestBody.CharacterTags),
+		InternalTags:        normalizeQuestTemplateInternalTags(requestBody.InternalTags),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
 	}
 	if requestBody.DefaultGold != nil {
 		questArchType.DefaultGold = *requestBody.DefaultGold
 	}
+	if strings.TrimSpace(requestBody.RewardMode) != "" {
+		questArchType.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
+	}
+	if requestBody.RewardExperience != nil {
+		questArchType.RewardExperience = *requestBody.RewardExperience
+	}
 
-	err := s.dbClient.QuestArchetype().Create(ctx, questArchType)
+	err = s.dbClient.QuestArchetype().Create(ctx, questArchType)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if requestBody.ItemRewards != nil {
-		rewards := []models.QuestArchetypeItemReward{}
-		for _, reward := range *requestBody.ItemRewards {
-			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
-				continue
-			}
-			rewards = append(rewards, models.QuestArchetypeItemReward{
-				ID:               uuid.New(),
-				CreatedAt:        time.Now(),
-				UpdatedAt:        time.Now(),
-				QuestArchetypeID: questArchType.ID,
-				InventoryItemID:  reward.InventoryItemID,
-				Quantity:         reward.Quantity,
-			})
-		}
+		rewards := buildQuestArchetypeItemRewards(questArchType.ID, *requestBody.ItemRewards)
 		if err := s.dbClient.QuestArchetypeItemReward().ReplaceForQuestArchetype(ctx, questArchType.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if requestBody.SpellRewards != nil {
+		rewards, err := buildQuestArchetypeSpellRewards(questArchType.ID, *requestBody.SpellRewards)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.dbClient.QuestArchetypeSpellReward().ReplaceForQuestArchetype(ctx, questArchType.ID, rewards); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -4413,7 +4552,11 @@ func (s *server) generateQuest(ctx *gin.Context) {
 
 	var questGiverCharacterID *uuid.UUID
 	if zoneQuestArchetype, err := s.dbClient.ZoneQuestArchetype().FindByZoneIDAndQuestArchetypeID(ctx, zoneID, questArchTypeIDUUID); err == nil {
-		questGiverCharacterID = zoneQuestArchetype.CharacterID
+		questGiverCharacterID, err = s.resolveZoneQuestArchetypeCharacterID(ctx, zoneQuestArchetype)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
@@ -4729,10 +4872,11 @@ func (s *server) getZone(ctx *gin.Context) {
 
 func (s *server) createZone(ctx *gin.Context) {
 	var requestBody struct {
-		Name        string  `json:"name"`
-		Latitude    float64 `json:"latitude"`
-		Longitude   float64 `json:"longitude"`
-		Description string  `json:"description"`
+		Name         string   `json:"name"`
+		Latitude     float64  `json:"latitude"`
+		Longitude    float64  `json:"longitude"`
+		Description  string   `json:"description"`
+		InternalTags []string `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4741,16 +4885,162 @@ func (s *server) createZone(ctx *gin.Context) {
 	}
 
 	zone := &models.Zone{
-		Name:        requestBody.Name,
-		Latitude:    requestBody.Latitude,
-		Longitude:   requestBody.Longitude,
-		Description: requestBody.Description,
+		Name:         requestBody.Name,
+		Latitude:     requestBody.Latitude,
+		Longitude:    requestBody.Longitude,
+		Description:  requestBody.Description,
+		InternalTags: parseZoneInternalTags(requestBody.InternalTags),
 	}
 	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, zone)
+}
+
+func (s *server) getDistricts(ctx *gin.Context) {
+	districts, err := s.dbClient.District().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, districts)
+}
+
+func (s *server) getDistrict(ctx *gin.Context) {
+	districtID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid district ID"})
+		return
+	}
+
+	district, err := s.dbClient.District().FindByID(ctx, districtID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, district)
+}
+
+func (s *server) createDistrict(ctx *gin.Context) {
+	var requestBody struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		ZoneIDs     []string `json:"zoneIds"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := strings.TrimSpace(requestBody.Name)
+	if name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	zoneIDs, err := parseDistrictZoneIDs(requestBody.ZoneIDs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	district := &models.District{
+		Name:        name,
+		Description: strings.TrimSpace(requestBody.Description),
+	}
+
+	if err := s.dbClient.District().Create(ctx, district, zoneIDs); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, district)
+}
+
+func (s *server) updateDistrict(ctx *gin.Context) {
+	districtID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid district ID"})
+		return
+	}
+
+	var requestBody struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		ZoneIDs     []string `json:"zoneIds"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := strings.TrimSpace(requestBody.Name)
+	if name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	zoneIDs, err := parseDistrictZoneIDs(requestBody.ZoneIDs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	district, err := s.dbClient.District().Update(
+		ctx,
+		districtID,
+		name,
+		strings.TrimSpace(requestBody.Description),
+		zoneIDs,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, district)
+}
+
+func (s *server) deleteDistrict(ctx *gin.Context) {
+	districtID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid district ID"})
+		return
+	}
+
+	if err := s.dbClient.District().Delete(ctx, districtID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "district deleted successfully"})
+}
+
+func parseDistrictZoneIDs(rawIDs []string) ([]uuid.UUID, error) {
+	if len(rawIDs) == 0 {
+		return nil, nil
+	}
+
+	zoneIDs := make([]uuid.UUID, 0, len(rawIDs))
+	for _, rawID := range rawIDs {
+		trimmed := strings.TrimSpace(rawID)
+		if trimmed == "" {
+			continue
+		}
+
+		zoneID, err := uuid.Parse(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("invalid zone ID: %s", trimmed)
+		}
+		zoneIDs = append(zoneIDs, zoneID)
+	}
+
+	return zoneIDs, nil
 }
 
 func (s *server) importZonesForMetro(ctx *gin.Context) {
@@ -13068,6 +13358,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 	var requestBody struct {
 		Name              string     `json:"name" binding:"required"`
 		Description       string     `json:"description"`
+		InternalTags      []string   `json:"internalTags"`
 		MapIconUrl        string     `json:"mapIconUrl"`
 		DialogueImageUrl  string     `json:"dialogueImageUrl"`
 		ThumbnailUrl      string     `json:"thumbnailUrl"`
@@ -13094,6 +13385,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 	character := &models.Character{
 		Name:              requestBody.Name,
 		Description:       requestBody.Description,
+		InternalTags:      parseCharacterInternalTags(requestBody.InternalTags),
 		MapIconURL:        requestBody.MapIconUrl,
 		DialogueImageURL:  requestBody.DialogueImageUrl,
 		ThumbnailURL:      requestBody.ThumbnailUrl,
@@ -13244,51 +13536,110 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		return
 	}
 
-	var requestBody struct {
-		Name              string     `json:"name"`
-		Description       string     `json:"description"`
-		MapIconUrl        string     `json:"mapIconUrl"`
-		DialogueImageUrl  string     `json:"dialogueImageUrl"`
-		ThumbnailUrl      string     `json:"thumbnailUrl"`
-		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
-	}
-
+	var requestBody map[string]json.RawMessage
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Update the character
-	characterUpdates := &models.Character{
-		Name:             requestBody.Name,
-		Description:      requestBody.Description,
-		MapIconURL:       requestBody.MapIconUrl,
-		DialogueImageURL: requestBody.DialogueImageUrl,
-		ThumbnailURL:     requestBody.ThumbnailUrl,
-	}
-	if requestBody.PointOfInterestID != nil {
-		_, err := s.dbClient.PointOfInterest().FindByID(ctx, *requestBody.PointOfInterestID)
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "point of interest not found"})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest: " + err.Error()})
+	updates := map[string]interface{}{}
+	dialogueImageURL := existingCharacter.DialogueImageURL
+	thumbnailURL := existingCharacter.ThumbnailURL
+
+	if raw, exists := requestBody["name"]; exists {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid name"})
 			return
 		}
-		characterUpdates.PointOfInterestID = requestBody.PointOfInterestID
+		updates["name"] = value
+	}
+	if raw, exists := requestBody["description"]; exists {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid description"})
+			return
+		}
+		updates["description"] = value
+	}
+	if raw, exists := requestBody["mapIconUrl"]; exists {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mapIconUrl"})
+			return
+		}
+		updates["map_icon_url"] = value
+	}
+	if raw, exists := requestBody["dialogueImageUrl"]; exists {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid dialogueImageUrl"})
+			return
+		}
+		dialogueImageURL = value
+		updates["dialogue_image_url"] = value
+	}
+	if raw, exists := requestBody["thumbnailUrl"]; exists {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid thumbnailUrl"})
+			return
+		}
+		thumbnailURL = value
+		updates["thumbnail_url"] = value
+	}
+	if raw, exists := requestBody["internalTags"]; exists {
+		var tags []string
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &tags); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid internalTags"})
+				return
+			}
+		}
+		updates["internal_tags"] = parseCharacterInternalTags(tags)
+	}
+	if raw, exists := requestBody["pointOfInterestId"]; exists {
+		if string(raw) == "null" {
+			updates["point_of_interest_id"] = nil
+		} else {
+			var pointOfInterestIDText string
+			if err := json.Unmarshal(raw, &pointOfInterestIDText); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid pointOfInterestId"})
+				return
+			}
+			pointOfInterestID, err := uuid.Parse(strings.TrimSpace(pointOfInterestIDText))
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid pointOfInterestId"})
+				return
+			}
+			_, err = s.dbClient.PointOfInterest().FindByID(ctx, pointOfInterestID)
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": "point of interest not found"})
+					return
+				}
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest: " + err.Error()})
+				return
+			}
+			updates["point_of_interest_id"] = pointOfInterestID
+		}
 	}
 
-	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {
+	if len(updates) == 0 {
+		ctx.JSON(http.StatusOK, existingCharacter)
+		return
+	}
+
+	if err := s.dbClient.Character().UpdateFields(ctx, id, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update character: " + err.Error()})
 		return
 	}
 
-	if strings.TrimSpace(requestBody.DialogueImageUrl) != "" &&
-		(strings.TrimSpace(requestBody.ThumbnailUrl) == "" ||
+	if strings.TrimSpace(dialogueImageURL) != "" &&
+		(strings.TrimSpace(thumbnailURL) == "" ||
 			strings.TrimSpace(existingCharacter.ThumbnailURL) == "" ||
-			requestBody.DialogueImageUrl != existingCharacter.DialogueImageURL) {
-		s.enqueueThumbnailTask(jobs.ThumbnailEntityCharacter, id, requestBody.DialogueImageUrl)
+			dialogueImageURL != existingCharacter.DialogueImageURL) {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityCharacter, id, dialogueImageURL)
 	}
 
 	// Fetch the updated character
@@ -14776,6 +15127,7 @@ type scenarioUpsertRequest struct {
 	Latitude                  float64                        `json:"latitude"`
 	Longitude                 float64                        `json:"longitude"`
 	Prompt                    string                         `json:"prompt"`
+	InternalTags              []string                       `json:"internalTags"`
 	ImageURL                  string                         `json:"imageUrl"`
 	ThumbnailURL              string                         `json:"thumbnailUrl"`
 	RewardMode                string                         `json:"rewardMode"`
@@ -15112,6 +15464,18 @@ func parseInventoryInternalTags(input []string) models.StringArray {
 		tags = append(tags, normalized)
 	}
 	return tags
+}
+
+func parseCharacterInternalTags(input []string) models.StringArray {
+	return parseInventoryInternalTags(input)
+}
+
+func parseZoneInternalTags(input []string) models.StringArray {
+	return parseInventoryInternalTags(input)
+}
+
+func parseScenarioInternalTags(input []string) models.StringArray {
+	return parseInventoryInternalTags(input)
 }
 
 func parseInventoryConsumeSpellIDs(input []string) (models.StringArray, error) {
@@ -15764,6 +16128,7 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 		Latitude:                  resolvedLatitude,
 		Longitude:                 resolvedLongitude,
 		Prompt:                    strings.TrimSpace(body.Prompt),
+		InternalTags:              parseScenarioInternalTags(body.InternalTags),
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
 		ScaleWithUserLevel:        body.ScaleWithUserLevel,

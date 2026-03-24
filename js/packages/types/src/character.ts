@@ -6,6 +6,7 @@ export interface Character {
   updatedAt: Date;
   name: string;
   description: string;
+  internalTags?: string[];
   mapIconUrl: string;
   dialogueImageUrl: string;
   thumbnailUrl?: string;

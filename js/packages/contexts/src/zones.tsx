@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
 import RBush from 'rbush';
 import { Zone } from '@poltergeist/types';
 import * as turf from '@turf/turf';
@@ -22,7 +29,6 @@ export const calculateDistance = (poi1, poi2) => {
   return R * c; // Distance in meters
 };
 
-
 export const isXMetersAway = (poi1, poi2, x) => {
   const distance = calculateDistance(poi1, poi2);
   return distance < x;
@@ -45,13 +51,20 @@ type ZoneContextType = {
   createZone: (zone: Zone) => void;
   deleteZone: (zone: Zone) => void;
   findZoneAtCoordinate: (lng: number, lat: number) => Zone | null;
-  editZone: (name: string, description: string, id: string) => void;
+  editZone: (
+    name: string,
+    description: string,
+    internalTags: string[],
+    id: string
+  ) => void;
   refreshZones: () => Promise<void>;
 };
 
 const ZoneContext = createContext<ZoneContextType | null>(null);
 
-export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { apiClient } = useAPI();
   const { user } = useAuth();
   const [zones, setZones] = useState<Zone[]>([]);
@@ -79,22 +92,26 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Clear existing data
     spatialIndex.clear();
-    
+
     // Insert new data
-    zones.forEach(zone => {
+    zones.forEach((zone) => {
       if (zone.points && zone.points.length > 0) {
         // Convert points to [lng, lat] pairs
-        const points = zone.points.map(p => [p.longitude, p.latitude] as [number, number]);
-        
+        const points = zone.points.map(
+          (p) => [p.longitude, p.latitude] as [number, number]
+        );
+
         // Create a polygon from the points
-        const polygon = turf.polygon([[
-          ...points,
-          points[0] // Close the polygon
-        ]]);
-        
+        const polygon = turf.polygon([
+          [
+            ...points,
+            points[0], // Close the polygon
+          ],
+        ]);
+
         // Get the bounding box of the polygon
         const bbox = turf.bbox(polygon);
-        
+
         // Add to spatial index with bounding box and points
         spatialIndex.insert({
           minX: bbox[0],
@@ -102,7 +119,7 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
           maxX: bbox[2],
           maxY: bbox[3],
           zoneId: zone.id,
-          points
+          points,
         });
       }
     });
@@ -123,23 +140,25 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
       minX: lng,
       minY: lat,
       maxX: lng,
-      maxY: lat
+      maxY: lat,
     });
 
     // Then check which of these zones actually contain the point
     for (const candidate of candidates) {
-      const polygon = turf.polygon([[
-        ...candidate.points,
-        candidate.points[0] // Close the polygon
-      ]]);
-      
+      const polygon = turf.polygon([
+        [
+          ...candidate.points,
+          candidate.points[0], // Close the polygon
+        ],
+      ]);
+
       const point = turf.point([lng, lat]);
       if (turf.booleanPointInPolygon(point, polygon)) {
         // Find the full zone object from our zones array
-        return zones.find(z => z.id === candidate.zoneId) || null;
+        return zones.find((z) => z.id === candidate.zoneId) || null;
       }
     }
-    
+
     return null;
   };
 
@@ -147,8 +166,15 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!location?.longitude || !location?.latitude) {
       return;
     }
-    if (!selectedZone || !previousLocation.current || isXMetersAway(previousLocation.current, location, 100)) {
-      const zone = findZoneAtCoordinate(location?.longitude, location?.latitude);
+    if (
+      !selectedZone ||
+      !previousLocation.current ||
+      isXMetersAway(previousLocation.current, location, 100)
+    ) {
+      const zone = findZoneAtCoordinate(
+        location?.longitude,
+        location?.latitude
+      );
       if (zone) {
         setSelectedZone(zone);
       }
@@ -156,16 +182,16 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [location?.latitude, location?.longitude]);
 
-  const createZone = async(zone: Zone) => {
+  const createZone = async (zone: Zone) => {
     const response = await apiClient.post<Zone>('/sonar/zones', zone);
-    setZones(prev => [...prev, response]);
+    setZones((prev) => [...prev, response]);
     setSelectedZone(response);
   };
 
   const deleteZone = async (zone: Zone) => {
     try {
       await apiClient.delete(`/sonar/zones/${zone.id}`);
-      setZones(prev => prev.filter(z => z.id !== zone.id));
+      setZones((prev) => prev.filter((z) => z.id !== zone.id));
       if (selectedZone?.id === zone.id) {
         setSelectedZone(null);
       }
@@ -174,22 +200,33 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const editZone = async (name: string, description: string, id: string) => {
-    const response = await apiClient.patch<Zone>(`/sonar/zones/${id}/edit`, { name, description });
-    setZones(prev => prev.map(z => z.id === id ? {...z, name: response.name, description: response.description} : z));
+  const editZone = async (
+    name: string,
+    description: string,
+    internalTags: string[],
+    id: string
+  ) => {
+    const response = await apiClient.patch<Zone>(`/sonar/zones/${id}/edit`, {
+      name,
+      description,
+      internalTags,
+    });
+    setZones((prev) => prev.map((z) => (z.id === id ? response : z)));
   };
 
   return (
-    <ZoneContext.Provider value={{
-      zones,
-      selectedZone,
-      setSelectedZone,
-      createZone,
-      deleteZone,
-      findZoneAtCoordinate,
-      editZone,
-      refreshZones
-    }}>
+    <ZoneContext.Provider
+      value={{
+        zones,
+        selectedZone,
+        setSelectedZone,
+        createZone,
+        deleteZone,
+        findZoneAtCoordinate,
+        editZone,
+        refreshZones,
+      }}
+    >
       {children}
     </ZoneContext.Provider>
   );

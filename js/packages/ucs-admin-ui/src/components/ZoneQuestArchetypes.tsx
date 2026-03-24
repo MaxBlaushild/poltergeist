@@ -2,12 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Character, QuestGenerationJob } from '@poltergeist/types';
-import "./questArchetypeTheme.css";
+import './questArchetypeTheme.css';
 
 export const ZoneQuestArchetypes = () => {
   const { zones } = useZoneContext();
   const { apiClient } = useAPI();
-  const { zoneQuestArchetypes, createZoneQuestArchetype, deleteZoneQuestArchetype, questArchetypes } = useQuestArchetypes();
+  const {
+    zoneQuestArchetypes,
+    createZoneQuestArchetype,
+    deleteZoneQuestArchetype,
+    questArchetypes,
+  } = useQuestArchetypes();
   const [shouldShowModal, setShouldShowModal] = useState(false);
   const [zoneSearch, setZoneSearch] = useState('');
   const [questArchetypeSearch, setQuestArchetypeSearch] = useState('');
@@ -17,9 +22,15 @@ export const ZoneQuestArchetypes = () => {
   const [numberOfQuests, setNumberOfQuests] = useState(1);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
-  const [generationJobsByArchetype, setGenerationJobsByArchetype] = useState<Record<string, QuestGenerationJob[]>>({});
-  const [generationErrors, setGenerationErrors] = useState<Record<string, string | null>>({});
-  const [generationLoading, setGenerationLoading] = useState<Record<string, boolean>>({});
+  const [generationJobsByArchetype, setGenerationJobsByArchetype] = useState<
+    Record<string, QuestGenerationJob[]>
+  >({});
+  const [generationErrors, setGenerationErrors] = useState<
+    Record<string, string | null>
+  >({});
+  const [generationLoading, setGenerationLoading] = useState<
+    Record<string, boolean>
+  >({});
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
   const [generationPolling, setGenerationPolling] = useState(false);
 
@@ -68,31 +79,48 @@ export const ZoneQuestArchetypes = () => {
 
   const updatePollingState = useCallback(
     (jobsMap: Record<string, QuestGenerationJob[]>) => {
-      const hasPending = Object.values(jobsMap).some((jobs) => jobs.some((job) => isPendingStatus(job.status)));
+      const hasPending = Object.values(jobsMap).some((jobs) =>
+        jobs.some((job) => isPendingStatus(job.status))
+      );
       setGenerationPolling(hasPending);
     },
     [isPendingStatus]
   );
 
-  const fetchGenerationJobsForArchetype = useCallback(async (zoneQuestArchetypeId: string) => {
-    setGenerationLoading((prev) => ({ ...prev, [zoneQuestArchetypeId]: true }));
-    try {
-      const jobs = await apiClient.get<QuestGenerationJob[]>(
-        `/sonar/zoneQuestArchetypes/${zoneQuestArchetypeId}/questGenerations`
-      );
-      setGenerationJobsByArchetype((prev) => {
-        const next = { ...prev, [zoneQuestArchetypeId]: jobs };
-        updatePollingState(next);
-        return next;
-      });
-      setGenerationErrors((prev) => ({ ...prev, [zoneQuestArchetypeId]: null }));
-    } catch (error) {
-      console.error('Failed to fetch quest generation jobs', error);
-      setGenerationErrors((prev) => ({ ...prev, [zoneQuestArchetypeId]: 'Failed to load generation status.' }));
-    } finally {
-      setGenerationLoading((prev) => ({ ...prev, [zoneQuestArchetypeId]: false }));
-    }
-  }, [apiClient, updatePollingState]);
+  const fetchGenerationJobsForArchetype = useCallback(
+    async (zoneQuestArchetypeId: string) => {
+      setGenerationLoading((prev) => ({
+        ...prev,
+        [zoneQuestArchetypeId]: true,
+      }));
+      try {
+        const jobs = await apiClient.get<QuestGenerationJob[]>(
+          `/sonar/zoneQuestArchetypes/${zoneQuestArchetypeId}/questGenerations`
+        );
+        setGenerationJobsByArchetype((prev) => {
+          const next = { ...prev, [zoneQuestArchetypeId]: jobs };
+          updatePollingState(next);
+          return next;
+        });
+        setGenerationErrors((prev) => ({
+          ...prev,
+          [zoneQuestArchetypeId]: null,
+        }));
+      } catch (error) {
+        console.error('Failed to fetch quest generation jobs', error);
+        setGenerationErrors((prev) => ({
+          ...prev,
+          [zoneQuestArchetypeId]: 'Failed to load generation status.',
+        }));
+      } finally {
+        setGenerationLoading((prev) => ({
+          ...prev,
+          [zoneQuestArchetypeId]: false,
+        }));
+      }
+    },
+    [apiClient, updatePollingState]
+  );
 
   useEffect(() => {
     if (!zoneQuestArchetypes || zoneQuestArchetypes.length === 0) {
@@ -106,7 +134,11 @@ export const ZoneQuestArchetypes = () => {
   }, [zoneQuestArchetypes, fetchGenerationJobsForArchetype]);
 
   useEffect(() => {
-    if (!generationPolling || !zoneQuestArchetypes || zoneQuestArchetypes.length === 0) {
+    if (
+      !generationPolling ||
+      !zoneQuestArchetypes ||
+      zoneQuestArchetypes.length === 0
+    ) {
       return;
     }
     const interval = setInterval(() => {
@@ -133,7 +165,10 @@ export const ZoneQuestArchetypes = () => {
       });
     } catch (error) {
       console.error('Failed to generate quests', error);
-      setGenerationErrors((prev) => ({ ...prev, [zoneQuestArchetypeId]: 'Failed to queue quest generation.' }));
+      setGenerationErrors((prev) => ({
+        ...prev,
+        [zoneQuestArchetypeId]: 'Failed to queue quest generation.',
+      }));
     } finally {
       setGenerating((prev) => ({ ...prev, [zoneQuestArchetypeId]: false }));
     }
@@ -147,12 +182,15 @@ export const ZoneQuestArchetypes = () => {
             <div className="qa-kicker">Zone Operations</div>
             <h1 className="qa-title">Zone Quest Archetypes</h1>
             <p className="qa-subtitle">
-              Bind archetypes to specific zones, set quest volume targets, and assign quest givers so each area
-              feels distinct.
+              Bind archetypes to specific zones, set quest volume targets, and
+              assign quest givers so each area feels distinct.
             </p>
           </div>
           <div className="qa-hero-actions">
-            <button className="qa-btn qa-btn-primary" onClick={() => setShouldShowModal(true)}>
+            <button
+              className="qa-btn qa-btn-primary"
+              onClick={() => setShouldShowModal(true)}
+            >
               New Zone Assignment
             </button>
           </div>
@@ -175,12 +213,18 @@ export const ZoneQuestArchetypes = () => {
               >
                 <div className="qa-card-header">
                   <div>
-                    <h2 className="qa-card-title">{zoneQuestArchetype.questArchetype.name}</h2>
-                    <div className="qa-meta">Zone: {zoneQuestArchetype.zone.name}</div>
+                    <h2 className="qa-card-title">
+                      {zoneQuestArchetype.questArchetype.name}
+                    </h2>
+                    <div className="qa-meta">
+                      Zone: {zoneQuestArchetype.zone.name}
+                    </div>
                   </div>
                   <div className="qa-actions">
                     <button
-                      onClick={() => deleteZoneQuestArchetype(zoneQuestArchetype.id)}
+                      onClick={() =>
+                        deleteZoneQuestArchetype(zoneQuestArchetype.id)
+                      }
                       className="qa-btn qa-btn-danger"
                     >
                       Delete
@@ -191,29 +235,44 @@ export const ZoneQuestArchetypes = () => {
                 <div className="qa-stat-grid">
                   <div className="qa-stat">
                     <div className="qa-stat-label">Quests to Generate</div>
-                    <div className="qa-stat-value">{zoneQuestArchetype.numberOfQuests}</div>
+                    <div className="qa-stat-value">
+                      {zoneQuestArchetype.numberOfQuests}
+                    </div>
                   </div>
                   <div className="qa-stat">
                     <div className="qa-stat-label">Quest Giver</div>
-                    <div className="qa-stat-value">{zoneQuestArchetype.character?.name ?? 'None'}</div>
+                    <div className="qa-stat-value">
+                      {zoneQuestArchetype.character?.name ??
+                        ((zoneQuestArchetype.questArchetype.characterTags
+                          ?.length ?? 0) > 0
+                          ? `Auto: ${zoneQuestArchetype.questArchetype.characterTags?.join(', ')}`
+                          : 'None')}
+                    </div>
                   </div>
                   <div className="qa-stat">
                     <div className="qa-stat-label">Archetype ID</div>
-                    <div className="qa-stat-value">{zoneQuestArchetype.questArchetypeId.slice(0, 8)}…</div>
+                    <div className="qa-stat-value">
+                      {zoneQuestArchetype.questArchetypeId.slice(0, 8)}…
+                    </div>
                   </div>
                 </div>
 
                 <div className="qa-divider" />
 
                 <div>
-                  <div className="qa-card-title" style={{ fontSize: 16 }}>Quest Generation</div>
+                  <div className="qa-card-title" style={{ fontSize: 16 }}>
+                    Quest Generation
+                  </div>
                   <p className="qa-muted" style={{ marginTop: 6 }}>
-                    Queue a fresh batch of quests and track completion progress in real time.
+                    Queue a fresh batch of quests and track completion progress
+                    in real time.
                   </p>
                   <div className="qa-actions" style={{ marginTop: 12 }}>
                     <button
                       className="qa-btn qa-btn-primary"
-                      onClick={() => handleGenerateQuests(zoneQuestArchetype.id)}
+                      onClick={() =>
+                        handleGenerateQuests(zoneQuestArchetype.id)
+                      }
                       disabled={generating[zoneQuestArchetype.id]}
                     >
                       {generating[zoneQuestArchetype.id]
@@ -222,10 +281,14 @@ export const ZoneQuestArchetypes = () => {
                     </button>
                     <button
                       className="qa-btn qa-btn-outline"
-                      onClick={() => fetchGenerationJobsForArchetype(zoneQuestArchetype.id)}
+                      onClick={() =>
+                        fetchGenerationJobsForArchetype(zoneQuestArchetype.id)
+                      }
                       disabled={generationLoading[zoneQuestArchetype.id]}
                     >
-                      {generationLoading[zoneQuestArchetype.id] ? 'Refreshing...' : 'Refresh Status'}
+                      {generationLoading[zoneQuestArchetype.id]
+                        ? 'Refreshing...'
+                        : 'Refresh Status'}
                     </button>
                   </div>
 
@@ -235,50 +298,79 @@ export const ZoneQuestArchetypes = () => {
                     </div>
                   )}
 
-                  {(generationJobsByArchetype[zoneQuestArchetype.id]?.length ?? 0) === 0 ? (
+                  {(generationJobsByArchetype[zoneQuestArchetype.id]?.length ??
+                    0) === 0 ? (
                     <div className="qa-panel" style={{ marginTop: 14 }}>
-                      <div className="qa-muted">No quest generation jobs yet.</div>
+                      <div className="qa-muted">
+                        No quest generation jobs yet.
+                      </div>
                     </div>
                   ) : (
                     <div className="qa-tree" style={{ marginTop: 14 }}>
-                      {(generationJobsByArchetype[zoneQuestArchetype.id] ?? []).map((job) => (
+                      {(
+                        generationJobsByArchetype[zoneQuestArchetype.id] ?? []
+                      ).map((job) => (
                         <div key={job.id} className="qa-node-card">
-                          <div className="qa-card-header" style={{ marginBottom: 8 }}>
+                          <div
+                            className="qa-card-header"
+                            style={{ marginBottom: 8 }}
+                          >
                             <div>
-                              <div className="qa-card-title" style={{ fontSize: 16 }}>
+                              <div
+                                className="qa-card-title"
+                                style={{ fontSize: 16 }}
+                              >
                                 Job {job.id.slice(0, 6)}…
                               </div>
-                              <div className="qa-meta">Started {formatTimestamp(job.createdAt)}</div>
+                              <div className="qa-meta">
+                                Started {formatTimestamp(job.createdAt)}
+                              </div>
                             </div>
-                            <div className={statusChipClass(job.status)}>{formatStatus(job.status)}</div>
+                            <div className={statusChipClass(job.status)}>
+                              {formatStatus(job.status)}
+                            </div>
                           </div>
                           <div className="qa-meta">
-                            Progress: {job.completedCount}/{job.totalCount} · Failed: {job.failedCount}
+                            Progress: {job.completedCount}/{job.totalCount} ·
+                            Failed: {job.failedCount}
                           </div>
                           {job.errorMessage && (
-                            <div className="qa-chip danger" style={{ marginTop: 8 }}>
+                            <div
+                              className="qa-chip danger"
+                              style={{ marginTop: 8 }}
+                            >
                               {job.errorMessage}
                             </div>
                           )}
                           {job.quests && job.quests.length > 0 ? (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Generated Quests</div>
+                              <div className="qa-stat-label">
+                                Generated Quests
+                              </div>
                               <div className="qa-tree" style={{ marginTop: 8 }}>
                                 {job.quests.map((quest) => (
                                   <div key={quest.id} className="qa-node-card">
-                                    <div className="qa-node-title">{quest.name || 'Untitled Quest'}</div>
-                                    <div className="qa-meta">ID: {quest.id.slice(0, 8)}…</div>
+                                    <div className="qa-node-title">
+                                      {quest.name || 'Untitled Quest'}
+                                    </div>
+                                    <div className="qa-meta">
+                                      ID: {quest.id.slice(0, 8)}…
+                                    </div>
                                   </div>
                                 ))}
                               </div>
                             </div>
                           ) : job.questIds && job.questIds.length > 0 ? (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Generated Quest IDs</div>
+                              <div className="qa-stat-label">
+                                Generated Quest IDs
+                              </div>
                               <div className="qa-tree" style={{ marginTop: 8 }}>
                                 {job.questIds.map((questId) => (
                                   <div key={questId} className="qa-node-card">
-                                    <div className="qa-node-title">Quest {questId.slice(0, 8)}…</div>
+                                    <div className="qa-node-title">
+                                      Quest {questId.slice(0, 8)}…
+                                    </div>
                                     <div className="qa-meta">ID: {questId}</div>
                                   </div>
                                 ))}
@@ -322,7 +414,9 @@ export const ZoneQuestArchetypes = () => {
                 >
                   <option value="">Select a zone</option>
                   {zones
-                    .filter((z) => z.name.toLowerCase().includes(zoneSearch.toLowerCase()))
+                    .filter((z) =>
+                      z.name.toLowerCase().includes(zoneSearch.toLowerCase())
+                    )
                     .map((z) => (
                       <option key={z.id} value={z.id}>
                         {z.name}
@@ -351,7 +445,11 @@ export const ZoneQuestArchetypes = () => {
                 >
                   <option value="">Select a quest archetype</option>
                   {questArchetypes
-                    .filter((qa) => qa.name.toLowerCase().includes(questArchetypeSearch.toLowerCase()))
+                    .filter((qa) =>
+                      qa.name
+                        .toLowerCase()
+                        .includes(questArchetypeSearch.toLowerCase())
+                    )
                     .map((qa) => (
                       <option key={qa.id} value={qa.id}>
                         {qa.name}
@@ -366,7 +464,9 @@ export const ZoneQuestArchetypes = () => {
                   type="number"
                   className="qa-input"
                   value={numberOfQuests}
-                  onChange={(e) => setNumberOfQuests(parseInt(e.target.value) || 1)}
+                  onChange={(e) =>
+                    setNumberOfQuests(parseInt(e.target.value) || 1)
+                  }
                   min="1"
                 />
               </div>
@@ -389,10 +489,12 @@ export const ZoneQuestArchetypes = () => {
                   value={selectedCharacterId}
                   onChange={(e) => setSelectedCharacterId(e.target.value)}
                 >
-                  <option value="">No character</option>
+                  <option value="">Auto-match from template tags</option>
                   {characters
                     .filter((character) =>
-                      character.name.toLowerCase().includes(characterSearch.toLowerCase())
+                      character.name
+                        .toLowerCase()
+                        .includes(characterSearch.toLowerCase())
                     )
                     .map((character) => (
                       <option key={character.id} value={character.id}>
@@ -403,13 +505,20 @@ export const ZoneQuestArchetypes = () => {
               </div>
 
               <div className="qa-footer">
-                <button className="qa-btn qa-btn-outline" onClick={() => setShouldShowModal(false)}>
+                <button
+                  className="qa-btn qa-btn-outline"
+                  onClick={() => setShouldShowModal(false)}
+                >
                   Cancel
                 </button>
                 <button
                   className="qa-btn qa-btn-primary"
                   onClick={async () => {
-                    if (selectedZoneId && selectedQuestArchetypeId && numberOfQuests) {
+                    if (
+                      selectedZoneId &&
+                      selectedQuestArchetypeId &&
+                      numberOfQuests
+                    ) {
                       await createZoneQuestArchetype(
                         selectedZoneId,
                         selectedQuestArchetypeId,
@@ -419,7 +528,11 @@ export const ZoneQuestArchetypes = () => {
                       setShouldShowModal(false);
                     }
                   }}
-                  disabled={!selectedZoneId || !selectedQuestArchetypeId || !numberOfQuests}
+                  disabled={
+                    !selectedZoneId ||
+                    !selectedQuestArchetypeId ||
+                    !numberOfQuests
+                  }
                 >
                   Create
                 </button>

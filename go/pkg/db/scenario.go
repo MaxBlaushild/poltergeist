@@ -161,6 +161,9 @@ func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) 
 	scenario.ID = uuid.New()
 	scenario.CreatedAt = time.Now()
 	scenario.UpdatedAt = time.Now()
+	if scenario.InternalTags == nil {
+		scenario.InternalTags = models.StringArray{}
+	}
 	normalizeScenarioFailurePenaltyDefaults(scenario)
 	if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
 		return err
@@ -210,7 +213,9 @@ func (h *scenarioHandle) adminListBaseQuery(
 				LOWER(scenarios.prompt) LIKE ?
 				OR LOWER(CAST(scenarios.id AS text)) LIKE ?
 				OR LOWER(COALESCE(zones.name, '')) LIKE ?
+				OR LOWER(COALESCE(CAST(scenarios.internal_tags AS text), '')) LIKE ?
 			)`,
+			searchTerm,
 			searchTerm,
 			searchTerm,
 			searchTerm,
@@ -331,6 +336,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"longitude":                    updates.Longitude,
 		"geometry":                     updates.Geometry,
 		"prompt":                       updates.Prompt,
+		"internal_tags":                updates.InternalTags,
 		"image_url":                    updates.ImageURL,
 		"scale_with_user_level":        updates.ScaleWithUserLevel,
 		"recurring_scenario_id":        updates.RecurringScenarioID,
@@ -357,6 +363,9 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"success_statuses":             updates.SuccessStatuses,
 		"updated_at":                   updates.UpdatedAt,
 		"thumbnail_url":                updates.ThumbnailURL,
+	}
+	if payload["internal_tags"] == nil {
+		payload["internal_tags"] = models.StringArray{}
 	}
 
 	return h.db.WithContext(ctx).Model(&models.Scenario{}).Where("id = ?", id).Updates(payload).Error

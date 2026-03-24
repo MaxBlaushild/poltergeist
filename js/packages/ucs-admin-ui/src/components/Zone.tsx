@@ -24,6 +24,16 @@ import wkx from 'wkx';
 // Set Mapbox access token
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
+const parseInternalTagsInput = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag !== '')
+    )
+  );
+
 interface MapProps {
   center: [number, number];
   onMapClick?: (lngLat: mapboxgl.LngLat) => void;
@@ -747,6 +757,9 @@ export const Zone = () => {
   const [isEditingZone, setIsEditingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
+  const [internalTagsInput, setInternalTagsInput] = useState(
+    (zone?.internalTags ?? []).join(', ')
+  );
   const [movingPinId, setMovingPinId] = useState<string | null>(null);
   const [pinMoveStatus, setPinMoveStatus] = useState<string | null>(null);
   const [pinMoveError, setPinMoveError] = useState<string | null>(null);
@@ -797,7 +810,8 @@ export const Zone = () => {
   useEffect(() => {
     setName(zone?.name || '');
     setDescription(zone?.description || '');
-  }, [zone?.name, zone?.description]);
+    setInternalTagsInput((zone?.internalTags ?? []).join(', '));
+  }, [zone?.name, zone?.description, zone?.internalTags]);
 
   useEffect(() => {
     setIsEditingBoundary(false);
@@ -1454,6 +1468,14 @@ export const Zone = () => {
           {zone.description?.trim() || 'No description yet.'}
         </p>
       </div>
+      <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Internal Tags
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-base text-slate-700">
+          {(zone?.internalTags ?? []).join(', ') || 'None'}
+        </p>
+      </div>
 
       <div className="mb-6 space-x-2">
         <button
@@ -1561,6 +1583,22 @@ export const Zone = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Internal Tags
+                </label>
+                <input
+                  type="text"
+                  value={internalTagsInput}
+                  onChange={(e) => setInternalTagsInput(e.target.value)}
+                  placeholder="starter_region, downtown, high_density"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Comma-separated internal metadata tags. Not shown to players.
+                </p>
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end space-x-3">
@@ -1572,7 +1610,12 @@ export const Zone = () => {
               </button>
               <button
                 onClick={() => {
-                  editZone(name, description, zone.id);
+                  editZone(
+                    name,
+                    description,
+                    parseInternalTagsInput(internalTagsInput),
+                    zone.id
+                  );
                   setIsEditingZone(false);
                 }}
                 className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"

@@ -1906,13 +1906,19 @@ export const Quests = () => {
       return;
     }
 
-    const name = `${selectedQuest.name} (Archetype)`;
+    const name = selectedQuest.name;
+    const rewardMode = getQuestRewardMode(selectedQuest);
     const itemRewards = (selectedQuest.itemRewards ?? [])
       .map((reward) => ({
         inventoryItemId: reward.inventoryItemId,
         quantity: reward.quantity ?? 0,
       }))
       .filter((reward) => reward.inventoryItemId && reward.quantity > 0);
+    const spellRewards = (selectedQuest.spellRewards ?? [])
+      .map((reward) => ({
+        spellId: reward.spellId,
+      }))
+      .filter((reward) => reward.spellId);
 
     setCreatingArchetype(true);
     try {
@@ -1927,9 +1933,18 @@ export const Quests = () => {
         '/sonar/questArchetypes',
         {
           name,
+          description: selectedQuest.description ?? '',
+          acceptanceDialogue: selectedQuest.acceptanceDialogue ?? [],
+          imageUrl: selectedQuest.imageUrl ?? '',
           rootId: rootNode.id,
           defaultGold: selectedQuest.gold ?? 0,
+          rewardMode: rewardMode,
+          randomRewardSize: selectedQuest.randomRewardSize ?? 'small',
+          rewardExperience: selectedQuest.rewardExperience ?? 0,
+          recurrenceFrequency: selectedQuest.recurrenceFrequency ?? null,
+          materialRewards: selectedQuest.materialRewards ?? [],
           itemRewards: itemRewards.length > 0 ? itemRewards : undefined,
+          spellRewards: spellRewards.length > 0 ? spellRewards : undefined,
         }
       );
 
@@ -3219,7 +3234,8 @@ export const Quests = () => {
               </div>
               {questForm.rewardMode === 'random' && (
                 <div className="md:col-span-2 text-xs text-gray-500">
-                  Random rewards ignore explicit gold/material/item/spell fields.
+                  Random rewards ignore explicit gold/material/item/spell
+                  fields.
                 </div>
               )}
               <div className="md:col-span-2">
@@ -3713,7 +3729,8 @@ export const Quests = () => {
                   </div>
                   {questForm.rewardMode === 'random' && (
                     <div className="md:col-span-2 text-xs text-gray-500">
-                      Random rewards ignore explicit gold/material/item/spell fields.
+                      Random rewards ignore explicit gold/material/item/spell
+                      fields.
                     </div>
                   )}
                   <div className="md:col-span-2">

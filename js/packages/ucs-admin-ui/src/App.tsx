@@ -10,13 +10,25 @@ import {
 } from '@poltergeist/contexts';
 import { Arenas } from './components/Arenas.tsx';
 import { Arena } from './components/Arena.tsx';
-import { createBrowserRouter, RouterProvider, useParams, Link, Outlet } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  RouterProvider,
+  useParams,
+  Link,
+  Outlet,
+} from 'react-router-dom';
 import { LoaderFunctionArgs, redirect } from 'react-router-dom';
-import { ArenaProvider, InventoryProvider, ZoneProvider } from '@poltergeist/contexts';
+import {
+  ArenaProvider,
+  InventoryProvider,
+  ZoneProvider,
+} from '@poltergeist/contexts';
 import { Login } from './components/Login.tsx';
 import Armory from './components/Armory.tsx';
 import { Zones } from './components/Zones.tsx';
 import { Zone } from './components/Zone.tsx';
+import { Districts } from './components/Districts.tsx';
+import { DistrictEditor } from './components/District.tsx';
 import { Place } from './components/Place.tsx';
 import { Tags } from './components/Tags.tsx';
 import LocationArchetypes from './components/LocationArchetypes.tsx';
@@ -69,48 +81,117 @@ function onlyUnauthenticated({ request }: LoaderFunctionArgs) {
 
 const ArenaWrapper = ({ children }: { children: React.ReactNode }) => {
   const { id } = useParams();
-  
-  return (
-    <ArenaProvider arenaId={id}>
-      {children}
-    </ArenaProvider>
-  );
+
+  return <ArenaProvider arenaId={id}>{children}</ArenaProvider>;
 };
 
 const Navigation = () => {
   const isLoggedIn = localStorage.getItem('token');
-  
+
   if (!isLoggedIn) return null;
 
   return (
     <nav className="bg-gray-800 p-4">
       <div className="container mx-auto flex gap-4">
-        <Link to="/armory" className="text-white hover:text-gray-300">Armory</Link>
-        <Link to="/zones" className="text-white hover:text-gray-300">Zones</Link>
-        <Link to="/tags" className="text-white hover:text-gray-300">Tags</Link>
-        <Link to="/location-archetypes" className="text-white hover:text-gray-300">Location Archetypes</Link>
-        <Link to="/quest-archetypes" className="text-white hover:text-gray-300">Quest Archetypes</Link>
-        <Link to="/zone-quest-archetypes" className="text-white hover:text-gray-300">Zone Quest Archetypes</Link>
-        <Link to="/users" className="text-white hover:text-gray-300">Users</Link>
-        <Link to="/parties" className="text-white hover:text-gray-300">Parties</Link>
-        <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
-        <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
-        <Link to="/bases" className="text-white hover:text-gray-300">Bases</Link>
-        <Link to="/spells" className="text-white hover:text-gray-300">Spells</Link>
-        <Link to="/monsters" className="text-white hover:text-gray-300">Monsters</Link>
-        <Link to="/starter-config" className="text-white hover:text-gray-300">Starter Config</Link>
-        <Link to="/tutorial" className="text-white hover:text-gray-300">Tutorial</Link>
-        <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
-        <Link to="/healing-fountains" className="text-white hover:text-gray-300">Healing Fountains</Link>
-        <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
-        <Link to="/quests" className="text-white hover:text-gray-300">Quests</Link>
-        <Link to="/insider-trades" className="text-white hover:text-gray-300">Insider Trades</Link>
-        <Link to="/feedback" className="text-white hover:text-gray-300">Feedback</Link>
-        <Link to="/zone-seeding" className="text-white hover:text-gray-300">Zone Seeding</Link>
-        <Link to="/scenarios" className="text-white hover:text-gray-300">Scenarios</Link>
-        <Link to="/scenario-templates" className="text-white hover:text-gray-300">Scenario Templates</Link>
-        <Link to="/challenges" className="text-white hover:text-gray-300">Challenges</Link>
-        <Link to="/challenge-templates" className="text-white hover:text-gray-300">Challenge Templates</Link>
+        <Link to="/armory" className="text-white hover:text-gray-300">
+          Armory
+        </Link>
+        <Link to="/zones" className="text-white hover:text-gray-300">
+          Zones
+        </Link>
+        <Link to="/districts" className="text-white hover:text-gray-300">
+          Districts
+        </Link>
+        <Link to="/tags" className="text-white hover:text-gray-300">
+          Tags
+        </Link>
+        <Link
+          to="/location-archetypes"
+          className="text-white hover:text-gray-300"
+        >
+          Location Archetypes
+        </Link>
+        <Link to="/quest-archetypes" className="text-white hover:text-gray-300">
+          Quest Archetypes
+        </Link>
+        <Link
+          to="/zone-quest-archetypes"
+          className="text-white hover:text-gray-300"
+        >
+          Zone Quest Archetypes
+        </Link>
+        <Link to="/users" className="text-white hover:text-gray-300">
+          Users
+        </Link>
+        <Link to="/parties" className="text-white hover:text-gray-300">
+          Parties
+        </Link>
+        <Link to="/characters" className="text-white hover:text-gray-300">
+          Characters
+        </Link>
+        <Link to="/inventory-items" className="text-white hover:text-gray-300">
+          Inventory Items
+        </Link>
+        <Link to="/bases" className="text-white hover:text-gray-300">
+          Bases
+        </Link>
+        <Link to="/spells" className="text-white hover:text-gray-300">
+          Spells
+        </Link>
+        <Link to="/monsters" className="text-white hover:text-gray-300">
+          Monsters
+        </Link>
+        <Link to="/starter-config" className="text-white hover:text-gray-300">
+          Starter Config
+        </Link>
+        <Link to="/tutorial" className="text-white hover:text-gray-300">
+          Tutorial
+        </Link>
+        <Link to="/treasure-chests" className="text-white hover:text-gray-300">
+          Treasure Chests
+        </Link>
+        <Link
+          to="/healing-fountains"
+          className="text-white hover:text-gray-300"
+        >
+          Healing Fountains
+        </Link>
+        <Link
+          to="/points-of-interest"
+          className="text-white hover:text-gray-300"
+        >
+          Points of Interest
+        </Link>
+        <Link to="/quests" className="text-white hover:text-gray-300">
+          Quests
+        </Link>
+        <Link to="/insider-trades" className="text-white hover:text-gray-300">
+          Insider Trades
+        </Link>
+        <Link to="/feedback" className="text-white hover:text-gray-300">
+          Feedback
+        </Link>
+        <Link to="/zone-seeding" className="text-white hover:text-gray-300">
+          Zone Seeding
+        </Link>
+        <Link to="/scenarios" className="text-white hover:text-gray-300">
+          Scenarios
+        </Link>
+        <Link
+          to="/scenario-templates"
+          className="text-white hover:text-gray-300"
+        >
+          Scenario Templates
+        </Link>
+        <Link to="/challenges" className="text-white hover:text-gray-300">
+          Challenges
+        </Link>
+        <Link
+          to="/challenge-templates"
+          className="text-white hover:text-gray-300"
+        >
+          Challenge Templates
+        </Link>
       </div>
     </nav>
   );
@@ -134,17 +215,17 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       {
-        path: "/",
+        path: '/',
         element: <Arenas />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/login",
+        path: '/login',
         element: <Login />,
         loader: onlyUnauthenticated,
       },
       {
-        path: "/arena/:id",
+        path: '/arena/:id',
         element: (
           <ArenaWrapper>
             <Arena />
@@ -153,196 +234,199 @@ const router = createBrowserRouter([
         loader: onlyAuthenticated,
       },
       {
-        path: "/armory",
+        path: '/armory',
         element: <Armory />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/zones",
-        element: (
-            <Zones />
-        ),
+        path: '/zones',
+        element: <Zones />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/zones/:id",
+        path: '/zones/:id',
         element: <Zone />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/place/:id",
+        path: '/districts',
+        element: <Districts />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/districts/:id',
+        element: <DistrictEditor />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/place/:id',
         element: <Place />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/tags",
+        path: '/tags',
         element: <Tags />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/location-archetypes",
-        element: (
-            <LocationArchetypes />
-        ),
+        path: '/location-archetypes',
+        element: <LocationArchetypes />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/quest-archetypes",
+        path: '/quest-archetypes',
         element: <QuestArchetypeComponent />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/zone-quest-archetypes",
+        path: '/zone-quest-archetypes',
         element: <ZoneQuestArchetypes />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/users",
+        path: '/users',
         element: <Users />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/parties",
+        path: '/parties',
         element: <Parties />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/characters",
+        path: '/characters',
         element: <Characters />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/inventory-items",
+        path: '/inventory-items',
         element: <InventoryItems />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/bases",
+        path: '/bases',
         element: <Bases />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/starter-config",
+        path: '/starter-config',
         element: <NewUserStarterConfig />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/tutorial",
+        path: '/tutorial',
         element: <Tutorial />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/treasure-chests",
+        path: '/treasure-chests',
         element: <TreasureChests />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/healing-fountains",
+        path: '/healing-fountains',
         element: <HealingFountains />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/fete-rooms",
+        path: '/fete-rooms',
         element: <FeteRooms />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/fete-teams",
+        path: '/fete-teams',
         element: <FeteTeams />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/fete-room-linked-list-teams",
+        path: '/fete-room-linked-list-teams',
         element: <FeteRoomLinkedListTeams />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/fete-room-teams",
+        path: '/fete-room-teams',
         element: <FeteRoomTeams />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/utility-closet-puzzle",
+        path: '/utility-closet-puzzle',
         element: <UtilityClosetPuzzleAdmin />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/flagged-photos",
+        path: '/flagged-photos',
         element: <FlaggedPhotos />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/points-of-interest",
+        path: '/points-of-interest',
         element: <PointOfInterest />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/points-of-interest/:id",
+        path: '/points-of-interest/:id',
         element: <PointOfInterestEditor />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/quests",
+        path: '/quests',
         element: <Quests />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/insider-trades",
+        path: '/insider-trades',
         element: <InsiderTrades />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/feedback",
+        path: '/feedback',
         element: <Feedback />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/zone-seeding",
+        path: '/zone-seeding',
         element: <ZoneSeedJobs />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/scenarios",
+        path: '/scenarios',
         element: <Scenarios />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/scenario-templates",
+        path: '/scenario-templates',
         element: <ScenarioTemplates />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/challenges",
+        path: '/challenges',
         element: <Challenges />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/challenge-templates",
+        path: '/challenge-templates',
         element: <ChallengeTemplates />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/spells",
+        path: '/spells',
         element: <Spells />,
         loader: onlyAuthenticated,
       },
       {
-        path: "/monsters",
+        path: '/monsters',
         element: <Monsters />,
         loader: onlyAuthenticated,
       },
-    ]
-  }
+    ],
+  },
 ]);
 
 const App = () => {
   return (
     <LocationProvider>
       <APIProvider>
-        <AuthProvider
-          appName="UCS Admin Dashboard"
-          uriPrefix="/sonar"
-        >
+        <AuthProvider appName="UCS Admin Dashboard" uriPrefix="/sonar">
           <MediaContextProvider>
             <TagProvider>
               <ZoneProvider>

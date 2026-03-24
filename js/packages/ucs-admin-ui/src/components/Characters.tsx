@@ -1,11 +1,20 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, PointOfInterest, CharacterAction, DialogueMessage, Quest } from '@poltergeist/types';
+import {
+  Character,
+  PointOfInterest,
+  CharacterAction,
+  DialogueMessage,
+  Quest,
+} from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
-import { ShopActionEditor, ShopActionSavePayload } from './ShopActionEditor.tsx';
+import {
+  ShopActionEditor,
+  ShopActionSavePayload,
+} from './ShopActionEditor.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -37,7 +46,8 @@ const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
-  const selectedLabel = options.find((option) => option.value === value)?.label ?? '';
+  const selectedLabel =
+    options.find((option) => option.value === value)?.label ?? '';
 
   useEffect(() => {
     if (!open) {
@@ -73,7 +83,12 @@ const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
         onBlur={() => {
           setTimeout(() => setOpen(false), 120);
         }}
-        style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid #ccc',
+          borderRadius: '4px',
+        }}
       />
       {open && (
         <div
@@ -112,7 +127,15 @@ const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
             </button>
           )}
           {filteredOptions.length === 0 ? (
-            <div style={{ padding: '8px 10px', fontSize: '13px', color: '#6b7280' }}>No matches</div>
+            <div
+              style={{
+                padding: '8px 10px',
+                fontSize: '13px',
+                color: '#6b7280',
+              }}
+            >
+              No matches
+            </div>
           ) : (
             filteredOptions.map((option) => (
               <button
@@ -125,7 +148,8 @@ const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
                   textAlign: 'left',
                   padding: '8px 10px',
                   border: 'none',
-                  background: option.value === value ? '#eff6ff' : 'transparent',
+                  background:
+                    option.value === value ? '#eff6ff' : 'transparent',
                   cursor: 'pointer',
                   fontSize: '13px',
                 }}
@@ -154,6 +178,26 @@ type StaticThumbnailResponse = {
   lastModified?: string;
   prompt?: string;
 };
+
+const normalizeInternalTags = (input: string[]) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  input.forEach((value) => {
+    const tag = value.trim().toLowerCase();
+    if (!tag || seen.has(tag)) return;
+    seen.add(tag);
+    normalized.push(tag);
+  });
+  return normalized;
+};
+
+const parseInternalTagsInput = (input: string) =>
+  normalizeInternalTags(
+    input
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
 
 const defaultCharacterUndiscoveredIconPrompt =
   'A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
@@ -211,7 +255,7 @@ const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
     }
 
     return () => {
-      markers.current.forEach(marker => marker.remove());
+      markers.current.forEach((marker) => marker.remove());
       markers.current = [];
       if (map.current) {
         map.current.remove();
@@ -229,7 +273,8 @@ const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
   }, [locations, mapLoaded]);
 
   React.useEffect(() => {
-    if (!map.current || !mapLoaded || didAutoLocate || locations.length > 0) return;
+    if (!map.current || !mapLoaded || didAutoLocate || locations.length > 0)
+      return;
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported in this browser.');
       return;
@@ -258,7 +303,7 @@ const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
   React.useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
-    markers.current.forEach(marker => marker.remove());
+    markers.current.forEach((marker) => marker.remove());
     markers.current = [];
 
     locations.forEach((location, index) => {
@@ -348,50 +393,82 @@ const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
 
 export const Characters = () => {
   const { apiClient } = useAPI();
-  const { zoneQuestArchetypes, updateZoneQuestArchetype } = useQuestArchetypes();
+  const { zoneQuestArchetypes, updateZoneQuestArchetype } =
+    useQuestArchetypes();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [filteredCharacters, setFilteredCharacters] = useState<Character[]>([]);
-  const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(new Set());
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(
+    new Set()
+  );
   const [bulkDeletingCharacters, setBulkDeletingCharacters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
   const [showGenerateCharacter, setShowGenerateCharacter] = useState(false);
-  const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
-  const [availablePointsOfInterest, setAvailablePointsOfInterest] = useState<PointOfInterest[]>([]);
-  const [selectedZoneQuestArchetypeIds, setSelectedZoneQuestArchetypeIds] = useState<string[]>([]);
-  
+  const [editingCharacter, setEditingCharacter] = useState<Character | null>(
+    null
+  );
+  const [availablePointsOfInterest, setAvailablePointsOfInterest] = useState<
+    PointOfInterest[]
+  >([]);
+  const [selectedZoneQuestArchetypeIds, setSelectedZoneQuestArchetypeIds] =
+    useState<string[]>([]);
+
   // Dialogue management state
-  const [selectedCharacterForDialogue, setSelectedCharacterForDialogue] = useState<Character | null>(null);
-  const [characterActions, setCharacterActions] = useState<CharacterAction[]>([]);
+  const [selectedCharacterForDialogue, setSelectedCharacterForDialogue] =
+    useState<Character | null>(null);
+  const [characterActions, setCharacterActions] = useState<CharacterAction[]>(
+    []
+  );
   const [questById, setQuestById] = useState<Record<string, Quest | null>>({});
   const [questLookupLoading, setQuestLookupLoading] = useState(false);
-  const [editingAction, setEditingAction] = useState<CharacterAction | null>(null);
+  const [editingAction, setEditingAction] = useState<CharacterAction | null>(
+    null
+  );
   const [showDialogueEditor, setShowDialogueEditor] = useState(false);
   const [showDialogueManager, setShowDialogueManager] = useState(false);
   const [showShopEditor, setShowShopEditor] = useState(false);
-  const [characterLocations, setCharacterLocations] = useState<[number, number][]>([]);
+  const [characterLocations, setCharacterLocations] = useState<
+    [number, number][]
+  >([]);
   const [savingLocations, setSavingLocations] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
   const [generationData, setGenerationData] = useState({
     name: '',
-    description: ''
+    description: '',
   });
-  const [characterUndiscoveredBusy, setCharacterUndiscoveredBusy] = useState(false);
-  const [characterUndiscoveredStatusLoading, setCharacterUndiscoveredStatusLoading] = useState(false);
-  const [characterUndiscoveredError, setCharacterUndiscoveredError] = useState<string | null>(null);
-  const [characterUndiscoveredMessage, setCharacterUndiscoveredMessage] = useState<string | null>(null);
+  const [characterUndiscoveredBusy, setCharacterUndiscoveredBusy] =
+    useState(false);
+  const [
+    characterUndiscoveredStatusLoading,
+    setCharacterUndiscoveredStatusLoading,
+  ] = useState(false);
+  const [characterUndiscoveredError, setCharacterUndiscoveredError] = useState<
+    string | null
+  >(null);
+  const [characterUndiscoveredMessage, setCharacterUndiscoveredMessage] =
+    useState<string | null>(null);
   const [characterUndiscoveredUrl, setCharacterUndiscoveredUrl] = useState(
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png'
   );
-  const [characterUndiscoveredStatus, setCharacterUndiscoveredStatus] = useState('unknown');
-  const [characterUndiscoveredExists, setCharacterUndiscoveredExists] = useState(false);
-  const [characterUndiscoveredRequestedAt, setCharacterUndiscoveredRequestedAt] = useState<string | null>(null);
-  const [characterUndiscoveredLastModified, setCharacterUndiscoveredLastModified] = useState<string | null>(null);
-  const [characterUndiscoveredPreviewNonce, setCharacterUndiscoveredPreviewNonce] = useState<number>(Date.now());
-  const [characterUndiscoveredPrompt, setCharacterUndiscoveredPrompt] = useState(
-    defaultCharacterUndiscoveredIconPrompt
-  );
+  const [characterUndiscoveredStatus, setCharacterUndiscoveredStatus] =
+    useState('unknown');
+  const [characterUndiscoveredExists, setCharacterUndiscoveredExists] =
+    useState(false);
+  const [
+    characterUndiscoveredRequestedAt,
+    setCharacterUndiscoveredRequestedAt,
+  ] = useState<string | null>(null);
+  const [
+    characterUndiscoveredLastModified,
+    setCharacterUndiscoveredLastModified,
+  ] = useState<string | null>(null);
+  const [
+    characterUndiscoveredPreviewNonce,
+    setCharacterUndiscoveredPreviewNonce,
+  ] = useState<number>(Date.now());
+  const [characterUndiscoveredPrompt, setCharacterUndiscoveredPrompt] =
+    useState(defaultCharacterUndiscoveredIconPrompt);
 
   const pointOfInterestOptions = React.useMemo<ComboOption[]>(() => {
     return [...availablePointsOfInterest]
@@ -399,7 +476,9 @@ export const Characters = () => {
       .map((poi) => ({
         value: poi.id,
         label: poi.name || poi.description || poi.id,
-        searchText: [poi.name, poi.description, poi.id].filter(Boolean).join(' ')
+        searchText: [poi.name, poi.description, poi.id]
+          .filter(Boolean)
+          .join(' '),
       }));
   }, [availablePointsOfInterest]);
 
@@ -407,6 +486,7 @@ export const Characters = () => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    internalTagsInput: '',
     mapIconUrl: '',
     dialogueImageUrl: '',
     thumbnailUrl: '',
@@ -419,7 +499,7 @@ export const Characters = () => {
   }, []);
 
   useEffect(() => {
-    const hasPending = characters.some(character =>
+    const hasPending = characters.some((character) =>
       ['queued', 'in_progress'].includes(character.imageGenerationStatus || '')
     );
     if (!hasPending) return;
@@ -433,7 +513,9 @@ export const Characters = () => {
 
   const fetchPointsOfInterest = async () => {
     try {
-      const response = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
+      const response = await apiClient.get<PointOfInterest[]>(
+        '/sonar/pointsOfInterest'
+      );
       setAvailablePointsOfInterest(response);
     } catch (error) {
       console.error('Error fetching points of interest:', error);
@@ -469,7 +551,10 @@ export const Characters = () => {
           );
         }
       } catch (error) {
-        console.error('Failed to load undiscovered character icon status', error);
+        console.error(
+          'Failed to load undiscovered character icon status',
+          error
+        );
         const message =
           error instanceof Error
             ? error.message
@@ -482,39 +567,40 @@ export const Characters = () => {
     [apiClient]
   );
 
-  const handleGenerateUndiscoveredCharacterIcon = React.useCallback(async () => {
-    const prompt = characterUndiscoveredPrompt.trim();
-    if (!prompt) {
-      setCharacterUndiscoveredError('Prompt is required.');
-      return;
-    }
-    try {
-      setCharacterUndiscoveredBusy(true);
-      setCharacterUndiscoveredError(null);
-      setCharacterUndiscoveredMessage(null);
-      await apiClient.post<StaticThumbnailResponse>(
-        '/sonar/admin/thumbnails/character-undiscovered',
-        { prompt }
-      );
-      setCharacterUndiscoveredMessage(
-        'Undiscovered character icon queued for generation.'
-      );
-      await refreshUndiscoveredCharacterIconStatus();
-    } catch (error) {
-      console.error('Failed to generate undiscovered character icon', error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to generate undiscovered character icon.';
-      setCharacterUndiscoveredError(message);
-    } finally {
-      setCharacterUndiscoveredBusy(false);
-    }
-  }, [
-    apiClient,
-    characterUndiscoveredPrompt,
-    refreshUndiscoveredCharacterIconStatus,
-  ]);
+  const handleGenerateUndiscoveredCharacterIcon =
+    React.useCallback(async () => {
+      const prompt = characterUndiscoveredPrompt.trim();
+      if (!prompt) {
+        setCharacterUndiscoveredError('Prompt is required.');
+        return;
+      }
+      try {
+        setCharacterUndiscoveredBusy(true);
+        setCharacterUndiscoveredError(null);
+        setCharacterUndiscoveredMessage(null);
+        await apiClient.post<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/character-undiscovered',
+          { prompt }
+        );
+        setCharacterUndiscoveredMessage(
+          'Undiscovered character icon queued for generation.'
+        );
+        await refreshUndiscoveredCharacterIconStatus();
+      } catch (error) {
+        console.error('Failed to generate undiscovered character icon', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate undiscovered character icon.';
+        setCharacterUndiscoveredError(message);
+      } finally {
+        setCharacterUndiscoveredBusy(false);
+      }
+    }, [
+      apiClient,
+      characterUndiscoveredPrompt,
+      refreshUndiscoveredCharacterIconStatus,
+    ]);
 
   const handleDeleteUndiscoveredCharacterIcon = React.useCallback(async () => {
     try {
@@ -542,8 +628,15 @@ export const Characters = () => {
     if (searchQuery === '') {
       setFilteredCharacters(characters);
     } else {
-      const filtered = characters.filter(character =>
-        character.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      const filtered = characters.filter(
+        (character) =>
+          character.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          character.description
+            ?.toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
+          (character.internalTags ?? []).some((tag) =>
+            tag.toLowerCase().includes(searchQuery.toLowerCase())
+          )
       );
       setFilteredCharacters(filtered);
     }
@@ -570,7 +663,10 @@ export const Characters = () => {
     if (!editingCharacter) return;
     setSelectedZoneQuestArchetypeIds(
       zoneQuestArchetypes
-        .filter((zoneQuestArchetype) => zoneQuestArchetype.characterId === editingCharacter.id)
+        .filter(
+          (zoneQuestArchetype) =>
+            zoneQuestArchetype.characterId === editingCharacter.id
+        )
         .map((zoneQuestArchetype) => zoneQuestArchetype.id)
     );
   }, [editingCharacter, zoneQuestArchetypes]);
@@ -607,7 +703,9 @@ export const Characters = () => {
   // Dialogue management functions
   const fetchCharacterActions = async (characterId: string) => {
     try {
-      const response = await apiClient.get<CharacterAction[]>(`/sonar/characters/${characterId}/actions`);
+      const response = await apiClient.get<CharacterAction[]>(
+        `/sonar/characters/${characterId}/actions`
+      );
       setCharacterActions(response);
       return response;
     } catch (error) {
@@ -617,7 +715,8 @@ export const Characters = () => {
   };
 
   const getActionQuestId = (action: CharacterAction) => {
-    const raw = action.metadata?.questId ?? action.metadata?.pointOfInterestGroupId;
+    const raw =
+      action.metadata?.questId ?? action.metadata?.pointOfInterestGroupId;
     if (!raw) return '';
     return String(raw);
   };
@@ -659,14 +758,22 @@ export const Characters = () => {
     setQuestLookupLoading(false);
   };
 
-  const createCharacterAction = async (characterId: string, actionType: 'talk' | 'shop', dialogue?: DialogueMessage[], metadata?: any) => {
+  const createCharacterAction = async (
+    characterId: string,
+    actionType: 'talk' | 'shop',
+    dialogue?: DialogueMessage[],
+    metadata?: any
+  ) => {
     try {
-      const newAction = await apiClient.post<CharacterAction>('/sonar/character-actions', {
-        characterId,
-        actionType,
-        dialogue: dialogue || [],
-        metadata: metadata || {}
-      });
+      const newAction = await apiClient.post<CharacterAction>(
+        '/sonar/character-actions',
+        {
+          characterId,
+          actionType,
+          dialogue: dialogue || [],
+          metadata: metadata || {},
+        }
+      );
       setCharacterActions([...characterActions, newAction]);
       return newAction;
     } catch (error) {
@@ -675,7 +782,11 @@ export const Characters = () => {
     }
   };
 
-  const updateCharacterAction = async (actionId: string, dialogue?: DialogueMessage[], metadata?: any) => {
+  const updateCharacterAction = async (
+    actionId: string,
+    dialogue?: DialogueMessage[],
+    metadata?: any
+  ) => {
     try {
       const updates: any = {};
       if (dialogue !== undefined) {
@@ -684,8 +795,13 @@ export const Characters = () => {
       if (metadata !== undefined) {
         updates.metadata = metadata;
       }
-      const updatedAction = await apiClient.put<CharacterAction>(`/sonar/character-actions/${actionId}`, updates);
-      setCharacterActions(characterActions.map(a => a.id === actionId ? updatedAction : a));
+      const updatedAction = await apiClient.put<CharacterAction>(
+        `/sonar/character-actions/${actionId}`,
+        updates
+      );
+      setCharacterActions(
+        characterActions.map((a) => (a.id === actionId ? updatedAction : a))
+      );
       return updatedAction;
     } catch (error) {
       console.error('Error updating character action:', error);
@@ -696,7 +812,7 @@ export const Characters = () => {
   const deleteCharacterAction = async (actionId: string) => {
     try {
       await apiClient.delete(`/sonar/character-actions/${actionId}`);
-      setCharacterActions(characterActions.filter(a => a.id !== actionId));
+      setCharacterActions(characterActions.filter((a) => a.id !== actionId));
     } catch (error) {
       console.error('Error deleting character action:', error);
     }
@@ -730,11 +846,17 @@ export const Characters = () => {
       if (editingAction) {
         await updateCharacterAction(editingAction.id, dialogue);
       } else {
-        await createCharacterAction(selectedCharacterForDialogue.id, 'talk', dialogue);
+        await createCharacterAction(
+          selectedCharacterForDialogue.id,
+          'talk',
+          dialogue
+        );
       }
       setShowDialogueEditor(false);
       setEditingAction(null);
-      const actions = await fetchCharacterActions(selectedCharacterForDialogue.id);
+      const actions = await fetchCharacterActions(
+        selectedCharacterForDialogue.id
+      );
       await ensureQuestLookups(actions);
     } catch (error) {
       console.error('Error saving dialogue:', error);
@@ -748,11 +870,18 @@ export const Characters = () => {
       if (editingAction) {
         await updateCharacterAction(editingAction.id, undefined, payload);
       } else {
-        await createCharacterAction(selectedCharacterForDialogue.id, 'shop', [], payload);
+        await createCharacterAction(
+          selectedCharacterForDialogue.id,
+          'shop',
+          [],
+          payload
+        );
       }
       setShowShopEditor(false);
       setEditingAction(null);
-      const actions = await fetchCharacterActions(selectedCharacterForDialogue.id);
+      const actions = await fetchCharacterActions(
+        selectedCharacterForDialogue.id
+      );
       await ensureQuestLookups(actions);
     } catch (error) {
       console.error('Error saving shop:', error);
@@ -763,6 +892,7 @@ export const Characters = () => {
     setFormData({
       name: '',
       description: '',
+      internalTagsInput: '',
       mapIconUrl: '',
       dialogueImageUrl: '',
       thumbnailUrl: '',
@@ -776,26 +906,41 @@ export const Characters = () => {
   const resetGenerationForm = () => {
     setGenerationData({
       name: '',
-      description: ''
+      description: '',
     });
   };
 
   const buildCharacterPayload = () => {
     return {
-      ...formData,
+      name: formData.name,
+      description: formData.description,
+      mapIconUrl: formData.mapIconUrl,
+      dialogueImageUrl: formData.dialogueImageUrl,
+      thumbnailUrl: formData.thumbnailUrl,
+      internalTags: parseInternalTagsInput(formData.internalTagsInput),
       pointOfInterestId: formData.pointOfInterestId || null,
     };
   };
 
-  const applyQuestAssignments = async (characterId: string, nextZoneQuestArchetypeIds: string[]) => {
+  const applyQuestAssignments = async (
+    characterId: string,
+    nextZoneQuestArchetypeIds: string[]
+  ) => {
     const updates: Promise<void>[] = [];
     zoneQuestArchetypes.forEach((zoneQuestArchetype) => {
-      const shouldBeAssigned = nextZoneQuestArchetypeIds.includes(zoneQuestArchetype.id);
-      const isAssignedToCharacter = zoneQuestArchetype.characterId === characterId;
+      const shouldBeAssigned = nextZoneQuestArchetypeIds.includes(
+        zoneQuestArchetype.id
+      );
+      const isAssignedToCharacter =
+        zoneQuestArchetype.characterId === characterId;
       if (shouldBeAssigned && !isAssignedToCharacter) {
-        updates.push(updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId }));
+        updates.push(
+          updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId })
+        );
       } else if (!shouldBeAssigned && isAssignedToCharacter) {
-        updates.push(updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId: null }));
+        updates.push(
+          updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId: null })
+        );
       }
     });
 
@@ -811,8 +956,8 @@ export const Characters = () => {
       await apiClient.put(`/sonar/characters/${characterId}/locations`, {
         locations: characterLocations.map(([lng, lat]) => ({
           latitude: lat,
-          longitude: lng
-        }))
+          longitude: lng,
+        })),
       });
       await fetchCharacters();
     } catch (error) {
@@ -826,9 +971,15 @@ export const Characters = () => {
   const handleCreateCharacter = async () => {
     try {
       const payload = buildCharacterPayload();
-      const newCharacter = await apiClient.post<Character>('/sonar/characters', payload);
+      const newCharacter = await apiClient.post<Character>(
+        '/sonar/characters',
+        payload
+      );
       setCharacters([...characters, newCharacter]);
-      await applyQuestAssignments(newCharacter.id, selectedZoneQuestArchetypeIds);
+      await applyQuestAssignments(
+        newCharacter.id,
+        selectedZoneQuestArchetypeIds
+      );
       if (characterLocations.length > 0) {
         await saveCharacterLocations(newCharacter.id);
       }
@@ -841,12 +992,22 @@ export const Characters = () => {
 
   const handleUpdateCharacter = async () => {
     if (!editingCharacter) return;
-    
+
     try {
       const payload = buildCharacterPayload();
-      const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${editingCharacter.id}`, payload);
-      setCharacters(characters.map(c => c.id === editingCharacter.id ? updatedCharacter : c));
-      await applyQuestAssignments(editingCharacter.id, selectedZoneQuestArchetypeIds);
+      const updatedCharacter = await apiClient.put<Character>(
+        `/sonar/characters/${editingCharacter.id}`,
+        payload
+      );
+      setCharacters(
+        characters.map((c) =>
+          c.id === editingCharacter.id ? updatedCharacter : c
+        )
+      );
+      await applyQuestAssignments(
+        editingCharacter.id,
+        selectedZoneQuestArchetypeIds
+      );
       await saveCharacterLocations(editingCharacter.id);
       setEditingCharacter(null);
       resetForm();
@@ -857,10 +1018,13 @@ export const Characters = () => {
 
   const handleGenerateCharacter = async () => {
     try {
-      const newCharacter = await apiClient.post<Character>('/sonar/characters/generate', {
-        name: generationData.name,
-        description: generationData.description
-      });
+      const newCharacter = await apiClient.post<Character>(
+        '/sonar/characters/generate',
+        {
+          name: generationData.name,
+          description: generationData.description,
+        }
+      );
       setCharacters([...characters, newCharacter]);
       setShowGenerateCharacter(false);
       resetGenerationForm();
@@ -872,8 +1036,13 @@ export const Characters = () => {
 
   const handleRegenerateCharacterImage = async (character: Character) => {
     try {
-      const updated = await apiClient.post<Character>(`/sonar/characters/${character.id}/regenerate`, {});
-      setCharacters(characters.map(c => c.id === character.id ? updated : c));
+      const updated = await apiClient.post<Character>(
+        `/sonar/characters/${character.id}/regenerate`,
+        {}
+      );
+      setCharacters(
+        characters.map((c) => (c.id === character.id ? updated : c))
+      );
     } catch (error) {
       console.error('Error regenerating character image:', error);
       alert('Error regenerating character image.');
@@ -883,7 +1052,7 @@ export const Characters = () => {
   const handleDeleteCharacter = async (character: Character) => {
     try {
       await apiClient.delete(`/sonar/characters/${character.id}`);
-      setCharacters(characters.filter(c => c.id !== character.id));
+      setCharacters(characters.filter((c) => c.id !== character.id));
       setSelectedCharacterIds((prev) => {
         const next = new Set(prev);
         next.delete(character.id);
@@ -896,7 +1065,9 @@ export const Characters = () => {
 
   const allFilteredSelected =
     filteredCharacters.length > 0 &&
-    filteredCharacters.every((character) => selectedCharacterIds.has(character.id));
+    filteredCharacters.every((character) =>
+      selectedCharacterIds.has(character.id)
+    );
 
   const toggleSelectAllFiltered = () => {
     setSelectedCharacterIds((prev) => {
@@ -935,21 +1106,30 @@ export const Characters = () => {
       selectedIDs.length === 1
         ? `Delete 1 selected character (${preview})? This cannot be undone.`
         : `Delete ${selectedIDs.length} selected characters${
-            preview ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})` : ''
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
           }? This cannot be undone.`;
     if (!window.confirm(confirmMessage)) return;
 
     setBulkDeletingCharacters(true);
     try {
-      await apiClient.post('/sonar/characters/bulk-delete', { ids: selectedIDs });
+      await apiClient.post('/sonar/characters/bulk-delete', {
+        ids: selectedIDs,
+      });
       const deleted = new Set(selectedIDs);
-      setCharacters((prev) => prev.filter((character) => !deleted.has(character.id)));
+      setCharacters((prev) =>
+        prev.filter((character) => !deleted.has(character.id))
+      );
       setSelectedCharacterIds(new Set());
       if (editingCharacter && deleted.has(editingCharacter.id)) {
         setEditingCharacter(null);
         resetForm();
       }
-      if (selectedCharacterForDialogue && deleted.has(selectedCharacterForDialogue.id)) {
+      if (
+        selectedCharacterForDialogue &&
+        deleted.has(selectedCharacterForDialogue.id)
+      ) {
         setSelectedCharacterForDialogue(null);
         setShowDialogueManager(false);
         setShowDialogueEditor(false);
@@ -970,27 +1150,34 @@ export const Characters = () => {
     setFormData({
       name: character.name,
       description: character.description,
+      internalTagsInput: (character.internalTags ?? []).join(', '),
       mapIconUrl: character.mapIconUrl,
       dialogueImageUrl: character.dialogueImageUrl,
       thumbnailUrl: character.thumbnailUrl ?? '',
       pointOfInterestId: character.pointOfInterestId ?? '',
     });
-    const locations = character.locations?.map(loc => [loc.longitude, loc.latitude] as [number, number]) ?? [];
+    const locations =
+      character.locations?.map(
+        (loc) => [loc.longitude, loc.latitude] as [number, number]
+      ) ?? [];
     setCharacterLocations(locations);
     setLocationsError(null);
     setSelectedZoneQuestArchetypeIds(
       zoneQuestArchetypes
-        .filter((zoneQuestArchetype) => zoneQuestArchetype.characterId === character.id)
+        .filter(
+          (zoneQuestArchetype) =>
+            zoneQuestArchetype.characterId === character.id
+        )
         .map((zoneQuestArchetype) => zoneQuestArchetype.id)
     );
   };
 
   const addCharacterLocation = (lng: number, lat: number) => {
-    setCharacterLocations(prev => [...prev, [lng, lat]]);
+    setCharacterLocations((prev) => [...prev, [lng, lat]]);
   };
 
   const removeCharacterLocation = (index: number) => {
-    setCharacterLocations(prev => prev.filter((_, i) => i !== index));
+    setCharacterLocations((prev) => prev.filter((_, i) => i !== index));
   };
 
   const formatGenerationStatus = (status?: string) => {
@@ -1048,13 +1235,17 @@ export const Characters = () => {
               onClick={() => void refreshUndiscoveredCharacterIconStatus(true)}
               disabled={characterUndiscoveredStatusLoading}
             >
-              {characterUndiscoveredStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+              {characterUndiscoveredStatusLoading
+                ? 'Refreshing…'
+                : 'Refresh Status'}
             </button>
             <button
               type="button"
               className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
               onClick={handleGenerateUndiscoveredCharacterIcon}
-              disabled={characterUndiscoveredBusy || characterUndiscoveredStatusLoading}
+              disabled={
+                characterUndiscoveredBusy || characterUndiscoveredStatusLoading
+              }
             >
               {characterUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
             </button>
@@ -1062,7 +1253,9 @@ export const Characters = () => {
               type="button"
               className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
               onClick={handleDeleteUndiscoveredCharacterIcon}
-              disabled={characterUndiscoveredBusy || characterUndiscoveredStatusLoading}
+              disabled={
+                characterUndiscoveredBusy || characterUndiscoveredStatusLoading
+              }
             >
               {characterUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
             </button>
@@ -1082,7 +1275,9 @@ export const Characters = () => {
             {characterUndiscoveredStatus || 'unknown'}
           </span>
         </div>
-        <div style={{ fontSize: '12px', color: '#4b5563', wordBreak: 'break-all' }}>
+        <div
+          style={{ fontSize: '12px', color: '#4b5563', wordBreak: 'break-all' }}
+        >
           URL: {characterUndiscoveredUrl}
         </div>
         <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px' }}>
@@ -1096,7 +1291,9 @@ export const Characters = () => {
           </label>
           <textarea
             value={characterUndiscoveredPrompt}
-            onChange={(event) => setCharacterUndiscoveredPrompt(event.target.value)}
+            onChange={(event) =>
+              setCharacterUndiscoveredPrompt(event.target.value)
+            }
             placeholder="Prompt used to generate the undiscovered character icon."
             style={{
               width: '100%',
@@ -1138,7 +1335,7 @@ export const Characters = () => {
           </div>
         ) : null}
       </div>
-      
+
       {/* Search */}
       <div className="mb-4">
         <input
@@ -1159,7 +1356,14 @@ export const Characters = () => {
           flexWrap: 'wrap',
         }}
       >
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+          }}
+        >
           <input
             type="checkbox"
             checked={allFilteredSelected}
@@ -1180,25 +1384,34 @@ export const Characters = () => {
       </div>
 
       {/* Characters Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-        gap: '20px',
-        padding: '20px'
-      }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: '20px',
+          padding: '20px',
+        }}
+      >
         {filteredCharacters.map((character) => (
-          <div 
+          <div
             key={character.id}
             style={{
               padding: '20px',
               border: '1px solid #ccc',
               borderRadius: '8px',
               backgroundColor: '#fff',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
             }}
           >
             <div style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '13px',
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={selectedCharacterIds.has(character.id)}
@@ -1207,26 +1420,42 @@ export const Characters = () => {
                 Select
               </label>
             </div>
-            <h2 style={{ 
-              margin: '0 0 15px 0',
-              color: '#333'
-            }}>{character.name}</h2>
-            
+            <h2
+              style={{
+                margin: '0 0 15px 0',
+                color: '#333',
+              }}
+            >
+              {character.name}
+            </h2>
+
             <p style={{ margin: '5px 0', color: '#666' }}>
               Description: {character.description || 'No description'}
             </p>
-            
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Internal Tags:{' '}
+              {(character.internalTags ?? []).join(', ') || 'None'}
+            </p>
+
             <p style={{ margin: '5px 0', color: '#666' }}>
               Dialogue Image URL: {character.dialogueImageUrl || '—'}
             </p>
             <p style={{ margin: '5px 0', color: '#666' }}>
-              Image Status: {formatGenerationStatus(character.imageGenerationStatus)}
+              Image Status:{' '}
+              {formatGenerationStatus(character.imageGenerationStatus)}
             </p>
-            {character.imageGenerationStatus === 'failed' && character.imageGenerationError && (
-              <p style={{ margin: '5px 0', color: '#b91c1c', fontSize: '12px' }}>
-                Error: {character.imageGenerationError}
-              </p>
-            )}
+            {character.imageGenerationStatus === 'failed' &&
+              character.imageGenerationError && (
+                <p
+                  style={{
+                    margin: '5px 0',
+                    color: '#b91c1c',
+                    fontSize: '12px',
+                  }}
+                >
+                  Error: {character.imageGenerationError}
+                </p>
+              )}
             {character.dialogueImageUrl && (
               <img
                 src={character.dialogueImageUrl}
@@ -1251,7 +1480,9 @@ export const Characters = () => {
               <button
                 onClick={() => handleRegenerateCharacterImage(character)}
                 className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
-                disabled={['queued', 'in_progress'].includes(character.imageGenerationStatus || '')}
+                disabled={['queued', 'in_progress'].includes(
+                  character.imageGenerationStatus || ''
+                )}
               >
                 Regenerate Image
               </button>
@@ -1290,82 +1521,170 @@ export const Characters = () => {
 
       {/* Create/Edit Character Modal */}
       {(showCreateCharacter || editingCharacter) && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '600px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '600px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
             <h2>{editingCharacter ? 'Edit Character' : 'Create Character'}</h2>
-            
+
             {/* Character Fields */}
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Name:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Name:
+              </label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Description:
+              </label>
               <textarea
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '60px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  minHeight: '60px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Map Icon URL:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Internal Tags:
+              </label>
+              <input
+                type="text"
+                value={formData.internalTagsInput}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    internalTagsInput: e.target.value,
+                  })
+                }
+                placeholder="merchant, starter_quest, blacksmith"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              />
+              <div
+                style={{ marginTop: '6px', color: '#666', fontSize: '12px' }}
+              >
+                Comma-separated metadata tags used to link characters with quest
+                templates.
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Map Icon URL:
+              </label>
               <input
                 type="text"
                 value={formData.mapIconUrl}
-                onChange={(e) => setFormData({ ...formData, mapIconUrl: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, mapIconUrl: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Thumbnail URL:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Thumbnail URL:
+              </label>
               <input
                 type="text"
                 value={formData.thumbnailUrl}
-                onChange={(e) => setFormData({ ...formData, thumbnailUrl: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, thumbnailUrl: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Dialogue Image URL:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Dialogue Image URL:
+              </label>
               <input
                 type="text"
                 value={formData.dialogueImageUrl}
-                onChange={(e) => setFormData({ ...formData, dialogueImageUrl: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setFormData({ ...formData, dialogueImageUrl: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Character Locations</label>
-              <div style={{ marginBottom: '10px', color: '#666', fontSize: '12px' }}>
-                Click on the map to add a pin. Click an existing pin to remove it.
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Character Locations
+              </label>
+              <div
+                style={{
+                  marginBottom: '10px',
+                  color: '#666',
+                  fontSize: '12px',
+                }}
+              >
+                Click on the map to add a pin. Click an existing pin to remove
+                it.
               </div>
               <CharacterLocationsMap
                 locations={characterLocations}
@@ -1373,7 +1692,13 @@ export const Characters = () => {
                 onRemoveLocation={removeCharacterLocation}
               />
               <div style={{ marginTop: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#666',
+                    marginBottom: '6px',
+                  }}
+                >
                   Saved locations ({characterLocations.length})
                 </div>
                 {characterLocations.length === 0 ? (
@@ -1381,7 +1706,13 @@ export const Characters = () => {
                     No locations yet.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
                     {characterLocations.map(([lng, lat], index) => (
                       <div
                         key={`${lng}-${lat}-${index}`}
@@ -1392,10 +1723,12 @@ export const Characters = () => {
                           padding: '6px 8px',
                           border: '1px solid #e5e7eb',
                           borderRadius: '4px',
-                          fontSize: '12px'
+                          fontSize: '12px',
                         }}
                       >
-                        <span>{lat.toFixed(6)}, {lng.toFixed(6)}</span>
+                        <span>
+                          {lat.toFixed(6)}, {lng.toFixed(6)}
+                        </span>
                         <button
                           type="button"
                           onClick={() => removeCharacterLocation(index)}
@@ -1403,7 +1736,7 @@ export const Characters = () => {
                             border: 'none',
                             background: 'transparent',
                             color: '#c00',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
                           }}
                         >
                           Remove
@@ -1414,16 +1747,26 @@ export const Characters = () => {
                 )}
               </div>
               {locationsError && (
-                <div style={{ marginTop: '8px', color: '#c00', fontSize: '12px' }}>
+                <div
+                  style={{ marginTop: '8px', color: '#c00', fontSize: '12px' }}
+                >
                   {locationsError}
                 </div>
               )}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginTop: '10px',
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => {
                     if (!editingCharacter) {
-                      setLocationsError('Save the character first to store locations.');
+                      setLocationsError(
+                        'Save the character first to store locations.'
+                      );
                       return;
                     }
                     saveCharacterLocations(editingCharacter.id);
@@ -1436,7 +1779,7 @@ export const Characters = () => {
                     border: 'none',
                     borderRadius: '4px',
                     cursor: savingLocations ? 'default' : 'pointer',
-                    opacity: savingLocations ? 0.7 : 1
+                    opacity: savingLocations ? 0.7 : 1,
                   }}
                 >
                   {savingLocations ? 'Saving...' : 'Save Locations'}
@@ -1452,24 +1795,46 @@ export const Characters = () => {
                 placeholder="Search points of interest..."
                 allowClear
                 clearLabel="None"
-                onChange={(value) => setFormData({ ...formData, pointOfInterestId: value })}
+                onChange={(value) =>
+                  setFormData({ ...formData, pointOfInterestId: value })
+                }
               />
             </div>
 
             {/* Quest Associations */}
-            <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
+            <div
+              style={{
+                marginBottom: '15px',
+                padding: '15px',
+                border: '1px solid #eee',
+                borderRadius: '4px',
+              }}
+            >
               <h3 style={{ margin: '0 0 15px 0' }}>Quest Associations</h3>
               {zoneQuestArchetypes.length === 0 ? (
                 <div style={{ color: '#999', fontStyle: 'italic' }}>
                   No zone quest archetypes available.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '240px', overflow: 'auto' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    maxHeight: '240px',
+                    overflow: 'auto',
+                  }}
+                >
                   {zoneQuestArchetypes.map((zoneQuestArchetype) => {
-                    const isAssigned = selectedZoneQuestArchetypeIds.includes(zoneQuestArchetype.id);
-                    const assignedCharacter = zoneQuestArchetype.character?.name
-                      || characters.find((c) => c.id === zoneQuestArchetype.characterId)?.name
-                      || 'Unassigned';
+                    const isAssigned = selectedZoneQuestArchetypeIds.includes(
+                      zoneQuestArchetype.id
+                    );
+                    const assignedCharacter =
+                      zoneQuestArchetype.character?.name ||
+                      characters.find(
+                        (c) => c.id === zoneQuestArchetype.characterId
+                      )?.name ||
+                      'Unassigned';
                     return (
                       <label
                         key={zoneQuestArchetype.id}
@@ -1480,7 +1845,7 @@ export const Characters = () => {
                           padding: '10px',
                           border: '1px solid #ddd',
                           borderRadius: '6px',
-                          backgroundColor: isAssigned ? '#f0f8ff' : '#fff'
+                          backgroundColor: isAssigned ? '#f0f8ff' : '#fff',
                         }}
                       >
                         <input
@@ -1488,21 +1853,32 @@ export const Characters = () => {
                           checked={isAssigned}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedZoneQuestArchetypeIds([...selectedZoneQuestArchetypeIds, zoneQuestArchetype.id]);
+                              setSelectedZoneQuestArchetypeIds([
+                                ...selectedZoneQuestArchetypeIds,
+                                zoneQuestArchetype.id,
+                              ]);
                             } else {
-                              setSelectedZoneQuestArchetypeIds(selectedZoneQuestArchetypeIds.filter((id) => id !== zoneQuestArchetype.id));
+                              setSelectedZoneQuestArchetypeIds(
+                                selectedZoneQuestArchetypeIds.filter(
+                                  (id) => id !== zoneQuestArchetype.id
+                                )
+                              );
                             }
                           }}
                         />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 600 }}>
-                            {zoneQuestArchetype.questArchetype?.name || zoneQuestArchetype.questArchetypeId}
+                            {zoneQuestArchetype.questArchetype?.name ||
+                              zoneQuestArchetype.questArchetypeId}
                           </div>
                           <div style={{ color: '#666', fontSize: '13px' }}>
-                            Zone: {zoneQuestArchetype.zone?.name || zoneQuestArchetype.zoneId}
+                            Zone:{' '}
+                            {zoneQuestArchetype.zone?.name ||
+                              zoneQuestArchetype.zoneId}
                           </div>
                           <div style={{ color: '#666', fontSize: '13px' }}>
-                            Number of Quests: {zoneQuestArchetype.numberOfQuests}
+                            Number of Quests:{' '}
+                            {zoneQuestArchetype.numberOfQuests}
                           </div>
                           <div style={{ color: '#999', fontSize: '12px' }}>
                             Current quest giver: {assignedCharacter}
@@ -1516,7 +1892,13 @@ export const Characters = () => {
             </div>
 
             {/* Modal Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+              }}
+            >
               <button
                 onClick={() => {
                   setShowCreateCharacter(false);
@@ -1528,7 +1910,11 @@ export const Characters = () => {
                 Cancel
               </button>
               <button
-                onClick={editingCharacter ? handleUpdateCharacter : handleCreateCharacter}
+                onClick={
+                  editingCharacter
+                    ? handleUpdateCharacter
+                    : handleCreateCharacter
+                }
                 className="bg-blue-500 text-white px-4 py-2 rounded-md"
               >
                 {editingCharacter ? 'Update' : 'Create'}
@@ -1540,45 +1926,71 @@ export const Characters = () => {
 
       {/* Generate Character Modal */}
       {showGenerateCharacter && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '500px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '500px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
             <h2>Generate Character</h2>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Name *:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Name *:
+              </label>
               <input
                 type="text"
                 value={generationData.name}
-                onChange={(e) => setGenerationData({ ...generationData, name: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                onChange={(e) =>
+                  setGenerationData({ ...generationData, name: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
                 required
               />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Description:
+              </label>
               <textarea
                 value={generationData.description}
-                onChange={(e) => setGenerationData({ ...generationData, description: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '80px' }}
+                onChange={(e) =>
+                  setGenerationData({
+                    ...generationData,
+                    description: e.target.value,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  minHeight: '80px',
+                }}
               />
             </div>
 
@@ -1605,33 +2017,44 @@ export const Characters = () => {
 
       {/* Dialogue Manager Modal */}
       {showDialogueManager && selectedCharacterForDialogue && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '800px',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '800px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+          >
             <h2 style={{ margin: '0 0 20px 0' }}>
               Manage Dialogue - {selectedCharacterForDialogue.name}
             </h2>
 
             {/* Character Actions List */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '15px',
+                }}
+              >
                 <h3 style={{ margin: 0 }}>Existing Actions</h3>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button
@@ -1656,22 +2079,35 @@ export const Characters = () => {
               </div>
 
               {characterActions.length === 0 ? (
-                <div style={{
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: '#999',
-                  fontStyle: 'italic',
-                  border: '1px dashed #ccc',
-                  borderRadius: '8px'
-                }}>
+                <div
+                  style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: '#999',
+                    fontStyle: 'italic',
+                    border: '1px dashed #ccc',
+                    borderRadius: '8px',
+                  }}
+                >
                   No actions yet. Create one to get started.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
                   {characterActions.map((action) => {
                     const questId = getActionQuestId(action);
-                    const hasQuestLookup = questId ? Object.prototype.hasOwnProperty.call(questById, questId) : false;
-                    const questRecord = questId && hasQuestLookup ? questById[questId] : undefined;
+                    const hasQuestLookup = questId
+                      ? Object.prototype.hasOwnProperty.call(questById, questId)
+                      : false;
+                    const questRecord =
+                      questId && hasQuestLookup
+                        ? questById[questId]
+                        : undefined;
                     const editDisabled = action.actionType === 'giveQuest';
 
                     return (
@@ -1681,20 +2117,34 @@ export const Characters = () => {
                           padding: '15px',
                           border: '1px solid #ccc',
                           borderRadius: '8px',
-                          backgroundColor: '#f9f9f9'
+                          backgroundColor: '#f9f9f9',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                            <div
+                              style={{
+                                fontWeight: 'bold',
+                                marginBottom: '5px',
+                              }}
+                            >
                               Type: {action.actionType}
                             </div>
                             <div style={{ color: '#666', fontSize: '14px' }}>
                               {action.actionType === 'talk' ? (
                                 action.dialogue.length > 0 ? (
                                   <>
-                                    Preview: {action.dialogue[0].text.substring(0, 100)}
-                                    {action.dialogue[0].text.length > 100 ? '...' : ''}
+                                    Preview:{' '}
+                                    {action.dialogue[0].text.substring(0, 100)}
+                                    {action.dialogue[0].text.length > 100
+                                      ? '...'
+                                      : ''}
                                   </>
                                 ) : (
                                   'No dialogue messages'
@@ -1702,11 +2152,22 @@ export const Characters = () => {
                               ) : action.actionType === 'shop' ? (
                                 action.metadata?.shopMode === 'tags' ? (
                                   <>
-                                    Shop by tags ({action.metadata?.shopItemTags?.length ?? 0} tag{(action.metadata?.shopItemTags?.length ?? 0) !== 1 ? 's' : ''})
+                                    Shop by tags (
+                                    {action.metadata?.shopItemTags?.length ?? 0}{' '}
+                                    tag
+                                    {(action.metadata?.shopItemTags?.length ??
+                                      0) !== 1
+                                      ? 's'
+                                      : ''}
+                                    )
                                   </>
                                 ) : action.metadata?.inventory ? (
                                   <>
-                                    Shop with {action.metadata.inventory.length} item{action.metadata.inventory.length !== 1 ? 's' : ''}
+                                    Shop with {action.metadata.inventory.length}{' '}
+                                    item
+                                    {action.metadata.inventory.length !== 1
+                                      ? 's'
+                                      : ''}
                                   </>
                                 ) : (
                                   'Shop with no items'
@@ -1731,23 +2192,41 @@ export const Characters = () => {
                                 'Unknown action type'
                               )}
                             </div>
-                            <div style={{ color: '#999', fontSize: '12px', marginTop: '5px' }}>
+                            <div
+                              style={{
+                                color: '#999',
+                                fontSize: '12px',
+                                marginTop: '5px',
+                              }}
+                            >
                               {action.actionType === 'talk' ? (
                                 <>
-                                  {action.dialogue.length} message{action.dialogue.length !== 1 ? 's' : ''}
+                                  {action.dialogue.length} message
+                                  {action.dialogue.length !== 1 ? 's' : ''}
                                 </>
                               ) : action.actionType === 'shop' ? (
                                 action.metadata?.shopMode === 'tags' ? (
                                   <>
-                                    Tags: {(action.metadata?.shopItemTags ?? []).join(', ') || 'None'}
+                                    Tags:{' '}
+                                    {(action.metadata?.shopItemTags ?? []).join(
+                                      ', '
+                                    ) || 'None'}
                                   </>
                                 ) : (
                                   <>
-                                    {action.metadata?.inventory?.length || 0} item{action.metadata?.inventory?.length !== 1 ? 's' : ''}
+                                    {action.metadata?.inventory?.length || 0}{' '}
+                                    item
+                                    {action.metadata?.inventory?.length !== 1
+                                      ? 's'
+                                      : ''}
                                   </>
                                 )
                               ) : action.actionType === 'giveQuest' ? (
-                                questId ? <>Quest ID: {questId}</> : <>Missing quest metadata</>
+                                questId ? (
+                                  <>Quest ID: {questId}</>
+                                ) : (
+                                  <>Missing quest metadata</>
+                                )
                               ) : null}
                             </div>
                           </div>
@@ -1760,7 +2239,11 @@ export const Characters = () => {
                                   : 'bg-blue-500 text-white px-3 py-1 rounded-md'
                               }
                               disabled={editDisabled}
-                              title={editDisabled ? 'GiveQuest actions are managed by quest assignments.' : 'Edit action'}
+                              title={
+                                editDisabled
+                                  ? 'GiveQuest actions are managed by quest assignments.'
+                                  : 'Edit action'
+                              }
                             >
                               Edit
                             </button>
@@ -1780,7 +2263,13 @@ export const Characters = () => {
             </div>
 
             {/* Modal Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+              }}
+            >
               <button
                 onClick={() => {
                   setShowDialogueManager(false);
@@ -1800,28 +2289,34 @@ export const Characters = () => {
 
       {/* Dialogue Editor Modal */}
       {showDialogueEditor && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 2000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '900px',
-            maxHeight: '90vh',
-            overflow: 'hidden'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 2000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '900px',
+              maxHeight: '90vh',
+              overflow: 'hidden',
+            }}
+          >
             <h2 style={{ margin: '0 0 20px 0' }}>
-              {editingAction ? 'Edit Dialogue Action' : 'Create New Dialogue Action'}
+              {editingAction
+                ? 'Edit Dialogue Action'
+                : 'Create New Dialogue Action'}
             </h2>
             <DialogueActionEditor
               action={editingAction}
@@ -1837,26 +2332,30 @@ export const Characters = () => {
 
       {/* Shop Editor Modal */}
       {showShopEditor && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 2000
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '30px',
-            borderRadius: '8px',
-            width: '900px',
-            maxHeight: '90vh',
-            overflow: 'hidden'
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 2000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '30px',
+              borderRadius: '8px',
+              width: '900px',
+              maxHeight: '90vh',
+              overflow: 'hidden',
+            }}
+          >
             <h2 style={{ margin: '0 0 20px 0' }}>
               {editingAction ? 'Edit Shop Action' : 'Create New Shop Action'}
             </h2>

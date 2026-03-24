@@ -8,13 +8,31 @@ import * as wellknown from 'wellknown';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
+const parseInternalTagsInput = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag !== '')
+    )
+  );
+
 const parseBoundaryString = (boundary: string): [number, number][] => {
   const trimmed = boundary.trim();
   if (!trimmed) return [];
 
-  if (trimmed.toUpperCase().startsWith('POLYGON') || trimmed.startsWith('SRID=')) {
-    const wkt = trimmed.includes(';') ? trimmed.split(';').slice(1).join(';').trim() : trimmed;
-    const parsed = wellknown.parse(wkt) as GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  if (
+    trimmed.toUpperCase().startsWith('POLYGON') ||
+    trimmed.startsWith('SRID=')
+  ) {
+    const wkt = trimmed.includes(';')
+      ? trimmed.split(';').slice(1).join(';').trim()
+      : trimmed;
+    const parsed = wellknown.parse(wkt) as
+      | GeoJSON.Polygon
+      | GeoJSON.MultiPolygon
+      | null;
     if (!parsed) return [];
     if (parsed.type === 'Polygon') {
       return parsed.coordinates?.[0] as [number, number][];
@@ -46,17 +64,18 @@ const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
   if (points.length < 3) return points.slice();
 
   const centroid = points.reduce(
-    (acc, point) => [acc[0] + point[0] / points.length, acc[1] + point[1] / points.length],
+    (acc, point) => [
+      acc[0] + point[0] / points.length,
+      acc[1] + point[1] / points.length,
+    ],
     [0, 0]
   );
 
-  const sorted = points
-    .slice()
-    .sort((a, b) => {
-      const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
-      const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
-      return angleA - angleB;
-    });
+  const sorted = points.slice().sort((a, b) => {
+    const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+    const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+    return angleA - angleB;
+  });
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
@@ -70,12 +89,16 @@ const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
 const getZoneRing = (zone: Zone): [number, number][] => {
   if (zone.points?.length) {
     return sortBoundaryPoints(
-      zone.points.map((point) => [point.longitude, point.latitude] as [number, number])
+      zone.points.map(
+        (point) => [point.longitude, point.latitude] as [number, number]
+      )
     );
   }
   if (zone.boundaryCoords?.length) {
     return sortBoundaryPoints(
-      zone.boundaryCoords.map((coord) => [coord.longitude, coord.latitude] as [number, number])
+      zone.boundaryCoords.map(
+        (coord) => [coord.longitude, coord.latitude] as [number, number]
+      )
     );
   }
 
@@ -180,7 +203,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
     }
 
     if (!mapboxgl.accessToken) {
-      setSearchStatus('Location search is unavailable because the Mapbox token is missing.');
+      setSearchStatus(
+        'Location search is unavailable because the Mapbox token is missing.'
+      );
       return;
     }
 
@@ -288,7 +313,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
       return;
     }
 
-    const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+    const canvasContainer = mapContainer.current?.querySelector(
+      '.mapboxgl-canvas-container'
+    );
     if (canvasContainer instanceof HTMLElement) {
       canvasContainer.style.cursor = 'grab';
     }
@@ -417,7 +444,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
           'fill-opacity': 0.18,
         },
       },
-      map.current.getLayer('zone-create-boundary') ? 'zone-create-boundary' : undefined
+      map.current.getLayer('zone-create-boundary')
+        ? 'zone-create-boundary'
+        : undefined
     );
 
     map.current.addLayer(
@@ -430,7 +459,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
           'line-width': 2,
         },
       },
-      map.current.getLayer('zone-create-boundary-outline') ? 'zone-create-boundary-outline' : undefined
+      map.current.getLayer('zone-create-boundary-outline')
+        ? 'zone-create-boundary-outline'
+        : undefined
     );
 
     return () => {
@@ -451,7 +482,14 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
 
   return (
     <div style={{ marginBottom: '15px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '10px',
+        }}
+      >
         <div>
           <div style={{ fontWeight: 600, marginBottom: '4px' }}>Boundary</div>
           <div style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -499,7 +537,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
             type="button"
             onClick={() => {
               if (!navigator.geolocation) {
-                setLocationError('Geolocation is not supported in this browser.');
+                setLocationError(
+                  'Geolocation is not supported in this browser.'
+                );
                 return;
               }
               setIsLocating(true);
@@ -540,7 +580,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ position: 'relative', flex: '1 1 320px', minWidth: '240px' }}>
+        <div
+          style={{ position: 'relative', flex: '1 1 320px', minWidth: '240px' }}
+        >
           <input
             type="text"
             value={searchQuery}
@@ -645,13 +687,19 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
       />
       <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
         {boundaryPoints.length} points added
-        {boundaryPoints.length < 3 ? '. Add at least 3 points to create the zone.' : '.'}
+        {boundaryPoints.length < 3
+          ? '. Add at least 3 points to create the zone.'
+          : '.'}
       </div>
       {locationError && (
-        <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '12px' }}>{locationError}</div>
+        <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '12px' }}>
+          {locationError}
+        </div>
       )}
       {searchStatus && (
-        <div style={{ marginTop: '8px', color: '#475569', fontSize: '12px' }}>{searchStatus}</div>
+        <div style={{ marginTop: '8px', color: '#475569', fontSize: '12px' }}>
+          {searchStatus}
+        </div>
       )}
     </div>
   );
@@ -662,9 +710,14 @@ export const Zones = () => {
   const { apiClient } = useAPI();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [internalTagsInput, setInternalTagsInput] = useState('');
   const [showCreateZone, setShowCreateZone] = useState(false);
-  const [createBoundaryPoints, setCreateBoundaryPoints] = useState<[number, number][]>([]);
-  const [createMapCenter, setCreateMapCenter] = useState<[number, number]>([-87.6298, 41.8781]);
+  const [createBoundaryPoints, setCreateBoundaryPoints] = useState<
+    [number, number][]
+  >([]);
+  const [createMapCenter, setCreateMapCenter] = useState<[number, number]>([
+    -87.6298, 41.8781,
+  ]);
   const [createZoneError, setCreateZoneError] = useState<string | null>(null);
   const [isCreatingZone, setIsCreatingZone] = useState(false);
   const [selectedMetro, setSelectedMetro] = useState('Chicago, Illinois');
@@ -674,7 +727,9 @@ export const Zones = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
+  const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(
+    new Set()
+  );
   const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -688,7 +743,8 @@ export const Zones = () => {
       return zone;
     }
 
-    return new Date(zone.createdAt).getTime() > new Date(latest.createdAt).getTime()
+    return new Date(zone.createdAt).getTime() >
+      new Date(latest.createdAt).getTime()
       ? zone
       : latest;
   }, null);
@@ -701,6 +757,7 @@ export const Zones = () => {
     );
     setName('');
     setDescription('');
+    setInternalTagsInput('');
     setCreateBoundaryPoints([]);
     setCreateZoneError(null);
     setShowCreateZone(true);
@@ -728,10 +785,11 @@ export const Zones = () => {
     'San Diego, California',
     'San Francisco, California',
     'Seattle, Washington',
-    'Washington, DC'
+    'Washington, DC',
   ];
 
-  const effectiveMetro = selectedMetro === '__custom__' ? customMetro.trim() : selectedMetro;
+  const effectiveMetro =
+    selectedMetro === '__custom__' ? customMetro.trim() : selectedMetro;
 
   const handleImportZones = async () => {
     setImportError(null);
@@ -741,9 +799,12 @@ export const Zones = () => {
     }
     setImporting(true);
     try {
-      const importItem = await apiClient.post<ZoneImport>('/sonar/zones/import', {
-        metroName: effectiveMetro
-      });
+      const importItem = await apiClient.post<ZoneImport>(
+        '/sonar/zones/import',
+        {
+          metroName: effectiveMetro,
+        }
+      );
       setImportJobs((prev) => [importItem, ...prev]);
       setImportPolling(true);
     } catch (error) {
@@ -756,10 +817,16 @@ export const Zones = () => {
 
   const fetchImportJobs = async () => {
     try {
-      const query = effectiveMetro ? `?metroName=${encodeURIComponent(effectiveMetro)}` : '';
-      const response = await apiClient.get<ZoneImport[]>(`/sonar/zones/imports${query}`);
+      const query = effectiveMetro
+        ? `?metroName=${encodeURIComponent(effectiveMetro)}`
+        : '';
+      const response = await apiClient.get<ZoneImport[]>(
+        `/sonar/zones/imports${query}`
+      );
       setImportJobs(response);
-      const hasPending = response.some((item) => item.status === 'queued' || item.status === 'in_progress');
+      const hasPending = response.some(
+        (item) => item.status === 'queued' || item.status === 'in_progress'
+      );
       setImportPolling(hasPending);
     } catch (error) {
       console.error('Failed to fetch zone import status', error);
@@ -767,7 +834,9 @@ export const Zones = () => {
   };
 
   const handleDeleteImportZones = async (importId: string) => {
-    const confirmed = window.confirm('Delete all zones created by this import? This cannot be undone.');
+    const confirmed = window.confirm(
+      'Delete all zones created by this import? This cannot be undone.'
+    );
     if (!confirmed) {
       return;
     }
@@ -800,7 +869,9 @@ export const Zones = () => {
     const sortedBoundaryPoints = sortBoundaryPoints(createBoundaryPoints);
     const center = calculateBoundaryCenter(sortedBoundaryPoints);
     if (!center) {
-      setCreateZoneError('Unable to calculate the zone center from the boundary.');
+      setCreateZoneError(
+        'Unable to calculate the zone center from the boundary.'
+      );
       return;
     }
 
@@ -811,6 +882,7 @@ export const Zones = () => {
       const createdZone = await apiClient.post<Zone>('/sonar/zones', {
         name: trimmedName,
         description,
+        internalTags: parseInternalTagsInput(internalTagsInput),
         latitude: center.latitude,
         longitude: center.longitude,
       });
@@ -844,7 +916,9 @@ export const Zones = () => {
 
   useEffect(() => {
     if (importJobs.length === 0) return;
-    const completed = importJobs.filter((job) => job.status === 'completed' && job.zoneCount > 0);
+    const completed = importJobs.filter(
+      (job) => job.status === 'completed' && job.zoneCount > 0
+    );
     if (completed.length === 0) return;
 
     setNotifiedImportIds((prev) => {
@@ -870,7 +944,7 @@ export const Zones = () => {
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [-87.6298, 41.8781],
         zoom: 10,
-        interactive: true
+        interactive: true,
       });
 
       mapRef.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -910,30 +984,32 @@ export const Zones = () => {
           type: 'Feature' as const,
           geometry: {
             type: 'Polygon' as const,
-            coordinates: [rawCoords]
+            coordinates: [rawCoords],
           },
           properties: {
             id: zone.id,
             name: zone.name,
             description: zone.description || '',
-            boundaryCount: Math.max(rawCoords.length - 1, 0)
-          }
+            boundaryCount: Math.max(rawCoords.length - 1, 0),
+          },
         };
       })
       .filter(Boolean);
 
     const geojson = {
       type: 'FeatureCollection' as const,
-      features: features as Array<GeoJSON.Feature<GeoJSON.Polygon>>
+      features: features as Array<GeoJSON.Feature<GeoJSON.Polygon>>,
     };
 
-    const existingSource = map.getSource('zones') as mapboxgl.GeoJSONSource | undefined;
+    const existingSource = map.getSource('zones') as
+      | mapboxgl.GeoJSONSource
+      | undefined;
     if (existingSource) {
       existingSource.setData(geojson);
     } else {
       map.addSource('zones', {
         type: 'geojson',
-        data: geojson
+        data: geojson,
       });
 
       map.addLayer({
@@ -942,8 +1018,8 @@ export const Zones = () => {
         source: 'zones',
         paint: {
           'fill-color': '#3b82f6',
-          'fill-opacity': 0.25
-        }
+          'fill-opacity': 0.25,
+        },
       });
 
       map.addLayer({
@@ -952,8 +1028,8 @@ export const Zones = () => {
         source: 'zones',
         paint: {
           'line-color': '#1d4ed8',
-          'line-width': 2
-        }
+          'line-width': 2,
+        },
       });
     }
 
@@ -1008,7 +1084,8 @@ export const Zones = () => {
         popupContent.appendChild(meta);
 
         const button = document.createElement('button');
-        button.className = 'mt-3 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700';
+        button.className =
+          'mt-3 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700';
         button.textContent = 'Open Zone';
         button.addEventListener('click', () => {
           popupRef.current?.remove();
@@ -1029,266 +1106,362 @@ export const Zones = () => {
   const allZoneBoundaries = zones
     .map((zone) => getZoneRing(zone))
     .filter((points) => points.length >= 4);
-  
-  return <div className="m-10">
-    <div className="flex items-center justify-between gap-4">
-      <h1 className='text-2xl font-bold'>Zones</h1>
-      <button
-        className="rounded-md bg-blue-500 px-4 py-2 font-semibold text-white"
-        onClick={openCreateZoneModal}
-      >
-        Create Zone
-      </button>
-    </div>
-    <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-800">Import Neighborhood Zones</h2>
-      <p className="text-sm text-slate-500">Select a metro area to import neighborhood polygons from OSM.</p>
-      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-        <div className="flex-1">
-          <label className="mb-1 block text-sm font-medium text-slate-700">Metro Area</label>
-          <select
-            value={selectedMetro}
-            onChange={(e) => setSelectedMetro(e.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            {metroOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-            <option value="__custom__">Custom...</option>
-          </select>
-        </div>
-        {selectedMetro === '__custom__' && (
+
+  return (
+    <div className="m-10">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">Zones</h1>
+        <button
+          className="rounded-md bg-blue-500 px-4 py-2 font-semibold text-white"
+          onClick={openCreateZoneModal}
+        >
+          Create Zone
+        </button>
+      </div>
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-800">
+          Import Neighborhood Zones
+        </h2>
+        <p className="text-sm text-slate-500">
+          Select a metro area to import neighborhood polygons from OSM.
+        </p>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
           <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Custom Metro</label>
-            <input
-              type="text"
-              value={customMetro}
-              onChange={(e) => setCustomMetro(e.target.value)}
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Metro Area
+            </label>
+            <select
+              value={selectedMetro}
+              onChange={(e) => setSelectedMetro(e.target.value)}
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="e.g., Minneapolis, Minnesota"
-            />
+            >
+              {metroOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+              <option value="__custom__">Custom...</option>
+            </select>
           </div>
-        )}
-        <button
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-          onClick={handleImportZones}
-          disabled={importing || !effectiveMetro}
-        >
-          {importing ? 'Queueing...' : 'Import Zones'}
-        </button>
-      </div>
-      {importError && (
-        <p className="mt-2 text-sm text-red-600">{importError}</p>
-      )}
-      <div className="mt-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">Recent Imports</h3>
-          <button
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-            onClick={fetchImportJobs}
-          >
-            Refresh
-          </button>
-        </div>
-        {importJobs.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-400">No imports yet.</p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {importJobs.slice(0, 6).map((job) => (
-              <div key={job.id} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm">
-                <div>
-                  <div className="font-medium text-slate-800">{job.metroName}</div>
-                  <div className="text-xs text-slate-500">Status: {job.status}</div>
-                  {job.errorMessage && <div className="text-xs text-red-600">{job.errorMessage}</div>}
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-xs text-slate-500">Zones: {job.zoneCount}</div>
-                  <button
-                    className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-60"
-                    onClick={() => handleDeleteImportZones(job.id)}
-                    disabled={deletingImportId === job.id}
-                  >
-                    {deletingImportId === job.id ? 'Deleting...' : 'Delete Zones'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-    <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">Zone Boundaries</h2>
-          <p className="text-sm text-slate-500">Click a zone polygon to view details and open its page.</p>
-        </div>
-        <button
-          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-          onClick={() => {
-            if (!mapRef.current || zones.length === 0) return;
-            const bounds = new mapboxgl.LngLatBounds();
-            let hasBounds = false;
-            zones.forEach((zone) => {
-              const coords = getZoneRing(zone);
-              coords.forEach((coord) => {
-                bounds.extend(coord);
-                hasBounds = true;
-              });
-            });
-            if (hasBounds) {
-              mapRef.current.fitBounds(bounds, { padding: 40, maxZoom: 12 });
-            }
-          }}
-        >
-          Fit to zones
-        </button>
-      </div>
-      <div className="mt-4 h-[420px] w-full overflow-hidden rounded-lg border border-slate-200">
-        <div ref={mapContainer} className="h-full w-full" />
-      </div>
-    </div>
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-      gap: '20px',
-      padding: '20px'
-    }}>
-      {zones && zones.map((zone) => (
-        <div 
-          key={zone.id}
-          style={{
-            padding: '20px',
-            border: '1px solid #ccc',
-            borderRadius: '8px',
-            backgroundColor: '#fff',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}
-        >
-          <h2 style={{ 
-            margin: '0 0 15px 0',
-            color: '#333'
-          }}>{zone.name}</h2>
-          <p style={{
-            margin: '5px 0',
-            color: '#666'
-          }}>Latitude: {zone.latitude}</p>
-          <p style={{
-            margin: '5px 0',
-            color: '#666'
-          }}>Longitude: {zone.longitude}</p>
-          <p style={{
-            margin: '5px 0',
-            color: '#666'
-          }}>Boundary points: {zone.points?.length ?? 0}</p>
-          <button
-            onClick={() => deleteZone(zone)}
-            className="bg-red-500 text-white px-4 py-2 rounded-md mr-2"
-          >
-            Delete
-          </button>
-          <button
-            onClick={() => navigate(`/zones/${zone.id}`)}
-            className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          >
-            View
-          </button>
-        </div>
-        
-      ))}
-    </div>
-    {showCreateZone && (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}>
-        <div style={{
-          backgroundColor: '#fff',
-          padding: '20px',
-          borderRadius: '8px',
-          width: 'min(900px, calc(100vw - 40px))',
-          maxHeight: 'calc(100vh - 40px)',
-          overflowY: 'auto'
-        }}>
-          <h2>Create Zone</h2>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>Name:</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
-            />
-          </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '4px',
-                border: '1px solid #ccc',
-                minHeight: '100px',
-                resize: 'vertical'
-              }}
-            />
-          </div>
-          <ZoneBoundaryEditorMap
-            center={createMapCenter}
-            boundaryPoints={createBoundaryPoints}
-            allZoneBoundaries={allZoneBoundaries}
-            onMapClick={(lngLat) => {
-              setCreateBoundaryPoints((prev) => [...prev, [lngLat.lng, lngLat.lat]]);
-            }}
-            onClearBoundary={() => setCreateBoundaryPoints([])}
-          />
-          {createZoneError && (
-            <div style={{ marginBottom: '15px', color: '#dc2626', fontSize: '14px' }}>
-              {createZoneError}
+          {selectedMetro === '__custom__' && (
+            <div className="flex-1">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Custom Metro
+              </label>
+              <input
+                type="text"
+                value={customMetro}
+                onChange={(e) => setCustomMetro(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                placeholder="e.g., Minneapolis, Minnesota"
+              />
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <button
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            onClick={handleImportZones}
+            disabled={importing || !effectiveMetro}
+          >
+            {importing ? 'Queueing...' : 'Import Zones'}
+          </button>
+        </div>
+        {importError && (
+          <p className="mt-2 text-sm text-red-600">{importError}</p>
+        )}
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Recent Imports
+            </h3>
             <button
-              onClick={closeCreateZoneModal}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '4px',
-                border: '1px solid #ccc',
-                backgroundColor: '#fff'
-              }}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              onClick={fetchImportJobs}
             >
-              Cancel
-            </button>
-            <button
-              onClick={handleCreateZone}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '4px',
-                border: 'none',
-                backgroundColor: '#007bff',
-                color: '#fff'
-              }}
-              disabled={isCreatingZone}
-            >
-              {isCreatingZone ? 'Creating...' : 'Create'}
+              Refresh
             </button>
           </div>
+          {importJobs.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-400">No imports yet.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {importJobs.slice(0, 6).map((job) => (
+                <div
+                  key={job.id}
+                  className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <div>
+                    <div className="font-medium text-slate-800">
+                      {job.metroName}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Status: {job.status}
+                    </div>
+                    {job.errorMessage && (
+                      <div className="text-xs text-red-600">
+                        {job.errorMessage}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-slate-500">
+                      Zones: {job.zoneCount}
+                    </div>
+                    <button
+                      className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-60"
+                      onClick={() => handleDeleteImportZones(job.id)}
+                      disabled={deletingImportId === job.id}
+                    >
+                      {deletingImportId === job.id
+                        ? 'Deleting...'
+                        : 'Delete Zones'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-    )}
-  </div>;
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">
+              Zone Boundaries
+            </h2>
+            <p className="text-sm text-slate-500">
+              Click a zone polygon to view details and open its page.
+            </p>
+          </div>
+          <button
+            className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+            onClick={() => {
+              if (!mapRef.current || zones.length === 0) return;
+              const bounds = new mapboxgl.LngLatBounds();
+              let hasBounds = false;
+              zones.forEach((zone) => {
+                const coords = getZoneRing(zone);
+                coords.forEach((coord) => {
+                  bounds.extend(coord);
+                  hasBounds = true;
+                });
+              });
+              if (hasBounds) {
+                mapRef.current.fitBounds(bounds, { padding: 40, maxZoom: 12 });
+              }
+            }}
+          >
+            Fit to zones
+          </button>
+        </div>
+        <div className="mt-4 h-[420px] w-full overflow-hidden rounded-lg border border-slate-200">
+          <div ref={mapContainer} className="h-full w-full" />
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: '20px',
+          padding: '20px',
+        }}
+      >
+        {zones &&
+          zones.map((zone) => (
+            <div
+              key={zone.id}
+              style={{
+                padding: '20px',
+                border: '1px solid #ccc',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              }}
+            >
+              <h2
+                style={{
+                  margin: '0 0 15px 0',
+                  color: '#333',
+                }}
+              >
+                {zone.name}
+              </h2>
+              <p
+                style={{
+                  margin: '5px 0',
+                  color: '#666',
+                }}
+              >
+                Latitude: {zone.latitude}
+              </p>
+              <p
+                style={{
+                  margin: '5px 0',
+                  color: '#666',
+                }}
+              >
+                Longitude: {zone.longitude}
+              </p>
+              <p
+                style={{
+                  margin: '5px 0',
+                  color: '#666',
+                }}
+              >
+                Boundary points: {zone.points?.length ?? 0}
+              </p>
+              <button
+                onClick={() => deleteZone(zone)}
+                className="bg-red-500 text-white px-4 py-2 rounded-md mr-2"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => navigate(`/zones/${zone.id}`)}
+                className="bg-blue-500 text-white px-4 py-2 rounded-md"
+              >
+                View
+              </button>
+            </div>
+          ))}
+      </div>
+      {showCreateZone && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '8px',
+              width: 'min(900px, calc(100vw - 40px))',
+              maxHeight: 'calc(100vh - 40px)',
+              overflowY: 'auto',
+            }}
+          >
+            <h2>Create Zone</h2>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Name:
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Description:
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                  minHeight: '100px',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Internal Tags:
+              </label>
+              <input
+                type="text"
+                value={internalTagsInput}
+                onChange={(e) => setInternalTagsInput(e.target.value)}
+                placeholder="e.g. starter_region, downtown, high_density"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                }}
+              />
+              <div
+                style={{ marginTop: '6px', color: '#666', fontSize: '12px' }}
+              >
+                Internal-only metadata tags. These are not shown to players.
+              </div>
+            </div>
+            <ZoneBoundaryEditorMap
+              center={createMapCenter}
+              boundaryPoints={createBoundaryPoints}
+              allZoneBoundaries={allZoneBoundaries}
+              onMapClick={(lngLat) => {
+                setCreateBoundaryPoints((prev) => [
+                  ...prev,
+                  [lngLat.lng, lngLat.lat],
+                ]);
+              }}
+              onClearBoundary={() => setCreateBoundaryPoints([])}
+            />
+            {createZoneError && (
+              <div
+                style={{
+                  marginBottom: '15px',
+                  color: '#dc2626',
+                  fontSize: '14px',
+                }}
+              >
+                {createZoneError}
+              </div>
+            )}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+              }}
+            >
+              <button
+                onClick={closeCreateZoneModal}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                  backgroundColor: '#fff',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateZone}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: '#007bff',
+                  color: '#fff',
+                }}
+                disabled={isCreatingZone}
+              >
+                {isCreatingZone ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };

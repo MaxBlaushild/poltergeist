@@ -45,6 +45,10 @@ func (h *characterHandler) Update(ctx context.Context, id uuid.UUID, updates *mo
 	return h.db.WithContext(ctx).Model(&models.Character{}).Where("id = ?", id).Updates(updates).Error
 }
 
+func (h *characterHandler) UpdateFields(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error {
+	return h.db.WithContext(ctx).Model(&models.Character{}).Where("id = ?", id).Updates(updates).Error
+}
+
 func (h *characterHandler) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Character{}, id).Error
 }

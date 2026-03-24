@@ -22,6 +22,8 @@ func (h *zoneQuestArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (
 		Preload("QuestArchetype").
 		Preload("QuestArchetype.ItemRewards").
 		Preload("QuestArchetype.ItemRewards.InventoryItem").
+		Preload("QuestArchetype.SpellRewards").
+		Preload("QuestArchetype.SpellRewards.Spell").
 		Preload("Zone").
 		Preload("Character").
 		First(&zoneQuestArchetype, "id = ?", id).Error; err != nil {
@@ -82,6 +84,8 @@ func (h *zoneQuestArchetypeHandle) FindAll(ctx context.Context) ([]*models.ZoneQ
 		Preload("QuestArchetype").
 		Preload("QuestArchetype.ItemRewards").
 		Preload("QuestArchetype.ItemRewards.InventoryItem").
+		Preload("QuestArchetype.SpellRewards").
+		Preload("QuestArchetype.SpellRewards.Spell").
 		Preload("Zone").
 		Preload("Character").
 		Find(&zoneQuestArchetypes).Error; err != nil {

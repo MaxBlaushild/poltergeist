@@ -6,7 +6,6 @@ export var Rarity;
     Rarity["Mythic"] = "Mythic";
     Rarity["NotDroppable"] = "Not Droppable";
 })(Rarity || (Rarity = {}));
-;
 export var ItemType;
 (function (ItemType) {
     ItemType[ItemType["CipherOfTheLaughingMonkey"] = 1] = "CipherOfTheLaughingMonkey";
@@ -25,7 +24,6 @@ export var ItemType;
     ItemType[ItemType["WickedSpellbook"] = 14] = "WickedSpellbook";
     ItemType[ItemType["CompassOfPeace"] = 15] = "CompassOfPeace";
 })(ItemType || (ItemType = {}));
-;
 export const ItemsUsabledInMenu = [
     ItemType.WickedSpellbook,
     ItemType.CipherOfTheLaughingMonkey,
@@ -37,9 +35,7 @@ export const ItemsUsabledInMenu = [
 export const PointOfInterestEffectingItems = [
     ItemType.CipherOfTheLaughingMonkey,
 ];
-export const ItemsUsabledOnPointOfInterest = [
-    ItemType.GoldenTelescope,
-];
+export const ItemsUsabledOnPointOfInterest = [ItemType.GoldenTelescope];
 export const ItemsRequiringTeamId = [
     ItemType.WickedSpellbook,
     ItemType.CortezsCutlass,

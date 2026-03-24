@@ -67,7 +67,6 @@ import '../widgets/rpg_dialogue_modal.dart';
 import '../widgets/scenario_panel.dart';
 import '../widgets/tracked_quests_overlay.dart';
 import '../widgets/shop_modal.dart';
-import '../widgets/quest_filter_panel.dart';
 import '../widgets/treasure_chest_panel.dart';
 import '../widgets/used_item_modal.dart';
 import '../widgets/zone_widget.dart';
@@ -7196,56 +7195,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                     },
                                   ),
                                   const SizedBox(height: 12),
-                                  Consumer2<QuestFilterProvider, TagsProvider>(
-                                    builder: (context, filters, tags, _) {
-                                      final hasActiveFilters =
-                                          filters.enableTagFilter &&
-                                          tags.selectedTagIds.isNotEmpty;
-                                      return Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          _OverlayButton(
-                                            icon: Icons.tune,
-                                            onTap: () {
-                                              if (kDebugMode) {
-                                                debugPrint(
-                                                  'SinglePlayer: filters tapped',
-                                                );
-                                              }
-                                              _showTagFilter(context);
-                                            },
-                                          ),
-                                          if (hasActiveFilters)
-                                            Positioned(
-                                              top: -2,
-                                              right: -2,
-                                              child: Container(
-                                                width: 10,
-                                                height: 10,
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFFF5C542,
-                                                  ),
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: Colors.white,
-                                                    width: 1,
-                                                  ),
-                                                  boxShadow: const [
-                                                    BoxShadow(
-                                                      color: Colors.black26,
-                                                      blurRadius: 4,
-                                                      offset: Offset(0, 2),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
                                   _OverlayButton(
                                     icon: Icons.my_location,
                                     onTap: _centerOnUserLocation,
@@ -9685,74 +9634,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showTagFilter(BuildContext context) {
-    context.read<TagsProvider>().refresh();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: false,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        top: false,
-        child: DraggableScrollableSheet(
-          initialChildSize: 0.9,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (_, scrollController) => PaperSheet(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Filters',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    child: const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: QuestFilterPanel(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

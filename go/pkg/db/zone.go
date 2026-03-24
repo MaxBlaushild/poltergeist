@@ -19,6 +19,9 @@ func (h *zoneHandler) Create(ctx context.Context, zone *models.Zone) error {
 	if zone.Boundary == "" {
 		zone.Boundary = "010300000000000000" // Empty polygon in WKB hex format
 	}
+	if zone.InternalTags == nil {
+		zone.InternalTags = models.StringArray{}
+	}
 
 	return h.db.WithContext(ctx).Create(zone).Error
 }
@@ -200,4 +203,19 @@ func (h *zoneHandler) UpdateNameAndDescription(ctx context.Context, zoneID uuid.
 		"name":        name,
 		"description": description,
 	}).Error
+}
+
+func (h *zoneHandler) UpdateMetadata(ctx context.Context, zoneID uuid.UUID, name string, description string, internalTags models.StringArray) (*models.Zone, error) {
+	if internalTags == nil {
+		internalTags = models.StringArray{}
+	}
+	if err := h.db.WithContext(ctx).Model(&models.Zone{}).Where("id = ?", zoneID).Updates(map[string]interface{}{
+		"name":          name,
+		"description":   description,
+		"internal_tags": internalTags,
+	}).Error; err != nil {
+		return nil, err
+	}
+
+	return h.FindByID(ctx, zoneID)
 }

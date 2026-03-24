@@ -27,6 +27,8 @@ type DbClient interface {
 	Match() MatchHandle
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
+	District() DistrictHandle
+	DistrictSeedJob() DistrictSeedJobHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	PointOfInterestImport() PointOfInterestImportHandle
 	ZoneImport() ZoneImportHandle
@@ -60,6 +62,7 @@ type DbClient interface {
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	QuestArchetypeItemReward() QuestArchetypeItemRewardHandle
+	QuestArchetypeSpellReward() QuestArchetypeSpellRewardHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	QuestGenerationJob() QuestGenerationJobHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
@@ -351,6 +354,22 @@ type PointOfInterestChallengeHandle interface {
 	DeleteAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) error
 }
 
+type DistrictHandle interface {
+	Create(ctx context.Context, district *models.District, zoneIDs []uuid.UUID) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.District, error)
+	FindAll(ctx context.Context) ([]*models.District, error)
+	Update(ctx context.Context, districtID uuid.UUID, name string, description string, zoneIDs []uuid.UUID) (*models.District, error)
+	Delete(ctx context.Context, districtID uuid.UUID) error
+}
+
+type DistrictSeedJobHandle interface {
+	Create(ctx context.Context, job *models.DistrictSeedJob) error
+	Update(ctx context.Context, job *models.DistrictSeedJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.DistrictSeedJob, error)
+	FindFiltered(ctx context.Context, districtID *uuid.UUID, statuses []string, limit int) ([]models.DistrictSeedJob, error)
+	DeleteByID(ctx context.Context, id uuid.UUID) error
+}
+
 type PointOfInterestImportHandle interface {
 	Create(ctx context.Context, item *models.PointOfInterestImport) error
 	Update(ctx context.Context, item *models.PointOfInterestImport) error
@@ -619,6 +638,7 @@ type ZoneHandle interface {
 	RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
 	UpdateNameAndDescription(ctx context.Context, zoneID uuid.UUID, name string, description string) error
+	UpdateMetadata(ctx context.Context, zoneID uuid.UUID, name string, description string, internalTags models.StringArray) (*models.Zone, error)
 	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error)
 }
 
@@ -658,6 +678,11 @@ type QuestArchetypeChallengeHandle interface {
 type QuestArchetypeItemRewardHandle interface {
 	ReplaceForQuestArchetype(ctx context.Context, questArchetypeID uuid.UUID, rewards []models.QuestArchetypeItemReward) error
 	FindByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) ([]models.QuestArchetypeItemReward, error)
+}
+
+type QuestArchetypeSpellRewardHandle interface {
+	ReplaceForQuestArchetype(ctx context.Context, questArchetypeID uuid.UUID, rewards []models.QuestArchetypeSpellReward) error
+	FindByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) ([]models.QuestArchetypeSpellReward, error)
 }
 
 type QuestArchetypeNodeChallengeHandle interface {
@@ -992,6 +1017,7 @@ type CharacterHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error)
 	FindAll(ctx context.Context) ([]*models.Character, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
+	UpdateFields(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

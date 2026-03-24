@@ -242,7 +242,10 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 
 func (c *client) generateQuestImagePrompt(questCopy QuestCopy) (string, error) {
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: fmt.Sprintf(generateQuestImagePromptTemplate, questCopy.Name, questCopy.Description),
+		Question: fmt.Sprintf(
+			generateQuestImagePromptTemplate,
+			fmt.Sprintf("%s\n\n%s", questCopy.Name, questCopy.Description),
+		),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)

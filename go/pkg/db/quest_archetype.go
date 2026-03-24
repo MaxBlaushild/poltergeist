@@ -35,8 +35,12 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
+		Preload("Root").
 		Preload("Root.Challenges").
 		Preload("Root.LocationArchetype").
+		Preload("Root.ScenarioTemplate").
 		First(&questArchetype, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -56,8 +60,12 @@ func (h *questArchetypeHandle) FindAll(ctx context.Context) ([]*models.QuestArch
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
+		Preload("Root").
 		Preload("Root.Challenges").
 		Preload("Root.LocationArchetype").
+		Preload("Root.ScenarioTemplate").
 		Find(&questArchetypes).Error; err != nil {
 		return nil, err
 	}

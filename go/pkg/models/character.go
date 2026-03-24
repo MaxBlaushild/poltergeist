@@ -12,6 +12,7 @@ type Character struct {
 	UpdatedAt             time.Time           `json:"updatedAt"`
 	Name                  string              `json:"name"`
 	Description           string              `json:"description"`
+	InternalTags          StringArray         `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	MapIconURL            string              `json:"mapIconUrl"`
 	DialogueImageURL      string              `json:"dialogueImageUrl"`
 	ThumbnailURL          string              `json:"thumbnailUrl"`

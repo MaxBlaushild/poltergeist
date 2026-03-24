@@ -77,6 +77,7 @@ type ScenarioRecord = {
   latitude: number;
   longitude: number;
   prompt: string;
+  internalTags?: string[];
   imageUrl: string;
   thumbnailUrl: string;
   difficulty: number;
@@ -113,6 +114,7 @@ type ScenarioFormState = {
   latitude: string;
   longitude: string;
   prompt: string;
+  internalTagsInput: string;
   imageUrl: string;
   thumbnailUrl: string;
   difficulty: string;
@@ -309,6 +311,7 @@ const emptyFormState = (): ScenarioFormState => ({
   latitude: '',
   longitude: '',
   prompt: '',
+  internalTagsInput: '',
   imageUrl: '',
   thumbnailUrl: '',
   difficulty: '24',
@@ -368,6 +371,16 @@ const parseCsv = (value: string): string[] => {
     .map((part) => part.trim())
     .filter(Boolean);
 };
+
+const parseInternalTagsInput = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag !== '')
+    )
+  );
 
 const normalizeFailureDrainType = (
   value?: string | null
@@ -1128,6 +1141,7 @@ export const Scenarios = () => {
       latitude: record.latitude.toString(),
       longitude: record.longitude.toString(),
       prompt: record.prompt,
+      internalTagsInput: (record.internalTags ?? []).join(', '),
       imageUrl: record.imageUrl,
       thumbnailUrl: record.thumbnailUrl ?? '',
       difficulty: record.difficulty.toString(),
@@ -1270,6 +1284,7 @@ export const Scenarios = () => {
       latitude: parseFloatValue(form.latitude),
       longitude: parseFloatValue(form.longitude),
       prompt: form.prompt.trim(),
+      internalTags: parseInternalTagsInput(form.internalTagsInput),
       imageUrl: form.imageUrl.trim(),
       thumbnailUrl: form.thumbnailUrl.trim(),
       difficulty: parseIntValue(form.difficulty, 24),
@@ -2938,7 +2953,7 @@ export const Scenarios = () => {
         <div className="flex flex-wrap gap-3">
           <input
             type="text"
-            placeholder="Search scenarios by prompt or ID..."
+            placeholder="Search scenarios by prompt, ID, or internal tag..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full max-w-xl p-2 border rounded-md"
@@ -3038,6 +3053,10 @@ export const Scenarios = () => {
               ) : null}
               <div className="text-sm text-gray-800 mb-3 line-clamp-3">
                 {record.prompt}
+              </div>
+              <div className="text-xs text-gray-600 mb-3">
+                Internal Tags:{' '}
+                {(record.internalTags ?? []).join(', ') || 'None'}
               </div>
               {(record.thumbnailUrl || record.imageUrl) && (
                 <button
@@ -3307,6 +3326,25 @@ export const Scenarios = () => {
                 }
                 className="w-full border rounded-md p-2 min-h-[90px]"
               />
+            </label>
+
+            <label className="text-sm block mb-4">
+              Internal Tags
+              <input
+                value={form.internalTagsInput}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    internalTagsInput: e.target.value,
+                  }))
+                }
+                placeholder="tutorial, boss_intro, social_check"
+                className="w-full border rounded-md p-2"
+              />
+              <span className="mt-1 block text-xs text-gray-500">
+                Internal-only metadata tags used for admin classification and
+                tooling.
+              </span>
             </label>
 
             <label className="inline-flex items-center gap-2 mb-4">
