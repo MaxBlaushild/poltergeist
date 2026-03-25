@@ -712,6 +712,7 @@ type QuestGenerationJobHandle interface {
 	Update(ctx context.Context, job *models.QuestGenerationJob) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestGenerationJob, error)
 	FindByZoneQuestArchetypeID(ctx context.Context, zoneQuestArchetypeID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error)
+	FindByQuestArchetypeIDAndZoneID(ctx context.Context, questArchetypeID uuid.UUID, zoneID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error)
 	MarkInProgress(ctx context.Context, id uuid.UUID) error
 	RecordSuccess(ctx context.Context, id uuid.UUID, questID uuid.UUID) error
 	RecordFailure(ctx context.Context, id uuid.UUID, errMsg string) error

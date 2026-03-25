@@ -47,6 +47,20 @@ func (h *questGenerationJobHandle) FindByZoneQuestArchetypeID(ctx context.Contex
 	return jobs, nil
 }
 
+func (h *questGenerationJobHandle) FindByQuestArchetypeIDAndZoneID(ctx context.Context, questArchetypeID uuid.UUID, zoneID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error) {
+	var jobs []*models.QuestGenerationJob
+	query := h.db.WithContext(ctx).
+		Where("quest_archetype_id = ? AND zone_id = ?", questArchetypeID, zoneID).
+		Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+	return jobs, nil
+}
+
 func (h *questGenerationJobHandle) MarkInProgress(ctx context.Context, id uuid.UUID) error {
 	updates := map[string]interface{}{
 		"status":     models.QuestGenerationStatusInProgress,

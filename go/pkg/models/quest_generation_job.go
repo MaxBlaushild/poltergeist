@@ -17,7 +17,7 @@ type QuestGenerationJob struct {
 	ID                    uuid.UUID   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt             time.Time   `json:"createdAt"`
 	UpdatedAt             time.Time   `json:"updatedAt"`
-	ZoneQuestArchetypeID  uuid.UUID   `json:"zoneQuestArchetypeId" gorm:"type:uuid"`
+	ZoneQuestArchetypeID  *uuid.UUID  `json:"zoneQuestArchetypeId,omitempty" gorm:"type:uuid"`
 	ZoneID                uuid.UUID   `json:"zoneId" gorm:"type:uuid"`
 	QuestArchetypeID      uuid.UUID   `json:"questArchetypeId" gorm:"type:uuid"`
 	QuestGiverCharacterID *uuid.UUID  `json:"questGiverCharacterId,omitempty" gorm:"type:uuid"`

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import {
   QuestArchetypeDraft,
   QuestTemplateGeneratorDraft,
@@ -11,6 +11,7 @@ import {
   QuestArchetypeNode,
   QuestArchetypeChallenge,
   QuestArchetypeChallengeTemplate,
+  QuestGenerationJob,
   QuestArchetypeNodeType,
   QuestDifficultyMode,
   InventoryItem,
@@ -118,6 +119,45 @@ const resolveChallengeProficiency = (
   const template = resolveChallengeTemplateForChallenge(challenge, challengeTemplates);
   return template?.proficiency ?? challenge.proficiency ?? '';
 };
+
+const extractApiErrorMessage = (error: unknown, fallback: string) => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'response' in error &&
+    error.response &&
+    typeof error.response === 'object' &&
+    'data' in error.response &&
+    error.response.data &&
+    typeof error.response.data === 'object' &&
+    'error' in error.response.data &&
+    typeof error.response.data.error === 'string'
+  ) {
+    return error.response.data.error;
+  }
+  return fallback;
+};
+
+const isPendingQuestGenerationStatus = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
+const questGenerationStatusChipClass = (status?: string | null) => {
+  switch (status) {
+    case 'completed':
+      return 'qa-chip success';
+    case 'failed':
+      return 'qa-chip danger';
+    case 'in_progress':
+      return 'qa-chip accent';
+    case 'queued':
+      return 'qa-chip muted';
+    default:
+      return 'qa-chip muted';
+  }
+};
+
+const formatQuestGenerationStatus = (status?: string | null) =>
+  (status || 'queued').replace(/_/g, ' ');
 
 const questArchetypeFormHasExplicitCopy = (
   form: QuestArchetypeFormState
@@ -1534,6 +1574,7 @@ const validateQuestTemplateGeneratorForm = (
 
 export const QuestArchetypeComponent = () => {
   const { apiClient } = useAPI();
+  const { zones } = useZoneContext();
   const {
     questArchetypes,
     locationArchetypes,
@@ -1562,6 +1603,8 @@ export const QuestArchetypeComponent = () => {
   const [shouldShowModal, setShouldShowModal] = useState(false);
   const [shouldShowGeneratorModal, setShouldShowGeneratorModal] =
     useState(false);
+  const [shouldShowGenerateQuestModal, setShouldShowGenerateQuestModal] =
+    useState(false);
   const [createForm, setCreateForm] = useState<QuestArchetypeFormState>(
     createEmptyQuestArchetypeForm()
   );
@@ -1587,6 +1630,14 @@ export const QuestArchetypeComponent = () => {
   const [archetypeSearch, setArchetypeSearch] = useState<string>('');
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<string>('');
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
+  const [generateQuestZoneSearch, setGenerateQuestZoneSearch] =
+    useState<string>('');
+  const [selectedGenerateZoneId, setSelectedGenerateZoneId] =
+    useState<string>('');
+  const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
+  const [generateQuestError, setGenerateQuestError] = useState<string>('');
+  const [questGenerationJob, setQuestGenerationJob] =
+    useState<QuestGenerationJob | null>(null);
 
   const filteredCreateLocationArchetypes = locationArchetypes
     .filter((archetype) =>
@@ -1616,6 +1667,30 @@ export const QuestArchetypeComponent = () => {
         (archetype) => archetype.id === selectedArchetypeId
       ) ?? null,
     [questArchetypes, selectedArchetypeId]
+  );
+
+  const filteredGenerationZones = useMemo(() => {
+    const query = generateQuestZoneSearch.trim().toLowerCase();
+    const sorted = [...zones].sort((left, right) =>
+      left.name.localeCompare(right.name)
+    );
+    if (!query) {
+      return sorted.slice(0, 18);
+    }
+    return sorted
+      .filter((zone) => zone.name.toLowerCase().includes(query))
+      .slice(0, 18);
+  }, [generateQuestZoneSearch, zones]);
+
+  const selectedGenerateZone = useMemo(
+    () =>
+      zones.find((zone) => zone.id === selectedGenerateZoneId) ?? null,
+    [zones, selectedGenerateZoneId]
+  );
+
+  const generatedQuest = useMemo(
+    () => questGenerationJob?.quests?.[0] ?? null,
+    [questGenerationJob]
   );
 
   const flowMapLayout = useMemo(
@@ -1665,6 +1740,76 @@ export const QuestArchetypeComponent = () => {
       setSelectedNodeId(flowRoutes[0].id);
     }
   }, [flowRoutes, selectedNodeId]);
+
+  useEffect(() => {
+    if (!shouldShowGenerateQuestModal) {
+      return;
+    }
+    if (
+      selectedGenerateZoneId &&
+      zones.some((zone) => zone.id === selectedGenerateZoneId)
+    ) {
+      return;
+    }
+    setSelectedGenerateZoneId(filteredGenerationZones[0]?.id ?? '');
+  }, [
+    filteredGenerationZones,
+    selectedGenerateZoneId,
+    shouldShowGenerateQuestModal,
+    zones,
+  ]);
+
+  useEffect(() => {
+    if (
+      !shouldShowGenerateQuestModal ||
+      !questGenerationJob?.id ||
+      !isPendingQuestGenerationStatus(questGenerationJob.status)
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    const pollJob = async () => {
+      try {
+        const refreshed = await apiClient.get<QuestGenerationJob>(
+          `/sonar/questGenerationJobs/${questGenerationJob.id}`
+        );
+        if (!active) {
+          return;
+        }
+        setQuestGenerationJob(refreshed);
+        if (refreshed.status === 'failed' && refreshed.errorMessage) {
+          setGenerateQuestError(refreshed.errorMessage);
+        } else if (refreshed.status === 'completed') {
+          setGenerateQuestError('');
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        console.error('Failed to refresh quest generation job', error);
+        setGenerateQuestError(
+          extractApiErrorMessage(
+            error,
+            'Failed to refresh quest generation status.'
+          )
+        );
+      }
+    };
+
+    pollJob();
+    const interval = window.setInterval(pollJob, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [
+    apiClient,
+    questGenerationJob?.id,
+    questGenerationJob?.status,
+    shouldShowGenerateQuestModal,
+  ]);
 
   useEffect(() => {
     const fetchReferenceData = async () => {
@@ -1725,6 +1870,42 @@ export const QuestArchetypeComponent = () => {
       window.clearTimeout(handle);
     };
   }, [apiClient, proficiencySearch]);
+
+  const openGenerateQuestModal = () => {
+    setGenerateQuestZoneSearch('');
+    setSelectedGenerateZoneId('');
+    setGenerateQuestError('');
+    setQuestGenerationJob(null);
+    setShouldShowGenerateQuestModal(true);
+  };
+
+  const handleGenerateQuest = async () => {
+    if (!selectedArchetype || !selectedGenerateZoneId) {
+      return;
+    }
+    setIsGeneratingQuest(true);
+    setGenerateQuestError('');
+    setQuestGenerationJob(null);
+    try {
+      const job = await apiClient.post<QuestGenerationJob>(
+        `/sonar/questArchetypes/${selectedArchetype.id}/generate`,
+        {
+          zoneId: selectedGenerateZoneId,
+        }
+      );
+      setQuestGenerationJob(job);
+    } catch (error) {
+      console.error('Failed to generate quest from archetype', error);
+      setGenerateQuestError(
+        extractApiErrorMessage(
+          error,
+          'Failed to generate a quest from this archetype.'
+        )
+      );
+    } finally {
+      setIsGeneratingQuest(false);
+    }
+  };
 
   const openChallengeEditor = (
     selected: QuestArchetypeChallenge,
@@ -1874,6 +2055,13 @@ export const QuestArchetypeComponent = () => {
                     </p>
                   </div>
                   <div className="qa-actions">
+                    <button
+                      className="qa-btn qa-btn-primary"
+                      onClick={openGenerateQuestModal}
+                      disabled={zones.length === 0}
+                    >
+                      Generate in Zone
+                    </button>
                     <button
                       className="qa-btn qa-btn-ghost"
                       onClick={() => {
@@ -2241,6 +2429,198 @@ export const QuestArchetypeComponent = () => {
           </div>
         </section>
       </div>
+
+      {shouldShowGenerateQuestModal && selectedArchetype && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Generate Quest In Zone</h2>
+            <p className="qa-muted" style={{ marginBottom: 16 }}>
+              Spin up one concrete quest from{' '}
+              <strong>{selectedArchetype.name}</strong> in a specific zone. The
+              archetype will keep its explicit copy and structure, while quest
+              generation chooses the best-fit characters, points of interest,
+              and exact placements.
+            </p>
+
+            <div className="qa-form-grid">
+              <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                <div className="qa-label">Zone Search</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={generateQuestZoneSearch}
+                  onChange={(e) => setGenerateQuestZoneSearch(e.target.value)}
+                  placeholder="Search zones..."
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Pick Zone</div>
+                {filteredGenerationZones.length === 0 ? (
+                  <div className="qa-empty">No zones match that search.</div>
+                ) : (
+                  <div
+                    className="qa-sidebar-list"
+                    style={{ maxHeight: 280, marginTop: 8 }}
+                  >
+                    {filteredGenerationZones.map((zone) => (
+                      <button
+                        key={zone.id}
+                        type="button"
+                        className={`qa-sidebar-item ${selectedGenerateZoneId === zone.id ? 'is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedGenerateZoneId(zone.id);
+                          setGenerateQuestError('');
+                          setQuestGenerationJob(null);
+                        }}
+                      >
+                        <div className="qa-sidebar-item-title">{zone.name}</div>
+                        <div className="qa-meta">
+                          {(zone.internalTags ?? []).length > 0
+                            ? (zone.internalTags ?? []).join(', ')
+                            : 'No internal tags'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Generation Brief</div>
+                <div className="qa-panel" style={{ minHeight: 280 }}>
+                  <div className="qa-card-header" style={{ marginBottom: 0 }}>
+                    <div className="qa-card-title">
+                      {selectedGenerateZone?.name ?? 'Select a zone'}
+                    </div>
+                    {questGenerationJob && (
+                      <span
+                        className={questGenerationStatusChipClass(
+                          questGenerationJob.status
+                        )}
+                      >
+                        {formatQuestGenerationStatus(
+                          questGenerationJob.status
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <p className="qa-muted" style={{ marginTop: 8 }}>
+                    {(selectedArchetype.characterTags ?? []).length > 0
+                      ? `Quest giver tags: ${selectedArchetype.characterTags?.join(', ')}`
+                      : 'Quest giver: no tag preference'}
+                  </p>
+                  <p className="qa-muted" style={{ marginTop: 8 }}>
+                    {(selectedArchetype.internalTags ?? []).length > 0
+                      ? `Template tags: ${selectedArchetype.internalTags?.join(', ')}`
+                      : 'Template tags: none'}
+                  </p>
+                  {selectedGenerateZone && (
+                    <div className="qa-inline" style={{ marginTop: 12 }}>
+                      <span className="qa-chip muted">
+                        Zone Tags:{' '}
+                        {(selectedGenerateZone.internalTags ?? []).length > 0
+                          ? selectedGenerateZone.internalTags?.join(', ')
+                          : 'None'}
+                      </span>
+                    </div>
+                  )}
+                  {questGenerationJob && (
+                    <div className="qa-inline" style={{ marginTop: 12 }}>
+                      <span className="qa-chip muted">
+                        Progress: {questGenerationJob.completedCount}/
+                        {questGenerationJob.totalCount}
+                      </span>
+                      <span className="qa-chip muted">
+                        Failed: {questGenerationJob.failedCount}
+                      </span>
+                    </div>
+                  )}
+                  {generatedQuest && (
+                    <div className="qa-panel" style={{ marginTop: 16 }}>
+                      <div className="qa-card-title">Quest generated</div>
+                      <div className="qa-meta" style={{ marginTop: 6 }}>
+                        {generatedQuest.name || 'Untitled Quest'} ·{' '}
+                        {generatedQuest.id.slice(0, 8)}…
+                      </div>
+                      <p className="qa-muted" style={{ marginTop: 10 }}>
+                        {generatedQuest.description ||
+                          'The quest was created successfully.'}
+                      </p>
+                      <div className="qa-inline" style={{ marginTop: 10 }}>
+                        <span className="qa-chip success">
+                          Zone: {selectedGenerateZone?.name}
+                        </span>
+                        {generatedQuest.questGiverCharacterId && (
+                          <span className="qa-chip accent">
+                            Quest giver assigned
+                          </span>
+                        )}
+                        <span className="qa-chip muted">
+                          Open it from the Quests screen.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {questGenerationJob &&
+                    isPendingQuestGenerationStatus(
+                      questGenerationJob.status
+                    ) && (
+                      <div className="qa-panel" style={{ marginTop: 16 }}>
+                        <div className="qa-card-title">Generation queued</div>
+                        <p className="qa-muted" style={{ marginTop: 10 }}>
+                          This quest is being generated in the background. You
+                          can keep this modal open to watch it finish.
+                        </p>
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              {generateQuestError && (
+                <div
+                  className="qa-chip danger"
+                  style={{ gridColumn: '1 / -1', marginTop: 4 }}
+                >
+                  {generateQuestError}
+                </div>
+              )}
+            </div>
+
+            <div className="qa-footer">
+              <button
+                type="button"
+                className="qa-btn qa-btn-outline"
+                onClick={() => {
+                  setShouldShowGenerateQuestModal(false);
+                  setGenerateQuestZoneSearch('');
+                  setSelectedGenerateZoneId('');
+                  setGenerateQuestError('');
+                  setQuestGenerationJob(null);
+                }}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="qa-btn qa-btn-primary"
+                disabled={
+                  !selectedGenerateZoneId ||
+                  isGeneratingQuest ||
+                  isPendingQuestGenerationStatus(questGenerationJob?.status)
+                }
+                onClick={handleGenerateQuest}
+              >
+                {isGeneratingQuest
+                  ? 'Queueing...'
+                  : isPendingQuestGenerationStatus(questGenerationJob?.status)
+                    ? 'Generating...'
+                    : 'Generate Quest'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {shouldShowGeneratorModal && (
         <div className="qa-modal">

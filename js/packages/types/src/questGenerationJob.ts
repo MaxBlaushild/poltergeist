@@ -4,7 +4,7 @@ export type QuestGenerationJob = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  zoneQuestArchetypeId: string;
+  zoneQuestArchetypeId?: string | null;
   zoneId: string;
   questArchetypeId: string;
   questGiverCharacterId?: string | null;

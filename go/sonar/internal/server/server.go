@@ -465,6 +465,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
+	r.POST("/sonar/questArchetypes/:id/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestForQuestArchetype))
 	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeNode))
 	r.PATCH("/sonar/questArchetypeNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetypeNode))
 	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeChallenge))
@@ -478,6 +479,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneQuestArchetype))
 	r.POST("/sonar/zoneQuestArchetypes/:id/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateZoneQuestArchetypeQuests))
 	r.GET("/sonar/zoneQuestArchetypes/:id/questGenerations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestGenerationJobsForZoneQuestArchetype))
+	r.GET("/sonar/questGenerationJobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestGenerationJob))
 	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRelevantTags))
 	r.POST("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTrackedPointOfInterestGroup))
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
@@ -2667,7 +2669,7 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 		ID:                    uuid.New(),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
-		ZoneQuestArchetypeID:  zoneQuestArchetype.ID,
+		ZoneQuestArchetypeID:  &zoneQuestArchetype.ID,
 		ZoneID:                zoneQuestArchetype.ZoneID,
 		QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
 		QuestGiverCharacterID: resolvedCharacterID,
@@ -2729,48 +2731,9 @@ func (s *server) getQuestGenerationJobsForZoneQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
-	questIDs := make([]uuid.UUID, 0)
-	seen := map[uuid.UUID]struct{}{}
-	for _, job := range jobsList {
-		for _, idStr := range job.QuestIDs {
-			questID, err := uuid.Parse(idStr)
-			if err != nil {
-				continue
-			}
-			if _, ok := seen[questID]; ok {
-				continue
-			}
-			seen[questID] = struct{}{}
-			questIDs = append(questIDs, questID)
-		}
-	}
-
-	questsByID := map[uuid.UUID]models.Quest{}
-	if len(questIDs) > 0 {
-		quests, err := s.dbClient.Quest().FindByIDs(ctx, questIDs)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		for _, quest := range quests {
-			questsByID[quest.ID] = quest
-		}
-	}
-
-	for _, job := range jobsList {
-		if len(job.QuestIDs) == 0 {
-			continue
-		}
-		job.Quests = make([]models.Quest, 0, len(job.QuestIDs))
-		for _, idStr := range job.QuestIDs {
-			questID, err := uuid.Parse(idStr)
-			if err != nil {
-				continue
-			}
-			if quest, ok := questsByID[questID]; ok {
-				job.Quests = append(job.Quests, quest)
-			}
-		}
+	if err := s.hydrateQuestGenerationJobs(ctx, jobsList); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	ctx.JSON(http.StatusOK, jobsList)
