@@ -1,3 +1,14 @@
+DO $$
+BEGIN
+  IF to_regclass('quest_node_challenges') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS quest_node_challenges_prevent_challenge_targets ON quest_node_challenges';
+  END IF;
+END
+$$;
+
+DROP TRIGGER IF EXISTS quest_nodes_prevent_prompt_overlap
+  ON quest_nodes;
+
 ALTER TABLE quest_node_children
   DROP COLUMN IF EXISTS quest_node_challenge_id;
 
