@@ -39,6 +39,7 @@ func (h *questNodeChallengeHandle) Update(ctx context.Context, id uuid.UUID, upd
 		"reward":                   updates.Reward,
 		"inventory_item_id":        updates.InventoryItemID,
 		"submission_type":          updates.SubmissionType,
+		"scale_with_user_level":    updates.ScaleWithUserLevel,
 		"difficulty":               updates.Difficulty,
 		"stat_tags":                updates.StatTags,
 		"proficiency":              updates.Proficiency,

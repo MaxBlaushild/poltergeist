@@ -135,6 +135,8 @@ func (s *server) generateQuestArchetypeFromSteps(
 		Description:        description,
 		AcceptanceDialogue: buildGeneratedQuestTemplateAcceptanceDialogue(requestBody.ThemePrompt, steps),
 		ImageURL:           "",
+		DifficultyMode:     models.QuestDifficultyModeScale,
+		Difficulty:         1,
 		DefaultGold:        0,
 		RewardMode:         models.RewardModeRandom,
 		RandomRewardSize:   models.RandomRewardSizeSmall,

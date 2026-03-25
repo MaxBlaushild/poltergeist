@@ -636,6 +636,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/challenges/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitStandaloneChallenge))
 	r.POST("/sonar/challenges/:id/rewards/choose-item", middleware.WithAuthenticationWithoutLocation(s.authClient, s.chooseChallengeItemChoiceReward))
 	r.POST("/sonar/challenges/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeImage))
+	r.POST("/sonar/challenge-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeTemplateImage))
 	r.DELETE("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallenge))
 	r.DELETE("/sonar/challenge-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallengeTemplate))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
@@ -1976,14 +1977,15 @@ func selectQuestNodeChallenge(
 		return nil, fmt.Errorf("quest node challenge not found")
 	}
 	return &models.QuestNodeChallenge{
-		ID:              standaloneChallenge.ID,
-		Question:        standaloneChallenge.Question,
-		Reward:          standaloneChallenge.Reward,
-		InventoryItemID: standaloneChallenge.InventoryItemID,
-		SubmissionType:  standaloneChallenge.SubmissionType,
-		Difficulty:      standaloneChallenge.Difficulty,
-		StatTags:        standaloneChallenge.StatTags,
-		Proficiency:     standaloneChallenge.Proficiency,
+		ID:                 standaloneChallenge.ID,
+		Question:           standaloneChallenge.Question,
+		Reward:             standaloneChallenge.Reward,
+		InventoryItemID:    standaloneChallenge.InventoryItemID,
+		SubmissionType:     standaloneChallenge.SubmissionType,
+		ScaleWithUserLevel: standaloneChallenge.ScaleWithUserLevel,
+		Difficulty:         standaloneChallenge.Difficulty,
+		StatTags:           standaloneChallenge.StatTags,
+		Proficiency:        standaloneChallenge.Proficiency,
 	}, nil
 }
 
@@ -2891,8 +2893,6 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Reward              int        `json:"reward"`
-		InventoryItemID     *int       `json:"inventoryItemId"`
 		Proficiency         *string    `json:"proficiency"`
 		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
 		questArchetypeNodePayload
@@ -2955,8 +2955,8 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 		ChallengeTemplateID: nil,
-		Reward:              requestBody.Reward,
-		InventoryItemID:     requestBody.InventoryItemID,
+		Reward:              0,
+		InventoryItemID:     nil,
 		Proficiency:         requestBody.Proficiency,
 		Difficulty:          0,
 		UnlockedNodeID:      newNodeID,
@@ -2998,8 +2998,6 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Reward              *int       `json:"reward"`
-		InventoryItemID     *int       `json:"inventoryItemId"`
 		Proficiency         *string    `json:"proficiency"`
 		Difficulty          *int       `json:"difficulty"`
 		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
@@ -3020,9 +3018,8 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	if requestBody.Reward != nil {
-		existing.Reward = *requestBody.Reward
-	}
+	existing.Reward = 0
+	existing.InventoryItemID = nil
 	if requestBody.ChallengeTemplateID != nil {
 		challengeTemplate, err := s.validateQuestArchetypeChallengeTemplate(
 			ctx,
@@ -3043,14 +3040,6 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		if challengeTemplate != nil {
 			existing.Proficiency = challengeTemplate.Proficiency
 			existing.Difficulty = challengeTemplate.Difficulty
-		}
-	}
-	if requestBody.InventoryItemID != nil {
-		if *requestBody.InventoryItemID <= 0 {
-			existing.InventoryItemID = nil
-		} else {
-			value := *requestBody.InventoryItemID
-			existing.InventoryItemID = &value
 		}
 	}
 	if requestBody.Proficiency != nil {
@@ -3223,6 +3212,8 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		AcceptanceDialogue  []string                            `json:"acceptanceDialogue"`
 		ImageURL            string                              `json:"imageUrl"`
 		DefaultGold         *int                                `json:"defaultGold"`
+		DifficultyMode      string                              `json:"difficultyMode"`
+		Difficulty          *int                                `json:"difficulty"`
 		RewardMode          string                              `json:"rewardMode"`
 		RandomRewardSize    string                              `json:"randomRewardSize"`
 		RewardExperience    *int                                `json:"rewardExperience"`
@@ -3257,6 +3248,16 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	difficultyMode, difficulty, err := normalizeQuestDifficultySettings(
+		requestBody.DifficultyMode,
+		requestBody.Difficulty,
+		models.QuestDifficultyModeScale,
+		1,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	name, description, acceptanceDialogue, err := normalizeExplicitQuestTemplateContent(
 		requestBody.Name,
 		requestBody.Description,
@@ -3277,6 +3278,8 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	questArchetype.Description = description
 	questArchetype.AcceptanceDialogue = acceptanceDialogue
 	questArchetype.ImageURL = requestBody.ImageURL
+	questArchetype.DifficultyMode = difficultyMode
+	questArchetype.Difficulty = difficulty
 	if requestBody.DefaultGold != nil {
 		questArchetype.DefaultGold = *requestBody.DefaultGold
 	}
@@ -3707,6 +3710,8 @@ func (s *server) createQuest(ctx *gin.Context) {
 		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
 		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
+		DifficultyMode        string                      `json:"difficultyMode"`
+		Difficulty            *int                        `json:"difficulty"`
 		RewardMode            string                      `json:"rewardMode"`
 		RandomRewardSize      string                      `json:"randomRewardSize"`
 		RewardExperience      *int                        `json:"rewardExperience"`
@@ -3743,6 +3748,16 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	difficultyMode, difficulty, err := normalizeQuestDifficultySettings(
+		requestBody.DifficultyMode,
+		requestBody.Difficulty,
+		models.QuestDifficultyModeScale,
+		1,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	acceptanceDialogue := models.StringArray(requestBody.AcceptanceDialogue)
 	if acceptanceDialogue == nil {
@@ -3761,6 +3776,8 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ZoneID:                requestBody.ZoneID,
 		QuestArchetypeID:      requestBody.QuestArchetypeID,
 		QuestGiverCharacterID: requestBody.QuestGiverCharacterID,
+		DifficultyMode:        difficultyMode,
+		Difficulty:            difficulty,
 		RewardMode:            models.RewardModeRandom,
 		RandomRewardSize:      models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
 		RewardExperience:      0,
@@ -3877,6 +3894,8 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
 		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
+		DifficultyMode        string                      `json:"difficultyMode"`
+		Difficulty            *int                        `json:"difficulty"`
 		RewardMode            string                      `json:"rewardMode"`
 		RandomRewardSize      string                      `json:"randomRewardSize"`
 		RewardExperience      *int                        `json:"rewardExperience"`
@@ -3918,6 +3937,16 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
+	difficultyMode, difficulty, err := normalizeQuestDifficultySettings(
+		requestBody.DifficultyMode,
+		requestBody.Difficulty,
+		quest.DifficultyMode,
+		quest.Difficulty,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	previousQuestGiver := quest.QuestGiverCharacterID
 	quest.Name = requestBody.Name
@@ -3929,6 +3958,8 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.ZoneID = requestBody.ZoneID
 	quest.QuestArchetypeID = requestBody.QuestArchetypeID
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
+	quest.DifficultyMode = difficultyMode
+	quest.Difficulty = difficulty
 	if strings.TrimSpace(requestBody.RewardMode) != "" {
 		quest.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
 	}
@@ -3978,6 +4009,10 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.UpdatedAt = time.Now()
 
 	if err := s.dbClient.Quest().Update(ctx, questID, quest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := syncQuestDifficultyConfiguration(ctx, s, quest); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -4206,14 +4241,15 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Tier            int      `json:"tier"`
-		Question        string   `json:"question"`
-		Reward          int      `json:"reward"`
-		InventoryItemID *int     `json:"inventoryItemId"`
-		StatTags        []string `json:"statTags"`
-		Difficulty      int      `json:"difficulty"`
-		Proficiency     string   `json:"proficiency"`
-		SubmissionType  string   `json:"submissionType"`
+		Tier               int      `json:"tier"`
+		Question           string   `json:"question"`
+		Reward             int      `json:"reward"`
+		InventoryItemID    *int     `json:"inventoryItemId"`
+		StatTags           []string `json:"statTags"`
+		ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
+		Difficulty         int      `json:"difficulty"`
+		Proficiency        string   `json:"proficiency"`
+		SubmissionType     string   `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4266,6 +4302,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		Reward:                 requestBody.Reward,
 		InventoryItemID:        requestBody.InventoryItemID,
 		SubmissionType:         parsedSubmissionType,
+		ScaleWithUserLevel:     requestBody.ScaleWithUserLevel,
 		Difficulty:             requestBody.Difficulty,
 		StatTags:               statTags,
 		Proficiency:            proficiencyPtr,
@@ -4307,14 +4344,15 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Tier            int      `json:"tier"`
-		Question        string   `json:"question"`
-		Reward          int      `json:"reward"`
-		InventoryItemID *int     `json:"inventoryItemId"`
-		StatTags        []string `json:"statTags"`
-		Difficulty      int      `json:"difficulty"`
-		Proficiency     string   `json:"proficiency"`
-		SubmissionType  *string  `json:"submissionType"`
+		Tier               int      `json:"tier"`
+		Question           string   `json:"question"`
+		Reward             int      `json:"reward"`
+		InventoryItemID    *int     `json:"inventoryItemId"`
+		StatTags           []string `json:"statTags"`
+		ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
+		Difficulty         int      `json:"difficulty"`
+		Proficiency        string   `json:"proficiency"`
+		SubmissionType     *string  `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4346,6 +4384,7 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 		Question:               requestBody.Question,
 		Reward:                 requestBody.Reward,
 		InventoryItemID:        requestBody.InventoryItemID,
+		ScaleWithUserLevel:     requestBody.ScaleWithUserLevel,
 		Difficulty:             requestBody.Difficulty,
 		StatTags:               statTags,
 		Proficiency:            proficiencyPtr,
@@ -4489,6 +4528,8 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ImageURL            string                              `json:"imageUrl"`
 		RootID              uuid.UUID                           `json:"rootID"`
 		DefaultGold         *int                                `json:"defaultGold"`
+		DifficultyMode      string                              `json:"difficultyMode"`
+		Difficulty          *int                                `json:"difficulty"`
 		RewardMode          string                              `json:"rewardMode"`
 		RandomRewardSize    string                              `json:"randomRewardSize"`
 		RewardExperience    *int                                `json:"rewardExperience"`
@@ -4523,6 +4564,16 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	difficultyMode, difficulty, err := normalizeQuestDifficultySettings(
+		requestBody.DifficultyMode,
+		requestBody.Difficulty,
+		models.QuestDifficultyModeScale,
+		1,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	name, description, acceptanceDialogue, err := normalizeExplicitQuestTemplateContent(
 		requestBody.Name,
 		requestBody.Description,
@@ -4540,6 +4591,8 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ImageURL:            requestBody.ImageURL,
 		RootID:              requestBody.RootID,
 		ID:                  uuid.New(),
+		DifficultyMode:      difficultyMode,
+		Difficulty:          difficulty,
 		RewardMode:          models.RewardModeRandom,
 		RandomRewardSize:    models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
 		RewardExperience:    0,
@@ -11281,13 +11334,13 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	challengeScaleWithUserLevel := standaloneChallenge != nil && standaloneChallenge.ScaleWithUserLevel
 
 	challenge, err := selectQuestNodeChallenge(node, standaloneChallenge, requestBody.QuestNodeChallengeID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	challengeScaleWithUserLevel := challenge.ScaleWithUserLevel
 
 	submissionType := challenge.SubmissionType
 	if strings.TrimSpace(string(submissionType)) == "" {

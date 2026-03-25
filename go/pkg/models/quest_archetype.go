@@ -13,6 +13,8 @@ type QuestArchetype struct {
 	Description         string                      `json:"description"`
 	AcceptanceDialogue  StringArray                 `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
 	ImageURL            string                      `json:"imageUrl"`
+	DifficultyMode      QuestDifficultyMode         `json:"difficultyMode" gorm:"column:difficulty_mode"`
+	Difficulty          int                         `json:"difficulty" gorm:"default:1"`
 	DefaultGold         int                         `json:"defaultGold"`
 	RewardMode          RewardMode                  `json:"rewardMode" gorm:"column:reward_mode"`
 	RandomRewardSize    RandomRewardSize            `json:"randomRewardSize" gorm:"column:random_reward_size"`

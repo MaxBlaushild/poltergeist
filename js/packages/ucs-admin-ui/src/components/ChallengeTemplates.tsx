@@ -185,6 +185,7 @@ export const ChallengeTemplates = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<ChallengeTemplateRecord | null>(null);
   const [form, setForm] = useState<ChallengeTemplateFormState>(emptyFormState());
@@ -259,6 +260,29 @@ export const ChallengeTemplates = () => {
     setShowModal(false);
   };
 
+  const refreshChallengeTemplateById = useCallback(
+    async (templateId: string): Promise<ChallengeTemplateRecord> => {
+      const latest = await apiClient.get<ChallengeTemplateRecord>(
+        `/sonar/challenge-templates/${templateId}`
+      );
+      setRecords((prev) => {
+        let found = false;
+        const next = prev.map((record) => {
+          if (record.id !== latest.id) return record;
+          found = true;
+          return latest;
+        });
+        return found ? next : [latest, ...prev];
+      });
+      if (editing?.id === latest.id) {
+        setEditing(latest);
+        setForm(formFromRecord(latest));
+      }
+      return latest;
+    },
+    [apiClient, editing]
+  );
+
   const save = async () => {
     try {
       setSaving(true);
@@ -319,6 +343,29 @@ export const ChallengeTemplates = () => {
       alert('Failed to queue challenge template generation.');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateImage = async (record: ChallengeTemplateRecord) => {
+    if (generatingTemplateId) return;
+    setGeneratingTemplateId(record.id);
+    const previousImageURL = (record.imageUrl || record.thumbnailUrl || '').trim();
+    try {
+      await apiClient.post(`/sonar/challenge-templates/${record.id}/generate-image`, {});
+
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        const latest = await refreshChallengeTemplateById(record.id);
+        const nextImageURL = (latest.imageUrl || latest.thumbnailUrl || '').trim();
+        if (nextImageURL && nextImageURL !== previousImageURL) {
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to queue challenge template image generation', error);
+      alert('Failed to queue challenge template image generation.');
+    } finally {
+      setGeneratingTemplateId(null);
     }
   };
 
@@ -442,8 +489,23 @@ export const ChallengeTemplates = () => {
                     <div className="text-sm text-gray-500">
                       Difficulty {record.difficulty} • Updated {formatDate(record.updatedAt)}
                     </div>
+                    {record.thumbnailUrl || record.imageUrl ? (
+                      <img
+                        src={record.thumbnailUrl || record.imageUrl}
+                        alt={record.question || 'Challenge template image'}
+                        className="h-28 w-28 rounded border object-cover"
+                      />
+                    ) : null}
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateImage(record)}
+                      disabled={Boolean(generatingTemplateId)}
+                      className="rounded border border-indigo-300 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {generatingTemplateId === record.id ? 'Generating...' : 'Generate Image'}
+                    </button>
                     <button
                       type="button"
                       onClick={() => openEdit(record)}

@@ -1,4 +1,5 @@
 import { InventoryItem } from './inventoryItem';
+import { QuestDifficultyMode } from './questDifficulty';
 import { QuestNode } from './questNode';
 import { Spell } from './spell';
 
@@ -37,6 +38,8 @@ export interface Quest {
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;
   completionCount?: number;
+  difficultyMode?: QuestDifficultyMode;
+  difficulty?: number;
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience?: number;

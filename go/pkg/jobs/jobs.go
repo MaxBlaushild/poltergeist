@@ -24,6 +24,7 @@ const (
 	GenerateScenarioImageTaskType                  = "generate_scenario_image"
 	GenerateTutorialImageTaskType                  = "generate_tutorial_image"
 	GenerateChallengeImageTaskType                 = "generate_challenge_image"
+	GenerateChallengeTemplateImageTaskType         = "generate_challenge_template_image"
 	GenerateScenarioTaskType                       = "generate_scenario"
 	GenerateChallengesTaskType                     = "generate_challenges"
 	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
@@ -269,6 +270,10 @@ type GenerateTutorialImageTaskPayload struct {
 
 type GenerateChallengeImageTaskPayload struct {
 	ChallengeID uuid.UUID `json:"challengeId"`
+}
+
+type GenerateChallengeTemplateImageTaskPayload struct {
+	ChallengeTemplateID uuid.UUID `json:"challengeTemplateId"`
 }
 
 type GenerateScenarioTaskPayload struct {

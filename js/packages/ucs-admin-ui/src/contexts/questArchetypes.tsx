@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   QuestArchetype,
+  QuestDifficultyMode,
   LocationArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
-  QuestArchetypeNodeEncounterItemReward,
   QuestArchetypeNodeType,
   ZoneQuestArchetype,
 } from '@poltergeist/types';
@@ -16,14 +16,7 @@ export type QuestArchetypeNodeDraft = {
   scenarioTemplateId?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
-  encounterRewardMode?: 'explicit' | 'random';
-  encounterRandomRewardSize?: 'small' | 'medium' | 'large';
-  encounterRewardExperience?: number | null;
-  encounterRewardGold?: number | null;
-  encounterMaterialRewards?: { resourceKey: string; amount: number }[];
-  encounterItemRewards?: QuestArchetypeNodeEncounterItemReward[];
   encounterProximityMeters?: number | null;
-  difficulty?: number | null;
 };
 
 export type QuestArchetypeDraft = {
@@ -32,7 +25,8 @@ export type QuestArchetypeDraft = {
   acceptanceDialogue?: string[];
   imageUrl?: string;
   rootNode: QuestArchetypeNodeDraft;
-  rootDifficulty?: number;
+  difficultyMode?: QuestDifficultyMode;
+  difficulty?: number;
   defaultGold?: number;
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';
@@ -73,20 +67,14 @@ type QuestArchetypesContextType = {
   ) => Promise<QuestArchetype | null>;
   addChallengeToQuestArchetype: (
     questArchetypeId: string,
-    rewardPoints: number,
-    inventoryItemId?: number | null,
     proficiency?: string | null,
-    difficulty?: number | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
     challengeTemplateId?: string | null
   ) => void;
   updateQuestArchetypeChallenge: (
     challengeId: string,
     updates: {
-      reward?: number;
-      inventoryItemId?: number | null;
       proficiency?: string | null;
-      difficulty?: number | null;
       challengeTemplateId?: string | null;
     }
   ) => void;
@@ -239,14 +227,7 @@ export const QuestArchetypesProvider = ({
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
-        encounterRewardMode: draft.rootNode.encounterRewardMode,
-        encounterRandomRewardSize: draft.rootNode.encounterRandomRewardSize,
-        encounterRewardExperience: draft.rootNode.encounterRewardExperience,
-        encounterRewardGold: draft.rootNode.encounterRewardGold,
-        encounterMaterialRewards: draft.rootNode.encounterMaterialRewards,
-        encounterItemRewards: draft.rootNode.encounterItemRewards,
         encounterProximityMeters: draft.rootNode.encounterProximityMeters,
-        difficulty: draft.rootNode.difficulty ?? draft.rootDifficulty,
       }
     );
     const questArchetype = await apiClient.post<QuestArchetype>(
@@ -257,6 +238,8 @@ export const QuestArchetypesProvider = ({
         acceptanceDialogue: draft.acceptanceDialogue,
         imageUrl: draft.imageUrl,
         rootId: node.id,
+        difficultyMode: draft.difficultyMode,
+        difficulty: draft.difficulty,
         defaultGold: draft.defaultGold,
         rewardMode: draft.rewardMode,
         randomRewardSize: draft.randomRewardSize,
@@ -336,34 +319,20 @@ export const QuestArchetypesProvider = ({
 
   const addChallengeToQuestArchetype = async (
     questArchetypeId: string,
-    reward: number,
-    inventoryItemId?: number | null,
     proficiency?: string | null,
-    difficulty?: number | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
     challengeTemplateId?: string | null
   ) => {
     const payload: {
-      reward: number;
-      inventoryItemId?: number;
       proficiency?: string;
-      difficulty?: number;
       challengeTemplateId?: string;
       nodeType?: QuestArchetypeNodeType;
       locationArchetypeID?: string;
       scenarioTemplateId?: string | null;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
-      encounterRewardMode?: 'explicit' | 'random';
-      encounterRandomRewardSize?: 'small' | 'medium' | 'large';
-      encounterRewardExperience?: number | null;
-      encounterRewardGold?: number | null;
-      encounterMaterialRewards?: { resourceKey: string; amount: number }[];
-      encounterItemRewards?: QuestArchetypeNodeEncounterItemReward[];
       encounterProximityMeters?: number | null;
-    } = {
-      reward,
-    };
+    } = {};
 
     if (unlockedNode) {
       if (unlockedNode.nodeType) {
@@ -380,26 +349,11 @@ export const QuestArchetypesProvider = ({
         payload.monsterTemplateIds = unlockedNode.monsterTemplateIds;
       }
       payload.targetLevel = unlockedNode.targetLevel;
-      payload.encounterRewardMode = unlockedNode.encounterRewardMode;
-      payload.encounterRandomRewardSize =
-        unlockedNode.encounterRandomRewardSize;
-      payload.encounterRewardExperience =
-        unlockedNode.encounterRewardExperience;
-      payload.encounterRewardGold = unlockedNode.encounterRewardGold;
-      payload.encounterMaterialRewards =
-        unlockedNode.encounterMaterialRewards;
-      payload.encounterItemRewards = unlockedNode.encounterItemRewards;
       payload.encounterProximityMeters =
         unlockedNode.encounterProximityMeters;
     }
-    if (inventoryItemId) {
-      payload.inventoryItemId = inventoryItemId;
-    }
     if (proficiency && proficiency.trim().length > 0) {
       payload.proficiency = proficiency.trim();
-    }
-    if (difficulty !== undefined && difficulty !== null) {
-      payload.difficulty = difficulty;
     }
     if (challengeTemplateId && challengeTemplateId.trim().length > 0) {
       payload.challengeTemplateId = challengeTemplateId.trim();
@@ -416,10 +370,7 @@ export const QuestArchetypesProvider = ({
   const updateQuestArchetypeChallenge = async (
     challengeId: string,
     updates: {
-      reward?: number;
-      inventoryItemId?: number | null;
       proficiency?: string | null;
-      difficulty?: number | null;
       challengeTemplateId?: string | null;
     }
   ) => {
@@ -445,14 +396,7 @@ export const QuestArchetypesProvider = ({
       scenarioTemplateId: updates.scenarioTemplateId,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,
-      encounterRewardMode: updates.encounterRewardMode,
-      encounterRandomRewardSize: updates.encounterRandomRewardSize,
-      encounterRewardExperience: updates.encounterRewardExperience,
-      encounterRewardGold: updates.encounterRewardGold,
-      encounterMaterialRewards: updates.encounterMaterialRewards,
-      encounterItemRewards: updates.encounterItemRewards,
       encounterProximityMeters: updates.encounterProximityMeters,
-      difficulty: updates.difficulty,
     });
     fetchQuestArchetypes();
   };

@@ -16,6 +16,8 @@ type questHandle struct {
 
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 	if quest != nil {
+		quest.DifficultyMode = models.NormalizeQuestDifficultyMode(string(quest.DifficultyMode))
+		quest.Difficulty = models.NormalizeQuestDifficulty(quest.Difficulty)
 		if strings.TrimSpace(string(quest.RewardMode)) == "" {
 			if quest.Gold > 0 || quest.RewardExperience > 0 {
 				quest.RewardMode = models.RewardModeExplicit
@@ -36,6 +38,8 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	if updates == nil {
 		return nil
 	}
+	updates.DifficultyMode = models.NormalizeQuestDifficultyMode(string(updates.DifficultyMode))
+	updates.Difficulty = models.NormalizeQuestDifficulty(updates.Difficulty)
 	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
 	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
 	if updates.RewardExperience < 0 {
@@ -52,6 +56,8 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"recurring_quest_id":       updates.RecurringQuestID,
 		"recurrence_frequency":     updates.RecurrenceFrequency,
 		"next_recurrence_at":       updates.NextRecurrenceAt,
+		"difficulty_mode":          updates.DifficultyMode,
+		"difficulty":               updates.Difficulty,
 		"reward_mode":              updates.RewardMode,
 		"random_reward_size":       updates.RandomRewardSize,
 		"reward_experience":        updates.RewardExperience,

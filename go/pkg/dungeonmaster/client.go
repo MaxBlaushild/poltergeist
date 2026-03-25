@@ -49,6 +49,23 @@ func normalizeQuestProficiency(proficiency *string) *string {
 	return &trimmed
 }
 
+func questUsesScaledDifficulty(quest *models.Quest) bool {
+	if quest == nil {
+		return false
+	}
+	return models.NormalizeQuestDifficultyMode(string(quest.DifficultyMode)) == models.QuestDifficultyModeScale
+}
+
+func questFixedDifficulty(quest *models.Quest, fallback int) int {
+	if quest != nil && quest.Difficulty >= 1 {
+		return quest.Difficulty
+	}
+	if fallback >= 1 {
+		return fallback
+	}
+	return 1
+}
+
 func NewClient(
 	googlemapsClient googlemaps.Client,
 	dbClient db.DbClient,
@@ -95,6 +112,8 @@ func (c *client) GenerateQuest(
 	if strings.TrimSpace(string(randomRewardSize)) == "" {
 		randomRewardSize = models.RandomRewardSizeSmall
 	}
+	difficultyMode := models.NormalizeQuestDifficultyMode(string(questArchType.DifficultyMode))
+	difficulty := models.NormalizeQuestDifficulty(questArchType.Difficulty)
 	acceptanceDialogue := questArchType.AcceptanceDialogue
 	if acceptanceDialogue == nil {
 		acceptanceDialogue = models.StringArray{}
@@ -127,6 +146,8 @@ func (c *client) GenerateQuest(
 		RecurringQuestID:      recurringQuestID,
 		RecurrenceFrequency:   questArchType.RecurrenceFrequency,
 		NextRecurrenceAt:      nextRecurrenceAt,
+		DifficultyMode:        difficultyMode,
+		Difficulty:            difficulty,
 		RewardMode:            rewardMode,
 		RandomRewardSize:      randomRewardSize,
 		RewardExperience:      questArchType.RewardExperience,
@@ -291,7 +312,13 @@ func (c *client) processQuestLocationNode(
 	} else {
 		questNodeID = uuid.New()
 		submissionType := models.DefaultQuestNodeSubmissionType()
-		locationChallenge, err := c.makeQuestLocationChallenge(zone.ID, pointOfInterest, submissionType)
+		locationChallenge, err := c.makeQuestLocationChallenge(
+			zone.ID,
+			pointOfInterest,
+			submissionType,
+			questUsesScaledDifficulty(quest),
+			questFixedDifficulty(quest, 1),
+		)
 		if err != nil {
 			return previousAnchor, err
 		}
@@ -325,18 +352,19 @@ func (c *client) processQuestLocationNode(
 			return currentAnchor, err
 		}
 		challenge := &models.QuestNodeChallenge{
-			ID:              uuid.New(),
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
-			QuestNodeID:     questNodeID,
-			Tier:            i,
-			Question:        resolvedChallenge.Question,
-			Reward:          allotedChallenge.Reward,
-			InventoryItemID: allotedChallenge.InventoryItemID,
-			Difficulty:      resolvedChallenge.Difficulty,
-			StatTags:        resolvedChallenge.StatTags,
-			Proficiency:     resolvedChallenge.Proficiency,
-			SubmissionType:  resolvedChallenge.SubmissionType,
+			ID:                 uuid.New(),
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+			QuestNodeID:        questNodeID,
+			Tier:               i,
+			Question:           resolvedChallenge.Question,
+			Reward:             0,
+			InventoryItemID:    nil,
+			ScaleWithUserLevel: questUsesScaledDifficulty(quest),
+			Difficulty:         questFixedDifficulty(quest, resolvedChallenge.Difficulty),
+			StatTags:           resolvedChallenge.StatTags,
+			Proficiency:        resolvedChallenge.Proficiency,
+			SubmissionType:     resolvedChallenge.SubmissionType,
 		}
 		if err := c.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
 			return currentAnchor, err
@@ -435,12 +463,12 @@ func (c *client) processQuestScenarioNode(
 		InternalTags:              models.StringArray{},
 		ImageURL:                  strings.TrimSpace(template.ImageURL),
 		ThumbnailURL:              thumbnailURL,
-		ScaleWithUserLevel:        template.ScaleWithUserLevel,
-		RewardMode:                template.RewardMode,
-		RandomRewardSize:          template.RandomRewardSize,
-		Difficulty:                template.Difficulty,
-		RewardExperience:          template.RewardExperience,
-		RewardGold:                template.RewardGold,
+		ScaleWithUserLevel:        questUsesScaledDifficulty(quest),
+		RewardMode:                models.RewardModeExplicit,
+		RandomRewardSize:          models.RandomRewardSizeSmall,
+		Difficulty:                questFixedDifficulty(quest, template.Difficulty),
+		RewardExperience:          0,
+		RewardGold:                0,
 		MaterialRewards:           models.BaseMaterialRewards{},
 		OpenEnded:                 template.OpenEnded,
 		FailurePenaltyMode:        template.FailurePenaltyMode,
@@ -449,27 +477,35 @@ func (c *client) processQuestScenarioNode(
 		FailureManaDrainType:      template.FailureManaDrainType,
 		FailureManaDrainValue:     template.FailureManaDrainValue,
 		FailureStatuses:           cloneScenarioFailureStatuses(template.FailureStatuses),
-		SuccessRewardMode:         template.SuccessRewardMode,
-		SuccessHealthRestoreType:  template.SuccessHealthRestoreType,
-		SuccessHealthRestoreValue: template.SuccessHealthRestoreValue,
-		SuccessManaRestoreType:    template.SuccessManaRestoreType,
-		SuccessManaRestoreValue:   template.SuccessManaRestoreValue,
-		SuccessStatuses:           cloneScenarioFailureStatuses(template.SuccessStatuses),
+		SuccessRewardMode:         models.ScenarioSuccessRewardModeShared,
+		SuccessHealthRestoreType:  models.ScenarioFailureDrainTypeNone,
+		SuccessHealthRestoreValue: 0,
+		SuccessManaRestoreType:    models.ScenarioFailureDrainTypeNone,
+		SuccessManaRestoreValue:   0,
+		SuccessStatuses:           models.ScenarioFailureStatusTemplates{},
 		Ephemeral:                 false,
 	}
 	if err := c.dbClient.Scenario().Create(ctx, scenario); err != nil {
 		return previousAnchor, err
 	}
-	if err := c.dbClient.Scenario().ReplaceOptions(ctx, scenario.ID, scenarioOptionsFromTemplate(template.Options)); err != nil {
+	if err := c.dbClient.Scenario().ReplaceOptions(
+		ctx,
+		scenario.ID,
+		scenarioOptionsFromTemplate(
+			template.Options,
+			questUsesScaledDifficulty(quest),
+			questFixedDifficulty(quest, template.Difficulty),
+		),
+	); err != nil {
 		return previousAnchor, err
 	}
-	if err := c.dbClient.Scenario().ReplaceItemRewards(ctx, scenario.ID, scenarioItemRewardsFromTemplate(template.ItemRewards)); err != nil {
+	if err := c.dbClient.Scenario().ReplaceItemRewards(ctx, scenario.ID, []models.ScenarioItemReward{}); err != nil {
 		return previousAnchor, err
 	}
-	if err := c.dbClient.Scenario().ReplaceItemChoiceRewards(ctx, scenario.ID, scenarioItemChoiceRewardsFromTemplate(template.ItemChoiceRewards)); err != nil {
+	if err := c.dbClient.Scenario().ReplaceItemChoiceRewards(ctx, scenario.ID, []models.ScenarioItemChoiceReward{}); err != nil {
 		return previousAnchor, err
 	}
-	if err := c.dbClient.Scenario().ReplaceSpellRewards(ctx, scenario.ID, scenarioSpellRewardsFromTemplate(template.SpellRewards)); err != nil {
+	if err := c.dbClient.Scenario().ReplaceSpellRewards(ctx, scenario.ID, []models.ScenarioSpellReward{}); err != nil {
 		return previousAnchor, err
 	}
 
@@ -579,6 +615,8 @@ func (c *client) processQuestMonsterEncounterNode(
 	}
 	createdMonsters := make([]models.Monster, 0, len(sourceTemplates))
 	members := make([]models.MonsterEncounterMember, 0, len(sourceTemplates))
+	fixedDifficulty := questFixedDifficulty(quest, questArchTypeNode.TargetLevel)
+	scaleWithUserLevel := questUsesScaledDifficulty(quest)
 	for index, source := range sourceTemplates {
 		templateID := source.ID
 		imageURL := strings.TrimSpace(source.ImageURL)
@@ -599,7 +637,7 @@ func (c *client) processQuestMonsterEncounterNode(
 			Latitude:         currentAnchor.Latitude,
 			Longitude:        currentAnchor.Longitude,
 			TemplateID:       &templateID,
-			Level:            maxInt(1, questArchTypeNode.TargetLevel),
+			Level:            fixedDifficulty,
 			RewardMode:       models.RewardModeExplicit,
 			RandomRewardSize: models.RandomRewardSizeSmall,
 			RewardExperience: 0,
@@ -634,16 +672,16 @@ func (c *client) processQuestMonsterEncounterNode(
 		ThumbnailURL:       firstNonEmptyMonsterThumbnail(createdMonsters),
 		EncounterType:      deriveQuestEncounterType(sourceMonsters),
 		Ephemeral:          false,
-		ScaleWithUserLevel: false,
+		ScaleWithUserLevel: scaleWithUserLevel,
 		ZoneID:             zone.ID,
 		Latitude:           currentAnchor.Latitude,
 		Longitude:          currentAnchor.Longitude,
-		RewardMode:         questArchTypeNode.EncounterRewardMode,
-		RandomRewardSize:   questArchTypeNode.EncounterRandomRewardSize,
-		RewardExperience:   questArchTypeNode.EncounterRewardExperience,
-		RewardGold:         questArchTypeNode.EncounterRewardGold,
-		MaterialRewards:    questArchTypeNode.EncounterMaterialRewards,
-		ItemRewards:        questArchTypeNode.EncounterItemRewards,
+		RewardMode:         models.RewardModeExplicit,
+		RandomRewardSize:   models.RandomRewardSizeSmall,
+		RewardExperience:   0,
+		RewardGold:         0,
+		MaterialRewards:    models.BaseMaterialRewards{},
+		ItemRewards:        []models.MonsterEncounterRewardItem{},
 	}
 	if err := c.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
 		return previousAnchor, err
@@ -994,32 +1032,41 @@ func firstNonEmptyMonsterThumbnail(monsters []models.Monster) string {
 	return firstNonEmptyMonsterImage(monsters)
 }
 
-func scenarioOptionsFromTemplate(input models.ScenarioTemplateOptions) []models.ScenarioOption {
+func scenarioOptionsFromTemplate(
+	input models.ScenarioTemplateOptions,
+	scaleWithUserLevel bool,
+	difficulty int,
+) []models.ScenarioOption {
 	options := make([]models.ScenarioOption, 0, len(input))
 	for _, option := range input {
+		var optionDifficulty *int
+		if !scaleWithUserLevel {
+			value := questFixedDifficulty(nil, difficulty)
+			optionDifficulty = &value
+		}
 		options = append(options, models.ScenarioOption{
 			OptionText:                strings.TrimSpace(option.OptionText),
 			SuccessText:               strings.TrimSpace(option.SuccessText),
 			FailureText:               strings.TrimSpace(option.FailureText),
 			StatTag:                   option.StatTag,
 			Proficiencies:             cloneStringArray(option.Proficiencies),
-			Difficulty:                cloneOptionalInt(option.Difficulty),
-			RewardExperience:          option.RewardExperience,
-			RewardGold:                option.RewardGold,
+			Difficulty:                optionDifficulty,
+			RewardExperience:          0,
+			RewardGold:                0,
 			MaterialRewards:           models.BaseMaterialRewards{},
 			FailureHealthDrainType:    option.FailureHealthDrainType,
 			FailureHealthDrainValue:   option.FailureHealthDrainValue,
 			FailureManaDrainType:      option.FailureManaDrainType,
 			FailureManaDrainValue:     option.FailureManaDrainValue,
 			FailureStatuses:           cloneScenarioFailureStatuses(option.FailureStatuses),
-			SuccessHealthRestoreType:  option.SuccessHealthRestoreType,
-			SuccessHealthRestoreValue: option.SuccessHealthRestoreValue,
-			SuccessManaRestoreType:    option.SuccessManaRestoreType,
-			SuccessManaRestoreValue:   option.SuccessManaRestoreValue,
-			SuccessStatuses:           cloneScenarioFailureStatuses(option.SuccessStatuses),
-			ItemRewards:               scenarioOptionItemRewardsFromTemplate(option.ItemRewards),
-			ItemChoiceRewards:         scenarioOptionItemChoiceRewardsFromTemplate(option.ItemChoiceRewards),
-			SpellRewards:              scenarioOptionSpellRewardsFromTemplate(option.SpellRewards),
+			SuccessHealthRestoreType:  models.ScenarioFailureDrainTypeNone,
+			SuccessHealthRestoreValue: 0,
+			SuccessManaRestoreType:    models.ScenarioFailureDrainTypeNone,
+			SuccessManaRestoreValue:   0,
+			SuccessStatuses:           models.ScenarioFailureStatusTemplates{},
+			ItemRewards:               []models.ScenarioOptionItemReward{},
+			ItemChoiceRewards:         []models.ScenarioOptionItemChoiceReward{},
+			SpellRewards:              []models.ScenarioOptionSpellReward{},
 		})
 	}
 	return options
@@ -1143,7 +1190,13 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func (c *client) makeQuestLocationChallenge(zoneID uuid.UUID, poi *models.PointOfInterest, submissionType models.QuestNodeSubmissionType) (*models.Challenge, error) {
+func (c *client) makeQuestLocationChallenge(
+	zoneID uuid.UUID,
+	poi *models.PointOfInterest,
+	submissionType models.QuestNodeSubmissionType,
+	scaleWithUserLevel bool,
+	difficulty int,
+) (*models.Challenge, error) {
 	if poi == nil {
 		return nil, fmt.Errorf("point of interest is required")
 	}
@@ -1162,18 +1215,19 @@ func (c *client) makeQuestLocationChallenge(zoneID uuid.UUID, poi *models.PointO
 	description := strings.TrimSpace(poi.Description)
 	now := time.Now()
 	return &models.Challenge{
-		ID:             uuid.New(),
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		ZoneID:         zoneID,
-		Latitude:       lat,
-		Longitude:      lng,
-		Question:       question,
-		Description:    description,
-		SubmissionType: submissionType,
-		Reward:         0,
-		Difficulty:     0,
-		StatTags:       models.StringArray{},
+		ID:                 uuid.New(),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		ZoneID:             zoneID,
+		Latitude:           lat,
+		Longitude:          lng,
+		Question:           question,
+		Description:        description,
+		SubmissionType:     submissionType,
+		ScaleWithUserLevel: scaleWithUserLevel,
+		Reward:             0,
+		Difficulty:         questFixedDifficulty(nil, difficulty),
+		StatTags:           models.StringArray{},
 	}, nil
 }
 

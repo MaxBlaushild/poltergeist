@@ -24,6 +24,7 @@ export * from './pointOfInterestGroupMember';
 export * from './pointOfInterestDiscovery';
 export * from './ownedInventoryItem';
 export { getQuestTags } from './questLog';
+export * from './questDifficulty';
 export * from './quest';
 export * from './questAcceptanceV2';
 export * from './questGenerationJob';

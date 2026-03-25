@@ -7,6 +7,7 @@ export interface QuestNodeChallenge {
     reward: number;
     inventoryItemId?: number | null;
     submissionType?: QuestNodeSubmissionType;
+    scaleWithUserLevel?: boolean;
     difficulty?: number;
     statTags?: string[];
     proficiency?: string | null;

@@ -1,5 +1,6 @@
 import { InventoryItem } from './inventoryItem';
 import { LocationArchetype } from './locationArchetype';
+import { QuestDifficultyMode } from './questDifficulty';
 import { QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 
@@ -10,8 +11,6 @@ export interface QuestArchetypeChallenge {
   deletedAt?: Date;
   challengeTemplateId?: string | null;
   challengeTemplate?: QuestArchetypeChallengeTemplate | null;
-  reward: number;
-  inventoryItemId?: number | null;
   proficiency?: string | null;
   difficulty?: number | null;
   unlockedNodeId?: string;
@@ -32,11 +31,6 @@ export type QuestArchetypeNodeType =
   | 'location'
   | 'monster_encounter'
   | 'scenario';
-
-export interface QuestArchetypeNodeEncounterItemReward {
-  inventoryItemId: number;
-  quantity: number;
-}
 
 export interface QuestArchetypeItemReward {
   id?: string;
@@ -64,12 +58,6 @@ export interface QuestArchetypeNode {
   scenarioTemplateId?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
-  encounterRewardMode?: 'explicit' | 'random';
-  encounterRandomRewardSize?: 'small' | 'medium' | 'large';
-  encounterRewardExperience?: number | null;
-  encounterRewardGold?: number | null;
-  encounterMaterialRewards?: QuestMaterialReward[];
-  encounterItemRewards?: QuestArchetypeNodeEncounterItemReward[];
   encounterProximityMeters?: number | null;
   challenges: QuestArchetypeChallenge[];
   difficulty?: number | null;
@@ -81,6 +69,8 @@ export interface QuestArchetype {
   description: string;
   acceptanceDialogue?: string[];
   imageUrl?: string;
+  difficultyMode?: QuestDifficultyMode;
+  difficulty?: number;
   defaultGold: number;
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';

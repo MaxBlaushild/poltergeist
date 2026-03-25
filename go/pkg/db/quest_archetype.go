@@ -13,6 +13,10 @@ type questArchetypeHandle struct {
 }
 
 func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *models.QuestArchetype) error {
+	if questArchetype != nil {
+		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
+		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
+	}
 	return h.db.WithContext(ctx).Create(questArchetype).Error
 }
 
@@ -49,6 +53,10 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 }
 
 func (h *questArchetypeHandle) Update(ctx context.Context, questArchetype *models.QuestArchetype) error {
+	if questArchetype != nil {
+		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
+		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
+	}
 	return h.db.WithContext(ctx).Save(questArchetype).Error
 }
 

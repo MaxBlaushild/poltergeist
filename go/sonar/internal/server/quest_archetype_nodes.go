@@ -10,20 +10,14 @@ import (
 )
 
 type questArchetypeNodePayload struct {
-	NodeType                  string                      `json:"nodeType"`
-	LocationArchetypeID       *uuid.UUID                  `json:"locationArchetypeID"`
-	ScenarioTemplateID        *uuid.UUID                  `json:"scenarioTemplateId"`
-	MonsterTemplateIDs        []string                    `json:"monsterTemplateIds"`
-	MonsterIDs                []string                    `json:"monsterIds"`
-	TargetLevel               *int                        `json:"targetLevel"`
-	EncounterRewardMode       string                      `json:"encounterRewardMode"`
-	EncounterRandomRewardSize string                      `json:"encounterRandomRewardSize"`
-	EncounterRewardExperience *int                        `json:"encounterRewardExperience"`
-	EncounterRewardGold       *int                        `json:"encounterRewardGold"`
-	EncounterMaterialRewards  []baseMaterialRewardPayload `json:"encounterMaterialRewards"`
-	EncounterItemRewards      []scenarioRewardItemPayload `json:"encounterItemRewards"`
-	EncounterProximityMeters  *int                        `json:"encounterProximityMeters"`
-	Difficulty                *int                        `json:"difficulty"`
+	NodeType                 string     `json:"nodeType"`
+	LocationArchetypeID      *uuid.UUID `json:"locationArchetypeID"`
+	ScenarioTemplateID       *uuid.UUID `json:"scenarioTemplateId"`
+	MonsterTemplateIDs       []string   `json:"monsterTemplateIds"`
+	MonsterIDs               []string   `json:"monsterIds"`
+	TargetLevel              *int       `json:"targetLevel"`
+	EncounterProximityMeters *int       `json:"encounterProximityMeters"`
+	Difficulty               *int       `json:"difficulty"`
 }
 
 func (p questArchetypeNodePayload) hasExplicitConfig() bool {
@@ -33,12 +27,6 @@ func (p questArchetypeNodePayload) hasExplicitConfig() bool {
 		len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
 		p.TargetLevel != nil ||
-		strings.TrimSpace(p.EncounterRewardMode) != "" ||
-		strings.TrimSpace(p.EncounterRandomRewardSize) != "" ||
-		p.EncounterRewardExperience != nil ||
-		p.EncounterRewardGold != nil ||
-		len(p.EncounterMaterialRewards) > 0 ||
-		len(p.EncounterItemRewards) > 0 ||
 		p.EncounterProximityMeters != nil
 }
 
@@ -55,13 +43,7 @@ func (p questArchetypeNodePayload) inferredNodeType() models.QuestArchetypeNodeT
 	if len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
 		p.TargetLevel != nil ||
-		p.EncounterRewardExperience != nil ||
-		p.EncounterRewardGold != nil ||
-		len(p.EncounterMaterialRewards) > 0 ||
-		len(p.EncounterItemRewards) > 0 ||
-		p.EncounterProximityMeters != nil ||
-		strings.TrimSpace(p.EncounterRewardMode) != "" ||
-		strings.TrimSpace(p.EncounterRandomRewardSize) != "" {
+		p.EncounterProximityMeters != nil {
 		return models.QuestArchetypeNodeTypeMonsterEncounter
 	}
 	return models.QuestArchetypeNodeTypeLocation
@@ -131,7 +113,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
 		node.TargetLevel = 1
-		node.EncounterRewardMode = models.RewardModeRandom
+		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
 		node.EncounterRewardExperience = 0
 		node.EncounterRewardGold = 0
@@ -178,35 +160,6 @@ func (s *server) applyQuestArchetypeNodePayload(
 		if proximityMeters < 0 {
 			return fmt.Errorf("encounterProximityMeters must be zero or greater")
 		}
-		rewardExperience := 0
-		if payload.EncounterRewardExperience != nil {
-			rewardExperience = *payload.EncounterRewardExperience
-		}
-		if rewardExperience < 0 {
-			return fmt.Errorf("encounterRewardExperience must be zero or greater")
-		}
-		rewardGold := 0
-		if payload.EncounterRewardGold != nil {
-			rewardGold = *payload.EncounterRewardGold
-		}
-		if rewardGold < 0 {
-			return fmt.Errorf("encounterRewardGold must be zero or greater")
-		}
-		materialRewards, err := parseBaseMaterialRewards(payload.EncounterMaterialRewards, "encounterMaterialRewards")
-		if err != nil {
-			return err
-		}
-		itemRewards, err := buildQuestArchetypeNodeEncounterItemRewards(payload.EncounterItemRewards)
-		if err != nil {
-			return err
-		}
-
-		rewardMode := models.RewardModeRandom
-		if strings.TrimSpace(payload.EncounterRewardMode) != "" {
-			rewardMode = models.NormalizeRewardMode(payload.EncounterRewardMode)
-		} else if rewardExperience > 0 || rewardGold > 0 || len(materialRewards) > 0 || len(itemRewards) > 0 {
-			rewardMode = models.RewardModeExplicit
-		}
 
 		node.NodeType = models.QuestArchetypeNodeTypeMonsterEncounter
 		node.LocationArchetypeID = locationArchetypeID
@@ -215,12 +168,12 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray(monsterTemplateIDs)
 		node.TargetLevel = targetLevel
-		node.EncounterRewardMode = rewardMode
-		node.EncounterRandomRewardSize = models.NormalizeRandomRewardSize(payload.EncounterRandomRewardSize)
-		node.EncounterRewardExperience = rewardExperience
-		node.EncounterRewardGold = rewardGold
-		node.EncounterMaterialRewards = materialRewards
-		node.EncounterItemRewards = itemRewards
+		node.EncounterRewardMode = models.RewardModeExplicit
+		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
+		node.EncounterRewardExperience = 0
+		node.EncounterRewardGold = 0
+		node.EncounterMaterialRewards = models.BaseMaterialRewards{}
+		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
 		node.EncounterProximityMeters = proximityMeters
 	default:
 		if payload.LocationArchetypeID == nil || *payload.LocationArchetypeID == uuid.Nil {
@@ -233,7 +186,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
 		node.TargetLevel = 1
-		node.EncounterRewardMode = models.RewardModeRandom
+		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
 		node.EncounterRewardExperience = 0
 		node.EncounterRewardGold = 0
@@ -288,29 +241,4 @@ func (s *server) parseQuestArchetypeNodeMonsterTemplateIDs(
 		return []string{}, nil
 	}
 	return normalized, nil
-}
-
-func buildQuestArchetypeNodeEncounterItemRewards(
-	input []scenarioRewardItemPayload,
-) (models.MonsterEncounterRewardItems, error) {
-	rewards := make(models.MonsterEncounterRewardItems, 0, len(input))
-	for idx, reward := range input {
-		if reward.InventoryItemID == 0 && reward.Quantity == 0 {
-			continue
-		}
-		if reward.InventoryItemID <= 0 {
-			return nil, fmt.Errorf("encounterItemRewards[%d].inventoryItemId must be positive", idx)
-		}
-		if reward.Quantity <= 0 {
-			return nil, fmt.Errorf("encounterItemRewards[%d].quantity must be positive", idx)
-		}
-		rewards = append(rewards, models.MonsterEncounterRewardItem{
-			InventoryItemID: reward.InventoryItemID,
-			Quantity:        reward.Quantity,
-		})
-	}
-	if rewards == nil {
-		return models.MonsterEncounterRewardItems{}, nil
-	}
-	return rewards, nil
 }

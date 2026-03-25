@@ -10,6 +10,7 @@ import {
   QuestArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
+  QuestDifficultyMode,
   QuestNode,
   QuestNodeChallenge,
   QuestNodeSubmissionType,
@@ -139,6 +140,8 @@ const emptyQuestForm = {
   questGiverCharacterId: '',
   questArchetypeId: '',
   recurrenceFrequency: '',
+  difficultyMode: 'scale' as QuestDifficultyMode,
+  difficulty: 1,
   rewardMode: 'random' as 'explicit' | 'random',
   randomRewardSize: 'small' as 'small' | 'medium' | 'large',
   rewardExperience: 0,
@@ -1758,6 +1761,8 @@ export const Quests = () => {
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
+        difficultyMode: questForm.difficultyMode,
+        difficulty: Math.max(1, Number(questForm.difficulty) || 1),
         rewardMode: questForm.rewardMode,
         randomRewardSize: questForm.randomRewardSize,
         rewardExperience:
@@ -1812,6 +1817,8 @@ export const Quests = () => {
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
+        difficultyMode: questForm.difficultyMode,
+        difficulty: Math.max(1, Number(questForm.difficulty) || 1),
         rewardMode: questForm.rewardMode,
         randomRewardSize: questForm.randomRewardSize,
         rewardExperience:
@@ -1937,6 +1944,9 @@ export const Quests = () => {
           acceptanceDialogue: selectedQuest.acceptanceDialogue ?? [],
           imageUrl: selectedQuest.imageUrl ?? '',
           rootId: rootNode.id,
+          difficultyMode:
+            selectedQuest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
+          difficulty: selectedQuest.difficulty ?? 1,
           defaultGold: selectedQuest.gold ?? 0,
           rewardMode: rewardMode,
           randomRewardSize: selectedQuest.randomRewardSize ?? 'small',
@@ -2205,6 +2215,8 @@ export const Quests = () => {
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
       questArchetypeId: quest.questArchetypeId ?? '',
       recurrenceFrequency: quest.recurrenceFrequency ?? '',
+      difficultyMode: quest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
+      difficulty: quest.difficulty ?? 1,
       rewardMode,
       randomRewardSize:
         (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
@@ -3159,6 +3171,42 @@ export const Quests = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
+                  Difficulty Mode
+                </label>
+                <select
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={questForm.difficultyMode}
+                  onChange={(e) =>
+                    setQuestForm((prev) => ({
+                      ...prev,
+                      difficultyMode: e.target.value as QuestDifficultyMode,
+                    }))
+                  }
+                >
+                  <option value="scale">Scale With User Level</option>
+                  <option value="fixed">Fixed Difficulty</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Difficulty
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={questForm.difficulty}
+                  disabled={questForm.difficultyMode !== 'fixed'}
+                  onChange={(e) =>
+                    setQuestForm((prev) => ({
+                      ...prev,
+                      difficulty: Math.max(1, Number(e.target.value) || 1),
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
                   Reward Mode
                 </label>
                 <select
@@ -3649,8 +3697,44 @@ export const Quests = () => {
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
-                      ))}
+                        ))}
+                      </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Difficulty Mode
+                    </label>
+                    <select
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      value={questForm.difficultyMode}
+                      onChange={(e) =>
+                        setQuestForm((prev) => ({
+                          ...prev,
+                          difficultyMode: e.target.value as QuestDifficultyMode,
+                        }))
+                      }
+                    >
+                      <option value="scale">Scale With User Level</option>
+                      <option value="fixed">Fixed Difficulty</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Difficulty
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      value={questForm.difficulty}
+                      disabled={questForm.difficultyMode !== 'fixed'}
+                      onChange={(e) =>
+                        setQuestForm((prev) => ({
+                          ...prev,
+                          difficulty: Math.max(1, Number(e.target.value) || 1),
+                        }))
+                      }
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">

@@ -221,6 +221,43 @@ func (s *server) deleteChallengeTemplate(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "challenge template deleted successfully"})
 }
 
+func (s *server) generateChallengeTemplateImage(ctx *gin.Context) {
+	templateID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge template ID"})
+		return
+	}
+
+	template, err := s.dbClient.ChallengeTemplate().FindByID(ctx, templateID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if template == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge template not found"})
+		return
+	}
+
+	payload := jobs.GenerateChallengeTemplateImageTaskPayload{
+		ChallengeTemplateID: templateID,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateChallengeTemplateImageTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"status":            "queued",
+		"challengeTemplate": template,
+	})
+}
+
 func (s *server) createChallengeTemplateGenerationJob(ctx *gin.Context) {
 	var body challengeTemplateGenerationJobRequest
 	if err := ctx.ShouldBindJSON(&body); err != nil {
