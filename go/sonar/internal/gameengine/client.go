@@ -49,7 +49,7 @@ type GameEngineClient interface {
 	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
 	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, spellsAwarded []models.SpellAwarded, err error)
-	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error
+	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.Challenge, questCompleted bool) error
 }
 
 type gameEngineClient struct {
@@ -1083,7 +1083,7 @@ func (c *gameEngineClient) awardReputationPointsForZone(ctx context.Context, use
 	return reputationPoints, nil
 }
 
-func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error {
+func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.Challenge, questCompleted bool) error {
 	if quest == nil || node == nil || challenge == nil {
 		return fmt.Errorf("quest, node, and challenge are required")
 	}
@@ -1319,13 +1319,6 @@ func (c *gameEngineClient) questProficiencies(ctx context.Context, quest *models
 					}
 				}
 			}
-			continue
-		}
-		for _, challenge := range node.Challenges {
-			if challenge.Proficiency == nil {
-				continue
-			}
-			appendProficiency(*challenge.Proficiency)
 		}
 	}
 	return result

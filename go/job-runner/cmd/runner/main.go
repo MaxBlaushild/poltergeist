@@ -116,7 +116,6 @@ func main() {
 	seedDistrictProcessor := processors.NewSeedDistrictProcessor(dbClient, deepPriestClient, dungeonmasterClient, locationSeederClient, client)
 	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, client)
 	shuffleZoneSeedChallengeProcessor := processors.NewShuffleZoneSeedChallengeProcessor(dbClient)
-	shuffleQuestNodeChallengeProcessor := processors.NewShuffleQuestNodeChallengeProcessor(dbClient, deepPriestClient)
 
 	logPolymarketConfiguration(cfg)
 	polymarketConfigHint := buildPolymarketConfigHint(cfg)
@@ -208,7 +207,6 @@ func main() {
 	mux.Handle(jobs.SeedDistrictTaskType, &seedDistrictProcessor)
 	mux.Handle(jobs.ApplyZoneSeedDraftTaskType, &applyZoneSeedDraftProcessor)
 	mux.Handle(jobs.ShuffleZoneSeedChallengeTaskType, &shuffleZoneSeedChallengeProcessor)
-	mux.Handle(jobs.ShuffleQuestNodeChallengeTaskType, &shuffleQuestNodeChallengeProcessor)
 	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)

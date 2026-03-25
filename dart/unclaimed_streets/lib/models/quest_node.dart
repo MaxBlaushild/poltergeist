@@ -1,5 +1,5 @@
 import 'point_of_interest.dart';
-import 'quest_node_challenge.dart';
+import 'quest_node_objective.dart';
 
 class QuestNodePolygonPoint {
   final double latitude;
@@ -32,7 +32,7 @@ class QuestNode {
   final String? monsterEncounterId;
   final String? challengeId;
   final List<QuestNodePolygonPoint> polygon;
-  final List<QuestNodeChallenge> challenges;
+  final QuestNodeObjective? objective;
   final String submissionType;
 
   const QuestNode({
@@ -46,7 +46,7 @@ class QuestNode {
     this.monsterEncounterId,
     this.challengeId,
     this.polygon = const [],
-    this.challenges = const [],
+    this.objective,
   });
 
   factory QuestNode.fromJson(Map<String, dynamic> json) {
@@ -81,13 +81,11 @@ class QuestNode {
               )
               .toList() ??
           const [],
-      challenges:
-          (json['challenges'] as List<dynamic>?)
-              ?.map(
-                (e) => QuestNodeChallenge.fromJson(e as Map<String, dynamic>),
-              )
-              .toList() ??
-          const [],
+      objective: json['objective'] is Map<String, dynamic>
+          ? QuestNodeObjective.fromJson(
+              json['objective'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 }

@@ -119,12 +119,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
   double _averageNodeDifficulty(Quest quest) {
     final nodeDifficulties = <double>[];
     for (final node in quest.nodes) {
-      if (node.challenges.isEmpty) continue;
-      var sum = 0.0;
-      for (final challenge in node.challenges) {
-        sum += challenge.difficulty.toDouble();
-      }
-      nodeDifficulties.add(sum / node.challenges.length);
+      final difficulty = node.objective?.difficulty ?? 0;
+      if (difficulty <= 0) continue;
+      nodeDifficulties.add(difficulty.toDouble());
     }
     if (nodeDifficulties.isEmpty) return 0;
     final total = nodeDifficulties.reduce((a, b) => a + b);
@@ -139,12 +136,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Set<String> _questStatTags(Quest quest) {
     final tags = <String>{};
     for (final node in quest.nodes) {
-      for (final challenge in node.challenges) {
-        for (final tag in challenge.statTags) {
-          final normalized = tag.trim().toLowerCase();
-          if (normalized.isNotEmpty) {
-            tags.add(normalized);
-          }
+      for (final tag in node.objective?.statTags ?? const <String>[]) {
+        final normalized = tag.trim().toLowerCase();
+        if (normalized.isNotEmpty) {
+          tags.add(normalized);
         }
       }
     }
@@ -1049,12 +1044,9 @@ class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
   double _averageNodeDifficulty(Quest quest) {
     final nodeDifficulties = <double>[];
     for (final node in quest.nodes) {
-      if (node.challenges.isEmpty) continue;
-      var sum = 0.0;
-      for (final challenge in node.challenges) {
-        sum += challenge.difficulty.toDouble();
-      }
-      nodeDifficulties.add(sum / node.challenges.length);
+      final difficulty = node.objective?.difficulty ?? 0;
+      if (difficulty <= 0) continue;
+      nodeDifficulties.add(difficulty.toDouble());
     }
     if (nodeDifficulties.isEmpty) return 0;
     final total = nodeDifficulties.reduce((a, b) => a + b);
@@ -1069,12 +1061,10 @@ class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
   Set<String> _questStatTags(Quest quest) {
     final tags = <String>{};
     for (final node in quest.nodes) {
-      for (final challenge in node.challenges) {
-        for (final tag in challenge.statTags) {
-          final normalized = tag.trim().toLowerCase();
-          if (normalized.isNotEmpty) {
-            tags.add(normalized);
-          }
+      for (final tag in node.objective?.statTags ?? const <String>[]) {
+        final normalized = tag.trim().toLowerCase();
+        if (normalized.isNotEmpty) {
+          tags.add(normalized);
         }
       }
     }

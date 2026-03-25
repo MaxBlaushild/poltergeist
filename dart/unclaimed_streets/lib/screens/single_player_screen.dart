@@ -24,7 +24,7 @@ import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
-import '../models/quest_node_challenge.dart';
+import '../models/quest_node_objective.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
@@ -6236,9 +6236,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     CapturedImage? capturedImage;
     PlatformFile? capturedVideo;
     bool uploadingSubmission = false;
-    String? selectedChallengeId = node.challenges.isNotEmpty
-        ? node.challenges.first.id
-        : null;
+    final objective = node.objective;
     final questLogProvider = context.read<QuestLogProvider>();
     final poiService = context.read<PoiService>();
     final mediaService = context.read<MediaService>();
@@ -6272,24 +6270,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   submissionType == QuestNode.submissionTypePhoto;
               final isVideoSubmission =
                   submissionType == QuestNode.submissionTypeVideo;
-              final selectedChallenge = node.challenges.isEmpty
-                  ? null
-                  : (selectedChallengeId == null
-                        ? node.challenges.first
-                        : node.challenges.firstWhere(
-                            (c) => c.id == selectedChallengeId,
-                            orElse: () => node.challenges.first,
-                          ));
-              final selectedChallengeHeroTag = selectedChallenge == null
+              final selectedObjectiveHeroTag = objective == null
                   ? null
                   : (challengeImageHeroTag ??
-                        _challengeImageHeroTag(selectedChallenge.id));
+                        _challengeImageHeroTag(objective.id));
               final statValues = context.watch<CharacterStatsProvider>().stats;
-              final statTags = (selectedChallenge?.statTags ?? const [])
+              final statTags = (objective?.statTags ?? const [])
                   .map((tag) => tag.trim().toLowerCase())
                   .where((tag) => tag.isNotEmpty)
                   .toList();
-              final difficultyValue = selectedChallenge?.difficulty ?? 0;
+              final difficultyValue = objective?.difficulty ?? 0;
               final statAverage = _averageStatValue(statValues, statTags);
               final difficultyColor = _difficultyColor(
                 statAverage,
@@ -6306,42 +6296,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (node.challenges.length > 1)
-                    DropdownButtonFormField<String>(
-                      value: selectedChallengeId,
-                      items: node.challenges
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.question),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setModalState(() => selectedChallengeId = value);
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Challenge',
-                        border: OutlineInputBorder(),
-                      ),
-                    )
-                  else if (node.challenges.isNotEmpty)
+                  if ((objective?.prompt.trim() ?? '').isNotEmpty)
                     Text(
-                      node.challenges.first.question,
+                      objective!.prompt,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                  if (selectedChallenge != null &&
-                      (selectedChallenge.imageUrl.isNotEmpty ||
-                          selectedChallenge.thumbnailUrl.isNotEmpty)) ...[
+                  if (objective != null &&
+                      (objective.imageUrl.isNotEmpty ||
+                          objective.thumbnailUrl.isNotEmpty)) ...[
                     const SizedBox(height: 10),
                     Hero(
-                      tag: selectedChallengeHeroTag!,
+                      tag: selectedObjectiveHeroTag!,
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.network(
-                          selectedChallenge.thumbnailUrl.isNotEmpty
-                              ? selectedChallenge.thumbnailUrl
-                              : selectedChallenge.imageUrl,
+                          objective.thumbnailUrl.isNotEmpty
+                              ? objective.thumbnailUrl
+                              : objective.imageUrl,
                           fit: BoxFit.cover,
                           height: 220,
                           width: double.infinity,
@@ -6350,10 +6321,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       ),
                     ),
                   ],
-                  if (selectedChallenge != null) ...[
+                  if (objective != null) ...[
                     const SizedBox(height: 6),
                     Text(
-                      'Difficulty: ${selectedChallenge.difficulty}',
+                      'Difficulty: ${objective.difficulty}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: difficultyColor,
                         fontWeight: FontWeight.w600,
@@ -6720,19 +6691,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             late final Map<String, dynamic> resp;
                             try {
                               resp = standaloneChallengeId == null
-                                  ? await questLogProvider
-                                        .submitQuestNodeChallenge(
-                                          node.id,
-                                          questNodeChallengeId:
-                                              selectedChallengeId,
-                                          textSubmission: isTextSubmission
-                                              ? trimmedText
-                                              : null,
-                                          imageSubmissionUrl:
-                                              imageSubmissionUrl,
-                                          videoSubmissionUrl:
-                                              videoSubmissionUrl,
-                                        )
+                                  ? await questLogProvider.submitQuestNode(
+                                      node.id,
+                                      textSubmission: isTextSubmission
+                                          ? trimmedText
+                                          : null,
+                                      imageSubmissionUrl: imageSubmissionUrl,
+                                      videoSubmissionUrl: videoSubmissionUrl,
+                                    )
                                   : await poiService.submitChallenge(
                                       standaloneChallengeId,
                                       textSubmission: isTextSubmission
@@ -8678,20 +8644,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       monsterEncounterId: node.monsterEncounterId,
       challengeId: node.challengeId,
       polygon: challenge.hasPolygon ? challenge.polygonPoints : node.polygon,
-      challenges: [
-        QuestNodeChallenge(
-          id: challenge.id,
-          tier: 0,
-          question: challenge.question,
-          imageUrl: challenge.imageUrl,
-          thumbnailUrl: challenge.thumbnailUrl,
-          reward: challenge.reward,
-          inventoryItemId: challenge.inventoryItemId,
-          difficulty: challenge.difficulty,
-          statTags: challenge.statTags,
-          proficiency: challenge.proficiency,
-        ),
-      ],
+      objective: QuestNodeObjective(
+        id: challenge.id,
+        type: QuestNodeObjective.typeChallenge,
+        prompt: challenge.question,
+        description: challenge.description,
+        imageUrl: challenge.imageUrl,
+        thumbnailUrl: challenge.thumbnailUrl,
+        reward: challenge.reward,
+        inventoryItemId: challenge.inventoryItemId,
+        submissionType: submissionType,
+        difficulty: challenge.difficulty,
+        statTags: challenge.statTags,
+        proficiency: challenge.proficiency,
+      ),
     );
     return _showQuestNodeSubmissionModal(
       quest.name,
@@ -8713,20 +8679,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       submissionType: submissionType,
       challengeId: challenge.id,
       polygon: challenge.polygonPoints,
-      challenges: [
-        QuestNodeChallenge(
-          id: challenge.id,
-          tier: 0,
-          question: challenge.question,
-          imageUrl: challenge.imageUrl,
-          thumbnailUrl: challenge.thumbnailUrl,
-          reward: challenge.reward,
-          inventoryItemId: challenge.inventoryItemId,
-          difficulty: challenge.difficulty,
-          statTags: challenge.statTags,
-          proficiency: challenge.proficiency,
-        ),
-      ],
+      objective: QuestNodeObjective(
+        id: challenge.id,
+        type: QuestNodeObjective.typeChallenge,
+        prompt: challenge.question,
+        description: challenge.description,
+        imageUrl: challenge.imageUrl,
+        thumbnailUrl: challenge.thumbnailUrl,
+        reward: challenge.reward,
+        inventoryItemId: challenge.inventoryItemId,
+        submissionType: submissionType,
+        difficulty: challenge.difficulty,
+        statTags: challenge.statTags,
+        proficiency: challenge.proficiency,
+      ),
     );
     return _showQuestNodeSubmissionModal(
       'Challenge',

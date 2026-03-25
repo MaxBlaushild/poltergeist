@@ -95,18 +95,6 @@ func syncQuestDifficultyConfiguration(
 	}
 
 	for _, node := range nodes {
-		if !questNodeHasModernTarget(&node) {
-			for _, challenge := range node.Challenges {
-				updatedChallenge := challenge
-				updatedChallenge.ScaleWithUserLevel = scaleWithUserLevel
-				updatedChallenge.Difficulty = difficulty
-				updatedChallenge.UpdatedAt = time.Now()
-				if _, err := s.dbClient.QuestNodeChallenge().Update(ctx, challenge.ID, &updatedChallenge); err != nil {
-					return err
-				}
-			}
-		}
-
 		if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
 			challenge, err := s.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
 			if err != nil {

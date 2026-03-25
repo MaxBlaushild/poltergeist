@@ -12,10 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
-type QuestNodeChallenge struct {
+type QuestNodeObjectiveType string
+
+const (
+	QuestNodeObjectiveTypeChallenge        QuestNodeObjectiveType = "challenge"
+	QuestNodeObjectiveTypeScenario         QuestNodeObjectiveType = "scenario"
+	QuestNodeObjectiveTypeMonsterEncounter QuestNodeObjectiveType = "monster_encounter"
+	QuestNodeObjectiveTypeMonster          QuestNodeObjectiveType = "monster"
+)
+
+type QuestNodeObjective struct {
 	ID              uuid.UUID                      `json:"id"`
-	Tier            int                            `json:"tier"`
-	Question        string                         `json:"question"`
+	Type            QuestNodeObjectiveType         `json:"type"`
+	Prompt          string                         `json:"prompt"`
+	Description     string                         `json:"description,omitempty"`
+	ImageURL        string                         `json:"imageUrl,omitempty"`
+	ThumbnailURL    string                         `json:"thumbnailUrl,omitempty"`
 	Reward          int                            `json:"reward"`
 	InventoryItemID *int                           `json:"inventoryItemId"`
 	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
@@ -28,13 +40,13 @@ type QuestNode struct {
 	ID                 uuid.UUID                      `json:"id"`
 	OrderIndex         int                            `json:"orderIndex"`
 	ObjectiveText      string                         `json:"objectiveText,omitempty"`
+	Objective          *QuestNodeObjective            `json:"objective,omitempty"`
 	PointOfInterest    *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
 	Polygon            []QuestNodePolygonPoint        `json:"polygon,omitempty"`
 	ScenarioID         *uuid.UUID                     `json:"scenarioId,omitempty"`
 	MonsterID          *uuid.UUID                     `json:"monsterId,omitempty"`
 	MonsterEncounterID *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
 	ChallengeID        *uuid.UUID                     `json:"challengeId,omitempty"`
-	Challenges         []QuestNodeChallenge           `json:"challenges"`
 	SubmissionType     models.QuestNodeSubmissionType `json:"submissionType"`
 }
 
@@ -357,29 +369,7 @@ func buildQuestNodeView(
 	dbClient db.DbClient,
 	node models.QuestNode,
 ) (*QuestNode, error) {
-	challenges := make([]QuestNodeChallenge, 0, len(node.Challenges))
-	for _, ch := range node.Challenges {
-		submissionType := ch.SubmissionType
-		if strings.TrimSpace(string(submissionType)) == "" {
-			submissionType = node.SubmissionType
-		}
-		if strings.TrimSpace(string(submissionType)) == "" {
-			submissionType = models.DefaultQuestNodeSubmissionType()
-		}
-		challenges = append(challenges, QuestNodeChallenge{
-			ID:              ch.ID,
-			Tier:            ch.Tier,
-			Question:        ch.Question,
-			Reward:          ch.Reward,
-			InventoryItemID: ch.InventoryItemID,
-			SubmissionType:  submissionType,
-			Difficulty:      ch.Difficulty,
-			StatTags:        []string(ch.StatTags),
-			Proficiency:     ch.Proficiency,
-		})
-	}
-
-	objectiveText, pointOfInterest, polygon, err := resolveNodePresentation(
+	objective, pointOfInterest, polygon, err := buildQuestNodeObjective(
 		ctx,
 		dbClient,
 		node,
@@ -390,59 +380,133 @@ func buildQuestNodeView(
 
 	submissionType := node.SubmissionType
 	if strings.TrimSpace(string(submissionType)) == "" {
-		if len(challenges) > 0 {
-			submissionType = challenges[0].SubmissionType
+		if objective != nil {
+			submissionType = objective.SubmissionType
 		}
 	}
 	if strings.TrimSpace(string(submissionType)) == "" {
 		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	objectiveText := ""
+	if objective != nil {
+		objectiveText = strings.TrimSpace(objective.Prompt)
 	}
 
 	return &QuestNode{
 		ID:                 node.ID,
 		OrderIndex:         node.OrderIndex,
 		ObjectiveText:      objectiveText,
+		Objective:          objective,
 		PointOfInterest:    pointOfInterest,
 		Polygon:            polygon,
 		ScenarioID:         node.ScenarioID,
 		MonsterID:          node.MonsterID,
 		MonsterEncounterID: node.MonsterEncounterID,
 		ChallengeID:        node.ChallengeID,
-		Challenges:         challenges,
 		SubmissionType:     submissionType,
 	}, nil
 }
 
-func resolveNodePresentation(
+func buildQuestNodeObjective(
 	ctx context.Context,
 	dbClient db.DbClient,
 	node models.QuestNode,
-) (string, *models.PointOfInterest, []QuestNodePolygonPoint, error) {
+) (*QuestNodeObjective, *models.PointOfInterest, []QuestNodePolygonPoint, error) {
 	if node.ChallengeID != nil {
 		challenge, err := dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
 		if err != nil {
 			log.Printf("resolveObjectiveText: challenge lookup failed for %s: %v", node.ChallengeID.String(), err)
-			return "", nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if challenge != nil {
-			return strings.TrimSpace(challenge.Question),
+			submissionType := challenge.SubmissionType
+			if strings.TrimSpace(string(submissionType)) == "" {
+				submissionType = node.SubmissionType
+			}
+			if strings.TrimSpace(string(submissionType)) == "" {
+				submissionType = models.DefaultQuestNodeSubmissionType()
+			}
+			return &QuestNodeObjective{
+					ID:              challenge.ID,
+					Type:            QuestNodeObjectiveTypeChallenge,
+					Prompt:          strings.TrimSpace(challenge.Question),
+					Description:     strings.TrimSpace(challenge.Description),
+					ImageURL:        strings.TrimSpace(challenge.ImageURL),
+					ThumbnailURL:    strings.TrimSpace(challenge.ThumbnailURL),
+					Reward:          challenge.Reward,
+					InventoryItemID: challenge.InventoryItemID,
+					SubmissionType:  submissionType,
+					Difficulty:      challenge.Difficulty,
+					StatTags:        []string(challenge.StatTags),
+					Proficiency:     challenge.Proficiency,
+				},
 				challenge.PointOfInterest,
 				convertPolygonPoints(challenge.PolygonPoints),
 				nil
 		}
-		return "", nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	if node.ScenarioID != nil {
 		scenario, err := dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
 		if err != nil {
 			log.Printf("resolveObjectiveText: scenario lookup failed for %s: %v", node.ScenarioID.String(), err)
-			return "Investigate the situation", nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if scenario != nil {
-			return "Investigate the situation", scenario.PointOfInterest, nil, nil
+			submissionType := node.SubmissionType
+			if strings.TrimSpace(string(submissionType)) == "" {
+				submissionType = models.DefaultQuestNodeSubmissionType()
+			}
+			difficulty := scenario.Difficulty
+			statTags := []string{}
+			seenTags := map[string]struct{}{}
+			var proficiency *string
+			optionDifficultyTotal := 0
+			optionDifficultyCount := 0
+			for _, option := range scenario.Options {
+				tag := strings.TrimSpace(option.StatTag)
+				if tag != "" {
+					normalized := strings.ToLower(tag)
+					if _, seen := seenTags[normalized]; !seen {
+						seenTags[normalized] = struct{}{}
+						statTags = append(statTags, normalized)
+					}
+				}
+				if option.Difficulty != nil {
+					optionDifficultyTotal += *option.Difficulty
+					optionDifficultyCount++
+				}
+				if proficiency == nil && len(option.Proficiencies) > 0 {
+					first := strings.TrimSpace(option.Proficiencies[0])
+					if first != "" {
+						proficiency = &first
+					}
+				}
+			}
+			if optionDifficultyCount > 0 {
+				difficulty = int(float64(optionDifficultyTotal) / float64(optionDifficultyCount))
+			}
+			prompt := strings.TrimSpace(scenario.Prompt)
+			if prompt == "" {
+				prompt = "Investigate the situation"
+			}
+			return &QuestNodeObjective{
+					ID:             scenario.ID,
+					Type:           QuestNodeObjectiveTypeScenario,
+					Prompt:         prompt,
+					ImageURL:       strings.TrimSpace(scenario.ImageURL),
+					ThumbnailURL:   strings.TrimSpace(scenario.ThumbnailURL),
+					SubmissionType: submissionType,
+					Difficulty:     difficulty,
+					StatTags:       statTags,
+					Proficiency:    proficiency,
+				},
+				scenario.PointOfInterest,
+				nil,
+				nil
 		}
-		return "Investigate the situation", nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	if node.MonsterEncounterID != nil {
@@ -456,39 +520,73 @@ func resolveNodePresentation(
 				node.MonsterEncounterID.String(),
 				err,
 			)
-			return "", nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if encounter != nil {
 			name := strings.TrimSpace(encounter.Name)
 			if name != "" {
-				return "Defeat " + name, nil, nil, nil
+				submissionType := node.SubmissionType
+				if strings.TrimSpace(string(submissionType)) == "" {
+					submissionType = models.DefaultQuestNodeSubmissionType()
+				}
+				difficulty := 0
+				if len(encounter.Members) > 0 {
+					totalLevel := 0
+					for _, member := range encounter.Members {
+						totalLevel += member.Monster.EffectiveLevel()
+					}
+					difficulty = int(float64(totalLevel) / float64(len(encounter.Members)))
+				}
+				return &QuestNodeObjective{
+					ID:             encounter.ID,
+					Type:           QuestNodeObjectiveTypeMonsterEncounter,
+					Prompt:         "Defeat " + name,
+					Description:    strings.TrimSpace(encounter.Description),
+					ImageURL:       strings.TrimSpace(encounter.ImageURL),
+					ThumbnailURL:   strings.TrimSpace(encounter.ThumbnailURL),
+					SubmissionType: submissionType,
+					Difficulty:     difficulty,
+				}, nil, nil, nil
 			}
 		}
-		return "", nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	if node.MonsterID != nil {
-		encounter, err := dbClient.MonsterEncounter().FindFirstByMonsterID(
+		monster, err := dbClient.Monster().FindByID(
 			ctx,
 			*node.MonsterID,
 		)
 		if err != nil {
 			log.Printf(
-				"resolveObjectiveText: monster encounter lookup by monster failed for %s: %v",
+				"resolveObjectiveText: monster lookup failed for %s: %v",
 				node.MonsterID.String(),
 				err,
 			)
-			return "", nil, nil, nil
+			return nil, nil, nil, nil
 		}
-		if encounter != nil {
-			name := strings.TrimSpace(encounter.Name)
+		if monster != nil {
+			name := strings.TrimSpace(monster.Name)
 			if name != "" {
-				return "Defeat " + name, nil, nil, nil
+				submissionType := node.SubmissionType
+				if strings.TrimSpace(string(submissionType)) == "" {
+					submissionType = models.DefaultQuestNodeSubmissionType()
+				}
+				return &QuestNodeObjective{
+					ID:             monster.ID,
+					Type:           QuestNodeObjectiveTypeMonster,
+					Prompt:         "Defeat " + name,
+					Description:    strings.TrimSpace(monster.Description),
+					ImageURL:       strings.TrimSpace(monster.ImageURL),
+					ThumbnailURL:   strings.TrimSpace(monster.ThumbnailURL),
+					SubmissionType: submissionType,
+					Difficulty:     monster.EffectiveLevel(),
+				}, nil, nil, nil
 			}
 		}
 	}
 
-	return "", nil, nil, nil
+	return nil, nil, nil, nil
 }
 
 func convertPolygonPoints(raw [][2]float64) []QuestNodePolygonPoint {

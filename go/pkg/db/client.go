@@ -98,7 +98,6 @@ type client struct {
 	questItemRewardHandle                *questItemRewardHandle
 	questSpellRewardHandle               *questSpellRewardHandle
 	questNodeHandle                      *questNodeHandle
-	questNodeChallengeHandle             *questNodeChallengeHandle
 	questNodeChildHandle                 *questNodeChildHandle
 	questNodeProgressHandle              *questNodeProgressHandle
 	movementPatternHandle                *movementPatternHandler
@@ -270,7 +269,6 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questItemRewardHandle:                &questItemRewardHandle{db: db},
 		questSpellRewardHandle:               &questSpellRewardHandle{db: db},
 		questNodeHandle:                      &questNodeHandle{db: db},
-		questNodeChallengeHandle:             &questNodeChallengeHandle{db: db},
 		questNodeChildHandle:                 &questNodeChildHandle{db: db},
 		questNodeProgressHandle:              &questNodeProgressHandle{db: db},
 		movementPatternHandle:                &movementPatternHandler{db: db},
@@ -696,10 +694,6 @@ func (c *client) QuestSpellReward() QuestSpellRewardHandle {
 
 func (c *client) QuestNode() QuestNodeHandle {
 	return c.questNodeHandle
-}
-
-func (c *client) QuestNodeChallenge() QuestNodeChallengeHandle {
-	return c.questNodeChallengeHandle
 }
 
 func (c *client) QuestNodeChild() QuestNodeChildHandle {

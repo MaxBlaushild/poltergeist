@@ -78,7 +78,6 @@ func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Nodes").
-		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		First(&quest, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -97,7 +96,6 @@ func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Nodes").
-		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("id IN ?", ids).
 		Find(&quests).Error; err != nil {
@@ -114,7 +112,6 @@ func (h *questHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]mod
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Nodes").
-		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("zone_id = ?", zoneID).
 		Find(&quests).Error; err != nil {
@@ -131,7 +128,6 @@ func (h *questHandle) FindByQuestGiverCharacterID(ctx context.Context, character
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Nodes").
-		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("quest_giver_character_id = ?", characterID).
 		Find(&quests).Error; err != nil {
@@ -148,7 +144,6 @@ func (h *questHandle) FindAll(ctx context.Context) ([]models.Quest, error) {
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Nodes").
-		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Find(&quests).Error; err != nil {
 		return nil, err

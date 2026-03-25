@@ -178,16 +178,14 @@ class QuestLogProvider with ChangeNotifier {
     return resp;
   }
 
-  Future<Map<String, dynamic>> submitQuestNodeChallenge(
+  Future<Map<String, dynamic>> submitQuestNode(
     String questNodeId, {
-    String? questNodeChallengeId,
     String? textSubmission,
     String? imageSubmissionUrl,
     String? videoSubmissionUrl,
   }) async {
-    final resp = await _service.submitQuestNodeChallenge(
+    final resp = await _service.submitQuestNode(
       questNodeId,
-      questNodeChallengeId: questNodeChallengeId,
       textSubmission: textSubmission,
       imageSubmissionUrl: imageSubmissionUrl,
       videoSubmissionUrl: videoSubmissionUrl,

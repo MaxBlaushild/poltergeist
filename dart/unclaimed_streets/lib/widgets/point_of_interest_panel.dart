@@ -455,9 +455,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     CapturedImage? capturedImage;
     PlatformFile? capturedVideo;
     bool uploadingSubmission = false;
-    String? selectedChallengeId = node.challenges.isNotEmpty
-        ? node.challenges.first.id
-        : null;
+    final objective = node.objective;
 
     await showModalBottomSheet(
       context: context,
@@ -487,20 +485,12 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                   submissionType == QuestNode.submissionTypePhoto;
               final isVideoSubmission =
                   submissionType == QuestNode.submissionTypeVideo;
-              final selectedChallenge = node.challenges.isEmpty
-                  ? null
-                  : (selectedChallengeId == null
-                        ? node.challenges.first
-                        : node.challenges.firstWhere(
-                            (c) => c.id == selectedChallengeId,
-                            orElse: () => node.challenges.first,
-                          ));
               final statValues = context.watch<CharacterStatsProvider>().stats;
-              final statTags = (selectedChallenge?.statTags ?? const [])
+              final statTags = (objective?.statTags ?? const [])
                   .map((tag) => tag.trim().toLowerCase())
                   .where((tag) => tag.isNotEmpty)
                   .toList();
-              final difficultyValue = selectedChallenge?.difficulty ?? 0;
+              final difficultyValue = objective?.difficulty ?? 0;
               final statAverage = _averageStatValue(statValues, statTags);
               final difficultyColor = _difficultyColor(
                 statAverage,
@@ -517,34 +507,15 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (node.challenges.length > 1)
-                    DropdownButtonFormField<String>(
-                      value: selectedChallengeId,
-                      items: node.challenges
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.question),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setModalState(() => selectedChallengeId = value);
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Challenge',
-                        border: OutlineInputBorder(),
-                      ),
-                    )
-                  else if (node.challenges.isNotEmpty)
+                  if ((objective?.prompt.trim() ?? '').isNotEmpty)
                     Text(
-                      node.challenges.first.question,
+                      objective!.prompt,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                  if (selectedChallenge != null) ...[
+                  if (objective != null) ...[
                     const SizedBox(height: 6),
                     Text(
-                      'Difficulty: ${selectedChallenge.difficulty}',
+                      'Difficulty: ${objective.difficulty}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: difficultyColor,
                         fontWeight: FontWeight.w600,
@@ -893,16 +864,14 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               }
                               videoSubmissionUrl = url.split('?').first;
                             }
-                            final resp = await questLogProvider
-                                .submitQuestNodeChallenge(
-                                  node.id,
-                                  questNodeChallengeId: selectedChallengeId,
-                                  textSubmission: isTextSubmission
-                                      ? trimmedText
-                                      : null,
-                                  imageSubmissionUrl: imageSubmissionUrl,
-                                  videoSubmissionUrl: videoSubmissionUrl,
-                                );
+                            final resp = await questLogProvider.submitQuestNode(
+                              node.id,
+                              textSubmission: isTextSubmission
+                                  ? trimmedText
+                                  : null,
+                              imageSubmissionUrl: imageSubmissionUrl,
+                              videoSubmissionUrl: videoSubmissionUrl,
+                            );
                             final elapsed = DateTime.now().difference(
                               startedAt,
                             );
@@ -1268,10 +1237,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final tags = poi.tags;
     final characters = poi.characters;
     final linkedChallenges = widget.linkedChallenges;
-    final questChallengeText = widget.questNode?.challenges
-        .map((challenge) => challenge.question.trim())
-        .where((question) => question.isNotEmpty)
-        .join('\n\n');
+    final questChallengeText =
+        widget.questNode?.objective?.prompt.trim().isNotEmpty == true
+        ? widget.questNode!.objective!.prompt.trim()
+        : null;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -1486,9 +1455,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               'Challenge details unlock when you move back within ${_unlockRadiusMeters.round()} m.',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                   ),
                             ),
                           ],

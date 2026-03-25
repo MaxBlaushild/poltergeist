@@ -12,7 +12,6 @@ import {
   QuestArchetypeNode,
   QuestDifficultyMode,
   QuestNode,
-  QuestNodeChallenge,
   QuestNodeSubmissionType,
   Spell,
   Tag,
@@ -43,6 +42,20 @@ type PointOfInterestImport = {
 };
 
 type QuestNodeType = 'poi' | 'polygon' | 'scenario' | 'monster' | 'challenge';
+
+type LegacyQuestNodePrompt = {
+  id: string;
+  tier?: number;
+  question?: string;
+  reward?: number;
+  inventoryItemId?: number | null;
+  submissionType?: QuestNodeSubmissionType;
+  difficulty?: number;
+  statTags?: string[];
+  proficiency?: string | null;
+  challengeShuffleStatus?: string;
+  challengeShuffleError?: string | null;
+};
 
 type ScenarioNodeOption = {
   id: string;
@@ -404,7 +417,7 @@ const formatStatTagLabel = (tag: string) =>
   tag.charAt(0).toUpperCase() + tag.slice(1);
 
 const buildChallengeFormFromChallenge = (
-  challenge: QuestNodeChallenge,
+  challenge: LegacyQuestNodePrompt,
   fallbackSubmissionType?: QuestNodeSubmissionType
 ) => ({
   ...emptyChallengeForm,
@@ -481,22 +494,18 @@ const normalizeText = (value: string) => value.trim().toLowerCase();
 const normalizeAcceptanceDialogue = (lines: string[]) =>
   lines.map((line) => line.trim()).filter((line) => line.length > 0);
 
-const normalizeStatTags = (tags: string[]) =>
-  Array.from(
-    new Set(
-      tags
-        .map((tag) => tag.trim().toLowerCase())
-        .filter((tag) => tag.length > 0)
-    )
-  );
-
 const resolveChallengeSubmissionType = (
-  challenge: QuestNodeChallenge,
+  challenge: LegacyQuestNodePrompt,
   node?: QuestNode
 ) =>
   (challenge.submissionType ||
     node?.submissionType ||
     'photo') as QuestNodeSubmissionType;
+
+const getLegacyQuestNodePrompts = (node?: QuestNode | null) =>
+  (((node ?? null) as (QuestNode & {
+    challenges?: LegacyQuestNodePrompt[];
+  }) | null)?.challenges ?? []) as LegacyQuestNodePrompt[];
 
 const questNodeUsesLinkedObjective = (node?: QuestNode | null) =>
   Boolean(
@@ -663,9 +672,7 @@ export const Quests = () => {
   const [selectedQuestIds, setSelectedQuestIds] = useState<Set<string>>(
     new Set()
   );
-  const [shufflingChallengeId, setShufflingChallengeId] = useState<
-    string | null
-  >(null);
+  const shufflingChallengeId: string | null = null;
   const [creatingArchetype, setCreatingArchetype] = useState(false);
   const questMapContainer = useRef<HTMLDivElement>(null);
   const questMap = useRef<mapboxgl.Map | null>(null);
@@ -1865,41 +1872,6 @@ export const Quests = () => {
     );
   };
 
-  const refreshQuestById = async (questId: string) => {
-    const latest = await apiClient.get<Quest>(`/sonar/quests/${questId}`);
-    setQuests((prev) => {
-      const found = prev.some((quest) => quest.id === questId);
-      if (!found) return [latest, ...prev];
-      return prev.map((quest) => (quest.id === questId ? latest : quest));
-    });
-    return latest;
-  };
-
-  const pollChallengeShuffleStatus = async (
-    questId: string,
-    challengeId: string,
-    maxAttempts = 15
-  ) => {
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-      try {
-        const latest = await refreshQuestById(questId);
-        const latestChallenge = (latest.nodes ?? [])
-          .flatMap((node) => node.challenges ?? [])
-          .find((challenge) => challenge.id === challengeId);
-        const status = (
-          latestChallenge?.challengeShuffleStatus || ''
-        ).toLowerCase();
-        if (status !== 'queued' && status !== 'in_progress') {
-          break;
-        }
-      } catch (error) {
-        console.error('Failed to poll challenge shuffle status', error);
-        break;
-      }
-    }
-  };
-
   const handleCreateQuest = async () => {
     try {
       const payload = {
@@ -2138,10 +2110,6 @@ export const Quests = () => {
           ? nodeLocationArchetypeIds[index + 1]
           : null;
         const currentLocationArchetypeId = nodeLocationArchetypeIds[index];
-        const challenges = (node.challenges ?? [])
-          .slice()
-          .sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
-
         if (node.challengeId) {
           if (!linkedChallenge) {
             throw new Error(
@@ -2190,7 +2158,7 @@ export const Quests = () => {
           continue;
         }
 
-        if (hasNext && challenges.length === 0) {
+        if (hasNext) {
           const created = await apiClient.post<QuestArchetypeChallenge>(
             `/sonar/questArchetypes/${currentNodeId}/challenges`,
             {
@@ -2203,54 +2171,6 @@ export const Quests = () => {
             throw new Error('Failed to create next archetype node.');
           }
           currentNodeId = created.unlockedNodeId;
-          continue;
-        }
-
-        for (
-          let challengeIndex = 0;
-          challengeIndex < challenges.length;
-          challengeIndex += 1
-        ) {
-          const challenge = challenges[challengeIndex];
-          const shouldUnlock =
-            hasNext && challengeIndex === challenges.length - 1;
-          const payload: {
-            reward: number;
-            inventoryItemId?: number;
-            proficiency?: string;
-            difficulty?: number;
-            locationArchetypeID?: string;
-          } = {
-            reward: challenge.reward ?? 0,
-          };
-
-          if (challenge.inventoryItemId) {
-            payload.inventoryItemId = challenge.inventoryItemId;
-          }
-          if (challenge.proficiency && challenge.proficiency.trim()) {
-            payload.proficiency = challenge.proficiency.trim();
-          }
-          if (
-            challenge.difficulty !== undefined &&
-            challenge.difficulty !== null
-          ) {
-            payload.difficulty = challenge.difficulty;
-          }
-          if (shouldUnlock && nextLocationArchetypeId) {
-            payload.locationArchetypeID = nextLocationArchetypeId;
-          }
-
-          const created = await apiClient.post<QuestArchetypeChallenge>(
-            `/sonar/questArchetypes/${currentNodeId}/challenges`,
-            payload
-          );
-
-          if (shouldUnlock) {
-            if (!created.unlockedNodeId) {
-              throw new Error('Failed to create next archetype node.');
-            }
-            currentNodeId = created.unlockedNodeId;
-          }
         }
       }
 
@@ -2855,7 +2775,7 @@ export const Quests = () => {
 
   const handleStartEditChallenge = (
     node: QuestNode,
-    challenge: QuestNodeChallenge
+    challenge: LegacyQuestNodePrompt
   ) => {
     setChallengeEdits((prev) => ({
       ...prev,
@@ -2875,139 +2795,27 @@ export const Quests = () => {
   };
 
   const handleCreateChallenge = async (node: QuestNode) => {
-    if (questNodeUsesLinkedObjective(node)) {
-      alert(
-        'Target-backed quest nodes now use their linked objective directly. Nested objective prompts are legacy-only.'
-      );
-      return;
-    }
-    const draft = challengeDrafts[node.id] ?? emptyChallengeForm;
-    if (!draft.question.trim()) {
-      alert('Please enter a question for this challenge.');
-      return;
-    }
-    try {
-      const payload = {
-        tier: Number(draft.tier) || 1,
-        question: draft.question,
-        reward: Number(draft.reward) || 0,
-        inventoryItemId: draft.inventoryItemId
-          ? Number(draft.inventoryItemId)
-          : null,
-        submissionType: draft.submissionType || node.submissionType || 'photo',
-        statTags: normalizeStatTags(draft.statTags),
-        difficulty: Number(draft.difficulty) || 0,
-        proficiency: draft.proficiency.trim(),
-      };
-      const created = await apiClient.post<QuestNodeChallenge>(
-        `/sonar/questNodes/${node.id}/challenges`,
-        payload
-      );
-      updateQuestState(node.questId, (quest) => ({
-        ...quest,
-        nodes: (quest.nodes ?? []).map((n) =>
-          n.id === node.id
-            ? { ...n, challenges: [...(n.challenges ?? []), created] }
-            : n
-        ),
-      }));
-      setChallengeDrafts((prev) => ({
-        ...prev,
-        [node.id]: { ...emptyChallengeForm },
-      }));
-    } catch (error) {
-      console.error('Failed to create challenge', error);
-      alert('Failed to create challenge.');
-    }
+    alert(
+      'Quest nodes now use their linked objective directly. Nested objective prompts are no longer supported.'
+    );
   };
 
   const handleUpdateChallenge = async (
     node: QuestNode,
-    challenge: QuestNodeChallenge
+    challenge: LegacyQuestNodePrompt
   ) => {
-    const draft = challengeEdits[challenge.id];
-    if (!draft) return;
-    if (!draft.question.trim()) {
-      alert('Please enter a question for this challenge.');
-      return;
-    }
-    try {
-      const payload = {
-        tier: Number(draft.tier) || 1,
-        question: draft.question,
-        reward: Number(draft.reward) || 0,
-        inventoryItemId: draft.inventoryItemId
-          ? Number(draft.inventoryItemId)
-          : null,
-        submissionType: draft.submissionType || node.submissionType || 'photo',
-        statTags: normalizeStatTags(draft.statTags),
-        difficulty: Number(draft.difficulty) || 0,
-        proficiency: draft.proficiency.trim(),
-      };
-      const updated = await apiClient.patch<QuestNodeChallenge>(
-        `/sonar/questNodes/${node.id}/challenges/${challenge.id}`,
-        payload
-      );
-      updateQuestState(node.questId, (quest) => ({
-        ...quest,
-        nodes: (quest.nodes ?? []).map((n) =>
-          n.id === node.id
-            ? {
-                ...n,
-                challenges: (n.challenges ?? []).map((c) =>
-                  c.id === challenge.id ? updated : c
-                ),
-              }
-            : n
-        ),
-      }));
-      handleCancelEditChallenge(challenge.id);
-    } catch (error) {
-      console.error('Failed to update challenge', error);
-      alert('Failed to update challenge.');
-    }
+    alert(
+      'Quest nodes now use their linked objective directly. Nested objective prompts are no longer supported.'
+    );
   };
 
   const handleShuffleSavedChallenge = async (
     node: QuestNode,
-    challenge: QuestNodeChallenge
+    challenge: LegacyQuestNodePrompt
   ) => {
-    if (!selectedQuest) return;
-    if (
-      challenge.challengeShuffleStatus === 'queued' ||
-      challenge.challengeShuffleStatus === 'in_progress'
-    ) {
-      return;
-    }
-
-    setShufflingChallengeId(challenge.id);
-    try {
-      const queued = await apiClient.post<QuestNodeChallenge>(
-        `/sonar/questNodeChallenges/${challenge.id}/shuffle`,
-        {}
-      );
-
-      updateQuestState(node.questId, (quest) => ({
-        ...quest,
-        nodes: (quest.nodes ?? []).map((n) =>
-          n.id === node.id
-            ? {
-                ...n,
-                challenges: (n.challenges ?? []).map((c) =>
-                  c.id === challenge.id ? queued : c
-                ),
-              }
-            : n
-        ),
-      }));
-
-      await pollChallengeShuffleStatus(selectedQuest.id, challenge.id);
-    } catch (error) {
-      console.error('Failed to shuffle challenge', error);
-      alert('Failed to queue challenge shuffle.');
-    } finally {
-      setShufflingChallengeId(null);
-    }
+    alert(
+      'Quest nodes now use their linked objective directly. Nested objective prompts are no longer supported.'
+    );
   };
 
   const handleDeleteNode = async (node: QuestNode) => {
@@ -5969,7 +5777,7 @@ export const Quests = () => {
                         );
                         const usesLinkedObjective =
                           questNodeUsesLinkedObjective(node);
-                        const nodeObjectivePrompts = node.challenges ?? [];
+                        const nodeObjectivePrompts = getLegacyQuestNodePrompts(node);
                         const challengeObjectiveSubmissionType = (
                           linkedChallenge?.submissionType ||
                           node.submissionType ||

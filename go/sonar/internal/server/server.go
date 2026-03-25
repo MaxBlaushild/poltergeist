@@ -227,7 +227,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentMatch))
 	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPresignedUploadUrl))
 	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitAnswerPointOfInterestChallenge))
-	r.POST("/sonar/questNodes/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestNodeChallenge))
+	r.POST("/sonar/questNodes/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestNode))
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllInventoryItems))
@@ -450,9 +450,6 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuest))
 	r.DELETE("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuest))
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
-	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
-	r.PATCH("/sonar/questNodes/:id/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
-	r.POST("/sonar/questNodeChallenges/:challengeId/shuffle", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleQuestNodeChallenge))
 	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
@@ -1946,81 +1943,6 @@ func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, 
 	}
 
 	return userLat, userLng, nil
-}
-
-func selectQuestNodeChallenge(
-	node *models.QuestNode,
-	standaloneChallenge *models.Challenge,
-	challengeID *uuid.UUID,
-) (*models.QuestNodeChallenge, error) {
-	if node == nil {
-		return nil, fmt.Errorf("quest node not found")
-	}
-	if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
-		if standaloneChallenge == nil {
-			return nil, fmt.Errorf("quest node has no challenges")
-		}
-		if challengeID != nil && *challengeID != uuid.Nil && *challengeID != standaloneChallenge.ID {
-			return nil, fmt.Errorf("quest node challenge not found")
-		}
-		return &models.QuestNodeChallenge{
-			ID:                 standaloneChallenge.ID,
-			Question:           standaloneChallenge.Question,
-			Reward:             standaloneChallenge.Reward,
-			InventoryItemID:    standaloneChallenge.InventoryItemID,
-			SubmissionType:     standaloneChallenge.SubmissionType,
-			ScaleWithUserLevel: standaloneChallenge.ScaleWithUserLevel,
-			Difficulty:         standaloneChallenge.Difficulty,
-			StatTags:           standaloneChallenge.StatTags,
-			Proficiency:        standaloneChallenge.Proficiency,
-		}, nil
-	}
-	if questNodeHasModernTarget(node) {
-		return nil, fmt.Errorf("quest node uses its linked objective directly")
-	}
-	if len(node.Challenges) > 0 {
-		if challengeID != nil && *challengeID != uuid.Nil {
-			for _, ch := range node.Challenges {
-				if ch.ID == *challengeID {
-					return &ch, nil
-				}
-			}
-			return nil, fmt.Errorf("quest node challenge not found")
-		}
-		if len(node.Challenges) == 1 {
-			return &node.Challenges[0], nil
-		}
-		return nil, fmt.Errorf("questNodeChallengeId is required")
-	}
-	return nil, fmt.Errorf("quest node has no challenges")
-}
-
-func questNodeHasModernTarget(node *models.QuestNode) bool {
-	if node == nil {
-		return false
-	}
-	return (node.ChallengeID != nil && *node.ChallengeID != uuid.Nil) ||
-		(node.ScenarioID != nil && *node.ScenarioID != uuid.Nil) ||
-		(node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil) ||
-		(node.MonsterID != nil && *node.MonsterID != uuid.Nil)
-}
-
-func questNodeModernTargetError(node *models.QuestNode) string {
-	if node == nil {
-		return "target-backed quest nodes use their linked objective directly and cannot use questNodeChallenges"
-	}
-	switch {
-	case node.ChallengeID != nil && *node.ChallengeID != uuid.Nil:
-		return "challenge-backed quest nodes use their linked challenge directly and cannot use questNodeChallenges"
-	case node.ScenarioID != nil && *node.ScenarioID != uuid.Nil:
-		return "scenario-backed quest nodes use their linked scenario directly and cannot use questNodeChallenges"
-	case node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil:
-		return "monster-encounter-backed quest nodes use their linked encounter directly and cannot use questNodeChallenges"
-	case node.MonsterID != nil && *node.MonsterID != uuid.Nil:
-		return "monster-backed quest nodes use their linked monster directly and cannot use questNodeChallenges"
-	default:
-		return "target-backed quest nodes use their linked objective directly and cannot use questNodeChallenges"
-	}
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -4296,290 +4218,6 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, node)
 }
 
-func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
-	id := ctx.Param("id")
-	nodeID, err := uuid.Parse(id)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
-		return
-	}
-
-	node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if node == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
-		return
-	}
-	if questNodeHasModernTarget(node) {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": questNodeModernTargetError(node),
-		})
-		return
-	}
-
-	var requestBody struct {
-		Tier               int      `json:"tier"`
-		Question           string   `json:"question"`
-		Reward             int      `json:"reward"`
-		InventoryItemID    *int     `json:"inventoryItemId"`
-		StatTags           []string `json:"statTags"`
-		ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
-		Difficulty         int      `json:"difficulty"`
-		Proficiency        string   `json:"proficiency"`
-		SubmissionType     string   `json:"submissionType"`
-	}
-
-	if err := ctx.Bind(&requestBody); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if strings.TrimSpace(requestBody.Question) == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
-		return
-	}
-	if requestBody.Difficulty < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
-		return
-	}
-
-	statTags := models.StringArray(requestBody.StatTags)
-	if statTags == nil {
-		statTags = models.StringArray{}
-	}
-	proficiency := strings.TrimSpace(requestBody.Proficiency)
-	var proficiencyPtr *string
-	if proficiency != "" {
-		proficiencyPtr = &proficiency
-	}
-
-	submissionType := strings.TrimSpace(requestBody.SubmissionType)
-	if submissionType == "" {
-		submissionType = strings.TrimSpace(string(node.SubmissionType))
-	}
-	if submissionType == "" {
-		submissionType = string(models.DefaultQuestNodeSubmissionType())
-	}
-	parsedSubmissionType := models.QuestNodeSubmissionType(submissionType)
-	if !parsedSubmissionType.IsValid() {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submissionType"})
-		return
-	}
-
-	challenge := &models.QuestNodeChallenge{
-		ID:                     uuid.New(),
-		CreatedAt:              time.Now(),
-		UpdatedAt:              time.Now(),
-		QuestNodeID:            nodeID,
-		Tier:                   requestBody.Tier,
-		Question:               requestBody.Question,
-		Reward:                 requestBody.Reward,
-		InventoryItemID:        requestBody.InventoryItemID,
-		SubmissionType:         parsedSubmissionType,
-		ScaleWithUserLevel:     requestBody.ScaleWithUserLevel,
-		Difficulty:             requestBody.Difficulty,
-		StatTags:               statTags,
-		Proficiency:            proficiencyPtr,
-		ChallengeShuffleStatus: models.QuestNodeChallengeShuffleStatusIdle,
-		ChallengeShuffleError:  nil,
-	}
-
-	if err := s.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, challenge)
-}
-
-func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
-	nodeIDParam := ctx.Param("id")
-	challengeIDParam := ctx.Param("challengeId")
-
-	nodeID, err := uuid.Parse(nodeIDParam)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
-		return
-	}
-
-	challengeID, err := uuid.Parse(challengeIDParam)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node challenge ID"})
-		return
-	}
-
-	existing, err := s.dbClient.QuestNodeChallenge().FindByID(ctx, challengeID)
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
-		return
-	}
-	if existing.QuestNodeID != nodeID {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge does not belong to quest node"})
-		return
-	}
-	parentNode, err := s.dbClient.QuestNode().FindByID(ctx, existing.QuestNodeID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if parentNode == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
-		return
-	}
-	if questNodeHasModernTarget(parentNode) {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": questNodeModernTargetError(parentNode),
-		})
-		return
-	}
-
-	var requestBody struct {
-		Tier               int      `json:"tier"`
-		Question           string   `json:"question"`
-		Reward             int      `json:"reward"`
-		InventoryItemID    *int     `json:"inventoryItemId"`
-		StatTags           []string `json:"statTags"`
-		ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
-		Difficulty         int      `json:"difficulty"`
-		Proficiency        string   `json:"proficiency"`
-		SubmissionType     *string  `json:"submissionType"`
-	}
-
-	if err := ctx.Bind(&requestBody); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if strings.TrimSpace(requestBody.Question) == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
-		return
-	}
-	if requestBody.Difficulty < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
-		return
-	}
-
-	statTags := models.StringArray(requestBody.StatTags)
-	if statTags == nil {
-		statTags = models.StringArray{}
-	}
-	proficiency := strings.TrimSpace(requestBody.Proficiency)
-	var proficiencyPtr *string
-	if proficiency != "" {
-		proficiencyPtr = &proficiency
-	}
-
-	updates := &models.QuestNodeChallenge{
-		Tier:                   requestBody.Tier,
-		Question:               requestBody.Question,
-		Reward:                 requestBody.Reward,
-		InventoryItemID:        requestBody.InventoryItemID,
-		ScaleWithUserLevel:     requestBody.ScaleWithUserLevel,
-		Difficulty:             requestBody.Difficulty,
-		StatTags:               statTags,
-		Proficiency:            proficiencyPtr,
-		SubmissionType:         existing.SubmissionType,
-		ChallengeShuffleStatus: existing.ChallengeShuffleStatus,
-		ChallengeShuffleError:  existing.ChallengeShuffleError,
-		UpdatedAt:              time.Now(),
-	}
-
-	if requestBody.SubmissionType != nil {
-		trimmed := strings.TrimSpace(*requestBody.SubmissionType)
-		if trimmed == "" {
-			trimmed = string(models.DefaultQuestNodeSubmissionType())
-		}
-		parsed := models.QuestNodeSubmissionType(trimmed)
-		if !parsed.IsValid() {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submissionType"})
-			return
-		}
-		updates.SubmissionType = parsed
-	}
-
-	updated, err := s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, updates)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, updated)
-}
-
-func (s *server) shuffleQuestNodeChallenge(ctx *gin.Context) {
-	challengeIDParam := ctx.Param("challengeId")
-
-	challengeID, err := uuid.Parse(challengeIDParam)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node challenge ID"})
-		return
-	}
-
-	existing, err := s.dbClient.QuestNodeChallenge().FindByID(ctx, challengeID)
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
-		return
-	}
-	if existing == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
-		return
-	}
-	if existing.ChallengeShuffleStatus == models.QuestNodeChallengeShuffleStatusQueued ||
-		existing.ChallengeShuffleStatus == models.QuestNodeChallengeShuffleStatusInProgress {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge shuffle already in progress"})
-		return
-	}
-	parentNode, err := s.dbClient.QuestNode().FindByID(ctx, existing.QuestNodeID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if parentNode == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
-		return
-	}
-	if questNodeHasModernTarget(parentNode) {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": questNodeModernTargetError(parentNode),
-		})
-		return
-	}
-
-	queued := *existing
-	queued.ChallengeShuffleStatus = models.QuestNodeChallengeShuffleStatusQueued
-	queued.ChallengeShuffleError = nil
-	queued.UpdatedAt = time.Now()
-
-	updated, err := s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, &queued)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	payloadBytes, err := json.Marshal(jobs.ShuffleQuestNodeChallengeTaskPayload{
-		QuestNodeChallengeID: challengeID,
-	})
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ShuffleQuestNodeChallengeTaskType, payloadBytes)); err != nil {
-		failed := *updated
-		errMsg := err.Error()
-		failed.ChallengeShuffleStatus = models.QuestNodeChallengeShuffleStatusFailed
-		failed.ChallengeShuffleError = &errMsg
-		failed.UpdatedAt = time.Now()
-		_, _ = s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, &failed)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusAccepted, updated)
-}
-
 func (s *server) deleteQuestNode(ctx *gin.Context) {
 	id := ctx.Param("id")
 	nodeID, err := uuid.Parse(id)
@@ -4593,10 +4231,6 @@ func (s *server) deleteQuestNode(ctx *gin.Context) {
 		return
 	}
 	if err := s.dbClient.QuestNodeChild().DeleteByNextNodeID(ctx, nodeID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.dbClient.QuestNodeChallenge().DeleteByNodeID(ctx, nodeID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -11360,7 +10994,7 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
+func (s *server) submitQuestNode(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -11379,11 +11013,10 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		QuestNodeChallengeID *uuid.UUID `json:"questNodeChallengeId"`
-		TextSubmission       string     `json:"textSubmission"`
-		ImageSubmissionUrl   string     `json:"imageSubmissionUrl"`
-		VideoSubmissionUrl   string     `json:"videoSubmissionUrl"`
-		TeamID               *uuid.UUID `json:"teamID"`
+		TextSubmission     string     `json:"textSubmission"`
+		ImageSubmissionUrl string     `json:"imageSubmissionUrl"`
+		VideoSubmissionUrl string     `json:"videoSubmissionUrl"`
+		TeamID             *uuid.UUID `json:"teamID"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -11445,18 +11078,19 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster-backed quest nodes are resolved through combat against their linked monster directly"})
 		return
 	}
+	if node.ChallengeID == nil || *node.ChallengeID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no linked objective"})
+		return
+	}
 
-	var standaloneChallenge *models.Challenge
-	if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
-		standaloneChallenge, err = s.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
-			return
-		}
-		if standaloneChallenge == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node challenge not found"})
-			return
-		}
+	standaloneChallenge, err := s.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
+		return
+	}
+	if standaloneChallenge == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node challenge not found"})
+		return
 	}
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
@@ -11464,14 +11098,9 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	challenge, err := selectQuestNodeChallenge(node, standaloneChallenge, requestBody.QuestNodeChallengeID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	challengeScaleWithUserLevel := challenge.ScaleWithUserLevel
+	challengeScaleWithUserLevel := standaloneChallenge.ScaleWithUserLevel
 
-	submissionType := challenge.SubmissionType
+	submissionType := standaloneChallenge.SubmissionType
 	if strings.TrimSpace(string(submissionType)) == "" {
 		submissionType = node.SubmissionType
 	}
@@ -11568,7 +11197,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
-		Question:           challenge.Question,
+		Question:           standaloneChallenge.Question,
 		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
 		TextSubmission:     textSubmission,
 	})
@@ -11594,7 +11223,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 	statTags := []string{}
 	seenTags := map[string]struct{}{}
-	for _, tag := range []string(challenge.StatTags) {
+	for _, tag := range []string(standaloneChallenge.StatTags) {
 		normalized := strings.ToLower(strings.TrimSpace(tag))
 		if normalized == "" {
 			continue
@@ -11652,11 +11281,11 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		combinedScore = score + statValueSum
 	}
 
-	difficulty := challenge.Difficulty
+	difficulty := standaloneChallenge.Difficulty
 	if challengeScaleWithUserLevel {
 		difficulty = scaledChallengeDifficultyForStatTags(
 			userLevel,
-			[]string(challenge.StatTags),
+			[]string(standaloneChallenge.StatTags),
 		)
 	}
 	if combinedScore < difficulty {
@@ -11701,7 +11330,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	if shouldAward {
-		if err := s.gameEngineClient.AwardQuestNodeSubmissionRewards(ctx, user.ID, requestBody.TeamID, quest, node, challenge, completed); err != nil {
+		if err := s.gameEngineClient.AwardQuestNodeSubmissionRewards(ctx, user.ID, requestBody.TeamID, quest, node, standaloneChallenge, completed); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -14252,17 +13881,7 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 				}
 				return float64(monster.EffectiveLevel()), normalizedTags, nil
 			default:
-				if len(node.Challenges) == 0 {
-					return 0, nil, nil
-				}
-				sum := 0.0
-				for _, challenge := range node.Challenges {
-					sum += float64(challenge.Difficulty)
-					for _, tag := range []string(challenge.StatTags) {
-						appendTag(tag)
-					}
-				}
-				return sum / float64(len(node.Challenges)), normalizedTags, nil
+				return 0, nil, nil
 			}
 		}
 		for _, action := range actions {

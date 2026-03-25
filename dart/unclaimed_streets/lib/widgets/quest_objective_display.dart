@@ -14,11 +14,10 @@ List<String> questObjectiveLines(QuestNode? node) {
     return [objectiveText];
   }
 
-  final lines = node.challenges
-      .map((challenge) => challenge.question.trim())
-      .where((question) => question.isNotEmpty)
-      .toList();
-  if (lines.isNotEmpty) return lines;
+  final objectivePrompt = node.objective?.prompt.trim() ?? '';
+  if (objectivePrompt.isNotEmpty) {
+    return [objectivePrompt];
+  }
 
   if (_hasValue(node.scenarioId)) {
     return const ['Complete the current scenario objective.'];

@@ -228,7 +228,6 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 	})
 
 	nodeIDMap := map[uuid.UUID]uuid.UUID{}
-	challengeIDMap := map[uuid.UUID]uuid.UUID{}
 
 	for _, node := range nodesCopy {
 		newNodeID := uuid.New()
@@ -240,47 +239,20 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 		}
 
 		newNode := &models.QuestNode{
-			ID:             newNodeID,
-			CreatedAt:      now,
-			UpdatedAt:      now,
-			QuestID:        questID,
-			OrderIndex:     node.OrderIndex,
-			ScenarioID:     node.ScenarioID,
-			MonsterID:      node.MonsterID,
-			ChallengeID:    node.ChallengeID,
-			SubmissionType: submissionType,
+			ID:                 newNodeID,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			QuestID:            questID,
+			OrderIndex:         node.OrderIndex,
+			ScenarioID:         node.ScenarioID,
+			MonsterID:          node.MonsterID,
+			MonsterEncounterID: node.MonsterEncounterID,
+			ChallengeID:        node.ChallengeID,
+			SubmissionType:     submissionType,
 		}
 
 		if err := p.dbClient.QuestNode().Create(ctx, newNode); err != nil {
 			return err
-		}
-
-		for _, challenge := range node.Challenges {
-			if (node.ChallengeID != nil && *node.ChallengeID != uuid.Nil) ||
-				(node.ScenarioID != nil && *node.ScenarioID != uuid.Nil) ||
-				(node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil) ||
-				(node.MonsterID != nil && *node.MonsterID != uuid.Nil) {
-				continue
-			}
-			newChallengeID := uuid.New()
-			challengeIDMap[challenge.ID] = newChallengeID
-			ch := &models.QuestNodeChallenge{
-				ID:              newChallengeID,
-				CreatedAt:       now,
-				UpdatedAt:       now,
-				QuestNodeID:     newNodeID,
-				Tier:            challenge.Tier,
-				Question:        challenge.Question,
-				Reward:          challenge.Reward,
-				InventoryItemID: challenge.InventoryItemID,
-				SubmissionType:  challenge.SubmissionType,
-				Difficulty:      challenge.Difficulty,
-				StatTags:        challenge.StatTags,
-				Proficiency:     challenge.Proficiency,
-			}
-			if err := p.dbClient.QuestNodeChallenge().Create(ctx, ch); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -296,21 +268,13 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 				log.Printf("Missing quest node mapping for %s", child.NextQuestNodeID)
 				continue
 			}
-			var newChallengeID *uuid.UUID
-			if child.QuestNodeChallengeID != nil {
-				if mapped, ok := challengeIDMap[*child.QuestNodeChallengeID]; ok {
-					mappedCopy := mapped
-					newChallengeID = &mappedCopy
-				}
-			}
 
 			newChild := &models.QuestNodeChild{
-				ID:                   uuid.New(),
-				CreatedAt:            now,
-				UpdatedAt:            now,
-				QuestNodeID:          newQuestNodeID,
-				NextQuestNodeID:      nextNodeID,
-				QuestNodeChallengeID: newChallengeID,
+				ID:              uuid.New(),
+				CreatedAt:       now,
+				UpdatedAt:       now,
+				QuestNodeID:     newQuestNodeID,
+				NextQuestNodeID: nextNodeID,
 			}
 			if err := p.dbClient.QuestNodeChild().Create(ctx, newChild); err != nil {
 				return err

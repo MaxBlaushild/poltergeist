@@ -62,9 +62,8 @@ class QuestLogService {
 
   /// POST /sonar/questNodes/:id/submit
   /// Returns { successful: bool, reason: string, questCompleted: bool, score?: int, difficulty?: int, combinedScore?: int }
-  Future<Map<String, dynamic>> submitQuestNodeChallenge(
+  Future<Map<String, dynamic>> submitQuestNode(
     String questNodeId, {
-    String? questNodeChallengeId,
     String? textSubmission,
     String? imageSubmissionUrl,
     String? videoSubmissionUrl,
@@ -72,8 +71,6 @@ class QuestLogService {
     final raw = await _api.post<dynamic>(
       '/sonar/questNodes/$questNodeId/submit',
       data: {
-        if (questNodeChallengeId != null && questNodeChallengeId.isNotEmpty)
-          'questNodeChallengeId': questNodeChallengeId,
         if (textSubmission != null) 'textSubmission': textSubmission,
         if (imageSubmissionUrl != null)
           'imageSubmissionUrl': imageSubmissionUrl,

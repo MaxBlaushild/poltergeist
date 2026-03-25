@@ -104,7 +104,6 @@ type DbClient interface {
 	QuestItemReward() QuestItemRewardHandle
 	QuestSpellReward() QuestSpellRewardHandle
 	QuestNode() QuestNodeHandle
-	QuestNodeChallenge() QuestNodeChallengeHandle
 	QuestNodeChild() QuestNodeChildHandle
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
@@ -1077,14 +1076,6 @@ type QuestNodeHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNode, error)
 	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestNode, error)
 	DeleteByID(ctx context.Context, id uuid.UUID) error
-}
-
-type QuestNodeChallengeHandle interface {
-	Create(ctx context.Context, challenge *models.QuestNodeChallenge) error
-	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNodeChallenge, error)
-	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChallenge, error)
-	Update(ctx context.Context, id uuid.UUID, updates *models.QuestNodeChallenge) (*models.QuestNodeChallenge, error)
-	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
 
 type QuestNodeChildHandle interface {

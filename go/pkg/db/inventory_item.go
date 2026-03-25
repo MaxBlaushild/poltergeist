@@ -370,7 +370,6 @@ func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, invento
 		column string
 	}{
 		{table: "point_of_interest_groups", column: "inventory_item_id"},
-		{table: "quest_node_challenges", column: "inventory_item_id"},
 		{table: "quest_archetype_challenges", column: "inventory_item_id"},
 		{table: "monsters", column: "dominant_hand_inventory_item_id"},
 		{table: "monsters", column: "off_hand_inventory_item_id"},
