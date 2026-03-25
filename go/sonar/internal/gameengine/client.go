@@ -822,7 +822,7 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		}
 	}
 
-	proficiencies := questProficiencies(quest)
+	proficiencies := c.questProficiencies(ctx, quest)
 	if len(proficiencies) > 0 {
 		for _, member := range partyMembers {
 			for _, proficiency := range proficiencies {
@@ -1276,27 +1276,56 @@ func preferredObjectiveImageURL(thumbnailURL string, imageURL string) string {
 	return ""
 }
 
-func questProficiencies(quest *models.Quest) []string {
+func (c *gameEngineClient) questProficiencies(ctx context.Context, quest *models.Quest) []string {
 	if quest == nil {
 		return nil
 	}
 	seen := map[string]struct{}{}
 	result := []string{}
+	appendProficiency := func(raw string) {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
 	for _, node := range quest.Nodes {
+		switch {
+		case node.ChallengeID != nil && *node.ChallengeID != uuid.Nil:
+			challenge, err := c.db.Challenge().FindByID(ctx, *node.ChallengeID)
+			if err != nil {
+				log.Printf("questProficiencies: failed to load challenge %s: %v", node.ChallengeID.String(), err)
+				continue
+			}
+			if challenge != nil && challenge.Proficiency != nil {
+				appendProficiency(*challenge.Proficiency)
+			}
+			continue
+		case node.ScenarioID != nil && *node.ScenarioID != uuid.Nil:
+			scenario, err := c.db.Scenario().FindByID(ctx, *node.ScenarioID)
+			if err != nil {
+				log.Printf("questProficiencies: failed to load scenario %s: %v", node.ScenarioID.String(), err)
+				continue
+			}
+			if scenario != nil {
+				for _, option := range scenario.Options {
+					for _, proficiency := range option.Proficiencies {
+						appendProficiency(proficiency)
+					}
+				}
+			}
+			continue
+		}
 		for _, challenge := range node.Challenges {
 			if challenge.Proficiency == nil {
 				continue
 			}
-			value := strings.TrimSpace(*challenge.Proficiency)
-			if value == "" {
-				continue
-			}
-			key := strings.ToLower(value)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			result = append(result, value)
+			appendProficiency(*challenge.Proficiency)
 		}
 	}
 	return result

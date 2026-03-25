@@ -1145,6 +1145,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		draft.Description,
 		submissionType,
 		challengeDifficulty,
+		statTags,
 	)
 	if err != nil {
 		return err
@@ -1154,25 +1155,6 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	}
 	node.ChallengeID = &locationChallenge.ID
 	if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
-		return err
-	}
-
-	challenge := &models.QuestNodeChallenge{
-		ID:             uuid.New(),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		QuestNodeID:    node.ID,
-		Tier:           0,
-		Question:       challengeQuestion,
-		Reward:         0,
-		SubmissionType: submissionType,
-		Difficulty:     challengeDifficulty,
-		StatTags:       statTags,
-	}
-	if challenge.StatTags == nil {
-		challenge.StatTags = models.StringArray{}
-	}
-	if err := p.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
 		return err
 	}
 
@@ -1295,6 +1277,13 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 			difficulty = randomQuestDifficulty()
 		}
 		difficulty = clampQuestDifficulty(difficulty)
+		statDraft := models.ZoneSeedQuestDraft{
+			Name:               draft.Name,
+			Description:        draft.Description,
+			AcceptanceDialogue: draft.AcceptanceDialogue,
+			ChallengeQuestion:  challengeQuestion,
+		}
+		statTags := p.classifyQuestStatTags(ctx, statDraft)
 		locationChallenge, err := p.createQuestNodeLocationChallenge(
 			zone.ID,
 			poi,
@@ -1302,6 +1291,7 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 			draft.Description,
 			submissionType,
 			difficulty,
+			statTags,
 		)
 		if err != nil {
 			return err
@@ -1311,33 +1301,6 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		}
 		node.ChallengeID = &locationChallenge.ID
 		if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
-			return err
-		}
-
-		statDraft := models.ZoneSeedQuestDraft{
-			Name:               draft.Name,
-			Description:        draft.Description,
-			AcceptanceDialogue: draft.AcceptanceDialogue,
-			ChallengeQuestion:  challengeQuestion,
-		}
-		statTags := p.classifyQuestStatTags(ctx, statDraft)
-
-		challenge := &models.QuestNodeChallenge{
-			ID:             uuid.New(),
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-			QuestNodeID:    node.ID,
-			Tier:           0,
-			Question:       challengeQuestion,
-			Reward:         0,
-			SubmissionType: submissionType,
-			Difficulty:     difficulty,
-			StatTags:       statTags,
-		}
-		if challenge.StatTags == nil {
-			challenge.StatTags = models.StringArray{}
-		}
-		if err := p.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
 			return err
 		}
 
@@ -1358,6 +1321,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestNodeLocationChallenge(
 	description string,
 	submissionType models.QuestNodeSubmissionType,
 	difficulty int,
+	statTags models.StringArray,
 ) (*models.Challenge, error) {
 	if poi == nil {
 		return nil, fmt.Errorf("quest node point of interest is required")
@@ -1379,6 +1343,9 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestNodeLocationChallenge(
 		challengeDescription = strings.TrimSpace(poi.Description)
 	}
 	now := time.Now()
+	if statTags == nil {
+		statTags = models.StringArray{}
+	}
 	return &models.Challenge{
 		ID:             uuid.New(),
 		CreatedAt:      now,
@@ -1391,7 +1358,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestNodeLocationChallenge(
 		SubmissionType: submissionType,
 		Reward:         0,
 		Difficulty:     difficulty,
-		StatTags:       models.StringArray{},
+		StatTags:       statTags,
 	}, nil
 }
 

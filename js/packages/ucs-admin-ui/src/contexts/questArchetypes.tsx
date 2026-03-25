@@ -27,6 +27,7 @@ export type QuestArchetypeDraft = {
   rootNode: QuestArchetypeNodeDraft;
   difficultyMode?: QuestDifficultyMode;
   difficulty?: number;
+  monsterEncounterTargetLevel?: number;
   defaultGold?: number;
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';
@@ -240,6 +241,7 @@ export const QuestArchetypesProvider = ({
         rootId: node.id,
         difficultyMode: draft.difficultyMode,
         difficulty: draft.difficulty,
+        monsterEncounterTargetLevel: draft.monsterEncounterTargetLevel,
         defaultGold: draft.defaultGold,
         rewardMode: draft.rewardMode,
         randomRewardSize: draft.randomRewardSize,

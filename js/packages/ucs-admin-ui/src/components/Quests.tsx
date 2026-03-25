@@ -50,6 +50,9 @@ type ScenarioNodeOption = {
   latitude: number;
   longitude: number;
   prompt: string;
+  difficulty?: number;
+  openEnded?: boolean;
+  options?: { id: string }[];
 };
 
 type MonsterNodeOption = {
@@ -58,6 +61,9 @@ type MonsterNodeOption = {
   latitude: number;
   longitude: number;
   name: string;
+  description?: string;
+  encounterType?: string;
+  scaleWithUserLevel?: boolean;
   monsterCount?: number;
   members?: { slot: number; monster: { id: string; name: string } }[];
 };
@@ -69,6 +75,13 @@ type ChallengeNodeOption = {
   latitude: number;
   longitude: number;
   question: string;
+  description?: string;
+  submissionType?: QuestNodeSubmissionType;
+  difficulty?: number;
+  statTags?: string[];
+  proficiency?: string | null;
+  reward?: number;
+  rewardExperience?: number;
 };
 
 type SelectOption = {
@@ -142,6 +155,7 @@ const emptyQuestForm = {
   recurrenceFrequency: '',
   difficultyMode: 'scale' as QuestDifficultyMode,
   difficulty: 1,
+  monsterEncounterTargetLevel: 1,
   rewardMode: 'random' as 'explicit' | 'random',
   randomRewardSize: 'small' as 'small' | 'medium' | 'large',
   rewardExperience: 0,
@@ -353,6 +367,42 @@ const questRecurrenceOptions = [
   { value: 'monthly', label: 'Monthly' },
 ];
 
+const getQuestRecurrenceLabel = (value?: string | null) => {
+  const match = questRecurrenceOptions.find(
+    (option) => option.value === (value ?? '')
+  );
+  if (match) return match.label;
+  if (!value) return 'No Recurrence';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const getQuestNodeKind = (node: QuestNode): QuestNodeType => {
+  if (node.pointOfInterestId) return 'poi';
+  if (node.scenarioId) return 'scenario';
+  if (node.monsterEncounterId || node.monsterId) return 'monster';
+  if (node.challengeId) return 'challenge';
+  return 'polygon';
+};
+
+const getQuestNodeKindLabel = (nodeType: QuestNodeType) => {
+  switch (nodeType) {
+    case 'poi':
+      return 'Location';
+    case 'scenario':
+      return 'Scenario';
+    case 'monster':
+      return 'Monster';
+    case 'challenge':
+      return 'Challenge Objective';
+    case 'polygon':
+    default:
+      return 'Polygon';
+  }
+};
+
+const formatStatTagLabel = (tag: string) =>
+  tag.charAt(0).toUpperCase() + tag.slice(1);
+
 const buildChallengeFormFromChallenge = (
   challenge: QuestNodeChallenge,
   fallbackSubmissionType?: QuestNodeSubmissionType
@@ -447,6 +497,14 @@ const resolveChallengeSubmissionType = (
   (challenge.submissionType ||
     node?.submissionType ||
     'photo') as QuestNodeSubmissionType;
+
+const questNodeUsesLinkedObjective = (node?: QuestNode | null) =>
+  Boolean(
+    node?.challengeId ||
+      node?.scenarioId ||
+      node?.monsterEncounterId ||
+      node?.monsterId
+  );
 
 const formatChallengeShuffleStatus = (status?: string | null) => {
   switch ((status || '').toLowerCase()) {
@@ -623,6 +681,99 @@ export const Quests = () => {
   const selectedQuestIdSet = useMemo(
     () => selectedQuestIds,
     [selectedQuestIds]
+  );
+  const orderedQuestNodes = useMemo(
+    () =>
+      (selectedQuest?.nodes ?? [])
+        .slice()
+        .sort((a, b) => a.orderIndex - b.orderIndex),
+    [selectedQuest?.nodes]
+  );
+  const selectedQuestZone = useMemo(
+    () => zones.find((zone) => zone.id === questForm.zoneId) ?? null,
+    [questForm.zoneId, zones]
+  );
+  const selectedQuestGiver = useMemo(
+    () =>
+      characters.find(
+        (character) => character.id === questForm.questGiverCharacterId
+      ) ?? null,
+    [characters, questForm.questGiverCharacterId]
+  );
+  const selectedQuestNodeCounts = useMemo(() => {
+    const counts: Record<QuestNodeType, number> = {
+      poi: 0,
+      polygon: 0,
+      scenario: 0,
+      monster: 0,
+      challenge: 0,
+    };
+    orderedQuestNodes.forEach((node) => {
+      counts[getQuestNodeKind(node)] += 1;
+    });
+    return counts;
+  }, [orderedQuestNodes]);
+  const selectedQuestNodePreview = useMemo(
+    () =>
+      orderedQuestNodes.map((node) => {
+        const nodeType = getQuestNodeKind(node);
+        if (node.pointOfInterestId) {
+          const poi = pointsOfInterest.find(
+            (item) => item.id === node.pointOfInterestId
+          );
+          return {
+            id: node.id,
+            orderIndex: node.orderIndex,
+            nodeType,
+            label: poi?.name ?? node.pointOfInterestId,
+          };
+        }
+        if (node.scenarioId) {
+          const scenario = scenarios.find((item) => item.id === node.scenarioId);
+          return {
+            id: node.id,
+            orderIndex: node.orderIndex,
+            nodeType,
+            label: summarizeScenarioPrompt(scenario?.prompt ?? ''),
+          };
+        }
+        if (node.monsterEncounterId || node.monsterId) {
+          const encounterId = node.monsterEncounterId ?? node.monsterId ?? '';
+          const encounter = monsterEncounters.find(
+            (item) => item.id === encounterId
+          );
+          const fallbackEncounter = monsterEncounters.find((item) =>
+            (item.members ?? []).some(
+              (member) => member.monster.id === node.monsterId
+            )
+          );
+          const resolved = encounter ?? fallbackEncounter;
+          return {
+            id: node.id,
+            orderIndex: node.orderIndex,
+            nodeType,
+            label: resolved?.name ?? encounterId,
+          };
+        }
+        if (node.challengeId) {
+          const challenge = challenges.find(
+            (item) => item.id === node.challengeId
+          );
+          return {
+            id: node.id,
+            orderIndex: node.orderIndex,
+            nodeType,
+            label: challenge?.question ?? node.challengeId,
+          };
+        }
+        return {
+          id: node.id,
+          orderIndex: node.orderIndex,
+          nodeType,
+          label: 'Drawn Area',
+        };
+      }),
+    [challenges, monsterEncounters, orderedQuestNodes, pointsOfInterest, scenarios]
   );
 
   useEffect(() => {
@@ -1763,6 +1914,10 @@ export const Quests = () => {
         recurrenceFrequency: questForm.recurrenceFrequency || '',
         difficultyMode: questForm.difficultyMode,
         difficulty: Math.max(1, Number(questForm.difficulty) || 1),
+        monsterEncounterTargetLevel: Math.max(
+          1,
+          Number(questForm.monsterEncounterTargetLevel) || 1
+        ),
         rewardMode: questForm.rewardMode,
         randomRewardSize: questForm.randomRewardSize,
         rewardExperience:
@@ -1819,6 +1974,10 @@ export const Quests = () => {
         recurrenceFrequency: questForm.recurrenceFrequency || '',
         difficultyMode: questForm.difficultyMode,
         difficulty: Math.max(1, Number(questForm.difficulty) || 1),
+        monsterEncounterTargetLevel: Math.max(
+          1,
+          Number(questForm.monsterEncounterTargetLevel) || 1
+        ),
         rewardMode: questForm.rewardMode,
         randomRewardSize: questForm.randomRewardSize,
         rewardExperience:
@@ -1879,31 +2038,40 @@ export const Quests = () => {
     }
 
     const missing: string[] = [];
-    const locationArchetypeIds: string[] = [];
+    const nodeLocationArchetypeIds: string[] = [];
+    const linkedChallengesForNodes: (ChallengeNodeOption | undefined)[] = [];
     nodes.forEach((node) => {
-      if (!node.pointOfInterestId) {
+      const linkedChallenge = node.challengeId
+        ? challenges.find((challenge) => challenge.id === node.challengeId)
+        : undefined;
+      linkedChallengesForNodes.push(linkedChallenge);
+      const sourcePointOfInterestId =
+        node.pointOfInterestId ?? linkedChallenge?.pointOfInterestId ?? null;
+      if (!sourcePointOfInterestId) {
         if (node.scenarioId) {
           missing.push(`Node ${node.orderIndex}: scenario node`);
         } else if (node.monsterEncounterId || node.monsterId) {
           missing.push(`Node ${node.orderIndex}: monster node`);
         } else if (node.challengeId) {
-          missing.push(`Node ${node.orderIndex}: challenge node`);
+          missing.push(
+            `Node ${node.orderIndex}: ${linkedChallenge?.question ?? 'challenge objective'}`
+          );
         } else {
           missing.push(`Node ${node.orderIndex}: polygon node`);
         }
         return;
       }
-      const match = archetypeByPoiId[node.pointOfInterestId];
+      const match = archetypeByPoiId[sourcePointOfInterestId];
       if (!match) {
         const poiName = pointsOfInterest.find(
-          (poi) => poi.id === node.pointOfInterestId
+          (poi) => poi.id === sourcePointOfInterestId
         )?.name;
         missing.push(
-          `Node ${node.orderIndex}: ${poiName ?? node.pointOfInterestId}`
+          `Node ${node.orderIndex}: ${poiName ?? sourcePointOfInterestId}`
         );
         return;
       }
-      locationArchetypeIds.push(match.id);
+      nodeLocationArchetypeIds.push(match.id);
     });
 
     if (missing.length > 0) {
@@ -1932,7 +2100,7 @@ export const Quests = () => {
       const rootNode = await apiClient.post<QuestArchetypeNode>(
         '/sonar/questArchetypeNodes',
         {
-          locationArchetypeID: locationArchetypeIds[0],
+          locationArchetypeID: nodeLocationArchetypeIds[0],
         }
       );
 
@@ -1947,6 +2115,8 @@ export const Quests = () => {
           difficultyMode:
             selectedQuest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
           difficulty: selectedQuest.difficulty ?? 1,
+          monsterEncounterTargetLevel:
+            selectedQuest.monsterEncounterTargetLevel ?? 1,
           defaultGold: selectedQuest.gold ?? 0,
           rewardMode: rewardMode,
           randomRewardSize: selectedQuest.randomRewardSize ?? 'small',
@@ -1962,13 +2132,63 @@ export const Quests = () => {
 
       for (let index = 0; index < nodes.length; index += 1) {
         const node = nodes[index];
+        const linkedChallenge = linkedChallengesForNodes[index];
         const hasNext = index < nodes.length - 1;
         const nextLocationArchetypeId = hasNext
-          ? locationArchetypeIds[index + 1]
+          ? nodeLocationArchetypeIds[index + 1]
           : null;
+        const currentLocationArchetypeId = nodeLocationArchetypeIds[index];
         const challenges = (node.challenges ?? [])
           .slice()
           .sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
+
+        if (node.challengeId) {
+          if (!linkedChallenge) {
+            throw new Error(
+              `Missing linked challenge data for node ${node.orderIndex}.`
+            );
+          }
+          if (!currentLocationArchetypeId) {
+            throw new Error(
+              `Missing location archetype for challenge node ${node.orderIndex}.`
+            );
+          }
+          const template = await apiClient.post<{ id: string }>(
+            '/sonar/challenge-templates',
+            {
+              locationArchetypeId: currentLocationArchetypeId,
+              question: linkedChallenge.question,
+              description: linkedChallenge.description ?? '',
+              imageUrl: '',
+              thumbnailUrl: '',
+              scaleWithUserLevel: false,
+              rewardMode: 'random',
+              randomRewardSize: 'small',
+              rewardExperience: 0,
+              reward: 0,
+              inventoryItemId: null,
+              itemChoiceRewards: [],
+              submissionType: linkedChallenge.submissionType ?? 'photo',
+              difficulty: linkedChallenge.difficulty ?? 0,
+              statTags: linkedChallenge.statTags ?? [],
+              proficiency: linkedChallenge.proficiency ?? '',
+            }
+          );
+          const created = await apiClient.post<QuestArchetypeChallenge>(
+            `/sonar/questArchetypes/${currentNodeId}/challenges`,
+            {
+              challengeTemplateId: template.id,
+              locationArchetypeID: nextLocationArchetypeId ?? undefined,
+            }
+          );
+          if (hasNext) {
+            if (!created.unlockedNodeId) {
+              throw new Error('Failed to create next archetype node.');
+            }
+            currentNodeId = created.unlockedNodeId;
+          }
+          continue;
+        }
 
         if (hasNext && challenges.length === 0) {
           const created = await apiClient.post<QuestArchetypeChallenge>(
@@ -2217,6 +2437,7 @@ export const Quests = () => {
       recurrenceFrequency: quest.recurrenceFrequency ?? '',
       difficultyMode: quest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
       difficulty: quest.difficulty ?? 1,
+      monsterEncounterTargetLevel: quest.monsterEncounterTargetLevel ?? 1,
       rewardMode,
       randomRewardSize:
         (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
@@ -2654,6 +2875,12 @@ export const Quests = () => {
   };
 
   const handleCreateChallenge = async (node: QuestNode) => {
+    if (questNodeUsesLinkedObjective(node)) {
+      alert(
+        'Target-backed quest nodes now use their linked objective directly. Nested objective prompts are legacy-only.'
+      );
+      return;
+    }
     const draft = challengeDrafts[node.id] ?? emptyChallengeForm;
     if (!draft.question.trim()) {
       alert('Please enter a question for this challenge.');
@@ -3017,8 +3244,25 @@ export const Quests = () => {
 
         {showCreateQuest && (
           <div className="qa-card">
-            <h2 className="qa-card-title">Create Quest</h2>
+            <div className="qa-card-header">
+              <div>
+                <div className="qa-kicker">New Quest</div>
+                <h2 className="qa-card-title">Create Quest</h2>
+                <p className="qa-meta">
+                  Start with the player-facing narrative, then assign the quest
+                  to a zone and define the reward behavior.
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2 qa-form-section">
+                <div className="qa-card-kicker">Narrative</div>
+                <div className="qa-section-title">Overview</div>
+                <p className="qa-section-copy">
+                  Set the quest identity that players will see before you wire
+                  it into the world.
+                </p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Name
@@ -3066,6 +3310,14 @@ export const Quests = () => {
                 <p className="mt-1 text-xs text-gray-500">
                   Each line becomes a separate dialogue line in the quest
                   acceptance prompt.
+                </p>
+              </div>
+              <div className="md:col-span-2 qa-form-section">
+                <div className="qa-card-kicker">Assignment</div>
+                <div className="qa-section-title">World Placement</div>
+                <p className="qa-section-copy">
+                  Choose the zone, quest giver, and pacing rules that frame how
+                  the route should behave.
                 </p>
               </div>
               <div>
@@ -3204,6 +3456,34 @@ export const Quests = () => {
                     }))
                   }
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Monster Encounter Target Level
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={questForm.monsterEncounterTargetLevel}
+                  onChange={(e) =>
+                    setQuestForm((prev) => ({
+                      ...prev,
+                      monsterEncounterTargetLevel: Math.max(
+                        1,
+                        Number(e.target.value) || 1
+                      ),
+                    }))
+                  }
+                />
+              </div>
+              <div className="md:col-span-2 qa-form-section">
+                <div className="qa-card-kicker">Rewards</div>
+                <div className="qa-section-title">Quest Payoff</div>
+                <p className="qa-section-copy">
+                  Configure the quest-level reward package before adding any
+                  route nodes.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -3430,135 +3710,267 @@ export const Quests = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
-          <div className="qa-card">
-            <h2 className="qa-card-title">Quest List</h2>
-            <input
-              className="mb-3 block w-full border border-gray-300 rounded-md p-2"
-              placeholder="Search quests..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                onClick={toggleSelectVisibleQuests}
-                disabled={filteredQuests.length === 0 || bulkDeletingQuests}
-              >
-                {allFilteredQuestsSelected
-                  ? 'Unselect Visible'
-                  : 'Select Visible'}
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                onClick={clearQuestSelection}
-                disabled={selectedQuestIds.size === 0 || bulkDeletingQuests}
-              >
-                Clear Selection
-              </button>
-              <button
-                type="button"
-                className="qa-btn qa-btn-danger"
-                onClick={handleBulkDeleteQuests}
-                disabled={
-                  selectedQuestIds.size === 0 ||
-                  bulkDeletingQuests ||
-                  deletingQuestId !== null
-                }
-              >
-                {bulkDeletingQuests
-                  ? `Deleting ${selectedQuestIds.size}...`
-                  : `Delete Selected (${selectedQuestIds.size})`}
-              </button>
-            </div>
-            <div className="space-y-2 max-h-[520px] overflow-y-auto">
-              {filteredQuests.map((quest) => (
-                <div
-                  key={quest.id}
-                  className={`flex items-center justify-between gap-2 p-3 rounded-md border ${selectedQuestId === quest.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={selectedQuestIdSet.has(quest.id)}
-                    disabled={bulkDeletingQuests}
-                    onChange={() => toggleQuestSelection(quest.id)}
-                  />
-                  <button
-                    className="flex-1 text-left"
-                    onClick={() => handleSelectQuest(quest)}
-                  >
-                    <div className="font-semibold">{quest.name}</div>
-                    <div className="text-xs text-gray-500">
-                      Nodes: {quest.nodes?.length ?? 0}
-                    </div>
-                  </button>
-                  <button
-                    className="qa-btn qa-btn-danger"
-                    onClick={() => handleDeleteQuestById(quest)}
-                    disabled={
-                      deletingQuestId === quest.id || bulkDeletingQuests
-                    }
-                  >
-                    {deletingQuestId === quest.id ? 'Deleting...' : 'Delete'}
-                  </button>
+        <div className="qa-workspace">
+          <aside className="qa-sidebar">
+            <div className="qa-card qa-library-card">
+              <div className="qa-library-header">
+                <div>
+                  <div className="qa-kicker">Library</div>
+                  <h2 className="qa-card-title">Quest Stack</h2>
+                  <p className="qa-meta">
+                    {filteredQuests.length} visible of {quests.length} quests
+                  </p>
                 </div>
-              ))}
+                <div className="qa-chip accent">
+                  Selected {selectedQuestIds.size}
+                </div>
+              </div>
+              <input
+                className="mb-3 block w-full border border-gray-300 rounded-md p-2"
+                placeholder="Search quests..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={toggleSelectVisibleQuests}
+                  disabled={filteredQuests.length === 0 || bulkDeletingQuests}
+                >
+                  {allFilteredQuestsSelected
+                    ? 'Unselect Visible'
+                    : 'Select Visible'}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={clearQuestSelection}
+                  disabled={selectedQuestIds.size === 0 || bulkDeletingQuests}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-danger"
+                  onClick={handleBulkDeleteQuests}
+                  disabled={
+                    selectedQuestIds.size === 0 ||
+                    bulkDeletingQuests ||
+                    deletingQuestId !== null
+                  }
+                >
+                  {bulkDeletingQuests
+                    ? `Deleting ${selectedQuestIds.size}...`
+                    : `Delete Selected (${selectedQuestIds.size})`}
+                </button>
+              </div>
+              <div className="qa-library-list">
+                {filteredQuests.map((quest) => {
+                  const isActive = selectedQuestId === quest.id;
+                  return (
+                    <div
+                      key={quest.id}
+                      className={`qa-library-item ${isActive ? 'active' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={selectedQuestIdSet.has(quest.id)}
+                        disabled={bulkDeletingQuests}
+                        onChange={() => toggleQuestSelection(quest.id)}
+                      />
+                      <button
+                        className="qa-library-item-body"
+                        onClick={() => handleSelectQuest(quest)}
+                      >
+                        <div className="qa-library-item-title">{quest.name}</div>
+                        <div className="qa-library-item-meta">
+                          <span>{quest.nodes?.length ?? 0} nodes</span>
+                          <span>
+                            {getQuestRecurrenceLabel(
+                              quest.recurrenceFrequency ?? ''
+                            )}
+                          </span>
+                          <span>{getQuestRewardMode(quest)} rewards</span>
+                        </div>
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-danger"
+                        onClick={() => handleDeleteQuestById(quest)}
+                        disabled={
+                          deletingQuestId === quest.id || bulkDeletingQuests
+                        }
+                      >
+                        {deletingQuestId === quest.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          </aside>
 
-          <div className="qa-card">
+          <div className="qa-workbench">
             {!selectedQuest ? (
-              <div className="text-gray-500">
-                Select a quest to edit details and add nodes.
+              <div className="qa-card qa-empty-state">
+                <div className="qa-kicker">Workbench</div>
+                <h2 className="qa-card-title">Pick a quest to shape</h2>
+                <p className="qa-meta">
+                  The quest editor now centers the active quest as a route. Pick
+                  one from the library to tune the narrative, rewards, and node
+                  flow in separate spaces.
+                </p>
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="qa-card-title">Quest Details</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="qa-btn qa-btn-outline"
-                      onClick={() => {
-                        resetImportForm();
-                        setShowImportModal(true);
-                      }}
-                    >
-                      Import POI
-                    </button>
-                    <button
-                      className="qa-btn qa-btn-outline"
-                      onClick={handleCreateQuestArchetypeFromQuest}
-                      disabled={creatingArchetype}
-                    >
-                      {creatingArchetype
-                        ? 'Creating Archetype...'
-                        : 'Create Archetype'}
-                    </button>
-                    <button
-                      className="qa-btn qa-btn-primary"
-                      onClick={handleUpdateQuest}
-                    >
-                      Save Changes
-                    </button>
-                    <button
-                      className="qa-btn qa-btn-danger"
-                      onClick={handleDeleteQuest}
-                      disabled={
-                        deletingQuestId === selectedQuest.id ||
-                        bulkDeletingQuests
-                      }
-                    >
-                      {deletingQuestId === selectedQuest.id
-                        ? 'Deleting...'
-                        : 'Delete Quest'}
-                    </button>
+                <div className="qa-card qa-focus-card">
+                  <div className="qa-card-header">
+                    <div>
+                      <div className="qa-kicker">Quest Workbench</div>
+                      <h2 className="qa-focus-title">
+                        {questForm.name.trim() || 'Untitled Quest'}
+                      </h2>
+                      <p className="qa-focus-copy">
+                        {questForm.description.trim() ||
+                          'Add a description to frame the route and player intent.'}
+                      </p>
+                    </div>
+                    <div className="qa-actions">
+                      <button
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => {
+                          resetImportForm();
+                          setShowImportModal(true);
+                        }}
+                      >
+                        Import POI
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-outline"
+                        onClick={handleCreateQuestArchetypeFromQuest}
+                        disabled={creatingArchetype}
+                      >
+                        {creatingArchetype
+                          ? 'Creating Archetype...'
+                          : 'Create Archetype'}
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-primary"
+                        onClick={handleUpdateQuest}
+                      >
+                        Save Changes
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-danger"
+                        onClick={handleDeleteQuest}
+                        disabled={
+                          deletingQuestId === selectedQuest.id ||
+                          bulkDeletingQuests
+                        }
+                      >
+                        {deletingQuestId === selectedQuest.id
+                          ? 'Deleting...'
+                          : 'Delete Quest'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="qa-stat-grid">
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Zone</div>
+                      <div className="qa-stat-value">
+                        {selectedQuestZone?.name ?? 'No zone'}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Quest Giver</div>
+                      <div className="qa-stat-value">
+                        {selectedQuestGiver?.name ?? 'Unassigned'}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Difficulty</div>
+                      <div className="qa-stat-value">
+                        {questForm.difficultyMode === 'fixed'
+                          ? `Fixed ${questForm.difficulty}`
+                          : 'Scales with player'}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Rewards</div>
+                      <div className="qa-stat-value">
+                        {questForm.rewardMode === 'explicit'
+                          ? 'Explicit'
+                          : 'Random'}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Recurrence</div>
+                      <div className="qa-stat-value">
+                        {getQuestRecurrenceLabel(
+                          questForm.recurrenceFrequency
+                        )}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Encounter Level</div>
+                      <div className="qa-stat-value">
+                        {questForm.monsterEncounterTargetLevel}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="qa-node-strip">
+                    {selectedQuestNodePreview.length === 0 ? (
+                      <div className="qa-chip muted">
+                        No nodes yet. Start building the route below.
+                      </div>
+                    ) : (
+                      selectedQuestNodePreview.map((node) => (
+                        <div
+                          key={node.id}
+                          className={`qa-node-pill ${node.nodeType}`}
+                        >
+                          <span className="qa-node-pill-index">
+                            {node.orderIndex}
+                          </span>
+                          <span className="qa-node-pill-label">
+                            {getQuestNodeKindLabel(node.nodeType)}
+                          </span>
+                          <span className="qa-node-pill-copy">
+                            {node.label}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="qa-card qa-detail-card">
+                  <div className="qa-card-header">
+                    <div>
+                      <div className="qa-kicker">Configuration</div>
+                      <h3 className="qa-card-title">Quest Settings</h3>
+                      <p className="qa-meta">
+                        Narrative copy, assignment, pacing, and reward behavior
+                        all live here.
+                      </p>
+                    </div>
+                    <div className="qa-chip muted">
+                      {orderedQuestNodes.length} route steps
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="md:col-span-2 qa-form-section">
+                    <div className="qa-card-kicker">Narrative</div>
+                    <div className="qa-section-title">Overview</div>
+                    <p className="qa-section-copy">
+                      Define the player-facing quest identity before tuning the
+                      route itself.
+                    </p>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
                       Name
@@ -3609,6 +4021,14 @@ export const Quests = () => {
                     <p className="mt-1 text-xs text-gray-500">
                       Each line becomes a separate dialogue line in the quest
                       acceptance prompt.
+                    </p>
+                  </div>
+                  <div className="md:col-span-2 qa-form-section">
+                    <div className="qa-card-kicker">Assignment</div>
+                    <div className="qa-section-title">Quest Framing</div>
+                    <p className="qa-section-copy">
+                      Set where the quest lives, who gives it, and how it
+                      should scale over time.
                     </p>
                   </div>
                   <div>
@@ -3735,6 +4155,34 @@ export const Quests = () => {
                         }))
                       }
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Monster Encounter Target Level
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      value={questForm.monsterEncounterTargetLevel}
+                      onChange={(e) =>
+                        setQuestForm((prev) => ({
+                          ...prev,
+                          monsterEncounterTargetLevel: Math.max(
+                            1,
+                            Number(e.target.value) || 1
+                          ),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="md:col-span-2 qa-form-section">
+                    <div className="qa-card-kicker">Rewards</div>
+                    <div className="qa-section-title">Quest Payoff</div>
+                    <p className="qa-section-copy">
+                      Rewards are configured at the quest level so every node
+                      stays focused on structure rather than loot.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
@@ -3945,8 +4393,38 @@ export const Quests = () => {
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <h3 className="text-lg font-semibold mb-3">Quest Nodes</h3>
+                </div>
+
+                <div className="qa-card qa-route-card">
+                  <div className="qa-card-header">
+                    <div>
+                      <div className="qa-kicker">Route Studio</div>
+                      <h3 className="qa-card-title">Quest Nodes</h3>
+                      <p className="qa-meta">
+                        Build the route, preview its composition, and attach the
+                        concrete world entities that bring each step to life.
+                      </p>
+                    </div>
+                    <div className="qa-route-summary">
+                      <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.poi} locations
+                      </div>
+                      <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.scenario} scenarios
+                      </div>
+                      <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.monster} monsters
+                      </div>
+                      <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.challenge} challenges
+                      </div>
+                      <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.polygon} polygons
+                      </div>
+                    </div>
+                  </div>
+                  <div className="qa-divider" />
+                  <div className="qa-route-builder">
                   <div className="bg-gray-50 border border-gray-200 rounded-md p-4 mb-4">
                     <h4 className="font-semibold mb-3">Add Node</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4004,7 +4482,7 @@ export const Quests = () => {
                         >
                           <option value="scenario">Scenario</option>
                           <option value="monster">Monster</option>
-                          <option value="challenge">Challenge</option>
+                          <option value="challenge">Challenge Objective</option>
                         </select>
                       </div>
                       <div>
@@ -4689,7 +5167,7 @@ export const Quests = () => {
                         <div className="md:col-span-2">
                           <div className="flex items-center justify-between gap-3">
                             <label className="block text-sm font-medium text-gray-700">
-                              Challenge
+                              Challenge Objective
                             </label>
                             <button
                               type="button"
@@ -4698,7 +5176,7 @@ export const Quests = () => {
                             >
                               {quickCreateOpen.challenge
                                 ? 'Hide Quick Create'
-                                : 'Create New Challenge'}
+                                : 'Create New Challenge Objective'}
                             </button>
                           </div>
                           <select
@@ -4711,7 +5189,7 @@ export const Quests = () => {
                               }))
                             }
                           >
-                            <option value="">Select a challenge</option>
+                            <option value="">Select a challenge objective</option>
                             {filteredChallenges.map((challenge) => (
                               <option key={challenge.id} value={challenge.id}>
                                 {challenge.question}
@@ -5453,11 +5931,19 @@ export const Quests = () => {
                     </div>
                   )}
 
+                  <div className="qa-route-list-header">
+                    <div>
+                      <div className="qa-card-kicker">Current Route</div>
+                      <div className="qa-section-title">Node Breakdown</div>
+                    </div>
+                    <div className="qa-section-copy">
+                      Modern quest nodes use their linked objective directly.
+                      Any nested prompt rows shown here are legacy-only data.
+                    </div>
+                  </div>
+
                   <div className="space-y-4">
-                    {(selectedQuest.nodes ?? [])
-                      .slice()
-                      .sort((a, b) => a.orderIndex - b.orderIndex)
-                      .map((node) => {
+                    {orderedQuestNodes.map((node) => {
                         const linkedScenario = node.scenarioId
                           ? scenarios.find(
                               (scenario) => scenario.id === node.scenarioId
@@ -5476,6 +5962,22 @@ export const Quests = () => {
                               (challenge) => challenge.id === node.challengeId
                             )
                           : undefined;
+                        const isChallengeTargetNode = Boolean(node.challengeId);
+                        const isScenarioTargetNode = Boolean(node.scenarioId);
+                        const isMonsterTargetNode = Boolean(
+                          node.monsterEncounterId || node.monsterId
+                        );
+                        const usesLinkedObjective =
+                          questNodeUsesLinkedObjective(node);
+                        const nodeObjectivePrompts = node.challenges ?? [];
+                        const challengeObjectiveSubmissionType = (
+                          linkedChallenge?.submissionType ||
+                          node.submissionType ||
+                          'photo'
+                        ) as QuestNodeSubmissionType;
+                        const hasLegacyChallengeOverrides =
+                          usesLinkedObjective &&
+                          nodeObjectivePrompts.length > 0;
 
                         return (
                           <div
@@ -5501,7 +6003,7 @@ export const Quests = () => {
                                               node.monsterId
                                             }`
                                           : node.challengeId
-                                            ? `Challenge: ${linkedChallenge?.question ?? node.challengeId}`
+                                            ? `Challenge Objective: ${linkedChallenge?.question ?? node.challengeId}`
                                             : 'Polygon'}
                                   </span>
                                   {node.scenarioId ? (
@@ -5549,9 +6051,141 @@ export const Quests = () => {
                             </div>
 
                             <div className="mt-3">
-                              <h4 className="font-semibold mb-2">Challenges</h4>
-                              <div className="space-y-2 mb-3">
-                                {(node.challenges ?? []).map((challenge) => {
+                              {usesLinkedObjective ? (
+                                <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Linked Objective
+                                  </div>
+                                  {isChallengeTargetNode ? (
+                                    <>
+                                      <div className="mt-2 text-sm font-semibold text-gray-900">
+                                        {linkedChallenge?.question ??
+                                          'Challenge details unavailable'}
+                                      </div>
+                                      {linkedChallenge?.description ? (
+                                        <p className="mt-2 text-sm text-gray-600">
+                                          {linkedChallenge.description}
+                                        </p>
+                                      ) : null}
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                        <span>
+                                          Input{' '}
+                                          {challengeObjectiveSubmissionType.toUpperCase()}
+                                        </span>
+                                        <span>
+                                          Difficulty{' '}
+                                          {linkedChallenge?.difficulty ?? 0}
+                                        </span>
+                                        {(linkedChallenge?.statTags?.length ??
+                                          0) > 0 && (
+                                          <span>
+                                            Stats:{' '}
+                                            {linkedChallenge?.statTags
+                                              ?.map(formatStatTagLabel)
+                                              .join(', ')}
+                                          </span>
+                                        )}
+                                        {linkedChallenge?.proficiency && (
+                                          <span>
+                                            Proficiency:{' '}
+                                            {linkedChallenge.proficiency}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : isScenarioTargetNode ? (
+                                    <>
+                                      <div className="mt-2 text-sm font-semibold text-gray-900">
+                                        {linkedScenario?.prompt
+                                          ? summarizeScenarioPrompt(
+                                              linkedScenario.prompt
+                                            )
+                                          : 'Scenario details unavailable'}
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                        <span>
+                                          {linkedScenario?.openEnded
+                                            ? 'Open-ended'
+                                            : 'Choice scenario'}
+                                        </span>
+                                        <span>
+                                          Difficulty{' '}
+                                          {linkedScenario?.difficulty ?? 0}
+                                        </span>
+                                        <span>
+                                          {(linkedScenario?.options?.length ??
+                                            0) > 0
+                                            ? `${linkedScenario?.options?.length ?? 0} options`
+                                            : 'Single resolution path'}
+                                        </span>
+                                      </div>
+                                    </>
+                                  ) : isMonsterTargetNode ? (
+                                    <>
+                                      <div className="mt-2 text-sm font-semibold text-gray-900">
+                                        {linkedMonsterEncounter?.name ??
+                                          'Monster encounter details unavailable'}
+                                      </div>
+                                      {linkedMonsterEncounter?.description ? (
+                                        <p className="mt-2 text-sm text-gray-600">
+                                          {linkedMonsterEncounter.description}
+                                        </p>
+                                      ) : null}
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                        <span>
+                                          Type{' '}
+                                          {linkedMonsterEncounter?.encounterType ??
+                                            'monster'}
+                                        </span>
+                                        <span>
+                                          {(linkedMonsterEncounter?.members
+                                            ?.length ??
+                                            linkedMonsterEncounter?.monsterCount ??
+                                            0) || 0}{' '}
+                                          monsters
+                                        </span>
+                                        <span>
+                                          {linkedMonsterEncounter?.scaleWithUserLevel
+                                            ? 'Scales with player'
+                                            : 'Fixed encounter'}
+                                        </span>
+                                      </div>
+                                    </>
+                                  ) : null}
+                                  <p className="mt-2 text-xs text-gray-500">
+                                    Target-backed quest nodes now use their
+                                    linked objective directly. Nested
+                                    quest-node prompt rows are legacy-only.
+                                  </p>
+                                </div>
+                              ) : (
+                                <>
+                                  <h4 className="font-semibold mb-1">
+                                    Objective Prompts
+                                  </h4>
+                                  <p className="mb-2 text-xs text-gray-500">
+                                    These prompts define what the player
+                                    actually submits or proves at this target.
+                                  </p>
+                                </>
+                              )}
+                              {hasLegacyChallengeOverrides && (
+                                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                                  <div className="text-xs font-semibold text-amber-900">
+                                    Legacy Prompt Overrides
+                                  </div>
+                                  <p className="mt-1 text-xs text-amber-800">
+                                    This target-backed node still has older
+                                    quest-specific prompt overrides attached.
+                                    New challenge, scenario, and monster nodes
+                                    no longer use these duplicates.
+                                  </p>
+                                </div>
+                              )}
+                              {(nodeObjectivePrompts.length > 0 ||
+                                !usesLinkedObjective) && (
+                                <div className="space-y-2 mb-3">
+                                  {nodeObjectivePrompts.map((challenge) => {
                                   const editDraft =
                                     challengeEdits[challenge.id] ??
                                     emptyChallengeForm;
@@ -5591,13 +6225,7 @@ export const Quests = () => {
                                                   <div className="text-xs text-gray-500">
                                                     Stats:{' '}
                                                     {challenge.statTags
-                                                      .map(
-                                                        (tag) =>
-                                                          tag
-                                                            .charAt(0)
-                                                            .toUpperCase() +
-                                                          tag.slice(1)
-                                                      )
+                                                      .map(formatStatTagLabel)
                                                       .join(', ')}
                                                   </div>
                                                 )}
@@ -5618,52 +6246,54 @@ export const Quests = () => {
                                             </>
                                           )}
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-                                            onClick={() =>
-                                              handleShuffleSavedChallenge(
-                                                node,
-                                                challenge
-                                              )
-                                            }
-                                            disabled={
-                                              isEditing ||
-                                              shufflingChallengeId ===
+                                        {!usesLinkedObjective && (
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                                              onClick={() =>
+                                                handleShuffleSavedChallenge(
+                                                  node,
+                                                  challenge
+                                                )
+                                              }
+                                              disabled={
+                                                isEditing ||
+                                                shufflingChallengeId ===
+                                                  challenge.id ||
+                                                challenge.challengeShuffleStatus ===
+                                                  'queued' ||
+                                                challenge.challengeShuffleStatus ===
+                                                  'in_progress'
+                                              }
+                                            >
+                                              {shufflingChallengeId ===
                                                 challenge.id ||
                                               challenge.challengeShuffleStatus ===
                                                 'queued' ||
                                               challenge.challengeShuffleStatus ===
                                                 'in_progress'
-                                            }
-                                          >
-                                            {shufflingChallengeId ===
-                                              challenge.id ||
-                                            challenge.challengeShuffleStatus ===
-                                              'queued' ||
-                                            challenge.challengeShuffleStatus ===
-                                              'in_progress'
-                                              ? 'Shuffling...'
-                                              : 'Shuffle'}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                                            onClick={() =>
-                                              isEditing
-                                                ? handleCancelEditChallenge(
-                                                    challenge.id
-                                                  )
-                                                : handleStartEditChallenge(
-                                                    node,
-                                                    challenge
-                                                  )
-                                            }
-                                          >
-                                            {isEditing ? 'Cancel' : 'Edit'}
-                                          </button>
-                                        </div>
+                                                ? 'Shuffling...'
+                                                : 'Shuffle'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                              onClick={() =>
+                                                isEditing
+                                                  ? handleCancelEditChallenge(
+                                                      challenge.id
+                                                    )
+                                                  : handleStartEditChallenge(
+                                                      node,
+                                                      challenge
+                                                    )
+                                              }
+                                            >
+                                              {isEditing ? 'Cancel' : 'Edit'}
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                       {isEditing && (
                                         <div className="mt-3">
@@ -5887,22 +6517,25 @@ export const Quests = () => {
                                     </div>
                                   );
                                 })}
-                                {(node.challenges ?? []).length === 0 && (
+                                {nodeObjectivePrompts.length === 0 &&
+                                  !usesLinkedObjective && (
                                   <div className="text-sm text-gray-500">
-                                    No challenges yet.
+                                    No objective prompts yet.
                                   </div>
                                 )}
-                              </div>
+                                </div>
+                              )}
 
-                              <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+                              {!usesLinkedObjective && (
+                                <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
                                 <h5 className="font-semibold mb-2">
-                                  Add Challenge
+                                  Add Objective Prompt
                                 </h5>
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                                   {node.pointOfInterestId && (
                                     <div className="md:col-span-4 rounded-md border border-amber-200 bg-amber-50 p-3">
                                       <div className="text-xs font-semibold text-amber-900">
-                                        Location Archetype Challenge
+                                        Location Archetype Prompt
                                       </div>
                                       <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div>
@@ -5948,7 +6581,7 @@ export const Quests = () => {
                                         </div>
                                         <div>
                                           <label className="block text-xs font-medium text-gray-700">
-                                            Challenge
+                                            Prompt Template
                                           </label>
                                           {(() => {
                                             const selectedArchetype =
@@ -6012,7 +6645,7 @@ export const Quests = () => {
                                                 }
                                               >
                                                 <option value="">
-                                                  Select challenge
+                                                  Select prompt template
                                                 </option>
                                                 {challenges.map(
                                                   (challenge, index) => (
@@ -6034,8 +6667,9 @@ export const Quests = () => {
                                         </div>
                                       </div>
                                       <p className="mt-2 text-xs text-amber-800">
-                                        Selecting a challenge will auto-fill the
-                                        question field and input type.
+                                        Selecting a prompt template will
+                                        auto-fill the question field and input
+                                        type.
                                       </p>
                                     </div>
                                   )}
@@ -6243,15 +6877,17 @@ export const Quests = () => {
                                   className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
                                   onClick={() => handleCreateChallenge(node)}
                                 >
-                                  Add Challenge
+                                  Add Objective Prompt
                                 </button>
                               </div>
+                              )}
                             </div>
                           </div>
                         );
                       })}
                   </div>
                 </div>
+              </div>
               </>
             )}
           </div>

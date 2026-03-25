@@ -61,6 +61,7 @@ export interface QuestArchetype {
     imageUrl?: string;
     difficultyMode?: QuestDifficultyMode;
     difficulty?: number;
+    monsterEncounterTargetLevel?: number;
     defaultGold: number;
     rewardMode?: 'explicit' | 'random';
     randomRewardSize?: 'small' | 'medium' | 'large';

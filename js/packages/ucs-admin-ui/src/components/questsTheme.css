@@ -128,3 +128,241 @@
 .qa-quests .text-amber-900 {
   color: var(--qa-accent-2);
 }
+
+.qa-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.qa-sidebar,
+.qa-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.qa-library-header,
+.qa-route-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.qa-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.qa-library-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--qa-stroke);
+  transition: border-color 160ms ease, background 160ms ease,
+    transform 160ms ease;
+}
+
+.qa-library-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.qa-library-item.active {
+  background: rgba(255, 107, 74, 0.12);
+  border-color: rgba(255, 107, 74, 0.5);
+}
+
+.qa-library-item-body {
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+}
+
+.qa-library-item-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.qa-library-item-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--qa-muted);
+}
+
+.qa-empty-state {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  justify-content: center;
+}
+
+.qa-focus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.qa-focus-title {
+  margin: 6px 0 8px;
+  font-family: "Fraunces", "Georgia", serif;
+  font-size: clamp(28px, 3.6vw, 40px);
+}
+
+.qa-focus-copy {
+  max-width: 720px;
+  color: var(--qa-muted);
+  line-height: 1.6;
+}
+
+.qa-node-strip {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.qa-node-pill {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.qa-node-pill.poi {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.qa-node-pill.scenario {
+  border-color: rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+}
+
+.qa-node-pill.monster {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.qa-node-pill.challenge {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.qa-node-pill.polygon {
+  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.12);
+}
+
+.qa-node-pill-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(9, 14, 18, 0.65);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.qa-node-pill-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--qa-accent-2);
+}
+
+.qa-node-pill-copy {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--qa-muted);
+}
+
+.qa-card-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--qa-accent-2);
+}
+
+.qa-form-section {
+  padding-top: 2px;
+}
+
+.qa-section-title {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--qa-ink);
+}
+
+.qa-section-copy {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--qa-muted);
+}
+
+.qa-route-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qa-route-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+@media (max-width: 1100px) {
+  .qa-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .qa-library-list {
+    max-height: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .qa-library-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .qa-library-item .qa-btn-danger {
+    grid-column: 1 / -1;
+    justify-self: flex-end;
+  }
+
+  .qa-node-pill-copy {
+    max-width: 160px;
+  }
+}

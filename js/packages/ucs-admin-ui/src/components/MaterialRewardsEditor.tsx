@@ -101,7 +101,7 @@ export const MaterialRewardsEditor = ({
         <label className="block text-sm font-medium">{title}</label>
         <button
           type="button"
-          className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+          className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900 disabled:opacity-50"
           onClick={addReward}
           disabled={disabled}
         >
@@ -109,19 +109,19 @@ export const MaterialRewardsEditor = ({
         </button>
       </div>
       {value.length === 0 ? (
-        <div className="rounded border border-dashed px-3 py-3 text-sm text-gray-500">
+        <div className="rounded border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-600">
           No material rewards configured.
         </div>
       ) : (
         value.map((reward, index) => (
           <div
             key={`${reward.resourceKey}-${index}`}
-            className="grid gap-3 rounded border p-3 md:grid-cols-[minmax(0,1fr)_120px_auto]"
+            className="grid gap-3 rounded border border-slate-300 bg-white p-3 md:grid-cols-[minmax(0,1fr)_120px_auto]"
           >
             <label className="block text-sm">
               Material
               <select
-                className="mt-1 w-full rounded border p-2"
+                className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900"
                 value={reward.resourceKey}
                 disabled={disabled}
                 onChange={(event) =>
@@ -138,7 +138,7 @@ export const MaterialRewardsEditor = ({
             <label className="block text-sm">
               Amount
               <input
-                className="mt-1 w-full rounded border p-2"
+                className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900"
                 type="number"
                 min={1}
                 step={1}
@@ -154,7 +154,7 @@ export const MaterialRewardsEditor = ({
             <div className="flex items-end">
               <button
                 type="button"
-                className="rounded border border-red-300 px-3 py-2 text-sm text-red-700 disabled:opacity-50"
+                className="rounded border border-red-300 bg-white px-3 py-2 text-sm text-red-700 disabled:opacity-50"
                 onClick={() => removeReward(index)}
                 disabled={disabled}
               >

@@ -24,3 +24,10 @@ func NormalizeQuestDifficulty(value int) int {
 	}
 	return value
 }
+
+func NormalizeMonsterEncounterTargetLevel(value int) int {
+	if value < 1 {
+		return 1
+	}
+	return value
+}

@@ -424,19 +424,11 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               </div>
             </div>
             <div className="qa-field">
-              <div className="qa-label">{prefix} Target Level</div>
-              <input
-                type="number"
-                min={1}
-                className="qa-input"
-                value={editor.targetLevel}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    targetLevel: parseInt(e.target.value) || 1,
-                  }))
-                }
-              />
+              <div className="qa-label">{prefix} Monster Level</div>
+              <div className="qa-helper">
+                Monster encounter target level is configured on the quest
+                template, not per child node.
+              </div>
             </div>
             <div className="qa-field">
               <div className="qa-label">{prefix} Proximity To Previous Node (m)</div>
@@ -1035,19 +1027,11 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               </div>
             </div>
             <div className="qa-field">
-              <div className="qa-label">{prefix} Target Level</div>
-              <input
-                type="number"
-                min={1}
-                className="qa-input"
-                value={editor.targetLevel}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    targetLevel: parseInt(e.target.value) || 1,
-                  }))
-                }
-              />
+              <div className="qa-label">{prefix} Monster Level</div>
+              <div className="qa-helper">
+                Monster encounter target level is configured on the quest
+                template, not per child node.
+              </div>
             </div>
             <div className="qa-field">
               <div className="qa-label">{prefix} Proximity To Previous Node (m)</div>
@@ -1318,6 +1302,7 @@ type QuestArchetypeFormState = {
   locationArchetypeQuery: string;
   difficultyMode: QuestDifficultyMode;
   difficulty: number;
+  monsterEncounterTargetLevel: number;
   defaultGold: number;
   rewardMode: RewardMode;
   randomRewardSize: RandomRewardSize;
@@ -1339,6 +1324,7 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   locationArchetypeQuery: '',
   difficultyMode: 'scale',
   difficulty: 1,
+  monsterEncounterTargetLevel: 1,
   defaultGold: 0,
   rewardMode: 'random',
   randomRewardSize: 'small',
@@ -1367,6 +1353,7 @@ const buildQuestArchetypeFormFromRecord = (
   difficultyMode:
     archetype.difficultyMode === 'fixed' ? 'fixed' : 'scale',
   difficulty: archetype.difficulty ?? 1,
+  monsterEncounterTargetLevel: archetype.monsterEncounterTargetLevel ?? 1,
   defaultGold: archetype.defaultGold ?? 0,
   rewardMode: archetype.rewardMode === 'explicit' ? 'explicit' : 'random',
   randomRewardSize:
@@ -1421,6 +1408,10 @@ const normalizeQuestArchetypeDraft = (
     },
     difficultyMode: form.difficultyMode,
     difficulty: Math.max(1, Number(form.difficulty) || 1),
+    monsterEncounterTargetLevel: Math.max(
+      1,
+      Number(form.monsterEncounterTargetLevel) || 1
+    ),
     defaultGold: Number(form.defaultGold) || 0,
     rewardMode,
     randomRewardSize: form.randomRewardSize,
@@ -1980,6 +1971,10 @@ export const QuestArchetypeComponent = () => {
                         {selectedArchetype.difficultyMode === 'fixed'
                           ? selectedArchetype.difficulty ?? 1
                           : 'Scales'}
+                      </span>
+                      <span className="qa-chip muted">
+                        Monster Level:{' '}
+                        {selectedArchetype.monsterEncounterTargetLevel ?? 1}
                       </span>
                       <span className="qa-chip muted">
                         Gold: {selectedArchetype.defaultGold ?? 0}
@@ -2716,6 +2711,20 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
+                <div className="qa-label">Image URL</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={createForm.imageUrl}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      imageUrl: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Quest Giver Tags</div>
                 <input
                   type="text"
@@ -2733,6 +2742,21 @@ export const QuestArchetypeComponent = () => {
                   Used to auto-match a character when quests are generated from
                   this archetype.
                 </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Internal Tags</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={createForm.internalTagsText}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      internalTagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="story_arc, faction, tutorial"
+                />
               </div>
               <div className="qa-field">
                 <div className="qa-label">Location Archetype</div>
@@ -2783,6 +2807,89 @@ export const QuestArchetypeComponent = () => {
                 </div>
               </div>
               <div className="qa-field">
+                <div className="qa-label">Reward Mode</div>
+                <select
+                  className="qa-select"
+                  value={createForm.rewardMode}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      rewardMode: e.target.value as RewardMode,
+                    }))
+                  }
+                >
+                  <option value="random">Random</option>
+                  <option value="explicit">Explicit</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Random Reward Size</div>
+                <select
+                  className="qa-select"
+                  value={createForm.randomRewardSize}
+                  disabled={createForm.rewardMode !== 'random'}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      randomRewardSize: e.target.value as RandomRewardSize,
+                    }))
+                  }
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Default Gold</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={createForm.defaultGold}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      defaultGold: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Reward Experience</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  disabled={createForm.rewardMode !== 'explicit'}
+                  value={createForm.rewardExperience}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      rewardExperience: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Recurrence</div>
+                <select
+                  className="qa-select"
+                  value={createForm.recurrenceFrequency}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      recurrenceFrequency: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">None</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Difficulty Mode</div>
                 <select
                   className="qa-select"
@@ -2813,6 +2920,195 @@ export const QuestArchetypeComponent = () => {
                     }))
                   }
                 />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Monster Encounter Target Level</div>
+                <input
+                  type="number"
+                  min={1}
+                  className="qa-input"
+                  value={createForm.monsterEncounterTargetLevel}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      monsterEncounterTargetLevel: Math.max(
+                        1,
+                        parseInt(e.target.value) || 1
+                      ),
+                    }))
+                  }
+                />
+                <div className="qa-helper">
+                  Used for all monster encounter child nodes in this quest
+                  template.
+                </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Material Rewards</div>
+                <MaterialRewardsEditor
+                  value={createForm.materialRewards}
+                  onChange={(materialRewards) =>
+                    setCreateForm((prev) => ({ ...prev, materialRewards }))
+                  }
+                  disabled={createForm.rewardMode !== 'explicit'}
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Item Rewards</div>
+                {createForm.itemRewards.length === 0 ? (
+                  <div className="qa-empty">No item rewards yet.</div>
+                ) : (
+                  <div className="qa-form-grid">
+                    {createForm.itemRewards.map((reward, index) => (
+                      <div
+                        key={`create-reward-${index}`}
+                        className="qa-reward-row"
+                      >
+                        <select
+                          className="qa-select"
+                          value={reward.inventoryItemId}
+                          disabled={createForm.rewardMode !== 'explicit'}
+                          onChange={(e) =>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              itemRewards: prev.itemRewards.map(
+                                (entry, rewardIndex) =>
+                                  rewardIndex === index
+                                    ? {
+                                        ...entry,
+                                        inventoryItemId: e.target.value,
+                                      }
+                                    : entry
+                              ),
+                            }))
+                          }
+                        >
+                          <option value="">Select an item</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          className="qa-input"
+                          disabled={createForm.rewardMode !== 'explicit'}
+                          value={reward.quantity}
+                          onChange={(e) =>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              itemRewards: prev.itemRewards.map(
+                                (entry, rewardIndex) =>
+                                  rewardIndex === index
+                                    ? {
+                                        ...entry,
+                                        quantity: parseInt(e.target.value) || 1,
+                                      }
+                                    : entry
+                              ),
+                            }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              itemRewards: prev.itemRewards.filter(
+                                (_, rewardIndex) => rewardIndex !== index
+                              ),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      itemRewards: [
+                        ...prev.itemRewards,
+                        { inventoryItemId: '', quantity: 1 },
+                      ],
+                    }))
+                  }
+                >
+                  Add Item Reward
+                </button>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Spell Rewards</div>
+                {createForm.spellRewards.length === 0 ? (
+                  <div className="qa-empty">No spell rewards yet.</div>
+                ) : (
+                  <div className="qa-form-grid">
+                    {createForm.spellRewards.map((reward, index) => (
+                      <div
+                        key={`create-spell-${index}`}
+                        className="qa-reward-row"
+                      >
+                        <select
+                          className="qa-select"
+                          value={reward.spellId}
+                          disabled={createForm.rewardMode !== 'explicit'}
+                          onChange={(e) =>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              spellRewards: prev.spellRewards.map(
+                                (entry, rewardIndex) =>
+                                  rewardIndex === index
+                                    ? { ...entry, spellId: e.target.value }
+                                    : entry
+                              ),
+                            }))
+                          }
+                        >
+                          <option value="">Select a spell</option>
+                          {spells.map((spell) => (
+                            <option key={spell.id} value={spell.id}>
+                              {spell.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              spellRewards: prev.spellRewards.filter(
+                                (_, rewardIndex) => rewardIndex !== index
+                              ),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      spellRewards: [...prev.spellRewards, { spellId: '' }],
+                    }))
+                  }
+                >
+                  Add Spell Reward
+                </button>
               </div>
               <div className="qa-footer">
                 <button
@@ -3046,6 +3342,28 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
+                <div className="qa-label">Monster Encounter Target Level</div>
+                <input
+                  type="number"
+                  min={1}
+                  className="qa-input"
+                  value={editForm.monsterEncounterTargetLevel}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      monsterEncounterTargetLevel: Math.max(
+                        1,
+                        parseInt(e.target.value) || 1
+                      ),
+                    }))
+                  }
+                />
+                <div className="qa-helper">
+                  Used for all monster encounter child nodes in this quest
+                  template.
+                </div>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Material Rewards</div>
                 <MaterialRewardsEditor
                   value={editForm.materialRewards}
@@ -3237,6 +3555,8 @@ export const QuestArchetypeComponent = () => {
                     imageUrl: draft.imageUrl,
                     difficultyMode: draft.difficultyMode,
                     difficulty: draft.difficulty,
+                    monsterEncounterTargetLevel:
+                      draft.monsterEncounterTargetLevel,
                     defaultGold: draft.defaultGold ?? 0,
                     rewardMode: draft.rewardMode,
                     randomRewardSize: draft.randomRewardSize,

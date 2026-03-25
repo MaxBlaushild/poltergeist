@@ -16,6 +16,7 @@ func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *model
 	if questArchetype != nil {
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
+		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
 	}
 	return h.db.WithContext(ctx).Create(questArchetype).Error
 }
@@ -56,6 +57,7 @@ func (h *questArchetypeHandle) Update(ctx context.Context, questArchetype *model
 	if questArchetype != nil {
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
+		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
 	}
 	return h.db.WithContext(ctx).Save(questArchetype).Error
 }

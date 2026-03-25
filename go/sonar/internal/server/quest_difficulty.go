@@ -33,6 +33,24 @@ func errInvalidQuestDifficulty() error {
 	return &questDifficultyValidationError{message: "difficulty must be one or greater"}
 }
 
+func normalizeMonsterEncounterTargetLevel(
+	input *int,
+	fallback int,
+) (int, error) {
+	targetLevel := models.NormalizeMonsterEncounterTargetLevel(fallback)
+	if input != nil {
+		if *input < 1 {
+			return 0, errInvalidMonsterEncounterTargetLevel()
+		}
+		targetLevel = *input
+	}
+	return models.NormalizeMonsterEncounterTargetLevel(targetLevel), nil
+}
+
+func errInvalidMonsterEncounterTargetLevel() error {
+	return &questDifficultyValidationError{message: "monsterEncounterTargetLevel must be one or greater"}
+}
+
 type questDifficultyValidationError struct {
 	message string
 }
@@ -43,6 +61,19 @@ func (e *questDifficultyValidationError) Error() string {
 
 func questUsesScaledDifficulty(mode models.QuestDifficultyMode) bool {
 	return models.NormalizeQuestDifficultyMode(string(mode)) == models.QuestDifficultyModeScale
+}
+
+func questMonsterEncounterTargetLevel(
+	quest *models.Quest,
+	fallback int,
+) int {
+	if quest != nil && quest.MonsterEncounterTargetLevel >= 1 {
+		return quest.MonsterEncounterTargetLevel
+	}
+	if fallback >= 1 {
+		return fallback
+	}
+	return 1
 }
 
 func syncQuestDifficultyConfiguration(
@@ -56,6 +87,7 @@ func syncQuestDifficultyConfiguration(
 
 	scaleWithUserLevel := questUsesScaledDifficulty(quest.DifficultyMode)
 	difficulty := models.NormalizeQuestDifficulty(quest.Difficulty)
+	monsterEncounterTargetLevel := questMonsterEncounterTargetLevel(quest, difficulty)
 
 	nodes, err := s.dbClient.QuestNode().FindByQuestID(ctx, quest.ID)
 	if err != nil {
@@ -63,13 +95,15 @@ func syncQuestDifficultyConfiguration(
 	}
 
 	for _, node := range nodes {
-		for _, challenge := range node.Challenges {
-			updatedChallenge := challenge
-			updatedChallenge.ScaleWithUserLevel = scaleWithUserLevel
-			updatedChallenge.Difficulty = difficulty
-			updatedChallenge.UpdatedAt = time.Now()
-			if _, err := s.dbClient.QuestNodeChallenge().Update(ctx, challenge.ID, &updatedChallenge); err != nil {
-				return err
+		if !questNodeHasModernTarget(&node) {
+			for _, challenge := range node.Challenges {
+				updatedChallenge := challenge
+				updatedChallenge.ScaleWithUserLevel = scaleWithUserLevel
+				updatedChallenge.Difficulty = difficulty
+				updatedChallenge.UpdatedAt = time.Now()
+				if _, err := s.dbClient.QuestNodeChallenge().Update(ctx, challenge.ID, &updatedChallenge); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -124,7 +158,7 @@ func syncQuestDifficultyConfiguration(
 				if !scaleWithUserLevel {
 					for _, member := range encounter.Members {
 						monster := member.Monster
-						monster.Level = difficulty
+						monster.Level = monsterEncounterTargetLevel
 						monster.UpdatedAt = time.Now()
 						if err := s.dbClient.Monster().Update(ctx, monster.ID, &monster); err != nil {
 							return err

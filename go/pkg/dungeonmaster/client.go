@@ -66,6 +66,16 @@ func questFixedDifficulty(quest *models.Quest, fallback int) int {
 	return 1
 }
 
+func questMonsterEncounterTargetLevel(quest *models.Quest, fallback int) int {
+	if quest != nil && quest.MonsterEncounterTargetLevel >= 1 {
+		return quest.MonsterEncounterTargetLevel
+	}
+	if fallback >= 1 {
+		return fallback
+	}
+	return 1
+}
+
 func NewClient(
 	googlemapsClient googlemaps.Client,
 	dbClient db.DbClient,
@@ -114,6 +124,7 @@ func (c *client) GenerateQuest(
 	}
 	difficultyMode := models.NormalizeQuestDifficultyMode(string(questArchType.DifficultyMode))
 	difficulty := models.NormalizeQuestDifficulty(questArchType.Difficulty)
+	monsterEncounterTargetLevel := models.NormalizeMonsterEncounterTargetLevel(questArchType.MonsterEncounterTargetLevel)
 	acceptanceDialogue := questArchType.AcceptanceDialogue
 	if acceptanceDialogue == nil {
 		acceptanceDialogue = models.StringArray{}
@@ -133,26 +144,27 @@ func (c *client) GenerateQuest(
 
 	log.Println("Creating quest")
 	quest := &models.Quest{
-		ID:                    uuid.New(),
-		CreatedAt:             time.Now(),
-		UpdatedAt:             time.Now(),
-		Name:                  strings.TrimSpace(questArchType.Name),
-		Description:           questArchType.Description,
-		AcceptanceDialogue:    acceptanceDialogue,
-		ImageURL:              questArchType.ImageURL,
-		ZoneID:                &zone.ID,
-		QuestArchetypeID:      &questArchetypeID,
-		QuestGiverCharacterID: questGiverCharacterID,
-		RecurringQuestID:      recurringQuestID,
-		RecurrenceFrequency:   questArchType.RecurrenceFrequency,
-		NextRecurrenceAt:      nextRecurrenceAt,
-		DifficultyMode:        difficultyMode,
-		Difficulty:            difficulty,
-		RewardMode:            rewardMode,
-		RandomRewardSize:      randomRewardSize,
-		RewardExperience:      questArchType.RewardExperience,
-		Gold:                  questArchType.DefaultGold,
-		MaterialRewards:       questArchType.MaterialRewards,
+		ID:                          uuid.New(),
+		CreatedAt:                   time.Now(),
+		UpdatedAt:                   time.Now(),
+		Name:                        strings.TrimSpace(questArchType.Name),
+		Description:                 questArchType.Description,
+		AcceptanceDialogue:          acceptanceDialogue,
+		ImageURL:                    questArchType.ImageURL,
+		ZoneID:                      &zone.ID,
+		QuestArchetypeID:            &questArchetypeID,
+		QuestGiverCharacterID:       questGiverCharacterID,
+		RecurringQuestID:            recurringQuestID,
+		RecurrenceFrequency:         questArchType.RecurrenceFrequency,
+		NextRecurrenceAt:            nextRecurrenceAt,
+		DifficultyMode:              difficultyMode,
+		Difficulty:                  difficulty,
+		MonsterEncounterTargetLevel: monsterEncounterTargetLevel,
+		RewardMode:                  rewardMode,
+		RandomRewardSize:            randomRewardSize,
+		RewardExperience:            questArchType.RewardExperience,
+		Gold:                        questArchType.DefaultGold,
+		MaterialRewards:             questArchType.MaterialRewards,
 	}
 	if quest.Name == "" {
 		quest.Name = "Quest"
@@ -312,6 +324,21 @@ func (c *client) processQuestLocationNode(
 	} else {
 		questNodeID = uuid.New()
 		submissionType := models.DefaultQuestNodeSubmissionType()
+		var primaryLocationChallenge *resolvedQuestArchetypeLocationChallenge
+		if len(questArchTypeNode.Challenges) > 0 {
+			resolvedChallenge, err := c.resolveQuestArchetypeLocationChallenge(
+				ctx,
+				questArchTypeNode,
+				&questArchTypeNode.Challenges[0],
+			)
+			if err != nil {
+				return previousAnchor, err
+			}
+			primaryLocationChallenge = resolvedChallenge
+			if resolvedChallenge != nil && resolvedChallenge.SubmissionType.IsValid() {
+				submissionType = resolvedChallenge.SubmissionType
+			}
+		}
 		locationChallenge, err := c.makeQuestLocationChallenge(
 			zone.ID,
 			pointOfInterest,
@@ -321,6 +348,16 @@ func (c *client) processQuestLocationNode(
 		)
 		if err != nil {
 			return previousAnchor, err
+		}
+		if primaryLocationChallenge != nil {
+			locationChallenge.Question = primaryLocationChallenge.Question
+			if strings.TrimSpace(primaryLocationChallenge.Description) != "" {
+				locationChallenge.Description = primaryLocationChallenge.Description
+			}
+			locationChallenge.SubmissionType = primaryLocationChallenge.SubmissionType
+			locationChallenge.Difficulty = questFixedDifficulty(quest, primaryLocationChallenge.Difficulty)
+			locationChallenge.StatTags = append(models.StringArray{}, primaryLocationChallenge.StatTags...)
+			locationChallenge.Proficiency = primaryLocationChallenge.Proficiency
 		}
 		if err := c.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
 			return previousAnchor, err
@@ -342,33 +379,7 @@ func (c *client) processQuestLocationNode(
 		(*orderIndex)++
 	}
 
-	for i, allotedChallenge := range questArchTypeNode.Challenges {
-		resolvedChallenge, err := c.resolveQuestArchetypeLocationChallenge(
-			ctx,
-			questArchTypeNode,
-			&allotedChallenge,
-		)
-		if err != nil {
-			return currentAnchor, err
-		}
-		challenge := &models.QuestNodeChallenge{
-			ID:                 uuid.New(),
-			CreatedAt:          time.Now(),
-			UpdatedAt:          time.Now(),
-			QuestNodeID:        questNodeID,
-			Tier:               i,
-			Question:           resolvedChallenge.Question,
-			Reward:             0,
-			InventoryItemID:    nil,
-			ScaleWithUserLevel: questUsesScaledDifficulty(quest),
-			Difficulty:         questFixedDifficulty(quest, resolvedChallenge.Difficulty),
-			StatTags:           resolvedChallenge.StatTags,
-			Proficiency:        resolvedChallenge.Proficiency,
-			SubmissionType:     resolvedChallenge.SubmissionType,
-		}
-		if err := c.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
-			return currentAnchor, err
-		}
+	for _, allotedChallenge := range questArchTypeNode.Challenges {
 		if allotedChallenge.UnlockedNodeID != nil {
 			unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *allotedChallenge.UnlockedNodeID)
 			if err != nil {
@@ -379,12 +390,11 @@ func (c *client) processQuestLocationNode(
 			}
 			childNodeID := nodeMap[unlockedNode.ID]
 			child := &models.QuestNodeChild{
-				ID:                   uuid.New(),
-				CreatedAt:            time.Now(),
-				UpdatedAt:            time.Now(),
-				QuestNodeID:          questNodeID,
-				NextQuestNodeID:      childNodeID,
-				QuestNodeChallengeID: &challenge.ID,
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestNodeID:     questNodeID,
+				NextQuestNodeID: childNodeID,
 			}
 			if err := c.dbClient.QuestNodeChild().Create(ctx, child); err != nil {
 				return currentAnchor, err
@@ -615,7 +625,7 @@ func (c *client) processQuestMonsterEncounterNode(
 	}
 	createdMonsters := make([]models.Monster, 0, len(sourceTemplates))
 	members := make([]models.MonsterEncounterMember, 0, len(sourceTemplates))
-	fixedDifficulty := questFixedDifficulty(quest, questArchTypeNode.TargetLevel)
+	monsterTargetLevel := questMonsterEncounterTargetLevel(quest, questArchTypeNode.TargetLevel)
 	scaleWithUserLevel := questUsesScaledDifficulty(quest)
 	for index, source := range sourceTemplates {
 		templateID := source.ID
@@ -637,7 +647,7 @@ func (c *client) processQuestMonsterEncounterNode(
 			Latitude:         currentAnchor.Latitude,
 			Longitude:        currentAnchor.Longitude,
 			TemplateID:       &templateID,
-			Level:            fixedDifficulty,
+			Level:            monsterTargetLevel,
 			RewardMode:       models.RewardModeExplicit,
 			RandomRewardSize: models.RandomRewardSizeSmall,
 			RewardExperience: 0,
@@ -902,6 +912,7 @@ func deriveQuestEncounterType(monsters []models.Monster) models.MonsterEncounter
 
 type resolvedQuestArchetypeLocationChallenge struct {
 	Question       string
+	Description    string
 	SubmissionType models.QuestNodeSubmissionType
 	Difficulty     int
 	StatTags       models.StringArray
@@ -947,6 +958,7 @@ func (c *client) resolveQuestArchetypeLocationChallenge(
 	}
 	return &resolvedQuestArchetypeLocationChallenge{
 		Question:       randomChallenge.Question,
+		Description:    "",
 		SubmissionType: submissionType,
 		Difficulty:     allotedChallenge.Difficulty,
 		StatTags:       models.StringArray{},
@@ -971,6 +983,7 @@ func resolvedQuestArchetypeLocationChallengeFromTemplate(
 	statTags := append(models.StringArray{}, template.StatTags...)
 	return &resolvedQuestArchetypeLocationChallenge{
 		Question:       question,
+		Description:    strings.TrimSpace(template.Description),
 		SubmissionType: submissionType,
 		Difficulty:     template.Difficulty,
 		StatTags:       statTags,

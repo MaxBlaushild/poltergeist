@@ -256,6 +256,12 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 		}
 
 		for _, challenge := range node.Challenges {
+			if (node.ChallengeID != nil && *node.ChallengeID != uuid.Nil) ||
+				(node.ScenarioID != nil && *node.ScenarioID != uuid.Nil) ||
+				(node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil) ||
+				(node.MonsterID != nil && *node.MonsterID != uuid.Nil) {
+				continue
+			}
 			newChallengeID := uuid.New()
 			challengeIDMap[challenge.ID] = newChallengeID
 			ch := &models.QuestNodeChallenge{

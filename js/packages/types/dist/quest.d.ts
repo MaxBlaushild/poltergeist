@@ -36,6 +36,7 @@ export interface Quest {
     completionCount?: number;
     difficultyMode?: QuestDifficultyMode;
     difficulty?: number;
+    monsterEncounterTargetLevel?: number;
     rewardMode?: 'explicit' | 'random';
     randomRewardSize?: 'small' | 'medium' | 'large';
     rewardExperience?: number;

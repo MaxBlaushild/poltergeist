@@ -1956,6 +1956,28 @@ func selectQuestNodeChallenge(
 	if node == nil {
 		return nil, fmt.Errorf("quest node not found")
 	}
+	if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
+		if standaloneChallenge == nil {
+			return nil, fmt.Errorf("quest node has no challenges")
+		}
+		if challengeID != nil && *challengeID != uuid.Nil && *challengeID != standaloneChallenge.ID {
+			return nil, fmt.Errorf("quest node challenge not found")
+		}
+		return &models.QuestNodeChallenge{
+			ID:                 standaloneChallenge.ID,
+			Question:           standaloneChallenge.Question,
+			Reward:             standaloneChallenge.Reward,
+			InventoryItemID:    standaloneChallenge.InventoryItemID,
+			SubmissionType:     standaloneChallenge.SubmissionType,
+			ScaleWithUserLevel: standaloneChallenge.ScaleWithUserLevel,
+			Difficulty:         standaloneChallenge.Difficulty,
+			StatTags:           standaloneChallenge.StatTags,
+			Proficiency:        standaloneChallenge.Proficiency,
+		}, nil
+	}
+	if questNodeHasModernTarget(node) {
+		return nil, fmt.Errorf("quest node uses its linked objective directly")
+	}
 	if len(node.Challenges) > 0 {
 		if challengeID != nil && *challengeID != uuid.Nil {
 			for _, ch := range node.Challenges {
@@ -1970,23 +1992,35 @@ func selectQuestNodeChallenge(
 		}
 		return nil, fmt.Errorf("questNodeChallengeId is required")
 	}
-	if standaloneChallenge == nil {
-		return nil, fmt.Errorf("quest node has no challenges")
+	return nil, fmt.Errorf("quest node has no challenges")
+}
+
+func questNodeHasModernTarget(node *models.QuestNode) bool {
+	if node == nil {
+		return false
 	}
-	if challengeID != nil && *challengeID != uuid.Nil && *challengeID != standaloneChallenge.ID {
-		return nil, fmt.Errorf("quest node challenge not found")
+	return (node.ChallengeID != nil && *node.ChallengeID != uuid.Nil) ||
+		(node.ScenarioID != nil && *node.ScenarioID != uuid.Nil) ||
+		(node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil) ||
+		(node.MonsterID != nil && *node.MonsterID != uuid.Nil)
+}
+
+func questNodeModernTargetError(node *models.QuestNode) string {
+	if node == nil {
+		return "target-backed quest nodes use their linked objective directly and cannot use questNodeChallenges"
 	}
-	return &models.QuestNodeChallenge{
-		ID:                 standaloneChallenge.ID,
-		Question:           standaloneChallenge.Question,
-		Reward:             standaloneChallenge.Reward,
-		InventoryItemID:    standaloneChallenge.InventoryItemID,
-		SubmissionType:     standaloneChallenge.SubmissionType,
-		ScaleWithUserLevel: standaloneChallenge.ScaleWithUserLevel,
-		Difficulty:         standaloneChallenge.Difficulty,
-		StatTags:           standaloneChallenge.StatTags,
-		Proficiency:        standaloneChallenge.Proficiency,
-	}, nil
+	switch {
+	case node.ChallengeID != nil && *node.ChallengeID != uuid.Nil:
+		return "challenge-backed quest nodes use their linked challenge directly and cannot use questNodeChallenges"
+	case node.ScenarioID != nil && *node.ScenarioID != uuid.Nil:
+		return "scenario-backed quest nodes use their linked scenario directly and cannot use questNodeChallenges"
+	case node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil:
+		return "monster-encounter-backed quest nodes use their linked encounter directly and cannot use questNodeChallenges"
+	case node.MonsterID != nil && *node.MonsterID != uuid.Nil:
+		return "monster-backed quest nodes use their linked monster directly and cannot use questNodeChallenges"
+	default:
+		return "target-backed quest nodes use their linked objective directly and cannot use questNodeChallenges"
+	}
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -3207,22 +3241,23 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	var requestBody struct {
-		Name                string                              `json:"name"`
-		Description         string                              `json:"description"`
-		AcceptanceDialogue  []string                            `json:"acceptanceDialogue"`
-		ImageURL            string                              `json:"imageUrl"`
-		DefaultGold         *int                                `json:"defaultGold"`
-		DifficultyMode      string                              `json:"difficultyMode"`
-		Difficulty          *int                                `json:"difficulty"`
-		RewardMode          string                              `json:"rewardMode"`
-		RandomRewardSize    string                              `json:"randomRewardSize"`
-		RewardExperience    *int                                `json:"rewardExperience"`
-		RecurrenceFrequency *string                             `json:"recurrenceFrequency"`
-		MaterialRewards     []baseMaterialRewardPayload         `json:"materialRewards"`
-		CharacterTags       []string                            `json:"characterTags"`
-		InternalTags        []string                            `json:"internalTags"`
-		ItemRewards         *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards        *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                        string                              `json:"name"`
+		Description                 string                              `json:"description"`
+		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
+		ImageURL                    string                              `json:"imageUrl"`
+		DefaultGold                 *int                                `json:"defaultGold"`
+		DifficultyMode              string                              `json:"difficultyMode"`
+		Difficulty                  *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                  string                              `json:"rewardMode"`
+		RandomRewardSize            string                              `json:"randomRewardSize"`
+		RewardExperience            *int                                `json:"rewardExperience"`
+		RecurrenceFrequency         *string                             `json:"recurrenceFrequency"`
+		MaterialRewards             []baseMaterialRewardPayload         `json:"materialRewards"`
+		CharacterTags               []string                            `json:"characterTags"`
+		InternalTags                []string                            `json:"internalTags"`
+		ItemRewards                 *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3273,6 +3308,14 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	monsterEncounterTargetLevel, err := normalizeMonsterEncounterTargetLevel(
+		requestBody.MonsterEncounterTargetLevel,
+		questArchetype.MonsterEncounterTargetLevel,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	questArchetype.Name = name
 	questArchetype.Description = description
@@ -3280,6 +3323,7 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	questArchetype.ImageURL = requestBody.ImageURL
 	questArchetype.DifficultyMode = difficultyMode
 	questArchetype.Difficulty = difficulty
+	questArchetype.MonsterEncounterTargetLevel = monsterEncounterTargetLevel
 	if requestBody.DefaultGold != nil {
 		questArchetype.DefaultGold = *requestBody.DefaultGold
 	}
@@ -3702,22 +3746,23 @@ func (s *server) getQuest(ctx *gin.Context) {
 
 func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
-		Name                  string                      `json:"name"`
-		Description           string                      `json:"description"`
-		AcceptanceDialogue    []string                    `json:"acceptanceDialogue"`
-		ImageURL              string                      `json:"imageUrl"`
-		ZoneID                *uuid.UUID                  `json:"zoneId"`
-		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
-		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
-		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
-		DifficultyMode        string                      `json:"difficultyMode"`
-		Difficulty            *int                        `json:"difficulty"`
-		RewardMode            string                      `json:"rewardMode"`
-		RandomRewardSize      string                      `json:"randomRewardSize"`
-		RewardExperience      *int                        `json:"rewardExperience"`
-		Gold                  *int                        `json:"gold"`
-		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
-		ItemRewards           *[]struct {
+		Name                        string                      `json:"name"`
+		Description                 string                      `json:"description"`
+		AcceptanceDialogue          []string                    `json:"acceptanceDialogue"`
+		ImageURL                    string                      `json:"imageUrl"`
+		ZoneID                      *uuid.UUID                  `json:"zoneId"`
+		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
+		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
+		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
+		DifficultyMode              string                      `json:"difficultyMode"`
+		Difficulty                  *int                        `json:"difficulty"`
+		MonsterEncounterTargetLevel *int                        `json:"monsterEncounterTargetLevel"`
+		RewardMode                  string                      `json:"rewardMode"`
+		RandomRewardSize            string                      `json:"randomRewardSize"`
+		RewardExperience            *int                        `json:"rewardExperience"`
+		Gold                        *int                        `json:"gold"`
+		MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
+		ItemRewards                 *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -3758,6 +3803,14 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	monsterEncounterTargetLevel, err := normalizeMonsterEncounterTargetLevel(
+		requestBody.MonsterEncounterTargetLevel,
+		difficulty,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	acceptanceDialogue := models.StringArray(requestBody.AcceptanceDialogue)
 	if acceptanceDialogue == nil {
@@ -3766,23 +3819,24 @@ func (s *server) createQuest(ctx *gin.Context) {
 
 	now := time.Now()
 	quest := &models.Quest{
-		ID:                    uuid.New(),
-		CreatedAt:             now,
-		UpdatedAt:             now,
-		Name:                  requestBody.Name,
-		Description:           requestBody.Description,
-		AcceptanceDialogue:    acceptanceDialogue,
-		ImageURL:              requestBody.ImageURL,
-		ZoneID:                requestBody.ZoneID,
-		QuestArchetypeID:      requestBody.QuestArchetypeID,
-		QuestGiverCharacterID: requestBody.QuestGiverCharacterID,
-		DifficultyMode:        difficultyMode,
-		Difficulty:            difficulty,
-		RewardMode:            models.RewardModeRandom,
-		RandomRewardSize:      models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
-		RewardExperience:      0,
-		Gold:                  0,
-		MaterialRewards:       materialRewards,
+		ID:                          uuid.New(),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+		Name:                        requestBody.Name,
+		Description:                 requestBody.Description,
+		AcceptanceDialogue:          acceptanceDialogue,
+		ImageURL:                    requestBody.ImageURL,
+		ZoneID:                      requestBody.ZoneID,
+		QuestArchetypeID:            requestBody.QuestArchetypeID,
+		QuestGiverCharacterID:       requestBody.QuestGiverCharacterID,
+		DifficultyMode:              difficultyMode,
+		Difficulty:                  difficulty,
+		MonsterEncounterTargetLevel: monsterEncounterTargetLevel,
+		RewardMode:                  models.RewardModeRandom,
+		RandomRewardSize:            models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
+		RewardExperience:            0,
+		Gold:                        0,
+		MaterialRewards:             materialRewards,
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
@@ -3886,22 +3940,23 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                  string                      `json:"name"`
-		Description           string                      `json:"description"`
-		AcceptanceDialogue    *[]string                   `json:"acceptanceDialogue"`
-		ImageURL              string                      `json:"imageUrl"`
-		ZoneID                *uuid.UUID                  `json:"zoneId"`
-		QuestArchetypeID      *uuid.UUID                  `json:"questArchetypeId"`
-		QuestGiverCharacterID *uuid.UUID                  `json:"questGiverCharacterId"`
-		RecurrenceFrequency   *string                     `json:"recurrenceFrequency"`
-		DifficultyMode        string                      `json:"difficultyMode"`
-		Difficulty            *int                        `json:"difficulty"`
-		RewardMode            string                      `json:"rewardMode"`
-		RandomRewardSize      string                      `json:"randomRewardSize"`
-		RewardExperience      *int                        `json:"rewardExperience"`
-		Gold                  *int                        `json:"gold"`
-		MaterialRewards       []baseMaterialRewardPayload `json:"materialRewards"`
-		ItemRewards           *[]struct {
+		Name                        string                      `json:"name"`
+		Description                 string                      `json:"description"`
+		AcceptanceDialogue          *[]string                   `json:"acceptanceDialogue"`
+		ImageURL                    string                      `json:"imageUrl"`
+		ZoneID                      *uuid.UUID                  `json:"zoneId"`
+		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
+		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
+		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
+		DifficultyMode              string                      `json:"difficultyMode"`
+		Difficulty                  *int                        `json:"difficulty"`
+		MonsterEncounterTargetLevel *int                        `json:"monsterEncounterTargetLevel"`
+		RewardMode                  string                      `json:"rewardMode"`
+		RandomRewardSize            string                      `json:"randomRewardSize"`
+		RewardExperience            *int                        `json:"rewardExperience"`
+		Gold                        *int                        `json:"gold"`
+		MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
+		ItemRewards                 *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -3947,6 +4002,14 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	monsterEncounterTargetLevel, err := normalizeMonsterEncounterTargetLevel(
+		requestBody.MonsterEncounterTargetLevel,
+		quest.MonsterEncounterTargetLevel,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	previousQuestGiver := quest.QuestGiverCharacterID
 	quest.Name = requestBody.Name
@@ -3960,6 +4023,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
 	quest.DifficultyMode = difficultyMode
 	quest.Difficulty = difficulty
+	quest.MonsterEncounterTargetLevel = monsterEncounterTargetLevel
 	if strings.TrimSpace(requestBody.RewardMode) != "" {
 		quest.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
 	}
@@ -4240,6 +4304,22 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
+	node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if node == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
+		return
+	}
+	if questNodeHasModernTarget(node) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": questNodeModernTargetError(node),
+		})
+		return
+	}
+
 	var requestBody struct {
 		Tier               int      `json:"tier"`
 		Question           string   `json:"question"`
@@ -4278,10 +4358,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 
 	submissionType := strings.TrimSpace(requestBody.SubmissionType)
 	if submissionType == "" {
-		node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
-		if err == nil && node != nil {
-			submissionType = strings.TrimSpace(string(node.SubmissionType))
-		}
+		submissionType = strings.TrimSpace(string(node.SubmissionType))
 	}
 	if submissionType == "" {
 		submissionType = string(models.DefaultQuestNodeSubmissionType())
@@ -4340,6 +4417,21 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 	}
 	if existing.QuestNodeID != nodeID {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge does not belong to quest node"})
+		return
+	}
+	parentNode, err := s.dbClient.QuestNode().FindByID(ctx, existing.QuestNodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if parentNode == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
+		return
+	}
+	if questNodeHasModernTarget(parentNode) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": questNodeModernTargetError(parentNode),
+		})
 		return
 	}
 
@@ -4439,6 +4531,21 @@ func (s *server) shuffleQuestNodeChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge shuffle already in progress"})
 		return
 	}
+	parentNode, err := s.dbClient.QuestNode().FindByID(ctx, existing.QuestNodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if parentNode == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
+		return
+	}
+	if questNodeHasModernTarget(parentNode) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": questNodeModernTargetError(parentNode),
+		})
+		return
+	}
 
 	queued := *existing
 	queued.ChallengeShuffleStatus = models.QuestNodeChallengeShuffleStatusQueued
@@ -4522,23 +4629,24 @@ func (s *server) getQuestArchetype(ctx *gin.Context) {
 
 func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name                string                              `json:"name"`
-		Description         string                              `json:"description"`
-		AcceptanceDialogue  []string                            `json:"acceptanceDialogue"`
-		ImageURL            string                              `json:"imageUrl"`
-		RootID              uuid.UUID                           `json:"rootID"`
-		DefaultGold         *int                                `json:"defaultGold"`
-		DifficultyMode      string                              `json:"difficultyMode"`
-		Difficulty          *int                                `json:"difficulty"`
-		RewardMode          string                              `json:"rewardMode"`
-		RandomRewardSize    string                              `json:"randomRewardSize"`
-		RewardExperience    *int                                `json:"rewardExperience"`
-		RecurrenceFrequency *string                             `json:"recurrenceFrequency"`
-		MaterialRewards     []baseMaterialRewardPayload         `json:"materialRewards"`
-		CharacterTags       []string                            `json:"characterTags"`
-		InternalTags        []string                            `json:"internalTags"`
-		ItemRewards         *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards        *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                        string                              `json:"name"`
+		Description                 string                              `json:"description"`
+		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
+		ImageURL                    string                              `json:"imageUrl"`
+		RootID                      uuid.UUID                           `json:"rootID"`
+		DefaultGold                 *int                                `json:"defaultGold"`
+		DifficultyMode              string                              `json:"difficultyMode"`
+		Difficulty                  *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                  string                              `json:"rewardMode"`
+		RandomRewardSize            string                              `json:"randomRewardSize"`
+		RewardExperience            *int                                `json:"rewardExperience"`
+		RecurrenceFrequency         *string                             `json:"recurrenceFrequency"`
+		MaterialRewards             []baseMaterialRewardPayload         `json:"materialRewards"`
+		CharacterTags               []string                            `json:"characterTags"`
+		InternalTags                []string                            `json:"internalTags"`
+		ItemRewards                 *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4574,6 +4682,14 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	monsterEncounterTargetLevel, err := normalizeMonsterEncounterTargetLevel(
+		requestBody.MonsterEncounterTargetLevel,
+		difficulty,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	name, description, acceptanceDialogue, err := normalizeExplicitQuestTemplateContent(
 		requestBody.Name,
 		requestBody.Description,
@@ -4585,23 +4701,24 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	}
 
 	questArchType := &models.QuestArchetype{
-		Name:                name,
-		Description:         description,
-		AcceptanceDialogue:  acceptanceDialogue,
-		ImageURL:            requestBody.ImageURL,
-		RootID:              requestBody.RootID,
-		ID:                  uuid.New(),
-		DifficultyMode:      difficultyMode,
-		Difficulty:          difficulty,
-		RewardMode:          models.RewardModeRandom,
-		RandomRewardSize:    models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
-		RewardExperience:    0,
-		RecurrenceFrequency: recurrenceFrequency,
-		MaterialRewards:     materialRewards,
-		CharacterTags:       normalizeQuestTemplateCharacterTags(requestBody.CharacterTags),
-		InternalTags:        normalizeQuestTemplateInternalTags(requestBody.InternalTags),
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
+		Name:                        name,
+		Description:                 description,
+		AcceptanceDialogue:          acceptanceDialogue,
+		ImageURL:                    requestBody.ImageURL,
+		RootID:                      requestBody.RootID,
+		ID:                          uuid.New(),
+		DifficultyMode:              difficultyMode,
+		Difficulty:                  difficulty,
+		MonsterEncounterTargetLevel: monsterEncounterTargetLevel,
+		RewardMode:                  models.RewardModeRandom,
+		RandomRewardSize:            models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
+		RewardExperience:            0,
+		RecurrenceFrequency:         recurrenceFrequency,
+		MaterialRewards:             materialRewards,
+		CharacterTags:               normalizeQuestTemplateCharacterTags(requestBody.CharacterTags),
+		InternalTags:                normalizeQuestTemplateInternalTags(requestBody.InternalTags),
+		CreatedAt:                   time.Now(),
+		UpdatedAt:                   time.Now(),
 	}
 	if requestBody.DefaultGold != nil {
 		questArchType.DefaultGold = *requestBody.DefaultGold
@@ -11316,6 +11433,18 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node is not the current objective"})
 		return
 	}
+	if node.ScenarioID != nil && *node.ScenarioID != uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario-backed quest nodes are resolved through their linked scenario directly"})
+		return
+	}
+	if node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster-encounter-backed quest nodes are resolved through combat against their linked encounter directly"})
+		return
+	}
+	if node.MonsterID != nil && *node.MonsterID != uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster-backed quest nodes are resolved through combat against their linked monster directly"})
+		return
+	}
 
 	var standaloneChallenge *models.Challenge
 	if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
@@ -14045,6 +14174,97 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			"wisdom":       {},
 			"charisma":     {},
 		}
+		loadQuestNodeObjectiveSummary := func(node models.QuestNode) (float64, []string, error) {
+			normalizedTags := []string{}
+			appendTag := func(raw string) {
+				normalized := strings.ToLower(strings.TrimSpace(raw))
+				if normalized == "" {
+					return
+				}
+				if _, ok := validStats[normalized]; !ok {
+					return
+				}
+				for _, existing := range normalizedTags {
+					if existing == normalized {
+						return
+					}
+				}
+				normalizedTags = append(normalizedTags, normalized)
+			}
+
+			switch {
+			case node.ChallengeID != nil && *node.ChallengeID != uuid.Nil:
+				challenge, err := s.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
+				if err != nil {
+					return 0, nil, err
+				}
+				if challenge == nil {
+					return 0, nil, nil
+				}
+				for _, tag := range []string(challenge.StatTags) {
+					appendTag(tag)
+				}
+				return float64(challenge.Difficulty), normalizedTags, nil
+			case node.ScenarioID != nil && *node.ScenarioID != uuid.Nil:
+				scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
+				if err != nil {
+					return 0, nil, err
+				}
+				if scenario == nil {
+					return 0, nil, nil
+				}
+				optionDifficultyTotal := 0.0
+				optionDifficultyCount := 0
+				for _, option := range scenario.Options {
+					appendTag(option.StatTag)
+					if option.Difficulty != nil {
+						optionDifficultyTotal += float64(*option.Difficulty)
+						optionDifficultyCount++
+					}
+				}
+				if optionDifficultyCount > 0 {
+					return optionDifficultyTotal / float64(optionDifficultyCount), normalizedTags, nil
+				}
+				return float64(scenario.Difficulty), normalizedTags, nil
+			case node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil:
+				encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, *node.MonsterEncounterID)
+				if err != nil {
+					return 0, nil, err
+				}
+				if encounter == nil {
+					return 0, nil, nil
+				}
+				if len(encounter.Members) == 0 {
+					return 0, normalizedTags, nil
+				}
+				levelTotal := 0.0
+				for _, member := range encounter.Members {
+					levelTotal += float64(member.Monster.EffectiveLevel())
+				}
+				return levelTotal / float64(len(encounter.Members)), normalizedTags, nil
+			case node.MonsterID != nil && *node.MonsterID != uuid.Nil:
+				monster, err := s.dbClient.Monster().FindByID(ctx, *node.MonsterID)
+				if err != nil {
+					return 0, nil, err
+				}
+				if monster == nil {
+					return 0, nil, nil
+				}
+				return float64(monster.EffectiveLevel()), normalizedTags, nil
+			default:
+				if len(node.Challenges) == 0 {
+					return 0, nil, nil
+				}
+				sum := 0.0
+				for _, challenge := range node.Challenges {
+					sum += float64(challenge.Difficulty)
+					for _, tag := range []string(challenge.StatTags) {
+						appendTag(tag)
+					}
+				}
+				return sum / float64(len(node.Challenges)), normalizedTags, nil
+			}
+		}
 		for _, action := range actions {
 			if action == nil || action.ActionType != models.ActionTypeGiveQuest {
 				continue
@@ -14074,24 +14294,23 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			var nodeAvgs []float64
 			tags := map[string]struct{}{}
 			for _, node := range quest.Nodes {
-				if len(node.Challenges) == 0 {
+				nodeAvg, nodeTags, err := loadQuestNodeObjectiveSummary(node)
+				if err != nil {
+					log.Printf(
+						"getCharacterActions: failed to summarize quest node objective action=%s questId=%s nodeId=%s err=%v",
+						action.ID,
+						quest.ID,
+						node.ID,
+						err,
+					)
 					continue
 				}
-				sum := 0.0
-				for _, challenge := range node.Challenges {
-					sum += float64(challenge.Difficulty)
-					for _, tag := range []string(challenge.StatTags) {
-						normalized := strings.ToLower(strings.TrimSpace(tag))
-						if normalized == "" {
-							continue
-						}
-						if _, ok := validStats[normalized]; !ok {
-							continue
-						}
-						tags[normalized] = struct{}{}
-					}
+				if nodeAvg > 0 {
+					nodeAvgs = append(nodeAvgs, nodeAvg)
 				}
-				nodeAvgs = append(nodeAvgs, sum/float64(len(node.Challenges)))
+				for _, tag := range nodeTags {
+					tags[tag] = struct{}{}
+				}
 			}
 			avgDifficulty := 0.0
 			if len(nodeAvgs) > 0 {
