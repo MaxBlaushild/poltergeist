@@ -546,7 +546,7 @@ func buildQuestNodeObjective(
 					ThumbnailURL:   strings.TrimSpace(encounter.ThumbnailURL),
 					SubmissionType: submissionType,
 					Difficulty:     difficulty,
-				}, nil, nil, nil
+				}, encounter.PointOfInterest, nil, nil
 			}
 		}
 		return nil, nil, nil, nil

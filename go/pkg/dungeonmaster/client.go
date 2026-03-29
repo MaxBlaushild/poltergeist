@@ -447,7 +447,7 @@ func (c *client) processQuestScenarioNode(
 		return previousAnchor, fmt.Errorf("scenario template %s not found", questArchTypeNode.ScenarioTemplateID.String())
 	}
 
-	currentAnchor, _, err := c.resolveQuestNodeAnchor(
+	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -467,6 +467,7 @@ func (c *client) processQuestScenarioNode(
 		CreatedAt:                 time.Now(),
 		UpdatedAt:                 time.Now(),
 		ZoneID:                    zone.ID,
+		PointOfInterestID:         optionalPointOfInterestID(pointOfInterest),
 		Latitude:                  currentAnchor.Latitude,
 		Longitude:                 currentAnchor.Longitude,
 		Prompt:                    strings.TrimSpace(template.Prompt),
@@ -613,7 +614,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		return previousAnchor, fmt.Errorf("monster encounter node cannot include more than 9 monster templates")
 	}
 
-	currentAnchor, _, err := c.resolveQuestNodeAnchor(
+	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -684,6 +685,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		Ephemeral:          false,
 		ScaleWithUserLevel: scaleWithUserLevel,
 		ZoneID:             zone.ID,
+		PointOfInterestID:  optionalPointOfInterestID(pointOfInterest),
 		Latitude:           currentAnchor.Latitude,
 		Longitude:          currentAnchor.Longitude,
 		RewardMode:         models.RewardModeExplicit,
@@ -1203,6 +1205,14 @@ func maxInt(a, b int) int {
 	return b
 }
 
+func optionalPointOfInterestID(poi *models.PointOfInterest) *uuid.UUID {
+	if poi == nil || poi.ID == uuid.Nil {
+		return nil
+	}
+	poiID := poi.ID
+	return &poiID
+}
+
 func (c *client) makeQuestLocationChallenge(
 	zoneID uuid.UUID,
 	poi *models.PointOfInterest,
@@ -1232,6 +1242,7 @@ func (c *client) makeQuestLocationChallenge(
 		CreatedAt:          now,
 		UpdatedAt:          now,
 		ZoneID:             zoneID,
+		PointOfInterestID:  optionalPointOfInterestID(poi),
 		Latitude:           lat,
 		Longitude:          lng,
 		Question:           question,

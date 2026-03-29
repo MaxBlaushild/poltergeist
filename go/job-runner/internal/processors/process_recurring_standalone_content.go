@@ -329,6 +329,7 @@ func (p *ProcessRecurringStandaloneContentProcessor) processMonsterEncounter(
 		RecurrenceFrequency:         &frequency,
 		NextRecurrenceAt:            &nextAt,
 		ZoneID:                      encounter.ZoneID,
+		PointOfInterestID:           encounter.PointOfInterestID,
 		Latitude:                    encounter.Latitude,
 		Longitude:                   encounter.Longitude,
 	}

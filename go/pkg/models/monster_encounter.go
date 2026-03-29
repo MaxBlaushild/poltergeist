@@ -86,6 +86,8 @@ type MonsterEncounter struct {
 	RetiredAt                   *time.Time                  `json:"retiredAt,omitempty" gorm:"column:retired_at"`
 	ZoneID                      uuid.UUID                   `json:"zoneId" gorm:"column:zone_id"`
 	Zone                        Zone                        `json:"zone"`
+	PointOfInterestID           *uuid.UUID                  `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
+	PointOfInterest             *PointOfInterest            `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
 	Latitude                    float64                     `json:"latitude"`
 	Longitude                   float64                     `json:"longitude"`
 	Geometry                    string                      `json:"geometry" gorm:"type:geometry(Point,4326)"`

@@ -291,6 +291,7 @@ type monsterEncounterUpsertRequest struct {
 	ScaleWithUserLevel  bool                        `json:"scaleWithUserLevel"`
 	RecurrenceFrequency *string                     `json:"recurrenceFrequency"`
 	ZoneID              string                      `json:"zoneId"`
+	PointOfInterestID   string                      `json:"pointOfInterestId"`
 	Latitude            float64                     `json:"latitude"`
 	Longitude           float64                     `json:"longitude"`
 	MonsterIDs          []string                    `json:"monsterIds"`
@@ -419,6 +420,7 @@ type monsterEncounterResponse struct {
 	NextRecurrenceAt            *time.Time                       `json:"nextRecurrenceAt,omitempty"`
 	ZoneID                      uuid.UUID                        `json:"zoneId"`
 	Zone                        models.Zone                      `json:"zone"`
+	PointOfInterestID           *uuid.UUID                       `json:"pointOfInterestId,omitempty"`
 	Latitude                    float64                          `json:"latitude"`
 	Longitude                   float64                          `json:"longitude"`
 	MonsterCount                int                              `json:"monsterCount"`
@@ -722,6 +724,7 @@ func (s *server) monsterEncounterResponseFrom(
 		NextRecurrenceAt:            encounter.NextRecurrenceAt,
 		ZoneID:                      encounter.ZoneID,
 		Zone:                        encounter.Zone,
+		PointOfInterestID:           encounter.PointOfInterestID,
 		Latitude:                    encounter.Latitude,
 		Longitude:                   encounter.Longitude,
 		MonsterCount:                len(monsters),
@@ -1366,6 +1369,20 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		}
 		return nil, nil, err
 	}
+	pointOfInterestID, err := parseStandalonePointOfInterestID(body.PointOfInterestID)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
+		ctx,
+		&zoneID,
+		pointOfInterestID,
+		body.Latitude,
+		body.Longitude,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if len(body.MonsterIDs) < 1 || len(body.MonsterIDs) > 9 {
 		return nil, nil, fmt.Errorf("monsterIds must include between 1 and 9 monsters")
@@ -1500,8 +1517,9 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		ItemRewards:        itemRewards,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
 		ZoneID:             zoneID,
-		Latitude:           body.Latitude,
-		Longitude:          body.Longitude,
+		PointOfInterestID:  resolvedPointOfInterestID,
+		Latitude:           resolvedLatitude,
+		Longitude:          resolvedLongitude,
 	}
 	return encounter, members, nil
 }
@@ -2659,6 +2677,12 @@ func (s *server) updateMonsterEncounter(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if strings.TrimSpace(requestBody.PointOfInterestID) == "" &&
+		existing.PointOfInterestID != nil &&
+		requestBody.Latitude == existing.Latitude &&
+		requestBody.Longitude == existing.Longitude {
+		encounter.PointOfInterestID = existing.PointOfInterestID
 	}
 	encounter.RecurringMonsterEncounterID = existing.RecurringMonsterEncounterID
 	encounter.RecurrenceFrequency = existing.RecurrenceFrequency

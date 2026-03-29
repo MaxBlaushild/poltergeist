@@ -22,6 +22,7 @@ type monsterEncounterAdminListRow struct {
 func (h *monsterEncounterHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
+		Preload("PointOfInterest").
 		Preload("Members", func(db *gorm.DB) *gorm.DB {
 			return db.Order("slot ASC").Order("created_at ASC")
 		}).
@@ -260,6 +261,7 @@ func (h *monsterEncounterHandle) Update(
 		"next_recurrence_at":             updates.NextRecurrenceAt,
 		"retired_at":                     updates.RetiredAt,
 		"zone_id":                        updates.ZoneID,
+		"point_of_interest_id":           updates.PointOfInterestID,
 		"latitude":                       updates.Latitude,
 		"longitude":                      updates.Longitude,
 		"geometry":                       updates.Geometry,

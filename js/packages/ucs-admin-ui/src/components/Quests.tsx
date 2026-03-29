@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
 import {
   Candidate,
@@ -60,6 +60,7 @@ type LegacyQuestNodePrompt = {
 type ScenarioNodeOption = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
   prompt: string;
@@ -71,6 +72,7 @@ type ScenarioNodeOption = {
 type MonsterNodeOption = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
   name: string;
@@ -489,6 +491,49 @@ const summarizeScenarioPrompt = (prompt: string) => {
   return normalized.length > 80 ? `${normalized.slice(0, 80)}...` : normalized;
 };
 
+const summarizePoiText = (value?: string | null, maxLength = 160) => {
+  const normalized = (value ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
+};
+
+const getPointOfInterestAliases = (poi?: PointOfInterest | null) => {
+  if (!poi) return [];
+  return [poi.googleMapsPlaceName, poi.originalName]
+    .map((value) => (value ?? '').trim())
+    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
+};
+
+const formatPoiCoordinate = (value?: string | number | null) => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(numeric)) return null;
+  return numeric.toFixed(5);
+};
+
+const formatNodeCoordinatePair = (
+  latitude?: string | number | null,
+  longitude?: string | number | null
+) => {
+  const formattedLatitude = formatPoiCoordinate(latitude);
+  const formattedLongitude = formatPoiCoordinate(longitude);
+  if (!formattedLatitude || !formattedLongitude) return null;
+  return `${formattedLatitude}, ${formattedLongitude}`;
+};
+
+const getLinkedQuestNodePoiId = (
+  node: QuestNode,
+  linkedScenario?: ScenarioNodeOption | null,
+  linkedMonsterEncounter?: MonsterNodeOption | null,
+  linkedChallenge?: ChallengeNodeOption | null
+) =>
+  node.pointOfInterestId ??
+  linkedChallenge?.pointOfInterestId ??
+  linkedScenario?.pointOfInterestId ??
+  linkedMonsterEncounter?.pointOfInterestId ??
+  null;
+
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
 const normalizeAcceptanceDialogue = (lines: string[]) =>
@@ -644,8 +689,6 @@ export const Quests = () => {
   >(null);
   const [proficiencySearch, setProficiencySearch] = useState('');
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
-  const [selectedPoiForModal, setSelectedPoiForModal] =
-    useState<PointOfInterest | null>(null);
   const [characterLocationsOpen, setCharacterLocationsOpen] = useState(false);
   const [selectedCharacterLocations, setSelectedCharacterLocations] = useState<
     { latitude: number; longitude: number }[]
@@ -678,8 +721,6 @@ export const Quests = () => {
   const questMap = useRef<mapboxgl.Map | null>(null);
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
   const questNodeMarkers = useRef<mapboxgl.Marker[]>([]);
-  const poiMarkers = useRef<mapboxgl.Marker[]>([]);
-  const characterLocationMarkers = useRef<mapboxgl.Marker[]>([]);
 
   const selectedQuest = useMemo(
     () => quests.find((quest) => quest.id === selectedQuestId) ?? null,
@@ -1482,6 +1523,75 @@ export const Quests = () => {
     return result;
   }, [pointsOfInterest, locationArchetypes]);
 
+  const selectedQuestLocationDetails = useMemo(
+    () =>
+      orderedQuestNodes
+        .map((node) => {
+          const linkedScenario = node.scenarioId
+            ? scenarios.find((entry) => entry.id === node.scenarioId)
+            : null;
+          const linkedMonsterEncounter =
+            node.monsterEncounterId || node.monsterId
+              ? monsterEncounters.find(
+                  (entry) =>
+                    entry.id === (node.monsterEncounterId ?? node.monsterId)
+                ) ?? null
+              : null;
+          const linkedChallenge = node.challengeId
+            ? challenges.find((entry) => entry.id === node.challengeId)
+            : null;
+          const poiId = getLinkedQuestNodePoiId(
+            node,
+            linkedScenario,
+            linkedMonsterEncounter,
+            linkedChallenge
+          );
+          if (!poiId) return null;
+          const poi =
+            pointsOfInterest.find((entry) => entry.id === poiId) ?? null;
+          if (!poi) return null;
+          const archetype = archetypeByPoiId[poi.id] ?? null;
+          const aliases = getPointOfInterestAliases(poi);
+          const summary =
+            summarizePoiText(poi.description) || summarizePoiText(poi.clue);
+          const tagNames = (poi.tags ?? []).map((tag) => tag.name).filter(Boolean);
+          return {
+            nodeId: node.id,
+            orderIndex: node.orderIndex,
+            poi,
+            archetype,
+            aliases,
+            summary,
+            tagNames,
+            latitude: formatPoiCoordinate(poi.lat),
+            longitude: formatPoiCoordinate(poi.lng),
+          };
+        })
+        .filter(
+          (
+            entry
+          ): entry is {
+            nodeId: string;
+            orderIndex: number;
+            poi: PointOfInterest;
+            archetype: LocationArchetype | null;
+            aliases: string[];
+            summary: string;
+            tagNames: string[];
+            latitude: string | null;
+            longitude: string | null;
+          } => Boolean(entry)
+        ),
+    [
+      archetypeByPoiId,
+      challenges,
+      monsterEncounters,
+      orderedQuestNodes,
+      pointsOfInterest,
+      scenarios,
+    ]
+  );
+
   useEffect(() => {
     if (!selectedQuest?.nodes?.length) return;
     if (!locationArchetypes.length) return;
@@ -1490,8 +1600,26 @@ export const Quests = () => {
       let changed = false;
       const next = { ...prev };
       selectedQuest.nodes?.forEach((node) => {
-        if (!node.pointOfInterestId) return;
-        const match = archetypeByPoiId[node.pointOfInterestId];
+        const linkedScenario = node.scenarioId
+          ? scenarios.find((item) => item.id === node.scenarioId)
+          : null;
+        const linkedMonsterEncounter =
+          node.monsterEncounterId || node.monsterId
+            ? monsterEncounters.find(
+                (item) => item.id === (node.monsterEncounterId ?? node.monsterId)
+              ) ?? null
+            : null;
+        const linkedChallenge = node.challengeId
+          ? challenges.find((item) => item.id === node.challengeId)
+          : null;
+        const linkedPoiId = getLinkedQuestNodePoiId(
+          node,
+          linkedScenario,
+          linkedMonsterEncounter,
+          linkedChallenge
+        );
+        if (!linkedPoiId) return;
+        const match = archetypeByPoiId[linkedPoiId];
         if (!match) return;
         const existing = next[node.id];
         if (existing?.locationArchetypeId) return;
@@ -1504,33 +1632,73 @@ export const Quests = () => {
       });
       return changed ? next : prev;
     });
-  }, [archetypeByPoiId, locationArchetypes.length, selectedQuest?.nodes]);
+  }, [
+    archetypeByPoiId,
+    challenges,
+    locationArchetypes.length,
+    monsterEncounters,
+    scenarios,
+    selectedQuest?.nodes,
+  ]);
 
   const questNodePoints = useMemo(() => {
     if (!selectedQuest?.nodes?.length) return [];
     return selectedQuest.nodes
       .map((node) => {
-        if (node.pointOfInterestId) {
+        const linkedScenario = node.scenarioId
+          ? scenarios.find((item) => item.id === node.scenarioId)
+          : null;
+        const linkedMonsterEncounter =
+          node.monsterEncounterId || node.monsterId
+            ? monsterEncounters.find(
+                (item) => item.id === (node.monsterEncounterId ?? node.monsterId)
+              ) ?? null
+            : null;
+        const linkedChallenge = node.challengeId
+          ? challenges.find((item) => item.id === node.challengeId)
+          : null;
+        const linkedPoiId = getLinkedQuestNodePoiId(
+          node,
+          linkedScenario,
+          linkedMonsterEncounter,
+          linkedChallenge
+        );
+
+        if (linkedPoiId) {
           const poi = pointsOfInterest.find(
-            (item) => item.id === node.pointOfInterestId
+            (item) => item.id === linkedPoiId
           );
           if (!poi) return null;
           const lng = Number(poi.lng);
           const lat = Number(poi.lat);
           if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          let name = poi.name;
+          let nodeType: QuestNodeType = getQuestNodeKind(node);
+          if (node.scenarioId) {
+            name = summarizeScenarioPrompt(linkedScenario?.prompt ?? '');
+            nodeType = 'scenario';
+          } else if (node.monsterEncounterId || node.monsterId) {
+            name =
+              linkedMonsterEncounter?.name ??
+              node.monsterEncounterId ??
+              node.monsterId ??
+              poi.name;
+            nodeType = 'monster';
+          } else if (node.challengeId) {
+            name = linkedChallenge?.question || node.challengeId || poi.name;
+            nodeType = 'challenge';
+          }
           return {
             id: node.id,
-            name: poi.name,
+            name,
             orderIndex: node.orderIndex,
             lng,
             lat,
-            nodeType: 'poi' as QuestNodeType,
+            nodeType,
           };
         }
         if (node.scenarioId) {
-          const scenario = scenarios.find(
-            (item) => item.id === node.scenarioId
-          );
+          const scenario = linkedScenario;
           if (!scenario) return null;
           const lng = Number(scenario.longitude);
           const lat = Number(scenario.latitude);
@@ -1545,16 +1713,13 @@ export const Quests = () => {
           };
         }
         if (node.monsterEncounterId || node.monsterId) {
-          const encounterId = node.monsterEncounterId ?? node.monsterId ?? '';
-          const encounter = monsterEncounters.find(
-            (item) => item.id === encounterId
-          );
-          const fallbackEncounter = monsterEncounters.find((item) =>
-            (item.members ?? []).some(
-              (member) => member.monster.id === node.monsterId
-            )
-          );
-          const resolved = encounter ?? fallbackEncounter;
+          const resolved =
+            linkedMonsterEncounter ??
+            monsterEncounters.find((item) =>
+              (item.members ?? []).some(
+                (member) => member.monster.id === node.monsterId
+              )
+            );
           if (!resolved) return null;
           const lng = Number(resolved.longitude);
           const lat = Number(resolved.latitude);
@@ -1569,9 +1734,7 @@ export const Quests = () => {
           };
         }
         if (node.challengeId) {
-          const challenge = challenges.find(
-            (item) => item.id === node.challengeId
-          );
+          const challenge = linkedChallenge;
           if (!challenge) return null;
           const lng = Number(challenge.longitude);
           const lat = Number(challenge.latitude);
@@ -1607,51 +1770,80 @@ export const Quests = () => {
     selectedQuest?.nodes,
   ]);
 
-  const questNodePoiIdSet = useMemo(() => {
-    if (!selectedQuest?.nodes?.length) return new Set<string>();
-    return new Set(
-      selectedQuest.nodes
-        .map((node) => node.pointOfInterestId)
-        .filter((id): id is string => Boolean(id))
-    );
-  }, [selectedQuest?.nodes]);
+  const focusQuestArea = useCallback(() => {
+    if (!questMap.current) return;
 
-  const snapToZone = () => {
-    if (!questMap.current || !questForm.zoneId) return;
-    const zone =
-      zoneDetailsById[questForm.zoneId] ||
-      zones.find((z) => z.id === questForm.zoneId);
-    if (!zone) return;
-    const boundaryCoords =
-      zone.boundaryCoords?.map((coord) => [coord.longitude, coord.latitude]) ??
-      (Array.isArray(zone.boundary) ? zone.boundary : []);
-    if (boundaryCoords.length > 0) {
-      const [lng, lat] = boundaryCoords[0];
-      questMap.current.setCenter([lng, lat]);
-      questMap.current.setZoom(14);
+    const bounds = new mapboxgl.LngLatBounds();
+    let hasBounds = false;
+
+    questNodePoints.forEach((point) => {
+      bounds.extend([point.lng, point.lat]);
+      hasBounds = true;
+    });
+
+    questPolygons.forEach((polygon) => {
+      polygon.coordinates?.forEach((ring) => {
+        ring.forEach((coord) => {
+          bounds.extend([coord[0], coord[1]]);
+          hasBounds = true;
+        });
+      });
+    });
+
+    if (!hasBounds && questForm.zoneId) {
+      const zone =
+        zoneDetailsById[questForm.zoneId] ||
+        zones.find((z) => z.id === questForm.zoneId);
+      if (zone) {
+        const lng =
+          typeof zone.longitude === 'number'
+            ? zone.longitude
+            : Number(zone.longitude);
+        const lat =
+          typeof zone.latitude === 'number'
+            ? zone.latitude
+            : Number(zone.latitude);
+        if (!Number.isNaN(lng) && !Number.isNaN(lat)) {
+          questMap.current.setCenter([lng, lat]);
+          questMap.current.setZoom(13);
+        }
+      }
       return;
     }
-    const lng =
-      typeof zone.longitude === 'number'
-        ? zone.longitude
-        : Number(zone.longitude);
-    const lat =
-      typeof zone.latitude === 'number' ? zone.latitude : Number(zone.latitude);
-    if (!Number.isNaN(lng) && !Number.isNaN(lat)) {
-      questMap.current.setCenter([lng, lat]);
-      questMap.current.setZoom(12);
+
+    if (!hasBounds) return;
+
+    if (
+      questNodePoints.length === 1 &&
+      questPolygons.length === 0
+    ) {
+      const point = questNodePoints[0];
+      questMap.current.easeTo({
+        center: [point.lng, point.lat],
+        zoom: 16,
+        duration: 600,
+      });
+      return;
     }
-  };
+
+    questMap.current.fitBounds(bounds, {
+      padding: 64,
+      maxZoom: 16,
+      duration: 600,
+    });
+  }, [
+    questForm.zoneId,
+    questNodePoints,
+    questPolygons,
+    zoneDetailsById,
+    zones,
+  ]);
 
   useEffect(() => {
     if (!questMap.current || !questMapLoaded) return;
 
     questNodeMarkers.current.forEach((marker) => marker.remove());
-    poiMarkers.current.forEach((marker) => marker.remove());
-    characterLocationMarkers.current.forEach((marker) => marker.remove());
     questNodeMarkers.current = [];
-    poiMarkers.current = [];
-    characterLocationMarkers.current = [];
 
     const bounds = new mapboxgl.LngLatBounds();
     let hasBounds = false;
@@ -1676,7 +1868,9 @@ export const Quests = () => {
           ? 'Scenario'
           : point.nodeType === 'monster'
             ? 'Monster'
-            : 'POI';
+            : point.nodeType === 'challenge'
+              ? 'Challenge'
+              : 'Location';
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat([point.lng, point.lat])
         .setPopup(
@@ -1687,60 +1881,6 @@ export const Quests = () => {
         .addTo(questMap.current!);
       questNodeMarkers.current.push(marker);
       bounds.extend([point.lng, point.lat]);
-      hasBounds = true;
-    });
-
-    const characterLocations = selectedCharacterLocations || [];
-    const poiNearCharacter = (poi: PointOfInterest) => {
-      const lng = Number(poi.lng);
-      const lat = Number(poi.lat);
-      if (Number.isNaN(lng) || Number.isNaN(lat)) return false;
-      return characterLocations.some((loc) => {
-        const dLng = Math.abs(lng - loc.longitude);
-        const dLat = Math.abs(lat - loc.latitude);
-        return dLng < 0.0001 && dLat < 0.0001;
-      });
-    };
-
-    characterLocations.forEach((loc) => {
-      if (Number.isNaN(loc.latitude) || Number.isNaN(loc.longitude)) return;
-      const el = document.createElement('div');
-      el.style.width = '14px';
-      el.style.height = '14px';
-      el.style.borderRadius = '9999px';
-      el.style.background = '#10b981';
-      el.style.border = '2px solid #065f46';
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([loc.longitude, loc.latitude])
-        .addTo(questMap.current!);
-      characterLocationMarkers.current.push(marker);
-      bounds.extend([loc.longitude, loc.latitude]);
-      hasBounds = true;
-    });
-
-    filteredPointsOfInterest.forEach((poi) => {
-      if (questNodePoiIdSet.has(poi.id)) return;
-      const lng = Number(poi.lng);
-      const lat = Number(poi.lat);
-      if (Number.isNaN(lng) || Number.isNaN(lat)) return;
-      const el = document.createElement('div');
-      el.style.width = '10px';
-      el.style.height = '10px';
-      el.style.borderRadius = '9999px';
-      const hasCharacter = poiNearCharacter(poi);
-      el.style.background = hasCharacter ? '#a855f7' : '#3b82f6';
-      el.style.border = hasCharacter
-        ? '2px solid #6b21a8'
-        : '2px solid #1e40af';
-      el.style.cursor = 'pointer';
-      el.addEventListener('click', () => {
-        setSelectedPoiForModal(poi);
-      });
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([lng, lat])
-        .addTo(questMap.current!);
-      poiMarkers.current.push(marker);
-      bounds.extend([lng, lat]);
       hasBounds = true;
     });
 
@@ -1803,62 +1943,30 @@ export const Quests = () => {
       });
     }
 
-    const zone = questForm.zoneId
-      ? zoneDetailsById[questForm.zoneId] ||
-        zones.find((z) => z.id === questForm.zoneId)
-      : null;
-    const zoneBoundaryCoords =
-      zone?.boundaryCoords?.map((coord) => [coord.longitude, coord.latitude]) ??
-      (Array.isArray(zone?.boundary) ? zone?.boundary : []);
-
-    if (zoneBoundaryCoords.length > 0) {
-      console.log('Quest Map: fitting to zone boundary', zoneBoundaryCoords);
-      const map = questMap.current;
-      map.resize();
-      zoneBoundaryCoords.forEach((coord) => {
-        bounds.extend([coord[0], coord[1]]);
-      });
-      const fit = () => map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
-      requestAnimationFrame(fit);
-      setTimeout(fit, 100);
-      return;
-    }
-
-    if (questNodePoints.length > 0) {
-      const firstNode = [...questNodePoints].sort(
-        (a, b) => a.orderIndex - b.orderIndex
-      )[0];
-      questMap.current.setCenter([firstNode.lng, firstNode.lat]);
-      questMap.current.setZoom(14);
-      return;
-    }
-
     if (hasBounds) {
-      questMap.current.fitBounds(bounds, { padding: 40, maxZoom: 15 });
-    } else if (questForm.zoneId && zone) {
-      if (zone) {
-        const lng =
-          typeof zone.longitude === 'number'
-            ? zone.longitude
-            : Number(zone.longitude);
-        const lat =
-          typeof zone.latitude === 'number'
-            ? zone.latitude
-            : Number(zone.latitude);
-        if (!Number.isNaN(lng) && !Number.isNaN(lat)) {
-          questMap.current.setCenter([lng, lat]);
-          questMap.current.setZoom(12);
-        }
+      if (questNodePoints.length === 1 && questPolygons.length === 0) {
+        const point = questNodePoints[0];
+        questMap.current.easeTo({
+          center: [point.lng, point.lat],
+          zoom: 16,
+          duration: 600,
+        });
+      } else {
+        questMap.current.fitBounds(bounds, {
+          padding: 64,
+          maxZoom: 16,
+          duration: 600,
+        });
       }
+    } else if (questForm.zoneId) {
+      focusQuestArea();
     }
   }, [
-    filteredPointsOfInterest,
+    focusQuestArea,
     questForm.zoneId,
     questMapLoaded,
-    questNodePoiIdSet,
     questNodePoints,
     questPolygons,
-    selectedCharacterLocations,
     zones,
     zoneDetailsById,
   ]);
@@ -2013,12 +2121,26 @@ export const Quests = () => {
     const nodeLocationArchetypeIds: string[] = [];
     const linkedChallengesForNodes: (ChallengeNodeOption | undefined)[] = [];
     nodes.forEach((node) => {
+      const linkedScenario = node.scenarioId
+        ? scenarios.find((scenario) => scenario.id === node.scenarioId)
+        : undefined;
+      const linkedMonsterEncounter =
+        node.monsterEncounterId || node.monsterId
+          ? monsterEncounters.find(
+              (encounter) =>
+                encounter.id === (node.monsterEncounterId ?? node.monsterId)
+            )
+          : undefined;
       const linkedChallenge = node.challengeId
         ? challenges.find((challenge) => challenge.id === node.challengeId)
         : undefined;
       linkedChallengesForNodes.push(linkedChallenge);
-      const sourcePointOfInterestId =
-        node.pointOfInterestId ?? linkedChallenge?.pointOfInterestId ?? null;
+      const sourcePointOfInterestId = getLinkedQuestNodePoiId(
+        node,
+        linkedScenario,
+        linkedMonsterEncounter,
+        linkedChallenge
+      );
       if (!sourcePointOfInterestId) {
         if (node.scenarioId) {
           missing.push(`Node ${node.orderIndex}: scenario node`);
@@ -3753,6 +3875,100 @@ export const Quests = () => {
                       ))
                     )}
                   </div>
+
+                  {selectedQuestLocationDetails.length > 0 && (
+                    <div className="qa-panel" style={{ marginTop: 16 }}>
+                      <div className="qa-card-header" style={{ marginBottom: 12 }}>
+                        <div>
+                          <div className="qa-meta">Quest Locations</div>
+                          <div className="qa-card-title" style={{ fontSize: 16 }}>
+                            Linked Points of Interest
+                          </div>
+                        </div>
+                        <div className="qa-chip muted">
+                          {selectedQuestLocationDetails.length} linked
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {selectedQuestLocationDetails.map((location) => (
+                          <div
+                            key={location.nodeId}
+                            className="rounded-md border border-gray-200 bg-white p-3"
+                          >
+                            <div className="flex gap-3">
+                              {location.poi.thumbnailUrl || location.poi.imageURL ? (
+                                <img
+                                  src={
+                                    location.poi.thumbnailUrl ||
+                                    location.poi.imageURL
+                                  }
+                                  alt={location.poi.name}
+                                  className="h-20 w-20 rounded-md object-cover"
+                                />
+                              ) : null}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-xs font-medium text-gray-500">
+                                      Node {location.orderIndex}
+                                    </div>
+                                    <div className="font-semibold text-gray-900">
+                                      {location.poi.name}
+                                    </div>
+                                  </div>
+                                  <Link
+                                    to={`/points-of-interest/${location.poi.id}`}
+                                    className={adminEntityLinkClass}
+                                  >
+                                    Open POI
+                                  </Link>
+                                </div>
+                                {location.aliases.length > 0 && (
+                                  <div className="mt-1 text-xs text-gray-500">
+                                    {location.aliases.join(' · ')}
+                                  </div>
+                                )}
+                                {location.summary && (
+                                  <p className="mt-2 text-sm text-gray-600">
+                                    {location.summary}
+                                  </p>
+                                )}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {location.archetype && (
+                                    <span className="qa-chip muted">
+                                      Archetype: {location.archetype.name}
+                                    </span>
+                                  )}
+                                  {(location.latitude || location.longitude) && (
+                                    <span className="qa-chip muted">
+                                      {location.latitude ?? '?'}, {location.longitude ?? '?'}
+                                    </span>
+                                  )}
+                                </div>
+                                {location.tagNames.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {location.tagNames.slice(0, 5).map((tagName) => (
+                                      <span
+                                        key={`${location.poi.id}-${tagName}`}
+                                        className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                                      >
+                                        {tagName}
+                                      </span>
+                                    ))}
+                                    {location.tagNames.length > 5 && (
+                                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-500">
+                                        +{location.tagNames.length - 5} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="qa-card qa-detail-card">
@@ -5370,9 +5586,9 @@ export const Quests = () => {
                         <button
                           type="button"
                           className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                          onClick={snapToZone}
+                          onClick={focusQuestArea}
                         >
-                          Snap to Zone
+                          Focus Quest Area
                         </button>
                         <button
                           type="button"
@@ -5387,7 +5603,7 @@ export const Quests = () => {
                       <div className="flex items-center gap-3 text-xs text-gray-600">
                         <span className="flex items-center gap-1">
                           <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 border border-amber-800" />
-                          POI nodes
+                          Quest locations
                         </span>
                         <span className="flex items-center gap-1">
                           <span className="inline-block h-2.5 w-2.5 rounded-full bg-teal-500 border border-teal-800" />
@@ -5397,90 +5613,16 @@ export const Quests = () => {
                           <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 border border-red-900" />
                           Monster nodes
                         </span>
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500 border border-blue-800" />
-                          Filtered POIs
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-purple-500 border border-purple-800" />
-                          POIs with character
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 border border-emerald-800" />
-                          Character locations
-                        </span>
                       </div>
                     </div>
                     <p className="mt-1 text-sm text-gray-600">
-                      Use the POI filters above to narrow the map to locations
-                      that fit this quest.
+                      The map now shows only this quest&apos;s nodes and polygons,
+                      then automatically zooms to the quest footprint.
                     </p>
                     <div className="mt-3 h-80 w-full overflow-hidden rounded-md border border-gray-200 relative">
                       <div ref={questMapContainer} className="h-full w-full" />
                     </div>
                   </div>
-
-                  {selectedPoiForModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
-                        <div className="flex items-start justify-between">
-                          <h3 className="text-lg font-semibold">
-                            {selectedPoiForModal.name}
-                          </h3>
-                          <button
-                            className="text-gray-500 hover:text-gray-700"
-                            onClick={() => setSelectedPoiForModal(null)}
-                          >
-                            Close
-                          </button>
-                        </div>
-                        {selectedPoiForModal.imageURL && (
-                          <img
-                            src={selectedPoiForModal.imageURL}
-                            alt={selectedPoiForModal.name}
-                            className="mt-3 w-full rounded-md"
-                          />
-                        )}
-                        {selectedPoiForModal.description && (
-                          <p className="mt-3 text-sm text-gray-600">
-                            {selectedPoiForModal.description}
-                          </p>
-                        )}
-                        {selectedPoiForModal.tags &&
-                          selectedPoiForModal.tags.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {selectedPoiForModal.tags.map((tag) => (
-                                <span
-                                  key={tag.id}
-                                  className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
-                                >
-                                  {tag.name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        <div className="mt-5 flex items-center justify-end gap-3">
-                          <button
-                            className="rounded-md border border-gray-300 px-4 py-2 text-sm"
-                            onClick={() => setSelectedPoiForModal(null)}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white"
-                            onClick={() => {
-                              window.alert(
-                                'Quest nodes now support only Scenario, Monster, or Challenge targets.'
-                              );
-                              setSelectedPoiForModal(null);
-                            }}
-                          >
-                            Select for Node
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   {showImportModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -5783,6 +5925,56 @@ export const Quests = () => {
                           node.submissionType ||
                           'photo'
                         ) as QuestNodeSubmissionType;
+                        const linkedPoiId =
+                          getLinkedQuestNodePoiId(
+                            node,
+                            linkedScenario,
+                            linkedMonsterEncounter,
+                            linkedChallenge
+                          );
+                        const linkedPoi = linkedPoiId
+                          ? pointsOfInterest.find((poi) => poi.id === linkedPoiId)
+                          : null;
+                        const linkedPoiArchetype = linkedPoi
+                          ? archetypeByPoiId[linkedPoi.id] ?? null
+                          : null;
+                        const linkedPoiAliases = getPointOfInterestAliases(
+                          linkedPoi
+                        );
+                        const linkedPoiSummary = linkedPoi
+                          ? summarizePoiText(linkedPoi.description) ||
+                            summarizePoiText(linkedPoi.clue)
+                          : '';
+                        const linkedPoiTagNames = linkedPoi
+                          ? (linkedPoi.tags ?? [])
+                              .map((tag) => tag.name)
+                              .filter(Boolean)
+                          : [];
+                        const linkedPoiLatitude = linkedPoi
+                          ? formatPoiCoordinate(linkedPoi.lat)
+                          : null;
+                        const linkedPoiLongitude = linkedPoi
+                          ? formatPoiCoordinate(linkedPoi.lng)
+                          : null;
+                        const linkedObjectiveCoordinates =
+                          linkedPoi
+                            ? null
+                            : linkedScenario
+                              ? formatNodeCoordinatePair(
+                                  linkedScenario.latitude,
+                                  linkedScenario.longitude
+                                )
+                              : linkedMonsterEncounter
+                                ? formatNodeCoordinatePair(
+                                    linkedMonsterEncounter.latitude,
+                                    linkedMonsterEncounter.longitude
+                                  )
+                                : linkedChallenge
+                                  ? formatNodeCoordinatePair(
+                                      linkedChallenge.latitude,
+                                      linkedChallenge.longitude
+                                    )
+                                  : null;
                         const hasLegacyChallengeOverrides =
                           usesLinkedObjective &&
                           nodeObjectivePrompts.length > 0;
@@ -5857,6 +6049,99 @@ export const Quests = () => {
                                 Remove Node
                               </button>
                             </div>
+
+                            <div className="mt-3 rounded-md border border-gray-200 bg-white p-3">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Location
+                              </div>
+                              {linkedPoi ? (
+                                <div className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                                  <span>
+                                    Point of Interest: <strong>{linkedPoi.name}</strong>
+                                  </span>
+                                  <Link
+                                    to={`/points-of-interest/${linkedPoi.id}`}
+                                    className={adminEntityLinkClass}
+                                  >
+                                    Open POI
+                                  </Link>
+                                </div>
+                              ) : linkedObjectiveCoordinates ? (
+                                <div className="mt-2 text-sm text-gray-700">
+                                  Coordinates: <strong>{linkedObjectiveCoordinates}</strong>
+                                </div>
+                              ) : node.polygon ? (
+                                <div className="mt-2 text-sm text-gray-700">
+                                  Custom polygon area
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-sm text-gray-500">
+                                  No linked location details available.
+                                </div>
+                              )}
+                            </div>
+
+                            {linkedPoi && (
+                              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-xs font-semibold text-amber-900">
+                                      Point of Interest
+                                    </div>
+                                    <div className="text-sm font-semibold text-gray-900">
+                                      {linkedPoi.name}
+                                    </div>
+                                    {linkedPoiAliases.length > 0 && (
+                                      <div className="mt-1 text-xs text-gray-600">
+                                        {linkedPoiAliases.join(' · ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <Link
+                                    to={`/points-of-interest/${linkedPoi.id}`}
+                                    className={adminEntityLinkClass}
+                                  >
+                                    Open POI
+                                  </Link>
+                                </div>
+                                {linkedPoiSummary && (
+                                  <p className="mt-2 text-sm text-gray-700">
+                                    {linkedPoiSummary}
+                                  </p>
+                                )}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {linkedPoiArchetype && (
+                                    <span className="qa-chip muted">
+                                      Archetype: {linkedPoiArchetype.name}
+                                    </span>
+                                  )}
+                                  {(linkedPoiLatitude || linkedPoiLongitude) && (
+                                    <span className="qa-chip muted">
+                                      {linkedPoiLatitude ?? '?'}, {linkedPoiLongitude ?? '?'}
+                                    </span>
+                                  )}
+                                </div>
+                                {linkedPoiTagNames.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {linkedPoiTagNames
+                                      .slice(0, 6)
+                                      .map((tagName) => (
+                                        <span
+                                          key={`${linkedPoi.id}-${tagName}`}
+                                          className="rounded-full border border-amber-200 bg-white px-2 py-1 text-xs text-amber-900"
+                                        >
+                                          {tagName}
+                                        </span>
+                                      ))}
+                                    {linkedPoiTagNames.length > 6 && (
+                                      <span className="rounded-full border border-amber-200 bg-white px-2 py-1 text-xs text-gray-500">
+                                        +{linkedPoiTagNames.length - 6} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             <div className="mt-3">
                               {usesLinkedObjective ? (
