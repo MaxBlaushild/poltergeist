@@ -88,6 +88,25 @@ func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest
 	return &quest, nil
 }
 
+func (h *questHandle) FindAllSummaries(ctx context.Context) ([]models.Quest, error) {
+	var quests []models.Quest
+	nodeCounts := h.db.WithContext(ctx).
+		Model(&models.QuestNode{}).
+		Select("quest_id, COUNT(*) AS node_count").
+		Group("quest_id")
+
+	if err := h.db.WithContext(ctx).
+		Model(&models.Quest{}).
+		Select("quests.*, COALESCE(node_counts.node_count, 0) AS node_count").
+		Joins("LEFT JOIN (?) AS node_counts ON node_counts.quest_id = quests.id", nodeCounts).
+		Order("quests.updated_at DESC").
+		Order("quests.created_at DESC").
+		Find(&quests).Error; err != nil {
+		return nil, err
+	}
+	return quests, nil
+}
+
 func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error) {
 	var quests []models.Quest
 	if err := h.db.WithContext(ctx).

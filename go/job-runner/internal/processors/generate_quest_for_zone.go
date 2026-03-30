@@ -3,6 +3,7 @@ package processors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 type GenerateQuestForZoneProcessor struct {
@@ -28,7 +30,13 @@ func NewGenerateQuestForZoneProcessor(dbClient db.DbClient, dungeonmaster dungeo
 }
 
 func (p *GenerateQuestForZoneProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	log.Printf("Processing generate quest for zone task: %v", task.Type())
+	attemptNumber, maxRetry := questGenerationRetryState(ctx)
+	log.Printf(
+		"Processing generate quest for zone task type=%s attempt=%d max_retry=%d",
+		task.Type(),
+		attemptNumber,
+		maxRetry,
+	)
 
 	var payload jobs.GenerateQuestForZoneTaskPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
@@ -36,7 +44,15 @@ func (p *GenerateQuestForZoneProcessor) ProcessTask(ctx context.Context, task *a
 		return fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	log.Printf("Generating quest for zone ID: %v with quest archetype ID: %v", payload.ZoneID, payload.QuestArchetypeID)
+	log.Printf(
+		"Generating quest for zone zone_id=%s quest_archetype_id=%s quest_generation_job_id=%v quest_giver_character_id=%v attempt=%d/%d",
+		payload.ZoneID,
+		payload.QuestArchetypeID,
+		payload.QuestGenerationJobID,
+		payload.QuestGiverCharacterID,
+		attemptNumber,
+		maxRetry,
+	)
 	return p.generateQuestForZone(ctx, payload.ZoneID, payload.QuestArchetypeID, payload.QuestGiverCharacterID, payload.QuestGenerationJobID)
 }
 
@@ -57,10 +73,22 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 
 	quest, err := p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID, questGiverCharacterID)
 	if err != nil {
-		log.Printf("Failed to generate quest: %v", err)
+		attemptNumber, maxRetry := questGenerationRetryState(ctx)
+		nonRetriable := isNonRetriableQuestGenerationError(err)
+		log.Printf(
+			"Failed to generate quest zone_id=%s zone_name=%q quest_archetype_id=%s quest_generation_job_id=%v attempt=%d/%d non_retriable=%t error=%v",
+			zoneID,
+			zone.Name,
+			questArchetypeID,
+			questGenerationJobID,
+			attemptNumber,
+			maxRetry,
+			nonRetriable,
+			err,
+		)
 		if questGenerationJobID != nil {
 			shouldRecord := shouldRecordFailure(ctx)
-			if isBadRequestError(err) {
+			if nonRetriable {
 				shouldRecord = true
 			}
 			if shouldRecord {
@@ -69,7 +97,7 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 				}
 			}
 		}
-		if isBadRequestError(err) {
+		if nonRetriable {
 			return fmt.Errorf("non-retriable error: %v: %w", err, asynq.SkipRetry)
 		}
 		return fmt.Errorf("failed to generate quest: %w", err)
@@ -100,4 +128,40 @@ func isBadRequestError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "status 400") || strings.Contains(message, "400 bad request")
+}
+
+func isNonRetriableQuestGenerationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isBadRequestError(err) ||
+		isDatabaseSchemaError(err) ||
+		dungeonmaster.IsNonRetriableQuestGenerationError(err) ||
+		errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func isDatabaseSchemaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "sqlstate 42703") || strings.Contains(message, "sqlstate 42p01") {
+		return true
+	}
+	if strings.Contains(message, "column") && strings.Contains(message, "does not exist") {
+		return true
+	}
+	if strings.Contains(message, "relation") && strings.Contains(message, "does not exist") {
+		return true
+	}
+	return false
+}
+
+func questGenerationRetryState(ctx context.Context) (int, int) {
+	maxRetry, hasMax := asynq.GetMaxRetry(ctx)
+	retryCount, hasRetry := asynq.GetRetryCount(ctx)
+	if !hasMax || !hasRetry {
+		return 1, 0
+	}
+	return retryCount + 1, maxRetry + 1
 }

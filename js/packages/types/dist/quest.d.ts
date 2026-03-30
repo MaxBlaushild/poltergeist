@@ -23,6 +23,8 @@ export interface Quest {
     id: string;
     createdAt: string;
     updatedAt: string;
+    nodeCount?: number;
+    detailLoaded?: boolean;
     name: string;
     description: string;
     acceptanceDialogue?: string[];

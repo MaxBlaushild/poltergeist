@@ -21,8 +21,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
-	"github.com/MaxBlaushild/poltergeist/pkg/polymarket"
-	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
@@ -117,32 +115,32 @@ func main() {
 	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, client)
 	shuffleZoneSeedChallengeProcessor := processors.NewShuffleZoneSeedChallengeProcessor(dbClient)
 
-	logPolymarketConfiguration(cfg)
-	polymarketConfigHint := buildPolymarketConfigHint(cfg)
+	// logPolymarketConfiguration(cfg)
+	// polymarketConfigHint := buildPolymarketConfigHint(cfg)
 
-	polymarketClient := polymarket.NewClient(polymarket.ClientConfig{
-		BaseURL:       defaultPolymarketBaseURL,
-		TradesPath:    defaultPolymarketTradesPath,
-		TradesURL:     defaultPolymarketTradesURL,
-		APIKey:        cfg.Secret.PolymarketAPIKey,
-		APISecret:     cfg.Secret.PolymarketAPISecret,
-		APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
-		Address:       cfg.Secret.PolymarketAddress,
-	})
-	log.Printf("Polymarket client initialized with fixed endpoint trades_url=%q", defaultPolymarketTradesURL)
+	// polymarketClient := polymarket.NewClient(polymarket.ClientConfig{
+	// 	BaseURL:       defaultPolymarketBaseURL,
+	// 	TradesPath:    defaultPolymarketTradesPath,
+	// 	TradesURL:     defaultPolymarketTradesURL,
+	// 	APIKey:        cfg.Secret.PolymarketAPIKey,
+	// 	APISecret:     cfg.Secret.PolymarketAPISecret,
+	// 	APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
+	// 	Address:       cfg.Secret.PolymarketAddress,
+	// })
+	// log.Printf("Polymarket client initialized with fixed endpoint trades_url=%q", defaultPolymarketTradesURL)
 
-	texterClient := texter.NewClient()
-	monitorPolymarketTradesProcessor := processors.NewMonitorPolymarketTradesProcessor(
-		dbClient,
-		polymarketClient,
-		texterClient,
-		cfg.Public.PolymarketAlertToNumber,
-		cfg.Public.PolymarketAlertFromNumber,
-		cfg.Public.PolymarketSuspiciousNotionalThreshold,
-		cfg.Public.PolymarketSuspiciousSizeThreshold,
-		cfg.Public.PolymarketTradesLimit,
-		polymarketConfigHint,
-	)
+	// texterClient := texter.NewClient()
+	// monitorPolymarketTradesProcessor := processors.NewMonitorPolymarketTradesProcessor(
+	// 	dbClient,
+	// 	polymarketClient,
+	// 	texterClient,
+	// 	cfg.Public.PolymarketAlertToNumber,
+	// 	cfg.Public.PolymarketAlertFromNumber,
+	// 	cfg.Public.PolymarketSuspiciousNotionalThreshold,
+	// 	cfg.Public.PolymarketSuspiciousSizeThreshold,
+	// 	cfg.Public.PolymarketTradesLimit,
+	// 	polymarketConfigHint,
+	// )
 
 	// Initialize Ethereum client for blockchain transaction checking (read-only)
 	var checkBlockchainTransactionsProcessor *processors.CheckBlockchainTransactionsProcessor
@@ -207,7 +205,10 @@ func main() {
 	mux.Handle(jobs.SeedDistrictTaskType, &seedDistrictProcessor)
 	mux.Handle(jobs.ApplyZoneSeedDraftTaskType, &applyZoneSeedDraftProcessor)
 	mux.Handle(jobs.ShuffleZoneSeedChallengeTaskType, &shuffleZoneSeedChallengeProcessor)
-	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
+	mux.Handle(jobs.MonitorPolymarketTradesTaskType, asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+		log.Printf("Discarding legacy task %s because Polymarket monitoring is disabled", t.Type())
+		return nil
+	}))
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
 	}
@@ -248,9 +249,9 @@ func main() {
 		}
 	}
 
-	if _, err = scheduler.Register("@every 1m", asynq.NewTask(jobs.MonitorPolymarketTradesTaskType, nil)); err != nil {
-		log.Fatalf("could not register the polymarket trades monitor schedule: %v", err)
-	}
+	// if _, err = scheduler.Register("@every 1m", asynq.NewTask(jobs.MonitorPolymarketTradesTaskType, nil)); err != nil {
+	// 	log.Fatalf("could not register the polymarket trades monitor schedule: %v", err)
+	// }
 
 	go func() {
 		if err := scheduler.Run(); err != nil {
@@ -292,43 +293,43 @@ func main() {
 	}
 }
 
-func logPolymarketConfiguration(cfg *config.Config) {
-	log.Printf(
-		"Polymarket config: endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q legacy_trades_url_env_set=%t legacy_base_url_env_set=%t legacy_trades_path_env_set=%t alert_to_set=%t alert_from_set=%t limit=%d notional_threshold=%.2f size_threshold=%.2f api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
-		defaultPolymarketTradesURL,
-		defaultPolymarketBaseURL,
-		defaultPolymarketTradesPath,
-		cfg.Public.PolymarketTradesURL != "",
-		cfg.Public.PolymarketBaseURL != "",
-		cfg.Public.PolymarketTradesPath != "",
-		cfg.Public.PolymarketAlertToNumber != "",
-		cfg.Public.PolymarketAlertFromNumber != "",
-		cfg.Public.PolymarketTradesLimit,
-		cfg.Public.PolymarketSuspiciousNotionalThreshold,
-		cfg.Public.PolymarketSuspiciousSizeThreshold,
-		cfg.Secret.PolymarketAPIKey != "",
-		cfg.Secret.PolymarketAPISecret != "",
-		cfg.Secret.PolymarketAPIPassphrase != "",
-		cfg.Secret.PolymarketAddress != "",
-	)
+// func logPolymarketConfiguration(cfg *config.Config) {
+// 	log.Printf(
+// 		"Polymarket config: endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q legacy_trades_url_env_set=%t legacy_base_url_env_set=%t legacy_trades_path_env_set=%t alert_to_set=%t alert_from_set=%t limit=%d notional_threshold=%.2f size_threshold=%.2f api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+// 		defaultPolymarketTradesURL,
+// 		defaultPolymarketBaseURL,
+// 		defaultPolymarketTradesPath,
+// 		cfg.Public.PolymarketTradesURL != "",
+// 		cfg.Public.PolymarketBaseURL != "",
+// 		cfg.Public.PolymarketTradesPath != "",
+// 		cfg.Public.PolymarketAlertToNumber != "",
+// 		cfg.Public.PolymarketAlertFromNumber != "",
+// 		cfg.Public.PolymarketTradesLimit,
+// 		cfg.Public.PolymarketSuspiciousNotionalThreshold,
+// 		cfg.Public.PolymarketSuspiciousSizeThreshold,
+// 		cfg.Secret.PolymarketAPIKey != "",
+// 		cfg.Secret.PolymarketAPISecret != "",
+// 		cfg.Secret.PolymarketAPIPassphrase != "",
+// 		cfg.Secret.PolymarketAddress != "",
+// 	)
 
-	missingL2 := make([]string, 0, 4)
-	if cfg.Secret.PolymarketAPIKey == "" {
-		missingL2 = append(missingL2, "POLYMARKET_API_KEY")
-	}
-	if cfg.Secret.PolymarketAPISecret == "" {
-		missingL2 = append(missingL2, "POLYMARKET_API_SECRET")
-	}
-	if cfg.Secret.PolymarketAPIPassphrase == "" {
-		missingL2 = append(missingL2, "POLYMARKET_API_PASSPHRASE")
-	}
-	if cfg.Secret.PolymarketAddress == "" {
-		missingL2 = append(missingL2, "POLYMARKET_ADDRESS")
-	}
-	if len(missingL2) > 0 {
-		log.Printf("Polymarket L2 credentials incomplete; missing=%v", missingL2)
-	}
-}
+// 	missingL2 := make([]string, 0, 4)
+// 	if cfg.Secret.PolymarketAPIKey == "" {
+// 		missingL2 = append(missingL2, "POLYMARKET_API_KEY")
+// 	}
+// 	if cfg.Secret.PolymarketAPISecret == "" {
+// 		missingL2 = append(missingL2, "POLYMARKET_API_SECRET")
+// 	}
+// 	if cfg.Secret.PolymarketAPIPassphrase == "" {
+// 		missingL2 = append(missingL2, "POLYMARKET_API_PASSPHRASE")
+// 	}
+// 	if cfg.Secret.PolymarketAddress == "" {
+// 		missingL2 = append(missingL2, "POLYMARKET_ADDRESS")
+// 	}
+// 	if len(missingL2) > 0 {
+// 		log.Printf("Polymarket L2 credentials incomplete; missing=%v", missingL2)
+// }
+// }
 
 func newRedisClient(redisURL string) *redis.Client {
 	trimmed := strings.TrimSpace(redisURL)
@@ -352,15 +353,15 @@ func newRedisClient(redisURL string) *redis.Client {
 	return redis.NewClient(opt)
 }
 
-func buildPolymarketConfigHint(cfg *config.Config) string {
-	return fmt.Sprintf(
-		"endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
-		defaultPolymarketTradesURL,
-		defaultPolymarketBaseURL,
-		defaultPolymarketTradesPath,
-		cfg.Secret.PolymarketAPIKey != "",
-		cfg.Secret.PolymarketAPISecret != "",
-		cfg.Secret.PolymarketAPIPassphrase != "",
-		cfg.Secret.PolymarketAddress != "",
-	)
-}
+// func buildPolymarketConfigHint(cfg *config.Config) string {
+// 	return fmt.Sprintf(
+// 		"endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+// 		defaultPolymarketTradesURL,
+// 		defaultPolymarketBaseURL,
+// 		defaultPolymarketTradesPath,
+// 		cfg.Secret.PolymarketAPIKey != "",
+// 		cfg.Secret.PolymarketAPISecret != "",
+// 		cfg.Secret.PolymarketAPIPassphrase != "",
+// 		cfg.Secret.PolymarketAddress != "",
+// 	)
+// }

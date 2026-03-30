@@ -2,7 +2,6 @@ package dungeonmaster
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -98,12 +97,22 @@ func (c *client) GenerateQuest(
 	questArchetypeID uuid.UUID,
 	questGiverCharacterID *uuid.UUID,
 ) (*models.Quest, error) {
+	if zone == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("zone is required for quest generation"),
+		)
+	}
 	log.Printf("Generating quest for zone %s with quest arch type %+v", zone.Name, questArchetypeID)
 
 	questArchType, err := c.dbClient.QuestArchetype().FindByID(ctx, questArchetypeID)
 	if err != nil {
 		log.Printf("Error finding quest arch type: %v", err)
 		return nil, err
+	}
+	if questArchType == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("quest archetype %s not found", questArchetypeID.String()),
+		)
 	}
 	if questGiverCharacterID == nil {
 		resolvedQuestGiverID, err := c.resolveQuestTemplateCharacterID(ctx, zone, questArchType)
@@ -189,6 +198,9 @@ func (c *client) GenerateQuest(
 	anchorMap := make(map[uuid.UUID]*questNodeAnchor)
 	if _, err := c.processQuestNode(ctx, zone, &questArchType.Root, quest, usedPOIs, &orderIndex, nodeMap, anchorMap, nil); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
+		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest after node processing failure: %v", deleteErr)
+		}
 		return nil, err
 	}
 
@@ -222,7 +234,9 @@ func (c *client) processQuestNode(
 	previousAnchor *questNodeAnchor,
 ) (*questNodeAnchor, error) {
 	if questArchTypeNode == nil {
-		return previousAnchor, fmt.Errorf("quest archetype node is required")
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("quest archetype node is required"),
+		)
 	}
 	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeScenario {
 		return c.processQuestScenarioNode(
@@ -275,7 +289,9 @@ func (c *client) processQuestLocationNode(
 	previousAnchor *questNodeAnchor,
 ) (*questNodeAnchor, error) {
 	if questArchTypeNode.LocationArchetypeID == nil || *questArchTypeNode.LocationArchetypeID == uuid.Nil {
-		return previousAnchor, fmt.Errorf("location node is missing a location archetype")
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("location node is missing a location archetype"),
+		)
 	}
 	log.Printf("Processing location node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID.String())
 
@@ -284,25 +300,26 @@ func (c *client) processQuestLocationNode(
 		log.Printf("Error finding location archetype: %v", err)
 		return previousAnchor, err
 	}
-	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, locationArchetype.IncludedTypes, locationArchetype.ExcludedTypes, 1)
+	if locationArchetype == nil {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String()),
+		)
+	}
+	pointOfInterest, err := c.resolveQuestNodePointOfInterest(
+		ctx,
+		zone,
+		locationArchetype,
+		usedPOIs,
+	)
 	if err != nil {
-		log.Printf("Error seeding points of interest: %v", err)
+		log.Printf(
+			"Error resolving quest POI for zone=%s node=%s location_archetype=%s: %v",
+			zone.ID,
+			questArchTypeNode.ID,
+			locationArchetype.ID,
+			err,
+		)
 		return previousAnchor, err
-	}
-	if len(pointsOfInterest) == 0 {
-		return previousAnchor, errors.New("no points of interest found")
-	}
-
-	var pointOfInterest *models.PointOfInterest
-	for _, poi := range pointsOfInterest {
-		if !usedPOIs[poi.ID] {
-			pointOfInterest = poi
-			usedPOIs[poi.ID] = true
-			break
-		}
-	}
-	if pointOfInterest == nil {
-		return previousAnchor, fmt.Errorf("no unused points of interest found for type %s", locationArchetype.ID)
 	}
 	if err := c.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, pointOfInterest.ID); err != nil {
 		log.Printf("Warning: failed to update last_used_in_quest_at for POI %s: %v", pointOfInterest.ID, err)
@@ -437,14 +454,18 @@ func (c *client) processQuestScenarioNode(
 	}
 
 	if questArchTypeNode.ScenarioTemplateID == nil || *questArchTypeNode.ScenarioTemplateID == uuid.Nil {
-		return previousAnchor, fmt.Errorf("scenario node requires a scenario template")
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("scenario node requires a scenario template"),
+		)
 	}
 	template, err := c.dbClient.ScenarioTemplate().FindByID(ctx, *questArchTypeNode.ScenarioTemplateID)
 	if err != nil {
 		return previousAnchor, err
 	}
 	if template == nil {
-		return previousAnchor, fmt.Errorf("scenario template %s not found", questArchTypeNode.ScenarioTemplateID.String())
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("scenario template %s not found", questArchTypeNode.ScenarioTemplateID.String()),
+		)
 	}
 
 	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
@@ -591,11 +612,18 @@ func (c *client) processQuestMonsterEncounterNode(
 	for _, rawID := range questArchTypeNode.MonsterTemplateIDs {
 		templateID, err := uuid.Parse(strings.TrimSpace(rawID))
 		if err != nil {
-			return previousAnchor, fmt.Errorf("invalid monster template id %q in quest archetype node", rawID)
+			return previousAnchor, markNonRetriableQuestGenerationError(
+				fmt.Errorf("invalid monster template id %q in quest archetype node", rawID),
+			)
 		}
 		template, err := c.dbClient.MonsterTemplate().FindByID(ctx, templateID)
 		if err != nil {
 			return previousAnchor, err
+		}
+		if template == nil {
+			return previousAnchor, markNonRetriableQuestGenerationError(
+				fmt.Errorf("monster template %s not found", templateID.String()),
+			)
 		}
 		sourceTemplates = append(sourceTemplates, *template)
 		sourceMonsters = append(sourceMonsters, models.Monster{
@@ -608,10 +636,14 @@ func (c *client) processQuestMonsterEncounterNode(
 		})
 	}
 	if len(sourceTemplates) == 0 {
-		return previousAnchor, fmt.Errorf("monster encounter node requires at least one monster template")
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("monster encounter node requires at least one monster template"),
+		)
 	}
 	if len(sourceTemplates) > 9 {
-		return previousAnchor, fmt.Errorf("monster encounter node cannot include more than 9 monster templates")
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("monster encounter node cannot include more than 9 monster templates"),
+		)
 	}
 
 	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
@@ -777,17 +809,127 @@ func (c *client) attachQuestMonsterEncounterChildren(
 
 func pointOfInterestCoordinates(poi *models.PointOfInterest) (float64, float64, error) {
 	if poi == nil {
-		return 0, 0, fmt.Errorf("point of interest is required")
+		return 0, 0, markNonRetriableQuestGenerationError(
+			fmt.Errorf("point of interest is required"),
+		)
 	}
 	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid point of interest latitude: %w", err)
+		return 0, 0, markNonRetriableQuestGenerationError(
+			fmt.Errorf("invalid point of interest latitude: %w", err),
+		)
 	}
 	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid point of interest longitude: %w", err)
+		return 0, 0, markNonRetriableQuestGenerationError(
+			fmt.Errorf("invalid point of interest longitude: %w", err),
+		)
 	}
 	return lat, lng, nil
+}
+
+func questNodePOISearchCount(usedPOICount int) int32 {
+	requested := maxInt(usedPOICount+1, 8)
+	if requested > 20 {
+		requested = 20
+	}
+	return int32(requested)
+}
+
+func selectUnusedPointOfInterest(
+	pointsOfInterest []*models.PointOfInterest,
+	usedPOIs map[uuid.UUID]bool,
+) *models.PointOfInterest {
+	for _, poi := range pointsOfInterest {
+		if poi == nil || usedPOIs[poi.ID] {
+			continue
+		}
+		return poi
+	}
+	return nil
+}
+
+func (c *client) resolveQuestNodePointOfInterest(
+	ctx context.Context,
+	zone *models.Zone,
+	locationArchetype *models.LocationArchetype,
+	usedPOIs map[uuid.UUID]bool,
+) (*models.PointOfInterest, error) {
+	if zone == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("zone is required for point of interest selection"),
+		)
+	}
+	if locationArchetype == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("location archetype is required for point of interest selection"),
+		)
+	}
+
+	searchCount := questNodePOISearchCount(len(usedPOIs))
+	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(
+		ctx,
+		*zone,
+		locationArchetype.IncludedTypes,
+		locationArchetype.ExcludedTypes,
+		searchCount,
+	)
+	if err != nil {
+		log.Printf(
+			"Error seeding quest POIs for zone=%s location_archetype=%s candidate_count=%d: %v",
+			zone.ID,
+			locationArchetype.ID,
+			searchCount,
+			err,
+		)
+		return nil, err
+	}
+	if len(pointsOfInterest) == 0 {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf(
+				"no points of interest found for location archetype %s in zone %s",
+				locationArchetype.ID,
+				zone.ID,
+			),
+		)
+	}
+
+	pointOfInterest := selectUnusedPointOfInterest(pointsOfInterest, usedPOIs)
+	if pointOfInterest == nil && searchCount < 20 {
+		fallbackCount := int32(20)
+		morePointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(
+			ctx,
+			*zone,
+			locationArchetype.IncludedTypes,
+			locationArchetype.ExcludedTypes,
+			fallbackCount,
+		)
+		if err != nil {
+			log.Printf(
+				"Error expanding quest POI search for zone=%s location_archetype=%s candidate_count=%d: %v",
+				zone.ID,
+				locationArchetype.ID,
+				fallbackCount,
+				err,
+			)
+			return nil, err
+		}
+		pointsOfInterest = morePointsOfInterest
+		pointOfInterest = selectUnusedPointOfInterest(pointsOfInterest, usedPOIs)
+	}
+	if pointOfInterest == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf(
+				"no unused points of interest found for location archetype %s in zone %s after checking %d candidates",
+				locationArchetype.ID,
+				zone.ID,
+				len(pointsOfInterest),
+			),
+		)
+	}
+
+	usedPOIs[pointOfInterest.ID] = true
+	return pointOfInterest, nil
 }
 
 func (c *client) resolveQuestNodeAnchor(
@@ -805,31 +947,18 @@ func (c *client) resolveQuestNodeAnchor(
 			return previousAnchor, nil, err
 		}
 		if locationArchetype == nil {
-			return previousAnchor, nil, fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String())
+			return previousAnchor, nil, markNonRetriableQuestGenerationError(
+				fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String()),
+			)
 		}
-		pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(
+		pointOfInterest, err := c.resolveQuestNodePointOfInterest(
 			ctx,
-			*zone,
-			locationArchetype.IncludedTypes,
-			locationArchetype.ExcludedTypes,
-			1,
+			zone,
+			locationArchetype,
+			usedPOIs,
 		)
 		if err != nil {
 			return previousAnchor, nil, err
-		}
-		if len(pointsOfInterest) == 0 {
-			return previousAnchor, nil, errors.New("no points of interest found")
-		}
-		var pointOfInterest *models.PointOfInterest
-		for _, poi := range pointsOfInterest {
-			if !usedPOIs[poi.ID] {
-				pointOfInterest = poi
-				usedPOIs[poi.ID] = true
-				break
-			}
-		}
-		if pointOfInterest == nil {
-			return previousAnchor, nil, fmt.Errorf("no unused points of interest found for type %s", locationArchetype.ID)
 		}
 		if err := c.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, pointOfInterest.ID); err != nil {
 			log.Printf("Warning: failed to update last_used_in_quest_at for POI %s: %v", pointOfInterest.ID, err)
@@ -927,10 +1056,14 @@ func (c *client) resolveQuestArchetypeLocationChallenge(
 	allotedChallenge *models.QuestArchetypeChallenge,
 ) (*resolvedQuestArchetypeLocationChallenge, error) {
 	if questArchTypeNode == nil {
-		return nil, fmt.Errorf("quest archetype node is required")
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("quest archetype node is required"),
+		)
 	}
 	if allotedChallenge == nil {
-		return nil, fmt.Errorf("quest archetype challenge is required")
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("quest archetype challenge is required"),
+		)
 	}
 	if allotedChallenge.ChallengeTemplate != nil {
 		return resolvedQuestArchetypeLocationChallengeFromTemplate(allotedChallenge.ChallengeTemplate)
@@ -941,7 +1074,9 @@ func (c *client) resolveQuestArchetypeLocationChallenge(
 			return nil, err
 		}
 		if template == nil {
-			return nil, fmt.Errorf("challenge template %s not found", allotedChallenge.ChallengeTemplateID.String())
+			return nil, markNonRetriableQuestGenerationError(
+				fmt.Errorf("challenge template %s not found", allotedChallenge.ChallengeTemplateID.String()),
+			)
 		}
 		return resolvedQuestArchetypeLocationChallengeFromTemplate(template)
 	}
@@ -972,11 +1107,15 @@ func resolvedQuestArchetypeLocationChallengeFromTemplate(
 	template *models.ChallengeTemplate,
 ) (*resolvedQuestArchetypeLocationChallenge, error) {
 	if template == nil {
-		return nil, fmt.Errorf("challenge template is required")
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("challenge template is required"),
+		)
 	}
 	question := strings.TrimSpace(template.Question)
 	if question == "" {
-		return nil, fmt.Errorf("challenge template question is required")
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("challenge template question is required"),
+		)
 	}
 	submissionType := template.SubmissionType
 	if !submissionType.IsValid() {
@@ -1221,15 +1360,21 @@ func (c *client) makeQuestLocationChallenge(
 	difficulty int,
 ) (*models.Challenge, error) {
 	if poi == nil {
-		return nil, fmt.Errorf("point of interest is required")
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("point of interest is required"),
+		)
 	}
 	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid point of interest latitude: %w", err)
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("invalid point of interest latitude: %w", err),
+		)
 	}
 	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid point of interest longitude: %w", err)
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("invalid point of interest longitude: %w", err),
+		)
 	}
 	question := fmt.Sprintf("Visit %s and share photo proof of your arrival.", strings.TrimSpace(poi.Name))
 	if strings.TrimSpace(poi.Name) == "" {

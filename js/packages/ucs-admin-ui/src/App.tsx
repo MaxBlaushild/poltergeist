@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import {
   AuthProvider,
@@ -16,6 +16,7 @@ import {
   useParams,
   Link,
   Outlet,
+  useLocation,
 } from 'react-router-dom';
 import { LoaderFunctionArgs, redirect } from 'react-router-dom';
 import {
@@ -62,6 +63,13 @@ import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
 import Tutorial from './components/Tutorial.tsx';
+import { AdminHome } from './components/AdminHome.tsx';
+import {
+  adminNavItemMatchesPath,
+  adminNavigationGroups,
+  featuredAdminNavItems,
+  findActiveAdminNavItem,
+} from './adminNavigation.ts';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -85,125 +93,176 @@ const ArenaWrapper = ({ children }: { children: React.ReactNode }) => {
   return <ArenaProvider arenaId={id}>{children}</ArenaProvider>;
 };
 
-const Navigation = () => {
-  const isLoggedIn = localStorage.getItem('token');
+const Navigation = ({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string;
+  onNavigate?: () => void;
+}) => {
+  const [query, setQuery] = useState('');
 
-  if (!isLoggedIn) return null;
+  const filteredGroups = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return adminNavigationGroups;
+    }
+    return adminNavigationGroups
+      .map((group) => {
+        const groupMatch =
+          group.label.toLowerCase().includes(normalizedQuery) ||
+          group.description.toLowerCase().includes(normalizedQuery);
+        return {
+          ...group,
+          items: groupMatch
+            ? group.items
+            : group.items.filter(
+                (item) =>
+                  item.label.toLowerCase().includes(normalizedQuery) ||
+                  item.description.toLowerCase().includes(normalizedQuery)
+              ),
+        };
+      })
+      .filter((group) => group.items.length > 0);
+  }, [query]);
 
   return (
-    <nav className="bg-gray-800 p-4">
-      <div className="container mx-auto flex gap-4">
-        <Link to="/armory" className="text-white hover:text-gray-300">
-          Armory
-        </Link>
-        <Link to="/zones" className="text-white hover:text-gray-300">
-          Zones
-        </Link>
-        <Link to="/districts" className="text-white hover:text-gray-300">
-          Districts
-        </Link>
-        <Link to="/tags" className="text-white hover:text-gray-300">
-          Tags
-        </Link>
+    <div className="admin-sidebar__inner">
+      <Link to="/" className="admin-brand" onClick={onNavigate}>
+        <div className="admin-brand__mark">US</div>
+        <div>
+          <div className="admin-brand__eyebrow">Unclaimed Streets</div>
+          <div className="admin-brand__title">Admin Dashboard</div>
+        </div>
+      </Link>
+
+      <div className="admin-sidebar__search">
+        <label htmlFor="admin-nav-search" className="admin-sidebar__search-label">
+          Find a tool
+        </label>
+        <input
+          id="admin-nav-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Zones, quests, users..."
+          className="admin-sidebar__search-input"
+        />
+      </div>
+
+      <div className="admin-nav-home">
         <Link
-          to="/location-archetypes"
-          className="text-white hover:text-gray-300"
+          to="/"
+          onClick={onNavigate}
+          className={`admin-nav-link admin-nav-link--home ${
+            pathname === '/' ? 'is-active' : ''
+          }`}
         >
-          Location Archetypes
-        </Link>
-        <Link to="/quest-archetypes" className="text-white hover:text-gray-300">
-          Quest Archetypes
-        </Link>
-        <Link
-          to="/zone-quest-archetypes"
-          className="text-white hover:text-gray-300"
-        >
-          Zone Quest Archetypes
-        </Link>
-        <Link to="/users" className="text-white hover:text-gray-300">
-          Users
-        </Link>
-        <Link to="/parties" className="text-white hover:text-gray-300">
-          Parties
-        </Link>
-        <Link to="/characters" className="text-white hover:text-gray-300">
-          Characters
-        </Link>
-        <Link to="/inventory-items" className="text-white hover:text-gray-300">
-          Inventory Items
-        </Link>
-        <Link to="/bases" className="text-white hover:text-gray-300">
-          Bases
-        </Link>
-        <Link to="/spells" className="text-white hover:text-gray-300">
-          Spells
-        </Link>
-        <Link to="/monsters" className="text-white hover:text-gray-300">
-          Monsters
-        </Link>
-        <Link to="/starter-config" className="text-white hover:text-gray-300">
-          Starter Config
-        </Link>
-        <Link to="/tutorial" className="text-white hover:text-gray-300">
-          Tutorial
-        </Link>
-        <Link to="/treasure-chests" className="text-white hover:text-gray-300">
-          Treasure Chests
-        </Link>
-        <Link
-          to="/healing-fountains"
-          className="text-white hover:text-gray-300"
-        >
-          Healing Fountains
-        </Link>
-        <Link
-          to="/points-of-interest"
-          className="text-white hover:text-gray-300"
-        >
-          Points of Interest
-        </Link>
-        <Link to="/quests" className="text-white hover:text-gray-300">
-          Quests
-        </Link>
-        <Link to="/insider-trades" className="text-white hover:text-gray-300">
-          Insider Trades
-        </Link>
-        <Link to="/feedback" className="text-white hover:text-gray-300">
-          Feedback
-        </Link>
-        <Link to="/zone-seeding" className="text-white hover:text-gray-300">
-          Zone Seeding
-        </Link>
-        <Link to="/scenarios" className="text-white hover:text-gray-300">
-          Scenarios
-        </Link>
-        <Link
-          to="/scenario-templates"
-          className="text-white hover:text-gray-300"
-        >
-          Scenario Templates
-        </Link>
-        <Link to="/challenges" className="text-white hover:text-gray-300">
-          Challenges
-        </Link>
-        <Link
-          to="/challenge-templates"
-          className="text-white hover:text-gray-300"
-        >
-          Challenge Templates
+          <span>Home</span>
+          <small>Overview, workflows, and grouped quick access.</small>
         </Link>
       </div>
-    </nav>
+
+      <div className="admin-nav-groups">
+        {filteredGroups.map((group) => (
+          <section key={group.id} className="admin-nav-group">
+            <div className="admin-nav-group__header">
+              <div className="admin-nav-group__title">{group.label}</div>
+              <div className="admin-nav-group__description">
+                {group.description}
+              </div>
+            </div>
+            <div className="admin-nav-group__links">
+              {group.items.map((item) => {
+                const isActive = adminNavItemMatchesPath(item, pathname);
+                return (
+                  <Link
+                    key={item.id}
+                    to={item.path}
+                    onClick={onNavigate}
+                    className={`admin-nav-link ${isActive ? 'is-active' : ''}`}
+                  >
+                    <span>{item.label}</span>
+                    <small>{item.description}</small>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+        {filteredGroups.length === 0 && (
+          <div className="admin-nav-empty">
+            No admin areas match <strong>{query}</strong>.
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
-// Create a new Layout component that includes Navigation and Outlet
 const Layout = () => {
+  const location = useLocation();
+  const isLoggedIn = Boolean(localStorage.getItem('token'));
+  const [navOpen, setNavOpen] = useState(false);
+  const activeNavItem = findActiveAdminNavItem(location.pathname);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  if (!isLoggedIn) {
+    return <Outlet />;
+  }
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navigation />
-      <div className="flex-1">
-        <Outlet />
+    <div className="admin-shell">
+      <button
+        type="button"
+        className={`admin-sidebar-backdrop ${navOpen ? 'is-visible' : ''}`}
+        aria-label="Close navigation"
+        onClick={() => setNavOpen(false)}
+      />
+      <aside className={`admin-sidebar ${navOpen ? 'is-open' : ''}`}>
+        <Navigation pathname={location.pathname} onNavigate={() => setNavOpen(false)} />
+      </aside>
+      <div className="admin-main">
+        <header className="admin-topbar">
+          <button
+            type="button"
+            className="admin-topbar__menu"
+            onClick={() => setNavOpen((open) => !open)}
+          >
+            {navOpen ? 'Close' : 'Browse'}
+          </button>
+          <div className="admin-topbar__title">
+            <div className="admin-topbar__eyebrow">
+              {activeNavItem?.group.label ?? 'Overview'}
+            </div>
+            <h1>{location.pathname === '/' ? 'Admin Home' : activeNavItem?.label ?? 'Admin Dashboard'}</h1>
+            <p>
+              {location.pathname === '/'
+                ? 'Use the new grouped navigation or start from one of the workflow launchpads below.'
+                : activeNavItem?.description ??
+                  'Manage world content, quests, systems, and live operations.'}
+            </p>
+          </div>
+          <div className="admin-topbar__quicklinks">
+            {featuredAdminNavItems.slice(0, 5).map((item) => (
+              <Link
+                key={item.id}
+                to={item.path}
+                className={`admin-topbar__quicklink ${
+                  adminNavItemMatchesPath(item, location.pathname) ? 'is-active' : ''
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </header>
+        <div className="admin-page">
+          <Outlet />
+        </div>
       </div>
     </div>
   );
@@ -216,6 +275,11 @@ const router = createBrowserRouter([
     children: [
       {
         path: '/',
+        element: <AdminHome />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/arenas',
         element: <Arenas />,
         loader: onlyAuthenticated,
       },

@@ -1053,6 +1053,7 @@ type QuestAcceptanceV2Handle interface {
 type QuestHandle interface {
 	Create(ctx context.Context, quest *models.Quest) error
 	Update(ctx context.Context, id uuid.UUID, updates *models.Quest) error
+	FindAllSummaries(ctx context.Context) ([]models.Quest, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)

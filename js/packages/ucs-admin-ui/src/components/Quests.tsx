@@ -180,6 +180,54 @@ const emptyQuestForm = {
   spellRewards: [] as { spellId: string }[],
 };
 
+const buildQuestFormFromQuest = (quest: Quest) => {
+  const rewardMode = getQuestRewardMode(quest);
+  return {
+    name: quest.name ?? '',
+    description: quest.description ?? '',
+    acceptanceDialogue: quest.acceptanceDialogue ?? [],
+    imageUrl: quest.imageUrl ?? '',
+    zoneId: quest.zoneId ?? '',
+    questGiverCharacterId: quest.questGiverCharacterId ?? '',
+    questArchetypeId: quest.questArchetypeId ?? '',
+    recurrenceFrequency: quest.recurrenceFrequency ?? '',
+    difficultyMode: quest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
+    difficulty: quest.difficulty ?? 1,
+    monsterEncounterTargetLevel: quest.monsterEncounterTargetLevel ?? 1,
+    rewardMode,
+    randomRewardSize:
+      (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
+    rewardExperience: quest.rewardExperience ?? 0,
+    gold: quest.gold ?? 0,
+    materialRewards: (quest.materialRewards ?? []).map((reward) => ({
+      resourceKey: reward.resourceKey,
+      amount: reward.amount ?? 1,
+    })),
+    itemRewards: (quest.itemRewards ?? []).map((reward) => ({
+      inventoryItemId: reward.inventoryItemId
+        ? String(reward.inventoryItemId)
+        : '',
+      quantity: reward.quantity ?? 1,
+    })),
+    spellRewards: (quest.spellRewards ?? []).map((reward) => ({
+      spellId: reward.spellId ?? '',
+    })),
+  };
+};
+
+const normalizeQuestSummary = (quest: Quest): Quest => ({
+  ...quest,
+  nodeCount: quest.nodeCount ?? quest.nodes?.length ?? 0,
+  detailLoaded: false,
+  nodes: undefined,
+});
+
+const normalizeQuestDetail = (quest: Quest): Quest => ({
+  ...quest,
+  nodeCount: quest.nodes?.length ?? quest.nodeCount ?? 0,
+  detailLoaded: true,
+});
+
 const questStatOptions = [
   { id: 'strength', label: 'Strength' },
   { id: 'dexterity', label: 'Dexterity' },
@@ -633,6 +681,12 @@ export const Quests = () => {
   >([]);
   const [challenges, setChallenges] = useState<ChallengeNodeOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [questDetailLoadingId, setQuestDetailLoadingId] = useState<
+    string | null
+  >(null);
+  const [questDetailErrorId, setQuestDetailErrorId] = useState<string | null>(
+    null
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [zoneSearch, setZoneSearch] = useState('');
@@ -721,10 +775,22 @@ export const Quests = () => {
   const questMap = useRef<mapboxgl.Map | null>(null);
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
   const questNodeMarkers = useRef<mapboxgl.Marker[]>([]);
+  const selectedQuestIdRef = useRef('');
+
+  const setActiveQuestId = (questId: string) => {
+    selectedQuestIdRef.current = questId;
+    setSelectedQuestId(questId);
+  };
 
   const selectedQuest = useMemo(
     () => quests.find((quest) => quest.id === selectedQuestId) ?? null,
     [quests, selectedQuestId]
+  );
+  const selectedQuestIsHydrating = Boolean(
+    selectedQuest && questDetailLoadingId === selectedQuest.id
+  );
+  const selectedQuestNeedsHydration = Boolean(
+    selectedQuest && !selectedQuest.detailLoaded
   );
   const selectedQuestIdSet = useMemo(
     () => selectedQuestIds,
@@ -826,9 +892,35 @@ export const Quests = () => {
 
   useEffect(() => {
     let isMounted = true;
-    const load = async () => {
+    const loadQuestSummaries = async () => {
+      try {
+        const result = await apiClient.get<Quest[]>('/sonar/admin/quests');
+        if (!isMounted) return;
+        setQuests(
+          Array.isArray(result) ? result.map(normalizeQuestSummary) : []
+        );
+        setLoadError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Failed to load quests', error);
+        setLoadError('Failed to load quests. Check console for details.');
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadQuestSummaries();
+    return () => {
+      isMounted = false;
+    };
+  }, [apiClient]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadSupportingData = async () => {
       const results = await Promise.allSettled([
-        apiClient.get<Quest[]>('/sonar/quests'),
         apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest'),
         apiClient.get<Character[]>('/sonar/characters'),
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
@@ -842,7 +934,6 @@ export const Quests = () => {
       if (!isMounted) return;
 
       const [
-        questsResult,
         poiResult,
         charactersResult,
         inventoryResult,
@@ -852,12 +943,6 @@ export const Quests = () => {
         monstersResult,
         challengesResult,
       ] = results;
-      if (questsResult.status === 'fulfilled') {
-        setQuests(questsResult.value);
-      } else {
-        console.error('Failed to load quests', questsResult.reason);
-        setLoadError('Failed to load quests. Check console for details.');
-      }
 
       if (poiResult.status === 'fulfilled') {
         setPointsOfInterest(poiResult.value);
@@ -919,15 +1004,13 @@ export const Quests = () => {
       } else {
         console.error('Failed to load challenges', challengesResult.reason);
       }
-
-      setLoading(false);
     };
 
-    load();
+    loadSupportingData();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [apiClient]);
 
   useEffect(() => {
     const query = proficiencySearch.trim();
@@ -2029,9 +2112,10 @@ export const Quests = () => {
             : [],
       };
       const created = await apiClient.post<Quest>('/sonar/quests', payload);
-      setQuests((prev) => [created, ...prev]);
-      setSelectedQuestId(created.id);
-      setQuestForm({ ...emptyQuestForm });
+      const normalizedQuest = normalizeQuestDetail(created);
+      setQuests((prev) => [normalizedQuest, ...prev]);
+      setActiveQuestId(normalizedQuest.id);
+      setQuestForm(buildQuestFormFromQuest(normalizedQuest));
       setShowCreateQuest(false);
     } catch (error) {
       console.error('Failed to create quest', error);
@@ -2092,7 +2176,9 @@ export const Quests = () => {
         `/sonar/quests/${selectedQuest.id}`,
         payload
       );
-      updateQuestState(selectedQuest.id, () => updated);
+      const normalizedQuest = normalizeQuestDetail(updated);
+      updateQuestState(selectedQuest.id, () => normalizedQuest);
+      setQuestForm(buildQuestFormFromQuest(normalizedQuest));
     } catch (error) {
       console.error('Failed to update quest', error);
       alert('Failed to update quest.');
@@ -2330,7 +2416,7 @@ export const Quests = () => {
         next.delete(selectedQuest.id);
         return next;
       });
-      setSelectedQuestId('');
+      setActiveQuestId('');
       setQuestForm({ ...emptyQuestForm });
     } catch (error) {
       console.error('Failed to delete quest', error);
@@ -2357,7 +2443,7 @@ export const Quests = () => {
         return next;
       });
       if (selectedQuestId === quest.id) {
-        setSelectedQuestId('');
+        setActiveQuestId('');
         setQuestForm({ ...emptyQuestForm });
       }
     } catch (error) {
@@ -2445,7 +2531,7 @@ export const Quests = () => {
           return next;
         });
         if (selectedQuestId && deletedIds.has(selectedQuestId)) {
-          setSelectedQuestId('');
+          setActiveQuestId('');
           setQuestForm({ ...emptyQuestForm });
         }
       }
@@ -2466,39 +2552,38 @@ export const Quests = () => {
   };
 
   const handleSelectQuest = (quest: Quest) => {
-    const rewardMode = getQuestRewardMode(quest);
-    setSelectedQuestId(quest.id);
-    setQuestForm({
-      name: quest.name ?? '',
-      description: quest.description ?? '',
-      acceptanceDialogue: quest.acceptanceDialogue ?? [],
-      imageUrl: quest.imageUrl ?? '',
-      zoneId: quest.zoneId ?? '',
-      questGiverCharacterId: quest.questGiverCharacterId ?? '',
-      questArchetypeId: quest.questArchetypeId ?? '',
-      recurrenceFrequency: quest.recurrenceFrequency ?? '',
-      difficultyMode: quest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
-      difficulty: quest.difficulty ?? 1,
-      monsterEncounterTargetLevel: quest.monsterEncounterTargetLevel ?? 1,
-      rewardMode,
-      randomRewardSize:
-        (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
-      rewardExperience: quest.rewardExperience ?? 0,
-      gold: quest.gold ?? 0,
-      materialRewards: (quest.materialRewards ?? []).map((reward) => ({
-        resourceKey: reward.resourceKey,
-        amount: reward.amount ?? 1,
-      })),
-      itemRewards: (quest.itemRewards ?? []).map((reward) => ({
-        inventoryItemId: reward.inventoryItemId
-          ? String(reward.inventoryItemId)
-          : '',
-        quantity: reward.quantity ?? 1,
-      })),
-      spellRewards: (quest.spellRewards ?? []).map((reward) => ({
-        spellId: reward.spellId ?? '',
-      })),
-    });
+    setActiveQuestId(quest.id);
+    setQuestDetailErrorId(null);
+    if (quest.detailLoaded) {
+      setQuestDetailLoadingId(null);
+      setQuestForm(buildQuestFormFromQuest(quest));
+      return;
+    }
+
+    setQuestDetailLoadingId(quest.id);
+    void (async () => {
+      try {
+        const detail = normalizeQuestDetail(
+          await apiClient.get<Quest>(`/sonar/quests/${quest.id}`)
+        );
+        setQuests((prev) =>
+          prev.map((item) => (item.id === detail.id ? detail : item))
+        );
+        if (selectedQuestIdRef.current === detail.id) {
+          setQuestDetailErrorId(null);
+          setQuestForm(buildQuestFormFromQuest(detail));
+        }
+      } catch (error) {
+        console.error('Failed to load quest details', error);
+        if (selectedQuestIdRef.current === quest.id) {
+          setQuestDetailErrorId(quest.id);
+        }
+      } finally {
+        if (selectedQuestIdRef.current === quest.id) {
+          setQuestDetailLoadingId(null);
+        }
+      }
+    })();
   };
 
   const handleAddQuestReward = () => {
@@ -3716,7 +3801,9 @@ export const Quests = () => {
                       >
                         <div className="qa-library-item-title">{quest.name}</div>
                         <div className="qa-library-item-meta">
-                          <span>{quest.nodes?.length ?? 0} nodes</span>
+                          <span>
+                            {quest.nodeCount ?? quest.nodes?.length ?? 0} nodes
+                          </span>
                           <span>
                             {getQuestRecurrenceLabel(
                               quest.recurrenceFrequency ?? ''
@@ -3751,6 +3838,35 @@ export const Quests = () => {
                   one from the library to tune the narrative, rewards, and node
                   flow in separate spaces.
                 </p>
+              </div>
+            ) : selectedQuestIsHydrating ? (
+              <div className="qa-card qa-empty-state">
+                <div className="qa-kicker">Quest Workbench</div>
+                <h2 className="qa-card-title">Loading quest details</h2>
+                <p className="qa-meta">
+                  Pulling the full node graph and reward package for{' '}
+                  {selectedQuest.name}.
+                </p>
+              </div>
+            ) : selectedQuestNeedsHydration ? (
+              <div className="qa-card qa-empty-state">
+                <div className="qa-kicker">Quest Workbench</div>
+                <h2 className="qa-card-title">Quest details unavailable</h2>
+                <p className="qa-meta">
+                  {questDetailErrorId === selectedQuest.id
+                    ? `We couldn't load the full quest payload for ${selectedQuest.name}.`
+                    : `Select ${selectedQuest.name} to load its full node graph.`}
+                </p>
+                <div className="mt-4">
+                  <button
+                    className="qa-btn qa-btn-primary"
+                    onClick={() => handleSelectQuest(selectedQuest)}
+                  >
+                    {questDetailErrorId === selectedQuest.id
+                      ? 'Retry Load'
+                      : 'Load Quest'}
+                  </button>
+                </div>
               </div>
             ) : (
               <>

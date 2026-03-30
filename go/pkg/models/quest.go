@@ -43,6 +43,7 @@ type Quest struct {
 	ID                          uuid.UUID           `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt                   time.Time           `json:"createdAt"`
 	UpdatedAt                   time.Time           `json:"updatedAt"`
+	NodeCount                   int                 `json:"nodeCount,omitempty" gorm:"-"`
 	Name                        string              `json:"name"`
 	Description                 string              `json:"description"`
 	AcceptanceDialogue          StringArray         `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`

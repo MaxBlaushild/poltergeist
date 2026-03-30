@@ -6,13 +6,16 @@ CREATE INDEX IF NOT EXISTS monster_encounters_point_of_interest_id_idx
 
 WITH poi_candidates AS (
   SELECT
-    id,
-    zone_id,
-    CAST(TRIM(lat) AS double precision) AS latitude,
-    CAST(TRIM(lng) AS double precision) AS longitude
-  FROM points_of_interest
-  WHERE TRIM(COALESCE(lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
-    AND TRIM(COALESCE(lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    poi.id,
+    pz.zone_id,
+    CAST(TRIM(poi.lat) AS double precision) AS latitude,
+    CAST(TRIM(poi.lng) AS double precision) AS longitude
+  FROM points_of_interest AS poi
+  JOIN point_of_interest_zones AS pz
+    ON pz.point_of_interest_id = poi.id
+   AND pz.deleted_at IS NULL
+  WHERE TRIM(COALESCE(poi.lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    AND TRIM(COALESCE(poi.lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
 )
 UPDATE challenges AS ch
 SET point_of_interest_id = poi.id
@@ -25,13 +28,16 @@ WHERE ch.point_of_interest_id IS NULL
 
 WITH poi_candidates AS (
   SELECT
-    id,
-    zone_id,
-    CAST(TRIM(lat) AS double precision) AS latitude,
-    CAST(TRIM(lng) AS double precision) AS longitude
-  FROM points_of_interest
-  WHERE TRIM(COALESCE(lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
-    AND TRIM(COALESCE(lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    poi.id,
+    pz.zone_id,
+    CAST(TRIM(poi.lat) AS double precision) AS latitude,
+    CAST(TRIM(poi.lng) AS double precision) AS longitude
+  FROM points_of_interest AS poi
+  JOIN point_of_interest_zones AS pz
+    ON pz.point_of_interest_id = poi.id
+   AND pz.deleted_at IS NULL
+  WHERE TRIM(COALESCE(poi.lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    AND TRIM(COALESCE(poi.lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
 )
 UPDATE scenarios AS sc
 SET point_of_interest_id = poi.id
@@ -44,13 +50,16 @@ WHERE sc.point_of_interest_id IS NULL
 
 WITH poi_candidates AS (
   SELECT
-    id,
-    zone_id,
-    CAST(TRIM(lat) AS double precision) AS latitude,
-    CAST(TRIM(lng) AS double precision) AS longitude
-  FROM points_of_interest
-  WHERE TRIM(COALESCE(lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
-    AND TRIM(COALESCE(lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    poi.id,
+    pz.zone_id,
+    CAST(TRIM(poi.lat) AS double precision) AS latitude,
+    CAST(TRIM(poi.lng) AS double precision) AS longitude
+  FROM points_of_interest AS poi
+  JOIN point_of_interest_zones AS pz
+    ON pz.point_of_interest_id = poi.id
+   AND pz.deleted_at IS NULL
+  WHERE TRIM(COALESCE(poi.lat, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
+    AND TRIM(COALESCE(poi.lng, '')) ~ '^-?[0-9]+([.][0-9]+)?$'
 )
 UPDATE monster_encounters AS me
 SET point_of_interest_id = poi.id

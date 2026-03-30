@@ -444,6 +444,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlaces))
 	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlace))
 	r.POST("/sonar/zones/:id/quests/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuest))
+	r.GET("/sonar/admin/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminQuests))
 	r.GET("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuests))
 	r.GET("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuest))
 	r.POST("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuest))
@@ -3603,6 +3604,15 @@ func (s *server) getQuestArchetypes(ctx *gin.Context) {
 
 func (s *server) getQuests(ctx *gin.Context) {
 	quests, err := s.dbClient.Quest().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, quests)
+}
+
+func (s *server) getAdminQuests(ctx *gin.Context) {
+	quests, err := s.dbClient.Quest().FindAllSummaries(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
