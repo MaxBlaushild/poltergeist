@@ -64,6 +64,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Design structured quest templates and node flows.',
       },
       {
+        id: 'quest-archetype-generator',
+        label: 'Quest Archetype Generator',
+        path: '/quest-archetype-generator',
+        description:
+          'Generate draft archetype bundles, review them, and convert the best ones into live templates.',
+      },
+      {
         id: 'zone-quest-archetypes',
         label: 'Zone Quest Archetypes',
         path: '/zone-quest-archetypes',

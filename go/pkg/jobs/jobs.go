@@ -29,6 +29,7 @@ const (
 	GenerateChallengesTaskType                     = "generate_challenges"
 	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
+	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
 	GenerateBaseStructureLevelImageTaskType        = "generate_base_structure_level_image"
@@ -92,6 +93,10 @@ type GenerateQuestForZoneTaskPayload struct {
 	QuestArchetypeID      uuid.UUID  `json:"quest_archetype_id"`
 	QuestGiverCharacterID *uuid.UUID `json:"quest_giver_character_id,omitempty"`
 	QuestGenerationJobID  *uuid.UUID `json:"quest_generation_job_id,omitempty"`
+}
+
+type GenerateQuestArchetypeSuggestionsTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
 }
 
 type SeedDistrictTaskPayload struct {

@@ -61,6 +61,8 @@ type client struct {
 	zoneHandle                           *zoneHandler
 	locationArchetypeHandle              *locationArchetypeHandle
 	questArchetypeHandle                 *questArchetypeHandle
+	questArchetypeSuggestionJobHandle    *questArchetypeSuggestionJobHandle
+	questArchetypeSuggestionDraftHandle  *questArchetypeSuggestionDraftHandle
 	questArchetypeNodeHandle             *questArchetypeNodeHandle
 	questArchetypeChallengeHandle        *questArchetypeChallengeHandle
 	questArchetypeNodeChallengeHandle    *questArchetypeNodeChallengeHandle
@@ -224,6 +226,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		zoneHandle:                           &zoneHandler{db: db},
 		locationArchetypeHandle:              &locationArchetypeHandle{db: db},
 		questArchetypeHandle:                 &questArchetypeHandle{db: db},
+		questArchetypeSuggestionJobHandle:    &questArchetypeSuggestionJobHandle{db: db},
+		questArchetypeSuggestionDraftHandle:  &questArchetypeSuggestionDraftHandle{db: db},
 		questArchetypeNodeHandle:             &questArchetypeNodeHandle{db: db},
 		questArchetypeChallengeHandle:        &questArchetypeChallengeHandle{db: db},
 		questArchetypeNodeChallengeHandle:    &questArchetypeNodeChallengeHandle{db: db},
@@ -442,6 +446,14 @@ func (c *client) LocationArchetype() LocationArchetypeHandle {
 
 func (c *client) QuestArchetype() QuestArchetypeHandle {
 	return c.questArchetypeHandle
+}
+
+func (c *client) QuestArchetypeSuggestionJob() QuestArchetypeSuggestionJobHandle {
+	return c.questArchetypeSuggestionJobHandle
+}
+
+func (c *client) QuestArchetypeSuggestionDraft() QuestArchetypeSuggestionDraftHandle {
+	return c.questArchetypeSuggestionDraftHandle
 }
 
 func (c *client) QuestArchetypeNode() QuestArchetypeNodeHandle {

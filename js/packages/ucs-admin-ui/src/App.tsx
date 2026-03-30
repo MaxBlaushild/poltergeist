@@ -35,6 +35,7 @@ import { Tags } from './components/Tags.tsx';
 import LocationArchetypes from './components/LocationArchetypes.tsx';
 import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
 import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
+import QuestArchetypeGenerator from './components/QuestArchetypeGenerator.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
@@ -340,6 +341,11 @@ const router = createBrowserRouter([
       {
         path: '/quest-archetypes',
         element: <QuestArchetypeComponent />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/quest-archetype-generator',
+        element: <QuestArchetypeGenerator />,
         loader: onlyAuthenticated,
       },
       {

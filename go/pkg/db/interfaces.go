@@ -58,6 +58,8 @@ type DbClient interface {
 	Zone() ZoneHandle
 	LocationArchetype() LocationArchetypeHandle
 	QuestArchetype() QuestArchetypeHandle
+	QuestArchetypeSuggestionJob() QuestArchetypeSuggestionJobHandle
+	QuestArchetypeSuggestionDraft() QuestArchetypeSuggestionDraftHandle
 	QuestArchetypeNode() QuestArchetypeNodeHandle
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
@@ -654,6 +656,21 @@ type QuestArchetypeHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetype, error)
 	FindAll(ctx context.Context) ([]*models.QuestArchetype, error)
 	Update(ctx context.Context, questArchetype *models.QuestArchetype) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type QuestArchetypeSuggestionJobHandle interface {
+	Create(ctx context.Context, job *models.QuestArchetypeSuggestionJob) error
+	Update(ctx context.Context, job *models.QuestArchetypeSuggestionJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeSuggestionJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.QuestArchetypeSuggestionJob, error)
+}
+
+type QuestArchetypeSuggestionDraftHandle interface {
+	Create(ctx context.Context, draft *models.QuestArchetypeSuggestionDraft) error
+	Update(ctx context.Context, draft *models.QuestArchetypeSuggestionDraft) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeSuggestionDraft, error)
+	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.QuestArchetypeSuggestionDraft, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
