@@ -51,15 +51,155 @@ type MonsterTemplateRecord = {
   monsterType?: 'monster' | 'boss' | 'raid';
   imageUrl?: string;
   thumbnailUrl?: string;
+  archived?: boolean;
+  description?: string;
+  baseStrength?: number;
+  baseDexterity?: number;
+  baseConstitution?: number;
+  baseIntelligence?: number;
+  baseWisdom?: number;
+  baseCharisma?: number;
+  strongAgainstAffinity?: string | null;
+  weakAgainstAffinity?: string | null;
+  spells?: Spell[];
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
 };
 
 type ScenarioTemplateRecord = {
   id: string;
   prompt: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  scaleWithUserLevel?: boolean;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
+  difficulty?: number | null;
+  rewardExperience?: number;
+  rewardGold?: number;
+  openEnded?: boolean;
+  failurePenaltyMode?: 'shared' | 'individual';
+  failureHealthDrainType?: 'none' | 'flat' | 'percent';
+  failureHealthDrainValue?: number;
+  failureManaDrainType?: 'none' | 'flat' | 'percent';
+  failureManaDrainValue?: number;
+  failureStatuses?: unknown[];
+  successRewardMode?: 'shared' | 'individual';
+  successHealthRestoreType?: 'none' | 'flat' | 'percent';
+  successHealthRestoreValue?: number;
+  successManaRestoreType?: 'none' | 'flat' | 'percent';
+  successManaRestoreValue?: number;
+  successStatuses?: unknown[];
+  options?: unknown[];
+  itemRewards?: unknown[];
+  itemChoiceRewards?: unknown[];
+  spellRewards?: unknown[];
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type ChallengeTemplateRecord = QuestArchetypeChallengeTemplate & {
   locationArchetype?: LocationArchetype | null;
+  description?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  scaleWithUserLevel?: boolean;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
+  rewardExperience?: number;
+  reward?: number;
+  inventoryItemId?: number | null;
+  itemChoiceRewards?: unknown[];
+  submissionType?: 'photo' | 'text' | 'video' | string;
+  difficulty?: number | null;
+  statTags?: string[];
+  proficiency?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type QuestArchetypeInlineEditorState =
+  | {
+      kind: 'challenge';
+      templateId: string;
+      sourceLabel: string;
+      lockedLocationArchetypeId?: string | null;
+    }
+  | {
+      kind: 'scenario';
+      templateId: string;
+      sourceLabel: string;
+    }
+  | {
+      kind: 'monster';
+      templateId: string;
+      sourceLabel: string;
+    };
+
+type ChallengeTemplateFormState = {
+  locationArchetypeId: string;
+  question: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  scaleWithUserLevel: boolean;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  rewardExperience: string;
+  reward: string;
+  inventoryItemId: string;
+  itemChoiceRewardsJson: string;
+  submissionType: 'photo' | 'text' | 'video';
+  difficulty: string;
+  statTags: string;
+  proficiency: string;
+};
+
+type ScenarioTemplateFormState = {
+  prompt: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  scaleWithUserLevel: boolean;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  difficulty: string;
+  rewardExperience: string;
+  rewardGold: string;
+  openEnded: boolean;
+  failurePenaltyMode: 'shared' | 'individual';
+  failureHealthDrainType: 'none' | 'flat' | 'percent';
+  failureHealthDrainValue: string;
+  failureManaDrainType: 'none' | 'flat' | 'percent';
+  failureManaDrainValue: string;
+  failureStatusesJson: string;
+  successRewardMode: 'shared' | 'individual';
+  successHealthRestoreType: 'none' | 'flat' | 'percent';
+  successHealthRestoreValue: string;
+  successManaRestoreType: 'none' | 'flat' | 'percent';
+  successManaRestoreValue: string;
+  successStatusesJson: string;
+  optionsJson: string;
+  itemRewardsJson: string;
+  itemChoiceRewardsJson: string;
+  spellRewardsJson: string;
+};
+
+type MonsterTemplateFormState = {
+  monsterType: 'monster' | 'boss' | 'raid';
+  name: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  baseStrength: string;
+  baseDexterity: string;
+  baseConstitution: string;
+  baseIntelligence: string;
+  baseWisdom: string;
+  baseCharisma: string;
+  strongAgainstAffinity: string;
+  weakAgainstAffinity: string;
+  spellIds: string[];
+  techniqueIds: string[];
 };
 
 type PaginatedResponse<T> = {
@@ -99,17 +239,15 @@ const resolveChallengeTemplateForChallenge = (
   challenge: QuestArchetypeChallenge,
   challengeTemplates: ChallengeTemplateRecord[]
 ) => {
-  if (challenge.challengeTemplate) {
-    return challenge.challengeTemplate;
-  }
-  if (!challenge.challengeTemplateId) {
-    return null;
-  }
-  return (
-    challengeTemplates.find(
+  if (challenge.challengeTemplateId) {
+    const latestTemplate = challengeTemplates.find(
       (template) => template.id === challenge.challengeTemplateId
-    ) ?? null
-  );
+    );
+    if (latestTemplate) {
+      return latestTemplate;
+    }
+  }
+  return challenge.challengeTemplate ?? null;
 };
 
 const resolveChallengeProficiency = (
@@ -137,6 +275,308 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
   }
   return fallback;
 };
+
+const prettyJson = (value: unknown): string =>
+  JSON.stringify(value ?? [], null, 2);
+
+const parseIntegerString = (value: string, fallback = 0): number => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseJsonField = <T,>(label: string, value: string): T => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+};
+
+const damageAffinityOptions = [
+  'physical',
+  'fire',
+  'ice',
+  'lightning',
+  'poison',
+  'arcane',
+  'holy',
+  'shadow',
+] as const;
+
+const emptyChallengeTemplateForm = (): ChallengeTemplateFormState => ({
+  locationArchetypeId: '',
+  question: '',
+  description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  scaleWithUserLevel: false,
+  rewardMode: 'random',
+  randomRewardSize: 'small',
+  rewardExperience: '0',
+  reward: '0',
+  inventoryItemId: '',
+  itemChoiceRewardsJson: '[]',
+  submissionType: 'photo',
+  difficulty: '0',
+  statTags: '',
+  proficiency: '',
+});
+
+const challengeTemplateFormFromRecord = (
+  record: ChallengeTemplateRecord
+): ChallengeTemplateFormState => ({
+  locationArchetypeId: record.locationArchetypeId ?? '',
+  question: record.question ?? '',
+  description: record.description ?? '',
+  imageUrl: record.imageUrl ?? '',
+  thumbnailUrl: record.thumbnailUrl ?? '',
+  scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
+  rewardMode: record.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    record.randomRewardSize === 'medium' || record.randomRewardSize === 'large'
+      ? record.randomRewardSize
+      : 'small',
+  rewardExperience: String(record.rewardExperience ?? 0),
+  reward: String(record.reward ?? 0),
+  inventoryItemId:
+    record.inventoryItemId !== undefined && record.inventoryItemId !== null
+      ? String(record.inventoryItemId)
+      : '',
+  itemChoiceRewardsJson: prettyJson(record.itemChoiceRewards),
+  submissionType:
+    record.submissionType === 'text' || record.submissionType === 'video'
+      ? record.submissionType
+      : 'photo',
+  difficulty: String(record.difficulty ?? 0),
+  statTags: (record.statTags ?? []).join(', '),
+  proficiency: record.proficiency ?? '',
+});
+
+const buildChallengeTemplatePayloadFromForm = (
+  form: ChallengeTemplateFormState
+) => ({
+  locationArchetypeId: form.locationArchetypeId,
+  question: form.question.trim(),
+  description: form.description.trim(),
+  imageUrl: form.imageUrl.trim(),
+  thumbnailUrl: form.thumbnailUrl.trim(),
+  scaleWithUserLevel: form.scaleWithUserLevel,
+  rewardMode: form.rewardMode,
+  randomRewardSize: form.randomRewardSize,
+  rewardExperience: parseIntegerString(form.rewardExperience, 0),
+  reward: parseIntegerString(form.reward, 0),
+  inventoryItemId: form.inventoryItemId.trim()
+    ? parseIntegerString(form.inventoryItemId, 0)
+    : null,
+  itemChoiceRewards: parseJsonField<unknown[]>(
+    'Challenge item choice rewards',
+    form.itemChoiceRewardsJson
+  ),
+  submissionType: form.submissionType,
+  difficulty: parseIntegerString(form.difficulty, 0),
+  statTags: form.statTags
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+  proficiency: form.proficiency.trim(),
+});
+
+const emptyScenarioTemplateForm = (): ScenarioTemplateFormState => ({
+  prompt: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  scaleWithUserLevel: false,
+  rewardMode: 'random',
+  randomRewardSize: 'small',
+  difficulty: '24',
+  rewardExperience: '0',
+  rewardGold: '0',
+  openEnded: false,
+  failurePenaltyMode: 'shared',
+  failureHealthDrainType: 'none',
+  failureHealthDrainValue: '0',
+  failureManaDrainType: 'none',
+  failureManaDrainValue: '0',
+  failureStatusesJson: '[]',
+  successRewardMode: 'shared',
+  successHealthRestoreType: 'none',
+  successHealthRestoreValue: '0',
+  successManaRestoreType: 'none',
+  successManaRestoreValue: '0',
+  successStatusesJson: '[]',
+  optionsJson: '[]',
+  itemRewardsJson: '[]',
+  itemChoiceRewardsJson: '[]',
+  spellRewardsJson: '[]',
+});
+
+const scenarioTemplateFormFromRecord = (
+  record: ScenarioTemplateRecord
+): ScenarioTemplateFormState => ({
+  prompt: record.prompt ?? '',
+  imageUrl: record.imageUrl ?? '',
+  thumbnailUrl: record.thumbnailUrl ?? '',
+  scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
+  rewardMode: record.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    record.randomRewardSize === 'medium' || record.randomRewardSize === 'large'
+      ? record.randomRewardSize
+      : 'small',
+  difficulty: String(record.difficulty ?? 0),
+  rewardExperience: String(record.rewardExperience ?? 0),
+  rewardGold: String(record.rewardGold ?? 0),
+  openEnded: Boolean(record.openEnded),
+  failurePenaltyMode:
+    record.failurePenaltyMode === 'individual' ? 'individual' : 'shared',
+  failureHealthDrainType:
+    record.failureHealthDrainType === 'flat' ||
+    record.failureHealthDrainType === 'percent'
+      ? record.failureHealthDrainType
+      : 'none',
+  failureHealthDrainValue: String(record.failureHealthDrainValue ?? 0),
+  failureManaDrainType:
+    record.failureManaDrainType === 'flat' ||
+    record.failureManaDrainType === 'percent'
+      ? record.failureManaDrainType
+      : 'none',
+  failureManaDrainValue: String(record.failureManaDrainValue ?? 0),
+  failureStatusesJson: prettyJson(record.failureStatuses),
+  successRewardMode:
+    record.successRewardMode === 'individual' ? 'individual' : 'shared',
+  successHealthRestoreType:
+    record.successHealthRestoreType === 'flat' ||
+    record.successHealthRestoreType === 'percent'
+      ? record.successHealthRestoreType
+      : 'none',
+  successHealthRestoreValue: String(record.successHealthRestoreValue ?? 0),
+  successManaRestoreType:
+    record.successManaRestoreType === 'flat' ||
+    record.successManaRestoreType === 'percent'
+      ? record.successManaRestoreType
+      : 'none',
+  successManaRestoreValue: String(record.successManaRestoreValue ?? 0),
+  successStatusesJson: prettyJson(record.successStatuses),
+  optionsJson: prettyJson(record.options),
+  itemRewardsJson: prettyJson(record.itemRewards),
+  itemChoiceRewardsJson: prettyJson(record.itemChoiceRewards),
+  spellRewardsJson: prettyJson(record.spellRewards),
+});
+
+const buildScenarioTemplatePayloadFromForm = (
+  form: ScenarioTemplateFormState
+) => ({
+  prompt: form.prompt.trim(),
+  imageUrl: form.imageUrl.trim(),
+  thumbnailUrl: form.thumbnailUrl.trim(),
+  scaleWithUserLevel: form.scaleWithUserLevel,
+  rewardMode: form.rewardMode,
+  randomRewardSize: form.randomRewardSize,
+  difficulty: parseIntegerString(form.difficulty, 0),
+  rewardExperience: parseIntegerString(form.rewardExperience, 0),
+  rewardGold: parseIntegerString(form.rewardGold, 0),
+  openEnded: form.openEnded,
+  failurePenaltyMode: form.failurePenaltyMode,
+  failureHealthDrainType: form.failureHealthDrainType,
+  failureHealthDrainValue: parseIntegerString(form.failureHealthDrainValue, 0),
+  failureManaDrainType: form.failureManaDrainType,
+  failureManaDrainValue: parseIntegerString(form.failureManaDrainValue, 0),
+  failureStatuses: parseJsonField<unknown[]>(
+    'Scenario failure statuses',
+    form.failureStatusesJson
+  ),
+  successRewardMode: form.successRewardMode,
+  successHealthRestoreType: form.successHealthRestoreType,
+  successHealthRestoreValue: parseIntegerString(
+    form.successHealthRestoreValue,
+    0
+  ),
+  successManaRestoreType: form.successManaRestoreType,
+  successManaRestoreValue: parseIntegerString(
+    form.successManaRestoreValue,
+    0
+  ),
+  successStatuses: parseJsonField<unknown[]>(
+    'Scenario success statuses',
+    form.successStatusesJson
+  ),
+  options: parseJsonField<unknown[]>(
+    'Scenario options',
+    form.optionsJson
+  ),
+  itemRewards: parseJsonField<unknown[]>(
+    'Scenario item rewards',
+    form.itemRewardsJson
+  ),
+  itemChoiceRewards: parseJsonField<unknown[]>(
+    'Scenario item choice rewards',
+    form.itemChoiceRewardsJson
+  ),
+  spellRewards: parseJsonField<unknown[]>(
+    'Scenario spell rewards',
+    form.spellRewardsJson
+  ),
+});
+
+const emptyMonsterTemplateForm = (): MonsterTemplateFormState => ({
+  monsterType: 'monster',
+  name: '',
+  description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  baseStrength: '10',
+  baseDexterity: '10',
+  baseConstitution: '10',
+  baseIntelligence: '10',
+  baseWisdom: '10',
+  baseCharisma: '10',
+  strongAgainstAffinity: '',
+  weakAgainstAffinity: '',
+  spellIds: [],
+  techniqueIds: [],
+});
+
+const monsterTemplateFormFromRecord = (
+  template: MonsterTemplateRecord
+): MonsterTemplateFormState => ({
+  monsterType: template.monsterType ?? 'monster',
+  name: template.name ?? '',
+  description: template.description ?? '',
+  imageUrl: template.imageUrl ?? '',
+  thumbnailUrl: template.thumbnailUrl ?? '',
+  baseStrength: String(template.baseStrength ?? 10),
+  baseDexterity: String(template.baseDexterity ?? 10),
+  baseConstitution: String(template.baseConstitution ?? 10),
+  baseIntelligence: String(template.baseIntelligence ?? 10),
+  baseWisdom: String(template.baseWisdom ?? 10),
+  baseCharisma: String(template.baseCharisma ?? 10),
+  strongAgainstAffinity: template.strongAgainstAffinity ?? '',
+  weakAgainstAffinity: template.weakAgainstAffinity ?? '',
+  spellIds: (template.spells ?? [])
+    .filter((spell) => (spell.abilityType ?? 'spell') !== 'technique')
+    .map((spell) => spell.id),
+  techniqueIds: (template.spells ?? [])
+    .filter((spell) => (spell.abilityType ?? 'spell') === 'technique')
+    .map((spell) => spell.id),
+});
+
+const buildMonsterTemplatePayloadFromForm = (
+  form: MonsterTemplateFormState
+) => ({
+  monsterType: form.monsterType,
+  name: form.name.trim(),
+  description: form.description.trim(),
+  imageUrl: form.imageUrl.trim(),
+  thumbnailUrl: form.thumbnailUrl.trim(),
+  baseStrength: parseIntegerString(form.baseStrength, 10),
+  baseDexterity: parseIntegerString(form.baseDexterity, 10),
+  baseConstitution: parseIntegerString(form.baseConstitution, 10),
+  baseIntelligence: parseIntegerString(form.baseIntelligence, 10),
+  baseWisdom: parseIntegerString(form.baseWisdom, 10),
+  baseCharisma: parseIntegerString(form.baseCharisma, 10),
+  strongAgainstAffinity: form.strongAgainstAffinity.trim(),
+  weakAgainstAffinity: form.weakAgainstAffinity.trim(),
+  spellIds: Array.from(new Set([...form.spellIds, ...form.techniqueIds])),
+});
 
 const isPendingQuestGenerationStatus = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
@@ -869,6 +1309,13 @@ interface QuestNodeInspectorProps {
     challenge: QuestArchetypeChallenge,
     allowsTemplate?: boolean
   ) => void;
+  onEditChallengeTemplate: (
+    templateId: string,
+    sourceLabel: string,
+    lockedLocationArchetypeId?: string | null
+  ) => void;
+  onEditScenarioTemplate: (templateId: string, sourceLabel: string) => void;
+  onEditMonsterTemplate: (templateId: string, sourceLabel: string) => void;
   onSelectNode: (nodeId: string) => void;
 }
 
@@ -883,6 +1330,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   addChallengeToQuestArchetype,
   onSaveNode,
   onEditChallenge,
+  onEditChallengeTemplate,
+  onEditScenarioTemplate,
+  onEditMonsterTemplate,
   onSelectNode,
 }) => {
   const nodeSummary = describeQuestArchetypeNode(
@@ -917,6 +1367,12 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   const availableChallengeTemplates = filterChallengeTemplatesForLocation(
     challengeTemplates,
     node.locationArchetypeId
+  );
+  const selectedScenarioTemplate = scenarioTemplates.find(
+    (template) => template.id === nodeEditor.scenarioTemplateId
+  );
+  const selectedMonsterTemplates = monsterTemplates.filter((template) =>
+    nodeEditor.monsterTemplateIds.includes(template.id)
   );
 
   const renderNodeConfigFields = (
@@ -1126,6 +1582,19 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             </div>
           </div>
           <div className="qa-inline">
+            {nodeEditor.nodeType === 'scenario' && selectedScenarioTemplate && (
+              <button
+                className="qa-btn qa-btn-ghost"
+                onClick={() =>
+                  onEditScenarioTemplate(
+                    selectedScenarioTemplate.id,
+                    `Scenario node ${pathLabel}`
+                  )
+                }
+              >
+                Edit Scenario Template
+              </button>
+            )}
             <button
               className="qa-btn qa-btn-outline"
               onClick={() =>
@@ -1145,6 +1614,28 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
         <div className="qa-form-grid" style={{ marginTop: 18 }}>
           {renderNodeConfigFields(nodeEditor, setNodeEditor, 'Node')}
         </div>
+        {nodeEditor.nodeType === 'monster_encounter' &&
+          selectedMonsterTemplates.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div className="qa-label">Linked Monster Templates</div>
+              <div className="qa-inline" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+                {selectedMonsterTemplates.map((template) => (
+                  <button
+                    key={`inline-monster-template-${template.id}`}
+                    className="qa-btn qa-btn-ghost"
+                    onClick={() =>
+                      onEditMonsterTemplate(
+                        template.id,
+                        `Monster node ${pathLabel}`
+                      )
+                    }
+                  >
+                    Edit {template.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
       </div>
 
       <div className="qa-card">
@@ -1286,12 +1777,28 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                         )}
                       </div>
                     </div>
-                    <button
-                      className="qa-btn qa-btn-ghost"
-                      onClick={() => onEditChallenge(challenge, !isBranchOnlyNode)}
-                    >
-                      Edit
-                    </button>
+                    <div className="qa-inline" style={{ flexWrap: 'wrap' }}>
+                      <button
+                        className="qa-btn qa-btn-ghost"
+                        onClick={() => onEditChallenge(challenge, !isBranchOnlyNode)}
+                      >
+                        Edit
+                      </button>
+                      {!isBranchOnlyNode && challengeTemplate && (
+                        <button
+                          className="qa-btn qa-btn-outline"
+                          onClick={() =>
+                            onEditChallengeTemplate(
+                              challengeTemplate.id,
+                              `Challenge ${pathLabel}.${index + 1}`,
+                              node.locationArchetypeId
+                            )
+                          }
+                        >
+                          Edit Template
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {challenge.unlockedNode ? (
                     <div className="qa-route-branch-footer">
@@ -1625,6 +2132,17 @@ export const QuestArchetypeComponent = () => {
     useState<boolean>(false);
   const [editChallengeProficiency, setEditChallengeProficiency] =
     useState<string>('');
+  const [inlineEditor, setInlineEditor] =
+    useState<QuestArchetypeInlineEditorState | null>(null);
+  const [inlineEditorError, setInlineEditorError] = useState<string>('');
+  const [inlineEditorSuccess, setInlineEditorSuccess] = useState<string>('');
+  const [inlineEditorSaving, setInlineEditorSaving] = useState<boolean>(false);
+  const [challengeTemplateForm, setChallengeTemplateForm] =
+    useState<ChallengeTemplateFormState>(emptyChallengeTemplateForm());
+  const [scenarioTemplateForm, setScenarioTemplateForm] =
+    useState<ScenarioTemplateFormState>(emptyScenarioTemplateForm());
+  const [monsterTemplateForm, setMonsterTemplateForm] =
+    useState<MonsterTemplateFormState>(emptyMonsterTemplateForm());
   const [proficiencySearch, setProficiencySearch] = useState<string>('');
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [archetypeSearch, setArchetypeSearch] = useState<string>('');
@@ -1717,6 +2235,36 @@ export const QuestArchetypeComponent = () => {
     [flowRoutes, selectedNodeId]
   );
 
+  const activeChallengeTemplate = useMemo(
+    () =>
+      inlineEditor?.kind === 'challenge'
+        ? challengeTemplates.find(
+            (template) => template.id === inlineEditor.templateId
+          ) ?? null
+        : null,
+    [challengeTemplates, inlineEditor]
+  );
+
+  const activeScenarioTemplate = useMemo(
+    () =>
+      inlineEditor?.kind === 'scenario'
+        ? scenarioTemplates.find(
+            (template) => template.id === inlineEditor.templateId
+          ) ?? null
+        : null,
+    [inlineEditor, scenarioTemplates]
+  );
+
+  const activeMonsterTemplate = useMemo(
+    () =>
+      inlineEditor?.kind === 'monster'
+        ? monsterTemplates.find(
+            (template) => template.id === inlineEditor.templateId
+          ) ?? null
+        : null,
+    [inlineEditor, monsterTemplates]
+  );
+
   useEffect(() => {
     if (questArchetypes.length === 0) {
       setSelectedArchetypeId('');
@@ -1740,6 +2288,43 @@ export const QuestArchetypeComponent = () => {
       setSelectedNodeId(flowRoutes[0].id);
     }
   }, [flowRoutes, selectedNodeId]);
+
+  useEffect(() => {
+    setInlineEditor(null);
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+  }, [selectedArchetypeId, selectedNodeId]);
+
+  useEffect(() => {
+    if (!activeChallengeTemplate) {
+      setChallengeTemplateForm(emptyChallengeTemplateForm());
+      return;
+    }
+    const nextForm = challengeTemplateFormFromRecord(activeChallengeTemplate);
+    if (
+      inlineEditor?.kind === 'challenge' &&
+      inlineEditor.lockedLocationArchetypeId
+    ) {
+      nextForm.locationArchetypeId = inlineEditor.lockedLocationArchetypeId;
+    }
+    setChallengeTemplateForm(nextForm);
+  }, [activeChallengeTemplate, inlineEditor]);
+
+  useEffect(() => {
+    if (!activeScenarioTemplate) {
+      setScenarioTemplateForm(emptyScenarioTemplateForm());
+      return;
+    }
+    setScenarioTemplateForm(scenarioTemplateFormFromRecord(activeScenarioTemplate));
+  }, [activeScenarioTemplate]);
+
+  useEffect(() => {
+    if (!activeMonsterTemplate) {
+      setMonsterTemplateForm(emptyMonsterTemplateForm());
+      return;
+    }
+    setMonsterTemplateForm(monsterTemplateFormFromRecord(activeMonsterTemplate));
+  }, [activeMonsterTemplate]);
 
   useEffect(() => {
     if (!shouldShowGenerateQuestModal) {
@@ -1920,6 +2505,162 @@ export const QuestArchetypeComponent = () => {
       resolveChallengeProficiency(selected, challengeTemplates)
     );
     setProficiencySearch(resolveChallengeProficiency(selected, challengeTemplates));
+  };
+
+  const openInlineChallengeTemplateEditor = (
+    templateId: string,
+    sourceLabel: string,
+    lockedLocationArchetypeId?: string | null
+  ) => {
+    setInlineEditor({
+      kind: 'challenge',
+      templateId,
+      sourceLabel,
+      lockedLocationArchetypeId: lockedLocationArchetypeId ?? null,
+    });
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+  };
+
+  const openInlineScenarioTemplateEditor = (
+    templateId: string,
+    sourceLabel: string
+  ) => {
+    setInlineEditor({
+      kind: 'scenario',
+      templateId,
+      sourceLabel,
+    });
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+  };
+
+  const openInlineMonsterTemplateEditor = (
+    templateId: string,
+    sourceLabel: string
+  ) => {
+    setInlineEditor({
+      kind: 'monster',
+      templateId,
+      sourceLabel,
+    });
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+  };
+
+  const handleSaveInlineChallengeTemplate = async () => {
+    if (!activeChallengeTemplate || inlineEditor?.kind !== 'challenge') {
+      return;
+    }
+    setInlineEditorSaving(true);
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+    try {
+      const payload = buildChallengeTemplatePayloadFromForm(challengeTemplateForm);
+      const updated = await apiClient.put<ChallengeTemplateRecord>(
+        `/sonar/challenge-templates/${activeChallengeTemplate.id}`,
+        payload
+      );
+      setChallengeTemplates((prev) =>
+        prev.map((template) =>
+          template.id === updated.id ? { ...template, ...updated } : template
+        )
+      );
+      setInlineEditorSuccess('Challenge template saved.');
+    } catch (error) {
+      console.error('Failed to save challenge template inline', error);
+      setInlineEditorError(
+        error instanceof Error
+          ? error.message
+          : extractApiErrorMessage(error, 'Failed to save challenge template.')
+      );
+    } finally {
+      setInlineEditorSaving(false);
+    }
+  };
+
+  const handleSaveInlineScenarioTemplate = async () => {
+    if (!activeScenarioTemplate || inlineEditor?.kind !== 'scenario') {
+      return;
+    }
+    setInlineEditorSaving(true);
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+    try {
+      const payload = buildScenarioTemplatePayloadFromForm(scenarioTemplateForm);
+      const updated = await apiClient.put<ScenarioTemplateRecord>(
+        `/sonar/scenario-templates/${activeScenarioTemplate.id}`,
+        payload
+      );
+      setScenarioTemplates((prev) =>
+        prev.map((template) =>
+          template.id === updated.id ? { ...template, ...updated } : template
+        )
+      );
+      setInlineEditorSuccess('Scenario template saved.');
+    } catch (error) {
+      console.error('Failed to save scenario template inline', error);
+      setInlineEditorError(
+        error instanceof Error
+          ? error.message
+          : extractApiErrorMessage(error, 'Failed to save scenario template.')
+      );
+    } finally {
+      setInlineEditorSaving(false);
+    }
+  };
+
+  const handleSaveInlineMonsterTemplate = async () => {
+    if (!activeMonsterTemplate || inlineEditor?.kind !== 'monster') {
+      return;
+    }
+    setInlineEditorSaving(true);
+    setInlineEditorError('');
+    setInlineEditorSuccess('');
+    try {
+      const payload = buildMonsterTemplatePayloadFromForm(monsterTemplateForm);
+      if (!payload.name) {
+        throw new Error('Monster template name is required.');
+      }
+      if (
+        payload.baseStrength <= 0 ||
+        payload.baseDexterity <= 0 ||
+        payload.baseConstitution <= 0 ||
+        payload.baseIntelligence <= 0 ||
+        payload.baseWisdom <= 0 ||
+        payload.baseCharisma <= 0
+      ) {
+        throw new Error('All monster base stats must be positive.');
+      }
+      if (
+        payload.strongAgainstAffinity &&
+        payload.strongAgainstAffinity === payload.weakAgainstAffinity
+      ) {
+        throw new Error(
+          'Strong against and weak against affinities must be different.'
+        );
+      }
+
+      const updated = await apiClient.put<MonsterTemplateRecord>(
+        `/sonar/monster-templates/${activeMonsterTemplate.id}`,
+        payload
+      );
+      setMonsterTemplates((prev) =>
+        prev.map((template) =>
+          template.id === updated.id ? { ...template, ...updated } : template
+        )
+      );
+      setInlineEditorSuccess('Monster template saved.');
+    } catch (error) {
+      console.error('Failed to save monster template inline', error);
+      setInlineEditorError(
+        error instanceof Error
+          ? error.message
+          : extractApiErrorMessage(error, 'Failed to save monster template.')
+      );
+    } finally {
+      setInlineEditorSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -2398,21 +3139,1199 @@ export const QuestArchetypeComponent = () => {
                       </div>
                       <div className="qa-workbench-main">
                         {selectedFlowNode ? (
-                          <QuestNodeInspector
-                            node={selectedFlowNode.node}
-                            pathLabel={selectedFlowNode.pathLabel}
-                            depth={selectedFlowNode.depth}
-                            locationArchetypes={locationArchetypes}
-                            monsterTemplates={monsterTemplates}
-                            scenarioTemplates={scenarioTemplates}
-                            challengeTemplates={challengeTemplates}
-                            addChallengeToQuestArchetype={
-                              addChallengeToQuestArchetype
-                            }
-                            onSaveNode={updateQuestArchetypeNode}
-                            onEditChallenge={openChallengeEditor}
-                            onSelectNode={setSelectedNodeId}
-                          />
+                          <>
+                            <QuestNodeInspector
+                              node={selectedFlowNode.node}
+                              pathLabel={selectedFlowNode.pathLabel}
+                              depth={selectedFlowNode.depth}
+                              locationArchetypes={locationArchetypes}
+                              monsterTemplates={monsterTemplates}
+                              scenarioTemplates={scenarioTemplates}
+                              challengeTemplates={challengeTemplates}
+                              addChallengeToQuestArchetype={
+                                addChallengeToQuestArchetype
+                              }
+                              onSaveNode={updateQuestArchetypeNode}
+                              onEditChallenge={openChallengeEditor}
+                              onEditChallengeTemplate={
+                                openInlineChallengeTemplateEditor
+                              }
+                              onEditScenarioTemplate={
+                                openInlineScenarioTemplateEditor
+                              }
+                              onEditMonsterTemplate={
+                                openInlineMonsterTemplateEditor
+                              }
+                              onSelectNode={setSelectedNodeId}
+                            />
+                          {inlineEditor?.kind === 'challenge' &&
+                            activeChallengeTemplate && (
+                              <div className="qa-card" style={{ marginTop: 18 }}>
+                                <div className="qa-card-header">
+                                  <div>
+                                    <div className="qa-card-title">
+                                      Challenge Template Editor
+                                    </div>
+                                    <div className="qa-meta">
+                                      Editing {activeChallengeTemplate.question} for{' '}
+                                      {inlineEditor.sourceLabel}.
+                                    </div>
+                                  </div>
+                                  <div className="qa-inline">
+                                    <span className="qa-chip muted">
+                                      {locationArchetypes.find(
+                                        (entry) =>
+                                          entry.id ===
+                                          activeChallengeTemplate.locationArchetypeId
+                                      )?.name ?? 'Unknown location'}
+                                    </span>
+                                    <button
+                                      className="qa-btn qa-btn-outline"
+                                      onClick={() => setInlineEditor(null)}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                                <div
+                                  className="qa-form-grid"
+                                  style={{ marginTop: 18 }}
+                                >
+                                  <div className="qa-field">
+                                    <div className="qa-label">Location Archetype</div>
+                                    <select
+                                      className="qa-select"
+                                      value={challengeTemplateForm.locationArchetypeId}
+                                      disabled={Boolean(
+                                        inlineEditor.lockedLocationArchetypeId
+                                      )}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          locationArchetypeId: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Select a location archetype</option>
+                                      {locationArchetypes.map((archetype) => (
+                                        <option
+                                          key={`challenge-template-location-${archetype.id}`}
+                                          value={archetype.id}
+                                        >
+                                          {archetype.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {inlineEditor.lockedLocationArchetypeId && (
+                                      <div className="qa-helper">
+                                        Locked to the location archetype used by this
+                                        branch so the quest flow stays compatible.
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Submission Type</div>
+                                    <select
+                                      className="qa-select"
+                                      value={challengeTemplateForm.submissionType}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          submissionType: e.target.value as
+                                            | 'photo'
+                                            | 'text'
+                                            | 'video',
+                                        }))
+                                      }
+                                    >
+                                      <option value="photo">Photo</option>
+                                      <option value="text">Text</option>
+                                      <option value="video">Video</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Question</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={challengeTemplateForm.question}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          question: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Description</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={5}
+                                      value={challengeTemplateForm.description}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          description: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Image URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={challengeTemplateForm.imageUrl}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          imageUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Thumbnail URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={challengeTemplateForm.thumbnailUrl}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          thumbnailUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Difficulty</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={challengeTemplateForm.difficulty}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          difficulty: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Proficiency</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={challengeTemplateForm.proficiency}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          proficiency: e.target.value,
+                                        }))
+                                      }
+                                      list="qa-proficiency-options"
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward Mode</div>
+                                    <select
+                                      className="qa-select"
+                                      value={challengeTemplateForm.rewardMode}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          rewardMode: e.target.value as
+                                            | 'explicit'
+                                            | 'random',
+                                        }))
+                                      }
+                                    >
+                                      <option value="random">Random</option>
+                                      <option value="explicit">Explicit</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Random Reward Size</div>
+                                    <select
+                                      className="qa-select"
+                                      value={challengeTemplateForm.randomRewardSize}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          randomRewardSize: e.target.value as
+                                            | 'small'
+                                            | 'medium'
+                                            | 'large',
+                                        }))
+                                      }
+                                    >
+                                      <option value="small">Small</option>
+                                      <option value="medium">Medium</option>
+                                      <option value="large">Large</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={challengeTemplateForm.reward}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          reward: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward Experience</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={challengeTemplateForm.rewardExperience}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          rewardExperience: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Inventory Item</div>
+                                    <select
+                                      className="qa-select"
+                                      value={challengeTemplateForm.inventoryItemId}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          inventoryItemId: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">None</option>
+                                      {inventoryItems.map((item) => (
+                                        <option
+                                          key={`challenge-template-item-${item.id}`}
+                                          value={item.id}
+                                        >
+                                          {item.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Stat Tags</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={challengeTemplateForm.statTags}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          statTags: e.target.value,
+                                        }))
+                                      }
+                                      placeholder="strength, dexterity"
+                                    />
+                                  </div>
+                                  <div
+                                    className="qa-field"
+                                    style={{ gridColumn: '1 / -1' }}
+                                  >
+                                    <label className="qa-inline">
+                                      <input
+                                        type="checkbox"
+                                        checked={
+                                          challengeTemplateForm.scaleWithUserLevel
+                                        }
+                                        onChange={(e) =>
+                                          setChallengeTemplateForm((prev) => ({
+                                            ...prev,
+                                            scaleWithUserLevel:
+                                              e.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="qa-label" style={{ marginBottom: 0 }}>
+                                        Scale with user level
+                                      </span>
+                                    </label>
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Item Choice Rewards JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={8}
+                                      value={challengeTemplateForm.itemChoiceRewardsJson}
+                                      onChange={(e) =>
+                                        setChallengeTemplateForm((prev) => ({
+                                          ...prev,
+                                          itemChoiceRewardsJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                {inlineEditorError && (
+                                  <div className="qa-chip danger" style={{ marginTop: 16 }}>
+                                    {inlineEditorError}
+                                  </div>
+                                )}
+                                {inlineEditorSuccess && (
+                                  <div className="qa-chip success" style={{ marginTop: 16 }}>
+                                    {inlineEditorSuccess}
+                                  </div>
+                                )}
+                                <div className="qa-footer">
+                                  <button
+                                    className="qa-btn qa-btn-outline"
+                                    onClick={() =>
+                                      setChallengeTemplateForm(
+                                        challengeTemplateFormFromRecord(
+                                          activeChallengeTemplate
+                                        )
+                                      )
+                                    }
+                                  >
+                                    Reset
+                                  </button>
+                                  <button
+                                    className="qa-btn qa-btn-primary"
+                                    disabled={inlineEditorSaving}
+                                    onClick={handleSaveInlineChallengeTemplate}
+                                  >
+                                    {inlineEditorSaving
+                                      ? 'Saving...'
+                                      : 'Save Challenge Template'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          {inlineEditor?.kind === 'scenario' &&
+                            activeScenarioTemplate && (
+                              <div className="qa-card" style={{ marginTop: 18 }}>
+                                <div className="qa-card-header">
+                                  <div>
+                                    <div className="qa-card-title">
+                                      Scenario Template Editor
+                                    </div>
+                                    <div className="qa-meta">
+                                      Editing the linked scenario template for{' '}
+                                      {inlineEditor.sourceLabel}.
+                                    </div>
+                                  </div>
+                                  <button
+                                    className="qa-btn qa-btn-outline"
+                                    onClick={() => setInlineEditor(null)}
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                                <div className="qa-form-grid" style={{ marginTop: 18 }}>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Prompt</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={4}
+                                      value={scenarioTemplateForm.prompt}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          prompt: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Image URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.imageUrl}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          imageUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Thumbnail URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.thumbnailUrl}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          thumbnailUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Difficulty</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.difficulty}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          difficulty: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward Mode</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.rewardMode}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          rewardMode: e.target.value as
+                                            | 'explicit'
+                                            | 'random',
+                                        }))
+                                      }
+                                    >
+                                      <option value="random">Random</option>
+                                      <option value="explicit">Explicit</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Random Reward Size</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.randomRewardSize}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          randomRewardSize: e.target.value as
+                                            | 'small'
+                                            | 'medium'
+                                            | 'large',
+                                        }))
+                                      }
+                                    >
+                                      <option value="small">Small</option>
+                                      <option value="medium">Medium</option>
+                                      <option value="large">Large</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward Experience</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.rewardExperience}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          rewardExperience: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Reward Gold</div>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.rewardGold}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          rewardGold: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <label className="qa-inline">
+                                      <input
+                                        type="checkbox"
+                                        checked={scenarioTemplateForm.openEnded}
+                                        onChange={(e) =>
+                                          setScenarioTemplateForm((prev) => ({
+                                            ...prev,
+                                            openEnded: e.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="qa-label" style={{ marginBottom: 0 }}>
+                                        Open ended
+                                      </span>
+                                    </label>
+                                  </div>
+                                  <div className="qa-field">
+                                    <label className="qa-inline">
+                                      <input
+                                        type="checkbox"
+                                        checked={
+                                          scenarioTemplateForm.scaleWithUserLevel
+                                        }
+                                        onChange={(e) =>
+                                          setScenarioTemplateForm((prev) => ({
+                                            ...prev,
+                                            scaleWithUserLevel:
+                                              e.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="qa-label" style={{ marginBottom: 0 }}>
+                                        Scale with user level
+                                      </span>
+                                    </label>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Failure Penalty Mode</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.failurePenaltyMode}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failurePenaltyMode: e.target.value as
+                                            | 'shared'
+                                            | 'individual',
+                                        }))
+                                      }
+                                    >
+                                      <option value="shared">Shared</option>
+                                      <option value="individual">Individual</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Failure Health Drain</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.failureHealthDrainType}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failureHealthDrainType: e.target.value as
+                                            | 'none'
+                                            | 'flat'
+                                            | 'percent',
+                                        }))
+                                      }
+                                    >
+                                      <option value="none">None</option>
+                                      <option value="flat">Flat</option>
+                                      <option value="percent">Percent</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Failure Health Value</div>
+                                    <input
+                                      type="number"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.failureHealthDrainValue}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failureHealthDrainValue: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Failure Mana Drain</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.failureManaDrainType}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failureManaDrainType: e.target.value as
+                                            | 'none'
+                                            | 'flat'
+                                            | 'percent',
+                                        }))
+                                      }
+                                    >
+                                      <option value="none">None</option>
+                                      <option value="flat">Flat</option>
+                                      <option value="percent">Percent</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Failure Mana Value</div>
+                                    <input
+                                      type="number"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.failureManaDrainValue}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failureManaDrainValue: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Success Reward Mode</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.successRewardMode}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successRewardMode: e.target.value as
+                                            | 'shared'
+                                            | 'individual',
+                                        }))
+                                      }
+                                    >
+                                      <option value="shared">Shared</option>
+                                      <option value="individual">Individual</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Success Health Restore</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.successHealthRestoreType}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successHealthRestoreType:
+                                            e.target.value as
+                                              | 'none'
+                                              | 'flat'
+                                              | 'percent',
+                                        }))
+                                      }
+                                    >
+                                      <option value="none">None</option>
+                                      <option value="flat">Flat</option>
+                                      <option value="percent">Percent</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Success Health Value</div>
+                                    <input
+                                      type="number"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.successHealthRestoreValue}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successHealthRestoreValue:
+                                            e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Success Mana Restore</div>
+                                    <select
+                                      className="qa-select"
+                                      value={scenarioTemplateForm.successManaRestoreType}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successManaRestoreType:
+                                            e.target.value as
+                                              | 'none'
+                                              | 'flat'
+                                              | 'percent',
+                                        }))
+                                      }
+                                    >
+                                      <option value="none">None</option>
+                                      <option value="flat">Flat</option>
+                                      <option value="percent">Percent</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Success Mana Value</div>
+                                    <input
+                                      type="number"
+                                      className="qa-input"
+                                      value={scenarioTemplateForm.successManaRestoreValue}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successManaRestoreValue:
+                                            e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Failure Statuses JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={6}
+                                      value={scenarioTemplateForm.failureStatusesJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          failureStatusesJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Success Statuses JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={6}
+                                      value={scenarioTemplateForm.successStatusesJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          successStatusesJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Options JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={8}
+                                      value={scenarioTemplateForm.optionsJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          optionsJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Item Rewards JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={6}
+                                      value={scenarioTemplateForm.itemRewardsJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          itemRewardsJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Item Choice Rewards JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={6}
+                                      value={scenarioTemplateForm.itemChoiceRewardsJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          itemChoiceRewardsJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Spell Rewards JSON</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={6}
+                                      value={scenarioTemplateForm.spellRewardsJson}
+                                      onChange={(e) =>
+                                        setScenarioTemplateForm((prev) => ({
+                                          ...prev,
+                                          spellRewardsJson: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                {inlineEditorError && (
+                                  <div className="qa-chip danger" style={{ marginTop: 16 }}>
+                                    {inlineEditorError}
+                                  </div>
+                                )}
+                                {inlineEditorSuccess && (
+                                  <div className="qa-chip success" style={{ marginTop: 16 }}>
+                                    {inlineEditorSuccess}
+                                  </div>
+                                )}
+                                <div className="qa-footer">
+                                  <button
+                                    className="qa-btn qa-btn-outline"
+                                    onClick={() =>
+                                      setScenarioTemplateForm(
+                                        scenarioTemplateFormFromRecord(
+                                          activeScenarioTemplate
+                                        )
+                                      )
+                                    }
+                                  >
+                                    Reset
+                                  </button>
+                                  <button
+                                    className="qa-btn qa-btn-primary"
+                                    disabled={inlineEditorSaving}
+                                    onClick={handleSaveInlineScenarioTemplate}
+                                  >
+                                    {inlineEditorSaving
+                                      ? 'Saving...'
+                                      : 'Save Scenario Template'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          {inlineEditor?.kind === 'monster' &&
+                            activeMonsterTemplate && (
+                              <div className="qa-card" style={{ marginTop: 18 }}>
+                                <div className="qa-card-header">
+                                  <div>
+                                    <div className="qa-card-title">
+                                      Monster Template Editor
+                                    </div>
+                                    <div className="qa-meta">
+                                      Editing the monster template linked from{' '}
+                                      {inlineEditor.sourceLabel}.
+                                    </div>
+                                  </div>
+                                  <div className="qa-inline">
+                                    <span className="qa-chip muted">
+                                      {activeMonsterTemplate.monsterType ?? 'monster'}
+                                    </span>
+                                    <button
+                                      className="qa-btn qa-btn-outline"
+                                      onClick={() => setInlineEditor(null)}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="qa-form-grid" style={{ marginTop: 18 }}>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Monster Type</div>
+                                    <select
+                                      className="qa-select"
+                                      value={monsterTemplateForm.monsterType}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          monsterType: e.target.value as
+                                            | 'monster'
+                                            | 'boss'
+                                            | 'raid',
+                                        }))
+                                      }
+                                    >
+                                      <option value="monster">Standard Monster</option>
+                                      <option value="boss">Boss Monster</option>
+                                      <option value="raid">Raid Monster</option>
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Name</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={monsterTemplateForm.name}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          name: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="qa-label">Description</div>
+                                    <textarea
+                                      className="qa-textarea"
+                                      rows={4}
+                                      value={monsterTemplateForm.description}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          description: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Image URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={monsterTemplateForm.imageUrl}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          imageUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Thumbnail URL</div>
+                                    <input
+                                      type="text"
+                                      className="qa-input"
+                                      value={monsterTemplateForm.thumbnailUrl}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          thumbnailUrl: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Strength</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseStrength}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseStrength: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Dexterity</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseDexterity}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseDexterity: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Constitution</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseConstitution}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseConstitution: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Intelligence</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseIntelligence}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseIntelligence: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Wisdom</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseWisdom}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseWisdom: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Base Charisma</div>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="qa-input"
+                                      value={monsterTemplateForm.baseCharisma}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          baseCharisma: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Strong Against</div>
+                                    <select
+                                      className="qa-select"
+                                      value={monsterTemplateForm.strongAgainstAffinity}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          strongAgainstAffinity: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">None</option>
+                                      {damageAffinityOptions.map((affinity) => (
+                                        <option
+                                          key={`monster-strong-${affinity}`}
+                                          value={affinity}
+                                        >
+                                          {affinity}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Weak Against</div>
+                                    <select
+                                      className="qa-select"
+                                      value={monsterTemplateForm.weakAgainstAffinity}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          weakAgainstAffinity: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">None</option>
+                                      {damageAffinityOptions.map((affinity) => (
+                                        <option
+                                          key={`monster-weak-${affinity}`}
+                                          value={affinity}
+                                        >
+                                          {affinity}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Spells</div>
+                                    <select
+                                      className="qa-select"
+                                      multiple
+                                      size={8}
+                                      value={monsterTemplateForm.spellIds}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          spellIds: Array.from(
+                                            e.target.selectedOptions
+                                          ).map((option) => option.value),
+                                        }))
+                                      }
+                                    >
+                                      {spells
+                                        .filter(
+                                          (spell) =>
+                                            (spell.abilityType ?? 'spell') !==
+                                            'technique'
+                                        )
+                                        .map((spell) => (
+                                          <option
+                                            key={`monster-spell-${spell.id}`}
+                                            value={spell.id}
+                                          >
+                                            {spell.name}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </div>
+                                  <div className="qa-field">
+                                    <div className="qa-label">Techniques</div>
+                                    <select
+                                      className="qa-select"
+                                      multiple
+                                      size={8}
+                                      value={monsterTemplateForm.techniqueIds}
+                                      onChange={(e) =>
+                                        setMonsterTemplateForm((prev) => ({
+                                          ...prev,
+                                          techniqueIds: Array.from(
+                                            e.target.selectedOptions
+                                          ).map((option) => option.value),
+                                        }))
+                                      }
+                                    >
+                                      {spells
+                                        .filter(
+                                          (spell) =>
+                                            (spell.abilityType ?? 'spell') ===
+                                            'technique'
+                                        )
+                                        .map((spell) => (
+                                          <option
+                                            key={`monster-technique-${spell.id}`}
+                                            value={spell.id}
+                                          >
+                                            {spell.name}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                {inlineEditorError && (
+                                  <div className="qa-chip danger" style={{ marginTop: 16 }}>
+                                    {inlineEditorError}
+                                  </div>
+                                )}
+                                {inlineEditorSuccess && (
+                                  <div className="qa-chip success" style={{ marginTop: 16 }}>
+                                    {inlineEditorSuccess}
+                                  </div>
+                                )}
+                                <div className="qa-footer">
+                                  <button
+                                    className="qa-btn qa-btn-outline"
+                                    onClick={() =>
+                                      setMonsterTemplateForm(
+                                        monsterTemplateFormFromRecord(
+                                          activeMonsterTemplate
+                                        )
+                                      )
+                                    }
+                                  >
+                                    Reset
+                                  </button>
+                                  <button
+                                    className="qa-btn qa-btn-primary"
+                                    disabled={inlineEditorSaving}
+                                    onClick={handleSaveInlineMonsterTemplate}
+                                  >
+                                    {inlineEditorSaving
+                                      ? 'Saving...'
+                                      : 'Save Monster Template'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
                         ) : (
                           <div className="qa-empty">Select a node to inspect it.</div>
                         )}
@@ -4043,5 +5962,5 @@ export const QuestArchetypeComponent = () => {
         </div>
       )}
     </div>
-  );
-};
+    );
+  };

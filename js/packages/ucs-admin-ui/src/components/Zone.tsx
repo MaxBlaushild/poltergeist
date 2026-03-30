@@ -712,6 +712,21 @@ type ZoneFlavorGenerationJob = {
 const isZoneFlavorPendingStatus = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
 
+type ZoneTagGenerationJob = {
+  id: string;
+  zoneId: string;
+  status: string;
+  contextSnapshot?: string;
+  generatedSummary?: string;
+  selectedTags?: string[];
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const isZoneTagPendingStatus = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
 export const Zone = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -804,6 +819,10 @@ export const Zone = () => {
     null
   );
   const lastCompletedZoneFlavorJobIdRef = useRef<string | null>(null);
+  const [queueingZoneTags, setQueueingZoneTags] = useState(false);
+  const [zoneTagJobs, setZoneTagJobs] = useState<ZoneTagGenerationJob[]>([]);
+  const [zoneTagJobsError, setZoneTagJobsError] = useState<string | null>(null);
+  const lastCompletedZoneTagJobIdRef = useRef<string | null>(null);
   const {
     candidates,
     loading: candidatesLoading,
@@ -925,9 +944,28 @@ export const Zone = () => {
       }
     };
 
+    const fetchZoneTagJobs = async () => {
+      try {
+        const response = await apiClient.get<ZoneTagGenerationJob[]>(
+          `/sonar/admin/zone-tag-generation-jobs?zoneId=${resolvedZoneId}&limit=10`
+        );
+        if (!active) return;
+        setZoneTagJobs(response);
+        setZoneTagJobsError(null);
+      } catch (error) {
+        console.error('Error fetching zone tag jobs:', error);
+        if (!active) return;
+        setZoneTagJobsError('Unable to load zone tag jobs.');
+      }
+    };
+
     loadZoneMapPins();
     fetchZoneFlavorJobs();
-    const interval = window.setInterval(fetchZoneFlavorJobs, 5000);
+    fetchZoneTagJobs();
+    const interval = window.setInterval(() => {
+      fetchZoneFlavorJobs();
+      fetchZoneTagJobs();
+    }, 5000);
     return () => {
       active = false;
       window.clearInterval(interval);
@@ -945,6 +983,18 @@ export const Zone = () => {
     lastCompletedZoneFlavorJobIdRef.current = latestJob.id;
     refreshZones();
   }, [zoneFlavorJobs, refreshZones]);
+
+  useEffect(() => {
+    const latestJob = zoneTagJobs[0];
+    if (!latestJob || latestJob.status !== 'completed') {
+      return;
+    }
+    if (lastCompletedZoneTagJobIdRef.current === latestJob.id) {
+      return;
+    }
+    lastCompletedZoneTagJobIdRef.current = latestJob.id;
+    refreshZones();
+  }, [zoneTagJobs, refreshZones]);
 
   const handleMapClick = (lngLat: mapboxgl.LngLat) => {
     const newPoint: [number, number] = [lngLat.lng, lngLat.lat];
@@ -1223,6 +1273,27 @@ export const Zone = () => {
     }
   };
 
+  const handleGenerateZoneTags = async () => {
+    if (!resolvedZoneId || queueingZoneTags) return;
+    setQueueingZoneTags(true);
+    try {
+      const queuedJob = await apiClient.post<ZoneTagGenerationJob>(
+        '/sonar/admin/zone-tag-generation-jobs',
+        { zoneId: resolvedZoneId }
+      );
+      setZoneTagJobs((prev) => [
+        queuedJob,
+        ...prev.filter((job) => job.id !== queuedJob.id),
+      ]);
+      setZoneTagJobsError(null);
+    } catch (error) {
+      console.error('Error queueing zone tag job:', error);
+      setZoneTagJobsError('Unable to queue zone tag generation.');
+    } finally {
+      setQueueingZoneTags(false);
+    }
+  };
+
   const handleSaveZoneMetadata = async () => {
     if (!resolvedZoneId) {
       return;
@@ -1250,6 +1321,7 @@ export const Zone = () => {
       point.name.toLowerCase().includes(nameFilter.toLowerCase())
   );
   const latestZoneFlavorJob = zoneFlavorJobs[0];
+  const latestZoneTagJob = zoneTagJobs[0];
   const allZoneBoundaries = zones
     .filter(
       (candidateZone) =>
@@ -1579,6 +1651,13 @@ export const Zone = () => {
         >
           {queueingZoneFlavor ? 'Queueing Flavor...' : 'Generate Zone Flavor'}
         </button>
+        <button
+          onClick={handleGenerateZoneTags}
+          disabled={queueingZoneTags}
+          className="bg-violet-600 text-white px-4 py-2 rounded-md hover:bg-violet-700 disabled:bg-violet-300"
+        >
+          {queueingZoneTags ? 'Queueing Tags...' : 'Generate Zone Tags'}
+        </button>
       </div>
 
       {(latestZoneFlavorJob || zoneFlavorJobsError) && (
@@ -1613,6 +1692,66 @@ export const Zone = () => {
               }
             >
               {zoneFlavorJobsError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {(latestZoneTagJob || zoneTagJobsError) && (
+        <div className="mb-6 rounded-lg border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+          {latestZoneTagJob && (
+            <>
+              <div className="font-semibold">
+                Zone tag job: {latestZoneTagJob.status.replace(/_/g, ' ')}
+              </div>
+              {latestZoneTagJob.generatedSummary && (
+                <p className="mt-2 text-violet-900">
+                  {latestZoneTagJob.generatedSummary}
+                </p>
+              )}
+              {(latestZoneTagJob.selectedTags?.length ?? 0) > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(latestZoneTagJob.selectedTags ?? []).map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-medium text-violet-700"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {latestZoneTagJob.errorMessage && (
+                <p className="mt-2 text-red-700">
+                  {latestZoneTagJob.errorMessage}
+                </p>
+              )}
+              {isZoneTagPendingStatus(latestZoneTagJob.status) && (
+                <p className="mt-2 text-violet-800">
+                  The worker is collecting neighborhood context from this
+                  zone&apos;s geometry and points of interest, then selecting
+                  five shared flavor tags.
+                </p>
+              )}
+              {latestZoneTagJob.contextSnapshot && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-violet-700">
+                    Context Used
+                  </summary>
+                  <pre className="mt-2 whitespace-pre-wrap rounded-md border border-violet-100 bg-white p-3 text-xs text-violet-900">
+                    {latestZoneTagJob.contextSnapshot}
+                  </pre>
+                </details>
+              )}
+            </>
+          )}
+          {zoneTagJobsError && (
+            <p
+              className={
+                latestZoneTagJob ? 'mt-2 text-red-700' : 'text-red-700'
+              }
+            >
+              {zoneTagJobsError}
             </p>
           )}
         </div>

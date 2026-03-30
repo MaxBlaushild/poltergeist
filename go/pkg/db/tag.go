@@ -32,7 +32,10 @@ func (h *tagHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Tag, er
 
 func (h *tagHandle) FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]*models.Tag, error) {
 	var tags []*models.Tag
-	if err := h.db.WithContext(ctx).Where("group_id = ?", groupID).Find(&tags).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Where("tag_group_id = ?", groupID).
+		Order("created_at ASC, value ASC").
+		Find(&tags).Error; err != nil {
 		return nil, err
 	}
 	return tags, nil

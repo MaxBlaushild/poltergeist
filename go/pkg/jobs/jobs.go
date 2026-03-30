@@ -31,6 +31,7 @@ const (
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
 	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
+	GenerateZoneTagsTaskType                       = "generate_zone_tags"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
 	GenerateBaseStructureLevelImageTaskType        = "generate_base_structure_level_image"
 	GenerateBaseStructureLevelTopDownImageTaskType = "generate_base_structure_level_top_down_image"
@@ -96,6 +97,10 @@ type GenerateQuestForZoneTaskPayload struct {
 }
 
 type GenerateQuestArchetypeSuggestionsTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateZoneTagsTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
 }
 
