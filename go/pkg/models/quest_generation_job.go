@@ -23,6 +23,7 @@ type QuestGenerationJob struct {
 	QuestGiverCharacterID *uuid.UUID  `json:"questGiverCharacterId,omitempty" gorm:"type:uuid"`
 	Status                string      `json:"status"`
 	TotalCount            int         `json:"totalCount"`
+	StartedCount          int         `json:"startedCount"`
 	CompletedCount        int         `json:"completedCount"`
 	FailedCount           int         `json:"failedCount"`
 	ErrorMessage          *string     `json:"errorMessage"`

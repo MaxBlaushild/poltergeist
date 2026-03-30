@@ -165,9 +165,18 @@ export const ZoneQuestArchetypes = () => {
       });
     } catch (error) {
       console.error('Failed to generate quests', error);
+      const errorMessage =
+        typeof error === 'object' &&
+        error !== null &&
+        'response' in error &&
+        typeof (error as { response?: { data?: { error?: string } } }).response
+          ?.data?.error === 'string'
+          ? (error as { response: { data: { error: string } } }).response.data
+              .error
+          : 'Failed to queue quest generation.';
       setGenerationErrors((prev) => ({
         ...prev,
-        [zoneQuestArchetypeId]: 'Failed to queue quest generation.',
+        [zoneQuestArchetypeId]: errorMessage,
       }));
     } finally {
       setGenerating((prev) => ({ ...prev, [zoneQuestArchetypeId]: false }));

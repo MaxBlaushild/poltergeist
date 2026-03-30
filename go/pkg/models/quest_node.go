@@ -14,9 +14,13 @@ type QuestNode struct {
 	QuestID            uuid.UUID               `json:"questId" gorm:"type:uuid"`
 	OrderIndex         int                     `json:"orderIndex"`
 	ScenarioID         *uuid.UUID              `json:"scenarioId" gorm:"type:uuid"`
+	Scenario           *Scenario               `json:"scenario,omitempty" gorm:"foreignKey:ScenarioID"`
 	MonsterID          *uuid.UUID              `json:"monsterId" gorm:"type:uuid"`
+	Monster            *Monster                `json:"monster,omitempty" gorm:"foreignKey:MonsterID"`
 	MonsterEncounterID *uuid.UUID              `json:"monsterEncounterId" gorm:"type:uuid"`
+	MonsterEncounter   *MonsterEncounter       `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
 	ChallengeID        *uuid.UUID              `json:"challengeId" gorm:"type:uuid"`
+	Challenge          *Challenge              `json:"challenge,omitempty" gorm:"foreignKey:ChallengeID"`
 	SubmissionType     QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Children           []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
 }

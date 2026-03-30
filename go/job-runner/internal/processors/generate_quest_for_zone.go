@@ -65,10 +65,23 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 	}
 
 	log.Printf("Found zone: %v, generating quest...", zone.Name)
+	releaseReservation := false
 	if questGenerationJobID != nil {
-		if err := p.dbClient.QuestGenerationJob().MarkInProgress(ctx, *questGenerationJobID); err != nil {
-			log.Printf("Failed to mark quest generation job in progress: %v", err)
+		started, startErr := p.dbClient.QuestGenerationJob().TryStart(ctx, *questGenerationJobID)
+		if startErr != nil {
+			log.Printf("Failed to reserve quest generation job slot: %v", startErr)
+			return fmt.Errorf("failed to reserve quest generation job slot: %w", startErr)
 		}
+		if !started {
+			log.Printf(
+				"Skipping duplicate or excess quest generation task zone_id=%s quest_archetype_id=%s quest_generation_job_id=%s",
+				zoneID,
+				questArchetypeID,
+				*questGenerationJobID,
+			)
+			return nil
+		}
+		releaseReservation = true
 	}
 
 	quest, err := p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID, questGiverCharacterID)
@@ -92,9 +105,15 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 				shouldRecord = true
 			}
 			if shouldRecord {
+				releaseReservation = false
 				if recordErr := p.dbClient.QuestGenerationJob().RecordFailure(ctx, *questGenerationJobID, err.Error()); recordErr != nil {
 					log.Printf("Failed to record quest generation failure: %v", recordErr)
 				}
+			} else if releaseReservation {
+				if releaseErr := p.dbClient.QuestGenerationJob().ReleaseReservation(ctx, *questGenerationJobID); releaseErr != nil {
+					log.Printf("Failed to release quest generation job reservation: %v", releaseErr)
+				}
+				releaseReservation = false
 			}
 		}
 		if nonRetriable {
@@ -107,6 +126,14 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 	if questGenerationJobID != nil && quest != nil {
 		if err := p.dbClient.QuestGenerationJob().RecordSuccess(ctx, *questGenerationJobID, quest.ID); err != nil {
 			log.Printf("Failed to record quest generation success: %v", err)
+		} else {
+			releaseReservation = false
+		}
+	}
+
+	if questGenerationJobID != nil && releaseReservation {
+		if err := p.dbClient.QuestGenerationJob().ReleaseReservation(ctx, *questGenerationJobID); err != nil {
+			log.Printf("Failed to release quest generation job reservation after generation: %v", err)
 		}
 	}
 

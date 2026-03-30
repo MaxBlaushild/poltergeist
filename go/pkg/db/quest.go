@@ -14,6 +14,31 @@ type questHandle struct {
 	db *gorm.DB
 }
 
+func (h *questHandle) preloadDetail(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).
+		Preload("ItemRewards").
+		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
+		Preload("Nodes").
+		Preload("Nodes.Children").
+		Preload("Nodes.Challenge").
+		Preload("Nodes.Challenge.PointOfInterest").
+		Preload("Nodes.Challenge.PointOfInterest.Tags").
+		Preload("Nodes.Scenario").
+		Preload("Nodes.Scenario.PointOfInterest").
+		Preload("Nodes.Scenario.PointOfInterest.Tags").
+		Preload("Nodes.Scenario.Options").
+		Preload("Nodes.Monster").
+		Preload("Nodes.MonsterEncounter").
+		Preload("Nodes.MonsterEncounter.PointOfInterest").
+		Preload("Nodes.MonsterEncounter.PointOfInterest.Tags").
+		Preload("Nodes.MonsterEncounter.Members", func(db *gorm.DB) *gorm.DB {
+			return db.Order("slot ASC").Order("created_at ASC")
+		}).
+		Preload("Nodes.MonsterEncounter.Members.Monster")
+}
+
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 	if quest != nil {
 		quest.DifficultyMode = models.NormalizeQuestDifficultyMode(string(quest.DifficultyMode))
@@ -72,14 +97,7 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 
 func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error) {
 	var quest models.Quest
-	if err := h.db.WithContext(ctx).
-		Preload("ItemRewards").
-		Preload("ItemRewards.InventoryItem").
-		Preload("SpellRewards").
-		Preload("SpellRewards.Spell").
-		Preload("Nodes").
-		Preload("Nodes.Children").
-		First(&quest, "id = ?", id).Error; err != nil {
+	if err := h.preloadDetail(ctx).First(&quest, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -109,15 +127,7 @@ func (h *questHandle) FindAllSummaries(ctx context.Context) ([]models.Quest, err
 
 func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error) {
 	var quests []models.Quest
-	if err := h.db.WithContext(ctx).
-		Preload("ItemRewards").
-		Preload("ItemRewards.InventoryItem").
-		Preload("SpellRewards").
-		Preload("SpellRewards.Spell").
-		Preload("Nodes").
-		Preload("Nodes.Children").
-		Where("id IN ?", ids).
-		Find(&quests).Error; err != nil {
+	if err := h.preloadDetail(ctx).Where("id IN ?", ids).Find(&quests).Error; err != nil {
 		return nil, err
 	}
 	return quests, nil

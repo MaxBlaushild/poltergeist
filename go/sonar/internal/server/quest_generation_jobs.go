@@ -2,12 +2,28 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+func questGenerationTaskID(jobID uuid.UUID, index int) string {
+	return fmt.Sprintf("quest-generation:%s:%d", jobID.String(), index)
+}
+
+func isQuestGenerationJobConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "quest_generation_jobs_active_zone_quest_archetype_idx") ||
+		(strings.Contains(message, "duplicate key value") &&
+			strings.Contains(message, "zone_quest_archetype_id"))
+}
 
 func (s *server) hydrateQuestGenerationJobs(
 	ctx context.Context,

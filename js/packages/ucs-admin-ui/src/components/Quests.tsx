@@ -61,6 +61,7 @@ type ScenarioNodeOption = {
   id: string;
   zoneId: string;
   pointOfInterestId?: string | null;
+  pointOfInterest?: PointOfInterest | null;
   latitude: number;
   longitude: number;
   prompt: string;
@@ -73,6 +74,7 @@ type MonsterNodeOption = {
   id: string;
   zoneId: string;
   pointOfInterestId?: string | null;
+  pointOfInterest?: PointOfInterest | null;
   latitude: number;
   longitude: number;
   name: string;
@@ -87,6 +89,7 @@ type ChallengeNodeOption = {
   id: string;
   zoneId: string;
   pointOfInterestId?: string | null;
+  pointOfInterest?: PointOfInterest | null;
   latitude: number;
   longitude: number;
   question: string;
@@ -111,6 +114,10 @@ type MonsterRecord = {
   name: string;
   level?: number;
 };
+
+type ResolvedQuestNodeScenario = ScenarioNodeOption;
+type ResolvedQuestNodeMonsterEncounter = MonsterNodeOption;
+type ResolvedQuestNodeChallenge = ChallengeNodeOption;
 
 type QuickCreateScenarioOptionForm = {
   optionText: string;
@@ -570,17 +577,122 @@ const formatNodeCoordinatePair = (
   return `${formattedLatitude}, ${formattedLongitude}`;
 };
 
+const resolveLinkedQuestScenario = (
+  node: QuestNode,
+  scenarios: ScenarioNodeOption[]
+): ResolvedQuestNodeScenario | null =>
+  (node.scenario as ResolvedQuestNodeScenario | null | undefined) ??
+  (node.scenarioId
+    ? scenarios.find((scenario) => scenario.id === node.scenarioId) ?? null
+    : null);
+
+const resolveLinkedQuestMonsterEncounter = (
+  node: QuestNode,
+  monsterEncounters: MonsterNodeOption[]
+): ResolvedQuestNodeMonsterEncounter | null => {
+  const embeddedEncounter = node.monsterEncounter as
+    | ResolvedQuestNodeMonsterEncounter
+    | null
+    | undefined;
+  if (embeddedEncounter) {
+    return embeddedEncounter;
+  }
+  if (node.monsterEncounterId) {
+    const directEncounter = monsterEncounters.find(
+      (encounter) => encounter.id === node.monsterEncounterId
+    );
+    if (directEncounter) {
+      return directEncounter;
+    }
+  }
+  if (node.monsterId) {
+    const directEncounter = monsterEncounters.find(
+      (encounter) => encounter.id === node.monsterId
+    );
+    if (directEncounter) {
+      return directEncounter;
+    }
+    const encounterByMember = monsterEncounters.find((encounter) =>
+      (encounter.members ?? []).some(
+        (member) => member.monster.id === node.monsterId
+      )
+    );
+    if (encounterByMember) {
+      return encounterByMember;
+    }
+  }
+  if (node.monster) {
+    return {
+      id: node.monster.id,
+      zoneId: node.monster.zoneId ?? '',
+      latitude: node.monster.latitude,
+      longitude: node.monster.longitude,
+      name: node.monster.name,
+      description: node.monster.description,
+      encounterType: 'monster',
+      scaleWithUserLevel: false,
+      monsterCount: 1,
+      members: [
+        {
+          slot: 1,
+          monster: {
+            id: node.monster.id,
+            name: node.monster.name,
+          },
+        },
+      ],
+    };
+  }
+  return null;
+};
+
+const resolveLinkedQuestChallenge = (
+  node: QuestNode,
+  challenges: ChallengeNodeOption[]
+): ResolvedQuestNodeChallenge | null =>
+  (node.challenge as ResolvedQuestNodeChallenge | null | undefined) ??
+  (node.challengeId
+    ? challenges.find((challenge) => challenge.id === node.challengeId) ?? null
+    : null);
+
 const getLinkedQuestNodePoiId = (
   node: QuestNode,
-  linkedScenario?: ScenarioNodeOption | null,
-  linkedMonsterEncounter?: MonsterNodeOption | null,
-  linkedChallenge?: ChallengeNodeOption | null
+  linkedScenario?: ResolvedQuestNodeScenario | null,
+  linkedMonsterEncounter?: ResolvedQuestNodeMonsterEncounter | null,
+  linkedChallenge?: ResolvedQuestNodeChallenge | null
 ) =>
   node.pointOfInterestId ??
   linkedChallenge?.pointOfInterestId ??
+  linkedChallenge?.pointOfInterest?.id ??
   linkedScenario?.pointOfInterestId ??
+  linkedScenario?.pointOfInterest?.id ??
   linkedMonsterEncounter?.pointOfInterestId ??
+  linkedMonsterEncounter?.pointOfInterest?.id ??
   null;
+
+const resolveLinkedQuestNodePoi = (
+  node: QuestNode,
+  pointsOfInterest: PointOfInterest[],
+  linkedScenario?: ResolvedQuestNodeScenario | null,
+  linkedMonsterEncounter?: ResolvedQuestNodeMonsterEncounter | null,
+  linkedChallenge?: ResolvedQuestNodeChallenge | null
+) => {
+  const linkedPoiId = getLinkedQuestNodePoiId(
+    node,
+    linkedScenario,
+    linkedMonsterEncounter,
+    linkedChallenge
+  );
+  const linkedPoi =
+    (linkedPoiId
+      ? pointsOfInterest.find((poi) => poi.id === linkedPoiId) ?? null
+      : null) ??
+    linkedChallenge?.pointOfInterest ??
+    linkedScenario?.pointOfInterest ??
+    linkedMonsterEncounter?.pointOfInterest ??
+    null;
+  return linkedPoi;
+};
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
@@ -843,7 +955,7 @@ export const Quests = () => {
           };
         }
         if (node.scenarioId) {
-          const scenario = scenarios.find((item) => item.id === node.scenarioId);
+          const scenario = resolveLinkedQuestScenario(node, scenarios);
           return {
             id: node.id,
             orderIndex: node.orderIndex,
@@ -853,15 +965,10 @@ export const Quests = () => {
         }
         if (node.monsterEncounterId || node.monsterId) {
           const encounterId = node.monsterEncounterId ?? node.monsterId ?? '';
-          const encounter = monsterEncounters.find(
-            (item) => item.id === encounterId
+          const resolved = resolveLinkedQuestMonsterEncounter(
+            node,
+            monsterEncounters
           );
-          const fallbackEncounter = monsterEncounters.find((item) =>
-            (item.members ?? []).some(
-              (member) => member.monster.id === node.monsterId
-            )
-          );
-          const resolved = encounter ?? fallbackEncounter;
           return {
             id: node.id,
             orderIndex: node.orderIndex,
@@ -870,9 +977,7 @@ export const Quests = () => {
           };
         }
         if (node.challengeId) {
-          const challenge = challenges.find(
-            (item) => item.id === node.challengeId
-          );
+          const challenge = resolveLinkedQuestChallenge(node, challenges);
           return {
             id: node.id,
             orderIndex: node.orderIndex,
@@ -1610,28 +1715,19 @@ export const Quests = () => {
     () =>
       orderedQuestNodes
         .map((node) => {
-          const linkedScenario = node.scenarioId
-            ? scenarios.find((entry) => entry.id === node.scenarioId)
-            : null;
-          const linkedMonsterEncounter =
-            node.monsterEncounterId || node.monsterId
-              ? monsterEncounters.find(
-                  (entry) =>
-                    entry.id === (node.monsterEncounterId ?? node.monsterId)
-                ) ?? null
-              : null;
-          const linkedChallenge = node.challengeId
-            ? challenges.find((entry) => entry.id === node.challengeId)
-            : null;
-          const poiId = getLinkedQuestNodePoiId(
+          const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+          const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
             node,
+            monsterEncounters
+          );
+          const linkedChallenge = resolveLinkedQuestChallenge(node, challenges);
+          const poi = resolveLinkedQuestNodePoi(
+            node,
+            pointsOfInterest,
             linkedScenario,
             linkedMonsterEncounter,
             linkedChallenge
           );
-          if (!poiId) return null;
-          const poi =
-            pointsOfInterest.find((entry) => entry.id === poiId) ?? null;
           if (!poi) return null;
           const archetype = archetypeByPoiId[poi.id] ?? null;
           const aliases = getPointOfInterestAliases(poi);
@@ -1683,18 +1779,12 @@ export const Quests = () => {
       let changed = false;
       const next = { ...prev };
       selectedQuest.nodes?.forEach((node) => {
-        const linkedScenario = node.scenarioId
-          ? scenarios.find((item) => item.id === node.scenarioId)
-          : null;
-        const linkedMonsterEncounter =
-          node.monsterEncounterId || node.monsterId
-            ? monsterEncounters.find(
-                (item) => item.id === (node.monsterEncounterId ?? node.monsterId)
-              ) ?? null
-            : null;
-        const linkedChallenge = node.challengeId
-          ? challenges.find((item) => item.id === node.challengeId)
-          : null;
+        const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+        const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
+          node,
+          monsterEncounters
+        );
+        const linkedChallenge = resolveLinkedQuestChallenge(node, challenges);
         const linkedPoiId = getLinkedQuestNodePoiId(
           node,
           linkedScenario,
@@ -1728,30 +1818,22 @@ export const Quests = () => {
     if (!selectedQuest?.nodes?.length) return [];
     return selectedQuest.nodes
       .map((node) => {
-        const linkedScenario = node.scenarioId
-          ? scenarios.find((item) => item.id === node.scenarioId)
-          : null;
-        const linkedMonsterEncounter =
-          node.monsterEncounterId || node.monsterId
-            ? monsterEncounters.find(
-                (item) => item.id === (node.monsterEncounterId ?? node.monsterId)
-              ) ?? null
-            : null;
-        const linkedChallenge = node.challengeId
-          ? challenges.find((item) => item.id === node.challengeId)
-          : null;
-        const linkedPoiId = getLinkedQuestNodePoiId(
+        const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+        const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
           node,
+          monsterEncounters
+        );
+        const linkedChallenge = resolveLinkedQuestChallenge(node, challenges);
+        const linkedPoi = resolveLinkedQuestNodePoi(
+          node,
+          pointsOfInterest,
           linkedScenario,
           linkedMonsterEncounter,
           linkedChallenge
         );
 
-        if (linkedPoiId) {
-          const poi = pointsOfInterest.find(
-            (item) => item.id === linkedPoiId
-          );
-          if (!poi) return null;
+        if (linkedPoi) {
+          const poi = linkedPoi;
           const lng = Number(poi.lng);
           const lat = Number(poi.lat);
           if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
@@ -1796,13 +1878,7 @@ export const Quests = () => {
           };
         }
         if (node.monsterEncounterId || node.monsterId) {
-          const resolved =
-            linkedMonsterEncounter ??
-            monsterEncounters.find((item) =>
-              (item.members ?? []).some(
-                (member) => member.monster.id === node.monsterId
-              )
-            );
+          const resolved = linkedMonsterEncounter;
           if (!resolved) return null;
           const lng = Number(resolved.longitude);
           const lat = Number(resolved.latitude);
@@ -2207,20 +2283,11 @@ export const Quests = () => {
     const nodeLocationArchetypeIds: string[] = [];
     const linkedChallengesForNodes: (ChallengeNodeOption | undefined)[] = [];
     nodes.forEach((node) => {
-      const linkedScenario = node.scenarioId
-        ? scenarios.find((scenario) => scenario.id === node.scenarioId)
-        : undefined;
+      const linkedScenario = resolveLinkedQuestScenario(node, scenarios) ?? undefined;
       const linkedMonsterEncounter =
-        node.monsterEncounterId || node.monsterId
-          ? monsterEncounters.find(
-              (encounter) =>
-                encounter.id === (node.monsterEncounterId ?? node.monsterId)
-            )
-          : undefined;
-      const linkedChallenge = node.challengeId
-        ? challenges.find((challenge) => challenge.id === node.challengeId)
-        : undefined;
-      linkedChallengesForNodes.push(linkedChallenge);
+        resolveLinkedQuestMonsterEncounter(node, monsterEncounters) ?? undefined;
+      const linkedChallenge = resolveLinkedQuestChallenge(node, challenges) ?? undefined;
+      linkedChallengesForNodes.push(linkedChallenge ?? undefined);
       const sourcePointOfInterestId = getLinkedQuestNodePoiId(
         node,
         linkedScenario,
@@ -6010,24 +6077,19 @@ export const Quests = () => {
 
                   <div className="space-y-4">
                     {orderedQuestNodes.map((node) => {
-                        const linkedScenario = node.scenarioId
-                          ? scenarios.find(
-                              (scenario) => scenario.id === node.scenarioId
-                            )
-                          : undefined;
+                        const linkedScenario = resolveLinkedQuestScenario(
+                          node,
+                          scenarios
+                        );
                         const linkedMonsterEncounter =
-                          node.monsterEncounterId || node.monsterId
-                            ? monsterEncounters.find(
-                                (monster) =>
-                                  monster.id ===
-                                  (node.monsterEncounterId ?? node.monsterId)
-                              )
-                            : undefined;
-                        const linkedChallenge = node.challengeId
-                          ? challenges.find(
-                              (challenge) => challenge.id === node.challengeId
-                            )
-                          : undefined;
+                          resolveLinkedQuestMonsterEncounter(
+                            node,
+                            monsterEncounters
+                          );
+                        const linkedChallenge = resolveLinkedQuestChallenge(
+                          node,
+                          challenges
+                        );
                         const isChallengeTargetNode = Boolean(node.challengeId);
                         const isScenarioTargetNode = Boolean(node.scenarioId);
                         const isMonsterTargetNode = Boolean(
@@ -6041,16 +6103,13 @@ export const Quests = () => {
                           node.submissionType ||
                           'photo'
                         ) as QuestNodeSubmissionType;
-                        const linkedPoiId =
-                          getLinkedQuestNodePoiId(
-                            node,
-                            linkedScenario,
-                            linkedMonsterEncounter,
-                            linkedChallenge
-                          );
-                        const linkedPoi = linkedPoiId
-                          ? pointsOfInterest.find((poi) => poi.id === linkedPoiId)
-                          : null;
+                        const linkedPoi = resolveLinkedQuestNodePoi(
+                          node,
+                          pointsOfInterest,
+                          linkedScenario,
+                          linkedMonsterEncounter,
+                          linkedChallenge
+                        );
                         const linkedPoiArchetype = linkedPoi
                           ? archetypeByPoiId[linkedPoi.id] ?? null
                           : null;

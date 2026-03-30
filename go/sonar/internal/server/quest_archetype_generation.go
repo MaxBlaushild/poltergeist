@@ -106,7 +106,10 @@ func (s *server) generateQuestForQuestArchetype(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); err != nil {
+	if _, err := s.asyncClient.Enqueue(
+		asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload),
+		asynq.TaskID(questGenerationTaskID(job.ID, 0)),
+	); err != nil {
 		msg := err.Error()
 		job.Status = models.QuestGenerationStatusFailed
 		job.ErrorMessage = &msg

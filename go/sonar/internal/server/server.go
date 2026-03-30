@@ -2682,6 +2682,10 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.QuestGenerationJob().Create(ctx, job); err != nil {
+		if isQuestGenerationJobConflictError(err) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": "a quest generation job is already queued for this zone quest archetype"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2697,7 +2701,10 @@ func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); err != nil {
+		if _, err := s.asyncClient.Enqueue(
+			asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload),
+			asynq.TaskID(questGenerationTaskID(job.ID, i)),
+		); err != nil {
 			msg := err.Error()
 			job.Status = models.QuestGenerationStatusFailed
 			job.ErrorMessage = &msg
