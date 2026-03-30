@@ -20,8 +20,12 @@ WITH poi_candidates AS (
 UPDATE challenges AS ch
 SET point_of_interest_id = poi.id
 FROM poi_candidates AS poi
-JOIN quest_nodes AS qn ON qn.challenge_id = ch.id
 WHERE ch.point_of_interest_id IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM quest_nodes AS qn
+    WHERE qn.challenge_id = ch.id
+  )
   AND ch.zone_id = poi.zone_id
   AND ABS(ch.latitude - poi.latitude) < 0.0000001
   AND ABS(ch.longitude - poi.longitude) < 0.0000001;
@@ -42,8 +46,12 @@ WITH poi_candidates AS (
 UPDATE scenarios AS sc
 SET point_of_interest_id = poi.id
 FROM poi_candidates AS poi
-JOIN quest_nodes AS qn ON qn.scenario_id = sc.id
 WHERE sc.point_of_interest_id IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM quest_nodes AS qn
+    WHERE qn.scenario_id = sc.id
+  )
   AND sc.zone_id = poi.zone_id
   AND ABS(sc.latitude - poi.latitude) < 0.0000001
   AND ABS(sc.longitude - poi.longitude) < 0.0000001;
@@ -64,8 +72,12 @@ WITH poi_candidates AS (
 UPDATE monster_encounters AS me
 SET point_of_interest_id = poi.id
 FROM poi_candidates AS poi
-JOIN quest_nodes AS qn ON qn.monster_encounter_id = me.id
 WHERE me.point_of_interest_id IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM quest_nodes AS qn
+    WHERE qn.monster_encounter_id = me.id
+  )
   AND me.zone_id = poi.zone_id
   AND ABS(me.latitude - poi.latitude) < 0.0000001
   AND ABS(me.longitude - poi.longitude) < 0.0000001;
