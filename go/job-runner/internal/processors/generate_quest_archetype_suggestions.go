@@ -27,6 +27,7 @@ Requested direction:
 - family tags: %s
 - character tags to bias toward: %s
 - internal tags to bias toward: %s
+- required location archetypes that must appear in each draft: %s
 - required location metadata tags to use when appropriate: %s
 
 Recent quest archetypes to avoid echoing:
@@ -94,6 +95,7 @@ Rules:
 - Every step must include 2-5 locationMetadataTags.
 - locationArchetypeName must be selected from the allowed list exactly when source is "location".
 - monsterTemplateNames must be selected from the allowed list exactly for monster steps.
+- Every draft must include each required location archetype at least once as a location step when a required list is provided.
 - Challenge steps must be concrete, enjoyable real-world tasks the player can actually complete at the location right now.
 - A challenge must be gradable from the player's submission alone.
 - Good challenge patterns: photograph a specific detail, spot and record a pattern, identify something visible, compare two visible features, describe ambience or signage actually present on site.
@@ -218,6 +220,7 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 		renderTagList(job.FamilyTags),
 		renderTagList(job.CharacterTags),
 		renderTagList(job.InternalTags),
+		buildRequiredLocationArchetypesPrompt(job.RequiredLocationArchetypeIDs, locationArchetypes),
 		renderTagList(job.RequiredLocationMetadataTags),
 		buildQuestArchetypeSuggestionAvoidance(recentArchetypes, 18),
 		buildAllowedLocationArchetypesPrompt(locationArchetypes),
@@ -240,9 +243,18 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 
 	locationIndex := buildLocationArchetypeIndex(locationArchetypes)
 	monsterIndex := buildMonsterTemplateIndex(monsterTemplates)
+	requiredLocationArchetypes := resolveRequiredLocationArchetypes(
+		job.RequiredLocationArchetypeIDs,
+		locationArchetypes,
+	)
 	createdCount := 0
 	for _, spec := range generated.Drafts {
-		draft := sanitizeQuestArchetypeSuggestionDraft(spec, locationIndex, monsterIndex)
+		draft := sanitizeQuestArchetypeSuggestionDraft(
+			spec,
+			locationIndex,
+			monsterIndex,
+			requiredLocationArchetypes,
+		)
 		draft.JobID = job.ID
 		draft.Status = models.QuestArchetypeSuggestionDraftStatusSuggested
 		if err := p.dbClient.QuestArchetypeSuggestionDraft().Create(ctx, draft); err != nil {
@@ -347,6 +359,21 @@ func buildAllowedLocationArchetypesPrompt(items []*models.LocationArchetype) str
 	return strings.Join(lines, "\n")
 }
 
+func buildRequiredLocationArchetypesPrompt(
+	requiredIDs []string,
+	items []*models.LocationArchetype,
+) string {
+	required := resolveRequiredLocationArchetypes(requiredIDs, items)
+	if len(required) == 0 {
+		return "- none"
+	}
+	lines := make([]string, 0, len(required))
+	for _, item := range required {
+		lines = append(lines, fmt.Sprintf("- %s", item.Name))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func buildAllowedMonsterTemplatesPrompt(items []models.MonsterTemplate) string {
 	if len(items) == 0 {
 		return "- none"
@@ -393,6 +420,47 @@ func buildLocationArchetypeIndex(items []*models.LocationArchetype) map[string]l
 	return index
 }
 
+func resolveRequiredLocationArchetypes(
+	requiredIDs []string,
+	items []*models.LocationArchetype,
+) []locationArchetypeIndexEntry {
+	if len(requiredIDs) == 0 || len(items) == 0 {
+		return nil
+	}
+	byID := make(map[uuid.UUID]locationArchetypeIndexEntry, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		name := strings.TrimSpace(item.Name)
+		if item.ID == uuid.Nil || name == "" {
+			continue
+		}
+		byID[item.ID] = locationArchetypeIndexEntry{ID: item.ID, Name: name}
+	}
+	required := make([]locationArchetypeIndexEntry, 0, len(requiredIDs))
+	seen := make(map[uuid.UUID]struct{}, len(requiredIDs))
+	for _, rawID := range requiredIDs {
+		parsedID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil || parsedID == uuid.Nil {
+			continue
+		}
+		entry, exists := byID[parsedID]
+		if !exists {
+			continue
+		}
+		if _, duplicate := seen[parsedID]; duplicate {
+			continue
+		}
+		seen[parsedID] = struct{}{}
+		required = append(required, entry)
+	}
+	sort.Slice(required, func(i, j int) bool {
+		return required[i].Name < required[j].Name
+	})
+	return required
+}
+
 type monsterTemplateIndexEntry struct {
 	ID   uuid.UUID
 	Name string
@@ -414,6 +482,7 @@ func sanitizeQuestArchetypeSuggestionDraft(
 	payload questArchetypeSuggestionDraftPayload,
 	locationIndex map[string]locationArchetypeIndexEntry,
 	monsterIndex map[string]monsterTemplateIndexEntry,
+	requiredLocationArchetypes []locationArchetypeIndexEntry,
 ) *models.QuestArchetypeSuggestionDraft {
 	now := time.Now()
 	warnings := models.StringArray{}
@@ -427,6 +496,15 @@ func sanitizeQuestArchetypeSuggestionDraft(
 	}
 	if len(steps) == 0 {
 		warnings = append(warnings, "no usable steps were generated")
+	}
+	for _, missing := range missingRequiredLocationArchetypes(
+		steps,
+		requiredLocationArchetypes,
+	) {
+		warnings = append(
+			warnings,
+			fmt.Sprintf("required location archetype %q was not used in this draft", missing),
+		)
 	}
 
 	difficultyMode := models.NormalizeQuestDifficultyMode(payload.DifficultyMode)
@@ -467,6 +545,30 @@ func sanitizeQuestArchetypeSuggestionDraft(
 		MonsterTemplateSeeds:        normalizeSuggestionLines(payload.MonsterTemplateSeeds),
 		Warnings:                    normalizeSuggestionLines(warnings),
 	}
+}
+
+func missingRequiredLocationArchetypes(
+	steps models.QuestArchetypeSuggestionSteps,
+	required []locationArchetypeIndexEntry,
+) []string {
+	if len(required) == 0 {
+		return nil
+	}
+	used := make(map[uuid.UUID]struct{}, len(steps))
+	for _, step := range steps {
+		if step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil {
+			continue
+		}
+		used[*step.LocationArchetypeID] = struct{}{}
+	}
+	missing := make([]string, 0, len(required))
+	for _, entry := range required {
+		if _, exists := used[entry.ID]; exists {
+			continue
+		}
+		missing = append(missing, entry.Name)
+	}
+	return missing
 }
 
 func sanitizeQuestArchetypeSuggestionStep(

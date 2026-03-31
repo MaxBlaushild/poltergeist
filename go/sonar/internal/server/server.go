@@ -595,6 +595,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monster-templates/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateMonsterTemplatesStatus))
 	r.POST("/sonar/admin/monster-templates/refresh-affinities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshMonsterTemplateAffinities))
 	r.GET("/sonar/admin/monster-templates/refresh-affinities/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRefreshMonsterTemplateAffinitiesStatus))
+	r.POST("/sonar/admin/monster-templates/reset-progressions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.resetMonsterTemplateProgressions))
+	r.GET("/sonar/admin/monster-templates/reset-progressions/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResetMonsterTemplateProgressionsStatus))
 	r.PUT("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterTemplate))
 	r.POST("/sonar/monster-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterTemplateImage))
 	r.DELETE("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterTemplate))

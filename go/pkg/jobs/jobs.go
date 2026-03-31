@@ -20,6 +20,7 @@ const (
 	GenerateMonsterTemplateImageTaskType           = "generate_monster_template_image"
 	GenerateMonsterTemplatesBulkTaskType           = "generate_monster_templates_bulk"
 	RefreshMonsterTemplateAffinitiesTaskType       = "refresh_monster_template_affinities"
+	ResetMonsterTemplateProgressionsTaskType       = "reset_monster_template_progressions"
 	GenerateCharacterImageTaskType                 = "generate_character_image"
 	GeneratePointOfInterestImageTaskType           = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType                  = "generate_scenario_image"
@@ -71,6 +72,15 @@ const (
 	MonsterTemplateAffinityRefreshStatusFailed     = "failed"
 
 	MonsterTemplateAffinityRefreshStatusTTL = 24 * time.Hour
+)
+
+const (
+	MonsterTemplateProgressionResetStatusQueued     = "queued"
+	MonsterTemplateProgressionResetStatusInProgress = "in_progress"
+	MonsterTemplateProgressionResetStatusCompleted  = "completed"
+	MonsterTemplateProgressionResetStatusFailed     = "failed"
+
+	MonsterTemplateProgressionResetStatusTTL = 24 * time.Hour
 )
 
 const (
@@ -263,6 +273,11 @@ type RefreshMonsterTemplateAffinitiesTaskPayload struct {
 	MonsterTemplateIDs []uuid.UUID `json:"monsterTemplateIds,omitempty"`
 }
 
+type ResetMonsterTemplateProgressionsTaskPayload struct {
+	JobID              uuid.UUID   `json:"jobId"`
+	MonsterTemplateIDs []uuid.UUID `json:"monsterTemplateIds,omitempty"`
+}
+
 type GenerateMonsterTemplatesBulkTaskPayload struct {
 	JobID       uuid.UUID                     `json:"jobId"`
 	Source      string                        `json:"source"`
@@ -286,6 +301,19 @@ type MonsterTemplateBulkStatus struct {
 }
 
 type MonsterTemplateAffinityRefreshStatus struct {
+	JobID        uuid.UUID   `json:"jobId"`
+	Status       string      `json:"status"`
+	TotalCount   int         `json:"totalCount"`
+	UpdatedCount int         `json:"updatedCount"`
+	TemplateIDs  []uuid.UUID `json:"templateIds,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	QueuedAt     *time.Time  `json:"queuedAt,omitempty"`
+	StartedAt    *time.Time  `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time  `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time   `json:"updatedAt"`
+}
+
+type MonsterTemplateProgressionResetStatus struct {
 	JobID        uuid.UUID   `json:"jobId"`
 	Status       string      `json:"status"`
 	TotalCount   int         `json:"totalCount"`
@@ -379,6 +407,10 @@ func MonsterTemplateBulkStatusKey(jobID uuid.UUID) string {
 
 func MonsterTemplateAffinityRefreshStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:monster-templates:affinity-refresh:%s", jobID.String())
+}
+
+func MonsterTemplateProgressionResetStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:monster-templates:progression-reset:%s", jobID.String())
 }
 
 func SpellBulkStatusKey(jobID uuid.UUID) string {

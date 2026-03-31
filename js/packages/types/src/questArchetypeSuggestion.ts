@@ -35,6 +35,7 @@ export interface QuestArchetypeSuggestionJob {
   familyTags: string[];
   characterTags: string[];
   internalTags: string[];
+  requiredLocationArchetypeIds: string[];
   requiredLocationMetadataTags: string[];
   createdCount: number;
   errorMessage?: string | null;

@@ -22,6 +22,7 @@ type questArchetypeSuggestionJobRequest struct {
 	FamilyTags                   []string `json:"familyTags"`
 	CharacterTags                []string `json:"characterTags"`
 	InternalTags                 []string `json:"internalTags"`
+	RequiredLocationArchetypeIDs []string `json:"requiredLocationArchetypeIds"`
 	RequiredLocationMetadataTags []string `json:"requiredLocationMetadataTags"`
 }
 
@@ -38,6 +39,14 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
 		return
 	}
+	requiredLocationArchetypeIDs, err := s.normalizeQuestArchetypeSuggestionLocationArchetypeIDs(
+		ctx,
+		body.RequiredLocationArchetypeIDs,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.QuestArchetypeSuggestionJob{
 		ID:                           uuid.New(),
@@ -49,6 +58,7 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		FamilyTags:                   normalizeQuestTemplateInternalTags(body.FamilyTags),
 		CharacterTags:                normalizeQuestTemplateCharacterTags(body.CharacterTags),
 		InternalTags:                 normalizeQuestTemplateInternalTags(body.InternalTags),
+		RequiredLocationArchetypeIDs: requiredLocationArchetypeIDs,
 		RequiredLocationMetadataTags: normalizeQuestTemplateInternalTags(body.RequiredLocationMetadataTags),
 		CreatedCount:                 0,
 	}
@@ -73,6 +83,43 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusAccepted, job)
+}
+
+func (s *server) normalizeQuestArchetypeSuggestionLocationArchetypeIDs(
+	ctx context.Context,
+	rawIDs []string,
+) (models.StringArray, error) {
+	if len(rawIDs) == 0 {
+		return models.StringArray{}, nil
+	}
+	locationArchetypes, err := s.dbClient.LocationArchetype().FindAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load location archetypes")
+	}
+	allowed := make(map[uuid.UUID]struct{}, len(locationArchetypes))
+	for _, archetype := range locationArchetypes {
+		if archetype == nil {
+			continue
+		}
+		allowed[archetype.ID] = struct{}{}
+	}
+	normalized := make(models.StringArray, 0, len(rawIDs))
+	seen := make(map[uuid.UUID]struct{}, len(rawIDs))
+	for idx, rawID := range rawIDs {
+		parsedID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil || parsedID == uuid.Nil {
+			return nil, fmt.Errorf("requiredLocationArchetypeIds[%d] must be a valid UUID", idx)
+		}
+		if _, exists := allowed[parsedID]; !exists {
+			return nil, fmt.Errorf("requiredLocationArchetypeIds[%d] could not be found", idx)
+		}
+		if _, exists := seen[parsedID]; exists {
+			continue
+		}
+		seen[parsedID] = struct{}{}
+		normalized = append(normalized, parsedID.String())
+	}
+	return normalized, nil
 }
 
 func (s *server) getQuestArchetypeSuggestionJobs(ctx *gin.Context) {

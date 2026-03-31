@@ -79,6 +79,7 @@ type QuestArchetypeSuggestionJob struct {
 	FamilyTags                   StringArray `json:"familyTags" gorm:"column:family_tags;type:jsonb"`
 	CharacterTags                StringArray `json:"characterTags" gorm:"column:character_tags;type:jsonb"`
 	InternalTags                 StringArray `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
+	RequiredLocationArchetypeIDs StringArray `json:"requiredLocationArchetypeIds" gorm:"column:required_location_archetype_ids;type:jsonb"`
 	RequiredLocationMetadataTags StringArray `json:"requiredLocationMetadataTags" gorm:"column:required_location_metadata_tags;type:jsonb"`
 	CreatedCount                 int         `json:"createdCount" gorm:"column:created_count"`
 	ErrorMessage                 *string     `json:"errorMessage,omitempty"`

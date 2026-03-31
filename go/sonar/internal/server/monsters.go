@@ -2215,6 +2215,47 @@ func (s *server) getMonsterTemplateAffinityRefreshStatus(
 	return &status, nil
 }
 
+func (s *server) setMonsterTemplateProgressionResetStatus(
+	ctx context.Context,
+	status jobs.MonsterTemplateProgressionResetStatus,
+) error {
+	if s.redisClient == nil {
+		return fmt.Errorf("redis client unavailable")
+	}
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return s.redisClient.Set(
+		ctx,
+		jobs.MonsterTemplateProgressionResetStatusKey(status.JobID),
+		payload,
+		jobs.MonsterTemplateProgressionResetStatusTTL,
+	).Err()
+}
+
+func (s *server) getMonsterTemplateProgressionResetStatus(
+	ctx context.Context,
+	jobID uuid.UUID,
+) (*jobs.MonsterTemplateProgressionResetStatus, error) {
+	if s.redisClient == nil {
+		return nil, fmt.Errorf("redis client unavailable")
+	}
+	value, err := s.redisClient.Get(ctx, jobs.MonsterTemplateProgressionResetStatusKey(jobID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var status jobs.MonsterTemplateProgressionResetStatus
+	if err := json.Unmarshal([]byte(value), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -2451,6 +2492,117 @@ func (s *server) getRefreshMonsterTemplateAffinitiesStatus(ctx *gin.Context) {
 	}
 	if status == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "affinity refresh job not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status)
+}
+
+func (s *server) resetMonsterTemplateProgressions(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+	if s.redisClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
+		return
+	}
+
+	var requestBody struct {
+		IDs []string `json:"ids"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && !errors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	templateIDs := make([]uuid.UUID, 0, len(requestBody.IDs))
+	seen := map[uuid.UUID]struct{}{}
+	for _, rawID := range requestBody.IDs {
+		templateID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid template ID: %s", rawID)})
+			return
+		}
+		if _, exists := seen[templateID]; exists {
+			continue
+		}
+		seen[templateID] = struct{}{}
+		templateIDs = append(templateIDs, templateID)
+	}
+
+	totalCount := len(templateIDs)
+	if totalCount == 0 {
+		templates, err := s.dbClient.MonsterTemplate().FindAll(ctx)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		totalCount = len(templates)
+	}
+
+	jobID := uuid.New()
+	queuedAt := time.Now().UTC()
+	status := jobs.MonsterTemplateProgressionResetStatus{
+		JobID:        jobID,
+		Status:       jobs.MonsterTemplateProgressionResetStatusQueued,
+		TotalCount:   totalCount,
+		UpdatedCount: 0,
+		TemplateIDs:  templateIDs,
+		QueuedAt:     &queuedAt,
+		UpdatedAt:    queuedAt,
+	}
+	if err := s.setMonsterTemplateProgressionResetStatus(ctx.Request.Context(), status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.ResetMonsterTemplateProgressionsTaskPayload{
+		JobID:              jobID,
+		MonsterTemplateIDs: templateIDs,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ResetMonsterTemplateProgressionsTaskType, payloadBytes)); err != nil {
+		failedAt := time.Now().UTC()
+		status.Status = jobs.MonsterTemplateProgressionResetStatusFailed
+		status.Error = err.Error()
+		status.CompletedAt = &failedAt
+		status.UpdatedAt = failedAt
+		_ = s.setMonsterTemplateProgressionResetStatus(ctx.Request.Context(), status)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, status)
+}
+
+func (s *server) getResetMonsterTemplateProgressionsStatus(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	jobID, err := uuid.Parse(ctx.Param("jobId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
+		return
+	}
+
+	status, err := s.getMonsterTemplateProgressionResetStatus(ctx.Request.Context(), jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if status == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "progression reset job not found"})
 		return
 	}
 

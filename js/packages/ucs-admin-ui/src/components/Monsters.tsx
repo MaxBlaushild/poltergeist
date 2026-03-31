@@ -198,6 +198,19 @@ type MonsterTemplateAffinityRefreshStatus = {
   updatedAt?: string;
 };
 
+type MonsterTemplateProgressionResetStatus = {
+  jobId: string;
+  status: string;
+  totalCount: number;
+  updatedCount: number;
+  templateIds?: string[];
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
 type PaginatedResponse<T> = {
   items: T[];
   total: number;
@@ -977,7 +990,11 @@ export const Monsters = () => {
   const [query, setQuery] = useState('');
   const [zoneQuery, setZoneQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [bulkDeletingMonsters, setBulkDeletingMonsters] = useState(false);
   const [bulkDeletingEncounters, setBulkDeletingEncounters] = useState(false);
+  const [selectedMonsterIds, setSelectedMonsterIds] = useState<Set<string>>(
+    new Set()
+  );
   const [selectedEncounterIds, setSelectedEncounterIds] = useState<Set<string>>(
     new Set()
   );
@@ -1056,6 +1073,15 @@ export const Monsters = () => {
     string | null
   >(null);
   const [affinityRefreshMessage, setAffinityRefreshMessage] = useState<
+    string | null
+  >(null);
+  const [progressionResetBusy, setProgressionResetBusy] = useState(false);
+  const [progressionResetJob, setProgressionResetJob] =
+    useState<MonsterTemplateProgressionResetStatus | null>(null);
+  const [progressionResetError, setProgressionResetError] = useState<
+    string | null
+  >(null);
+  const [progressionResetMessage, setProgressionResetMessage] = useState<
     string | null
   >(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -1264,6 +1290,20 @@ export const Monsters = () => {
   }, [templateTab]);
 
   useEffect(() => {
+    setSelectedMonsterIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(records.map((monster) => monster.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [records]);
+
+  useEffect(() => {
     setSelectedEncounterIds((prev) => {
       if (prev.size === 0) return prev;
       const validIDs = new Set(encounters.map((encounter) => encounter.id));
@@ -1403,6 +1443,16 @@ export const Monsters = () => {
   const filteredTemplates = templates;
   const filteredMonsters = records;
   const filteredEncounters = encounters;
+  const selectedMonsterIdSet = useMemo(
+    () => selectedMonsterIds,
+    [selectedMonsterIds]
+  );
+  const allFilteredMonstersSelected = useMemo(() => {
+    if (filteredMonsters.length === 0) return false;
+    return filteredMonsters.every((monster) =>
+      selectedMonsterIds.has(monster.id)
+    );
+  }, [filteredMonsters, selectedMonsterIds]);
   const selectedEncounterIdSet = useMemo(
     () => selectedEncounterIds,
     [selectedEncounterIds]
@@ -1744,6 +1794,80 @@ export const Monsters = () => {
     }
   };
 
+  const refreshProgressionResetJobStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status =
+          await apiClient.get<MonsterTemplateProgressionResetStatus>(
+            `/sonar/admin/monster-templates/reset-progressions/${jobId}/status`
+          );
+        setProgressionResetJob(status);
+        if (status.status === 'completed') {
+          setProgressionResetBusy(false);
+          setProgressionResetError(null);
+          setProgressionResetMessage(
+            `Reset progressions for ${status.updatedCount} template${
+              status.updatedCount === 1 ? '' : 's'
+            }.`
+          );
+          await loadPagedData(true);
+        } else if (status.status === 'failed') {
+          setProgressionResetBusy(false);
+          setProgressionResetMessage(null);
+          setProgressionResetError(status.error || 'Progression reset failed.');
+        }
+      } catch (err) {
+        console.error(
+          'Failed to refresh monster progression reset job status',
+          err
+        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to refresh progression reset job status.';
+        setProgressionResetError(message);
+        setProgressionResetBusy(false);
+      }
+    },
+    [apiClient, loadPagedData]
+  );
+
+  const handleResetTemplateProgressions = async () => {
+    try {
+      setProgressionResetBusy(true);
+      setProgressionResetError(null);
+      setProgressionResetMessage(null);
+      setProgressionResetJob(null);
+      const ids = Array.from(selectedTemplateIds);
+      const response =
+        await apiClient.post<MonsterTemplateProgressionResetStatus>(
+          '/sonar/admin/monster-templates/reset-progressions',
+          ids.length > 0 ? { ids } : {}
+        );
+      setProgressionResetJob(response);
+      if (response.status === 'completed') {
+        setProgressionResetBusy(false);
+        setProgressionResetMessage(
+          `Reset progressions for ${response.updatedCount} template${
+            response.updatedCount === 1 ? '' : 's'
+          }.`
+        );
+        await loadPagedData(true);
+      } else if (response.status === 'failed') {
+        setProgressionResetBusy(false);
+        setProgressionResetError(response.error || 'Progression reset failed.');
+      }
+    } catch (err) {
+      console.error('Failed to reset monster template progressions', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to reset monster template progressions.';
+      setProgressionResetError(message);
+      setProgressionResetBusy(false);
+    }
+  };
+
   const ensureTemplateOptionsLoaded = useCallback(async () => {
     if (templateOptionsLoaded && templateOptions.length > 0) {
       return templateOptions;
@@ -2040,6 +2164,12 @@ export const Monsters = () => {
     if (!window.confirm(`Delete monster "${monster.name}"?`)) return;
     try {
       await apiClient.delete(`/sonar/monsters/${monster.id}`);
+      setSelectedMonsterIds((prev) => {
+        if (!prev.has(monster.id)) return prev;
+        const next = new Set(prev);
+        next.delete(monster.id);
+        return next;
+      });
       if (monsterOptionsLoaded) {
         setMonsterOptions((prev) =>
           prev.filter((record) => record.id !== monster.id)
@@ -2049,6 +2179,101 @@ export const Monsters = () => {
     } catch (err) {
       console.error('Failed to delete monster', err);
       alert('Failed to delete monster.');
+    }
+  };
+
+  const toggleMonsterSelection = (monsterId: string) => {
+    setSelectedMonsterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(monsterId)) {
+        next.delete(monsterId);
+      } else {
+        next.add(monsterId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllVisibleMonsters = () => {
+    if (filteredMonsters.length === 0) return;
+    setSelectedMonsterIds((prev) => {
+      const next = new Set(prev);
+      filteredMonsters.forEach((monster) => next.add(monster.id));
+      return next;
+    });
+  };
+
+  const clearMonsterSelection = () => {
+    setSelectedMonsterIds(new Set());
+  };
+
+  const handleBulkDeleteMonsters = async () => {
+    if (bulkDeletingMonsters || selectedMonsterIds.size === 0) return;
+
+    const selectedIds = Array.from(selectedMonsterIds);
+    const selectedNames = records
+      .filter((monster) => selectedMonsterIds.has(monster.id))
+      .map((monster) => monster.name);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected monster (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected monsters${
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
+          }? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingMonsters(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((monsterId) =>
+          apiClient.delete(`/sonar/monsters/${monsterId}`)
+        )
+      );
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const monsterId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(monsterId);
+        } else {
+          console.error(`Failed to delete monster ${monsterId}`, result.reason);
+          failedIds.push(monsterId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setSelectedMonsterIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((monsterId) => next.delete(monsterId));
+          return next;
+        });
+        if (monsterOptionsLoaded) {
+          setMonsterOptions((prev) =>
+            prev.filter((monster) => !deletedIds.has(monster.id))
+          );
+        }
+        if (editingMonster && deletedIds.has(editingMonster.id)) {
+          closeMonsterModal();
+        }
+        await loadPagedData(true);
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} monster${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
+            failedIds.length
+          }. Check console for details.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete monsters', err);
+      alert('Failed to delete selected monsters.');
+    } finally {
+      setBulkDeletingMonsters(false);
     }
   };
 
@@ -2558,6 +2783,22 @@ export const Monsters = () => {
     return () => window.clearInterval(interval);
   }, [affinityRefreshJob, refreshAffinityJobStatus]);
 
+  useEffect(() => {
+    if (!progressionResetJob?.jobId) {
+      return;
+    }
+    if (
+      progressionResetJob.status !== 'queued' &&
+      progressionResetJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshProgressionResetJobStatus(progressionResetJob.jobId);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [progressionResetJob, refreshProgressionResetJobStatus]);
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -2876,6 +3117,17 @@ export const Monsters = () => {
                       ? `Refresh Selected Affinities (${selectedTemplateIds.size})`
                       : 'Refresh All Template Affinities'}
                 </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={progressionResetBusy}
+                  onClick={() => void handleResetTemplateProgressions()}
+                >
+                  {progressionResetBusy
+                    ? 'Resetting Progressions...'
+                    : selectedTemplateIds.size > 0
+                      ? `Reset Selected Progressions (${selectedTemplateIds.size})`
+                      : 'Reset All Template Progressions'}
+                </button>
               </div>
               {affinityRefreshJob ? (
                 <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-700">
@@ -2904,6 +3156,35 @@ export const Monsters = () => {
               {affinityRefreshError ? (
                 <p className="mb-4 text-sm text-red-700">
                   {affinityRefreshError}
+                </p>
+              ) : null}
+              {progressionResetJob ? (
+                <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-700">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white ${staticStatusClassName(
+                      progressionResetJob.status
+                    )}`}
+                  >
+                    {formatBulkTemplateStatus(progressionResetJob.status)}
+                  </span>
+                  <span>
+                    Progress: {progressionResetJob.updatedCount}/
+                    {progressionResetJob.totalCount}
+                  </span>
+                  <span>Job: {progressionResetJob.jobId}</span>
+                  <span>
+                    Updated: {formatDate(progressionResetJob.updatedAt)}
+                  </span>
+                </div>
+              ) : null}
+              {progressionResetMessage ? (
+                <p className="mb-4 text-sm text-emerald-700">
+                  {progressionResetMessage}
+                </p>
+              ) : null}
+              {progressionResetError ? (
+                <p className="mb-4 text-sm text-red-700">
+                  {progressionResetError}
                 </p>
               ) : null}
               {filteredTemplates.length === 0 ? (
@@ -3077,7 +3358,45 @@ export const Monsters = () => {
             </div>
 
             <div className="qa-card">
-              <h2 className="text-lg font-semibold mb-3">Monsters</h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">Monsters</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={selectAllVisibleMonsters}
+                    disabled={
+                      filteredMonsters.length === 0 ||
+                      allFilteredMonstersSelected ||
+                      bulkDeletingMonsters
+                    }
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={clearMonsterSelection}
+                    disabled={
+                      selectedMonsterIds.size === 0 || bulkDeletingMonsters
+                    }
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-danger"
+                    onClick={handleBulkDeleteMonsters}
+                    disabled={
+                      selectedMonsterIds.size === 0 || bulkDeletingMonsters
+                    }
+                  >
+                    {bulkDeletingMonsters
+                      ? `Deleting ${selectedMonsterIds.size}...`
+                      : `Delete Selected (${selectedMonsterIds.size})`}
+                  </button>
+                </div>
+              </div>
               {filteredMonsters.length === 0 ? (
                 <p className="text-sm text-gray-600">No monsters found.</p>
               ) : (
@@ -3089,6 +3408,13 @@ export const Monsters = () => {
                     >
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <div className="flex gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 mt-1"
+                            checked={selectedMonsterIdSet.has(monster.id)}
+                            disabled={bulkDeletingMonsters}
+                            onChange={() => toggleMonsterSelection(monster.id)}
+                          />
                           {monster.thumbnailUrl || monster.imageUrl ? (
                             <button
                               type="button"
@@ -3128,8 +3454,8 @@ export const Monsters = () => {
                               Dominant Hand:{' '}
                               {monster.dominantHandInventoryItem?.name ??
                                 monster.weaponInventoryItem?.name ??
-                                ((monster.dominantHandInventoryItemId ??
-                                monster.weaponInventoryItemId)
+                                (monster.dominantHandInventoryItemId ??
+                                monster.weaponInventoryItemId
                                   ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
                                   : 'N/A')}
                             </p>
@@ -3216,6 +3542,7 @@ export const Monsters = () => {
                           <button
                             className="qa-btn qa-btn-danger"
                             onClick={() => deleteMonster(monster)}
+                            disabled={bulkDeletingMonsters}
                           >
                             Delete
                           </button>

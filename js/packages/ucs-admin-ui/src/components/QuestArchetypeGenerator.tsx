@@ -5,6 +5,7 @@ import {
   QuestArchetypeSuggestionDraft,
   QuestArchetypeSuggestionJob,
 } from '@poltergeist/types';
+import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import './questArchetypeTheme.css';
 
 type GeneratorFormState = {
@@ -13,6 +14,7 @@ type GeneratorFormState = {
   familyTagsText: string;
   characterTagsText: string;
   internalTagsText: string;
+  requiredLocationArchetypeIds: string[];
   requiredLocationMetadataTagsText: string;
 };
 
@@ -22,6 +24,7 @@ const emptyGeneratorForm = (): GeneratorFormState => ({
   familyTagsText: '',
   characterTagsText: '',
   internalTagsText: '',
+  requiredLocationArchetypeIds: [],
   requiredLocationMetadataTagsText: '',
 });
 
@@ -81,6 +84,7 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
 
 export const QuestArchetypeGenerator = () => {
   const { apiClient } = useAPI();
+  const { locationArchetypes } = useQuestArchetypes();
   const [form, setForm] = useState<GeneratorFormState>(emptyGeneratorForm);
   const [jobs, setJobs] = useState<QuestArchetypeSuggestionJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -90,13 +94,32 @@ export const QuestArchetypeGenerator = () => {
   const [queueing, setQueueing] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [jobActionError, setJobActionError] = useState<string | null>(null);
-  const [convertingDraftId, setConvertingDraftId] = useState<string | null>(null);
+  const [convertingDraftId, setConvertingDraftId] = useState<string | null>(
+    null
+  );
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
   );
+  const locationArchetypeNamesById = useMemo(() => {
+    const map = new Map<string, string>();
+    locationArchetypes.forEach((archetype) => {
+      map.set(archetype.id, archetype.name);
+    });
+    return map;
+  }, [locationArchetypes]);
+  const selectedJobRequiredLocationArchetypes = useMemo(() => {
+    if (!selectedJob?.requiredLocationArchetypeIds?.length) {
+      return [];
+    }
+    return selectedJob.requiredLocationArchetypeIds.map(
+      (id) =>
+        locationArchetypeNamesById.get(id) ??
+        `Unknown archetype (${id.slice(0, 8)}...)`
+    );
+  }, [locationArchetypeNamesById, selectedJob]);
 
   const fetchJobs = useCallback(async () => {
     setLoadingJobs(true);
@@ -139,7 +162,10 @@ export const QuestArchetypeGenerator = () => {
         setDrafts(response);
         setJobActionError(null);
       } catch (error) {
-        console.error('Failed to load quest archetype suggestion drafts', error);
+        console.error(
+          'Failed to load quest archetype suggestion drafts',
+          error
+        );
         setJobActionError(
           extractApiErrorMessage(error, 'Failed to load generated drafts.')
         );
@@ -188,12 +214,16 @@ export const QuestArchetypeGenerator = () => {
           familyTags: parseTags(form.familyTagsText),
           characterTags: parseTags(form.characterTagsText),
           internalTags: parseTags(form.internalTagsText),
+          requiredLocationArchetypeIds: form.requiredLocationArchetypeIds,
           requiredLocationMetadataTags: parseTags(
             form.requiredLocationMetadataTagsText
           ),
         }
       );
-      setJobs((current) => [created, ...current.filter((job) => job.id !== created.id)]);
+      setJobs((current) => [
+        created,
+        ...current.filter((job) => job.id !== created.id),
+      ]);
       setSelectedJobId(created.id);
       setDrafts([]);
     } catch (error) {
@@ -213,12 +243,18 @@ export const QuestArchetypeGenerator = () => {
     setConvertingDraftId(draftId);
     setJobActionError(null);
     try {
-      await apiClient.post(`/sonar/questArchetypeSuggestionDrafts/${draftId}/convert`, {});
+      await apiClient.post(
+        `/sonar/questArchetypeSuggestionDrafts/${draftId}/convert`,
+        {}
+      );
       if (selectedJobId) {
         await fetchDrafts(selectedJobId);
       }
     } catch (error) {
-      console.error('Failed to convert quest archetype suggestion draft', error);
+      console.error(
+        'Failed to convert quest archetype suggestion draft',
+        error
+      );
       setJobActionError(
         extractApiErrorMessage(error, 'Failed to convert draft into archetype.')
       );
@@ -231,7 +267,9 @@ export const QuestArchetypeGenerator = () => {
     setDeletingDraftId(draftId);
     setJobActionError(null);
     try {
-      await apiClient.delete(`/sonar/questArchetypeSuggestionDrafts/${draftId}`);
+      await apiClient.delete(
+        `/sonar/questArchetypeSuggestionDrafts/${draftId}`
+      );
       setDrafts((current) => current.filter((draft) => draft.id !== draftId));
     } catch (error) {
       console.error('Failed to delete quest archetype suggestion draft', error);
@@ -252,12 +290,16 @@ export const QuestArchetypeGenerator = () => {
             <h1 className="qa-title">Quest Archetype Generator</h1>
             <p className="qa-subtitle">
               Generate batches of draft archetype bundles, review node-by-node
-              content, and convert the strongest ones into live quest archetypes.
+              content, and convert the strongest ones into live quest
+              archetypes.
             </p>
           </div>
         </header>
 
-        <section className="qa-grid" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
+        <section
+          className="qa-grid"
+          style={{ gridTemplateColumns: '1.2fr 1fr' }}
+        >
           <div className="qa-panel">
             <div className="qa-card-title">Queue Suggestion Job</div>
             <p className="qa-muted" style={{ marginTop: 8 }}>
@@ -271,7 +313,10 @@ export const QuestArchetypeGenerator = () => {
                   className="qa-input"
                   value={form.count}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, count: event.target.value }))
+                    setForm((current) => ({
+                      ...current,
+                      count: event.target.value,
+                    }))
                   }
                   type="number"
                   min={1}
@@ -349,6 +394,87 @@ export const QuestArchetypeGenerator = () => {
                   placeholder="market, alley, warehouse"
                 />
               </div>
+              <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                <div className="qa-label">Required Location Archetypes</div>
+                <div
+                  className="qa-muted"
+                  style={{ marginTop: 6, marginBottom: 10 }}
+                >
+                  Every generated draft should include each checked archetype at
+                  least once.
+                </div>
+                <div
+                  className="qa-tree"
+                  style={{ maxHeight: 220, overflowY: 'auto', padding: 8 }}
+                >
+                  {locationArchetypes.length === 0 ? (
+                    <div className="qa-node-card">
+                      <div className="qa-muted">
+                        No location archetypes available.
+                      </div>
+                    </div>
+                  ) : (
+                    locationArchetypes
+                      .slice()
+                      .sort((left, right) =>
+                        left.name.localeCompare(right.name)
+                      )
+                      .map((archetype) => {
+                        const checked =
+                          form.requiredLocationArchetypeIds.includes(
+                            archetype.id
+                          );
+                        return (
+                          <label
+                            key={archetype.id}
+                            className="qa-node-card"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  requiredLocationArchetypeIds: event.target
+                                    .checked
+                                    ? [
+                                        ...current.requiredLocationArchetypeIds,
+                                        archetype.id,
+                                      ]
+                                    : current.requiredLocationArchetypeIds.filter(
+                                        (id) => id !== archetype.id
+                                      ),
+                                }))
+                              }
+                            />
+                            <div>
+                              <div
+                                className="qa-meta"
+                                style={{ fontWeight: 600 }}
+                              >
+                                {archetype.name}
+                              </div>
+                              <div
+                                className="qa-muted"
+                                style={{ marginTop: 4 }}
+                              >
+                                {(archetype.includedTypes ?? [])
+                                  .slice(0, 4)
+                                  .join(', ') || 'No included place types'}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="qa-actions" style={{ marginTop: 18 }}>
@@ -405,7 +531,9 @@ export const QuestArchetypeGenerator = () => {
                         <div className="qa-card-title" style={{ fontSize: 16 }}>
                           Job {job.id.slice(0, 8)}...
                         </div>
-                        <div className="qa-meta">{formatDate(job.createdAt)}</div>
+                        <div className="qa-meta">
+                          {formatDate(job.createdAt)}
+                        </div>
                       </div>
                       <div className={statusChipClass(job.status)}>
                         {formatStatus(job.status)}
@@ -414,6 +542,18 @@ export const QuestArchetypeGenerator = () => {
                     <div className="qa-meta">
                       Drafts: {job.createdCount}/{job.count}
                     </div>
+                    {job.requiredLocationArchetypeIds?.length > 0 && (
+                      <div className="qa-meta" style={{ marginTop: 8 }}>
+                        Required archetypes:{' '}
+                        {job.requiredLocationArchetypeIds
+                          .map(
+                            (id) =>
+                              locationArchetypeNamesById.get(id) ??
+                              `Unknown archetype (${id.slice(0, 8)}...)`
+                          )
+                          .join(', ')}
+                      </div>
+                    )}
                     {job.themePrompt && (
                       <div className="qa-muted" style={{ marginTop: 8 }}>
                         {job.themePrompt}
@@ -493,11 +633,19 @@ export const QuestArchetypeGenerator = () => {
                   </div>
 
                   <div style={{ marginTop: 18 }}>
+                    {selectedJobRequiredLocationArchetypes.length > 0 && (
+                      <div className="qa-meta" style={{ marginBottom: 8 }}>
+                        Required archetypes:{' '}
+                        {selectedJobRequiredLocationArchetypes.join(', ')}
+                      </div>
+                    )}
                     <div className="qa-meta">
-                      Character tags: {(draft.characterTags ?? []).join(', ') || 'none'}
+                      Character tags:{' '}
+                      {(draft.characterTags ?? []).join(', ') || 'none'}
                     </div>
                     <div className="qa-meta" style={{ marginTop: 6 }}>
-                      Internal tags: {(draft.internalTags ?? []).join(', ') || 'none'}
+                      Internal tags:{' '}
+                      {(draft.internalTags ?? []).join(', ') || 'none'}
                     </div>
                     <p style={{ marginTop: 12 }}>{draft.description}</p>
                   </div>
@@ -507,7 +655,10 @@ export const QuestArchetypeGenerator = () => {
                       <div className="qa-stat-label">Acceptance Dialogue</div>
                       <div className="qa-tree" style={{ marginTop: 8 }}>
                         {draft.acceptanceDialogue.map((line, index) => (
-                          <div key={`${draft.id}-dialogue-${index}`} className="qa-node-card">
+                          <div
+                            key={`${draft.id}-dialogue-${index}`}
+                            className="qa-node-card"
+                          >
                             {line}
                           </div>
                         ))}
@@ -519,8 +670,14 @@ export const QuestArchetypeGenerator = () => {
                     <div className="qa-stat-label">Node Plan</div>
                     <div className="qa-tree" style={{ marginTop: 10 }}>
                       {draft.steps.map((step, index) => (
-                        <div key={`${draft.id}-step-${index}`} className="qa-node-card">
-                          <div className="qa-card-title" style={{ fontSize: 15 }}>
+                        <div
+                          key={`${draft.id}-step-${index}`}
+                          className="qa-node-card"
+                        >
+                          <div
+                            className="qa-card-title"
+                            style={{ fontSize: 15 }}
+                          >
                             Step {index + 1}: {step.source} {step.content}
                           </div>
                           <div className="qa-meta" style={{ marginTop: 8 }}>
@@ -537,7 +694,8 @@ export const QuestArchetypeGenerator = () => {
                             </div>
                           )}
                           <div className="qa-meta" style={{ marginTop: 6 }}>
-                            Metadata tags: {(step.locationMetadataTags ?? []).join(', ')}
+                            Metadata tags:{' '}
+                            {(step.locationMetadataTags ?? []).join(', ')}
                           </div>
                           <div className="qa-meta" style={{ marginTop: 6 }}>
                             Template concept: {step.templateConcept}
@@ -545,7 +703,9 @@ export const QuestArchetypeGenerator = () => {
 
                           {step.content === 'challenge' && (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Challenge Template Draft</div>
+                              <div className="qa-stat-label">
+                                Challenge Template Draft
+                              </div>
                               <div className="qa-meta" style={{ marginTop: 6 }}>
                                 Question: {step.challengeQuestion}
                               </div>
@@ -553,47 +713,62 @@ export const QuestArchetypeGenerator = () => {
                                 Description: {step.challengeDescription}
                               </div>
                               <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Submission: {step.challengeSubmissionType || 'photo'}
+                                Submission:{' '}
+                                {step.challengeSubmissionType || 'photo'}
                               </div>
                             </div>
                           )}
 
                           {step.content === 'scenario' && (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Scenario Template Draft</div>
+                              <div className="qa-stat-label">
+                                Scenario Template Draft
+                              </div>
                               <div className="qa-meta" style={{ marginTop: 6 }}>
                                 Prompt: {step.scenarioPrompt}
                               </div>
                               <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Beats: {(step.scenarioBeats ?? []).join(', ') || 'none'}
+                                Beats:{' '}
+                                {(step.scenarioBeats ?? []).join(', ') ||
+                                  'none'}
                               </div>
                             </div>
                           )}
 
                           {step.content === 'monster' && (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Monster Encounter Draft</div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Templates: {(step.monsterTemplateNames ?? []).join(', ') || 'none'}
+                              <div className="qa-stat-label">
+                                Monster Encounter Draft
                               </div>
                               <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Tone: {(step.encounterTone ?? []).join(', ') || 'none'}
+                                Templates:{' '}
+                                {(step.monsterTemplateNames ?? []).join(', ') ||
+                                  'none'}
+                              </div>
+                              <div className="qa-meta" style={{ marginTop: 6 }}>
+                                Tone:{' '}
+                                {(step.encounterTone ?? []).join(', ') ||
+                                  'none'}
                               </div>
                             </div>
                           )}
 
                           {(step.potentialContent ?? []).length > 0 && (
                             <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">Potential Content</div>
+                              <div className="qa-stat-label">
+                                Potential Content
+                              </div>
                               <div className="qa-tree" style={{ marginTop: 8 }}>
-                                {step.potentialContent.map((item, ideaIndex) => (
-                                  <div
-                                    key={`${draft.id}-step-${index}-idea-${ideaIndex}`}
-                                    className="qa-node-card"
-                                  >
-                                    {item}
-                                  </div>
-                                ))}
+                                {step.potentialContent.map(
+                                  (item, ideaIndex) => (
+                                    <div
+                                      key={`${draft.id}-step-${index}-idea-${ideaIndex}`}
+                                      className="qa-node-card"
+                                    >
+                                      {item}
+                                    </div>
+                                  )
+                                )}
                               </div>
                             </div>
                           )}
@@ -614,7 +789,10 @@ export const QuestArchetypeGenerator = () => {
                       <div className="qa-stat-label">Warnings</div>
                       <div className="qa-tree" style={{ marginTop: 8 }}>
                         {draft.warnings.map((warning, index) => (
-                          <div key={`${draft.id}-warning-${index}`} className="qa-chip danger">
+                          <div
+                            key={`${draft.id}-warning-${index}`}
+                            className="qa-chip danger"
+                          >
                             {warning}
                           </div>
                         ))}
@@ -629,17 +807,20 @@ export const QuestArchetypeGenerator = () => {
                       <div className="qa-stat-label">Seed Notes</div>
                       {draft.challengeTemplateSeeds?.length ? (
                         <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Challenge seeds: {draft.challengeTemplateSeeds.join(' | ')}
+                          Challenge seeds:{' '}
+                          {draft.challengeTemplateSeeds.join(' | ')}
                         </div>
                       ) : null}
                       {draft.scenarioTemplateSeeds?.length ? (
                         <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Scenario seeds: {draft.scenarioTemplateSeeds.join(' | ')}
+                          Scenario seeds:{' '}
+                          {draft.scenarioTemplateSeeds.join(' | ')}
                         </div>
                       ) : null}
                       {draft.monsterTemplateSeeds?.length ? (
                         <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Monster seeds: {draft.monsterTemplateSeeds.join(' | ')}
+                          Monster seeds:{' '}
+                          {draft.monsterTemplateSeeds.join(' | ')}
                         </div>
                       ) : null}
                     </div>
@@ -647,7 +828,10 @@ export const QuestArchetypeGenerator = () => {
 
                   <div className="qa-actions" style={{ marginTop: 18 }}>
                     {draft.questArchetypeId ? (
-                      <Link to="/quest-archetypes" className="qa-btn qa-btn-outline">
+                      <Link
+                        to="/quest-archetypes"
+                        className="qa-btn qa-btn-outline"
+                      >
                         Open Quest Archetypes
                       </Link>
                     ) : (
@@ -669,7 +853,9 @@ export const QuestArchetypeGenerator = () => {
                         onClick={() => void handleDeleteDraft(draft.id)}
                         disabled={deletingDraftId === draft.id}
                       >
-                        {deletingDraftId === draft.id ? 'Deleting...' : 'Delete Draft'}
+                        {deletingDraftId === draft.id
+                          ? 'Deleting...'
+                          : 'Delete Draft'}
                       </button>
                     )}
                   </div>

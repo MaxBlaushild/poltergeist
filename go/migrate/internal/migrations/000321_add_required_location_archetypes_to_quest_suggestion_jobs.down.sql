@@ -1,0 +1,2 @@
+ALTER TABLE quest_archetype_suggestion_jobs
+DROP COLUMN IF EXISTS required_location_archetype_ids;
