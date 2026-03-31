@@ -195,9 +195,14 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 		return nil, fmt.Errorf("the first step cannot use proximity")
 	}
 
+	monsterTemplates, err := s.dbClient.MonsterTemplate().FindAllActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster templates: %w", err)
+	}
+
 	nodes := make([]*models.QuestArchetypeNode, 0, len(draft.Steps))
 	for _, step := range draft.Steps {
-		node, err := s.createQuestArchetypeSuggestionNode(ctx, step, draft)
+		node, err := s.createQuestArchetypeSuggestionNode(ctx, step, draft, &monsterTemplates)
 		if err != nil {
 			return nil, err
 		}
@@ -264,6 +269,7 @@ func (s *server) createQuestArchetypeSuggestionNode(
 	ctx context.Context,
 	step models.QuestArchetypeSuggestionStep,
 	draft *models.QuestArchetypeSuggestionDraft,
+	monsterTemplates *[]models.MonsterTemplate,
 ) (*models.QuestArchetypeNode, error) {
 	if step.Source == "location" && (step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil) {
 		return nil, fmt.Errorf("%s step %q is missing a resolved location archetype", step.Content, step.LocationConcept)
@@ -283,9 +289,31 @@ func (s *server) createQuestArchetypeSuggestionNode(
 			payload.EncounterProximityMeters = step.DistanceMeters
 		}
 	case "monster":
+		locationArchetype, err := s.resolveQuestArchetypeSuggestionStepLocationArchetype(ctx, step)
+		if err != nil {
+			return nil, err
+		}
+		templateIDs, err := s.ensureQuestMonsterTemplateIDs(
+			ctx,
+			monsterTemplates,
+			questMonsterTemplateRequest{
+				Count:             questArchetypeSuggestionMonsterTemplateCount(step),
+				MonsterType:       models.MonsterTemplateTypeMonster,
+				ThemePrompt:       strings.TrimSpace(draft.Name + " " + draft.Hook + " " + draft.Description),
+				EncounterConcept:  questArchetypeSuggestionMonsterEncounterConcept(step, draft),
+				LocationConcept:   strings.TrimSpace(step.LocationConcept),
+				LocationArchetype: locationArchetype,
+				EncounterTone:     step.EncounterTone,
+				SeedHints:         questArchetypeSuggestionMonsterSeedHints(step, draft),
+			},
+			step.MonsterTemplateIDs,
+		)
+		if err != nil {
+			return nil, err
+		}
 		payload.NodeType = string(models.QuestArchetypeNodeTypeMonsterEncounter)
 		payload.LocationArchetypeID = step.LocationArchetypeID
-		payload.MonsterTemplateIDs = step.MonsterTemplateIDs
+		payload.MonsterTemplateIDs = templateIDs
 		targetLevel := models.NormalizeMonsterEncounterTargetLevel(draft.MonsterEncounterTargetLevel)
 		payload.TargetLevel = &targetLevel
 		if step.DistanceMeters != nil {
@@ -311,6 +339,64 @@ func (s *server) createQuestArchetypeSuggestionNode(
 		return nil, fmt.Errorf("failed to create quest archetype node: %w", err)
 	}
 	return node, nil
+}
+
+func (s *server) resolveQuestArchetypeSuggestionStepLocationArchetype(
+	ctx context.Context,
+	step models.QuestArchetypeSuggestionStep,
+) (*models.LocationArchetype, error) {
+	if step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil {
+		return nil, nil
+	}
+	locationArchetype, err := s.dbClient.LocationArchetype().FindByID(ctx, *step.LocationArchetypeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load location archetype for monster step: %w", err)
+	}
+	return locationArchetype, nil
+}
+
+func questArchetypeSuggestionMonsterTemplateCount(step models.QuestArchetypeSuggestionStep) int {
+	count := len(step.MonsterTemplateIDs)
+	if len(step.MonsterTemplateNames) > count {
+		count = len(step.MonsterTemplateNames)
+	}
+	return maxInt(1, count)
+}
+
+func questArchetypeSuggestionMonsterEncounterConcept(
+	step models.QuestArchetypeSuggestionStep,
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	if concept := strings.TrimSpace(step.TemplateConcept); concept != "" {
+		return concept
+	}
+	if len(step.PotentialContent) > 0 {
+		return strings.TrimSpace(step.PotentialContent[0])
+	}
+	if draft == nil {
+		return strings.TrimSpace(step.LocationConcept)
+	}
+	return strings.TrimSpace(draft.Name + " " + step.LocationConcept)
+}
+
+func questArchetypeSuggestionMonsterSeedHints(
+	step models.QuestArchetypeSuggestionStep,
+	draft *models.QuestArchetypeSuggestionDraft,
+) []string {
+	hints := make([]string, 0, len(step.MonsterTemplateNames)+len(step.PotentialContent)+len(step.EncounterTone)+len(draft.MonsterTemplateSeeds)+2)
+	hints = append(hints, step.MonsterTemplateNames...)
+	hints = append(hints, step.PotentialContent...)
+	hints = append(hints, step.EncounterTone...)
+	if draft != nil {
+		hints = append(hints, draft.MonsterTemplateSeeds...)
+	}
+	if concept := strings.TrimSpace(step.TemplateConcept); concept != "" {
+		hints = append(hints, concept)
+	}
+	if location := strings.TrimSpace(step.LocationConcept); location != "" {
+		hints = append(hints, location)
+	}
+	return hints
 }
 
 func (s *server) linkQuestArchetypeSuggestionStep(

@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -102,7 +101,7 @@ func (s *server) generateQuestArchetypeFromSteps(
 	var previousNode *models.QuestArchetypeNode
 	var previousStep *normalizedQuestTemplateGeneratorStep
 	for idx, step := range steps {
-		node, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, monsterTemplates)
+		node, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, &monsterTemplates)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +208,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	themePrompt string,
 	stepIndex int,
 	step normalizedQuestTemplateGeneratorStep,
-	monsterTemplates []models.MonsterTemplate,
+	monsterTemplates *[]models.MonsterTemplate,
 ) (*models.QuestArchetypeNode, error) {
 	payload := questArchetypeNodePayload{
 		Difficulty: intPtr(0),
@@ -228,7 +227,19 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 		payload.ScenarioTemplateID = &template.ID
 		payload.EncounterProximityMeters = intPtr(step.ProximityMeters)
 	case questTemplateGeneratorContentMonster:
-		templateIDs, err := selectGeneratedMonsterTemplateIDs(monsterTemplates, themePrompt, step)
+		templateIDs, err := s.ensureQuestMonsterTemplateIDs(
+			ctx,
+			monsterTemplates,
+			questMonsterTemplateRequest{
+				Count:             1,
+				MonsterType:       models.MonsterTemplateTypeMonster,
+				ThemePrompt:       themePrompt,
+				EncounterConcept:  buildGeneratedQuestTemplateName("", themePrompt, []normalizedQuestTemplateGeneratorStep{step}),
+				LocationConcept:   generatedQuestMonsterLocationConcept(step),
+				LocationArchetype: step.LocationArchetype,
+			},
+			nil,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -493,55 +504,6 @@ func buildGeneratedQuestTemplateAcceptanceDialogue(
 	return lines
 }
 
-func selectGeneratedMonsterTemplateIDs(
-	templates []models.MonsterTemplate,
-	themePrompt string,
-	step normalizedQuestTemplateGeneratorStep,
-) ([]string, error) {
-	if len(templates) == 0 {
-		return nil, fmt.Errorf("at least one active monster template is required")
-	}
-	queryTokens := generatedQuestTemplateTokens(themePrompt)
-	if step.LocationArchetype != nil {
-		queryTokens = append(queryTokens, generatedQuestTemplateTokens(step.LocationArchetype.Name)...)
-		for _, placeType := range step.LocationArchetype.IncludedTypes {
-			queryTokens = append(queryTokens, generatedQuestTemplateTokens(string(placeType))...)
-		}
-	}
-	querySet := map[string]struct{}{}
-	for _, token := range queryTokens {
-		querySet[token] = struct{}{}
-	}
-	type scoredTemplate struct {
-		template models.MonsterTemplate
-		score    int
-	}
-	scored := make([]scoredTemplate, 0, len(templates))
-	for _, template := range templates {
-		score := 0
-		for _, token := range generatedQuestTemplateTokens(template.Name + " " + template.Description) {
-			if _, ok := querySet[token]; ok {
-				score++
-			}
-		}
-		if template.MonsterType == models.MonsterTemplateTypeMonster {
-			score++
-		}
-		scored = append(scored, scoredTemplate{template: template, score: score})
-	}
-	sort.Slice(scored, func(i, j int) bool {
-		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
-		}
-		if scored[i].template.MonsterType != scored[j].template.MonsterType {
-			return scored[i].template.MonsterType < scored[j].template.MonsterType
-		}
-		return strings.ToLower(scored[i].template.Name) < strings.ToLower(scored[j].template.Name)
-	})
-	selected := scored[0].template.ID.String()
-	return []string{selected}, nil
-}
-
 func generatedQuestTemplateTokens(input string) []string {
 	normalized := strings.ToLower(strings.TrimSpace(input))
 	if normalized == "" {
@@ -557,4 +519,11 @@ func generatedQuestTemplateTokens(input string) []string {
 		out = append(out, word)
 	}
 	return out
+}
+
+func generatedQuestMonsterLocationConcept(step normalizedQuestTemplateGeneratorStep) string {
+	if step.LocationArchetype == nil {
+		return ""
+	}
+	return strings.TrimSpace(step.LocationArchetype.Name)
 }

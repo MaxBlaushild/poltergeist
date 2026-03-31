@@ -45,6 +45,8 @@ type DbClient interface {
 	Spell() SpellHandle
 	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
+	InventoryItemSuggestionJob() InventoryItemSuggestionJobHandle
+	InventoryItemSuggestionDraft() InventoryItemSuggestionDraftHandle
 	UserLearnedRecipe() UserLearnedRecipeHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	Tutorial() TutorialHandle
@@ -521,6 +523,21 @@ type InventoryItemHandle interface {
 	FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
 	UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error
 	DeleteInventoryItem(ctx context.Context, id int) error
+}
+
+type InventoryItemSuggestionJobHandle interface {
+	Create(ctx context.Context, job *models.InventoryItemSuggestionJob) error
+	Update(ctx context.Context, job *models.InventoryItemSuggestionJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.InventoryItemSuggestionJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.InventoryItemSuggestionJob, error)
+}
+
+type InventoryItemSuggestionDraftHandle interface {
+	Create(ctx context.Context, draft *models.InventoryItemSuggestionDraft) error
+	Update(ctx context.Context, draft *models.InventoryItemSuggestionDraft) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.InventoryItemSuggestionDraft, error)
+	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.InventoryItemSuggestionDraft, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type UserLearnedRecipeHandle interface {

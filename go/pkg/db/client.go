@@ -48,6 +48,8 @@ type client struct {
 	spellHandle                          *spellHandler
 	userSpellHandle                      *userSpellHandler
 	inventoryItemHandle                  *inventoryItemHandler
+	inventoryItemSuggestionJobHandle     *inventoryItemSuggestionJobHandle
+	inventoryItemSuggestionDraftHandle   *inventoryItemSuggestionDraftHandle
 	userLearnedRecipeHandle              *userLearnedRecipeHandle
 	newUserStarterConfigHandle           *newUserStarterConfigHandle
 	tutorialHandle                       *tutorialHandle
@@ -214,6 +216,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		spellHandle:                          &spellHandler{db: db},
 		userSpellHandle:                      &userSpellHandler{db: db},
 		inventoryItemHandle:                  &inventoryItemHandler{db: db},
+		inventoryItemSuggestionJobHandle:     &inventoryItemSuggestionJobHandle{db: db},
+		inventoryItemSuggestionDraftHandle:   &inventoryItemSuggestionDraftHandle{db: db},
 		userLearnedRecipeHandle:              &userLearnedRecipeHandle{db: db},
 		newUserStarterConfigHandle:           &newUserStarterConfigHandle{db: db},
 		tutorialHandle:                       &tutorialHandle{db: db},
@@ -508,6 +512,14 @@ func (c *client) AuditItem() AuditItemHandle {
 
 func (c *client) InventoryItem() InventoryItemHandle {
 	return c.inventoryItemHandle
+}
+
+func (c *client) InventoryItemSuggestionJob() InventoryItemSuggestionJobHandle {
+	return c.inventoryItemSuggestionJobHandle
+}
+
+func (c *client) InventoryItemSuggestionDraft() InventoryItemSuggestionDraftHandle {
+	return c.inventoryItemSuggestionDraftHandle
 }
 
 func (c *client) UserLearnedRecipe() UserLearnedRecipeHandle {

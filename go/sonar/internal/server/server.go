@@ -233,6 +233,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllInventoryItems))
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
+	r.POST("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItemSuggestionJob))
+	r.GET("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJobs))
+	r.GET("/sonar/inventory-item-suggestion-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJob))
+	r.GET("/sonar/inventory-item-suggestion-jobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionDrafts))
+	r.POST("/sonar/inventory-item-suggestion-drafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertInventoryItemSuggestionDraft))
+	r.DELETE("/sonar/inventory-item-suggestion-drafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItemSuggestionDraft))
+	r.POST("/sonar/inventory-items/:id/generate-progression-drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItemProgressionDrafts))
 	r.POST("/sonar/inventory-items/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItem))
 	r.POST("/sonar/inventory-items/generate-equippable-set", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateEquippableInventorySet))
 	r.POST("/sonar/inventory-items/:id/generate-consumable-qualities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateConsumableQualities))
@@ -8071,251 +8078,15 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 }
 
 func (s *server) createInventoryItem(ctx *gin.Context) {
-	var requestBody struct {
-		Name                                     string                         `json:"name" binding:"required"`
-		Archived                                 *bool                          `json:"archived"`
-		ImageURL                                 string                         `json:"imageUrl"`
-		FlavorText                               string                         `json:"flavorText"`
-		EffectText                               string                         `json:"effectText"`
-		RarityTier                               string                         `json:"rarityTier" binding:"required"`
-		IsCaptureType                            bool                           `json:"isCaptureType"`
-		BuyPrice                                 *int                           `json:"buyPrice"`
-		UnlockTier                               *int                           `json:"unlockTier"`
-		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
-		ItemLevel                                *int                           `json:"itemLevel"`
-		EquipSlot                                *string                        `json:"equipSlot"`
-		StrengthMod                              int                            `json:"strengthMod"`
-		DexterityMod                             int                            `json:"dexterityMod"`
-		ConstitutionMod                          int                            `json:"constitutionMod"`
-		IntelligenceMod                          int                            `json:"intelligenceMod"`
-		WisdomMod                                int                            `json:"wisdomMod"`
-		CharismaMod                              int                            `json:"charismaMod"`
-		PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent"`
-		PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent"`
-		SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent"`
-		BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent"`
-		FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent"`
-		IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent"`
-		LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent"`
-		PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent"`
-		ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent"`
-		HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent"`
-		ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent"`
-		PhysicalResistancePercent                int                            `json:"physicalResistancePercent"`
-		PiercingResistancePercent                int                            `json:"piercingResistancePercent"`
-		SlashingResistancePercent                int                            `json:"slashingResistancePercent"`
-		BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent"`
-		FireResistancePercent                    int                            `json:"fireResistancePercent"`
-		IceResistancePercent                     int                            `json:"iceResistancePercent"`
-		LightningResistancePercent               int                            `json:"lightningResistancePercent"`
-		PoisonResistancePercent                  int                            `json:"poisonResistancePercent"`
-		ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent"`
-		HolyResistancePercent                    int                            `json:"holyResistancePercent"`
-		ShadowResistancePercent                  int                            `json:"shadowResistancePercent"`
-		HandItemCategory                         *string                        `json:"handItemCategory"`
-		Handedness                               *string                        `json:"handedness"`
-		DamageMin                                *int                           `json:"damageMin"`
-		DamageMax                                *int                           `json:"damageMax"`
-		DamageAffinity                           *string                        `json:"damageAffinity"`
-		SwipesPerAttack                          *int                           `json:"swipesPerAttack"`
-		BlockPercentage                          *int                           `json:"blockPercentage"`
-		DamageBlocked                            *int                           `json:"damageBlocked"`
-		SpellDamageBonusPercent                  *int                           `json:"spellDamageBonusPercent"`
-		ConsumeHealthDelta                       int                            `json:"consumeHealthDelta"`
-		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
-		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
-		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
-		ConsumeDealDamage                        int                            `json:"consumeDealDamage"`
-		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
-		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
-		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
-		ConsumeCreateBase                        bool                           `json:"consumeCreateBase"`
-		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
-		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
-		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
-		ConsumeTeachRecipeIDs                    []string                       `json:"consumeTeachRecipeIds"`
-		AlchemyRecipes                           []inventoryRecipePayload       `json:"alchemyRecipes"`
-		WorkshopRecipes                          []inventoryRecipePayload       `json:"workshopRecipes"`
-		InternalTags                             []string                       `json:"internalTags"`
-	}
-
+	var requestBody inventoryItemUpsertRequest
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	itemLevel := 1
-	if requestBody.ItemLevel != nil {
-		itemLevel = *requestBody.ItemLevel
-	}
-	if itemLevel < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
-		return
-	}
-	if requestBody.BuyPrice != nil && *requestBody.BuyPrice < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "buyPrice must be 0 or greater"})
-		return
-	}
-	if requestBody.UnlockLocksStrength != nil &&
-		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockLocksStrength must be between 1 and 100"})
-		return
-	}
-	consumeDealDamageHits := 0
-	if requestBody.ConsumeDealDamage > 0 {
-		consumeDealDamageHits = 1
-		if requestBody.ConsumeDealDamageHits != nil {
-			consumeDealDamageHits = *requestBody.ConsumeDealDamageHits
-		}
-		if consumeDealDamageHits < 1 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageHits must be 1 or greater when consumeDealDamage is set"})
-			return
-		}
-	}
-	consumeDealDamageAllEnemiesHits := 0
-	if requestBody.ConsumeDealDamageAllEnemies > 0 {
-		consumeDealDamageAllEnemiesHits = 1
-		if requestBody.ConsumeDealDamageAllEnemiesHits != nil {
-			consumeDealDamageAllEnemiesHits = *requestBody.ConsumeDealDamageAllEnemiesHits
-		}
-		if consumeDealDamageAllEnemiesHits < 1 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageAllEnemiesHits must be 1 or greater when consumeDealDamageAllEnemies is set"})
-			return
-		}
-	}
-
-	var equipSlot *string
-	if requestBody.EquipSlot != nil {
-		trimmed := strings.TrimSpace(*requestBody.EquipSlot)
-		if trimmed != "" {
-			if !models.IsValidInventoryEquipSlot(trimmed) {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equip slot"})
-				return
-			}
-			equipSlot = &trimmed
-		}
-	}
-	handAttrs, err := models.NormalizeAndValidateHandEquipment(equipSlot, models.HandEquipmentAttributes{
-		HandItemCategory:        requestBody.HandItemCategory,
-		Handedness:              requestBody.Handedness,
-		DamageMin:               requestBody.DamageMin,
-		DamageMax:               requestBody.DamageMax,
-		DamageAffinity:          requestBody.DamageAffinity,
-		SwipesPerAttack:         requestBody.SwipesPerAttack,
-		BlockPercentage:         requestBody.BlockPercentage,
-		DamageBlocked:           requestBody.DamageBlocked,
-		SpellDamageBonusPercent: requestBody.SpellDamageBonusPercent,
-	})
+	item, err := s.normalizeInventoryItemUpsertRequest(ctx, requestBody, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-	consumeStatusesToAdd, err := parseScenarioFailureStatusTemplates(requestBody.ConsumeStatusesToAdd, "consumeStatusesToAdd")
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
-	consumeSpellIDs, err := parseInventoryConsumeSpellIDs(requestBody.ConsumeSpellIDs)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	alchemyRecipes, workshopRecipes, consumeTeachRecipeIDs, err := s.parseInventoryRecipeConfiguration(
-		ctx,
-		requestBody.AlchemyRecipes,
-		requestBody.WorkshopRecipes,
-		requestBody.ConsumeTeachRecipeIDs,
-		nil,
-	)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
-	for idx, rawSpellID := range consumeSpellIDs {
-		spellID, _ := uuid.Parse(rawSpellID)
-		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
-			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("consumeSpellIds[%d] not found", idx)})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	item := &models.InventoryItem{
-		Archived:                                 requestBody.Archived != nil && *requestBody.Archived,
-		Name:                                     requestBody.Name,
-		ImageURL:                                 requestBody.ImageURL,
-		FlavorText:                               requestBody.FlavorText,
-		EffectText:                               requestBody.EffectText,
-		RarityTier:                               requestBody.RarityTier,
-		IsCaptureType:                            requestBody.IsCaptureType,
-		BuyPrice:                                 requestBody.BuyPrice,
-		UnlockTier:                               requestBody.UnlockTier,
-		UnlockLocksStrength:                      requestBody.UnlockLocksStrength,
-		ItemLevel:                                itemLevel,
-		EquipSlot:                                equipSlot,
-		StrengthMod:                              requestBody.StrengthMod,
-		DexterityMod:                             requestBody.DexterityMod,
-		ConstitutionMod:                          requestBody.ConstitutionMod,
-		IntelligenceMod:                          requestBody.IntelligenceMod,
-		WisdomMod:                                requestBody.WisdomMod,
-		CharismaMod:                              requestBody.CharismaMod,
-		PhysicalDamageBonusPercent:               requestBody.PhysicalDamageBonusPercent,
-		PiercingDamageBonusPercent:               requestBody.PiercingDamageBonusPercent,
-		SlashingDamageBonusPercent:               requestBody.SlashingDamageBonusPercent,
-		BludgeoningDamageBonusPercent:            requestBody.BludgeoningDamageBonusPercent,
-		FireDamageBonusPercent:                   requestBody.FireDamageBonusPercent,
-		IceDamageBonusPercent:                    requestBody.IceDamageBonusPercent,
-		LightningDamageBonusPercent:              requestBody.LightningDamageBonusPercent,
-		PoisonDamageBonusPercent:                 requestBody.PoisonDamageBonusPercent,
-		ArcaneDamageBonusPercent:                 requestBody.ArcaneDamageBonusPercent,
-		HolyDamageBonusPercent:                   requestBody.HolyDamageBonusPercent,
-		ShadowDamageBonusPercent:                 requestBody.ShadowDamageBonusPercent,
-		PhysicalResistancePercent:                requestBody.PhysicalResistancePercent,
-		PiercingResistancePercent:                requestBody.PiercingResistancePercent,
-		SlashingResistancePercent:                requestBody.SlashingResistancePercent,
-		BludgeoningResistancePercent:             requestBody.BludgeoningResistancePercent,
-		FireResistancePercent:                    requestBody.FireResistancePercent,
-		IceResistancePercent:                     requestBody.IceResistancePercent,
-		LightningResistancePercent:               requestBody.LightningResistancePercent,
-		PoisonResistancePercent:                  requestBody.PoisonResistancePercent,
-		ArcaneResistancePercent:                  requestBody.ArcaneResistancePercent,
-		HolyResistancePercent:                    requestBody.HolyResistancePercent,
-		ShadowResistancePercent:                  requestBody.ShadowResistancePercent,
-		HandItemCategory:                         handAttrs.HandItemCategory,
-		Handedness:                               handAttrs.Handedness,
-		DamageMin:                                handAttrs.DamageMin,
-		DamageMax:                                handAttrs.DamageMax,
-		DamageAffinity:                           handAttrs.DamageAffinity,
-		SwipesPerAttack:                          handAttrs.SwipesPerAttack,
-		BlockPercentage:                          handAttrs.BlockPercentage,
-		DamageBlocked:                            handAttrs.DamageBlocked,
-		SpellDamageBonusPercent:                  handAttrs.SpellDamageBonusPercent,
-		ConsumeHealthDelta:                       requestBody.ConsumeHealthDelta,
-		ConsumeManaDelta:                         requestBody.ConsumeManaDelta,
-		ConsumeRevivePartyMemberHealth:           requestBody.ConsumeRevivePartyMemberHealth,
-		ConsumeReviveAllDownedPartyMembersHealth: requestBody.ConsumeReviveAllDownedPartyMembersHealth,
-		ConsumeDealDamage:                        requestBody.ConsumeDealDamage,
-		ConsumeDealDamageHits:                    consumeDealDamageHits,
-		ConsumeDealDamageAllEnemies:              requestBody.ConsumeDealDamageAllEnemies,
-		ConsumeDealDamageAllEnemiesHits:          consumeDealDamageAllEnemiesHits,
-		ConsumeCreateBase:                        requestBody.ConsumeCreateBase,
-		ConsumeStatusesToAdd:                     consumeStatusesToAdd,
-		ConsumeStatusesToRemove:                  consumeStatusesToRemove,
-		ConsumeSpellIDs:                          consumeSpellIDs,
-		ConsumeTeachRecipeIDs:                    consumeTeachRecipeIDs,
-		AlchemyRecipes:                           alchemyRecipes,
-		WorkshopRecipes:                          workshopRecipes,
-		InternalTags:                             internalTags,
-		ImageGenerationStatus: func() string {
-			if requestBody.ImageURL != "" {
-				return models.InventoryImageGenerationStatusComplete
-			}
-			return models.InventoryImageGenerationStatusNone
-		}(),
 	}
 
 	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -10093,252 +9864,83 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	var requestBody struct {
-		Name                                     string                         `json:"name"`
-		Archived                                 *bool                          `json:"archived"`
-		ImageURL                                 string                         `json:"imageUrl"`
-		FlavorText                               string                         `json:"flavorText"`
-		EffectText                               string                         `json:"effectText"`
-		RarityTier                               string                         `json:"rarityTier"`
-		IsCaptureType                            bool                           `json:"isCaptureType"`
-		BuyPrice                                 *int                           `json:"buyPrice"`
-		UnlockTier                               *int                           `json:"unlockTier"`
-		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
-		ItemLevel                                *int                           `json:"itemLevel"`
-		EquipSlot                                *string                        `json:"equipSlot"`
-		StrengthMod                              int                            `json:"strengthMod"`
-		DexterityMod                             int                            `json:"dexterityMod"`
-		ConstitutionMod                          int                            `json:"constitutionMod"`
-		IntelligenceMod                          int                            `json:"intelligenceMod"`
-		WisdomMod                                int                            `json:"wisdomMod"`
-		CharismaMod                              int                            `json:"charismaMod"`
-		PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent"`
-		PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent"`
-		SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent"`
-		BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent"`
-		FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent"`
-		IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent"`
-		LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent"`
-		PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent"`
-		ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent"`
-		HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent"`
-		ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent"`
-		PhysicalResistancePercent                int                            `json:"physicalResistancePercent"`
-		PiercingResistancePercent                int                            `json:"piercingResistancePercent"`
-		SlashingResistancePercent                int                            `json:"slashingResistancePercent"`
-		BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent"`
-		FireResistancePercent                    int                            `json:"fireResistancePercent"`
-		IceResistancePercent                     int                            `json:"iceResistancePercent"`
-		LightningResistancePercent               int                            `json:"lightningResistancePercent"`
-		PoisonResistancePercent                  int                            `json:"poisonResistancePercent"`
-		ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent"`
-		HolyResistancePercent                    int                            `json:"holyResistancePercent"`
-		ShadowResistancePercent                  int                            `json:"shadowResistancePercent"`
-		HandItemCategory                         *string                        `json:"handItemCategory"`
-		Handedness                               *string                        `json:"handedness"`
-		DamageMin                                *int                           `json:"damageMin"`
-		DamageMax                                *int                           `json:"damageMax"`
-		DamageAffinity                           *string                        `json:"damageAffinity"`
-		SwipesPerAttack                          *int                           `json:"swipesPerAttack"`
-		BlockPercentage                          *int                           `json:"blockPercentage"`
-		DamageBlocked                            *int                           `json:"damageBlocked"`
-		SpellDamageBonusPercent                  *int                           `json:"spellDamageBonusPercent"`
-		ConsumeHealthDelta                       int                            `json:"consumeHealthDelta"`
-		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
-		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
-		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
-		ConsumeDealDamage                        int                            `json:"consumeDealDamage"`
-		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
-		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
-		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
-		ConsumeCreateBase                        bool                           `json:"consumeCreateBase"`
-		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
-		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
-		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
-		ConsumeTeachRecipeIDs                    []string                       `json:"consumeTeachRecipeIds"`
-		AlchemyRecipes                           []inventoryRecipePayload       `json:"alchemyRecipes"`
-		WorkshopRecipes                          []inventoryRecipePayload       `json:"workshopRecipes"`
-		InternalTags                             []string                       `json:"internalTags"`
-	}
-
+	var requestBody inventoryItemUpsertRequest
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	itemLevel := existingItem.ItemLevel
-	if itemLevel < 1 {
-		itemLevel = 1
-	}
-	if requestBody.ItemLevel != nil {
-		itemLevel = *requestBody.ItemLevel
-	}
-	if itemLevel < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
-		return
-	}
-	if requestBody.BuyPrice != nil && *requestBody.BuyPrice < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "buyPrice must be 0 or greater"})
-		return
-	}
-	if requestBody.UnlockLocksStrength != nil &&
-		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockLocksStrength must be between 1 and 100"})
-		return
-	}
-	consumeDealDamageHits := 0
-	if requestBody.ConsumeDealDamage > 0 {
-		consumeDealDamageHits = 1
-		if requestBody.ConsumeDealDamageHits != nil {
-			consumeDealDamageHits = *requestBody.ConsumeDealDamageHits
-		}
-		if consumeDealDamageHits < 1 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageHits must be 1 or greater when consumeDealDamage is set"})
-			return
-		}
-	}
-	consumeDealDamageAllEnemiesHits := 0
-	if requestBody.ConsumeDealDamageAllEnemies > 0 {
-		consumeDealDamageAllEnemiesHits = 1
-		if requestBody.ConsumeDealDamageAllEnemiesHits != nil {
-			consumeDealDamageAllEnemiesHits = *requestBody.ConsumeDealDamageAllEnemiesHits
-		}
-		if consumeDealDamageAllEnemiesHits < 1 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageAllEnemiesHits must be 1 or greater when consumeDealDamageAllEnemies is set"})
-			return
-		}
-	}
-
-	var equipSlot *string
-	if requestBody.EquipSlot != nil {
-		trimmed := strings.TrimSpace(*requestBody.EquipSlot)
-		if trimmed != "" {
-			if !models.IsValidInventoryEquipSlot(trimmed) {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equip slot"})
-				return
-			}
-			equipSlot = &trimmed
-		}
-	}
-	handAttrs, err := models.NormalizeAndValidateHandEquipment(equipSlot, models.HandEquipmentAttributes{
-		HandItemCategory:        requestBody.HandItemCategory,
-		Handedness:              requestBody.Handedness,
-		DamageMin:               requestBody.DamageMin,
-		DamageMax:               requestBody.DamageMax,
-		DamageAffinity:          requestBody.DamageAffinity,
-		SwipesPerAttack:         requestBody.SwipesPerAttack,
-		BlockPercentage:         requestBody.BlockPercentage,
-		DamageBlocked:           requestBody.DamageBlocked,
-		SpellDamageBonusPercent: requestBody.SpellDamageBonusPercent,
-	})
+	item, err := s.normalizeInventoryItemUpsertRequest(ctx, requestBody, existingItem)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-	consumeStatusesToAdd, err := parseScenarioFailureStatusTemplates(requestBody.ConsumeStatusesToAdd, "consumeStatusesToAdd")
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
-	consumeSpellIDs, err := parseInventoryConsumeSpellIDs(requestBody.ConsumeSpellIDs)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	alchemyRecipes, workshopRecipes, consumeTeachRecipeIDs, err := s.parseInventoryRecipeConfiguration(
-		ctx,
-		requestBody.AlchemyRecipes,
-		requestBody.WorkshopRecipes,
-		requestBody.ConsumeTeachRecipeIDs,
-		&existingItem.ID,
-	)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
-	archived := existingItem.Archived
-	if requestBody.Archived != nil {
-		archived = *requestBody.Archived
-	}
-	for idx, rawSpellID := range consumeSpellIDs {
-		spellID, _ := uuid.Parse(rawSpellID)
-		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
-			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("consumeSpellIds[%d] not found", idx)})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
 	}
 
 	updates := map[string]interface{}{
-		"archived":                                       archived,
-		"name":                                           requestBody.Name,
-		"image_url":                                      requestBody.ImageURL,
-		"flavor_text":                                    requestBody.FlavorText,
-		"effect_text":                                    requestBody.EffectText,
-		"rarity_tier":                                    requestBody.RarityTier,
-		"is_capture_type":                                requestBody.IsCaptureType,
-		"buy_price":                                      requestBody.BuyPrice,
-		"unlock_tier":                                    requestBody.UnlockTier,
-		"unlock_locks_strength":                          requestBody.UnlockLocksStrength,
-		"item_level":                                     itemLevel,
-		"equip_slot":                                     equipSlot,
-		"strength_mod":                                   requestBody.StrengthMod,
-		"dexterity_mod":                                  requestBody.DexterityMod,
-		"constitution_mod":                               requestBody.ConstitutionMod,
-		"intelligence_mod":                               requestBody.IntelligenceMod,
-		"wisdom_mod":                                     requestBody.WisdomMod,
-		"charisma_mod":                                   requestBody.CharismaMod,
-		"physical_damage_bonus_percent":                  requestBody.PhysicalDamageBonusPercent,
-		"piercing_damage_bonus_percent":                  requestBody.PiercingDamageBonusPercent,
-		"slashing_damage_bonus_percent":                  requestBody.SlashingDamageBonusPercent,
-		"bludgeoning_damage_bonus_percent":               requestBody.BludgeoningDamageBonusPercent,
-		"fire_damage_bonus_percent":                      requestBody.FireDamageBonusPercent,
-		"ice_damage_bonus_percent":                       requestBody.IceDamageBonusPercent,
-		"lightning_damage_bonus_percent":                 requestBody.LightningDamageBonusPercent,
-		"poison_damage_bonus_percent":                    requestBody.PoisonDamageBonusPercent,
-		"arcane_damage_bonus_percent":                    requestBody.ArcaneDamageBonusPercent,
-		"holy_damage_bonus_percent":                      requestBody.HolyDamageBonusPercent,
-		"shadow_damage_bonus_percent":                    requestBody.ShadowDamageBonusPercent,
-		"physical_resistance_percent":                    requestBody.PhysicalResistancePercent,
-		"piercing_resistance_percent":                    requestBody.PiercingResistancePercent,
-		"slashing_resistance_percent":                    requestBody.SlashingResistancePercent,
-		"bludgeoning_resistance_percent":                 requestBody.BludgeoningResistancePercent,
-		"fire_resistance_percent":                        requestBody.FireResistancePercent,
-		"ice_resistance_percent":                         requestBody.IceResistancePercent,
-		"lightning_resistance_percent":                   requestBody.LightningResistancePercent,
-		"poison_resistance_percent":                      requestBody.PoisonResistancePercent,
-		"arcane_resistance_percent":                      requestBody.ArcaneResistancePercent,
-		"holy_resistance_percent":                        requestBody.HolyResistancePercent,
-		"shadow_resistance_percent":                      requestBody.ShadowResistancePercent,
-		"hand_item_category":                             handAttrs.HandItemCategory,
-		"handedness":                                     handAttrs.Handedness,
-		"damage_min":                                     handAttrs.DamageMin,
-		"damage_max":                                     handAttrs.DamageMax,
-		"damage_affinity":                                handAttrs.DamageAffinity,
-		"swipes_per_attack":                              handAttrs.SwipesPerAttack,
-		"block_percentage":                               handAttrs.BlockPercentage,
-		"damage_blocked":                                 handAttrs.DamageBlocked,
-		"spell_damage_bonus_percent":                     handAttrs.SpellDamageBonusPercent,
-		"consume_health_delta":                           requestBody.ConsumeHealthDelta,
-		"consume_mana_delta":                             requestBody.ConsumeManaDelta,
-		"consume_revive_party_member_health":             requestBody.ConsumeRevivePartyMemberHealth,
-		"consume_revive_all_downed_party_members_health": requestBody.ConsumeReviveAllDownedPartyMembersHealth,
-		"consume_deal_damage":                            requestBody.ConsumeDealDamage,
-		"consume_deal_damage_hits":                       consumeDealDamageHits,
-		"consume_deal_damage_all_enemies":                requestBody.ConsumeDealDamageAllEnemies,
-		"consume_deal_damage_all_enemies_hits":           consumeDealDamageAllEnemiesHits,
-		"consume_create_base":                            requestBody.ConsumeCreateBase,
-		"consume_statuses_to_add":                        consumeStatusesToAdd,
-		"consume_statuses_to_remove":                     consumeStatusesToRemove,
-		"consume_spell_ids":                              consumeSpellIDs,
-		"consume_teach_recipe_ids":                       consumeTeachRecipeIDs,
-		"alchemy_recipes":                                alchemyRecipes,
-		"workshop_recipes":                               workshopRecipes,
-		"internal_tags":                                  internalTags,
+		"archived":                                       item.Archived,
+		"name":                                           item.Name,
+		"image_url":                                      item.ImageURL,
+		"flavor_text":                                    item.FlavorText,
+		"effect_text":                                    item.EffectText,
+		"rarity_tier":                                    item.RarityTier,
+		"is_capture_type":                                item.IsCaptureType,
+		"buy_price":                                      item.BuyPrice,
+		"unlock_tier":                                    item.UnlockTier,
+		"unlock_locks_strength":                          item.UnlockLocksStrength,
+		"item_level":                                     item.ItemLevel,
+		"equip_slot":                                     item.EquipSlot,
+		"strength_mod":                                   item.StrengthMod,
+		"dexterity_mod":                                  item.DexterityMod,
+		"constitution_mod":                               item.ConstitutionMod,
+		"intelligence_mod":                               item.IntelligenceMod,
+		"wisdom_mod":                                     item.WisdomMod,
+		"charisma_mod":                                   item.CharismaMod,
+		"physical_damage_bonus_percent":                  item.PhysicalDamageBonusPercent,
+		"piercing_damage_bonus_percent":                  item.PiercingDamageBonusPercent,
+		"slashing_damage_bonus_percent":                  item.SlashingDamageBonusPercent,
+		"bludgeoning_damage_bonus_percent":               item.BludgeoningDamageBonusPercent,
+		"fire_damage_bonus_percent":                      item.FireDamageBonusPercent,
+		"ice_damage_bonus_percent":                       item.IceDamageBonusPercent,
+		"lightning_damage_bonus_percent":                 item.LightningDamageBonusPercent,
+		"poison_damage_bonus_percent":                    item.PoisonDamageBonusPercent,
+		"arcane_damage_bonus_percent":                    item.ArcaneDamageBonusPercent,
+		"holy_damage_bonus_percent":                      item.HolyDamageBonusPercent,
+		"shadow_damage_bonus_percent":                    item.ShadowDamageBonusPercent,
+		"physical_resistance_percent":                    item.PhysicalResistancePercent,
+		"piercing_resistance_percent":                    item.PiercingResistancePercent,
+		"slashing_resistance_percent":                    item.SlashingResistancePercent,
+		"bludgeoning_resistance_percent":                 item.BludgeoningResistancePercent,
+		"fire_resistance_percent":                        item.FireResistancePercent,
+		"ice_resistance_percent":                         item.IceResistancePercent,
+		"lightning_resistance_percent":                   item.LightningResistancePercent,
+		"poison_resistance_percent":                      item.PoisonResistancePercent,
+		"arcane_resistance_percent":                      item.ArcaneResistancePercent,
+		"holy_resistance_percent":                        item.HolyResistancePercent,
+		"shadow_resistance_percent":                      item.ShadowResistancePercent,
+		"hand_item_category":                             item.HandItemCategory,
+		"handedness":                                     item.Handedness,
+		"damage_min":                                     item.DamageMin,
+		"damage_max":                                     item.DamageMax,
+		"damage_affinity":                                item.DamageAffinity,
+		"swipes_per_attack":                              item.SwipesPerAttack,
+		"block_percentage":                               item.BlockPercentage,
+		"damage_blocked":                                 item.DamageBlocked,
+		"spell_damage_bonus_percent":                     item.SpellDamageBonusPercent,
+		"consume_health_delta":                           item.ConsumeHealthDelta,
+		"consume_mana_delta":                             item.ConsumeManaDelta,
+		"consume_revive_party_member_health":             item.ConsumeRevivePartyMemberHealth,
+		"consume_revive_all_downed_party_members_health": item.ConsumeReviveAllDownedPartyMembersHealth,
+		"consume_deal_damage":                            item.ConsumeDealDamage,
+		"consume_deal_damage_hits":                       item.ConsumeDealDamageHits,
+		"consume_deal_damage_all_enemies":                item.ConsumeDealDamageAllEnemies,
+		"consume_deal_damage_all_enemies_hits":           item.ConsumeDealDamageAllEnemiesHits,
+		"consume_create_base":                            item.ConsumeCreateBase,
+		"consume_statuses_to_add":                        item.ConsumeStatusesToAdd,
+		"consume_statuses_to_remove":                     item.ConsumeStatusesToRemove,
+		"consume_spell_ids":                              item.ConsumeSpellIDs,
+		"consume_teach_recipe_ids":                       item.ConsumeTeachRecipeIDs,
+		"alchemy_recipes":                                item.AlchemyRecipes,
+		"workshop_recipes":                               item.WorkshopRecipes,
+		"internal_tags":                                  item.InternalTags,
 	}
 
 	if requestBody.ImageURL != "" {

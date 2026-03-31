@@ -41,6 +41,32 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     'wisdom': 'Wisdom',
     'charisma': 'Charisma',
   };
+  static const List<String> _affinityOrder = [
+    'physical',
+    'piercing',
+    'slashing',
+    'bludgeoning',
+    'fire',
+    'ice',
+    'lightning',
+    'poison',
+    'arcane',
+    'holy',
+    'shadow',
+  ];
+  static const Map<String, String> _affinityLabels = {
+    'physical': 'Physical',
+    'piercing': 'Piercing',
+    'slashing': 'Slashing',
+    'bludgeoning': 'Bludgeoning',
+    'fire': 'Fire',
+    'ice': 'Ice',
+    'lightning': 'Lightning',
+    'poison': 'Poison',
+    'arcane': 'Arcane',
+    'holy': 'Holy',
+    'shadow': 'Shadow',
+  };
 
   String? _lastUserId;
   String? _lastEquipmentUserId;
@@ -218,6 +244,11 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final proficiencies =
         overrideStats?.proficiencies ?? statsProvider.proficiencies;
     final statuses = overrideStats?.statuses ?? statsProvider.statuses;
+    final affinityDamageBonuses =
+        overrideStats?.affinityDamageBonuses ??
+        statsProvider.affinityDamageBonuses;
+    final affinityResistances =
+        overrideStats?.affinityResistances ?? statsProvider.affinityResistances;
     final hasProficiencies = proficiencies.isNotEmpty;
     final canEdit = !_isReadOnly;
 
@@ -623,6 +654,12 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                 ),
               ),
               const SizedBox(height: 16),
+              _buildAffinitiesCard(
+                context,
+                affinityDamageBonuses: affinityDamageBonuses,
+                affinityResistances: affinityResistances,
+              ),
+              const SizedBox(height: 16),
               _buildStatusesCard(context, statuses),
               const SizedBox(height: 16),
               Container(
@@ -831,6 +868,144 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
         ],
       ),
     );
+  }
+
+  Widget _buildAffinitiesCard(
+    BuildContext context, {
+    required Map<String, int> affinityDamageBonuses,
+    required Map<String, int> affinityResistances,
+  }) {
+    final theme = Theme.of(context);
+    final damageEntries = _nonZeroAffinityEntries(affinityDamageBonuses);
+    final resistanceEntries = _nonZeroAffinityEntries(affinityResistances);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          collapsedShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Affinities',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Text(
+            'Damage bonuses and resistances',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          children: [
+            _buildAffinitySection(
+              context,
+              title: 'Damage Bonuses',
+              entries: damageEntries,
+              emptyText:
+                  'No affinity damage bonuses. All others are at 0% by default.',
+            ),
+            const SizedBox(height: 12),
+            _buildAffinitySection(
+              context,
+              title: 'Resistances',
+              entries: resistanceEntries,
+              emptyText:
+                  'No affinity resistances. All others are at 0% by default.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAffinitySection(
+    BuildContext context, {
+    required String title,
+    required List<MapEntry<String, int>> entries,
+    required String emptyText,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          Text(
+            emptyText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: entries.map((entry) {
+              final value = entry.value;
+              final positive = value > 0;
+              final label =
+                  _affinityLabels[entry.key] ?? _toTitleCase(entry.key);
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Text(
+                  '$label ${positive ? '+' : ''}$value%',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: positive
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.error,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  List<MapEntry<String, int>> _nonZeroAffinityEntries(Map<String, int> values) {
+    final entries = values.entries
+        .where((entry) => entry.value != 0)
+        .map((entry) => MapEntry(entry.key.trim().toLowerCase(), entry.value))
+        .toList();
+    entries.sort((a, b) {
+      final aIndex = _affinityOrder.indexOf(a.key);
+      final bIndex = _affinityOrder.indexOf(b.key);
+      if (aIndex != bIndex) {
+        if (aIndex == -1) return 1;
+        if (bIndex == -1) return -1;
+        return aIndex.compareTo(bIndex);
+      }
+      return a.key.compareTo(b.key);
+    });
+    return entries;
   }
 
   Widget _buildStatusesCard(

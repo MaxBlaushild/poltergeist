@@ -62,6 +62,10 @@ class CharacterStatsProvider with ChangeNotifier {
       _stats?.bonusMap() ?? _defaultBonuses();
   Map<String, int> get statusBonuses =>
       _stats?.statusBonusMap() ?? _defaultBonuses();
+  Map<String, int> get affinityDamageBonuses =>
+      _stats?.affinityDamageBonuses ?? const {};
+  Map<String, int> get affinityResistances =>
+      _stats?.affinityResistances ?? const {};
   Map<String, int> get stats => _stats?.effectiveMap() ?? _defaultStats();
   List<CharacterProficiency> get proficiencies =>
       _stats?.proficiencies ?? const [];

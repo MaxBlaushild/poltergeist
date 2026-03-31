@@ -1,6 +1,18 @@
 import { useAPI, useMediaContext } from '@poltergeist/contexts';
-import { InventoryItem, Rarity, Spell } from '@poltergeist/types';
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import {
+  InventoryItem,
+  InventoryItemSuggestionDraft,
+  InventoryItemSuggestionJob,
+  Rarity,
+  Spell,
+} from '@poltergeist/types';
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 import { useUsers } from '../hooks/useUsers.ts';
 
 type SelectOption = {
@@ -94,6 +106,20 @@ type ConsumableQualitiesResponse = {
 };
 
 type BulkTagAction = 'none' | 'replace' | 'add' | 'remove' | 'clear';
+
+type InventorySuggestionFormState = {
+  count: string;
+  themePrompt: string;
+  categoriesText: string;
+  rarityTiersText: string;
+  equipSlotsText: string;
+  statTagsText: string;
+  benefitTagsText: string;
+  statusNamesText: string;
+  internalTagsText: string;
+  minItemLevel: string;
+  maxItemLevel: string;
+};
 
 const emptyConsumeStatus = (): InventoryConsumeStatus => ({
   name: '',
@@ -301,6 +327,59 @@ const parseInternalTagsInput = (value: string): string[] =>
 
 const normalizeInternalTags = (tags?: string[] | null): string[] =>
   parseInternalTagsInput((tags ?? []).join(','));
+
+const parseCommaValues = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '')
+    )
+  );
+
+const renderSuggestionFacetLabel = (
+  label: string,
+  values?: string[] | null
+) => {
+  if (!values || values.length === 0) return null;
+  return `${label}: ${values.join(', ')}`;
+};
+
+const emptyInventorySuggestionForm = (): InventorySuggestionFormState => ({
+  count: '12',
+  themePrompt: '',
+  categoriesText: 'equippable, consumable, material',
+  rarityTiersText: 'Common, Uncommon, Epic',
+  equipSlotsText: '',
+  statTagsText: '',
+  benefitTagsText: '',
+  statusNamesText: '',
+  internalTagsText: '',
+  minItemLevel: '1',
+  maxItemLevel: '40',
+});
+
+const isSuggestionJobPending = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
+const extractApiErrorMessage = (error: unknown, fallback: string) => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'response' in error &&
+    error.response &&
+    typeof error.response === 'object' &&
+    'data' in error.response &&
+    error.response.data &&
+    typeof error.response.data === 'object' &&
+    'error' in error.response.data &&
+    typeof (error.response.data as { error?: unknown }).error === 'string'
+  ) {
+    return (error.response.data as { error: string }).error;
+  }
+  return fallback;
+};
 
 const applyBulkTagAction = (
   currentTags: string[] | undefined,
@@ -721,6 +800,8 @@ export const InventoryItems = () => {
   const [setGenerationBusyIds, setSetGenerationBusyIds] = useState<Set<number>>(
     new Set()
   );
+  const [progressionGenerationBusyIds, setProgressionGenerationBusyIds] =
+    useState<Set<number>>(new Set());
   const [bulkSetTargetLevel, setBulkSetTargetLevel] = useState('25');
   const [bulkSetMajorStat, setBulkSetMajorStat] = useState('strength');
   const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
@@ -731,6 +812,24 @@ export const InventoryItems = () => {
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showFilters, setShowFilters] = useState(false);
+  const [suggestionForm, setSuggestionForm] =
+    useState<InventorySuggestionFormState>(emptyInventorySuggestionForm);
+  const [suggestionJobs, setSuggestionJobs] = useState<
+    InventoryItemSuggestionJob[]
+  >([]);
+  const [selectedSuggestionJobId, setSelectedSuggestionJobId] = useState('');
+  const [suggestionDrafts, setSuggestionDrafts] = useState<
+    InventoryItemSuggestionDraft[]
+  >([]);
+  const [loadingSuggestionJobs, setLoadingSuggestionJobs] = useState(false);
+  const [loadingSuggestionDrafts, setLoadingSuggestionDrafts] = useState(false);
+  const [queueingSuggestionJob, setQueueingSuggestionJob] = useState(false);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [convertingSuggestionDraftId, setConvertingSuggestionDraftId] =
+    useState<string | null>(null);
+  const [deletingSuggestionDraftId, setDeletingSuggestionDraftId] = useState<
+    string | null
+  >(null);
   const [filters, setFilters] = useState({
     rarity: '',
     equipSlot: '',
@@ -896,10 +995,99 @@ export const InventoryItems = () => {
     return options;
   }, [formData.alchemyRecipes, formData.name, formData.workshopRecipes, items]);
 
+  const selectedSuggestionJob = useMemo(
+    () =>
+      suggestionJobs.find((job) => job.id === selectedSuggestionJobId) ?? null,
+    [selectedSuggestionJobId, suggestionJobs]
+  );
+
+  const fetchItems = useCallback(async () => {
+    try {
+      const response = await apiClient.get<InventoryItemRecord[]>(
+        '/sonar/inventory-items'
+      );
+      setItems(response);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching inventory items:', error);
+      setLoading(false);
+    }
+  }, [apiClient]);
+
+  const fetchSpells = useCallback(async () => {
+    try {
+      const response = await apiClient.get<Spell[]>('/sonar/spells');
+      setSpells(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching spells:', error);
+      setSpells([]);
+    }
+  }, [apiClient]);
+
+  const fetchSuggestionJobs = useCallback(async () => {
+    setLoadingSuggestionJobs(true);
+    try {
+      const response = await apiClient.get<InventoryItemSuggestionJob[]>(
+        '/sonar/inventory-item-suggestion-jobs?limit=20'
+      );
+      const jobs = Array.isArray(response) ? response : [];
+      setSuggestionJobs(jobs);
+      setSuggestionError(null);
+      setSelectedSuggestionJobId((current) => {
+        if (current && jobs.some((job) => job.id === current)) {
+          return current;
+        }
+        return jobs[0]?.id ?? '';
+      });
+    } catch (error) {
+      console.error('Error fetching inventory item suggestion jobs:', error);
+      setSuggestionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to load inventory draft generation jobs.'
+        )
+      );
+    } finally {
+      setLoadingSuggestionJobs(false);
+    }
+  }, [apiClient]);
+
+  const fetchSuggestionDrafts = useCallback(
+    async (jobId: string) => {
+      if (!jobId) {
+        setSuggestionDrafts([]);
+        return;
+      }
+      setLoadingSuggestionDrafts(true);
+      try {
+        const response = await apiClient.get<InventoryItemSuggestionDraft[]>(
+          `/sonar/inventory-item-suggestion-jobs/${jobId}/drafts`
+        );
+        setSuggestionDrafts(Array.isArray(response) ? response : []);
+        setSuggestionError(null);
+      } catch (error) {
+        console.error(
+          'Error fetching inventory item suggestion drafts:',
+          error
+        );
+        setSuggestionError(
+          extractApiErrorMessage(
+            error,
+            'Failed to load generated inventory drafts.'
+          )
+        );
+      } finally {
+        setLoadingSuggestionDrafts(false);
+      }
+    },
+    [apiClient]
+  );
+
   useEffect(() => {
-    fetchItems();
-    fetchSpells();
-  }, []);
+    void fetchItems();
+    void fetchSpells();
+    void fetchSuggestionJobs();
+  }, [fetchItems, fetchSpells, fetchSuggestionJobs]);
 
   useEffect(() => {
     const hasPending = items.some((item) =>
@@ -908,11 +1096,11 @@ export const InventoryItems = () => {
     if (!hasPending) return;
 
     const interval = setInterval(() => {
-      fetchItems();
+      void fetchItems();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [items]);
+  }, [fetchItems, items]);
 
   useEffect(() => {
     setSelectedItemIDs((prev) => {
@@ -932,26 +1120,153 @@ export const InventoryItems = () => {
     setSelectedItemIDs(new Set());
   }, [itemTab]);
 
-  const fetchItems = async () => {
+  useEffect(() => {
+    if (!selectedSuggestionJobId) {
+      setSuggestionDrafts([]);
+      return;
+    }
+    void fetchSuggestionDrafts(selectedSuggestionJobId);
+  }, [fetchSuggestionDrafts, selectedSuggestionJobId]);
+
+  useEffect(() => {
+    const hasPendingSuggestionJob = suggestionJobs.some((job) =>
+      isSuggestionJobPending(job.status)
+    );
+    if (!hasPendingSuggestionJob) return;
+
+    const interval = setInterval(() => {
+      void fetchSuggestionJobs();
+      if (selectedSuggestionJobId) {
+        void fetchSuggestionDrafts(selectedSuggestionJobId);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [
+    fetchSuggestionDrafts,
+    fetchSuggestionJobs,
+    selectedSuggestionJobId,
+    suggestionJobs,
+  ]);
+
+  const handleQueueSuggestionJob = async () => {
+    setQueueingSuggestionJob(true);
+    setSuggestionError(null);
     try {
-      const response = await apiClient.get<InventoryItemRecord[]>(
-        '/sonar/inventory-items'
+      const created = await apiClient.post<InventoryItemSuggestionJob>(
+        '/sonar/inventory-item-suggestion-jobs',
+        {
+          count: Math.max(1, parseInt(suggestionForm.count, 10) || 1),
+          themePrompt: suggestionForm.themePrompt.trim(),
+          categories: parseCommaValues(suggestionForm.categoriesText),
+          rarityTiers: parseCommaValues(suggestionForm.rarityTiersText),
+          equipSlots: parseCommaValues(suggestionForm.equipSlotsText),
+          statTags: parseCommaValues(suggestionForm.statTagsText),
+          benefitTags: parseCommaValues(suggestionForm.benefitTagsText),
+          statusNames: parseCommaValues(suggestionForm.statusNamesText),
+          internalTags: parseInternalTagsInput(suggestionForm.internalTagsText),
+          minItemLevel: Math.max(
+            1,
+            parseInt(suggestionForm.minItemLevel, 10) || 1
+          ),
+          maxItemLevel: Math.max(
+            1,
+            parseInt(suggestionForm.maxItemLevel, 10) || 1
+          ),
+        }
       );
-      setItems(response);
-      setLoading(false);
+      setSuggestionJobs((current) => [
+        created,
+        ...current.filter((job) => job.id !== created.id),
+      ]);
+      setSelectedSuggestionJobId(created.id);
+      setSuggestionDrafts([]);
     } catch (error) {
-      console.error('Error fetching inventory items:', error);
-      setLoading(false);
+      console.error('Failed to queue inventory item suggestion job:', error);
+      setSuggestionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to queue inventory draft generation job.'
+        )
+      );
+    } finally {
+      setQueueingSuggestionJob(false);
     }
   };
 
-  const fetchSpells = async () => {
+  const handleConvertSuggestionDraft = async (draftId: string) => {
+    setConvertingSuggestionDraftId(draftId);
+    setSuggestionError(null);
     try {
-      const response = await apiClient.get<Spell[]>('/sonar/spells');
-      setSpells(Array.isArray(response) ? response : []);
+      await apiClient.post(
+        `/sonar/inventory-item-suggestion-drafts/${draftId}/convert`,
+        {}
+      );
+      await fetchItems();
+      if (selectedSuggestionJobId) {
+        await fetchSuggestionDrafts(selectedSuggestionJobId);
+      }
     } catch (error) {
-      console.error('Error fetching spells:', error);
-      setSpells([]);
+      console.error(
+        'Failed to convert inventory item suggestion draft:',
+        error
+      );
+      setSuggestionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to convert inventory draft into a live item.'
+        )
+      );
+    } finally {
+      setConvertingSuggestionDraftId(null);
+    }
+  };
+
+  const handleDeleteSuggestionDraft = async (draftId: string) => {
+    setDeletingSuggestionDraftId(draftId);
+    setSuggestionError(null);
+    try {
+      await apiClient.delete(
+        `/sonar/inventory-item-suggestion-drafts/${draftId}`
+      );
+      setSuggestionDrafts((current) =>
+        current.filter((draft) => draft.id !== draftId)
+      );
+    } catch (error) {
+      console.error('Failed to delete inventory item suggestion draft:', error);
+      setSuggestionError(
+        extractApiErrorMessage(error, 'Failed to delete inventory draft.')
+      );
+    } finally {
+      setDeletingSuggestionDraftId(null);
+    }
+  };
+
+  const handleGenerateProgressionDrafts = async (item: InventoryItemRecord) => {
+    setProgressionGenerationBusyIds((current) => new Set(current).add(item.id));
+    setSuggestionError(null);
+    try {
+      const job = await apiClient.post<InventoryItemSuggestionJob>(
+        `/sonar/inventory-items/${item.id}/generate-progression-drafts`,
+        {}
+      );
+      await fetchSuggestionJobs();
+      setSelectedSuggestionJobId(job.id);
+      await fetchSuggestionDrafts(job.id);
+    } catch (error) {
+      console.error('Failed to generate progression drafts:', error);
+      setSuggestionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to generate progression drafts for this item.'
+        )
+      );
+    } finally {
+      setProgressionGenerationBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
     }
   };
 
@@ -2939,6 +3254,472 @@ export const InventoryItems = () => {
         </div>
       </div>
 
+      <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
+              Draft Generator
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              Agent-first inventory ideation
+            </div>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              Queue batches of draft items, review the generated concepts, and
+              convert only the ones that feel worth keeping.
+            </p>
+          </div>
+          <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-600">
+            Recent jobs: {suggestionJobs.length}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+            <div className="mb-3 text-sm font-semibold text-slate-800">
+              Queue Draft Batch
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Batch Size
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={suggestionForm.count}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      count: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Level Band
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={suggestionForm.minItemLevel}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        minItemLevel: event.target.value,
+                      }))
+                    }
+                    placeholder="Min"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={suggestionForm.maxItemLevel}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        maxItemLevel: event.target.value,
+                      }))
+                    }
+                    placeholder="Max"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Theme Prompt
+                </label>
+                <textarea
+                  rows={4}
+                  value={suggestionForm.themePrompt}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      themePrompt: event.target.value,
+                    }))
+                  }
+                  placeholder="Low-level occult street gear, scavenger kits, and odd consumables for night exploration."
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Categories
+                </label>
+                <input
+                  value={suggestionForm.categoriesText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      categoriesText: event.target.value,
+                    }))
+                  }
+                  placeholder="equippable, consumable, material"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Rarity Tiers
+                </label>
+                <input
+                  value={suggestionForm.rarityTiersText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      rarityTiersText: event.target.value,
+                    }))
+                  }
+                  placeholder="Common, Uncommon, Epic"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Equip Slots
+                </label>
+                <input
+                  value={suggestionForm.equipSlotsText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      equipSlotsText: event.target.value,
+                    }))
+                  }
+                  placeholder="hat, necklace, dominant_hand"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Stat Tags
+                </label>
+                <input
+                  value={suggestionForm.statTagsText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      statTagsText: event.target.value,
+                    }))
+                  }
+                  placeholder="strength, intelligence, wisdom"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Benefit Tags
+                </label>
+                <input
+                  value={suggestionForm.benefitTagsText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      benefitTagsText: event.target.value,
+                    }))
+                  }
+                  placeholder="healing, mana, fire damage, resistances"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Status Names
+                </label>
+                <input
+                  value={suggestionForm.statusNamesText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      statusNamesText: event.target.value,
+                    }))
+                  }
+                  placeholder="Blessed, Guarded, Regenerating"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Internal Tags
+                </label>
+                <input
+                  value={suggestionForm.internalTagsText}
+                  onChange={(event) =>
+                    setSuggestionForm((current) => ({
+                      ...current,
+                      internalTagsText: event.target.value,
+                    }))
+                  }
+                  placeholder="occult, scavenger, downtown"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleQueueSuggestionJob()}
+                disabled={queueingSuggestionJob}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {queueingSuggestionJob ? 'Queueing...' : 'Queue Draft Job'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSuggestionForm(emptyInventorySuggestionForm())
+                }
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
+              >
+                Reset
+              </button>
+            </div>
+
+            {suggestionError && (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {suggestionError}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-slate-800">
+                Recent Draft Jobs
+              </div>
+              {loadingSuggestionJobs && (
+                <div className="text-xs text-slate-500">Refreshing...</div>
+              )}
+            </div>
+            <div className="space-y-2">
+              {suggestionJobs.length === 0 && !loadingSuggestionJobs && (
+                <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+                  No draft jobs yet.
+                </div>
+              )}
+              {suggestionJobs.map((job) => {
+                const selected = job.id === selectedSuggestionJobId;
+                return (
+                  <button
+                    key={job.id}
+                    type="button"
+                    onClick={() => setSelectedSuggestionJobId(job.id)}
+                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                      selected
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium text-slate-900">
+                        {job.themePrompt?.trim() || 'Untitled draft job'}
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          job.status === 'completed'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : job.status === 'failed'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {job.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">
+                      {job.createdCount}/{job.count} drafts · levels{' '}
+                      {job.minItemLevel}-{job.maxItemLevel}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      {[
+                        renderSuggestionFacetLabel('stats', job.statTags),
+                        renderSuggestionFacetLabel('benefits', job.benefitTags),
+                        renderSuggestionFacetLabel('statuses', job.statusNames),
+                      ]
+                        .filter((entry): entry is string => Boolean(entry))
+                        .map((entry) => (
+                          <span
+                            key={`${job.id}-${entry}`}
+                            className="rounded-full bg-white/80 px-2 py-1"
+                          >
+                            {entry}
+                          </span>
+                        ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-800">
+                {selectedSuggestionJob
+                  ? `Drafts for ${selectedSuggestionJob.themePrompt || 'selected job'}`
+                  : 'Generated Drafts'}
+              </div>
+              {selectedSuggestionJob && (
+                <div className="space-y-1 text-xs text-slate-500">
+                  <div>
+                    {selectedSuggestionJob.createdCount} draft
+                    {selectedSuggestionJob.createdCount === 1 ? '' : 's'} ·{' '}
+                    {selectedSuggestionJob.categories.join(', ') ||
+                      'all categories'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      renderSuggestionFacetLabel(
+                        'Stat focus',
+                        selectedSuggestionJob.statTags
+                      ),
+                      renderSuggestionFacetLabel(
+                        'Benefit focus',
+                        selectedSuggestionJob.benefitTags
+                      ),
+                      renderSuggestionFacetLabel(
+                        'Statuses',
+                        selectedSuggestionJob.statusNames
+                      ),
+                    ]
+                      .filter((entry): entry is string => Boolean(entry))
+                      .map((entry) => (
+                        <span
+                          key={`${selectedSuggestionJob.id}-${entry}`}
+                          className="rounded-full bg-slate-100 px-2 py-1 text-slate-600"
+                        >
+                          {entry}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            {loadingSuggestionDrafts && (
+              <div className="text-xs text-slate-500">Loading drafts...</div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {suggestionDrafts.length === 0 && !loadingSuggestionDrafts && (
+              <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
+                {selectedSuggestionJob
+                  ? 'This job has not produced any drafts yet.'
+                  : 'Select a draft job to review its generated items.'}
+              </div>
+            )}
+            {suggestionDrafts.map((draft) => (
+              <div
+                key={draft.id}
+                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold text-slate-900">
+                      {draft.name}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                        {draft.category}
+                      </span>
+                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                        {draft.rarityTier}
+                      </span>
+                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                        Lv {draft.itemLevel}
+                      </span>
+                      {draft.equipSlot && (
+                        <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                          {draft.equipSlot}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                      draft.status === 'converted'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-indigo-100 text-indigo-700'
+                    }`}
+                  >
+                    {draft.status}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-sm text-slate-700">{draft.whyItFits}</p>
+                {draft.payload.item.effectText && (
+                  <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-slate-700">
+                    <span className="font-medium text-slate-900">Effect:</span>{' '}
+                    {draft.payload.item.effectText}
+                  </div>
+                )}
+                {draft.payload.item.flavorText && (
+                  <div className="mt-3 text-sm text-slate-600">
+                    {draft.payload.item.flavorText}
+                  </div>
+                )}
+                {(draft.internalTags?.length ?? 0) > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {draft.internalTags.map((tag) => (
+                      <span
+                        key={`${draft.id}-${tag}`}
+                        className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(draft.warnings?.length ?? 0) > 0 && (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {draft.warnings.join(' ')}
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleConvertSuggestionDraft(draft.id)}
+                    disabled={
+                      draft.status === 'converted' ||
+                      convertingSuggestionDraftId === draft.id
+                    }
+                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {draft.status === 'converted'
+                      ? 'Converted'
+                      : convertingSuggestionDraftId === draft.id
+                        ? 'Converting...'
+                        : 'Convert to Item'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSuggestionDraft(draft.id)}
+                    disabled={
+                      draft.status === 'converted' ||
+                      deletingSuggestionDraftId === draft.id
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    {deletingSuggestionDraftId === draft.id
+                      ? 'Deleting...'
+                      : 'Delete Draft'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Search + Sort */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
         <div className="flex-1">
@@ -3568,6 +4349,15 @@ export const InventoryItems = () => {
                     : 'Generate Set'}
                 </button>
               )}
+              <button
+                onClick={() => void handleGenerateProgressionDrafts(item)}
+                className="bg-indigo-700 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                disabled={progressionGenerationBusyIds.has(item.id)}
+              >
+                {progressionGenerationBusyIds.has(item.id)
+                  ? 'Generating Progression...'
+                  : 'Generate Progression'}
+              </button>
               <button
                 onClick={() => handleDeleteItem(item)}
                 className="bg-red-500 text-white px-4 py-2 rounded-md"
