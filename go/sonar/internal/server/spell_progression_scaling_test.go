@@ -29,10 +29,10 @@ func TestSpellProgressionDamageFollowsLevelBaseline(t *testing.T) {
 		level    int
 		expected int
 	}{
-		{level: 10, expected: 50},
-		{level: 25, expected: 125},
-		{level: 50, expected: 250},
-		{level: 70, expected: 350},
+		{level: 10, expected: 100},
+		{level: 25, expected: 250},
+		{level: 50, expected: 500},
+		{level: 70, expected: 700},
 	}
 
 	for _, tc := range cases {
@@ -48,10 +48,10 @@ func TestSpellProgressionAllEnemiesDamageFollowsLevelBaseline(t *testing.T) {
 		level    int
 		expected int
 	}{
-		{level: 10, expected: 40},
-		{level: 25, expected: 100},
-		{level: 50, expected: 200},
-		{level: 70, expected: 280},
+		{level: 10, expected: 60},
+		{level: 25, expected: 150},
+		{level: 50, expected: 300},
+		{level: 70, expected: 420},
 	}
 
 	for _, tc := range cases {
@@ -81,9 +81,9 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		50,
 		models.SpellAbilityTypeSpell,
 	)
-	if level50FromSmallSeed < 180 {
+	if level50FromSmallSeed < 400 {
 		t.Fatalf(
-			"expected level 50 damage to be anchored to monster HP baseline, got %d",
+			"expected level 50 damage to be anchored to the new combat baseline, got %d",
 			level50FromSmallSeed,
 		)
 	}
@@ -95,9 +95,9 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		70,
 		models.SpellAbilityTypeSpell,
 	)
-	if level70FromSmallSeed < 320 {
+	if level70FromSmallSeed < 650 {
 		t.Fatalf(
-			"expected level 70 damage to be high for high-health monsters, got %d",
+			"expected level 70 damage to hit the more aggressive high-tier baseline, got %d",
 			level70FromSmallSeed,
 		)
 	}
@@ -125,8 +125,8 @@ func TestSpellProgressionManaCostScalesByBand(t *testing.T) {
 			level70,
 		)
 	}
-	if level70 < 170 {
-		t.Fatalf("expected high-tier spell mana cost to be substantial, got %d", level70)
+	if level70 < 400 {
+		t.Fatalf("expected high-tier spell mana cost to be much steeper, got %d", level70)
 	}
 }
 
@@ -147,6 +147,9 @@ func TestTechniqueProgressionUsesLowerDamageTargetsAndZeroMana(t *testing.T) {
 	spellDamage := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, 50, models.SpellAbilityTypeSpell)
 	if techniqueDamage >= spellDamage {
 		t.Fatalf("expected techniques to target lower damage than spells, got technique=%d spell=%d", techniqueDamage, spellDamage)
+	}
+	if techniqueDamage != 400 {
+		t.Fatalf("expected techniques to use the new 8x baseline at level 50, got %d", techniqueDamage)
 	}
 
 	techniqueMana := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeTechnique)
@@ -185,7 +188,7 @@ func TestBuildSpellProgressionVariantUsesBandTargetLevel(t *testing.T) {
 		},
 	}
 
-	variant := buildSpellProgressionVariant(seed, 25, 42, map[string]struct{}{}, models.SpellAbilityTypeSpell)
+	variant := buildSpellProgressionVariant(seed, 25, 42, map[string]struct{}{}, nil, models.SpellAbilityTypeSpell)
 	if variant.AbilityLevel != 50 {
 		t.Fatalf("expected variant level to match the target band level, got %d", variant.AbilityLevel)
 	}
@@ -204,8 +207,8 @@ func TestBuildSpellProgressionVariantUsesBandSpecificDescription(t *testing.T) {
 		},
 	}
 
-	lowVariant := buildSpellProgressionVariant(seed, 25, 10, map[string]struct{}{}, models.SpellAbilityTypeSpell)
-	highVariant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, models.SpellAbilityTypeSpell)
+	lowVariant := buildSpellProgressionVariant(seed, 25, 10, map[string]struct{}{}, nil, models.SpellAbilityTypeSpell)
+	highVariant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, nil, models.SpellAbilityTypeSpell)
 
 	if lowVariant.Description == highVariant.Description {
 		t.Fatalf("expected progression descriptions to vary by band, got %q", lowVariant.Description)
@@ -224,6 +227,7 @@ func TestBuildTechniqueProgressionVariantUsesTechniqueRules(t *testing.T) {
 		AbilityType:   models.SpellAbilityTypeTechnique,
 		SchoolOfMagic: "Martial",
 		ManaCost:      0,
+		CooldownTurns: 3,
 		Effects: models.SpellEffects{
 			{
 				Type:   models.SpellEffectTypeDealDamage,
@@ -232,17 +236,65 @@ func TestBuildTechniqueProgressionVariantUsesTechniqueRules(t *testing.T) {
 		},
 	}
 
-	variant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, models.SpellAbilityTypeTechnique)
+	variant := buildSpellProgressionVariant(seed, 25, 70, map[string]struct{}{}, nil, models.SpellAbilityTypeTechnique)
 	if variant.AbilityType != models.SpellAbilityTypeTechnique {
 		t.Fatalf("expected technique variant ability type, got %s", variant.AbilityType)
 	}
 	if variant.ManaCost != 0 {
 		t.Fatalf("expected technique progression mana cost to remain 0, got %d", variant.ManaCost)
 	}
+	if variant.CooldownTurns != 3 {
+		t.Fatalf("expected technique progression cooldown to match seed cooldown, got %d", variant.CooldownTurns)
+	}
 	if !strings.Contains(strings.ToLower(variant.Description), "cataclysmic") {
 		t.Fatalf("expected technique description to retain band intensity, got %q", variant.Description)
 	}
 	if strings.Contains(strings.ToLower(variant.Name), "nova") {
 		t.Fatalf("expected technique naming, got %q", variant.Name)
+	}
+}
+
+func TestParseGeneratedSpellProgressionVariantFlavors(t *testing.T) {
+	raw := "```json\n{\"variants\":[{\"levelBand\":10,\"name\":\"Kindled Arc\",\"description\":\"A quick ribbon of flame snaps across a foe.\"},{\"abilityLevel\":70,\"name\":\"Inferno Crown\",\"description\":\"A cataclysmic storm of fire breaks over the battlefield.\"}]}\n```"
+
+	parsed, err := parseGeneratedSpellProgressionVariantFlavors(raw)
+	if err != nil {
+		t.Fatalf("expected parser to succeed, got %v", err)
+	}
+	if parsed[10].Name != "Kindled Arc" {
+		t.Fatalf("expected level 10 name to parse, got %q", parsed[10].Name)
+	}
+	if parsed[70].Name != "Inferno Crown" {
+		t.Fatalf("expected abilityLevel to normalize to level band 70, got %q", parsed[70].Name)
+	}
+	if strings.Contains(strings.ToLower(parsed[70].Description), "level") {
+		t.Fatalf("expected description to be stripped of meta references, got %q", parsed[70].Description)
+	}
+}
+
+func TestBuildSpellProgressionVariantUsesFlavorOverride(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		ManaCost:      12,
+		Effects: models.SpellEffects{
+			{
+				Type:   models.SpellEffectTypeDealDamage,
+				Amount: 60,
+			},
+		},
+	}
+
+	override := &generatedSpellProgressionVariantFlavor{
+		LevelBand:   50,
+		Name:        "Ashen Halo",
+		Description: "A surging ring of fire crashes inward on a single foe.",
+	}
+	variant := buildSpellProgressionVariant(seed, 25, 50, map[string]struct{}{}, override, models.SpellAbilityTypeSpell)
+	if variant.Name != "Ashen Halo" {
+		t.Fatalf("expected override name to be used, got %q", variant.Name)
+	}
+	if variant.Description != "A surging ring of fire crashes inward on a single foe." {
+		t.Fatalf("expected override description to be used, got %q", variant.Description)
 	}
 }

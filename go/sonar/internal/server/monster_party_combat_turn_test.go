@@ -193,3 +193,49 @@ func TestMonsterAbilityDamageForCombatTechniqueAddsStrengthBonus(t *testing.T) {
 		t.Fatalf("expected technique damage to include level/strength bonuses, got %d", got)
 	}
 }
+
+func TestMonsterCombatAbilitiesUsesClosestProgressionMemberForLevel(t *testing.T) {
+	low := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Cinder Snap",
+		AbilityLevel: 10,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	mid := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Cinder Lance",
+		AbilityLevel: 25,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	high := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Cinder Nova",
+		AbilityLevel: 50,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	monster := &models.Monster{
+		Level: 24,
+		Template: &models.MonsterTemplate{
+			Progressions: []models.MonsterTemplateProgression{
+				{
+					Progression: models.SpellProgression{
+						ID: uuid.New(),
+						Members: []models.SpellProgressionSpell{
+							{LevelBand: 10, Spell: low},
+							{LevelBand: 25, Spell: mid},
+							{LevelBand: 50, Spell: high},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	abilities := monsterCombatAbilities(monster)
+	if len(abilities) != 1 {
+		t.Fatalf("expected exactly one resolved progression ability, got %d", len(abilities))
+	}
+	if abilities[0].ID != mid.ID {
+		t.Fatalf("expected closest level ability %q, got %q", mid.Name, abilities[0].Name)
+	}
+}

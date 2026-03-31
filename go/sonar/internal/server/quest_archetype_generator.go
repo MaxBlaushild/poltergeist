@@ -398,19 +398,19 @@ func buildGeneratedChallengeTemplateQuestion(
 	switch {
 	case nextStep != nil && nextStep.Content == questTemplateGeneratorContentScenario:
 		if theme != "" {
-			return fmt.Sprintf("Search %s for the clue that reveals the next turn in %s, then photograph what you find.", locationName, theme)
+			return fmt.Sprintf("Photograph a detail at %s that feels tied to %s.", locationName, theme)
 		}
-		return fmt.Sprintf("Search %s for the clue that reveals the next turn, then photograph what you find.", locationName)
+		return fmt.Sprintf("Photograph a detail at %s that hints a story is unfolding there.", locationName)
 	case nextStep != nil && nextStep.Content == questTemplateGeneratorContentMonster:
 		if theme != "" {
-			return fmt.Sprintf("Scout %s for signs of the threat tied to %s and capture proof of the danger ahead.", locationName, theme)
+			return fmt.Sprintf("Photograph a detail at %s that would make travelers wary of %s.", locationName, theme)
 		}
-		return fmt.Sprintf("Scout %s for signs of the threat ahead and capture proof of what you uncover.", locationName)
+		return fmt.Sprintf("Photograph a detail at %s that suggests danger could be near.", locationName)
 	default:
 		if theme != "" {
-			return fmt.Sprintf("Investigate %s and capture proof of the lead tied to %s.", locationName, theme)
+			return fmt.Sprintf("Photograph the detail at %s that best captures the mood of %s.", locationName, theme)
 		}
-		return fmt.Sprintf("Investigate %s and capture proof of the lead hidden there.", locationName)
+		return fmt.Sprintf("Photograph the detail at %s that best captures the spirit of the place.", locationName)
 	}
 }
 
@@ -426,14 +426,14 @@ func buildGeneratedChallengeTemplateDescription(
 	theme := strings.TrimSpace(themePrompt)
 	if nextStep == nil {
 		if theme != "" {
-			return fmt.Sprintf("A generated field challenge grounded at %s and tuned to the trail surrounding %s.", locationName, theme)
+			return fmt.Sprintf("A concrete on-site photo challenge at %s. The player should submit a detail that clearly expresses %s and can be judged from the image alone.", locationName, theme)
 		}
-		return fmt.Sprintf("A generated field challenge grounded at %s.", locationName)
+		return fmt.Sprintf("A concrete on-site photo challenge at %s that can be judged from the submission alone.", locationName)
 	}
 	if theme != "" {
-		return fmt.Sprintf("A generated field challenge at %s that pushes the quest toward the next %s beat in %s.", locationName, nextStep.Content, theme)
+		return fmt.Sprintf("A concrete on-site photo challenge at %s that bridges toward the next %s beat in %s. The task should be enjoyable, locally grounded, and gradeable from the submission alone.", locationName, nextStep.Content, theme)
 	}
-	return fmt.Sprintf("A generated field challenge at %s that pushes the quest toward the next %s beat.", locationName, nextStep.Content)
+	return fmt.Sprintf("A concrete on-site photo challenge at %s that bridges toward the next %s beat. The task should be enjoyable, locally grounded, and gradeable from the submission alone.", locationName, nextStep.Content)
 }
 
 func buildGeneratedQuestTemplateName(

@@ -31,6 +31,12 @@ func (h *monsterEncounterHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("Members.Monster.Template").
 		Preload("Members.Monster.Template.Spells").
 		Preload("Members.Monster.Template.Spells.Spell").
+		Preload("Members.Monster.Template.Progressions").
+		Preload("Members.Monster.Template.Progressions.Progression").
+		Preload("Members.Monster.Template.Progressions.Progression.Members", func(db *gorm.DB) *gorm.DB {
+			return db.Order("level_band ASC")
+		}).
+		Preload("Members.Monster.Template.Progressions.Progression.Members.Spell").
 		Preload("Members.Monster.DominantHandInventoryItem").
 		Preload("Members.Monster.OffHandInventoryItem").
 		Preload("Members.Monster.WeaponInventoryItem").

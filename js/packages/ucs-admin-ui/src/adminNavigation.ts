@@ -32,6 +32,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Group zones into higher-level neighborhoods and seed them.',
       },
       {
+        id: 'zone-tagging',
+        label: 'Zone Tagging',
+        path: '/zone-tagging',
+        description:
+          'Queue neighborhood-tag generation jobs and review shared flavor tags for zones.',
+      },
+      {
         id: 'points-of-interest',
         label: 'Points of Interest',
         path: '/points-of-interest',

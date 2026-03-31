@@ -15,16 +15,6 @@ import {
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
 
-type DamageAffinity =
-  | 'physical'
-  | 'fire'
-  | 'ice'
-  | 'lightning'
-  | 'poison'
-  | 'arcane'
-  | 'holy'
-  | 'shadow';
-
 type MonsterEncounterType = 'monster' | 'boss' | 'raid';
 type MonsterTemplateType = 'monster' | 'boss' | 'raid';
 
@@ -44,11 +34,25 @@ type MonsterTemplateRecord = {
   baseIntelligence: number;
   baseWisdom: number;
   baseCharisma: number;
-  strongAgainstAffinity?: DamageAffinity | null;
-  weakAgainstAffinity?: DamageAffinity | null;
+  affinityDamageBonuses?: Record<string, number>;
+  affinityResistances?: Record<string, number>;
+  progressions?: MonsterTemplateProgressionRecord[];
   spells: Spell[];
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
+};
+
+type MonsterTemplateProgressionRecord = {
+  id: string;
+  name: string;
+  abilityType?: 'spell' | 'technique' | string;
+};
+
+type MonsterAbilityProgressionOption = {
+  id: string;
+  name: string;
+  abilityType: 'spell' | 'technique';
+  memberCount: number;
 };
 
 type MonsterRewardItem = {
@@ -94,8 +98,8 @@ type MonsterRecord = {
   attackDamageMin: number;
   attackDamageMax: number;
   attackSwipesPerAttack: number;
-  strongAgainstAffinity?: DamageAffinity | null;
-  weakAgainstAffinity?: DamageAffinity | null;
+  affinityDamageBonuses?: Record<string, number>;
+  affinityResistances?: Record<string, number>;
   spells: Spell[];
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';
@@ -181,6 +185,19 @@ type BulkMonsterTemplateStatus = {
   updatedAt?: string;
 };
 
+type MonsterTemplateAffinityRefreshStatus = {
+  jobId: string;
+  status: string;
+  totalCount: number;
+  updatedCount: number;
+  templateIds?: string[];
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
 type PaginatedResponse<T> = {
   items: T[];
   total: number;
@@ -223,10 +240,30 @@ type MonsterTemplateFormState = {
   baseIntelligence: string;
   baseWisdom: string;
   baseCharisma: string;
-  strongAgainstAffinity: string;
-  weakAgainstAffinity: string;
-  spellIds: string[];
-  techniqueIds: string[];
+  physicalDamageBonusPercent: string;
+  piercingDamageBonusPercent: string;
+  slashingDamageBonusPercent: string;
+  bludgeoningDamageBonusPercent: string;
+  fireDamageBonusPercent: string;
+  iceDamageBonusPercent: string;
+  lightningDamageBonusPercent: string;
+  poisonDamageBonusPercent: string;
+  arcaneDamageBonusPercent: string;
+  holyDamageBonusPercent: string;
+  shadowDamageBonusPercent: string;
+  physicalResistancePercent: string;
+  piercingResistancePercent: string;
+  slashingResistancePercent: string;
+  bludgeoningResistancePercent: string;
+  fireResistancePercent: string;
+  iceResistancePercent: string;
+  lightningResistancePercent: string;
+  poisonResistancePercent: string;
+  arcaneResistancePercent: string;
+  holyResistancePercent: string;
+  shadowResistancePercent: string;
+  spellProgressionIds: string[];
+  techniqueProgressionIds: string[];
 };
 
 type MonsterFormItem = {
@@ -320,16 +357,85 @@ const encounterIconDefaults: Record<
   },
 };
 
-const damageAffinityOptions: DamageAffinity[] = [
-  'physical',
-  'fire',
-  'ice',
-  'lightning',
-  'poison',
-  'arcane',
-  'holy',
-  'shadow',
-];
+const damageBonusFieldOptions = [
+  {
+    key: 'physicalDamageBonusPercent',
+    label: 'Physical Dmg %',
+    affinity: 'physical',
+  },
+  {
+    key: 'piercingDamageBonusPercent',
+    label: 'Piercing Dmg %',
+    affinity: 'piercing',
+  },
+  {
+    key: 'slashingDamageBonusPercent',
+    label: 'Slashing Dmg %',
+    affinity: 'slashing',
+  },
+  {
+    key: 'bludgeoningDamageBonusPercent',
+    label: 'Bludgeoning Dmg %',
+    affinity: 'bludgeoning',
+  },
+  { key: 'fireDamageBonusPercent', label: 'Fire Dmg %', affinity: 'fire' },
+  { key: 'iceDamageBonusPercent', label: 'Ice Dmg %', affinity: 'ice' },
+  {
+    key: 'lightningDamageBonusPercent',
+    label: 'Lightning Dmg %',
+    affinity: 'lightning',
+  },
+  {
+    key: 'poisonDamageBonusPercent',
+    label: 'Poison Dmg %',
+    affinity: 'poison',
+  },
+  {
+    key: 'arcaneDamageBonusPercent',
+    label: 'Arcane Dmg %',
+    affinity: 'arcane',
+  },
+  { key: 'holyDamageBonusPercent', label: 'Holy Dmg %', affinity: 'holy' },
+  {
+    key: 'shadowDamageBonusPercent',
+    label: 'Shadow Dmg %',
+    affinity: 'shadow',
+  },
+] as const;
+
+const resistanceFieldOptions = [
+  {
+    key: 'physicalResistancePercent',
+    label: 'Physical Res %',
+    affinity: 'physical',
+  },
+  {
+    key: 'piercingResistancePercent',
+    label: 'Piercing Res %',
+    affinity: 'piercing',
+  },
+  {
+    key: 'slashingResistancePercent',
+    label: 'Slashing Res %',
+    affinity: 'slashing',
+  },
+  {
+    key: 'bludgeoningResistancePercent',
+    label: 'Bludgeoning Res %',
+    affinity: 'bludgeoning',
+  },
+  { key: 'fireResistancePercent', label: 'Fire Res %', affinity: 'fire' },
+  { key: 'iceResistancePercent', label: 'Ice Res %', affinity: 'ice' },
+  {
+    key: 'lightningResistancePercent',
+    label: 'Lightning Res %',
+    affinity: 'lightning',
+  },
+  { key: 'poisonResistancePercent', label: 'Poison Res %', affinity: 'poison' },
+  { key: 'arcaneResistancePercent', label: 'Arcane Res %', affinity: 'arcane' },
+  { key: 'holyResistancePercent', label: 'Holy Res %', affinity: 'holy' },
+  { key: 'shadowResistancePercent', label: 'Shadow Res %', affinity: 'shadow' },
+] as const;
 
 const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
@@ -413,10 +519,30 @@ const emptyTemplateForm = (): MonsterTemplateFormState => ({
   baseIntelligence: '10',
   baseWisdom: '10',
   baseCharisma: '10',
-  strongAgainstAffinity: '',
-  weakAgainstAffinity: '',
-  spellIds: [],
-  techniqueIds: [],
+  physicalDamageBonusPercent: '0',
+  piercingDamageBonusPercent: '0',
+  slashingDamageBonusPercent: '0',
+  bludgeoningDamageBonusPercent: '0',
+  fireDamageBonusPercent: '0',
+  iceDamageBonusPercent: '0',
+  lightningDamageBonusPercent: '0',
+  poisonDamageBonusPercent: '0',
+  arcaneDamageBonusPercent: '0',
+  holyDamageBonusPercent: '0',
+  shadowDamageBonusPercent: '0',
+  physicalResistancePercent: '0',
+  piercingResistancePercent: '0',
+  slashingResistancePercent: '0',
+  bludgeoningResistancePercent: '0',
+  fireResistancePercent: '0',
+  iceResistancePercent: '0',
+  lightningResistancePercent: '0',
+  poisonResistancePercent: '0',
+  arcaneResistancePercent: '0',
+  holyResistancePercent: '0',
+  shadowResistancePercent: '0',
+  spellProgressionIds: [],
+  techniqueProgressionIds: [],
 });
 
 const templateFormFromRecord = (
@@ -433,14 +559,58 @@ const templateFormFromRecord = (
   baseIntelligence: String(template.baseIntelligence ?? 10),
   baseWisdom: String(template.baseWisdom ?? 10),
   baseCharisma: String(template.baseCharisma ?? 10),
-  strongAgainstAffinity: template.strongAgainstAffinity ?? '',
-  weakAgainstAffinity: template.weakAgainstAffinity ?? '',
-  spellIds: (template.spells ?? [])
-    .filter((spell) => (spell.abilityType ?? 'spell') !== 'technique')
-    .map((spell) => spell.id),
-  techniqueIds: (template.spells ?? [])
-    .filter((spell) => (spell.abilityType ?? 'spell') === 'technique')
-    .map((spell) => spell.id),
+  physicalDamageBonusPercent: String(
+    template.affinityDamageBonuses?.physical ?? 0
+  ),
+  piercingDamageBonusPercent: String(
+    template.affinityDamageBonuses?.piercing ?? 0
+  ),
+  slashingDamageBonusPercent: String(
+    template.affinityDamageBonuses?.slashing ?? 0
+  ),
+  bludgeoningDamageBonusPercent: String(
+    template.affinityDamageBonuses?.bludgeoning ?? 0
+  ),
+  fireDamageBonusPercent: String(template.affinityDamageBonuses?.fire ?? 0),
+  iceDamageBonusPercent: String(template.affinityDamageBonuses?.ice ?? 0),
+  lightningDamageBonusPercent: String(
+    template.affinityDamageBonuses?.lightning ?? 0
+  ),
+  poisonDamageBonusPercent: String(template.affinityDamageBonuses?.poison ?? 0),
+  arcaneDamageBonusPercent: String(template.affinityDamageBonuses?.arcane ?? 0),
+  holyDamageBonusPercent: String(template.affinityDamageBonuses?.holy ?? 0),
+  shadowDamageBonusPercent: String(template.affinityDamageBonuses?.shadow ?? 0),
+  physicalResistancePercent: String(
+    template.affinityResistances?.physical ?? 0
+  ),
+  piercingResistancePercent: String(
+    template.affinityResistances?.piercing ?? 0
+  ),
+  slashingResistancePercent: String(
+    template.affinityResistances?.slashing ?? 0
+  ),
+  bludgeoningResistancePercent: String(
+    template.affinityResistances?.bludgeoning ?? 0
+  ),
+  fireResistancePercent: String(template.affinityResistances?.fire ?? 0),
+  iceResistancePercent: String(template.affinityResistances?.ice ?? 0),
+  lightningResistancePercent: String(
+    template.affinityResistances?.lightning ?? 0
+  ),
+  poisonResistancePercent: String(template.affinityResistances?.poison ?? 0),
+  arcaneResistancePercent: String(template.affinityResistances?.arcane ?? 0),
+  holyResistancePercent: String(template.affinityResistances?.holy ?? 0),
+  shadowResistancePercent: String(template.affinityResistances?.shadow ?? 0),
+  spellProgressionIds: (template.progressions ?? [])
+    .filter(
+      (progression) => (progression.abilityType ?? 'spell') !== 'technique'
+    )
+    .map((progression) => progression.id),
+  techniqueProgressionIds: (template.progressions ?? [])
+    .filter(
+      (progression) => (progression.abilityType ?? 'spell') === 'technique'
+    )
+    .map((progression) => progression.id),
 });
 
 const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
@@ -455,9 +625,40 @@ const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
   baseIntelligence: parseIntSafe(form.baseIntelligence, 10),
   baseWisdom: parseIntSafe(form.baseWisdom, 10),
   baseCharisma: parseIntSafe(form.baseCharisma, 10),
-  strongAgainstAffinity: form.strongAgainstAffinity.trim(),
-  weakAgainstAffinity: form.weakAgainstAffinity.trim(),
-  spellIds: Array.from(new Set([...form.spellIds, ...form.techniqueIds])),
+  physicalDamageBonusPercent: parseIntSafe(form.physicalDamageBonusPercent, 0),
+  piercingDamageBonusPercent: parseIntSafe(form.piercingDamageBonusPercent, 0),
+  slashingDamageBonusPercent: parseIntSafe(form.slashingDamageBonusPercent, 0),
+  bludgeoningDamageBonusPercent: parseIntSafe(
+    form.bludgeoningDamageBonusPercent,
+    0
+  ),
+  fireDamageBonusPercent: parseIntSafe(form.fireDamageBonusPercent, 0),
+  iceDamageBonusPercent: parseIntSafe(form.iceDamageBonusPercent, 0),
+  lightningDamageBonusPercent: parseIntSafe(
+    form.lightningDamageBonusPercent,
+    0
+  ),
+  poisonDamageBonusPercent: parseIntSafe(form.poisonDamageBonusPercent, 0),
+  arcaneDamageBonusPercent: parseIntSafe(form.arcaneDamageBonusPercent, 0),
+  holyDamageBonusPercent: parseIntSafe(form.holyDamageBonusPercent, 0),
+  shadowDamageBonusPercent: parseIntSafe(form.shadowDamageBonusPercent, 0),
+  physicalResistancePercent: parseIntSafe(form.physicalResistancePercent, 0),
+  piercingResistancePercent: parseIntSafe(form.piercingResistancePercent, 0),
+  slashingResistancePercent: parseIntSafe(form.slashingResistancePercent, 0),
+  bludgeoningResistancePercent: parseIntSafe(
+    form.bludgeoningResistancePercent,
+    0
+  ),
+  fireResistancePercent: parseIntSafe(form.fireResistancePercent, 0),
+  iceResistancePercent: parseIntSafe(form.iceResistancePercent, 0),
+  lightningResistancePercent: parseIntSafe(form.lightningResistancePercent, 0),
+  poisonResistancePercent: parseIntSafe(form.poisonResistancePercent, 0),
+  arcaneResistancePercent: parseIntSafe(form.arcaneResistancePercent, 0),
+  holyResistancePercent: parseIntSafe(form.holyResistancePercent, 0),
+  shadowResistancePercent: parseIntSafe(form.shadowResistancePercent, 0),
+  progressionIds: Array.from(
+    new Set([...form.spellProgressionIds, ...form.techniqueProgressionIds])
+  ),
 });
 
 const emptyMonsterForm = (): MonsterFormState => ({
@@ -660,9 +861,19 @@ const formatGenerationStatus = (status?: string) => {
   }
 };
 
-const formatAffinityLabel = (affinity?: string | null): string => {
-  if (!affinity) return 'None';
-  return affinity.charAt(0).toUpperCase() + affinity.slice(1);
+const summarizeAffinityMap = (
+  values: Record<string, number> | undefined,
+  options: ReadonlyArray<{ affinity: string; label: string }>
+): string => {
+  if (!values) return 'None';
+  const parts = options
+    .map(({ affinity, label }) => ({
+      label,
+      value: values[affinity] ?? 0,
+    }))
+    .filter(({ value }) => value !== 0)
+    .map(({ label, value }) => `${label} ${value > 0 ? '+' : ''}${value}`);
+  return parts.length > 0 ? parts.join(' · ') : 'None';
 };
 
 const formatMonsterEncounterTypeLabel = (
@@ -838,6 +1049,15 @@ export const Monsters = () => {
   const [bulkTemplateMessage, setBulkTemplateMessage] = useState<string | null>(
     null
   );
+  const [affinityRefreshBusy, setAffinityRefreshBusy] = useState(false);
+  const [affinityRefreshJob, setAffinityRefreshJob] =
+    useState<MonsterTemplateAffinityRefreshStatus | null>(null);
+  const [affinityRefreshError, setAffinityRefreshError] = useState<
+    string | null
+  >(null);
+  const [affinityRefreshMessage, setAffinityRefreshMessage] = useState<
+    string | null
+  >(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
@@ -1136,15 +1356,48 @@ export const Monsters = () => {
     (selectedDominantHandItem?.handedness ?? '').trim().toLowerCase() ===
     'two_handed';
 
-  const spellAbilities = useMemo(
+  const progressionOptions = useMemo(() => {
+    const groups = new Map<string, MonsterAbilityProgressionOption>();
+    for (const spell of spells) {
+      const link = spell.progressionLinks?.[0];
+      if (!link?.progressionId) {
+        continue;
+      }
+      const abilityType =
+        (spell.abilityType ?? 'spell') === 'technique' ? 'technique' : 'spell';
+      const existing = groups.get(link.progressionId);
+      if (existing) {
+        existing.memberCount += 1;
+        if (
+          link.progression?.name &&
+          link.progression.name.trim() &&
+          existing.name.startsWith('Progression ')
+        ) {
+          existing.name = link.progression.name.trim();
+        }
+        continue;
+      }
+      groups.set(link.progressionId, {
+        id: link.progressionId,
+        name:
+          link.progression?.name?.trim() || `Progression ${groups.size + 1}`,
+        abilityType,
+        memberCount: 1,
+      });
+    }
+    return Array.from(groups.values()).sort((left, right) =>
+      left.name.localeCompare(right.name)
+    );
+  }, [spells]);
+  const spellProgressionOptions = useMemo(
     () =>
-      spells.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique'),
-    [spells]
+      progressionOptions.filter((option) => option.abilityType !== 'technique'),
+    [progressionOptions]
   );
-  const techniqueAbilities = useMemo(
+  const techniqueProgressionOptions = useMemo(
     () =>
-      spells.filter((spell) => (spell.abilityType ?? 'spell') === 'technique'),
-    [spells]
+      progressionOptions.filter((option) => option.abilityType === 'technique'),
+    [progressionOptions]
   );
 
   const filteredTemplates = templates;
@@ -1206,14 +1459,6 @@ export const Monsters = () => {
         alert('All base stats must be positive.');
         return;
       }
-      if (
-        payload.strongAgainstAffinity &&
-        payload.strongAgainstAffinity === payload.weakAgainstAffinity
-      ) {
-        alert('Strong against and weak against affinities must be different.');
-        return;
-      }
-
       if (editingTemplate) {
         const updated = await apiClient.put<MonsterTemplateRecord>(
           `/sonar/monster-templates/${editingTemplate.id}`,
@@ -1421,6 +1666,81 @@ export const Monsters = () => {
           : `Failed to generate ${monsterType} template.`;
       setBulkTemplateError(message);
       setBulkTemplateBusy(false);
+    }
+  };
+
+  const refreshAffinityJobStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status =
+          await apiClient.get<MonsterTemplateAffinityRefreshStatus>(
+            `/sonar/admin/monster-templates/refresh-affinities/${jobId}/status`
+          );
+        setAffinityRefreshJob(status);
+        if (status.status === 'completed') {
+          setAffinityRefreshBusy(false);
+          setAffinityRefreshError(null);
+          setAffinityRefreshMessage(
+            `Refreshed affinities for ${status.updatedCount} template${
+              status.updatedCount === 1 ? '' : 's'
+            }.`
+          );
+          await loadPagedData(true);
+        } else if (status.status === 'failed') {
+          setAffinityRefreshBusy(false);
+          setAffinityRefreshMessage(null);
+          setAffinityRefreshError(
+            status.error || 'Affinity refresh generation failed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh monster affinity job status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to refresh affinity job status.';
+        setAffinityRefreshError(message);
+        setAffinityRefreshBusy(false);
+      }
+    },
+    [apiClient, loadPagedData]
+  );
+
+  const handleRefreshTemplateAffinities = async () => {
+    try {
+      setAffinityRefreshBusy(true);
+      setAffinityRefreshError(null);
+      setAffinityRefreshMessage(null);
+      setAffinityRefreshJob(null);
+      const ids = Array.from(selectedTemplateIds);
+      const response =
+        await apiClient.post<MonsterTemplateAffinityRefreshStatus>(
+          '/sonar/admin/monster-templates/refresh-affinities',
+          ids.length > 0 ? { ids } : {}
+        );
+      setAffinityRefreshJob(response);
+      if (response.status === 'completed') {
+        setAffinityRefreshBusy(false);
+        setAffinityRefreshMessage(
+          `Refreshed affinities for ${response.updatedCount} template${
+            response.updatedCount === 1 ? '' : 's'
+          }.`
+        );
+        await loadPagedData(true);
+      } else if (response.status === 'failed') {
+        setAffinityRefreshBusy(false);
+        setAffinityRefreshError(
+          response.error || 'Affinity refresh generation failed.'
+        );
+      }
+    } catch (err) {
+      console.error('Failed to refresh monster template affinities', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to refresh monster template affinities.';
+      setAffinityRefreshError(message);
+      setAffinityRefreshBusy(false);
     }
   };
 
@@ -1793,17 +2113,17 @@ export const Monsters = () => {
   };
 
   const updateTemplateSpellIds = (selected: HTMLSelectElement) => {
-    const spellIds = Array.from(selected.selectedOptions).map(
+    const spellProgressionIds = Array.from(selected.selectedOptions).map(
       (option) => option.value
     );
-    setTemplateForm((prev) => ({ ...prev, spellIds }));
+    setTemplateForm((prev) => ({ ...prev, spellProgressionIds }));
   };
 
   const updateTemplateTechniqueIds = (selected: HTMLSelectElement) => {
-    const techniqueIds = Array.from(selected.selectedOptions).map(
+    const techniqueProgressionIds = Array.from(selected.selectedOptions).map(
       (option) => option.value
     );
-    setTemplateForm((prev) => ({ ...prev, techniqueIds }));
+    setTemplateForm((prev) => ({ ...prev, techniqueProgressionIds }));
   };
 
   const updateDominantHandSelection = (value: string) => {
@@ -2222,6 +2542,22 @@ export const Monsters = () => {
     return () => window.clearInterval(interval);
   }, [bulkTemplateJob, refreshBulkTemplateJobStatus]);
 
+  useEffect(() => {
+    if (!affinityRefreshJob?.jobId) {
+      return;
+    }
+    if (
+      affinityRefreshJob.status !== 'queued' &&
+      affinityRefreshJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshAffinityJobStatus(affinityRefreshJob.jobId);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [affinityRefreshJob, refreshAffinityJobStatus]);
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -2529,7 +2865,47 @@ export const Monsters = () => {
                     ? `Archive Selected (${selectedTemplateIds.size})`
                     : `Restore Selected (${selectedTemplateIds.size})`}
                 </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={affinityRefreshBusy}
+                  onClick={() => void handleRefreshTemplateAffinities()}
+                >
+                  {affinityRefreshBusy
+                    ? 'Refreshing Affinities...'
+                    : selectedTemplateIds.size > 0
+                      ? `Refresh Selected Affinities (${selectedTemplateIds.size})`
+                      : 'Refresh All Template Affinities'}
+                </button>
               </div>
+              {affinityRefreshJob ? (
+                <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-700">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white ${staticStatusClassName(
+                      affinityRefreshJob.status
+                    )}`}
+                  >
+                    {formatBulkTemplateStatus(affinityRefreshJob.status)}
+                  </span>
+                  <span>
+                    Progress: {affinityRefreshJob.updatedCount}/
+                    {affinityRefreshJob.totalCount}
+                  </span>
+                  <span>Job: {affinityRefreshJob.jobId}</span>
+                  <span>
+                    Updated: {formatDate(affinityRefreshJob.updatedAt)}
+                  </span>
+                </div>
+              ) : null}
+              {affinityRefreshMessage ? (
+                <p className="mb-4 text-sm text-emerald-700">
+                  {affinityRefreshMessage}
+                </p>
+              ) : null}
+              {affinityRefreshError ? (
+                <p className="mb-4 text-sm text-red-700">
+                  {affinityRefreshError}
+                </p>
+              ) : null}
               {filteredTemplates.length === 0 ? (
                 <p className="text-sm text-gray-600">No templates found.</p>
               ) : (
@@ -2604,27 +2980,32 @@ export const Monsters = () => {
                               {template.baseCharisma}
                             </p>
                             <p className="text-sm text-gray-500 mt-1">
-                              Strong vs{' '}
-                              {formatAffinityLabel(
-                                template.strongAgainstAffinity
-                              )}
-                              {' · '}
-                              Weak vs{' '}
-                              {formatAffinityLabel(
-                                template.weakAgainstAffinity
+                              Damage Bonuses:{' '}
+                              {summarizeAffinityMap(
+                                template.affinityDamageBonuses,
+                                damageBonusFieldOptions
                               )}
                             </p>
                             <p className="text-sm text-gray-500 mt-1">
-                              Spells:{' '}
-                              {template.spells?.filter(
-                                (spell) =>
-                                  (spell.abilityType ?? 'spell') !== 'technique'
+                              Resistances:{' '}
+                              {summarizeAffinityMap(
+                                template.affinityResistances,
+                                resistanceFieldOptions
+                              )}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Spell Progressions:{' '}
+                              {template.progressions?.filter(
+                                (progression) =>
+                                  (progression.abilityType ?? 'spell') !==
+                                  'technique'
                               ).length ?? 0}
                               {' · '}
-                              Techniques:{' '}
-                              {template.spells?.filter(
-                                (spell) =>
-                                  (spell.abilityType ?? 'spell') === 'technique'
+                              Technique Progressions:{' '}
+                              {template.progressions?.filter(
+                                (progression) =>
+                                  (progression.abilityType ?? 'spell') ===
+                                  'technique'
                               ).length ?? 0}
                             </p>
                             <p className="text-xs text-gray-500 mt-1">
@@ -2747,8 +3128,8 @@ export const Monsters = () => {
                               Dominant Hand:{' '}
                               {monster.dominantHandInventoryItem?.name ??
                                 monster.weaponInventoryItem?.name ??
-                                (monster.dominantHandInventoryItemId ??
-                                monster.weaponInventoryItemId
+                                ((monster.dominantHandInventoryItemId ??
+                                monster.weaponInventoryItemId)
                                   ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
                                   : 'N/A')}
                             </p>
@@ -2769,16 +3150,17 @@ export const Monsters = () => {
                               {monster.mana}/{monster.maxMana}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Strong vs{' '}
-                              {formatAffinityLabel(
-                                monster.strongAgainstAffinity ??
-                                  monster.template?.strongAgainstAffinity
+                              Damage Bonuses:{' '}
+                              {summarizeAffinityMap(
+                                monster.affinityDamageBonuses,
+                                damageBonusFieldOptions
                               )}
-                              {' · '}
-                              Weak vs{' '}
-                              {formatAffinityLabel(
-                                monster.weakAgainstAffinity ??
-                                  monster.template?.weakAgainstAffinity
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Resistances:{' '}
+                              {summarizeAffinityMap(
+                                monster.affinityResistances,
+                                resistanceFieldOptions
                               )}
                             </p>
                             <p className="text-sm text-gray-600">
@@ -3222,75 +3604,85 @@ export const Monsters = () => {
                     }
                   />
                 </label>
-                <label className="block">
-                  <span className="block text-sm mb-1">Strong Against</span>
-                  <select
-                    className="w-full border border-gray-300 rounded-md p-2"
-                    value={templateForm.strongAgainstAffinity}
-                    onChange={(event) =>
-                      setTemplateForm((prev) => ({
-                        ...prev,
-                        strongAgainstAffinity: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">None</option>
-                    {damageAffinityOptions.map((affinity) => (
-                      <option key={`strong-${affinity}`} value={affinity}>
-                        {formatAffinityLabel(affinity)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="block text-sm mb-1">Weak Against</span>
-                  <select
-                    className="w-full border border-gray-300 rounded-md p-2"
-                    value={templateForm.weakAgainstAffinity}
-                    onChange={(event) =>
-                      setTemplateForm((prev) => ({
-                        ...prev,
-                        weakAgainstAffinity: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">None</option>
-                    {damageAffinityOptions.map((affinity) => (
-                      <option key={`weak-${affinity}`} value={affinity}>
-                        {formatAffinityLabel(affinity)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-sm font-medium mb-2">
+                  Affinity Damage Bonuses
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {damageBonusFieldOptions.map(({ key, label }) => (
+                    <label className="block" key={key}>
+                      <span className="block text-sm mb-1">{label}</span>
+                      <input
+                        type="number"
+                        className="w-full border border-gray-300 rounded-md p-2"
+                        value={templateForm[key]}
+                        onChange={(event) =>
+                          setTemplateForm((prev) => ({
+                            ...prev,
+                            [key]: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-sm font-medium mb-2">
+                  Affinity Resistances
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {resistanceFieldOptions.map(({ key, label }) => (
+                    <label className="block" key={key}>
+                      <span className="block text-sm mb-1">{label}</span>
+                      <input
+                        type="number"
+                        className="w-full border border-gray-300 rounded-md p-2"
+                        value={templateForm[key]}
+                        onChange={(event) =>
+                          setTemplateForm((prev) => ({
+                            ...prev,
+                            [key]: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <label className="block">
-                <span className="block text-sm mb-1">Spells</span>
+                <span className="block text-sm mb-1">Spell Progressions</span>
                 <select
                   multiple
                   className="w-full border border-gray-300 rounded-md p-2 min-h-[180px]"
-                  value={templateForm.spellIds}
+                  value={templateForm.spellProgressionIds}
                   onChange={(event) => updateTemplateSpellIds(event.target)}
                 >
-                  {spellAbilities.map((spell) => (
-                    <option key={spell.id} value={spell.id}>
-                      {spell.name}
+                  {spellProgressionOptions.map((progression) => (
+                    <option key={progression.id} value={progression.id}>
+                      {progression.name} ({progression.memberCount})
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="block">
-                <span className="block text-sm mb-1">Techniques</span>
+                <span className="block text-sm mb-1">
+                  Technique Progressions
+                </span>
                 <select
                   multiple
                   className="w-full border border-gray-300 rounded-md p-2 min-h-[180px]"
-                  value={templateForm.techniqueIds}
+                  value={templateForm.techniqueProgressionIds}
                   onChange={(event) => updateTemplateTechniqueIds(event.target)}
                 >
-                  {techniqueAbilities.map((technique) => (
-                    <option key={technique.id} value={technique.id}>
-                      {technique.name}
+                  {techniqueProgressionOptions.map((progression) => (
+                    <option key={progression.id} value={progression.id}>
+                      {progression.name} ({progression.memberCount})
                     </option>
                   ))}
                 </select>

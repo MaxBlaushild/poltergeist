@@ -17,7 +17,13 @@ type monsterTemplateHandle struct {
 func (h *monsterTemplateHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Spells").
-		Preload("Spells.Spell")
+		Preload("Spells.Spell").
+		Preload("Progressions").
+		Preload("Progressions.Progression").
+		Preload("Progressions.Progression.Members", func(db *gorm.DB) *gorm.DB {
+			return db.Order("level_band ASC")
+		}).
+		Preload("Progressions.Progression.Members.Spell")
 }
 
 func (h *monsterTemplateHandle) Create(ctx context.Context, template *models.MonsterTemplate) error {
@@ -182,23 +188,43 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 	updates.UpdatedAt = time.Now()
 	updates.MonsterType = models.NormalizeMonsterTemplateType(string(updates.MonsterType))
 	payload := map[string]interface{}{
-		"archived":                updates.Archived,
-		"monster_type":            updates.MonsterType,
-		"name":                    updates.Name,
-		"description":             updates.Description,
-		"image_url":               updates.ImageURL,
-		"thumbnail_url":           updates.ThumbnailURL,
-		"base_strength":           updates.BaseStrength,
-		"base_dexterity":          updates.BaseDexterity,
-		"base_constitution":       updates.BaseConstitution,
-		"base_intelligence":       updates.BaseIntelligence,
-		"base_wisdom":             updates.BaseWisdom,
-		"base_charisma":           updates.BaseCharisma,
-		"strong_against_affinity": updates.StrongAgainstAffinity,
-		"weak_against_affinity":   updates.WeakAgainstAffinity,
-		"image_generation_status": updates.ImageGenerationStatus,
-		"image_generation_error":  updates.ImageGenerationError,
-		"updated_at":              updates.UpdatedAt,
+		"archived":                         updates.Archived,
+		"monster_type":                     updates.MonsterType,
+		"name":                             updates.Name,
+		"description":                      updates.Description,
+		"image_url":                        updates.ImageURL,
+		"thumbnail_url":                    updates.ThumbnailURL,
+		"base_strength":                    updates.BaseStrength,
+		"base_dexterity":                   updates.BaseDexterity,
+		"base_constitution":                updates.BaseConstitution,
+		"base_intelligence":                updates.BaseIntelligence,
+		"base_wisdom":                      updates.BaseWisdom,
+		"base_charisma":                    updates.BaseCharisma,
+		"physical_damage_bonus_percent":    updates.PhysicalDamageBonusPercent,
+		"piercing_damage_bonus_percent":    updates.PiercingDamageBonusPercent,
+		"slashing_damage_bonus_percent":    updates.SlashingDamageBonusPercent,
+		"bludgeoning_damage_bonus_percent": updates.BludgeoningDamageBonusPercent,
+		"fire_damage_bonus_percent":        updates.FireDamageBonusPercent,
+		"ice_damage_bonus_percent":         updates.IceDamageBonusPercent,
+		"lightning_damage_bonus_percent":   updates.LightningDamageBonusPercent,
+		"poison_damage_bonus_percent":      updates.PoisonDamageBonusPercent,
+		"arcane_damage_bonus_percent":      updates.ArcaneDamageBonusPercent,
+		"holy_damage_bonus_percent":        updates.HolyDamageBonusPercent,
+		"shadow_damage_bonus_percent":      updates.ShadowDamageBonusPercent,
+		"physical_resistance_percent":      updates.PhysicalResistancePercent,
+		"piercing_resistance_percent":      updates.PiercingResistancePercent,
+		"slashing_resistance_percent":      updates.SlashingResistancePercent,
+		"bludgeoning_resistance_percent":   updates.BludgeoningResistancePercent,
+		"fire_resistance_percent":          updates.FireResistancePercent,
+		"ice_resistance_percent":           updates.IceResistancePercent,
+		"lightning_resistance_percent":     updates.LightningResistancePercent,
+		"poison_resistance_percent":        updates.PoisonResistancePercent,
+		"arcane_resistance_percent":        updates.ArcaneResistancePercent,
+		"holy_resistance_percent":          updates.HolyResistancePercent,
+		"shadow_resistance_percent":        updates.ShadowResistancePercent,
+		"image_generation_status":          updates.ImageGenerationStatus,
+		"image_generation_error":           updates.ImageGenerationError,
+		"updated_at":                       updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.MonsterTemplate{}).Where("id = ?", id).Updates(payload).Error
 }
@@ -219,6 +245,29 @@ func (h *monsterTemplateHandle) ReplaceSpells(ctx context.Context, templateID uu
 			spell.CreatedAt = now
 			spell.UpdatedAt = now
 			if err := tx.Create(&spell).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (h *monsterTemplateHandle) ReplaceProgressions(
+	ctx context.Context,
+	templateID uuid.UUID,
+	progressions []models.MonsterTemplateProgression,
+) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("monster_template_id = ?", templateID).Delete(&models.MonsterTemplateProgression{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, progression := range progressions {
+			progression.ID = uuid.New()
+			progression.MonsterTemplateID = templateID
+			progression.CreatedAt = now
+			progression.UpdatedAt = now
+			if err := tx.Create(&progression).Error; err != nil {
 				return err
 			}
 		}

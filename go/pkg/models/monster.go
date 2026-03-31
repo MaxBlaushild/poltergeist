@@ -45,26 +45,47 @@ type Monster struct {
 }
 
 type MonsterTemplate struct {
-	ID                    uuid.UUID              `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt             time.Time              `json:"createdAt"`
-	UpdatedAt             time.Time              `json:"updatedAt"`
-	Archived              bool                   `json:"archived" gorm:"column:archived;default:false"`
-	MonsterType           MonsterTemplateType    `json:"monsterType" gorm:"column:monster_type"`
-	Name                  string                 `json:"name"`
-	Description           string                 `json:"description"`
-	ImageURL              string                 `json:"imageUrl" gorm:"column:image_url"`
-	ThumbnailURL          string                 `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	BaseStrength          int                    `json:"baseStrength" gorm:"column:base_strength"`
-	BaseDexterity         int                    `json:"baseDexterity" gorm:"column:base_dexterity"`
-	BaseConstitution      int                    `json:"baseConstitution" gorm:"column:base_constitution"`
-	BaseIntelligence      int                    `json:"baseIntelligence" gorm:"column:base_intelligence"`
-	BaseWisdom            int                    `json:"baseWisdom" gorm:"column:base_wisdom"`
-	BaseCharisma          int                    `json:"baseCharisma" gorm:"column:base_charisma"`
-	StrongAgainstAffinity *string                `json:"strongAgainstAffinity,omitempty" gorm:"column:strong_against_affinity"`
-	WeakAgainstAffinity   *string                `json:"weakAgainstAffinity,omitempty" gorm:"column:weak_against_affinity"`
-	ImageGenerationStatus string                 `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
-	ImageGenerationError  *string                `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
-	Spells                []MonsterTemplateSpell `json:"spells" gorm:"foreignKey:MonsterTemplateID"`
+	ID                            uuid.UUID                    `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt                     time.Time                    `json:"createdAt"`
+	UpdatedAt                     time.Time                    `json:"updatedAt"`
+	Archived                      bool                         `json:"archived" gorm:"column:archived;default:false"`
+	MonsterType                   MonsterTemplateType          `json:"monsterType" gorm:"column:monster_type"`
+	Name                          string                       `json:"name"`
+	Description                   string                       `json:"description"`
+	ImageURL                      string                       `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL                  string                       `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	BaseStrength                  int                          `json:"baseStrength" gorm:"column:base_strength"`
+	BaseDexterity                 int                          `json:"baseDexterity" gorm:"column:base_dexterity"`
+	BaseConstitution              int                          `json:"baseConstitution" gorm:"column:base_constitution"`
+	BaseIntelligence              int                          `json:"baseIntelligence" gorm:"column:base_intelligence"`
+	BaseWisdom                    int                          `json:"baseWisdom" gorm:"column:base_wisdom"`
+	BaseCharisma                  int                          `json:"baseCharisma" gorm:"column:base_charisma"`
+	PhysicalDamageBonusPercent    int                          `json:"physicalDamageBonusPercent" gorm:"column:physical_damage_bonus_percent"`
+	PiercingDamageBonusPercent    int                          `json:"piercingDamageBonusPercent" gorm:"column:piercing_damage_bonus_percent"`
+	SlashingDamageBonusPercent    int                          `json:"slashingDamageBonusPercent" gorm:"column:slashing_damage_bonus_percent"`
+	BludgeoningDamageBonusPercent int                          `json:"bludgeoningDamageBonusPercent" gorm:"column:bludgeoning_damage_bonus_percent"`
+	FireDamageBonusPercent        int                          `json:"fireDamageBonusPercent" gorm:"column:fire_damage_bonus_percent"`
+	IceDamageBonusPercent         int                          `json:"iceDamageBonusPercent" gorm:"column:ice_damage_bonus_percent"`
+	LightningDamageBonusPercent   int                          `json:"lightningDamageBonusPercent" gorm:"column:lightning_damage_bonus_percent"`
+	PoisonDamageBonusPercent      int                          `json:"poisonDamageBonusPercent" gorm:"column:poison_damage_bonus_percent"`
+	ArcaneDamageBonusPercent      int                          `json:"arcaneDamageBonusPercent" gorm:"column:arcane_damage_bonus_percent"`
+	HolyDamageBonusPercent        int                          `json:"holyDamageBonusPercent" gorm:"column:holy_damage_bonus_percent"`
+	ShadowDamageBonusPercent      int                          `json:"shadowDamageBonusPercent" gorm:"column:shadow_damage_bonus_percent"`
+	PhysicalResistancePercent     int                          `json:"physicalResistancePercent" gorm:"column:physical_resistance_percent"`
+	PiercingResistancePercent     int                          `json:"piercingResistancePercent" gorm:"column:piercing_resistance_percent"`
+	SlashingResistancePercent     int                          `json:"slashingResistancePercent" gorm:"column:slashing_resistance_percent"`
+	BludgeoningResistancePercent  int                          `json:"bludgeoningResistancePercent" gorm:"column:bludgeoning_resistance_percent"`
+	FireResistancePercent         int                          `json:"fireResistancePercent" gorm:"column:fire_resistance_percent"`
+	IceResistancePercent          int                          `json:"iceResistancePercent" gorm:"column:ice_resistance_percent"`
+	LightningResistancePercent    int                          `json:"lightningResistancePercent" gorm:"column:lightning_resistance_percent"`
+	PoisonResistancePercent       int                          `json:"poisonResistancePercent" gorm:"column:poison_resistance_percent"`
+	ArcaneResistancePercent       int                          `json:"arcaneResistancePercent" gorm:"column:arcane_resistance_percent"`
+	HolyResistancePercent         int                          `json:"holyResistancePercent" gorm:"column:holy_resistance_percent"`
+	ShadowResistancePercent       int                          `json:"shadowResistancePercent" gorm:"column:shadow_resistance_percent"`
+	ImageGenerationStatus         string                       `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError          *string                      `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	Spells                        []MonsterTemplateSpell       `json:"spells" gorm:"foreignKey:MonsterTemplateID"`
+	Progressions                  []MonsterTemplateProgression `json:"progressions,omitempty" gorm:"foreignKey:MonsterTemplateID"`
 }
 
 type MonsterTemplateSpell struct {
@@ -74,6 +95,15 @@ type MonsterTemplateSpell struct {
 	MonsterTemplateID uuid.UUID `json:"monsterTemplateId" gorm:"column:monster_template_id"`
 	SpellID           uuid.UUID `json:"spellId" gorm:"column:spell_id"`
 	Spell             Spell     `json:"spell"`
+}
+
+type MonsterTemplateProgression struct {
+	ID                uuid.UUID        `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt         time.Time        `json:"createdAt"`
+	UpdatedAt         time.Time        `json:"updatedAt"`
+	MonsterTemplateID uuid.UUID        `json:"monsterTemplateId" gorm:"column:monster_template_id"`
+	ProgressionID     uuid.UUID        `json:"progressionId" gorm:"column:progression_id"`
+	Progression       SpellProgression `json:"progression,omitempty" gorm:"foreignKey:ProgressionID"`
 }
 
 type MonsterItemReward struct {
@@ -96,6 +126,10 @@ func (m *MonsterTemplate) TableName() string {
 
 func (m *MonsterTemplateSpell) TableName() string {
 	return "monster_template_spells"
+}
+
+func (m *MonsterTemplateProgression) TableName() string {
+	return "monster_template_progressions"
 }
 
 func (m *MonsterItemReward) TableName() string {
@@ -131,6 +165,36 @@ func (m *Monster) BeforeSave(tx *gorm.DB) error {
 func (m *MonsterTemplate) BeforeSave(tx *gorm.DB) error {
 	m.MonsterType = NormalizeMonsterTemplateType(string(m.MonsterType))
 	return nil
+}
+
+func (m *MonsterTemplate) AffinityBonuses() CharacterStatBonuses {
+	if m == nil {
+		return CharacterStatBonuses{}
+	}
+	return CharacterStatBonuses{
+		PhysicalDamageBonusPercent:    m.PhysicalDamageBonusPercent,
+		PiercingDamageBonusPercent:    m.PiercingDamageBonusPercent,
+		SlashingDamageBonusPercent:    m.SlashingDamageBonusPercent,
+		BludgeoningDamageBonusPercent: m.BludgeoningDamageBonusPercent,
+		FireDamageBonusPercent:        m.FireDamageBonusPercent,
+		IceDamageBonusPercent:         m.IceDamageBonusPercent,
+		LightningDamageBonusPercent:   m.LightningDamageBonusPercent,
+		PoisonDamageBonusPercent:      m.PoisonDamageBonusPercent,
+		ArcaneDamageBonusPercent:      m.ArcaneDamageBonusPercent,
+		HolyDamageBonusPercent:        m.HolyDamageBonusPercent,
+		ShadowDamageBonusPercent:      m.ShadowDamageBonusPercent,
+		PhysicalResistancePercent:     m.PhysicalResistancePercent,
+		PiercingResistancePercent:     m.PiercingResistancePercent,
+		SlashingResistancePercent:     m.SlashingResistancePercent,
+		BludgeoningResistancePercent:  m.BludgeoningResistancePercent,
+		FireResistancePercent:         m.FireResistancePercent,
+		IceResistancePercent:          m.IceResistancePercent,
+		LightningResistancePercent:    m.LightningResistancePercent,
+		PoisonResistancePercent:       m.PoisonResistancePercent,
+		ArcaneResistancePercent:       m.ArcaneResistancePercent,
+		HolyResistancePercent:         m.HolyResistancePercent,
+		ShadowResistancePercent:       m.ShadowResistancePercent,
+	}
 }
 
 func (m *Monster) SetGeometry(latitude, longitude float64) error {

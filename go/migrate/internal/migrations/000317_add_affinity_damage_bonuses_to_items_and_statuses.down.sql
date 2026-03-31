@@ -1,0 +1,38 @@
+ALTER TABLE monster_statuses
+  DROP COLUMN shadow_damage_bonus_percent,
+  DROP COLUMN holy_damage_bonus_percent,
+  DROP COLUMN arcane_damage_bonus_percent,
+  DROP COLUMN poison_damage_bonus_percent,
+  DROP COLUMN lightning_damage_bonus_percent,
+  DROP COLUMN ice_damage_bonus_percent,
+  DROP COLUMN fire_damage_bonus_percent,
+  DROP COLUMN bludgeoning_damage_bonus_percent,
+  DROP COLUMN slashing_damage_bonus_percent,
+  DROP COLUMN piercing_damage_bonus_percent,
+  DROP COLUMN physical_damage_bonus_percent;
+
+ALTER TABLE user_statuses
+  DROP COLUMN shadow_damage_bonus_percent,
+  DROP COLUMN holy_damage_bonus_percent,
+  DROP COLUMN arcane_damage_bonus_percent,
+  DROP COLUMN poison_damage_bonus_percent,
+  DROP COLUMN lightning_damage_bonus_percent,
+  DROP COLUMN ice_damage_bonus_percent,
+  DROP COLUMN fire_damage_bonus_percent,
+  DROP COLUMN bludgeoning_damage_bonus_percent,
+  DROP COLUMN slashing_damage_bonus_percent,
+  DROP COLUMN piercing_damage_bonus_percent,
+  DROP COLUMN physical_damage_bonus_percent;
+
+ALTER TABLE inventory_items
+  DROP COLUMN shadow_damage_bonus_percent,
+  DROP COLUMN holy_damage_bonus_percent,
+  DROP COLUMN arcane_damage_bonus_percent,
+  DROP COLUMN poison_damage_bonus_percent,
+  DROP COLUMN lightning_damage_bonus_percent,
+  DROP COLUMN ice_damage_bonus_percent,
+  DROP COLUMN fire_damage_bonus_percent,
+  DROP COLUMN bludgeoning_damage_bonus_percent,
+  DROP COLUMN slashing_damage_bonus_percent,
+  DROP COLUMN piercing_damage_bonus_percent,
+  DROP COLUMN physical_damage_bonus_percent;

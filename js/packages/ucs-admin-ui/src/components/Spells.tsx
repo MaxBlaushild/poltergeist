@@ -18,6 +18,28 @@ type SpellStatusTemplateForm = {
   intelligenceMod: string;
   wisdomMod: string;
   charismaMod: string;
+  physicalDamageBonusPercent: string;
+  piercingDamageBonusPercent: string;
+  slashingDamageBonusPercent: string;
+  bludgeoningDamageBonusPercent: string;
+  fireDamageBonusPercent: string;
+  iceDamageBonusPercent: string;
+  lightningDamageBonusPercent: string;
+  poisonDamageBonusPercent: string;
+  arcaneDamageBonusPercent: string;
+  holyDamageBonusPercent: string;
+  shadowDamageBonusPercent: string;
+  physicalResistancePercent: string;
+  piercingResistancePercent: string;
+  slashingResistancePercent: string;
+  bludgeoningResistancePercent: string;
+  fireResistancePercent: string;
+  iceResistancePercent: string;
+  lightningResistancePercent: string;
+  poisonResistancePercent: string;
+  arcaneResistancePercent: string;
+  holyResistancePercent: string;
+  shadowResistancePercent: string;
 };
 
 type SpellEffectForm = {
@@ -102,6 +124,27 @@ type GenerateAbilityTomesResponse = {
   warnings?: string[];
 };
 
+type AbilityListViewMode = 'abilities' | 'progressions';
+
+type ProgressionGroup = {
+  id: string;
+  name: string;
+  abilityType: 'spell' | 'technique';
+  spells: Spell[];
+};
+
+type SeedAbilityPackResponse = {
+  items?: Array<{
+    name: string;
+    abilityType?: string;
+    action: 'created' | 'updated' | string;
+  }>;
+  abilityType?: string;
+  processedCount: number;
+  createdCount: number;
+  updatedCount: number;
+};
+
 type BulkEffectCountsForm = {
   dealDamage: string;
   dealDamageAllEnemies: string;
@@ -151,6 +194,34 @@ const damageAffinityOptions = [
   'shadow',
 ] as const;
 
+const resistanceFieldOptions = [
+  ['physicalResistancePercent', 'Physical %'],
+  ['piercingResistancePercent', 'Piercing %'],
+  ['slashingResistancePercent', 'Slashing %'],
+  ['bludgeoningResistancePercent', 'Bludgeoning %'],
+  ['fireResistancePercent', 'Fire %'],
+  ['iceResistancePercent', 'Ice %'],
+  ['lightningResistancePercent', 'Lightning %'],
+  ['poisonResistancePercent', 'Poison %'],
+  ['arcaneResistancePercent', 'Arcane %'],
+  ['holyResistancePercent', 'Holy %'],
+  ['shadowResistancePercent', 'Shadow %'],
+] as const;
+
+const damageBonusFieldOptions = [
+  ['physicalDamageBonusPercent', 'Physical Dmg %'],
+  ['piercingDamageBonusPercent', 'Piercing Dmg %'],
+  ['slashingDamageBonusPercent', 'Slashing Dmg %'],
+  ['bludgeoningDamageBonusPercent', 'Bludgeoning Dmg %'],
+  ['fireDamageBonusPercent', 'Fire Dmg %'],
+  ['iceDamageBonusPercent', 'Ice Dmg %'],
+  ['lightningDamageBonusPercent', 'Lightning Dmg %'],
+  ['poisonDamageBonusPercent', 'Poison Dmg %'],
+  ['arcaneDamageBonusPercent', 'Arcane Dmg %'],
+  ['holyDamageBonusPercent', 'Holy Dmg %'],
+  ['shadowDamageBonusPercent', 'Shadow Dmg %'],
+] as const;
+
 const statusEffectTypeOptions = [
   'stat_modifier',
   'damage_over_time',
@@ -174,6 +245,28 @@ const emptyStatusTemplate = (): SpellStatusTemplateForm => ({
   intelligenceMod: '0',
   wisdomMod: '0',
   charismaMod: '0',
+  physicalDamageBonusPercent: '0',
+  piercingDamageBonusPercent: '0',
+  slashingDamageBonusPercent: '0',
+  bludgeoningDamageBonusPercent: '0',
+  fireDamageBonusPercent: '0',
+  iceDamageBonusPercent: '0',
+  lightningDamageBonusPercent: '0',
+  poisonDamageBonusPercent: '0',
+  arcaneDamageBonusPercent: '0',
+  holyDamageBonusPercent: '0',
+  shadowDamageBonusPercent: '0',
+  physicalResistancePercent: '0',
+  piercingResistancePercent: '0',
+  slashingResistancePercent: '0',
+  bludgeoningResistancePercent: '0',
+  fireResistancePercent: '0',
+  iceResistancePercent: '0',
+  lightningResistancePercent: '0',
+  poisonResistancePercent: '0',
+  arcaneResistancePercent: '0',
+  holyResistancePercent: '0',
+  shadowResistancePercent: '0',
 });
 
 const emptyEffect = (): SpellEffectForm => ({
@@ -312,6 +405,67 @@ const parseStatusTemplate = (
     intelligenceMod: parseIntSafe(template.intelligenceMod, 0),
     wisdomMod: parseIntSafe(template.wisdomMod, 0),
     charismaMod: parseIntSafe(template.charismaMod, 0),
+    physicalDamageBonusPercent: parseIntSafe(
+      template.physicalDamageBonusPercent,
+      0
+    ),
+    piercingDamageBonusPercent: parseIntSafe(
+      template.piercingDamageBonusPercent,
+      0
+    ),
+    slashingDamageBonusPercent: parseIntSafe(
+      template.slashingDamageBonusPercent,
+      0
+    ),
+    bludgeoningDamageBonusPercent: parseIntSafe(
+      template.bludgeoningDamageBonusPercent,
+      0
+    ),
+    fireDamageBonusPercent: parseIntSafe(template.fireDamageBonusPercent, 0),
+    iceDamageBonusPercent: parseIntSafe(template.iceDamageBonusPercent, 0),
+    lightningDamageBonusPercent: parseIntSafe(
+      template.lightningDamageBonusPercent,
+      0
+    ),
+    poisonDamageBonusPercent: parseIntSafe(
+      template.poisonDamageBonusPercent,
+      0
+    ),
+    arcaneDamageBonusPercent: parseIntSafe(
+      template.arcaneDamageBonusPercent,
+      0
+    ),
+    holyDamageBonusPercent: parseIntSafe(template.holyDamageBonusPercent, 0),
+    shadowDamageBonusPercent: parseIntSafe(
+      template.shadowDamageBonusPercent,
+      0
+    ),
+    physicalResistancePercent: parseIntSafe(
+      template.physicalResistancePercent,
+      0
+    ),
+    piercingResistancePercent: parseIntSafe(
+      template.piercingResistancePercent,
+      0
+    ),
+    slashingResistancePercent: parseIntSafe(
+      template.slashingResistancePercent,
+      0
+    ),
+    bludgeoningResistancePercent: parseIntSafe(
+      template.bludgeoningResistancePercent,
+      0
+    ),
+    fireResistancePercent: parseIntSafe(template.fireResistancePercent, 0),
+    iceResistancePercent: parseIntSafe(template.iceResistancePercent, 0),
+    lightningResistancePercent: parseIntSafe(
+      template.lightningResistancePercent,
+      0
+    ),
+    poisonResistancePercent: parseIntSafe(template.poisonResistancePercent, 0),
+    arcaneResistancePercent: parseIntSafe(template.arcaneResistancePercent, 0),
+    holyResistancePercent: parseIntSafe(template.holyResistancePercent, 0),
+    shadowResistancePercent: parseIntSafe(template.shadowResistancePercent, 0),
   };
 };
 
@@ -389,6 +543,70 @@ const formFromSpell = (spell: Spell): SpellFormState => {
                 intelligenceMod: String(status.intelligenceMod ?? 0),
                 wisdomMod: String(status.wisdomMod ?? 0),
                 charismaMod: String(status.charismaMod ?? 0),
+                physicalDamageBonusPercent: String(
+                  status.physicalDamageBonusPercent ?? 0
+                ),
+                piercingDamageBonusPercent: String(
+                  status.piercingDamageBonusPercent ?? 0
+                ),
+                slashingDamageBonusPercent: String(
+                  status.slashingDamageBonusPercent ?? 0
+                ),
+                bludgeoningDamageBonusPercent: String(
+                  status.bludgeoningDamageBonusPercent ?? 0
+                ),
+                fireDamageBonusPercent: String(
+                  status.fireDamageBonusPercent ?? 0
+                ),
+                iceDamageBonusPercent: String(
+                  status.iceDamageBonusPercent ?? 0
+                ),
+                lightningDamageBonusPercent: String(
+                  status.lightningDamageBonusPercent ?? 0
+                ),
+                poisonDamageBonusPercent: String(
+                  status.poisonDamageBonusPercent ?? 0
+                ),
+                arcaneDamageBonusPercent: String(
+                  status.arcaneDamageBonusPercent ?? 0
+                ),
+                holyDamageBonusPercent: String(
+                  status.holyDamageBonusPercent ?? 0
+                ),
+                shadowDamageBonusPercent: String(
+                  status.shadowDamageBonusPercent ?? 0
+                ),
+                physicalResistancePercent: String(
+                  status.physicalResistancePercent ?? 0
+                ),
+                piercingResistancePercent: String(
+                  status.piercingResistancePercent ?? 0
+                ),
+                slashingResistancePercent: String(
+                  status.slashingResistancePercent ?? 0
+                ),
+                bludgeoningResistancePercent: String(
+                  status.bludgeoningResistancePercent ?? 0
+                ),
+                fireResistancePercent: String(
+                  status.fireResistancePercent ?? 0
+                ),
+                iceResistancePercent: String(status.iceResistancePercent ?? 0),
+                lightningResistancePercent: String(
+                  status.lightningResistancePercent ?? 0
+                ),
+                poisonResistancePercent: String(
+                  status.poisonResistancePercent ?? 0
+                ),
+                arcaneResistancePercent: String(
+                  status.arcaneResistancePercent ?? 0
+                ),
+                holyResistancePercent: String(
+                  status.holyResistancePercent ?? 0
+                ),
+                shadowResistancePercent: String(
+                  status.shadowResistancePercent ?? 0
+                ),
               })
             ),
             statusesToRemove: (effect.statusesToRemove ?? []).join(', '),
@@ -413,7 +631,7 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     effectText: spell.effectText ?? '',
     schoolOfMagic: spell.schoolOfMagic ?? '',
     manaCost: String(
-      spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)
+      spell.abilityType === 'technique' ? 0 : spell.manaCost ?? 0
     ),
     effects,
   };
@@ -481,6 +699,8 @@ export const Spells = () => {
     useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [listViewMode, setListViewMode] =
+    useState<AbilityListViewMode>('abilities');
 
   const [showModal, setShowModal] = useState(false);
   const [editingSpell, setEditingSpell] = useState<Spell | null>(null);
@@ -499,6 +719,10 @@ export const Spells = () => {
     'spell'
   );
   const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
+  const [seedPackBusy, setSeedPackBusy] = useState(false);
+  const [seedPackAbilityType, setSeedPackAbilityType] = useState<
+    'spell' | 'technique' | null
+  >(null);
   const [bulkAbilityJob, setBulkAbilityJob] =
     useState<BulkAbilityStatus | null>(null);
   const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
@@ -583,6 +807,81 @@ export const Spells = () => {
 
   const filteredAbilityIds = useMemo(
     () => filtered.map((spell) => spell.id),
+    [filtered]
+  );
+
+  const progressionGroups = useMemo(() => {
+    const groups = new Map<string, ProgressionGroup>();
+    for (const spell of filtered) {
+      const progressionLink = spell.progressionLinks?.[0];
+      if (!progressionLink) {
+        continue;
+      }
+      const progressionId = progressionLink.progressionId;
+      const groupName =
+        progressionLink.progression?.name?.trim() ||
+        `${spell.name} Progression`;
+      const abilityType =
+        spell.abilityType === 'technique' ? 'technique' : 'spell';
+      const existing = groups.get(progressionId);
+      if (existing) {
+        existing.spells.push(spell);
+        if (
+          !existing.name.trim() &&
+          progressionLink.progression?.name &&
+          progressionLink.progression.name.trim()
+        ) {
+          existing.name = progressionLink.progression.name.trim();
+        }
+      } else {
+        groups.set(progressionId, {
+          id: progressionId,
+          name: groupName,
+          abilityType,
+          spells: [spell],
+        });
+      }
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        spells: [...group.spells].sort((left, right) => {
+          const leftBand = left.progressionLinks?.[0]?.levelBand ?? 0;
+          const rightBand = right.progressionLinks?.[0]?.levelBand ?? 0;
+          if (leftBand !== rightBand) {
+            return leftBand - rightBand;
+          }
+          const leftLevel = left.abilityLevel ?? 0;
+          const rightLevel = right.abilityLevel ?? 0;
+          if (leftLevel !== rightLevel) {
+            return leftLevel - rightLevel;
+          }
+          return left.name.localeCompare(right.name);
+        }),
+      }))
+      .sort((left, right) => {
+        const leftMin = left.spells[0]?.progressionLinks?.[0]?.levelBand ?? 0;
+        const rightMin = right.spells[0]?.progressionLinks?.[0]?.levelBand ?? 0;
+        if (leftMin !== rightMin) {
+          return leftMin - rightMin;
+        }
+        return left.name.localeCompare(right.name);
+      });
+  }, [filtered]);
+
+  const standaloneAbilities = useMemo(
+    () =>
+      filtered
+        .filter((spell) => !spell.progressionLinks?.length)
+        .sort((left, right) => {
+          const leftLevel = left.abilityLevel ?? 0;
+          const rightLevel = right.abilityLevel ?? 0;
+          if (leftLevel !== rightLevel) {
+            return leftLevel - rightLevel;
+          }
+          return left.name.localeCompare(right.name);
+        }),
     [filtered]
   );
 
@@ -785,6 +1084,10 @@ export const Spells = () => {
     setSelectedAbilityIds((prev) =>
       Array.from(new Set([...prev, ...filteredAbilityIds]))
     );
+  };
+
+  const handleSelectAllAbilities = () => {
+    setSelectedAbilityIds(Array.from(new Set(spells.map((spell) => spell.id))));
   };
 
   const handleClearSelectedAbilities = () => {
@@ -1014,6 +1317,36 @@ export const Spells = () => {
     }
   };
 
+  const handleSeedAbilityPack = async (abilityType: 'spell' | 'technique') => {
+    try {
+      setSeedPackBusy(true);
+      setSeedPackAbilityType(abilityType);
+      setBulkAbilityError(null);
+      setBulkAbilityMessage(null);
+      setBulkAbilityJob(null);
+
+      const path =
+        abilityType === 'technique'
+          ? '/sonar/techniques/seed-pack'
+          : '/sonar/spells/seed-pack';
+      const response = await apiClient.post<SeedAbilityPackResponse>(path, {});
+      setBulkAbilityMessage(
+        `Seeded ${abilityType === 'technique' ? 'technique' : 'spell'} pack: ${response.processedCount} processed (${response.createdCount} created, ${response.updatedCount} updated).`
+      );
+      await load(true);
+    } catch (err) {
+      console.error('Failed to seed ability pack', err);
+      setBulkAbilityError(
+        err instanceof Error
+          ? err.message
+          : `Failed to seed ${abilityType === 'technique' ? 'technique' : 'spell'} pack.`
+      );
+    } finally {
+      setSeedPackBusy(false);
+      setSeedPackAbilityType(null);
+    }
+  };
+
   const formatGenerationStatus = (status?: string) => {
     switch ((status || '').trim()) {
       case 'queued':
@@ -1132,9 +1465,27 @@ export const Spells = () => {
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={handleBulkGenerateAbilities}
-                disabled={bulkAbilityBusy}
+                disabled={bulkAbilityBusy || seedPackBusy}
               >
                 {bulkAbilityBusy ? 'Generating...' : 'Generate Bulk'}
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={() => void handleSeedAbilityPack('spell')}
+                disabled={bulkAbilityBusy || seedPackBusy}
+              >
+                {seedPackBusy && seedPackAbilityType === 'spell'
+                  ? 'Seeding...'
+                  : 'Seed Spell Pack'}
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={() => void handleSeedAbilityPack('technique')}
+                disabled={bulkAbilityBusy || seedPackBusy}
+              >
+                {seedPackBusy && seedPackAbilityType === 'technique'
+                  ? 'Seeding...'
+                  : 'Seed Technique Pack'}
               </button>
               <button className="qa-btn qa-btn-primary" onClick={openCreate}>
                 Create Ability
@@ -1375,6 +1726,13 @@ export const Spells = () => {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               className="qa-btn qa-btn-secondary"
+              onClick={handleSelectAllAbilities}
+              disabled={spells.length === 0 || tomeBusy}
+            >
+              Select All
+            </button>
+            <button
+              className="qa-btn qa-btn-secondary"
               onClick={handleSelectFilteredAbilities}
               disabled={filteredAbilityIds.length === 0 || tomeBusy}
             >
@@ -1408,12 +1766,313 @@ export const Spells = () => {
           ) : null}
         </div>
 
+        <div className="qa-card mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-800">View</div>
+              <p className="text-xs text-gray-600">
+                Switch between the flat ability list and grouped progressions.
+              </p>
+            </div>
+            <div className="inline-flex rounded-md border border-gray-300 bg-white p-1">
+              <button
+                className={`rounded px-3 py-1.5 text-sm ${
+                  listViewMode === 'abilities'
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-700'
+                }`}
+                onClick={() => setListViewMode('abilities')}
+              >
+                Abilities
+              </button>
+              <button
+                className={`rounded px-3 py-1.5 text-sm ${
+                  listViewMode === 'progressions'
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-700'
+                }`}
+                onClick={() => setListViewMode('progressions')}
+              >
+                Progressions
+              </button>
+            </div>
+          </div>
+        </div>
+
         {loading ? (
           <div className="qa-card">Loading abilities...</div>
         ) : error ? (
           <div className="qa-card text-red-600">{error}</div>
         ) : filtered.length === 0 ? (
           <div className="qa-card text-gray-600">No abilities found.</div>
+        ) : listViewMode === 'progressions' ? (
+          <div className="space-y-6">
+            {progressionGroups.length === 0 ? (
+              <div className="qa-card text-gray-600">
+                No progressions found for the current filters.
+              </div>
+            ) : (
+              progressionGroups.map((group) => {
+                const leadSpell = group.spells[0];
+                const leadIcon = group.spells.find(
+                  (spell) => spell.iconUrl
+                )?.iconUrl;
+                return (
+                  <div key={group.id} className="qa-card">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-lg font-semibold">
+                          {group.name}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-600">
+                          {group.abilityType === 'technique'
+                            ? 'Technique Progression'
+                            : 'Spell Progression'}{' '}
+                          · {group.spells.length} abilities
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Levels:{' '}
+                          {group.spells
+                            .map((spell) =>
+                              Math.max(1, spell.abilityLevel ?? 1)
+                            )
+                            .join(' · ')}
+                        </div>
+                      </div>
+                      {leadIcon ? (
+                        <img
+                          src={leadIcon}
+                          alt={group.name}
+                          className="h-14 w-14 rounded-md border object-cover"
+                        />
+                      ) : leadSpell ? (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-md border bg-gray-100 text-xs text-gray-500">
+                          No Icon
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      {group.spells.map((spell) => {
+                        const progressionLink = spell.progressionLinks?.[0];
+                        const isSelected = selectedAbilityIds.includes(
+                          spell.id
+                        );
+                        return (
+                          <div
+                            key={spell.id}
+                            className="rounded-lg border border-gray-200 bg-white p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-base font-semibold">
+                                  {spell.name}
+                                </div>
+                                <div className="mt-1 text-sm text-gray-600">
+                                  {(spell.abilityType ?? 'spell') ===
+                                  'technique'
+                                    ? `${spell.schoolOfMagic} · Lvl ${Math.max(
+                                        1,
+                                        spell.abilityLevel ?? 1
+                                      )} · Technique${
+                                        (spell.cooldownTurns ?? 0) > 0
+                                          ? ` · Cooldown ${spell.cooldownTurns}t`
+                                          : ''
+                                      }`
+                                    : `${spell.schoolOfMagic} · Lvl ${Math.max(
+                                        1,
+                                        spell.abilityLevel ?? 1
+                                      )} · Mana ${spell.manaCost}`}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-500">
+                                  Level Band{' '}
+                                  {progressionLink?.levelBand ?? 'N/A'}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <label className="inline-flex items-center gap-2 text-xs text-gray-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() =>
+                                      toggleAbilitySelected(spell.id)
+                                    }
+                                    disabled={tomeBusy}
+                                  />
+                                  Select
+                                </label>
+                                {spell.iconUrl ? (
+                                  <img
+                                    src={spell.iconUrl}
+                                    alt={spell.name}
+                                    className="h-12 w-12 rounded-md border object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-12 w-12 items-center justify-center rounded-md border bg-gray-100 text-[10px] text-gray-500">
+                                    No Icon
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {spell.description ? (
+                              <p className="mt-3 text-sm text-gray-700">
+                                {spell.description}
+                              </p>
+                            ) : null}
+                            {spell.effectText ? (
+                              <p className="mt-2 text-sm text-gray-700">
+                                {spell.effectText}
+                              </p>
+                            ) : null}
+                            <div className="mt-2 text-xs text-gray-500">
+                              Effects: {spell.effects?.length ?? 0}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500">
+                              Icon Status:{' '}
+                              {formatGenerationStatus(
+                                spell.imageGenerationStatus
+                              )}
+                            </div>
+                            {spell.imageGenerationStatus === 'failed' &&
+                            spell.imageGenerationError ? (
+                              <div className="mt-1 text-xs text-red-600">
+                                Error: {spell.imageGenerationError}
+                              </div>
+                            ) : null}
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() => openEdit(spell)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() => handleGenerateIcon(spell)}
+                                disabled={
+                                  generatingIconSpellId === spell.id ||
+                                  ['queued', 'in_progress'].includes(
+                                    spell.imageGenerationStatus || ''
+                                  )
+                                }
+                              >
+                                {generatingIconSpellId === spell.id
+                                  ? 'Queueing...'
+                                  : 'Generate Icon'}
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() => handleGenerateTomes([spell.id])}
+                                disabled={tomeBusy}
+                              >
+                                {tomeBusy
+                                  ? 'Queueing Tome...'
+                                  : 'Generate Tome'}
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-danger"
+                                onClick={() => setDeleteId(spell.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+            {standaloneAbilities.length > 0 ? (
+              <div className="qa-card">
+                <div className="text-lg font-semibold">
+                  Standalone Abilities
+                </div>
+                <div className="mt-1 text-sm text-gray-600">
+                  Abilities not currently attached to a progression.
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {standaloneAbilities.map((spell) => (
+                    <div
+                      key={spell.id}
+                      className="rounded-lg border border-gray-200 bg-white p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-base font-semibold">
+                            {spell.name}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-600">
+                            {(spell.abilityType ?? 'spell') === 'technique'
+                              ? `${spell.schoolOfMagic} · Lvl ${Math.max(
+                                  1,
+                                  spell.abilityLevel ?? 1
+                                )} · Technique${
+                                  (spell.cooldownTurns ?? 0) > 0
+                                    ? ` · Cooldown ${spell.cooldownTurns}t`
+                                    : ''
+                                }`
+                              : `${spell.schoolOfMagic} · Lvl ${Math.max(
+                                  1,
+                                  spell.abilityLevel ?? 1
+                                )} · Mana ${spell.manaCost}`}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            Icon Status:{' '}
+                            {formatGenerationStatus(
+                              spell.imageGenerationStatus
+                            )}
+                          </div>
+                        </div>
+                        {spell.iconUrl ? (
+                          <img
+                            src={spell.iconUrl}
+                            alt={spell.name}
+                            className="h-12 w-12 rounded-md border object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-md border bg-gray-100 text-[10px] text-gray-500">
+                            No Icon
+                          </div>
+                        )}
+                      </div>
+                      {spell.description ? (
+                        <p className="mt-3 text-sm text-gray-700">
+                          {spell.description}
+                        </p>
+                      ) : null}
+                      {spell.effectText ? (
+                        <p className="mt-2 text-sm text-gray-700">
+                          {spell.effectText}
+                        </p>
+                      ) : null}
+                      <div className="mt-2 text-xs text-gray-500">
+                        Effects: {spell.effects?.length ?? 0}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <button
+                          className="qa-btn qa-btn-secondary"
+                          onClick={() => handleGenerateProgression(spell)}
+                          disabled={generatingProgressionSpellId === spell.id}
+                        >
+                          {generatingProgressionSpellId === spell.id
+                            ? 'Generating...'
+                            : 'Generate Level Bands'}
+                        </button>
+                        <button
+                          className="qa-btn qa-btn-secondary"
+                          onClick={() => openEdit(spell)}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((spell) => {
@@ -2015,6 +2674,66 @@ export const Spells = () => {
                                           />
                                         </label>
                                       ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:col-span-2">
+                                      {damageBonusFieldOptions.map(
+                                        ([key, label]) => (
+                                          <label
+                                            className="text-[11px]"
+                                            key={key}
+                                          >
+                                            {label}
+                                            <input
+                                              className="w-full border rounded-md p-1"
+                                              type="number"
+                                              value={
+                                                status[
+                                                  key as keyof SpellStatusTemplateForm
+                                                ] as string
+                                              }
+                                              onChange={(e) =>
+                                                updateEffectStatus(
+                                                  effectIndex,
+                                                  statusIndex,
+                                                  {
+                                                    [key]: e.target.value,
+                                                  }
+                                                )
+                                              }
+                                            />
+                                          </label>
+                                        )
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:col-span-2">
+                                      {resistanceFieldOptions.map(
+                                        ([key, label]) => (
+                                          <label
+                                            className="text-[11px]"
+                                            key={key}
+                                          >
+                                            {label}
+                                            <input
+                                              className="w-full border rounded-md p-1"
+                                              type="number"
+                                              value={
+                                                status[
+                                                  key as keyof SpellStatusTemplateForm
+                                                ] as string
+                                              }
+                                              onChange={(e) =>
+                                                updateEffectStatus(
+                                                  effectIndex,
+                                                  statusIndex,
+                                                  {
+                                                    [key]: e.target.value,
+                                                  }
+                                                )
+                                              }
+                                            />
+                                          </label>
+                                        )
+                                      )}
                                     </div>
                                   </div>
                                   <div className="mt-2">

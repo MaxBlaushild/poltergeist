@@ -24,6 +24,28 @@ type InventoryItem struct {
 	IntelligenceMod                          int                            `json:"intelligenceMod" gorm:"column:intelligence_mod"`
 	WisdomMod                                int                            `json:"wisdomMod" gorm:"column:wisdom_mod"`
 	CharismaMod                              int                            `json:"charismaMod" gorm:"column:charisma_mod"`
+	PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent" gorm:"column:physical_damage_bonus_percent"`
+	PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent" gorm:"column:piercing_damage_bonus_percent"`
+	SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent" gorm:"column:slashing_damage_bonus_percent"`
+	BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent" gorm:"column:bludgeoning_damage_bonus_percent"`
+	FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent" gorm:"column:fire_damage_bonus_percent"`
+	IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent" gorm:"column:ice_damage_bonus_percent"`
+	LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent" gorm:"column:lightning_damage_bonus_percent"`
+	PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent" gorm:"column:poison_damage_bonus_percent"`
+	ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent" gorm:"column:arcane_damage_bonus_percent"`
+	HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent" gorm:"column:holy_damage_bonus_percent"`
+	ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent" gorm:"column:shadow_damage_bonus_percent"`
+	PhysicalResistancePercent                int                            `json:"physicalResistancePercent" gorm:"column:physical_resistance_percent"`
+	PiercingResistancePercent                int                            `json:"piercingResistancePercent" gorm:"column:piercing_resistance_percent"`
+	SlashingResistancePercent                int                            `json:"slashingResistancePercent" gorm:"column:slashing_resistance_percent"`
+	BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent" gorm:"column:bludgeoning_resistance_percent"`
+	FireResistancePercent                    int                            `json:"fireResistancePercent" gorm:"column:fire_resistance_percent"`
+	IceResistancePercent                     int                            `json:"iceResistancePercent" gorm:"column:ice_resistance_percent"`
+	LightningResistancePercent               int                            `json:"lightningResistancePercent" gorm:"column:lightning_resistance_percent"`
+	PoisonResistancePercent                  int                            `json:"poisonResistancePercent" gorm:"column:poison_resistance_percent"`
+	ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent" gorm:"column:arcane_resistance_percent"`
+	HolyResistancePercent                    int                            `json:"holyResistancePercent" gorm:"column:holy_resistance_percent"`
+	ShadowResistancePercent                  int                            `json:"shadowResistancePercent" gorm:"column:shadow_resistance_percent"`
 	HandItemCategory                         *string                        `json:"handItemCategory" gorm:"column:hand_item_category"`
 	Handedness                               *string                        `json:"handedness" gorm:"column:handedness"`
 	DamageMin                                *int                           `json:"damageMin" gorm:"column:damage_min"`

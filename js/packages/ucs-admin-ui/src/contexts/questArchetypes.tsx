@@ -60,6 +60,7 @@ type QuestArchetypesContextType = {
   locationArchetypes: LocationArchetype[];
   questArchetypes: QuestArchetype[];
   zoneQuestArchetypes: ZoneQuestArchetype[];
+  refreshLocationArchetypes: () => Promise<void>;
   createQuestArchetype: (
     draft: QuestArchetypeDraft
   ) => Promise<QuestArchetype | null>;
@@ -106,6 +107,7 @@ export const QuestArchetypesContext =
   React.createContext<QuestArchetypesContextType>({
     questArchetypes: [],
     zoneQuestArchetypes: [],
+    refreshLocationArchetypes: async () => {},
     createQuestArchetype: async () => null,
     generateQuestArchetypeTemplate: async () => null,
     addChallengeToQuestArchetype: () => {},
@@ -280,7 +282,9 @@ export const QuestArchetypesProvider = ({
       }
     );
     if (questArchetype.root) {
-      questArchetype.root = await populateChallengesForNode(questArchetype.root);
+      questArchetype.root = await populateChallengesForNode(
+        questArchetype.root
+      );
     }
     setQuestArchetypes((prev) => [
       ...prev.filter((entry) => entry.id !== questArchetype.id),
@@ -351,8 +355,7 @@ export const QuestArchetypesProvider = ({
         payload.monsterTemplateIds = unlockedNode.monsterTemplateIds;
       }
       payload.targetLevel = unlockedNode.targetLevel;
-      payload.encounterProximityMeters =
-        unlockedNode.encounterProximityMeters;
+      payload.encounterProximityMeters = unlockedNode.encounterProximityMeters;
     }
     if (proficiency && proficiency.trim().length > 0) {
       payload.proficiency = proficiency.trim();
@@ -476,6 +479,7 @@ export const QuestArchetypesProvider = ({
         locationArchetypes,
         placeTypes,
         zoneQuestArchetypes,
+        refreshLocationArchetypes: fetchLocationArchetypes,
         createQuestArchetype,
         generateQuestArchetypeTemplate,
         addChallengeToQuestArchetype,

@@ -19,6 +19,7 @@ const (
 	GenerateMonsterImageTaskType                   = "generate_monster_image"
 	GenerateMonsterTemplateImageTaskType           = "generate_monster_template_image"
 	GenerateMonsterTemplatesBulkTaskType           = "generate_monster_templates_bulk"
+	RefreshMonsterTemplateAffinitiesTaskType       = "refresh_monster_template_affinities"
 	GenerateCharacterImageTaskType                 = "generate_character_image"
 	GeneratePointOfInterestImageTaskType           = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType                  = "generate_scenario_image"
@@ -29,6 +30,7 @@ const (
 	GenerateChallengesTaskType                     = "generate_challenges"
 	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
+	GenerateLocationArchetypesTaskType             = "generate_location_archetypes"
 	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateZoneTagsTaskType                       = "generate_zone_tags"
@@ -59,6 +61,15 @@ const (
 	MonsterTemplateBulkStatusFailed     = "failed"
 
 	MonsterTemplateBulkStatusTTL = 24 * time.Hour
+)
+
+const (
+	MonsterTemplateAffinityRefreshStatusQueued     = "queued"
+	MonsterTemplateAffinityRefreshStatusInProgress = "in_progress"
+	MonsterTemplateAffinityRefreshStatusCompleted  = "completed"
+	MonsterTemplateAffinityRefreshStatusFailed     = "failed"
+
+	MonsterTemplateAffinityRefreshStatusTTL = 24 * time.Hour
 )
 
 const (
@@ -98,6 +109,11 @@ type GenerateQuestForZoneTaskPayload struct {
 
 type GenerateQuestArchetypeSuggestionsTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateLocationArchetypesTaskPayload struct {
+	Count int    `json:"count"`
+	Salt  string `json:"salt,omitempty"`
 }
 
 type GenerateZoneTagsTaskPayload struct {
@@ -237,6 +253,11 @@ type MonsterTemplateCreationSpec struct {
 	BaseCharisma     int    `json:"baseCharisma"`
 }
 
+type RefreshMonsterTemplateAffinitiesTaskPayload struct {
+	JobID              uuid.UUID   `json:"jobId"`
+	MonsterTemplateIDs []uuid.UUID `json:"monsterTemplateIds,omitempty"`
+}
+
 type GenerateMonsterTemplatesBulkTaskPayload struct {
 	JobID       uuid.UUID                     `json:"jobId"`
 	Source      string                        `json:"source"`
@@ -257,6 +278,19 @@ type MonsterTemplateBulkStatus struct {
 	StartedAt    *time.Time `json:"startedAt,omitempty"`
 	CompletedAt  *time.Time `json:"completedAt,omitempty"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
+type MonsterTemplateAffinityRefreshStatus struct {
+	JobID        uuid.UUID   `json:"jobId"`
+	Status       string      `json:"status"`
+	TotalCount   int         `json:"totalCount"`
+	UpdatedCount int         `json:"updatedCount"`
+	TemplateIDs  []uuid.UUID `json:"templateIds,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	QueuedAt     *time.Time  `json:"queuedAt,omitempty"`
+	StartedAt    *time.Time  `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time  `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time   `json:"updatedAt"`
 }
 
 type GenerateCharacterImageTaskPayload struct {
@@ -336,6 +370,10 @@ type ShuffleZoneSeedChallengeTaskPayload struct {
 
 func MonsterTemplateBulkStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:monster-templates:bulk:%s", jobID.String())
+}
+
+func MonsterTemplateAffinityRefreshStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:monster-templates:affinity-refresh:%s", jobID.String())
 }
 
 func SpellBulkStatusKey(jobID uuid.UUID) string {

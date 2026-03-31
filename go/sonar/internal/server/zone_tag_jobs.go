@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,44 @@ import (
 
 type zoneTagGenerationJobRequest struct {
 	ZoneID string `json:"zoneId"`
+}
+
+type bulkQueueZoneTagGenerationJobsRequest struct {
+	ZoneIDs []string `json:"zoneIds"`
+}
+
+func (s *server) createAndEnqueueZoneTagGenerationJob(
+	ctx *gin.Context,
+	zoneID uuid.UUID,
+) (*models.ZoneTagGenerationJob, error) {
+	job := &models.ZoneTagGenerationJob{
+		ID:              uuid.New(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		ZoneID:          zoneID,
+		Status:          models.ZoneTagGenerationStatusQueued,
+		ContextSnapshot: "",
+		SelectedTags:    models.StringArray{},
+	}
+	if err := s.dbClient.ZoneTagGenerationJob().Create(ctx, job); err != nil {
+		return nil, err
+	}
+
+	payload, err := json.Marshal(jobs.GenerateZoneTagsTaskPayload{JobID: job.ID})
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateZoneTagsTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ZoneTagGenerationStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ZoneTagGenerationJob().Update(ctx, job)
+		return nil, err
+	}
+
+	return job, nil
 }
 
 func (s *server) createZoneTagGenerationJob(ctx *gin.Context) {
@@ -41,37 +80,71 @@ func (s *server) createZoneTagGenerationJob(ctx *gin.Context) {
 		return
 	}
 
-	job := &models.ZoneTagGenerationJob{
-		ID:              uuid.New(),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		ZoneID:          zoneID,
-		Status:          models.ZoneTagGenerationStatusQueued,
-		ContextSnapshot: "",
-		SelectedTags:    models.StringArray{},
-	}
-	if err := s.dbClient.ZoneTagGenerationJob().Create(ctx, job); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	payload, err := json.Marshal(jobs.GenerateZoneTagsTaskPayload{JobID: job.ID})
+	job, err := s.createAndEnqueueZoneTagGenerationJob(ctx, zoneID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateZoneTagsTaskType, payload)); err != nil {
-		errMsg := err.Error()
-		job.Status = models.ZoneTagGenerationStatusFailed
-		job.ErrorMessage = &errMsg
-		job.UpdatedAt = time.Now()
-		_ = s.dbClient.ZoneTagGenerationJob().Update(ctx, job)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	ctx.JSON(http.StatusAccepted, job)
+}
+
+func (s *server) bulkQueueZoneTagGenerationJobs(ctx *gin.Context) {
+	var requestBody bulkQueueZoneTagGenerationJobsRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusAccepted, job)
+	if len(requestBody.ZoneIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneIds array cannot be empty"})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.ZoneIDs))
+	zoneIDs := make([]uuid.UUID, 0, len(requestBody.ZoneIDs))
+	for _, zoneIDStr := range requestBody.ZoneIDs {
+		zoneID, err := uuid.Parse(strings.TrimSpace(zoneIDStr))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid zone ID: %s", zoneIDStr)})
+			return
+		}
+		if _, ok := seen[zoneID]; ok {
+			continue
+		}
+		seen[zoneID] = struct{}{}
+		zoneIDs = append(zoneIDs, zoneID)
+	}
+	if len(zoneIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneIds array cannot be empty"})
+		return
+	}
+
+	createdJobs := make([]*models.ZoneTagGenerationJob, 0, len(zoneIDs))
+	for _, zoneID := range zoneIDs {
+		zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if zone == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("zone not found: %s", zoneID)})
+			return
+		}
+
+		job, err := s.createAndEnqueueZoneTagGenerationJob(ctx, zoneID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to queue zone %s: %v", zoneID, err)})
+			return
+		}
+		createdJobs = append(createdJobs, job)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"queuedCount":        len(createdJobs),
+		"requestedZoneCount": len(zoneIDs),
+		"jobs":               createdJobs,
+	})
 }
 
 func (s *server) getZoneTagGenerationJobs(ctx *gin.Context) {

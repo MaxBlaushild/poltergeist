@@ -67,11 +67,12 @@ type monsterBattleDetail struct {
 }
 
 type monsterBattleUserResource struct {
-	UserID    uuid.UUID `json:"userId"`
-	Health    int       `json:"health"`
-	MaxHealth int       `json:"maxHealth"`
-	Mana      int       `json:"mana"`
-	MaxMana   int       `json:"maxMana"`
+	UserID    uuid.UUID                   `json:"userId"`
+	Health    int                         `json:"health"`
+	MaxHealth int                         `json:"maxHealth"`
+	Mana      int                         `json:"mana"`
+	MaxMana   int                         `json:"maxMana"`
+	Bonuses   models.CharacterStatBonuses `json:"-"`
 }
 
 type monsterBattleActionSummary struct {
@@ -867,6 +868,37 @@ func monsterAbilityDamageForCombat(monster *models.Monster, spell *models.Spell)
 	return maxInt(1, explicitDamage+bonus)
 }
 
+func monsterAbilityDamageAffinity(spell *models.Spell) *string {
+	if spell == nil {
+		return nil
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamage, models.SpellEffectTypeDealDamageAllEnemies:
+			return models.NormalizeOptionalDamageAffinity(effect.DamageAffinity)
+		}
+	}
+	return nil
+}
+
+func monsterBasicAttackAffinity(monster *models.Monster) *string {
+	if monster == nil {
+		return nil
+	}
+	if monster.DominantHandInventoryItem != nil {
+		if affinity := models.NormalizeOptionalDamageAffinity(monster.DominantHandInventoryItem.DamageAffinity); affinity != nil {
+			return affinity
+		}
+	}
+	if monster.WeaponInventoryItem != nil {
+		if affinity := models.NormalizeOptionalDamageAffinity(monster.WeaponInventoryItem.DamageAffinity); affinity != nil {
+			return affinity
+		}
+	}
+	affinity := string(models.DamageAffinityPhysical)
+	return &affinity
+}
+
 func monsterAbilityHealingForCombat(spell *models.Spell) int {
 	if spell == nil {
 		return 0
@@ -885,28 +917,7 @@ func monsterCombatAbilities(monster *models.Monster) []models.Spell {
 	if monster == nil {
 		return []models.Spell{}
 	}
-	estimatedSize := 0
-	if monster.Template != nil {
-		estimatedSize = len(monster.Template.Spells)
-	}
-	abilities := make([]models.Spell, 0, estimatedSize)
-	seen := map[uuid.UUID]struct{}{}
-	appendAbility := func(spell models.Spell) {
-		if spell.ID == uuid.Nil {
-			return
-		}
-		if _, exists := seen[spell.ID]; exists {
-			return
-		}
-		seen[spell.ID] = struct{}{}
-		abilities = append(abilities, spell)
-	}
-	if monster.Template != nil {
-		for _, templateSpell := range monster.Template.Spells {
-			appendAbility(templateSpell.Spell)
-		}
-	}
-	return abilities
+	return monsterTemplateResolvedAbilitiesForLevel(monster.Template, monster.EffectiveLevel())
 }
 
 func chooseMonsterBattleAbility(
@@ -1002,12 +1013,17 @@ func (s *server) loadMonsterBattleUserResources(
 		if err != nil {
 			return nil, err
 		}
+		bonuses, err := s.getCharacterTotalBonuses(ctx, participant.UserID)
+		if err != nil {
+			return nil, err
+		}
 		resources = append(resources, monsterBattleUserResource{
 			UserID:    participant.UserID,
 			Health:    health,
 			MaxHealth: maxHealth,
 			Mana:      mana,
 			MaxMana:   maxMana,
+			Bonuses:   bonuses,
 		})
 	}
 	return resources, nil
@@ -1050,23 +1066,45 @@ func (s *server) applyMonsterBattleUserStatuses(
 				continue
 			}
 			status := &models.UserStatus{
-				UserID:          targetUserID,
-				Name:            name,
-				Description:     strings.TrimSpace(statusTemplate.Description),
-				Effect:          strings.TrimSpace(statusTemplate.Effect),
-				Positive:        statusTemplate.Positive,
-				EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
-				DamagePerTick:   statusTemplate.DamagePerTick,
-				HealthPerTick:   statusTemplate.HealthPerTick,
-				ManaPerTick:     statusTemplate.ManaPerTick,
-				StrengthMod:     statusTemplate.StrengthMod,
-				DexterityMod:    statusTemplate.DexterityMod,
-				ConstitutionMod: statusTemplate.ConstitutionMod,
-				IntelligenceMod: statusTemplate.IntelligenceMod,
-				WisdomMod:       statusTemplate.WisdomMod,
-				CharismaMod:     statusTemplate.CharismaMod,
-				StartedAt:       time.Now(),
-				ExpiresAt:       time.Now().Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+				UserID:                        targetUserID,
+				Name:                          name,
+				Description:                   strings.TrimSpace(statusTemplate.Description),
+				Effect:                        strings.TrimSpace(statusTemplate.Effect),
+				Positive:                      statusTemplate.Positive,
+				EffectType:                    normalizeUserStatusEffectType(statusTemplate.EffectType),
+				DamagePerTick:                 statusTemplate.DamagePerTick,
+				HealthPerTick:                 statusTemplate.HealthPerTick,
+				ManaPerTick:                   statusTemplate.ManaPerTick,
+				StrengthMod:                   statusTemplate.StrengthMod,
+				DexterityMod:                  statusTemplate.DexterityMod,
+				ConstitutionMod:               statusTemplate.ConstitutionMod,
+				IntelligenceMod:               statusTemplate.IntelligenceMod,
+				WisdomMod:                     statusTemplate.WisdomMod,
+				CharismaMod:                   statusTemplate.CharismaMod,
+				PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+				PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+				SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+				BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+				FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+				IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+				LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+				PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+				ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+				HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+				ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+				PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+				PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+				SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+				BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+				FireResistancePercent:         statusTemplate.FireResistancePercent,
+				IceResistancePercent:          statusTemplate.IceResistancePercent,
+				LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+				PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+				ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+				HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+				ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+				StartedAt:                     time.Now(),
+				ExpiresAt:                     time.Now().Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 			}
 			if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
 				return nil, err
@@ -1115,24 +1153,46 @@ func (s *server) applyMonsterBattleMonsterStatuses(
 			continue
 		}
 		status := &models.MonsterStatus{
-			UserID:          battle.UserID,
-			BattleID:        battle.ID,
-			MonsterID:       monster.ID,
-			Name:            name,
-			Description:     strings.TrimSpace(statusTemplate.Description),
-			Effect:          strings.TrimSpace(statusTemplate.Effect),
-			Positive:        statusTemplate.Positive,
-			EffectType:      normalizeMonsterStatusEffectType(statusTemplate.EffectType),
-			DamagePerTick:   statusTemplate.DamagePerTick,
-			HealthPerTick:   statusTemplate.HealthPerTick,
-			StrengthMod:     statusTemplate.StrengthMod,
-			DexterityMod:    statusTemplate.DexterityMod,
-			ConstitutionMod: statusTemplate.ConstitutionMod,
-			IntelligenceMod: statusTemplate.IntelligenceMod,
-			WisdomMod:       statusTemplate.WisdomMod,
-			CharismaMod:     statusTemplate.CharismaMod,
-			StartedAt:       now,
-			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+			UserID:                        battle.UserID,
+			BattleID:                      battle.ID,
+			MonsterID:                     monster.ID,
+			Name:                          name,
+			Description:                   strings.TrimSpace(statusTemplate.Description),
+			Effect:                        strings.TrimSpace(statusTemplate.Effect),
+			Positive:                      statusTemplate.Positive,
+			EffectType:                    normalizeMonsterStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:                 statusTemplate.DamagePerTick,
+			HealthPerTick:                 statusTemplate.HealthPerTick,
+			StrengthMod:                   statusTemplate.StrengthMod,
+			DexterityMod:                  statusTemplate.DexterityMod,
+			ConstitutionMod:               statusTemplate.ConstitutionMod,
+			IntelligenceMod:               statusTemplate.IntelligenceMod,
+			WisdomMod:                     statusTemplate.WisdomMod,
+			CharismaMod:                   statusTemplate.CharismaMod,
+			PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+			PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+			SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+			BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+			FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+			IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+			LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+			PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+			ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+			HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+			ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+			PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+			PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+			SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+			BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+			FireResistancePercent:         statusTemplate.FireResistancePercent,
+			IceResistancePercent:          statusTemplate.IceResistancePercent,
+			LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+			PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+			ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+			HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+			ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+			StartedAt:                     now,
+			ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 		}
 		if err := s.dbClient.MonsterStatus().Create(ctx, status); err != nil {
 			return nil, err
@@ -1168,6 +1228,10 @@ func (s *server) executeMonsterBattleAction(
 	if err != nil {
 		return nil, nil, err
 	}
+	totalCombatBonuses := statusBonuses
+	if monster.Template != nil {
+		totalCombatBonuses = monster.Template.AffinityBonuses().Add(totalCombatBonuses)
+	}
 	currentMonsterHealth := maxInt(0, monster.DerivedMaxHealthWithBonuses(statusBonuses)-battle.MonsterHealthDeficit)
 	maxMonsterHealth := maxInt(1, monster.DerivedMaxHealthWithBonuses(statusBonuses))
 	maxMonsterMana := maxInt(0, monster.DerivedMaxManaWithBonuses(statusBonuses))
@@ -1196,7 +1260,18 @@ func (s *server) executeMonsterBattleAction(
 			}
 			totalDamage += damageMin + rand.Intn(damageMax-damageMin+1)
 		}
-		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, target.UserID, totalDamage, 0); err != nil {
+		damageAffinity := monsterBasicAttackAffinity(monster)
+		damageWithBonus, _, _ := applyAffinityDamageBonus(
+			totalDamage,
+			damageAffinity,
+			totalCombatBonuses,
+		)
+		appliedDamage, _, _ := applyCharacterAffinityResistance(
+			damageWithBonus,
+			damageAffinity,
+			target.Bonuses,
+		)
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, target.UserID, appliedDamage, 0); err != nil {
 			return nil, nil, err
 		}
 		updatedResources, err := s.loadMonsterBattleUserResources(ctx, battle)
@@ -1209,7 +1284,7 @@ func (s *server) executeMonsterBattleAction(
 			ActorMonsterName: strings.TrimSpace(monster.Name),
 			TargetUserID:     &target.UserID,
 			TargetUserIDs:    []uuid.UUID{target.UserID},
-			Damage:           totalDamage,
+			Damage:           appliedDamage,
 		}, updatedResources, nil
 	}
 
@@ -1272,15 +1347,35 @@ func (s *server) executeMonsterBattleAction(
 	if len(targetIDs) > 0 {
 		summary.TargetUserIDs = append(summary.TargetUserIDs, targetIDs...)
 	}
+	resourceByUserID := make(map[uuid.UUID]monsterBattleUserResource, len(resources))
+	for _, resource := range resources {
+		resourceByUserID[resource.UserID] = resource
+	}
 
 	damage := monsterAbilityDamageForCombat(monster, ability)
 	if damage > 0 && len(targetIDs) > 0 {
+		damageAffinity := monsterAbilityDamageAffinity(ability)
+		damageWithBonus, _, _ := applyAffinityDamageBonus(
+			damage,
+			damageAffinity,
+			totalCombatBonuses,
+		)
+		maxAppliedDamage := 0
 		for _, userID := range targetIDs {
-			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, damage, 0); err != nil {
+			resource := resourceByUserID[userID]
+			appliedDamage, _, _ := applyCharacterAffinityResistance(
+				damageWithBonus,
+				damageAffinity,
+				resource.Bonuses,
+			)
+			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, appliedDamage, 0); err != nil {
 				return nil, nil, err
 			}
+			if appliedDamage > maxAppliedDamage {
+				maxAppliedDamage = appliedDamage
+			}
 		}
-		summary.Damage = damage
+		summary.Damage = maxAppliedDamage
 	}
 
 	healAmount := monsterAbilityHealingForCombat(ability)

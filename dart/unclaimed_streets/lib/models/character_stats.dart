@@ -100,6 +100,8 @@ class CharacterStats {
   final int maxMana;
   final Map<String, int> equipmentBonuses;
   final Map<String, int> statusBonuses;
+  final Map<String, int> affinityDamageBonuses;
+  final Map<String, int> affinityResistances;
   final int unspentPoints;
   final int level;
   final List<CharacterProficiency> proficiencies;
@@ -119,6 +121,8 @@ class CharacterStats {
     required this.maxMana,
     this.equipmentBonuses = const {},
     this.statusBonuses = const {},
+    this.affinityDamageBonuses = const {},
+    this.affinityResistances = const {},
     required this.unspentPoints,
     required this.level,
     this.proficiencies = const [],
@@ -141,6 +145,8 @@ class CharacterStats {
     final charisma = intValue('charisma', 'Charisma');
     final equipmentBonuses = _parseBonusMap(json['equipmentBonuses']);
     final statusBonuses = _parseBonusMap(json['statusBonuses']);
+    final affinityDamageBonuses = _parseBonusMap(json['affinityDamageBonuses']);
+    final affinityResistances = _parseBonusMap(json['affinityResistances']);
     final combinedBonuses = _mergeBonusMaps(equipmentBonuses, statusBonuses);
     final effectiveConstitution =
         constitution + (combinedBonuses['constitution'] ?? 0);
@@ -173,6 +179,8 @@ class CharacterStats {
       maxMana: maxMana,
       equipmentBonuses: equipmentBonuses,
       statusBonuses: statusBonuses,
+      affinityDamageBonuses: affinityDamageBonuses,
+      affinityResistances: affinityResistances,
       unspentPoints: intValue('unspentPoints', 'unspent_points'),
       level: intValue('level', 'Level'),
       proficiencies:

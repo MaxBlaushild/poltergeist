@@ -245,6 +245,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
 	r.POST("/sonar/abilities/generate-tomes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateAbilityTomes))
 	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
+	r.POST("/sonar/spells/seed-pack", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedSpellCombatPack))
 	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.POST("/sonar/spells/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueSpellProgressionFromPrompt))
 	r.GET("/sonar/spells/progression-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellProgressionFromPromptStatus))
@@ -257,6 +258,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteSpell))
 	r.GET("/sonar/techniques", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTechniques))
 	r.POST("/sonar/techniques/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateTechniques))
+	r.POST("/sonar/techniques/seed-pack", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTechniqueCombatPack))
 	r.GET("/sonar/techniques/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.GET("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTechnique))
 	r.POST("/sonar/techniques", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTechnique))
@@ -361,6 +363,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addTagToPointOfInterest))
 	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removeTagFromPointOfInterest))
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
+	r.GET("/sonar/admin/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminZones))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
 	r.GET("/sonar/districts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistricts))
@@ -403,6 +406,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/zone-flavor-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneFlavorGenerationJob))
 	r.POST("/sonar/admin/zone-tag-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneTagGenerationJob))
 	r.GET("/sonar/admin/zone-tag-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneTagGenerationJobs))
+	r.POST("/sonar/admin/zone-tag-generation-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneTagGenerationJobs))
 	r.GET("/sonar/admin/zone-tag-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneTagGenerationJob))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
@@ -460,6 +464,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetypes))
 	r.GET("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetype))
 	r.POST("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createLocationArchetype))
+	r.POST("/sonar/locationArchetypes/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateLocationArchetypes))
 	r.POST("/sonar/locationArchetypes/challenges/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateLocationArchetypeChallenges))
 	r.DELETE("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteLocationArchetype))
 	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateLocationArchetype))
@@ -581,6 +586,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/monster-templates/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateMonsterTemplates))
 	r.POST("/sonar/monster-templates/bulk-archive", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkArchiveMonsterTemplates))
 	r.GET("/sonar/monster-templates/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateMonsterTemplatesStatus))
+	r.POST("/sonar/admin/monster-templates/refresh-affinities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshMonsterTemplateAffinities))
+	r.GET("/sonar/admin/monster-templates/refresh-affinities/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRefreshMonsterTemplateAffinitiesStatus))
 	r.PUT("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterTemplate))
 	r.POST("/sonar/monster-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterTemplateImage))
 	r.DELETE("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterTemplate))
@@ -8083,6 +8090,28 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		IntelligenceMod                          int                            `json:"intelligenceMod"`
 		WisdomMod                                int                            `json:"wisdomMod"`
 		CharismaMod                              int                            `json:"charismaMod"`
+		PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent"`
+		PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent"`
+		SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent"`
+		BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent"`
+		FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent"`
+		IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent"`
+		LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent"`
+		PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent"`
+		ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent"`
+		HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent"`
+		ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent"`
+		PhysicalResistancePercent                int                            `json:"physicalResistancePercent"`
+		PiercingResistancePercent                int                            `json:"piercingResistancePercent"`
+		SlashingResistancePercent                int                            `json:"slashingResistancePercent"`
+		BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent"`
+		FireResistancePercent                    int                            `json:"fireResistancePercent"`
+		IceResistancePercent                     int                            `json:"iceResistancePercent"`
+		LightningResistancePercent               int                            `json:"lightningResistancePercent"`
+		PoisonResistancePercent                  int                            `json:"poisonResistancePercent"`
+		ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent"`
+		HolyResistancePercent                    int                            `json:"holyResistancePercent"`
+		ShadowResistancePercent                  int                            `json:"shadowResistancePercent"`
 		HandItemCategory                         *string                        `json:"handItemCategory"`
 		Handedness                               *string                        `json:"handedness"`
 		DamageMin                                *int                           `json:"damageMin"`
@@ -8234,6 +8263,28 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		IntelligenceMod:                          requestBody.IntelligenceMod,
 		WisdomMod:                                requestBody.WisdomMod,
 		CharismaMod:                              requestBody.CharismaMod,
+		PhysicalDamageBonusPercent:               requestBody.PhysicalDamageBonusPercent,
+		PiercingDamageBonusPercent:               requestBody.PiercingDamageBonusPercent,
+		SlashingDamageBonusPercent:               requestBody.SlashingDamageBonusPercent,
+		BludgeoningDamageBonusPercent:            requestBody.BludgeoningDamageBonusPercent,
+		FireDamageBonusPercent:                   requestBody.FireDamageBonusPercent,
+		IceDamageBonusPercent:                    requestBody.IceDamageBonusPercent,
+		LightningDamageBonusPercent:              requestBody.LightningDamageBonusPercent,
+		PoisonDamageBonusPercent:                 requestBody.PoisonDamageBonusPercent,
+		ArcaneDamageBonusPercent:                 requestBody.ArcaneDamageBonusPercent,
+		HolyDamageBonusPercent:                   requestBody.HolyDamageBonusPercent,
+		ShadowDamageBonusPercent:                 requestBody.ShadowDamageBonusPercent,
+		PhysicalResistancePercent:                requestBody.PhysicalResistancePercent,
+		PiercingResistancePercent:                requestBody.PiercingResistancePercent,
+		SlashingResistancePercent:                requestBody.SlashingResistancePercent,
+		BludgeoningResistancePercent:             requestBody.BludgeoningResistancePercent,
+		FireResistancePercent:                    requestBody.FireResistancePercent,
+		IceResistancePercent:                     requestBody.IceResistancePercent,
+		LightningResistancePercent:               requestBody.LightningResistancePercent,
+		PoisonResistancePercent:                  requestBody.PoisonResistancePercent,
+		ArcaneResistancePercent:                  requestBody.ArcaneResistancePercent,
+		HolyResistancePercent:                    requestBody.HolyResistancePercent,
+		ShadowResistancePercent:                  requestBody.ShadowResistancePercent,
 		HandItemCategory:                         handAttrs.HandItemCategory,
 		Handedness:                               handAttrs.Handedness,
 		DamageMin:                                handAttrs.DamageMin,
@@ -10061,6 +10112,28 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		IntelligenceMod                          int                            `json:"intelligenceMod"`
 		WisdomMod                                int                            `json:"wisdomMod"`
 		CharismaMod                              int                            `json:"charismaMod"`
+		PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent"`
+		PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent"`
+		SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent"`
+		BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent"`
+		FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent"`
+		IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent"`
+		LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent"`
+		PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent"`
+		ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent"`
+		HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent"`
+		ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent"`
+		PhysicalResistancePercent                int                            `json:"physicalResistancePercent"`
+		PiercingResistancePercent                int                            `json:"piercingResistancePercent"`
+		SlashingResistancePercent                int                            `json:"slashingResistancePercent"`
+		BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent"`
+		FireResistancePercent                    int                            `json:"fireResistancePercent"`
+		IceResistancePercent                     int                            `json:"iceResistancePercent"`
+		LightningResistancePercent               int                            `json:"lightningResistancePercent"`
+		PoisonResistancePercent                  int                            `json:"poisonResistancePercent"`
+		ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent"`
+		HolyResistancePercent                    int                            `json:"holyResistancePercent"`
+		ShadowResistancePercent                  int                            `json:"shadowResistancePercent"`
 		HandItemCategory                         *string                        `json:"handItemCategory"`
 		Handedness                               *string                        `json:"handedness"`
 		DamageMin                                *int                           `json:"damageMin"`
@@ -10201,36 +10274,58 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"archived":                           archived,
-		"name":                               requestBody.Name,
-		"image_url":                          requestBody.ImageURL,
-		"flavor_text":                        requestBody.FlavorText,
-		"effect_text":                        requestBody.EffectText,
-		"rarity_tier":                        requestBody.RarityTier,
-		"is_capture_type":                    requestBody.IsCaptureType,
-		"buy_price":                          requestBody.BuyPrice,
-		"unlock_tier":                        requestBody.UnlockTier,
-		"unlock_locks_strength":              requestBody.UnlockLocksStrength,
-		"item_level":                         itemLevel,
-		"equip_slot":                         equipSlot,
-		"strength_mod":                       requestBody.StrengthMod,
-		"dexterity_mod":                      requestBody.DexterityMod,
-		"constitution_mod":                   requestBody.ConstitutionMod,
-		"intelligence_mod":                   requestBody.IntelligenceMod,
-		"wisdom_mod":                         requestBody.WisdomMod,
-		"charisma_mod":                       requestBody.CharismaMod,
-		"hand_item_category":                 handAttrs.HandItemCategory,
-		"handedness":                         handAttrs.Handedness,
-		"damage_min":                         handAttrs.DamageMin,
-		"damage_max":                         handAttrs.DamageMax,
-		"damage_affinity":                    handAttrs.DamageAffinity,
-		"swipes_per_attack":                  handAttrs.SwipesPerAttack,
-		"block_percentage":                   handAttrs.BlockPercentage,
-		"damage_blocked":                     handAttrs.DamageBlocked,
-		"spell_damage_bonus_percent":         handAttrs.SpellDamageBonusPercent,
-		"consume_health_delta":               requestBody.ConsumeHealthDelta,
-		"consume_mana_delta":                 requestBody.ConsumeManaDelta,
-		"consume_revive_party_member_health": requestBody.ConsumeRevivePartyMemberHealth,
+		"archived":                                       archived,
+		"name":                                           requestBody.Name,
+		"image_url":                                      requestBody.ImageURL,
+		"flavor_text":                                    requestBody.FlavorText,
+		"effect_text":                                    requestBody.EffectText,
+		"rarity_tier":                                    requestBody.RarityTier,
+		"is_capture_type":                                requestBody.IsCaptureType,
+		"buy_price":                                      requestBody.BuyPrice,
+		"unlock_tier":                                    requestBody.UnlockTier,
+		"unlock_locks_strength":                          requestBody.UnlockLocksStrength,
+		"item_level":                                     itemLevel,
+		"equip_slot":                                     equipSlot,
+		"strength_mod":                                   requestBody.StrengthMod,
+		"dexterity_mod":                                  requestBody.DexterityMod,
+		"constitution_mod":                               requestBody.ConstitutionMod,
+		"intelligence_mod":                               requestBody.IntelligenceMod,
+		"wisdom_mod":                                     requestBody.WisdomMod,
+		"charisma_mod":                                   requestBody.CharismaMod,
+		"physical_damage_bonus_percent":                  requestBody.PhysicalDamageBonusPercent,
+		"piercing_damage_bonus_percent":                  requestBody.PiercingDamageBonusPercent,
+		"slashing_damage_bonus_percent":                  requestBody.SlashingDamageBonusPercent,
+		"bludgeoning_damage_bonus_percent":               requestBody.BludgeoningDamageBonusPercent,
+		"fire_damage_bonus_percent":                      requestBody.FireDamageBonusPercent,
+		"ice_damage_bonus_percent":                       requestBody.IceDamageBonusPercent,
+		"lightning_damage_bonus_percent":                 requestBody.LightningDamageBonusPercent,
+		"poison_damage_bonus_percent":                    requestBody.PoisonDamageBonusPercent,
+		"arcane_damage_bonus_percent":                    requestBody.ArcaneDamageBonusPercent,
+		"holy_damage_bonus_percent":                      requestBody.HolyDamageBonusPercent,
+		"shadow_damage_bonus_percent":                    requestBody.ShadowDamageBonusPercent,
+		"physical_resistance_percent":                    requestBody.PhysicalResistancePercent,
+		"piercing_resistance_percent":                    requestBody.PiercingResistancePercent,
+		"slashing_resistance_percent":                    requestBody.SlashingResistancePercent,
+		"bludgeoning_resistance_percent":                 requestBody.BludgeoningResistancePercent,
+		"fire_resistance_percent":                        requestBody.FireResistancePercent,
+		"ice_resistance_percent":                         requestBody.IceResistancePercent,
+		"lightning_resistance_percent":                   requestBody.LightningResistancePercent,
+		"poison_resistance_percent":                      requestBody.PoisonResistancePercent,
+		"arcane_resistance_percent":                      requestBody.ArcaneResistancePercent,
+		"holy_resistance_percent":                        requestBody.HolyResistancePercent,
+		"shadow_resistance_percent":                      requestBody.ShadowResistancePercent,
+		"hand_item_category":                             handAttrs.HandItemCategory,
+		"handedness":                                     handAttrs.Handedness,
+		"damage_min":                                     handAttrs.DamageMin,
+		"damage_max":                                     handAttrs.DamageMax,
+		"damage_affinity":                                handAttrs.DamageAffinity,
+		"swipes_per_attack":                              handAttrs.SwipesPerAttack,
+		"block_percentage":                               handAttrs.BlockPercentage,
+		"damage_blocked":                                 handAttrs.DamageBlocked,
+		"spell_damage_bonus_percent":                     handAttrs.SpellDamageBonusPercent,
+		"consume_health_delta":                           requestBody.ConsumeHealthDelta,
+		"consume_mana_delta":                             requestBody.ConsumeManaDelta,
+		"consume_revive_party_member_health":             requestBody.ConsumeRevivePartyMemberHealth,
 		"consume_revive_all_downed_party_members_health": requestBody.ConsumeReviveAllDownedPartyMembersHealth,
 		"consume_deal_damage":                            requestBody.ConsumeDealDamage,
 		"consume_deal_damage_hits":                       consumeDealDamageHits,
@@ -15088,21 +15183,43 @@ type scenarioOptionPayload struct {
 }
 
 type scenarioFailureStatusPayload struct {
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	Effect          string `json:"effect"`
-	EffectType      string `json:"effectType"`
-	Positive        *bool  `json:"positive"`
-	DamagePerTick   int    `json:"damagePerTick"`
-	HealthPerTick   int    `json:"healthPerTick"`
-	ManaPerTick     int    `json:"manaPerTick"`
-	DurationSeconds int    `json:"durationSeconds"`
-	StrengthMod     int    `json:"strengthMod"`
-	DexterityMod    int    `json:"dexterityMod"`
-	ConstitutionMod int    `json:"constitutionMod"`
-	IntelligenceMod int    `json:"intelligenceMod"`
-	WisdomMod       int    `json:"wisdomMod"`
-	CharismaMod     int    `json:"charismaMod"`
+	Name                          string `json:"name"`
+	Description                   string `json:"description"`
+	Effect                        string `json:"effect"`
+	EffectType                    string `json:"effectType"`
+	Positive                      *bool  `json:"positive"`
+	DamagePerTick                 int    `json:"damagePerTick"`
+	HealthPerTick                 int    `json:"healthPerTick"`
+	ManaPerTick                   int    `json:"manaPerTick"`
+	DurationSeconds               int    `json:"durationSeconds"`
+	StrengthMod                   int    `json:"strengthMod"`
+	DexterityMod                  int    `json:"dexterityMod"`
+	ConstitutionMod               int    `json:"constitutionMod"`
+	IntelligenceMod               int    `json:"intelligenceMod"`
+	WisdomMod                     int    `json:"wisdomMod"`
+	CharismaMod                   int    `json:"charismaMod"`
+	PhysicalDamageBonusPercent    int    `json:"physicalDamageBonusPercent"`
+	PiercingDamageBonusPercent    int    `json:"piercingDamageBonusPercent"`
+	SlashingDamageBonusPercent    int    `json:"slashingDamageBonusPercent"`
+	BludgeoningDamageBonusPercent int    `json:"bludgeoningDamageBonusPercent"`
+	FireDamageBonusPercent        int    `json:"fireDamageBonusPercent"`
+	IceDamageBonusPercent         int    `json:"iceDamageBonusPercent"`
+	LightningDamageBonusPercent   int    `json:"lightningDamageBonusPercent"`
+	PoisonDamageBonusPercent      int    `json:"poisonDamageBonusPercent"`
+	ArcaneDamageBonusPercent      int    `json:"arcaneDamageBonusPercent"`
+	HolyDamageBonusPercent        int    `json:"holyDamageBonusPercent"`
+	ShadowDamageBonusPercent      int    `json:"shadowDamageBonusPercent"`
+	PhysicalResistancePercent     int    `json:"physicalResistancePercent"`
+	PiercingResistancePercent     int    `json:"piercingResistancePercent"`
+	SlashingResistancePercent     int    `json:"slashingResistancePercent"`
+	BludgeoningResistancePercent  int    `json:"bludgeoningResistancePercent"`
+	FireResistancePercent         int    `json:"fireResistancePercent"`
+	IceResistancePercent          int    `json:"iceResistancePercent"`
+	LightningResistancePercent    int    `json:"lightningResistancePercent"`
+	PoisonResistancePercent       int    `json:"poisonResistancePercent"`
+	ArcaneResistancePercent       int    `json:"arcaneResistancePercent"`
+	HolyResistancePercent         int    `json:"holyResistancePercent"`
+	ShadowResistancePercent       int    `json:"shadowResistancePercent"`
 }
 
 type scenarioUpsertRequest struct {
@@ -15395,21 +15512,43 @@ func parseScenarioFailureStatusTemplates(
 			positive = *status.Positive
 		}
 		templates = append(templates, models.ScenarioFailureStatusTemplate{
-			Name:            name,
-			Description:     strings.TrimSpace(status.Description),
-			Effect:          strings.TrimSpace(status.Effect),
-			EffectType:      string(effectType),
-			Positive:        positive,
-			DamagePerTick:   status.DamagePerTick,
-			HealthPerTick:   status.HealthPerTick,
-			ManaPerTick:     status.ManaPerTick,
-			DurationSeconds: status.DurationSeconds,
-			StrengthMod:     status.StrengthMod,
-			DexterityMod:    status.DexterityMod,
-			ConstitutionMod: status.ConstitutionMod,
-			IntelligenceMod: status.IntelligenceMod,
-			WisdomMod:       status.WisdomMod,
-			CharismaMod:     status.CharismaMod,
+			Name:                          name,
+			Description:                   strings.TrimSpace(status.Description),
+			Effect:                        strings.TrimSpace(status.Effect),
+			EffectType:                    string(effectType),
+			Positive:                      positive,
+			DamagePerTick:                 status.DamagePerTick,
+			HealthPerTick:                 status.HealthPerTick,
+			ManaPerTick:                   status.ManaPerTick,
+			DurationSeconds:               status.DurationSeconds,
+			StrengthMod:                   status.StrengthMod,
+			DexterityMod:                  status.DexterityMod,
+			ConstitutionMod:               status.ConstitutionMod,
+			IntelligenceMod:               status.IntelligenceMod,
+			WisdomMod:                     status.WisdomMod,
+			CharismaMod:                   status.CharismaMod,
+			PhysicalDamageBonusPercent:    status.PhysicalDamageBonusPercent,
+			PiercingDamageBonusPercent:    status.PiercingDamageBonusPercent,
+			SlashingDamageBonusPercent:    status.SlashingDamageBonusPercent,
+			BludgeoningDamageBonusPercent: status.BludgeoningDamageBonusPercent,
+			FireDamageBonusPercent:        status.FireDamageBonusPercent,
+			IceDamageBonusPercent:         status.IceDamageBonusPercent,
+			LightningDamageBonusPercent:   status.LightningDamageBonusPercent,
+			PoisonDamageBonusPercent:      status.PoisonDamageBonusPercent,
+			ArcaneDamageBonusPercent:      status.ArcaneDamageBonusPercent,
+			HolyDamageBonusPercent:        status.HolyDamageBonusPercent,
+			ShadowDamageBonusPercent:      status.ShadowDamageBonusPercent,
+			PhysicalResistancePercent:     status.PhysicalResistancePercent,
+			PiercingResistancePercent:     status.PiercingResistancePercent,
+			SlashingResistancePercent:     status.SlashingResistancePercent,
+			BludgeoningResistancePercent:  status.BludgeoningResistancePercent,
+			FireResistancePercent:         status.FireResistancePercent,
+			IceResistancePercent:          status.IceResistancePercent,
+			LightningResistancePercent:    status.LightningResistancePercent,
+			PoisonResistancePercent:       status.PoisonResistancePercent,
+			ArcaneResistancePercent:       status.ArcaneResistancePercent,
+			HolyResistancePercent:         status.HolyResistancePercent,
+			ShadowResistancePercent:       status.ShadowResistancePercent,
 		})
 	}
 	return templates, nil
@@ -15795,15 +15934,10 @@ func (s *server) getScenarioResourceState(
 	if err != nil {
 		return nil, 0, 0, 0, 0, err
 	}
-	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	totalBonuses, err := s.getCharacterTotalBonuses(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, 0, 0, err
 	}
-	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
-	if err != nil {
-		return nil, 0, 0, 0, 0, err
-	}
-	totalBonuses := equipmentBonuses.Add(statusBonuses)
 	maxHealth, maxMana, currentHealth, currentMana := deriveCharacterResources(
 		stats,
 		totalBonuses,
@@ -15857,23 +15991,45 @@ func (s *server) applyScenarioFailurePenalty(
 			continue
 		}
 		status := &models.UserStatus{
-			UserID:          userID,
-			Name:            name,
-			Description:     strings.TrimSpace(statusTemplate.Description),
-			Effect:          strings.TrimSpace(statusTemplate.Effect),
-			Positive:        statusTemplate.Positive,
-			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
-			DamagePerTick:   statusTemplate.DamagePerTick,
-			HealthPerTick:   statusTemplate.HealthPerTick,
-			ManaPerTick:     statusTemplate.ManaPerTick,
-			StrengthMod:     statusTemplate.StrengthMod,
-			DexterityMod:    statusTemplate.DexterityMod,
-			ConstitutionMod: statusTemplate.ConstitutionMod,
-			IntelligenceMod: statusTemplate.IntelligenceMod,
-			WisdomMod:       statusTemplate.WisdomMod,
-			CharismaMod:     statusTemplate.CharismaMod,
-			StartedAt:       now,
-			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+			UserID:                        userID,
+			Name:                          name,
+			Description:                   strings.TrimSpace(statusTemplate.Description),
+			Effect:                        strings.TrimSpace(statusTemplate.Effect),
+			Positive:                      statusTemplate.Positive,
+			EffectType:                    normalizeUserStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:                 statusTemplate.DamagePerTick,
+			HealthPerTick:                 statusTemplate.HealthPerTick,
+			ManaPerTick:                   statusTemplate.ManaPerTick,
+			StrengthMod:                   statusTemplate.StrengthMod,
+			DexterityMod:                  statusTemplate.DexterityMod,
+			ConstitutionMod:               statusTemplate.ConstitutionMod,
+			IntelligenceMod:               statusTemplate.IntelligenceMod,
+			WisdomMod:                     statusTemplate.WisdomMod,
+			CharismaMod:                   statusTemplate.CharismaMod,
+			PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+			PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+			SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+			BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+			FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+			IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+			LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+			PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+			ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+			HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+			ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+			PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+			PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+			SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+			BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+			FireResistancePercent:         statusTemplate.FireResistancePercent,
+			IceResistancePercent:          statusTemplate.IceResistancePercent,
+			LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+			PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+			ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+			HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+			ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+			StartedAt:                     now,
+			ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 		}
 		if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
 			return applied, err
@@ -15939,23 +16095,45 @@ func (s *server) applyScenarioSuccessReward(
 			continue
 		}
 		status := &models.UserStatus{
-			UserID:          userID,
-			Name:            name,
-			Description:     strings.TrimSpace(statusTemplate.Description),
-			Effect:          strings.TrimSpace(statusTemplate.Effect),
-			Positive:        statusTemplate.Positive,
-			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
-			DamagePerTick:   statusTemplate.DamagePerTick,
-			HealthPerTick:   statusTemplate.HealthPerTick,
-			ManaPerTick:     statusTemplate.ManaPerTick,
-			StrengthMod:     statusTemplate.StrengthMod,
-			DexterityMod:    statusTemplate.DexterityMod,
-			ConstitutionMod: statusTemplate.ConstitutionMod,
-			IntelligenceMod: statusTemplate.IntelligenceMod,
-			WisdomMod:       statusTemplate.WisdomMod,
-			CharismaMod:     statusTemplate.CharismaMod,
-			StartedAt:       now,
-			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+			UserID:                        userID,
+			Name:                          name,
+			Description:                   strings.TrimSpace(statusTemplate.Description),
+			Effect:                        strings.TrimSpace(statusTemplate.Effect),
+			Positive:                      statusTemplate.Positive,
+			EffectType:                    normalizeUserStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:                 statusTemplate.DamagePerTick,
+			HealthPerTick:                 statusTemplate.HealthPerTick,
+			ManaPerTick:                   statusTemplate.ManaPerTick,
+			StrengthMod:                   statusTemplate.StrengthMod,
+			DexterityMod:                  statusTemplate.DexterityMod,
+			ConstitutionMod:               statusTemplate.ConstitutionMod,
+			IntelligenceMod:               statusTemplate.IntelligenceMod,
+			WisdomMod:                     statusTemplate.WisdomMod,
+			CharismaMod:                   statusTemplate.CharismaMod,
+			PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+			PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+			SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+			BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+			FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+			IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+			LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+			PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+			ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+			HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+			ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+			PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+			PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+			SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+			BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+			FireResistancePercent:         statusTemplate.FireResistancePercent,
+			IceResistancePercent:          statusTemplate.IceResistancePercent,
+			LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+			PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+			ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+			HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+			ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+			StartedAt:                     now,
+			ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 		}
 		if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
 			return applied, err

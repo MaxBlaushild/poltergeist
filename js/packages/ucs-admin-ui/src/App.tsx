@@ -56,6 +56,7 @@ import { Quests } from './components/Quests.tsx';
 import { InsiderTrades } from './components/InsiderTrades.tsx';
 import Feedback from './components/Feedback.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
+import ZoneTagJobs from './components/ZoneTagJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
 import { Challenges } from './components/Challenges.tsx';
 import ScenarioTemplates from './components/ScenarioTemplates.tsx';
@@ -456,6 +457,11 @@ const router = createBrowserRouter([
       {
         path: '/zone-seeding',
         element: <ZoneSeedJobs />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/zone-tagging',
+        element: <ZoneTagJobs />,
         loader: onlyAuthenticated,
       },
       {

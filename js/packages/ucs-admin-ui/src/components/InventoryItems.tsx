@@ -21,6 +21,28 @@ type InventoryConsumeStatus = {
   intelligenceMod: number;
   wisdomMod: number;
   charismaMod: number;
+  physicalDamageBonusPercent: number;
+  piercingDamageBonusPercent: number;
+  slashingDamageBonusPercent: number;
+  bludgeoningDamageBonusPercent: number;
+  fireDamageBonusPercent: number;
+  iceDamageBonusPercent: number;
+  lightningDamageBonusPercent: number;
+  poisonDamageBonusPercent: number;
+  arcaneDamageBonusPercent: number;
+  holyDamageBonusPercent: number;
+  shadowDamageBonusPercent: number;
+  physicalResistancePercent: number;
+  piercingResistancePercent: number;
+  slashingResistancePercent: number;
+  bludgeoningResistancePercent: number;
+  fireResistancePercent: number;
+  iceResistancePercent: number;
+  lightningResistancePercent: number;
+  poisonResistancePercent: number;
+  arcaneResistancePercent: number;
+  holyResistancePercent: number;
+  shadowResistancePercent: number;
 };
 
 type InventoryRecipeIngredientDraft = {
@@ -85,6 +107,28 @@ const emptyConsumeStatus = (): InventoryConsumeStatus => ({
   intelligenceMod: 0,
   wisdomMod: 0,
   charismaMod: 0,
+  physicalDamageBonusPercent: 0,
+  piercingDamageBonusPercent: 0,
+  slashingDamageBonusPercent: 0,
+  bludgeoningDamageBonusPercent: 0,
+  fireDamageBonusPercent: 0,
+  iceDamageBonusPercent: 0,
+  lightningDamageBonusPercent: 0,
+  poisonDamageBonusPercent: 0,
+  arcaneDamageBonusPercent: 0,
+  holyDamageBonusPercent: 0,
+  shadowDamageBonusPercent: 0,
+  physicalResistancePercent: 0,
+  piercingResistancePercent: 0,
+  slashingResistancePercent: 0,
+  bludgeoningResistancePercent: 0,
+  fireResistancePercent: 0,
+  iceResistancePercent: 0,
+  lightningResistancePercent: 0,
+  poisonResistancePercent: 0,
+  arcaneResistancePercent: 0,
+  holyResistancePercent: 0,
+  shadowResistancePercent: 0,
 });
 
 const normalizeConsumeStatus = (
@@ -116,6 +160,86 @@ const normalizeConsumeStatus = (
     wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
     charismaMod: Number.isFinite(status.charismaMod)
       ? Number(status.charismaMod)
+      : 0,
+    physicalDamageBonusPercent: Number.isFinite(
+      status.physicalDamageBonusPercent
+    )
+      ? Number(status.physicalDamageBonusPercent)
+      : 0,
+    piercingDamageBonusPercent: Number.isFinite(
+      status.piercingDamageBonusPercent
+    )
+      ? Number(status.piercingDamageBonusPercent)
+      : 0,
+    slashingDamageBonusPercent: Number.isFinite(
+      status.slashingDamageBonusPercent
+    )
+      ? Number(status.slashingDamageBonusPercent)
+      : 0,
+    bludgeoningDamageBonusPercent: Number.isFinite(
+      status.bludgeoningDamageBonusPercent
+    )
+      ? Number(status.bludgeoningDamageBonusPercent)
+      : 0,
+    fireDamageBonusPercent: Number.isFinite(status.fireDamageBonusPercent)
+      ? Number(status.fireDamageBonusPercent)
+      : 0,
+    iceDamageBonusPercent: Number.isFinite(status.iceDamageBonusPercent)
+      ? Number(status.iceDamageBonusPercent)
+      : 0,
+    lightningDamageBonusPercent: Number.isFinite(
+      status.lightningDamageBonusPercent
+    )
+      ? Number(status.lightningDamageBonusPercent)
+      : 0,
+    poisonDamageBonusPercent: Number.isFinite(status.poisonDamageBonusPercent)
+      ? Number(status.poisonDamageBonusPercent)
+      : 0,
+    arcaneDamageBonusPercent: Number.isFinite(status.arcaneDamageBonusPercent)
+      ? Number(status.arcaneDamageBonusPercent)
+      : 0,
+    holyDamageBonusPercent: Number.isFinite(status.holyDamageBonusPercent)
+      ? Number(status.holyDamageBonusPercent)
+      : 0,
+    shadowDamageBonusPercent: Number.isFinite(status.shadowDamageBonusPercent)
+      ? Number(status.shadowDamageBonusPercent)
+      : 0,
+    physicalResistancePercent: Number.isFinite(status.physicalResistancePercent)
+      ? Number(status.physicalResistancePercent)
+      : 0,
+    piercingResistancePercent: Number.isFinite(status.piercingResistancePercent)
+      ? Number(status.piercingResistancePercent)
+      : 0,
+    slashingResistancePercent: Number.isFinite(status.slashingResistancePercent)
+      ? Number(status.slashingResistancePercent)
+      : 0,
+    bludgeoningResistancePercent: Number.isFinite(
+      status.bludgeoningResistancePercent
+    )
+      ? Number(status.bludgeoningResistancePercent)
+      : 0,
+    fireResistancePercent: Number.isFinite(status.fireResistancePercent)
+      ? Number(status.fireResistancePercent)
+      : 0,
+    iceResistancePercent: Number.isFinite(status.iceResistancePercent)
+      ? Number(status.iceResistancePercent)
+      : 0,
+    lightningResistancePercent: Number.isFinite(
+      status.lightningResistancePercent
+    )
+      ? Number(status.lightningResistancePercent)
+      : 0,
+    poisonResistancePercent: Number.isFinite(status.poisonResistancePercent)
+      ? Number(status.poisonResistancePercent)
+      : 0,
+    arcaneResistancePercent: Number.isFinite(status.arcaneResistancePercent)
+      ? Number(status.arcaneResistancePercent)
+      : 0,
+    holyResistancePercent: Number.isFinite(status.holyResistancePercent)
+      ? Number(status.holyResistancePercent)
+      : 0,
+    shadowResistancePercent: Number.isFinite(status.shadowResistancePercent)
+      ? Number(status.shadowResistancePercent)
       : 0,
     positive: status.positive ?? true,
   };
@@ -328,6 +452,34 @@ const damageAffinityOptions: SelectOption[] = [
   { value: 'shadow', label: 'Shadow' },
 ];
 
+const resistanceFieldOptions = [
+  { key: 'physicalResistancePercent', label: 'Physical %' },
+  { key: 'piercingResistancePercent', label: 'Piercing %' },
+  { key: 'slashingResistancePercent', label: 'Slashing %' },
+  { key: 'bludgeoningResistancePercent', label: 'Bludgeoning %' },
+  { key: 'fireResistancePercent', label: 'Fire %' },
+  { key: 'iceResistancePercent', label: 'Ice %' },
+  { key: 'lightningResistancePercent', label: 'Lightning %' },
+  { key: 'poisonResistancePercent', label: 'Poison %' },
+  { key: 'arcaneResistancePercent', label: 'Arcane %' },
+  { key: 'holyResistancePercent', label: 'Holy %' },
+  { key: 'shadowResistancePercent', label: 'Shadow %' },
+] as const;
+
+const damageBonusFieldOptions = [
+  { key: 'physicalDamageBonusPercent', label: 'Physical Dmg %' },
+  { key: 'piercingDamageBonusPercent', label: 'Piercing Dmg %' },
+  { key: 'slashingDamageBonusPercent', label: 'Slashing Dmg %' },
+  { key: 'bludgeoningDamageBonusPercent', label: 'Bludgeoning Dmg %' },
+  { key: 'fireDamageBonusPercent', label: 'Fire Dmg %' },
+  { key: 'iceDamageBonusPercent', label: 'Ice Dmg %' },
+  { key: 'lightningDamageBonusPercent', label: 'Lightning Dmg %' },
+  { key: 'poisonDamageBonusPercent', label: 'Poison Dmg %' },
+  { key: 'arcaneDamageBonusPercent', label: 'Arcane Dmg %' },
+  { key: 'holyDamageBonusPercent', label: 'Holy Dmg %' },
+  { key: 'shadowDamageBonusPercent', label: 'Shadow Dmg %' },
+] as const;
+
 const equipSlotLabel = (slot?: string | null) => {
   if (!slot) return 'Not equippable';
   const found = equipSlotOptions.find((opt) => opt.value === slot);
@@ -391,6 +543,16 @@ const statModSummary = (item: InventoryItemRecord) => {
   push('INT', item.intelligenceMod);
   push('WIS', item.wisdomMod);
   push('CHA', item.charismaMod);
+  for (const { key, label } of damageBonusFieldOptions) {
+    const value = item[key];
+    if (!value || value === 0) continue;
+    mods.push(`${label} ${value > 0 ? '+' : ''}${value}`);
+  }
+  for (const { key, label } of resistanceFieldOptions) {
+    const value = item[key];
+    if (!value || value === 0) continue;
+    mods.push(`${label} ${value > 0 ? '+' : ''}${value}`);
+  }
   return mods.join(', ');
 };
 
@@ -613,6 +775,28 @@ export const InventoryItems = () => {
     intelligenceMod: 0,
     wisdomMod: 0,
     charismaMod: 0,
+    physicalDamageBonusPercent: 0,
+    piercingDamageBonusPercent: 0,
+    slashingDamageBonusPercent: 0,
+    bludgeoningDamageBonusPercent: 0,
+    fireDamageBonusPercent: 0,
+    iceDamageBonusPercent: 0,
+    lightningDamageBonusPercent: 0,
+    poisonDamageBonusPercent: 0,
+    arcaneDamageBonusPercent: 0,
+    holyDamageBonusPercent: 0,
+    shadowDamageBonusPercent: 0,
+    physicalResistancePercent: 0,
+    piercingResistancePercent: 0,
+    slashingResistancePercent: 0,
+    bludgeoningResistancePercent: 0,
+    fireResistancePercent: 0,
+    iceResistancePercent: 0,
+    lightningResistancePercent: 0,
+    poisonResistancePercent: 0,
+    arcaneResistancePercent: 0,
+    holyResistancePercent: 0,
+    shadowResistancePercent: 0,
     handItemCategory: '',
     handedness: '',
     damageMin: undefined as number | undefined,
@@ -794,6 +978,28 @@ export const InventoryItems = () => {
       intelligenceMod: 0,
       wisdomMod: 0,
       charismaMod: 0,
+      physicalDamageBonusPercent: 0,
+      piercingDamageBonusPercent: 0,
+      slashingDamageBonusPercent: 0,
+      bludgeoningDamageBonusPercent: 0,
+      fireDamageBonusPercent: 0,
+      iceDamageBonusPercent: 0,
+      lightningDamageBonusPercent: 0,
+      poisonDamageBonusPercent: 0,
+      arcaneDamageBonusPercent: 0,
+      holyDamageBonusPercent: 0,
+      shadowDamageBonusPercent: 0,
+      physicalResistancePercent: 0,
+      piercingResistancePercent: 0,
+      slashingResistancePercent: 0,
+      bludgeoningResistancePercent: 0,
+      fireResistancePercent: 0,
+      iceResistancePercent: 0,
+      lightningResistancePercent: 0,
+      poisonResistancePercent: 0,
+      arcaneResistancePercent: 0,
+      holyResistancePercent: 0,
+      shadowResistancePercent: 0,
       handItemCategory: '',
       handedness: '',
       damageMin: undefined,
@@ -1915,6 +2121,28 @@ export const InventoryItems = () => {
       intelligenceMod: item.intelligenceMod ?? 0,
       wisdomMod: item.wisdomMod ?? 0,
       charismaMod: item.charismaMod ?? 0,
+      physicalDamageBonusPercent: item.physicalDamageBonusPercent ?? 0,
+      piercingDamageBonusPercent: item.piercingDamageBonusPercent ?? 0,
+      slashingDamageBonusPercent: item.slashingDamageBonusPercent ?? 0,
+      bludgeoningDamageBonusPercent: item.bludgeoningDamageBonusPercent ?? 0,
+      fireDamageBonusPercent: item.fireDamageBonusPercent ?? 0,
+      iceDamageBonusPercent: item.iceDamageBonusPercent ?? 0,
+      lightningDamageBonusPercent: item.lightningDamageBonusPercent ?? 0,
+      poisonDamageBonusPercent: item.poisonDamageBonusPercent ?? 0,
+      arcaneDamageBonusPercent: item.arcaneDamageBonusPercent ?? 0,
+      holyDamageBonusPercent: item.holyDamageBonusPercent ?? 0,
+      shadowDamageBonusPercent: item.shadowDamageBonusPercent ?? 0,
+      physicalResistancePercent: item.physicalResistancePercent ?? 0,
+      piercingResistancePercent: item.piercingResistancePercent ?? 0,
+      slashingResistancePercent: item.slashingResistancePercent ?? 0,
+      bludgeoningResistancePercent: item.bludgeoningResistancePercent ?? 0,
+      fireResistancePercent: item.fireResistancePercent ?? 0,
+      iceResistancePercent: item.iceResistancePercent ?? 0,
+      lightningResistancePercent: item.lightningResistancePercent ?? 0,
+      poisonResistancePercent: item.poisonResistancePercent ?? 0,
+      arcaneResistancePercent: item.arcaneResistancePercent ?? 0,
+      holyResistancePercent: item.holyResistancePercent ?? 0,
+      shadowResistancePercent: item.shadowResistancePercent ?? 0,
       handItemCategory: item.handItemCategory ?? '',
       handedness: item.handedness ?? '',
       damageMin: item.damageMin ?? undefined,
@@ -2079,6 +2307,82 @@ export const InventoryItems = () => {
                     borderRadius: '4px',
                   }}
                 />
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '10px',
+                  marginTop: '10px',
+                }}
+              >
+                {damageBonusFieldOptions.map(({ key, label }) => (
+                  <div key={key}>
+                    <label
+                      style={{
+                        display: 'block',
+                        marginBottom: '4px',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {label}
+                    </label>
+                    <input
+                      type="number"
+                      value={formData[key]}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          [key]: parseInt(e.target.value, 10) || 0,
+                        })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '10px',
+                  marginTop: '10px',
+                }}
+              >
+                {resistanceFieldOptions.map(({ key, label }) => (
+                  <div key={key}>
+                    <label
+                      style={{
+                        display: 'block',
+                        marginBottom: '4px',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {label}
+                    </label>
+                    <input
+                      type="number"
+                      value={formData[key]}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          [key]: parseInt(e.target.value, 10) || 0,
+                        })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -4462,6 +4766,82 @@ export const InventoryItems = () => {
                           }}
                         />
                       </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gap: '8px',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      {damageBonusFieldOptions.map(({ key, label }) => (
+                        <div key={key}>
+                          <label
+                            style={{
+                              display: 'block',
+                              marginBottom: '4px',
+                              fontSize: '12px',
+                            }}
+                          >
+                            {label}
+                          </label>
+                          <input
+                            type="number"
+                            value={status[key]}
+                            onChange={(e) =>
+                              updateConsumeStatusToAdd(statusIndex, {
+                                [key]: parseInt(e.target.value, 10) || 0,
+                              })
+                            }
+                            style={{
+                              width: '100%',
+                              padding: '6px',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gap: '8px',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      {resistanceFieldOptions.map(({ key, label }) => (
+                        <div key={key}>
+                          <label
+                            style={{
+                              display: 'block',
+                              marginBottom: '4px',
+                              fontSize: '12px',
+                            }}
+                          >
+                            {label}
+                          </label>
+                          <input
+                            type="number"
+                            value={status[key]}
+                            onChange={(e) =>
+                              updateConsumeStatusToAdd(statusIndex, {
+                                [key]: parseInt(e.target.value, 10) || 0,
+                              })
+                            }
+                            style={{
+                              width: '100%',
+                              padding: '6px',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                            }}
+                          />
+                        </div>
+                      ))}
                     </div>
 
                     <div

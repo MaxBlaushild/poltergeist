@@ -28,21 +28,43 @@ const (
 )
 
 type ScenarioFailureStatusTemplate struct {
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	Effect          string `json:"effect"`
-	EffectType      string `json:"effectType"`
-	Positive        bool   `json:"positive"`
-	DamagePerTick   int    `json:"damagePerTick"`
-	HealthPerTick   int    `json:"healthPerTick"`
-	ManaPerTick     int    `json:"manaPerTick"`
-	DurationSeconds int    `json:"durationSeconds"`
-	StrengthMod     int    `json:"strengthMod"`
-	DexterityMod    int    `json:"dexterityMod"`
-	ConstitutionMod int    `json:"constitutionMod"`
-	IntelligenceMod int    `json:"intelligenceMod"`
-	WisdomMod       int    `json:"wisdomMod"`
-	CharismaMod     int    `json:"charismaMod"`
+	Name                          string `json:"name"`
+	Description                   string `json:"description"`
+	Effect                        string `json:"effect"`
+	EffectType                    string `json:"effectType"`
+	Positive                      bool   `json:"positive"`
+	DamagePerTick                 int    `json:"damagePerTick"`
+	HealthPerTick                 int    `json:"healthPerTick"`
+	ManaPerTick                   int    `json:"manaPerTick"`
+	DurationSeconds               int    `json:"durationSeconds"`
+	StrengthMod                   int    `json:"strengthMod"`
+	DexterityMod                  int    `json:"dexterityMod"`
+	ConstitutionMod               int    `json:"constitutionMod"`
+	IntelligenceMod               int    `json:"intelligenceMod"`
+	WisdomMod                     int    `json:"wisdomMod"`
+	CharismaMod                   int    `json:"charismaMod"`
+	PhysicalDamageBonusPercent    int    `json:"physicalDamageBonusPercent"`
+	PiercingDamageBonusPercent    int    `json:"piercingDamageBonusPercent"`
+	SlashingDamageBonusPercent    int    `json:"slashingDamageBonusPercent"`
+	BludgeoningDamageBonusPercent int    `json:"bludgeoningDamageBonusPercent"`
+	FireDamageBonusPercent        int    `json:"fireDamageBonusPercent"`
+	IceDamageBonusPercent         int    `json:"iceDamageBonusPercent"`
+	LightningDamageBonusPercent   int    `json:"lightningDamageBonusPercent"`
+	PoisonDamageBonusPercent      int    `json:"poisonDamageBonusPercent"`
+	ArcaneDamageBonusPercent      int    `json:"arcaneDamageBonusPercent"`
+	HolyDamageBonusPercent        int    `json:"holyDamageBonusPercent"`
+	ShadowDamageBonusPercent      int    `json:"shadowDamageBonusPercent"`
+	PhysicalResistancePercent     int    `json:"physicalResistancePercent"`
+	PiercingResistancePercent     int    `json:"piercingResistancePercent"`
+	SlashingResistancePercent     int    `json:"slashingResistancePercent"`
+	BludgeoningResistancePercent  int    `json:"bludgeoningResistancePercent"`
+	FireResistancePercent         int    `json:"fireResistancePercent"`
+	IceResistancePercent          int    `json:"iceResistancePercent"`
+	LightningResistancePercent    int    `json:"lightningResistancePercent"`
+	PoisonResistancePercent       int    `json:"poisonResistancePercent"`
+	ArcaneResistancePercent       int    `json:"arcaneResistancePercent"`
+	HolyResistancePercent         int    `json:"holyResistancePercent"`
+	ShadowResistancePercent       int    `json:"shadowResistancePercent"`
 }
 
 type ScenarioFailureStatusTemplates []ScenarioFailureStatusTemplate

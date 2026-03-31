@@ -34,6 +34,104 @@ func (h *zoneHandler) FindAll(ctx context.Context) ([]*models.Zone, error) {
 	return zones, nil
 }
 
+func (h *zoneHandler) FindAdminSummaries(ctx context.Context) ([]models.ZoneAdminSummary, error) {
+	const query = `
+SELECT
+	zones.id,
+	zones.created_at,
+	zones.updated_at,
+	zones.name,
+	zones.description,
+	zones.internal_tags,
+	zones.latitude,
+	zones.longitude,
+	zones.zone_import_id,
+	zone_imports.metro_name AS import_metro_name,
+	COALESCE(boundary_points.boundary_point_count, 0) AS boundary_point_count,
+	COALESCE(point_of_interest_zones.point_of_interest_count, 0) AS point_of_interest_count,
+	COALESCE(quests.quest_count, 0) AS quest_count,
+	COALESCE(zone_quest_archetypes.zone_quest_archetype_count, 0) AS zone_quest_archetype_count,
+	COALESCE(challenges.challenge_count, 0) AS challenge_count,
+	COALESCE(scenarios.scenario_count, 0) AS scenario_count,
+	COALESCE(monsters.monster_count, 0) AS monster_count,
+	COALESCE(monster_encounters.monster_encounter_count, 0) AS monster_encounter_count,
+	COALESCE(treasure_chests.treasure_chest_count, 0) AS treasure_chest_count,
+	COALESCE(healing_fountains.healing_fountain_count, 0) AS healing_fountain_count
+FROM zones
+LEFT JOIN zone_imports
+	ON zone_imports.id = zones.zone_import_id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS boundary_point_count
+	FROM boundary_points
+	GROUP BY zone_id
+) AS boundary_points
+	ON boundary_points.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS point_of_interest_count
+	FROM point_of_interest_zones
+	WHERE deleted_at IS NULL
+	GROUP BY zone_id
+) AS point_of_interest_zones
+	ON point_of_interest_zones.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS quest_count
+	FROM quests
+	GROUP BY zone_id
+) AS quests
+	ON quests.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS zone_quest_archetype_count
+	FROM zone_quest_archetypes
+	WHERE deleted_at IS NULL
+	GROUP BY zone_id
+) AS zone_quest_archetypes
+	ON zone_quest_archetypes.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS challenge_count
+	FROM challenges
+	GROUP BY zone_id
+) AS challenges
+	ON challenges.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS scenario_count
+	FROM scenarios
+	GROUP BY zone_id
+) AS scenarios
+	ON scenarios.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS monster_count
+	FROM monsters
+	GROUP BY zone_id
+) AS monsters
+	ON monsters.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS monster_encounter_count
+	FROM monster_encounters
+	GROUP BY zone_id
+) AS monster_encounters
+	ON monster_encounters.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS treasure_chest_count
+	FROM treasure_chests
+	GROUP BY zone_id
+) AS treasure_chests
+	ON treasure_chests.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS healing_fountain_count
+	FROM healing_fountains
+	GROUP BY zone_id
+) AS healing_fountains
+	ON healing_fountains.zone_id = zones.id
+ORDER BY zones.name ASC, zones.created_at DESC
+`
+
+	var summaries []models.ZoneAdminSummary
+	if err := h.db.WithContext(ctx).Raw(query).Scan(&summaries).Error; err != nil {
+		return nil, err
+	}
+	return summaries, nil
+}
+
 func (h *zoneHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error) {
 	var zone models.Zone
 	if err := h.db.WithContext(ctx).Preload("Points").Where("id = ?", id).First(&zone).Error; err != nil {

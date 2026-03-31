@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
-import { Zone, ZoneImport } from '@poltergeist/types';
+import { Zone, ZoneAdminSummary, ZoneImport } from '@poltergeist/types';
 import { useNavigate } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -138,6 +138,70 @@ const calculateBoundaryCenter = (points: [number, number][]) => {
     longitude: totals[0] / openPoints.length,
     latitude: totals[1] / openPoints.length,
   };
+};
+
+const formatCoordinate = (value: number) => value.toFixed(4);
+
+const formatZoneDate = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+const buildZoneSearchText = (zone: ZoneAdminSummary) =>
+  [
+    zone.name,
+    zone.description,
+    zone.importMetroName || '',
+    ...(zone.internalTags || []),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+const getZoneActivityLabel = (zone: ZoneAdminSummary) => {
+  const totalContent =
+    zone.questCount +
+    zone.zoneQuestArchetypeCount +
+    zone.challengeCount +
+    zone.scenarioCount +
+    zone.monsterEncounterCount +
+    zone.pointOfInterestCount +
+    zone.treasureChestCount +
+    zone.healingFountainCount;
+
+  if (totalContent >= 30) {
+    return 'Dense';
+  }
+  if (totalContent >= 15) {
+    return 'Active';
+  }
+  if (totalContent >= 6) {
+    return 'Growing';
+  }
+  if (totalContent >= 1) {
+    return 'Light';
+  }
+  return 'Empty';
+};
+
+const getZoneReadinessSummary = (zone: ZoneAdminSummary) => {
+  const objectiveCount =
+    zone.challengeCount + zone.scenarioCount + zone.monsterEncounterCount;
+
+  if (zone.questCount > 0 && objectiveCount > 0) {
+    return `${zone.questCount} live quest${zone.questCount === 1 ? '' : 's'} supported by ${objectiveCount} linked objective${objectiveCount === 1 ? '' : 's'}.`;
+  }
+
+  if (zone.zoneQuestArchetypeCount > 0) {
+    return `${zone.zoneQuestArchetypeCount} assigned archetype${zone.zoneQuestArchetypeCount === 1 ? '' : 's'} ready for generation, with ${zone.pointOfInterestCount} mapped point${zone.pointOfInterestCount === 1 ? '' : 's'} of interest.`;
+  }
+
+  if (zone.pointOfInterestCount > 0) {
+    return `${zone.pointOfInterestCount} mapped point${zone.pointOfInterestCount === 1 ? '' : 's'} of interest and ${zone.boundaryPointCount} boundary point${zone.boundaryPointCount === 1 ? '' : 's'} are in place, but quest content is still thin.`;
+  }
+
+  return 'This zone has geometry, but it still needs tags, POIs, and quest content to feel fully authored.';
 };
 
 type BoundaryEditorMapProps = {
@@ -706,7 +770,7 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
 };
 
 export const Zones = () => {
-  const { zones, deleteZone, refreshZones } = useZoneContext();
+  const { zones, refreshZones } = useZoneContext();
   const { apiClient } = useAPI();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -727,9 +791,17 @@ export const Zones = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(
-    new Set()
+  const [deletingZoneId, setDeletingZoneId] = useState<string | null>(null);
+  const [zoneSummaries, setZoneSummaries] = useState<ZoneAdminSummary[]>([]);
+  const [zoneSummariesLoading, setZoneSummariesLoading] = useState(false);
+  const [zoneSummariesError, setZoneSummariesError] = useState<string | null>(
+    null
   );
+  const [zoneSearchQuery, setZoneSearchQuery] = useState('');
+  const [zoneSort, setZoneSort] = useState<
+    'richest' | 'quests' | 'updated' | 'name'
+  >('richest');
+  const [, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -737,6 +809,20 @@ export const Zones = () => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const handlersAttachedRef = useRef(false);
   const fitBoundsRef = useRef(false);
+
+  const fetchZoneSummaries = useCallback(async () => {
+    setZoneSummariesLoading(true);
+    setZoneSummariesError(null);
+    try {
+      const response = await apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones');
+      setZoneSummaries(response);
+    } catch (error) {
+      console.error('Failed to fetch zone summaries', error);
+      setZoneSummariesError('Failed to load zone summaries.');
+    } finally {
+      setZoneSummariesLoading(false);
+    }
+  }, [apiClient]);
 
   const mostRecentlyCreatedZone = zones.reduce<Zone | null>((latest, zone) => {
     if (!latest) {
@@ -748,6 +834,94 @@ export const Zones = () => {
       ? zone
       : latest;
   }, null);
+
+  const zoneSummaryByID = useMemo(
+    () => new Map(zoneSummaries.map((zone) => [zone.id, zone])),
+    [zoneSummaries]
+  );
+
+  const zoneOverview = useMemo(
+    () =>
+      zoneSummaries.reduce(
+        (totals, zone) => {
+          totals.pointOfInterestCount += zone.pointOfInterestCount;
+          totals.questCount += zone.questCount;
+          totals.zoneQuestArchetypeCount += zone.zoneQuestArchetypeCount;
+          totals.challengeCount += zone.challengeCount;
+          totals.scenarioCount += zone.scenarioCount;
+          totals.monsterCount += zone.monsterCount;
+          totals.monsterEncounterCount += zone.monsterEncounterCount;
+          totals.treasureChestCount += zone.treasureChestCount;
+          totals.healingFountainCount += zone.healingFountainCount;
+          return totals;
+        },
+        {
+          pointOfInterestCount: 0,
+          questCount: 0,
+          zoneQuestArchetypeCount: 0,
+          challengeCount: 0,
+          scenarioCount: 0,
+          monsterCount: 0,
+          monsterEncounterCount: 0,
+          treasureChestCount: 0,
+          healingFountainCount: 0,
+        }
+      ),
+    [zoneSummaries]
+  );
+
+  const filteredZoneSummaries = useMemo(() => {
+    const query = zoneSearchQuery.trim().toLowerCase();
+    const filtered = zoneSummaries.filter((zone) => {
+      if (!query) {
+        return true;
+      }
+      return buildZoneSearchText(zone).includes(query);
+    });
+
+    return filtered.sort((left, right) => {
+      if (zoneSort === 'name') {
+        return left.name.localeCompare(right.name);
+      }
+
+      if (zoneSort === 'updated') {
+        return (
+          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+        );
+      }
+
+      if (zoneSort === 'quests') {
+        return (
+          right.questCount - left.questCount ||
+          right.zoneQuestArchetypeCount - left.zoneQuestArchetypeCount ||
+          left.name.localeCompare(right.name)
+        );
+      }
+
+      const leftRichness =
+        left.pointOfInterestCount +
+        left.questCount +
+        left.zoneQuestArchetypeCount +
+        left.challengeCount +
+        left.scenarioCount +
+        left.monsterCount +
+        left.monsterEncounterCount +
+        left.treasureChestCount +
+        left.healingFountainCount;
+      const rightRichness =
+        right.pointOfInterestCount +
+        right.questCount +
+        right.zoneQuestArchetypeCount +
+        right.challengeCount +
+        right.scenarioCount +
+        right.monsterCount +
+        right.monsterEncounterCount +
+        right.treasureChestCount +
+        right.healingFountainCount;
+
+      return rightRichness - leftRichness || left.name.localeCompare(right.name);
+    });
+  }, [zoneSearchQuery, zoneSort, zoneSummaries]);
 
   const openCreateZoneModal = () => {
     setCreateMapCenter(
@@ -815,7 +989,7 @@ export const Zones = () => {
     }
   };
 
-  const fetchImportJobs = async () => {
+  const fetchImportJobs = useCallback(async () => {
     try {
       const query = effectiveMetro
         ? `?metroName=${encodeURIComponent(effectiveMetro)}`
@@ -831,7 +1005,7 @@ export const Zones = () => {
     } catch (error) {
       console.error('Failed to fetch zone import status', error);
     }
-  };
+  }, [apiClient, effectiveMetro]);
 
   const handleDeleteImportZones = async (importId: string) => {
     const confirmed = window.confirm(
@@ -846,6 +1020,7 @@ export const Zones = () => {
       await apiClient.delete(`/sonar/zones/imports/${importId}`);
       await fetchImportJobs();
       await refreshZones();
+      await fetchZoneSummaries();
     } catch (error) {
       console.error('Failed to delete imported zones', error);
       setImportError('Failed to delete imported zones.');
@@ -892,6 +1067,7 @@ export const Zones = () => {
       });
 
       await refreshZones();
+      await fetchZoneSummaries();
       closeCreateZoneModal();
       navigate(`/zones/${createdZone.id}`);
     } catch (error) {
@@ -903,16 +1079,20 @@ export const Zones = () => {
   };
 
   useEffect(() => {
-    fetchImportJobs();
-  }, [selectedMetro, customMetro]);
+    void fetchImportJobs();
+  }, [fetchImportJobs]);
+
+  useEffect(() => {
+    void fetchZoneSummaries();
+  }, [fetchZoneSummaries]);
 
   useEffect(() => {
     if (!importPolling) return;
     const interval = setInterval(() => {
-      fetchImportJobs();
+      void fetchImportJobs();
     }, 3000);
     return () => clearInterval(interval);
-  }, [importPolling, selectedMetro, customMetro]);
+  }, [fetchImportJobs, importPolling]);
 
   useEffect(() => {
     if (importJobs.length === 0) return;
@@ -931,11 +1111,33 @@ export const Zones = () => {
         }
       });
       if (hasNew) {
-        refreshZones();
+        void refreshZones();
+        void fetchZoneSummaries();
       }
       return next;
     });
-  }, [importJobs, refreshZones]);
+  }, [fetchZoneSummaries, importJobs, refreshZones]);
+
+  const handleDeleteZone = async (zoneID: string) => {
+    const confirmed = window.confirm(
+      'Delete this zone and its zone-level content? This cannot be undone.'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingZoneId(zoneID);
+    try {
+      await apiClient.delete(`/sonar/zones/${zoneID}`);
+      await refreshZones();
+      await fetchZoneSummaries();
+    } catch (error) {
+      console.error('Error deleting zone:', error);
+      setZoneSummariesError('Failed to delete zone.');
+    } finally {
+      setDeletingZoneId(null);
+    }
+  };
 
   useEffect(() => {
     if (mapContainer.current && !mapRef.current) {
@@ -975,6 +1177,7 @@ export const Zones = () => {
     const features = zones
       .map((zone) => {
         const rawCoords = getZoneRing(zone);
+        const summary = zoneSummaryByID.get(zone.id);
 
         if (rawCoords.length < 4) {
           return null;
@@ -991,6 +1194,13 @@ export const Zones = () => {
             name: zone.name,
             description: zone.description || '',
             boundaryCount: Math.max(rawCoords.length - 1, 0),
+            pointOfInterestCount: summary?.pointOfInterestCount ?? 0,
+            questCount: summary?.questCount ?? 0,
+            zoneQuestArchetypeCount: summary?.zoneQuestArchetypeCount ?? 0,
+            challengeCount: summary?.challengeCount ?? 0,
+            scenarioCount: summary?.scenarioCount ?? 0,
+            monsterEncounterCount: summary?.monsterEncounterCount ?? 0,
+            importMetroName: summary?.importMetroName ?? '',
           },
         };
       })
@@ -1062,6 +1272,19 @@ export const Zones = () => {
         const zoneName = feature.properties.name as string;
         const zoneDescription = feature.properties.description as string;
         const boundaryCount = Number(feature.properties.boundaryCount ?? 0);
+        const pointOfInterestCount = Number(
+          feature.properties.pointOfInterestCount ?? 0
+        );
+        const questCount = Number(feature.properties.questCount ?? 0);
+        const zoneQuestArchetypeCount = Number(
+          feature.properties.zoneQuestArchetypeCount ?? 0
+        );
+        const challengeCount = Number(feature.properties.challengeCount ?? 0);
+        const scenarioCount = Number(feature.properties.scenarioCount ?? 0);
+        const monsterEncounterCount = Number(
+          feature.properties.monsterEncounterCount ?? 0
+        );
+        const importMetroName = feature.properties.importMetroName as string;
 
         popupRef.current?.remove();
 
@@ -1078,10 +1301,27 @@ export const Zones = () => {
         description.textContent = zoneDescription || 'No description.';
         popupContent.appendChild(description);
 
+        if (importMetroName) {
+          const importMeta = document.createElement('div');
+          importMeta.className = 'mt-2 text-xs font-medium text-indigo-600';
+          importMeta.textContent = `Imported from ${importMetroName}`;
+          popupContent.appendChild(importMeta);
+        }
+
         const meta = document.createElement('div');
         meta.className = 'mt-2 text-xs text-slate-500';
         meta.textContent = `Boundary points: ${boundaryCount}`;
         popupContent.appendChild(meta);
+
+        const counts = document.createElement('div');
+        counts.className = 'mt-2 text-xs text-slate-500';
+        counts.textContent = `POIs: ${pointOfInterestCount} · Quests: ${questCount} · Archetypes: ${zoneQuestArchetypeCount}`;
+        popupContent.appendChild(counts);
+
+        const objectiveCounts = document.createElement('div');
+        objectiveCounts.className = 'mt-1 text-xs text-slate-500';
+        objectiveCounts.textContent = `Challenges: ${challengeCount} · Scenarios: ${scenarioCount} · Encounters: ${monsterEncounterCount}`;
+        popupContent.appendChild(objectiveCounts);
 
         const button = document.createElement('button');
         button.className =
@@ -1101,7 +1341,7 @@ export const Zones = () => {
 
       handlersAttachedRef.current = true;
     }
-  }, [zones, navigate, mapLoaded]);
+  }, [zones, navigate, mapLoaded, zoneSummaryByID]);
 
   const allZoneBoundaries = zones
     .map((zone) => getZoneRing(zone))
@@ -1257,72 +1497,274 @@ export const Zones = () => {
           <div ref={mapContainer} className="h-full w-full" />
         </div>
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: '20px',
-          padding: '20px',
-        }}
-      >
-        {zones &&
-          zones.map((zone) => (
-            <div
-              key={zone.id}
-              style={{
-                padding: '20px',
-                border: '1px solid #ccc',
-                borderRadius: '8px',
-                backgroundColor: '#fff',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 15px 0',
-                  color: '#333',
-                }}
-              >
-                {zone.name}
-              </h2>
-              <p
-                style={{
-                  margin: '5px 0',
-                  color: '#666',
-                }}
-              >
-                Latitude: {zone.latitude}
-              </p>
-              <p
-                style={{
-                  margin: '5px 0',
-                  color: '#666',
-                }}
-              >
-                Longitude: {zone.longitude}
-              </p>
-              <p
-                style={{
-                  margin: '5px 0',
-                  color: '#666',
-                }}
-              >
-                Boundary points: {zone.points?.length ?? 0}
-              </p>
-              <button
-                onClick={() => deleteZone(zone)}
-                className="bg-red-500 text-white px-4 py-2 rounded-md mr-2"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => navigate(`/zones/${zone.id}`)}
-                className="bg-blue-500 text-white px-4 py-2 rounded-md"
-              >
-                View
-              </button>
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">
+              Zone Library
+            </h2>
+            <p className="text-sm text-slate-500">
+              Browse each neighborhood with content totals, import provenance,
+              internal tags, and quick health signals.
+            </p>
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {filteredZoneSummaries.length} showing of {zoneSummaries.length}{' '}
+            zones
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Zones
             </div>
-          ))}
+            <div className="mt-2 text-2xl font-semibold text-slate-900">
+              {zoneSummaries.length}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Neighborhoods loaded into admin
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Points Of Interest
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">
+              {zoneOverview.pointOfInterestCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Mapped places tied to zones
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Quests
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">
+              {zoneOverview.questCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Live quests across all zones
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Objective Content
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">
+              {zoneOverview.challengeCount +
+                zoneOverview.scenarioCount +
+                zoneOverview.monsterEncounterCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Challenges, scenarios, and encounters
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Assigned Archetypes
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">
+              {zoneOverview.zoneQuestArchetypeCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Zone-level quest generation assignments
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+          <div className="flex-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Search Zones
+            </label>
+            <input
+              type="text"
+              value={zoneSearchQuery}
+              onChange={(event) => setZoneSearchQuery(event.target.value)}
+              placeholder="Search by name, description, import metro, or internal tags"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="w-full lg:w-64">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Sort By
+            </label>
+            <select
+              value={zoneSort}
+              onChange={(event) =>
+                setZoneSort(
+                  event.target.value as 'richest' | 'quests' | 'updated' | 'name'
+                )
+              }
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="richest">Most Content</option>
+              <option value="quests">Most Quests</option>
+              <option value="updated">Recently Updated</option>
+              <option value="name">Alphabetical</option>
+            </select>
+          </div>
+        </div>
+
+        {zoneSummariesError && (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {zoneSummariesError}
+          </div>
+        )}
+
+        {zoneSummariesLoading ? (
+          <div className="mt-6 text-sm text-slate-500">Loading zone summaries...</div>
+        ) : filteredZoneSummaries.length === 0 ? (
+          <div className="mt-6 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+            No zones matched that search.
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {filteredZoneSummaries.map((zone) => {
+              const contentCounts = [
+                { label: 'POIs', value: zone.pointOfInterestCount },
+                { label: 'Quests', value: zone.questCount },
+                {
+                  label: 'Archetypes',
+                  value: zone.zoneQuestArchetypeCount,
+                },
+                { label: 'Challenges', value: zone.challengeCount },
+                { label: 'Scenarios', value: zone.scenarioCount },
+                {
+                  label: 'Encounters',
+                  value: zone.monsterEncounterCount,
+                },
+                { label: 'Monsters', value: zone.monsterCount },
+                { label: 'Chests', value: zone.treasureChestCount },
+                {
+                  label: 'Fountains',
+                  value: zone.healingFountainCount,
+                },
+              ];
+
+              return (
+                <article
+                  key={zone.id}
+                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">
+                        {zone.name}
+                      </h3>
+                      <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        {zone.importMetroName
+                          ? `Imported from ${zone.importMetroName}`
+                          : 'Manual zone'}
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                      {getZoneActivityLabel(zone)}
+                    </div>
+                  </div>
+
+                  <p className="mt-3 min-h-[60px] text-sm leading-6 text-slate-600">
+                    {zone.description || 'No description yet.'}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(zone.internalTags && zone.internalTags.length > 0
+                      ? zone.internalTags
+                      : ['untagged']
+                    ).map((tag) => (
+                      <span
+                        key={`${zone.id}-${tag}`}
+                        className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Center
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-slate-800">
+                        {formatCoordinate(zone.latitude)},{' '}
+                        {formatCoordinate(zone.longitude)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Boundary
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-slate-800">
+                        {zone.boundaryPointCount} point
+                        {zone.boundaryPointCount === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Updated
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-slate-800">
+                        {formatZoneDate(zone.updatedAt)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Created
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-slate-800">
+                        {formatZoneDate(zone.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {contentCounts.map((item) => (
+                      <div
+                        key={`${zone.id}-${item.label}`}
+                        className="rounded-lg border border-slate-200 px-3 py-2"
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {item.label}
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900">
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-lg bg-indigo-50 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                      Zone Readiness
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-indigo-900">
+                      {getZoneReadinessSummary(zone)}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => navigate(`/zones/${zone.id}`)}
+                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      View Zone
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteZone(zone.id)}
+                      disabled={deletingZoneId === zone.id}
+                      className="rounded-md border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {deletingZoneId === zone.id ? 'Deleting...' : 'Delete Zone'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
       {showCreateZone && (
         <div

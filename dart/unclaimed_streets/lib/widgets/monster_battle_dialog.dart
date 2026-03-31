@@ -899,6 +899,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _cacheVictoryRewardsFromPayload(setupResponse);
       _markSeenPartyActionSequenceFromPayload(setupResponse);
       _updatePartyTurnOrderFromPayload(setupResponse);
+      _applyParticipantResourcesFromPayload(setupResponse);
       _syncPartyMonsterHealthFromPayload(setupResponse);
       _applyMonsterStatusChanges(
         setupResponse,
@@ -1812,7 +1813,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   }
 
   void _applySelfHealsFromResponse(Map<String, dynamic> response) {
-    if (_selfUserId.isEmpty) return;
     final healsRaw = response['heals'];
     if (healsRaw is! List) return;
     for (final raw in healsRaw) {
@@ -1821,17 +1821,34 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           : (raw is Map ? Map<String, dynamic>.from(raw) : null);
       if (heal == null) continue;
       final userId = (heal['userId']?.toString() ?? '').trim();
-      if (userId != _selfUserId) continue;
+      if (userId.isEmpty) continue;
+      final maxHealth = math.max(
+        1,
+        _parseIntValue(
+          heal['maxHealth'],
+          fallback: userId == _selfUserId ? _playerMaxHealth : 1,
+        ),
+      );
       final nextHealth = _parseIntValue(
         heal['health'],
-        fallback: _playerHealth,
-      ).clamp(0, _playerMaxHealth).toInt();
-      if (widget.isPartyBattle && nextHealth > _playerHealth) {
-        _allowPartySelfHealthIncreaseSync();
+        fallback: userId == _selfUserId ? _playerHealth : 0,
+      ).clamp(0, maxHealth).toInt();
+      if (userId == _selfUserId) {
+        if (widget.isPartyBattle && nextHealth > _playerHealth) {
+          _allowPartySelfHealthIncreaseSync();
+        }
+        _playerHealth = nextHealth;
+        _playerMaxHealth = maxHealth;
+        _syncSelfAllyFromLocalResources();
+        continue;
       }
-      _playerHealth = nextHealth;
-      _syncSelfAllyFromLocalResources();
-      return;
+      final allyIndex = _partyAllies.indexWhere(
+        (ally) => ally.userId == userId,
+      );
+      if (allyIndex < 0) continue;
+      final ally = _partyAllies[allyIndex];
+      ally.maxHealth = maxHealth;
+      ally.currentHealth = nextHealth;
     }
   }
 

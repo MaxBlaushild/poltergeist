@@ -94,6 +94,12 @@ Rules:
 - Every step must include 2-5 locationMetadataTags.
 - locationArchetypeName must be selected from the allowed list exactly when source is "location".
 - monsterTemplateNames must be selected from the allowed list exactly for monster steps.
+- Challenge steps must be concrete, enjoyable real-world tasks the player can actually complete at the location right now.
+- A challenge must be gradable from the player's submission alone.
+- Good challenge patterns: photograph a specific detail, spot and record a pattern, identify something visible, compare two visible features, describe ambience or signage actually present on site.
+- Never make a challenge depend on fictional missing objects, hidden clues, NPC cooperation, interviewing strangers, asking around, or facts that may not exist at the real location.
+- If the content is about how the player would help, investigate, negotiate, persuade, intervene, solve a problem, or respond to a roleplaying situation, that is a scenario step instead of a challenge step.
+- challengeQuestion should be an imperative action, not a mystery question.
 - Make challengeQuestion and challengeDescription explicit and production-usable.
 - Make scenarioPrompt explicit and production-usable.
 - Make the content materially distinct across the batch.
@@ -536,6 +542,19 @@ func sanitizeQuestArchetypeSuggestionStep(
 			step.ChallengeDescription = "Generated challenge template."
 			warnings = append(warnings, "challenge description was empty")
 		}
+		if shouldConvertSuggestionChallengeToScenario(step.ChallengeQuestion, step.ChallengeDescription) {
+			prompt := buildScenarioPromptFromSuggestionChallenge(step)
+			step.Content = "scenario"
+			step.ScenarioPrompt = prompt
+			step.ScenarioOpenEnded = true
+			step.ScenarioBeats = nil
+			step.ChallengeQuestion = ""
+			step.ChallengeDescription = ""
+			step.ChallengeSubmissionType = ""
+			step.ChallengeProficiency = nil
+			step.ChallengeStatTags = nil
+			warnings = append(warnings, "challenge read like a roleplaying or investigation scenario and was converted to an open-ended scenario")
+		}
 	case "scenario":
 		step.ScenarioPrompt = strings.TrimSpace(payload.ScenarioPrompt)
 		if step.ScenarioPrompt == "" {
@@ -564,6 +583,92 @@ func sanitizeQuestArchetypeSuggestionStep(
 	}
 
 	return step, warnings
+}
+
+var suggestionChallengeScenarioLikePhrases = []string{
+	"interview locals",
+	"ask locals",
+	"ask around",
+	"search the area",
+	"search for clues",
+	"find clues",
+	"look for clues",
+	"track down",
+	"find out",
+	"figure out",
+	"convince",
+	"persuade",
+	"negotiate",
+	"mediate",
+	"resolve the dispute",
+	"solve the problem",
+	"help settle",
+	"what do you do",
+	"how would you",
+	"how do you",
+	"decide how",
+	"respond to",
+	"intervene",
+	"missing sketchbook",
+	"missing journal",
+	"missing item",
+	"lost sketchbook",
+	"lost journal",
+}
+
+func shouldConvertSuggestionChallengeToScenario(question string, description string) bool {
+	trimmedQuestion := strings.TrimSpace(strings.ToLower(question))
+	if trimmedQuestion == "" {
+		return false
+	}
+
+	if strings.HasSuffix(trimmedQuestion, "?") {
+		return true
+	}
+
+	for _, prefix := range []string{"where ", "who ", "why ", "how ", "what ", "when ", "which "} {
+		if strings.HasPrefix(trimmedQuestion, prefix) {
+			return true
+		}
+	}
+
+	combined := strings.ToLower(strings.TrimSpace(question + " " + description))
+	for _, phrase := range suggestionChallengeScenarioLikePhrases {
+		if strings.Contains(combined, phrase) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func buildScenarioPromptFromSuggestionChallenge(step models.QuestArchetypeSuggestionStep) string {
+	location := strings.TrimSpace(step.LocationConcept)
+	if location == "" {
+		location = "location"
+	}
+
+	problem := strings.TrimSpace(step.ChallengeDescription)
+	if problem == "" {
+		problem = strings.TrimSpace(step.ChallengeQuestion)
+	}
+	problem = ensureSuggestionSentence(problem)
+	if problem == "" {
+		return fmt.Sprintf("At the %s, a complication unfolds that needs your response. What do you do?", location)
+	}
+	return fmt.Sprintf("At the %s, this complication unfolds: %s What do you do?", location, problem)
+}
+
+func ensureSuggestionSentence(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return ""
+	}
+	last := trimmed[len(trimmed)-1]
+	if last == '.' || last == '!' || last == '?' {
+		return trimmed
+	}
+	return trimmed + "."
 }
 
 func normalizeSuggestionSource(raw string) string {

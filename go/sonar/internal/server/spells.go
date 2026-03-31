@@ -79,6 +79,17 @@ type generatedAbilityPayload struct {
 	Techniques []jobs.SpellCreationSpec `json:"techniques"`
 }
 
+type generatedSpellProgressionVariantFlavorEnvelope struct {
+	Variants []generatedSpellProgressionVariantFlavor `json:"variants"`
+}
+
+type generatedSpellProgressionVariantFlavor struct {
+	LevelBand    int    `json:"levelBand"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	AbilityLevel int    `json:"abilityLevel"`
+}
+
 const generateAbilitiesPromptTemplate = `
 You are designing %d original %s for a fantasy action RPG.
 
@@ -106,6 +117,42 @@ Respond as:
     }
   ]
 }
+`
+
+const generateSpellProgressionVariantFlavorTemplate = `
+You are designing missing level-band variants for a fantasy RPG %s progression.
+
+Seed ability:
+- Name: %s
+- School: %s
+- Description: %s
+- Effect text: %s
+
+Missing variants to create:
+%s
+
+Existing ability names to avoid:
+%s
+
+Return JSON only:
+{
+  "variants": [
+    {
+      "levelBand": 10,
+      "name": "2-4 words",
+      "description": "one vivid line, 8-18 words"
+    }
+  ]
+}
+
+Rules:
+- Each name should feel related to the seed ability, but not be formulaic.
+- Make the names feel like a true progression in intensity across the bands.
+- Keep names distinct from each other and from the avoid list.
+- Descriptions must be a single flavorful line with no level numbers, no tier labels, and no meta commentary.
+- Spell descriptions should feel magical; technique descriptions should feel physical and martial.
+- Do not mention progression bands, levels, rarity, or game systems.
+- No copyrighted franchises or references.
 `
 
 var spellBulkSeeds = []jobs.SpellCreationSpec{
@@ -211,6 +258,130 @@ func nextUniqueAbilityName(base string, used map[string]struct{}, abilityType mo
 		candidate = fmt.Sprintf("%s %d", trimmed, suffix)
 		suffix++
 	}
+}
+
+func extractGeneratedJSONObject(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "```") {
+		trimmed = strings.TrimPrefix(trimmed, "```json")
+		trimmed = strings.TrimPrefix(trimmed, "```JSON")
+		trimmed = strings.TrimPrefix(trimmed, "```")
+		trimmed = strings.TrimSuffix(trimmed, "```")
+		trimmed = strings.TrimSpace(trimmed)
+	}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		return trimmed[start : end+1]
+	}
+	return trimmed
+}
+
+func sanitizeGeneratedSpellProgressionVariantName(value string) string {
+	trimmed := strings.TrimSpace(value)
+	trimmed = strings.Trim(trimmed, "\"'`")
+	trimmed = strings.Join(strings.Fields(trimmed), " ")
+	return strings.TrimSpace(trimmed)
+}
+
+func sanitizeGeneratedSpellProgressionVariantDescription(value string) string {
+	trimmed := stripSpellProgressionMetaSentences(value)
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(trimmed), " ")
+}
+
+func parseGeneratedSpellProgressionVariantFlavors(
+	raw string,
+) (map[int]generatedSpellProgressionVariantFlavor, error) {
+	parsed := generatedSpellProgressionVariantFlavorEnvelope{}
+	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(raw)), &parsed); err != nil {
+		return nil, err
+	}
+
+	byBand := make(map[int]generatedSpellProgressionVariantFlavor, len(parsed.Variants))
+	for _, variant := range parsed.Variants {
+		levelBand := variant.LevelBand
+		if levelBand <= 0 {
+			levelBand = variant.AbilityLevel
+		}
+		levelBand = normalizeSpellProgressionBand(levelBand)
+		if levelBand <= 0 {
+			continue
+		}
+		variant.LevelBand = levelBand
+		variant.Name = sanitizeGeneratedSpellProgressionVariantName(variant.Name)
+		variant.Description = sanitizeGeneratedSpellProgressionVariantDescription(variant.Description)
+		byBand[levelBand] = variant
+	}
+	return byBand, nil
+}
+
+func formatSpellProgressionVariantPromptLines(
+	seed *models.Spell,
+	seedBand int,
+	targetBands []int,
+	abilityType models.SpellAbilityType,
+) string {
+	lines := make([]string, 0, len(targetBands))
+	for _, targetBand := range targetBands {
+		targetLevel := spellProgressionTargetLevelForBand(targetBand)
+		effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel, abilityType)
+		lines = append(lines, fmt.Sprintf(
+			"- Band %d: target level %d, effect text: %s",
+			targetBand,
+			targetLevel,
+			buildSpellProgressionEffectText(effects),
+		))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (s *server) generateSpellProgressionVariantFlavors(
+	seed *models.Spell,
+	seedBand int,
+	targetBands []int,
+	usedNames map[string]struct{},
+	abilityType models.SpellAbilityType,
+) map[int]generatedSpellProgressionVariantFlavor {
+	if s.deepPriest == nil || seed == nil || len(targetBands) == 0 {
+		return nil
+	}
+
+	abilityLabel := "spell"
+	if abilityType == models.SpellAbilityTypeTechnique {
+		abilityLabel = "technique"
+	}
+
+	existingNames := make([]string, 0, len(usedNames))
+	for usedName := range usedNames {
+		if trimmed := strings.TrimSpace(usedName); trimmed != "" {
+			existingNames = append(existingNames, trimmed)
+		}
+	}
+
+	prompt := fmt.Sprintf(
+		generateSpellProgressionVariantFlavorTemplate,
+		abilityLabel,
+		strings.TrimSpace(seed.Name),
+		strings.TrimSpace(seed.SchoolOfMagic),
+		strings.TrimSpace(seed.Description),
+		strings.TrimSpace(seed.EffectText),
+		formatSpellProgressionVariantPromptLines(seed, seedBand, targetBands, abilityType),
+		formatAbilityNamesForPrompt(existingNames),
+	)
+	answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return nil
+	}
+
+	parsed, err := parseGeneratedSpellProgressionVariantFlavors(answer.Answer)
+	if err != nil {
+		return nil
+	}
+	return parsed
 }
 
 func clampBulkSpellManaCost(manaCost int, abilityType models.SpellAbilityType) int {
@@ -1404,16 +1575,16 @@ func spellProgressionTargetAmount(
 ) int {
 	normalizedBand := normalizeSpellProgressionBand(levelBand)
 	if effectType == models.SpellEffectTypeDealDamage {
-		damagePerLevel := 5
+		damagePerLevel := 10
 		if abilityType == models.SpellAbilityTypeTechnique {
-			damagePerLevel = 4
+			damagePerLevel = 8
 		}
 		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
 	if effectType == models.SpellEffectTypeDealDamageAllEnemies {
-		damagePerLevel := 4
+		damagePerLevel := 6
 		if abilityType == models.SpellAbilityTypeTechnique {
-			damagePerLevel = 3
+			damagePerLevel = 5
 		}
 		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
@@ -1558,61 +1729,61 @@ func spellProgressionTargetManaCost(
 	switch effectType {
 	case models.SpellEffectTypeDealDamage:
 		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
-			10: 16,
-			25: 36,
-			50: 90,
-			70: 180,
+			10: 32,
+			25: 72,
+			50: 180,
+			70: 360,
 		})
 		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
-			10: 0.09,
-			25: 0.12,
-			50: 0.17,
-			70: 0.22,
+			10: 0.18,
+			25: 0.24,
+			50: 0.34,
+			70: 0.44,
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
 	case models.SpellEffectTypeDealDamageAllEnemies:
 		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
-			10: 20,
-			25: 48,
-			50: 120,
-			70: 240,
+			10: 40,
+			25: 96,
+			50: 240,
+			70: 480,
 		})
 		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
-			10: 0.11,
-			25: 0.16,
-			50: 0.23,
-			70: 0.30,
+			10: 0.22,
+			25: 0.32,
+			50: 0.46,
+			70: 0.60,
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
 	case models.SpellEffectTypeRestoreLifePartyMember:
 		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
-			10: 14,
-			25: 30,
-			50: 76,
-			70: 155,
+			10: 28,
+			25: 60,
+			50: 152,
+			70: 310,
 		})
 		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
-			10: 0.08,
-			25: 0.11,
-			50: 0.15,
-			70: 0.19,
+			10: 0.16,
+			25: 0.22,
+			50: 0.30,
+			70: 0.38,
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
 	case models.SpellEffectTypeRestoreLifeAllParty:
 		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
-			10: 18,
-			25: 42,
-			50: 105,
-			70: 210,
+			10: 36,
+			25: 84,
+			50: 210,
+			70: 420,
 		})
 		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
-			10: 0.10,
-			25: 0.14,
-			50: 0.20,
-			70: 0.27,
+			10: 0.20,
+			25: 0.28,
+			50: 0.40,
+			70: 0.54,
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
@@ -1621,17 +1792,17 @@ func spellProgressionTargetManaCost(
 		models.SpellEffectTypeApplyDetrimentalAll,
 		models.SpellEffectTypeRemoveDetrimental:
 		return spellProgressionBandFloor(targetBand, map[int]int{
-			10: 12,
-			25: 26,
-			50: 64,
-			70: 130,
+			10: 24,
+			25: 52,
+			50: 128,
+			70: 260,
 		})
 	default:
 		return spellProgressionBandFloor(targetBand, map[int]int{
-			10: 10,
-			25: 22,
-			50: 56,
-			70: 112,
+			10: 20,
+			25: 44,
+			50: 112,
+			70: 224,
 		})
 	}
 }
@@ -1664,8 +1835,8 @@ func scaleSpellProgressionManaCost(
 	if scaled < 1 {
 		return 1
 	}
-	if scaled > 300 {
-		return 300
+	if scaled > 600 {
+		return 600
 	}
 	return scaled
 }
@@ -1718,6 +1889,28 @@ func buildScaledSpellProgressionEffects(
 				scaledStatus.IntelligenceMod = scaleSpellProgressionValue(status.IntelligenceMod, seedBand, targetBand, 0.4)
 				scaledStatus.WisdomMod = scaleSpellProgressionValue(status.WisdomMod, seedBand, targetBand, 0.4)
 				scaledStatus.CharismaMod = scaleSpellProgressionValue(status.CharismaMod, seedBand, targetBand, 0.4)
+				scaledStatus.PhysicalDamageBonusPercent = scaleSpellProgressionValue(status.PhysicalDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.PiercingDamageBonusPercent = scaleSpellProgressionValue(status.PiercingDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.SlashingDamageBonusPercent = scaleSpellProgressionValue(status.SlashingDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.BludgeoningDamageBonusPercent = scaleSpellProgressionValue(status.BludgeoningDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.FireDamageBonusPercent = scaleSpellProgressionValue(status.FireDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.IceDamageBonusPercent = scaleSpellProgressionValue(status.IceDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.LightningDamageBonusPercent = scaleSpellProgressionValue(status.LightningDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.PoisonDamageBonusPercent = scaleSpellProgressionValue(status.PoisonDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.ArcaneDamageBonusPercent = scaleSpellProgressionValue(status.ArcaneDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.HolyDamageBonusPercent = scaleSpellProgressionValue(status.HolyDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.ShadowDamageBonusPercent = scaleSpellProgressionValue(status.ShadowDamageBonusPercent, seedBand, targetBand, 0.35)
+				scaledStatus.PhysicalResistancePercent = scaleSpellProgressionValue(status.PhysicalResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.PiercingResistancePercent = scaleSpellProgressionValue(status.PiercingResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.SlashingResistancePercent = scaleSpellProgressionValue(status.SlashingResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.BludgeoningResistancePercent = scaleSpellProgressionValue(status.BludgeoningResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.FireResistancePercent = scaleSpellProgressionValue(status.FireResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.IceResistancePercent = scaleSpellProgressionValue(status.IceResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.LightningResistancePercent = scaleSpellProgressionValue(status.LightningResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.PoisonResistancePercent = scaleSpellProgressionValue(status.PoisonResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.ArcaneResistancePercent = scaleSpellProgressionValue(status.ArcaneResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.HolyResistancePercent = scaleSpellProgressionValue(status.HolyResistancePercent, seedBand, targetBand, 0.35)
+				scaledStatus.ShadowResistancePercent = scaleSpellProgressionValue(status.ShadowResistancePercent, seedBand, targetBand, 0.35)
 				statuses = append(statuses, scaledStatus)
 			}
 			next.StatusesToApply = statuses
@@ -1915,23 +2108,34 @@ func buildSpellProgressionVariant(
 	seedBand int,
 	targetBand int,
 	usedNames map[string]struct{},
+	flavorOverride *generatedSpellProgressionVariantFlavor,
 	abilityType models.SpellAbilityType,
 ) *models.Spell {
 	targetLevel := spellProgressionTargetLevelForBand(targetBand)
 	primaryEffect := spellProgressionPrimaryEffectType(seed)
-	theme := spellProgressionTheme(seed)
-	bandTerm := spellProgressionBandTerm(primaryEffect, targetLevel, abilityType)
-	name := nextUniqueAbilityName(
-		fmt.Sprintf("%s %s", theme, bandTerm),
-		usedNames,
-		abilityType,
+	fallbackName := fmt.Sprintf(
+		"%s %s",
+		spellProgressionTheme(seed),
+		spellProgressionBandTerm(primaryEffect, targetLevel, abilityType),
 	)
+	nameBase := fallbackName
+	if flavorOverride != nil && strings.TrimSpace(flavorOverride.Name) != "" {
+		nameBase = flavorOverride.Name
+	}
+	name := nextUniqueAbilityName(nameBase, usedNames, abilityType)
 	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel, abilityType)
 	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetLevel, abilityType)
+	cooldownTurns := 0
 	if abilityType == models.SpellAbilityTypeTechnique {
 		manaCost = 0
+		if seed != nil && seed.CooldownTurns > 0 {
+			cooldownTurns = seed.CooldownTurns
+		}
 	}
 	description := buildSpellProgressionVariantFlavorDescription(seed, primaryEffect, targetLevel, abilityType)
+	if flavorOverride != nil && strings.TrimSpace(flavorOverride.Description) != "" {
+		description = flavorOverride.Description
+	}
 	emptyError := ""
 	now := time.Now()
 	return &models.Spell{
@@ -1945,6 +2149,7 @@ func buildSpellProgressionVariant(
 		ImageGenerationError:  &emptyError,
 		AbilityType:           abilityType,
 		AbilityLevel:          targetLevel,
+		CooldownTurns:         cooldownTurns,
 		EffectText:            buildSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
 		ManaCost:              manaCost,
@@ -2946,11 +3151,24 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 	}
 
 	createdSpells := make([]models.Spell, 0)
+	missingBands := make([]int, 0, len(spellProgressionLevelBands))
 	for _, targetBand := range spellProgressionLevelBands {
 		if _, occupied := occupiedBands[targetBand]; occupied {
 			continue
 		}
-		variant := buildSpellProgressionVariant(seedSpell, seedBand, targetBand, usedNames, abilityType)
+		missingBands = append(missingBands, targetBand)
+	}
+	llmFlavors := s.generateSpellProgressionVariantFlavors(seedSpell, seedBand, missingBands, usedNames, abilityType)
+	for _, targetBand := range spellProgressionLevelBands {
+		if _, occupied := occupiedBands[targetBand]; occupied {
+			continue
+		}
+		var flavorOverride *generatedSpellProgressionVariantFlavor
+		if llmFlavor, exists := llmFlavors[targetBand]; exists {
+			llmFlavorCopy := llmFlavor
+			flavorOverride = &llmFlavorCopy
+		}
+		variant := buildSpellProgressionVariant(seedSpell, seedBand, targetBand, usedNames, flavorOverride, abilityType)
 		if err := s.dbClient.Spell().Create(ctx, variant); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -3474,24 +3692,46 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					return
 				}
 				status := &models.MonsterStatus{
-					UserID:          user.ID,
-					BattleID:        monsterBattle.ID,
-					MonsterID:       *targetMonsterID,
-					Name:            name,
-					Description:     strings.TrimSpace(statusTemplate.Description),
-					Effect:          strings.TrimSpace(statusTemplate.Effect),
-					Positive:        statusTemplate.Positive,
-					EffectType:      normalizeMonsterStatusEffectType(statusTemplate.EffectType),
-					DamagePerTick:   statusTemplate.DamagePerTick,
-					HealthPerTick:   statusTemplate.HealthPerTick,
-					StrengthMod:     statusTemplate.StrengthMod,
-					DexterityMod:    statusTemplate.DexterityMod,
-					ConstitutionMod: statusTemplate.ConstitutionMod,
-					IntelligenceMod: statusTemplate.IntelligenceMod,
-					WisdomMod:       statusTemplate.WisdomMod,
-					CharismaMod:     statusTemplate.CharismaMod,
-					StartedAt:       now,
-					ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+					UserID:                        user.ID,
+					BattleID:                      monsterBattle.ID,
+					MonsterID:                     *targetMonsterID,
+					Name:                          name,
+					Description:                   strings.TrimSpace(statusTemplate.Description),
+					Effect:                        strings.TrimSpace(statusTemplate.Effect),
+					Positive:                      statusTemplate.Positive,
+					EffectType:                    normalizeMonsterStatusEffectType(statusTemplate.EffectType),
+					DamagePerTick:                 statusTemplate.DamagePerTick,
+					HealthPerTick:                 statusTemplate.HealthPerTick,
+					StrengthMod:                   statusTemplate.StrengthMod,
+					DexterityMod:                  statusTemplate.DexterityMod,
+					ConstitutionMod:               statusTemplate.ConstitutionMod,
+					IntelligenceMod:               statusTemplate.IntelligenceMod,
+					WisdomMod:                     statusTemplate.WisdomMod,
+					CharismaMod:                   statusTemplate.CharismaMod,
+					PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+					PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+					SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+					BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+					FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+					IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+					LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+					PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+					ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+					HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+					ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+					PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+					PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+					SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+					BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+					FireResistancePercent:         statusTemplate.FireResistancePercent,
+					IceResistancePercent:          statusTemplate.IceResistancePercent,
+					LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+					PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+					ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+					HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+					ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+					StartedAt:                     now,
+					ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 				}
 				if err := s.dbClient.MonsterStatus().Create(ctx, status); err != nil {
 					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -3540,23 +3780,45 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					continue
 				}
 				status := &models.UserStatus{
-					UserID:          statusTargetUserID,
-					Name:            name,
-					Description:     strings.TrimSpace(statusTemplate.Description),
-					Effect:          strings.TrimSpace(statusTemplate.Effect),
-					Positive:        statusTemplate.Positive,
-					EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
-					DamagePerTick:   statusTemplate.DamagePerTick,
-					HealthPerTick:   statusTemplate.HealthPerTick,
-					ManaPerTick:     statusTemplate.ManaPerTick,
-					StrengthMod:     statusTemplate.StrengthMod,
-					DexterityMod:    statusTemplate.DexterityMod,
-					ConstitutionMod: statusTemplate.ConstitutionMod,
-					IntelligenceMod: statusTemplate.IntelligenceMod,
-					WisdomMod:       statusTemplate.WisdomMod,
-					CharismaMod:     statusTemplate.CharismaMod,
-					StartedAt:       now,
-					ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+					UserID:                        statusTargetUserID,
+					Name:                          name,
+					Description:                   strings.TrimSpace(statusTemplate.Description),
+					Effect:                        strings.TrimSpace(statusTemplate.Effect),
+					Positive:                      statusTemplate.Positive,
+					EffectType:                    normalizeUserStatusEffectType(statusTemplate.EffectType),
+					DamagePerTick:                 statusTemplate.DamagePerTick,
+					HealthPerTick:                 statusTemplate.HealthPerTick,
+					ManaPerTick:                   statusTemplate.ManaPerTick,
+					StrengthMod:                   statusTemplate.StrengthMod,
+					DexterityMod:                  statusTemplate.DexterityMod,
+					ConstitutionMod:               statusTemplate.ConstitutionMod,
+					IntelligenceMod:               statusTemplate.IntelligenceMod,
+					WisdomMod:                     statusTemplate.WisdomMod,
+					CharismaMod:                   statusTemplate.CharismaMod,
+					PhysicalDamageBonusPercent:    statusTemplate.PhysicalDamageBonusPercent,
+					PiercingDamageBonusPercent:    statusTemplate.PiercingDamageBonusPercent,
+					SlashingDamageBonusPercent:    statusTemplate.SlashingDamageBonusPercent,
+					BludgeoningDamageBonusPercent: statusTemplate.BludgeoningDamageBonusPercent,
+					FireDamageBonusPercent:        statusTemplate.FireDamageBonusPercent,
+					IceDamageBonusPercent:         statusTemplate.IceDamageBonusPercent,
+					LightningDamageBonusPercent:   statusTemplate.LightningDamageBonusPercent,
+					PoisonDamageBonusPercent:      statusTemplate.PoisonDamageBonusPercent,
+					ArcaneDamageBonusPercent:      statusTemplate.ArcaneDamageBonusPercent,
+					HolyDamageBonusPercent:        statusTemplate.HolyDamageBonusPercent,
+					ShadowDamageBonusPercent:      statusTemplate.ShadowDamageBonusPercent,
+					PhysicalResistancePercent:     statusTemplate.PhysicalResistancePercent,
+					PiercingResistancePercent:     statusTemplate.PiercingResistancePercent,
+					SlashingResistancePercent:     statusTemplate.SlashingResistancePercent,
+					BludgeoningResistancePercent:  statusTemplate.BludgeoningResistancePercent,
+					FireResistancePercent:         statusTemplate.FireResistancePercent,
+					IceResistancePercent:          statusTemplate.IceResistancePercent,
+					LightningResistancePercent:    statusTemplate.LightningResistancePercent,
+					PoisonResistancePercent:       statusTemplate.PoisonResistancePercent,
+					ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
+					HolyResistancePercent:         statusTemplate.HolyResistancePercent,
+					ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
+					StartedAt:                     now,
+					ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 				}
 				if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
 					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

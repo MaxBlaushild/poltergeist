@@ -314,6 +314,7 @@ class CharacterStatsProvider with ChangeNotifier {
       maxMana: current.maxMana,
       equipmentBonuses: current.equipmentBonuses,
       statusBonuses: current.statusBonuses,
+      affinityDamageBonuses: current.affinityDamageBonuses,
       unspentPoints: current.unspentPoints,
       level: current.level,
       proficiencies: current.proficiencies,

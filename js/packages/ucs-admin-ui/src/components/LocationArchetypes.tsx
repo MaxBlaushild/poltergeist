@@ -1,13 +1,18 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useCandidates } from "@poltergeist/hooks";
-import { Candidate, LocationArchetype, LocationArchetypeChallenge, QuestNodeSubmissionType } from "@poltergeist/types";
-import { useAPI } from "@poltergeist/contexts";
-import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
-import "./questArchetypeTheme.css";
+import React, { useEffect, useMemo, useState } from 'react';
+import { useCandidates } from '@poltergeist/hooks';
+import {
+  Candidate,
+  LocationArchetype,
+  LocationArchetypeChallenge,
+  QuestNodeSubmissionType,
+} from '@poltergeist/types';
+import { useAPI } from '@poltergeist/contexts';
+import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
+import './questArchetypeTheme.css';
 
 const buildEmptyArchetype = (): LocationArchetype => ({
-  id: "",
-  name: "",
+  id: '',
+  name: '',
   includedTypes: [],
   excludedTypes: [],
   challenges: [],
@@ -37,9 +42,14 @@ type PlaceTypeImporterProps = {
   onApplyTypes: (types: string[]) => void;
 };
 
-const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTypes }) => {
-  const [query, setQuery] = useState("");
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({
+  label,
+  onApplyTypes,
+}) => {
+  const [query, setQuery] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
+    null
+  );
   const trimmedQuery = query.trim();
   const { candidates, loading } = useCandidates(trimmedQuery);
 
@@ -75,12 +85,16 @@ const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTyp
                   key={candidate.place_id}
                   type="button"
                   className={`qa-combobox-option ${
-                    selectedCandidate?.place_id === candidate.place_id ? "is-active" : ""
+                    selectedCandidate?.place_id === candidate.place_id
+                      ? 'is-active'
+                      : ''
                   }`}
                   onClick={() => setSelectedCandidate(candidate)}
                 >
                   <div className="qa-option-title">{candidate.name}</div>
-                  <div className="qa-option-sub">{candidate.formatted_address}</div>
+                  <div className="qa-option-sub">
+                    {candidate.formatted_address}
+                  </div>
                 </button>
               ))}
           </div>
@@ -93,10 +107,14 @@ const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTyp
           <div className="qa-option-title" style={{ marginTop: 6 }}>
             {selectedCandidate.name}
           </div>
-          <div className="qa-option-sub">{selectedCandidate.formatted_address}</div>
+          <div className="qa-option-sub">
+            {selectedCandidate.formatted_address}
+          </div>
           <div className="qa-inline" style={{ marginTop: 10 }}>
             {selectedTypes.length === 0 ? (
-              <span className="qa-empty">No place types found on this result.</span>
+              <span className="qa-empty">
+                No place types found on this result.
+              </span>
             ) : (
               preview.preview.map((type) => (
                 <span key={type} className="qa-chip accent">
@@ -115,11 +133,12 @@ const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTyp
               disabled={selectedTypes.length === 0}
               onClick={() => {
                 onApplyTypes(selectedTypes);
-                setQuery("");
+                setQuery('');
                 setSelectedCandidate(null);
               }}
             >
-              Add {selectedTypes.length} type{selectedTypes.length === 1 ? "" : "s"}
+              Add {selectedTypes.length} type
+              {selectedTypes.length === 1 ? '' : 's'}
             </button>
             <button
               type="button"
@@ -144,53 +163,113 @@ type GeneratedLocationChallenge = {
 };
 
 const LocationArchetypes: React.FC = () => {
-  const { locationArchetypes, createLocationArchetype, updateLocationArchetype, deleteLocationArchetype, placeTypes } =
-    useQuestArchetypes();
+  const {
+    locationArchetypes,
+    createLocationArchetype,
+    updateLocationArchetype,
+    deleteLocationArchetype,
+    placeTypes,
+    refreshLocationArchetypes,
+  } = useQuestArchetypes();
   const { apiClient } = useAPI();
 
   const submissionTypeOptions = [
-    { value: "photo", label: "Photo" },
-    { value: "text", label: "Text" },
-    { value: "video", label: "Video" },
+    { value: 'photo', label: 'Photo' },
+    { value: 'text', label: 'Text' },
+    { value: 'video', label: 'Video' },
   ];
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createDraft, setCreateDraft] = useState<LocationArchetype>(buildEmptyArchetype());
-  const [createIncludedQuery, setCreateIncludedQuery] = useState("");
-  const [createExcludedQuery, setCreateExcludedQuery] = useState("");
-  const [createChallengeQuery, setCreateChallengeQuery] = useState("");
-  const [createChallengeInputType, setCreateChallengeInputType] = useState<QuestNodeSubmissionType>("photo");
-  const [createChallengeProficiency, setCreateChallengeProficiency] = useState("");
-  const [createChallengeDifficulty, setCreateChallengeDifficulty] = useState<number>(0);
-  const [createGeneratedChallenges, setCreateGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
+  const [createDraft, setCreateDraft] = useState<LocationArchetype>(
+    buildEmptyArchetype()
+  );
+  const [createIncludedQuery, setCreateIncludedQuery] = useState('');
+  const [createExcludedQuery, setCreateExcludedQuery] = useState('');
+  const [createChallengeQuery, setCreateChallengeQuery] = useState('');
+  const [createChallengeInputType, setCreateChallengeInputType] =
+    useState<QuestNodeSubmissionType>('photo');
+  const [createChallengeProficiency, setCreateChallengeProficiency] =
+    useState('');
+  const [createChallengeDifficulty, setCreateChallengeDifficulty] =
+    useState<number>(0);
+  const [createGeneratedChallenges, setCreateGeneratedChallenges] = useState<
+    GeneratedLocationChallenge[]
+  >([]);
   const [createGenerating, setCreateGenerating] = useState(false);
-  const [createGenerateError, setCreateGenerateError] = useState<string | null>(null);
+  const [createGenerateError, setCreateGenerateError] = useState<string | null>(
+    null
+  );
+  const [queueingBatchGeneration, setQueueingBatchGeneration] = useState(false);
+  const [batchGenerationMessage, setBatchGenerationMessage] = useState<
+    string | null
+  >(null);
+  const [batchGenerationError, setBatchGenerationError] = useState<
+    string | null
+  >(null);
 
   const [editDraft, setEditDraft] = useState<LocationArchetype | null>(null);
-  const [editIncludedQuery, setEditIncludedQuery] = useState("");
-  const [editExcludedQuery, setEditExcludedQuery] = useState("");
-  const [editChallengeQuery, setEditChallengeQuery] = useState("");
-  const [editChallengeInputType, setEditChallengeInputType] = useState<QuestNodeSubmissionType>("photo");
-  const [editChallengeProficiency, setEditChallengeProficiency] = useState("");
-  const [editChallengeDifficulty, setEditChallengeDifficulty] = useState<number>(0);
-  const [editGeneratedChallenges, setEditGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
+  const [editIncludedQuery, setEditIncludedQuery] = useState('');
+  const [editExcludedQuery, setEditExcludedQuery] = useState('');
+  const [editChallengeQuery, setEditChallengeQuery] = useState('');
+  const [editChallengeInputType, setEditChallengeInputType] =
+    useState<QuestNodeSubmissionType>('photo');
+  const [editChallengeProficiency, setEditChallengeProficiency] = useState('');
+  const [editChallengeDifficulty, setEditChallengeDifficulty] =
+    useState<number>(0);
+  const [editGeneratedChallenges, setEditGeneratedChallenges] = useState<
+    GeneratedLocationChallenge[]
+  >([]);
   const [editGenerating, setEditGenerating] = useState(false);
-  const [editGenerateError, setEditGenerateError] = useState<string | null>(null);
+  const [editGenerateError, setEditGenerateError] = useState<string | null>(
+    null
+  );
+
+  const queueBatchGeneration = async () => {
+    setQueueingBatchGeneration(true);
+    setBatchGenerationMessage(null);
+    setBatchGenerationError(null);
+    try {
+      const response = await apiClient.post<{ queued: boolean; count: number }>(
+        '/sonar/locationArchetypes/generate',
+        {
+          count: 50,
+        }
+      );
+      setBatchGenerationMessage(
+        `Queued ${response.count} new archetypes. Refreshing the list shortly.`
+      );
+      window.setTimeout(() => {
+        refreshLocationArchetypes().catch((error) => {
+          console.error(
+            'Failed to refresh location archetypes after generation',
+            error
+          );
+        });
+      }, 6000);
+    } catch (error) {
+      console.error('Failed to queue location archetype generation', error);
+      setBatchGenerationError('Failed to queue location archetype generation.');
+    } finally {
+      setQueueingBatchGeneration(false);
+    }
+  };
 
   const filteredArchetypes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return locationArchetypes;
-    return locationArchetypes.filter((archetype) => archetype.name.toLowerCase().includes(query));
+    return locationArchetypes.filter((archetype) =>
+      archetype.name.toLowerCase().includes(query)
+    );
   }, [locationArchetypes, searchQuery]);
 
   const resetCreate = () => {
     setCreateDraft(buildEmptyArchetype());
-    setCreateIncludedQuery("");
-    setCreateExcludedQuery("");
-    setCreateChallengeQuery("");
-    setCreateChallengeInputType("photo");
-    setCreateChallengeProficiency("");
+    setCreateIncludedQuery('');
+    setCreateExcludedQuery('');
+    setCreateChallengeQuery('');
+    setCreateChallengeInputType('photo');
+    setCreateChallengeProficiency('');
     setCreateChallengeDifficulty(0);
     setCreateGeneratedChallenges([]);
     setCreateGenerating(false);
@@ -204,16 +283,17 @@ const LocationArchetypes: React.FC = () => {
       excludedTypes: [...archetype.excludedTypes],
       challenges: archetype.challenges.map((challenge) => ({
         ...challenge,
-        submissionType: (challenge.submissionType ?? "photo") as QuestNodeSubmissionType,
-        proficiency: challenge.proficiency ?? "",
+        submissionType: (challenge.submissionType ??
+          'photo') as QuestNodeSubmissionType,
+        proficiency: challenge.proficiency ?? '',
         difficulty: challenge.difficulty ?? 0,
       })),
     });
-    setEditIncludedQuery("");
-    setEditExcludedQuery("");
-    setEditChallengeQuery("");
-    setEditChallengeInputType("photo");
-    setEditChallengeProficiency("");
+    setEditIncludedQuery('');
+    setEditExcludedQuery('');
+    setEditChallengeQuery('');
+    setEditChallengeInputType('photo');
+    setEditChallengeProficiency('');
     setEditChallengeDifficulty(0);
     setEditGeneratedChallenges([]);
     setEditGenerating(false);
@@ -225,14 +305,17 @@ const LocationArchetypes: React.FC = () => {
     return [...list, value];
   };
 
-  const addChallengeUnique = (list: LocationArchetypeChallenge[], challenge: LocationArchetypeChallenge) => {
-    const proficiencyKey = (challenge.proficiency ?? "").toLowerCase();
+  const addChallengeUnique = (
+    list: LocationArchetypeChallenge[],
+    challenge: LocationArchetypeChallenge
+  ) => {
+    const proficiencyKey = (challenge.proficiency ?? '').toLowerCase();
     const difficultyKey = String(challenge.difficulty ?? 0);
     const key = `${challenge.question.toLowerCase()}|${challenge.submissionType}|${proficiencyKey}|${difficultyKey}`;
     if (
       list.some(
         (item) =>
-          `${item.question.toLowerCase()}|${item.submissionType}|${(item.proficiency ?? "").toLowerCase()}|${String(
+          `${item.question.toLowerCase()}|${item.submissionType}|${(item.proficiency ?? '').toLowerCase()}|${String(
             item.difficulty ?? 0
           )}` === key
       )
@@ -243,7 +326,7 @@ const LocationArchetypes: React.FC = () => {
   };
 
   const formatSubmissionType = (value?: QuestNodeSubmissionType) => {
-    return (value ?? "photo").toUpperCase();
+    return (value ?? 'photo').toUpperCase();
   };
 
   const mergeUniqueChallenges = (
@@ -257,7 +340,10 @@ const LocationArchetypes: React.FC = () => {
     return next;
   };
 
-  const clampChallengePreview = (items: LocationArchetypeChallenge[], limit: number) => {
+  const clampChallengePreview = (
+    items: LocationArchetypeChallenge[],
+    limit: number
+  ) => {
     if (items.length <= limit) {
       return { preview: items, remaining: 0 };
     }
@@ -265,40 +351,55 @@ const LocationArchetypes: React.FC = () => {
   };
 
   const createIncludedOptions = placeTypes
-    .filter((type) => type.toLowerCase().includes(createIncludedQuery.trim().toLowerCase()))
+    .filter((type) =>
+      type.toLowerCase().includes(createIncludedQuery.trim().toLowerCase())
+    )
     .filter((type) => !createDraft.includedTypes.includes(type))
     .slice(0, 8);
 
   const createExcludedOptions = placeTypes
-    .filter((type) => type.toLowerCase().includes(createExcludedQuery.trim().toLowerCase()))
+    .filter((type) =>
+      type.toLowerCase().includes(createExcludedQuery.trim().toLowerCase())
+    )
     .filter((type) => !createDraft.excludedTypes.includes(type))
     .slice(0, 8);
 
   const editIncludedOptions = editDraft
     ? placeTypes
-        .filter((type) => type.toLowerCase().includes(editIncludedQuery.trim().toLowerCase()))
+        .filter((type) =>
+          type.toLowerCase().includes(editIncludedQuery.trim().toLowerCase())
+        )
         .filter((type) => !editDraft.includedTypes.includes(type))
         .slice(0, 8)
     : [];
 
   const editExcludedOptions = editDraft
     ? placeTypes
-        .filter((type) => type.toLowerCase().includes(editExcludedQuery.trim().toLowerCase()))
+        .filter((type) =>
+          type.toLowerCase().includes(editExcludedQuery.trim().toLowerCase())
+        )
         .filter((type) => !editDraft.excludedTypes.includes(type))
         .slice(0, 8)
     : [];
 
   const hydrateGeneratedChallenges = (
-    challenges: { question: string; submissionType: string; proficiency?: string | null; difficulty?: number | null }[]
+    challenges: {
+      question: string;
+      submissionType: string;
+      proficiency?: string | null;
+      difficulty?: number | null;
+    }[]
   ): GeneratedLocationChallenge[] => {
     const seed = Date.now();
     return challenges.map((challenge, index) => ({
       id: `${seed}-${index}-${Math.random().toString(16).slice(2, 6)}`,
       question: challenge.question,
-      submissionType: (challenge.submissionType || "photo") as QuestNodeSubmissionType,
+      submissionType: (challenge.submissionType ||
+        'photo') as QuestNodeSubmissionType,
       proficiency: challenge.proficiency ?? null,
       difficulty:
-        typeof challenge.difficulty === "number" && Number.isFinite(challenge.difficulty)
+        typeof challenge.difficulty === 'number' &&
+        Number.isFinite(challenge.difficulty)
           ? challenge.difficulty
           : 0,
     }));
@@ -306,7 +407,9 @@ const LocationArchetypes: React.FC = () => {
 
   const requestGeneratedChallenges = async (
     draft: LocationArchetype | null,
-    setGenerated: React.Dispatch<React.SetStateAction<GeneratedLocationChallenge[]>>,
+    setGenerated: React.Dispatch<
+      React.SetStateAction<GeneratedLocationChallenge[]>
+    >,
     setGenerating: React.Dispatch<React.SetStateAction<boolean>>,
     setError: React.Dispatch<React.SetStateAction<string | null>>
   ) => {
@@ -321,20 +424,19 @@ const LocationArchetypes: React.FC = () => {
           proficiency?: string | null;
           difficulty?: number | null;
         }[];
-      }>(
-        "/sonar/locationArchetypes/challenges/generate",
-        {
-          name: draft.name,
-          includedTypes: draft.includedTypes,
-          excludedTypes: draft.excludedTypes,
-          allowedSubmissionTypes: submissionTypeOptions.map((option) => option.value),
-          count: 10,
-        }
-      );
+      }>('/sonar/locationArchetypes/challenges/generate', {
+        name: draft.name,
+        includedTypes: draft.includedTypes,
+        excludedTypes: draft.excludedTypes,
+        allowedSubmissionTypes: submissionTypeOptions.map(
+          (option) => option.value
+        ),
+        count: 10,
+      });
       setGenerated(hydrateGeneratedChallenges(response.challenges ?? []));
     } catch (error) {
-      console.error("Failed to generate location challenges", error);
-      setError("Failed to generate challenges.");
+      console.error('Failed to generate location challenges', error);
+      setError('Failed to generate challenges.');
     } finally {
       setGenerating(false);
     }
@@ -348,8 +450,8 @@ const LocationArchetypes: React.FC = () => {
             <div className="qa-kicker">Location Blueprints</div>
             <h1 className="qa-title">Location Archetypes</h1>
             <p className="qa-subtitle">
-              Decide where quests can spawn by shaping included and excluded place types, then attach reusable
-              challenge prompts.
+              Decide where quests can spawn by shaping included and excluded
+              place types, then attach reusable challenge prompts.
             </p>
           </div>
           <div className="qa-hero-actions">
@@ -360,11 +462,34 @@ const LocationArchetypes: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search archetypes..."
             />
-            <button className="qa-btn qa-btn-primary" onClick={() => setShowCreateModal(true)}>
+            <button
+              className="qa-btn qa-btn-outline"
+              onClick={queueBatchGeneration}
+              disabled={queueingBatchGeneration}
+            >
+              {queueingBatchGeneration
+                ? 'Queueing...'
+                : 'Generate 50 Archetypes'}
+            </button>
+            <button
+              className="qa-btn qa-btn-primary"
+              onClick={() => setShowCreateModal(true)}
+            >
               New Location Archetype
             </button>
           </div>
         </header>
+
+        {batchGenerationMessage && (
+          <p className="qa-muted" style={{ marginTop: 12 }}>
+            {batchGenerationMessage}
+          </p>
+        )}
+        {batchGenerationError && (
+          <p className="qa-muted" style={{ marginTop: 12, color: '#f99b9b' }}>
+            {batchGenerationError}
+          </p>
+        )}
 
         <section className="qa-grid">
           {filteredArchetypes.length === 0 ? (
@@ -378,7 +503,10 @@ const LocationArchetypes: React.FC = () => {
             filteredArchetypes.map((archetype, index) => {
               const includedPreview = clampPreview(archetype.includedTypes, 6);
               const excludedPreview = clampPreview(archetype.excludedTypes, 6);
-              const challengePreview = clampChallengePreview(archetype.challenges, 6);
+              const challengePreview = clampChallengePreview(
+                archetype.challenges,
+                6
+              );
               return (
                 <article
                   key={archetype.id}
@@ -389,18 +517,24 @@ const LocationArchetypes: React.FC = () => {
                     <div>
                       <h3 className="qa-card-title">{archetype.name}</h3>
                       <div className="qa-meta">
-                        {archetype.includedTypes.length} included · {archetype.excludedTypes.length} excluded ·{" "}
+                        {archetype.includedTypes.length} included ·{' '}
+                        {archetype.excludedTypes.length} excluded ·{' '}
                         {archetype.challenges.length} challenges
                       </div>
                     </div>
                     <div className="qa-actions">
-                      <button className="qa-btn qa-btn-outline" onClick={() => openEdit(archetype)}>
+                      <button
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => openEdit(archetype)}
+                      >
                         Edit
                       </button>
                       <button
                         className="qa-btn qa-btn-danger"
                         onClick={() => {
-                          if (window.confirm("Delete this location archetype?")) {
+                          if (
+                            window.confirm('Delete this location archetype?')
+                          ) {
                             deleteLocationArchetype(archetype.id);
                           }
                         }}
@@ -413,19 +547,27 @@ const LocationArchetypes: React.FC = () => {
                   <div className="qa-stat-grid">
                     <div className="qa-stat">
                       <div className="qa-stat-label">Included Types</div>
-                      <div className="qa-stat-value">{archetype.includedTypes.length}</div>
+                      <div className="qa-stat-value">
+                        {archetype.includedTypes.length}
+                      </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Excluded Types</div>
-                      <div className="qa-stat-value">{archetype.excludedTypes.length}</div>
+                      <div className="qa-stat-value">
+                        {archetype.excludedTypes.length}
+                      </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Challenge Prompts</div>
-                      <div className="qa-stat-value">{archetype.challenges.length}</div>
+                      <div className="qa-stat-value">
+                        {archetype.challenges.length}
+                      </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Updated</div>
-                      <div className="qa-stat-value">{new Date(archetype.updatedAt).toLocaleDateString()}</div>
+                      <div className="qa-stat-value">
+                        {new Date(archetype.updatedAt).toLocaleDateString()}
+                      </div>
                     </div>
                   </div>
 
@@ -444,7 +586,9 @@ const LocationArchetypes: React.FC = () => {
                         ))
                       )}
                       {includedPreview.remaining > 0 && (
-                        <span className="qa-chip muted">+{includedPreview.remaining} more</span>
+                        <span className="qa-chip muted">
+                          +{includedPreview.remaining} more
+                        </span>
                       )}
                     </div>
                   </div>
@@ -462,7 +606,9 @@ const LocationArchetypes: React.FC = () => {
                         ))
                       )}
                       {excludedPreview.remaining > 0 && (
-                        <span className="qa-chip muted">+{excludedPreview.remaining} more</span>
+                        <span className="qa-chip muted">
+                          +{excludedPreview.remaining} more
+                        </span>
                       )}
                     </div>
                   </div>
@@ -475,19 +621,25 @@ const LocationArchetypes: React.FC = () => {
                       ) : (
                         challengePreview.preview.map((challenge) => (
                           <span
-                            key={`${challenge.question}-${challenge.submissionType}-${challenge.proficiency ?? ""}-${challenge.difficulty ?? 0}`}
+                            key={`${challenge.question}-${challenge.submissionType}-${challenge.proficiency ?? ''}-${challenge.difficulty ?? 0}`}
                             className="qa-chip success"
                           >
-                            {challenge.question} · {formatSubmissionType(challenge.submissionType)}
-                            {challenge.proficiency ? ` · ${challenge.proficiency}` : ""}
-                            {challenge.difficulty !== undefined && challenge.difficulty !== null
+                            {challenge.question} ·{' '}
+                            {formatSubmissionType(challenge.submissionType)}
+                            {challenge.proficiency
+                              ? ` · ${challenge.proficiency}`
+                              : ''}
+                            {challenge.difficulty !== undefined &&
+                            challenge.difficulty !== null
                               ? ` · Difficulty: ${challenge.difficulty}`
-                              : ""}
+                              : ''}
                           </span>
                         ))
                       )}
                       {challengePreview.remaining > 0 && (
-                        <span className="qa-chip muted">+{challengePreview.remaining} more</span>
+                        <span className="qa-chip muted">
+                          +{challengePreview.remaining} more
+                        </span>
                       )}
                     </div>
                   </div>
@@ -517,7 +669,9 @@ const LocationArchetypes: React.FC = () => {
                   type="text"
                   className="qa-input"
                   value={createDraft.name}
-                  onChange={(e) => setCreateDraft({ ...createDraft, name: e.target.value })}
+                  onChange={(e) =>
+                    setCreateDraft({ ...createDraft, name: e.target.value })
+                  }
                   required
                 />
               </div>
@@ -545,9 +699,12 @@ const LocationArchetypes: React.FC = () => {
                             onClick={() => {
                               setCreateDraft({
                                 ...createDraft,
-                                includedTypes: addUnique(createDraft.includedTypes, type),
+                                includedTypes: addUnique(
+                                  createDraft.includedTypes,
+                                  type
+                                ),
                               });
-                              setCreateIncludedQuery("");
+                              setCreateIncludedQuery('');
                             }}
                           >
                             {type}
@@ -571,7 +728,11 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-empty">No included types yet.</div>
                   ) : (
                     createDraft.includedTypes.map((type) => (
-                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                      <div
+                        key={type}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
                         <span className="qa-chip accent">{type}</span>
                         <button
                           type="button"
@@ -579,7 +740,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setCreateDraft({
                               ...createDraft,
-                              includedTypes: createDraft.includedTypes.filter((value) => value !== type),
+                              includedTypes: createDraft.includedTypes.filter(
+                                (value) => value !== type
+                              ),
                             })
                           }
                         >
@@ -614,9 +777,12 @@ const LocationArchetypes: React.FC = () => {
                             onClick={() => {
                               setCreateDraft({
                                 ...createDraft,
-                                excludedTypes: addUnique(createDraft.excludedTypes, type),
+                                excludedTypes: addUnique(
+                                  createDraft.excludedTypes,
+                                  type
+                                ),
                               });
-                              setCreateExcludedQuery("");
+                              setCreateExcludedQuery('');
                             }}
                           >
                             {type}
@@ -640,7 +806,11 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-empty">No excluded types yet.</div>
                   ) : (
                     createDraft.excludedTypes.map((type) => (
-                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                      <div
+                        key={type}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
                         <span className="qa-chip danger">{type}</span>
                         <button
                           type="button"
@@ -648,7 +818,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setCreateDraft({
                               ...createDraft,
-                              excludedTypes: createDraft.excludedTypes.filter((value) => value !== type),
+                              excludedTypes: createDraft.excludedTypes.filter(
+                                (value) => value !== type
+                              ),
                             })
                           }
                         >
@@ -673,7 +845,11 @@ const LocationArchetypes: React.FC = () => {
                   <select
                     className="qa-select"
                     value={createChallengeInputType}
-                    onChange={(event) => setCreateChallengeInputType(event.target.value as QuestNodeSubmissionType)}
+                    onChange={(event) =>
+                      setCreateChallengeInputType(
+                        event.target.value as QuestNodeSubmissionType
+                      )
+                    }
                   >
                     {submissionTypeOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -685,7 +861,9 @@ const LocationArchetypes: React.FC = () => {
                     type="text"
                     className="qa-input"
                     value={createChallengeProficiency}
-                    onChange={(event) => setCreateChallengeProficiency(event.target.value)}
+                    onChange={(event) =>
+                      setCreateChallengeProficiency(event.target.value)
+                    }
                     placeholder="Proficiency (optional)"
                   />
                   <input
@@ -693,7 +871,11 @@ const LocationArchetypes: React.FC = () => {
                     min={0}
                     className="qa-input"
                     value={createChallengeDifficulty}
-                    onChange={(event) => setCreateChallengeDifficulty(Number(event.target.value) || 0)}
+                    onChange={(event) =>
+                      setCreateChallengeDifficulty(
+                        Number(event.target.value) || 0
+                      )
+                    }
                     placeholder="Difficulty"
                   />
                   <button
@@ -702,7 +884,9 @@ const LocationArchetypes: React.FC = () => {
                     onClick={() => {
                       const value = createChallengeQuery.trim();
                       const proficiency = createChallengeProficiency.trim();
-                      const difficulty = Number.isFinite(createChallengeDifficulty)
+                      const difficulty = Number.isFinite(
+                        createChallengeDifficulty
+                      )
                         ? Math.max(0, createChallengeDifficulty)
                         : 0;
                       if (!value) return;
@@ -715,8 +899,8 @@ const LocationArchetypes: React.FC = () => {
                           difficulty,
                         }),
                       });
-                      setCreateChallengeQuery("");
-                      setCreateChallengeProficiency("");
+                      setCreateChallengeQuery('');
+                      setCreateChallengeProficiency('');
                       setCreateChallengeDifficulty(0);
                     }}
                   >
@@ -726,7 +910,8 @@ const LocationArchetypes: React.FC = () => {
                 <div className="qa-panel" style={{ marginTop: 12 }}>
                   <div className="qa-meta">Challenge generator</div>
                   <p className="qa-muted" style={{ marginTop: 6 }}>
-                    Generate 10 themed challenges based on the archetype details.
+                    Generate 10 themed challenges based on the archetype
+                    details.
                   </p>
                   <div className="qa-inline" style={{ marginTop: 10 }}>
                     <button
@@ -742,7 +927,9 @@ const LocationArchetypes: React.FC = () => {
                       }
                       disabled={createGenerating}
                     >
-                      {createGenerating ? "Generating..." : "Generate 10 Challenges"}
+                      {createGenerating
+                        ? 'Generating...'
+                        : 'Generate 10 Challenges'}
                     </button>
                     {createGeneratedChallenges.length > 0 && (
                       <button
@@ -763,17 +950,26 @@ const LocationArchetypes: React.FC = () => {
                 {createGeneratedChallenges.length > 0 && (
                   <div className="qa-panel" style={{ marginTop: 12 }}>
                     <div className="qa-meta">Generated options</div>
-                    <div className="qa-generated-list" style={{ marginTop: 10 }}>
+                    <div
+                      className="qa-generated-list"
+                      style={{ marginTop: 10 }}
+                    >
                       {createGeneratedChallenges.map((challenge) => (
                         <div key={challenge.id} className="qa-generated-row">
                           <div className="qa-generated-info">
-                            <div className="qa-option-title">{challenge.question}</div>
+                            <div className="qa-option-title">
+                              {challenge.question}
+                            </div>
                             <div className="qa-option-sub">
-                              Input: {formatSubmissionType(challenge.submissionType)}
-                              {challenge.proficiency ? ` · Proficiency: ${challenge.proficiency}` : ""}
-                              {challenge.difficulty !== undefined && challenge.difficulty !== null
+                              Input:{' '}
+                              {formatSubmissionType(challenge.submissionType)}
+                              {challenge.proficiency
+                                ? ` · Proficiency: ${challenge.proficiency}`
+                                : ''}
+                              {challenge.difficulty !== undefined &&
+                              challenge.difficulty !== null
                                 ? ` · Difficulty: ${challenge.difficulty}`
-                                : ""}
+                                : ''}
                             </div>
                           </div>
                           <button
@@ -782,12 +978,17 @@ const LocationArchetypes: React.FC = () => {
                             onClick={() => {
                               setCreateDraft((prev) => ({
                                 ...prev,
-                                challenges: addChallengeUnique(prev.challenges, {
-                                  question: challenge.question,
-                                  submissionType: challenge.submissionType as QuestNodeSubmissionType,
-                                  proficiency: challenge.proficiency ?? undefined,
-                                  difficulty: challenge.difficulty ?? 0,
-                                }),
+                                challenges: addChallengeUnique(
+                                  prev.challenges,
+                                  {
+                                    question: challenge.question,
+                                    submissionType:
+                                      challenge.submissionType as QuestNodeSubmissionType,
+                                    proficiency:
+                                      challenge.proficiency ?? undefined,
+                                    difficulty: challenge.difficulty ?? 0,
+                                  }
+                                ),
                               }));
                             }}
                           >
@@ -807,7 +1008,8 @@ const LocationArchetypes: React.FC = () => {
                               prev.challenges,
                               createGeneratedChallenges.map((challenge) => ({
                                 question: challenge.question,
-                                submissionType: challenge.submissionType as QuestNodeSubmissionType,
+                                submissionType:
+                                  challenge.submissionType as QuestNodeSubmissionType,
                                 proficiency: challenge.proficiency ?? undefined,
                                 difficulty: challenge.difficulty ?? 0,
                               }))
@@ -831,20 +1033,23 @@ const LocationArchetypes: React.FC = () => {
                         style={{ marginBottom: 8 }}
                       >
                         <span className="qa-chip success">
-                          {challenge.question} · {formatSubmissionType(challenge.submissionType)} · Difficulty:{" "}
-                          {challenge.difficulty ?? 0}
+                          {challenge.question} ·{' '}
+                          {formatSubmissionType(challenge.submissionType)} ·
+                          Difficulty: {challenge.difficulty ?? 0}
                         </span>
                         <input
                           type="text"
                           className="qa-input"
-                          style={{ minWidth: 180, flex: "1 1 200px" }}
-                          value={challenge.proficiency ?? ""}
+                          style={{ minWidth: 180, flex: '1 1 200px' }}
+                          value={challenge.proficiency ?? ''}
                           onChange={(event) => {
                             const value = event.target.value;
                             setCreateDraft((prev) => ({
                               ...prev,
                               challenges: prev.challenges.map((item, i) =>
-                                i === index ? { ...item, proficiency: value } : item
+                                i === index
+                                  ? { ...item, proficiency: value }
+                                  : item
                               ),
                             }));
                           }}
@@ -861,7 +1066,9 @@ const LocationArchetypes: React.FC = () => {
                             setCreateDraft((prev) => ({
                               ...prev,
                               challenges: prev.challenges.map((item, i) =>
-                                i === index ? { ...item, difficulty: value } : item
+                                i === index
+                                  ? { ...item, difficulty: value }
+                                  : item
                               ),
                             }));
                           }}
@@ -873,7 +1080,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setCreateDraft({
                               ...createDraft,
-                              challenges: createDraft.challenges.filter((_, i) => i !== index),
+                              challenges: createDraft.challenges.filter(
+                                (_, i) => i !== index
+                              ),
                             })
                           }
                         >
@@ -916,7 +1125,9 @@ const LocationArchetypes: React.FC = () => {
                   type="text"
                   className="qa-input"
                   value={editDraft.name}
-                  onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                  onChange={(e) =>
+                    setEditDraft({ ...editDraft, name: e.target.value })
+                  }
                 />
               </div>
 
@@ -944,9 +1155,12 @@ const LocationArchetypes: React.FC = () => {
                               if (!editDraft) return;
                               setEditDraft({
                                 ...editDraft,
-                                includedTypes: addUnique(editDraft.includedTypes, type),
+                                includedTypes: addUnique(
+                                  editDraft.includedTypes,
+                                  type
+                                ),
                               });
-                              setEditIncludedQuery("");
+                              setEditIncludedQuery('');
                             }}
                           >
                             {type}
@@ -963,7 +1177,10 @@ const LocationArchetypes: React.FC = () => {
                       prev
                         ? {
                             ...prev,
-                            includedTypes: mergeUnique(prev.includedTypes, types),
+                            includedTypes: mergeUnique(
+                              prev.includedTypes,
+                              types
+                            ),
                           }
                         : prev
                     )
@@ -974,7 +1191,11 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-empty">No included types yet.</div>
                   ) : (
                     editDraft.includedTypes.map((type) => (
-                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                      <div
+                        key={type}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
                         <span className="qa-chip accent">{type}</span>
                         <button
                           type="button"
@@ -982,7 +1203,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setEditDraft({
                               ...editDraft,
-                              includedTypes: editDraft.includedTypes.filter((value) => value !== type),
+                              includedTypes: editDraft.includedTypes.filter(
+                                (value) => value !== type
+                              ),
                             })
                           }
                         >
@@ -1018,9 +1241,12 @@ const LocationArchetypes: React.FC = () => {
                               if (!editDraft) return;
                               setEditDraft({
                                 ...editDraft,
-                                excludedTypes: addUnique(editDraft.excludedTypes, type),
+                                excludedTypes: addUnique(
+                                  editDraft.excludedTypes,
+                                  type
+                                ),
                               });
-                              setEditExcludedQuery("");
+                              setEditExcludedQuery('');
                             }}
                           >
                             {type}
@@ -1037,7 +1263,10 @@ const LocationArchetypes: React.FC = () => {
                       prev
                         ? {
                             ...prev,
-                            excludedTypes: mergeUnique(prev.excludedTypes, types),
+                            excludedTypes: mergeUnique(
+                              prev.excludedTypes,
+                              types
+                            ),
                           }
                         : prev
                     )
@@ -1048,7 +1277,11 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-empty">No excluded types yet.</div>
                   ) : (
                     editDraft.excludedTypes.map((type) => (
-                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                      <div
+                        key={type}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
                         <span className="qa-chip danger">{type}</span>
                         <button
                           type="button"
@@ -1056,7 +1289,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setEditDraft({
                               ...editDraft,
-                              excludedTypes: editDraft.excludedTypes.filter((value) => value !== type),
+                              excludedTypes: editDraft.excludedTypes.filter(
+                                (value) => value !== type
+                              ),
                             })
                           }
                         >
@@ -1081,7 +1316,11 @@ const LocationArchetypes: React.FC = () => {
                   <select
                     className="qa-select"
                     value={editChallengeInputType}
-                    onChange={(event) => setEditChallengeInputType(event.target.value as QuestNodeSubmissionType)}
+                    onChange={(event) =>
+                      setEditChallengeInputType(
+                        event.target.value as QuestNodeSubmissionType
+                      )
+                    }
                   >
                     {submissionTypeOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1093,7 +1332,9 @@ const LocationArchetypes: React.FC = () => {
                     type="text"
                     className="qa-input"
                     value={editChallengeProficiency}
-                    onChange={(event) => setEditChallengeProficiency(event.target.value)}
+                    onChange={(event) =>
+                      setEditChallengeProficiency(event.target.value)
+                    }
                     placeholder="Proficiency (optional)"
                   />
                   <input
@@ -1101,7 +1342,11 @@ const LocationArchetypes: React.FC = () => {
                     min={0}
                     className="qa-input"
                     value={editChallengeDifficulty}
-                    onChange={(event) => setEditChallengeDifficulty(Number(event.target.value) || 0)}
+                    onChange={(event) =>
+                      setEditChallengeDifficulty(
+                        Number(event.target.value) || 0
+                      )
+                    }
                     placeholder="Difficulty"
                   />
                   <button
@@ -1111,7 +1356,9 @@ const LocationArchetypes: React.FC = () => {
                       if (!editDraft) return;
                       const value = editChallengeQuery.trim();
                       const proficiency = editChallengeProficiency.trim();
-                      const difficulty = Number.isFinite(editChallengeDifficulty)
+                      const difficulty = Number.isFinite(
+                        editChallengeDifficulty
+                      )
                         ? Math.max(0, editChallengeDifficulty)
                         : 0;
                       if (!value) return;
@@ -1124,8 +1371,8 @@ const LocationArchetypes: React.FC = () => {
                           difficulty,
                         }),
                       });
-                      setEditChallengeQuery("");
-                      setEditChallengeProficiency("");
+                      setEditChallengeQuery('');
+                      setEditChallengeProficiency('');
                       setEditChallengeDifficulty(0);
                     }}
                   >
@@ -1135,7 +1382,8 @@ const LocationArchetypes: React.FC = () => {
                 <div className="qa-panel" style={{ marginTop: 12 }}>
                   <div className="qa-meta">Challenge generator</div>
                   <p className="qa-muted" style={{ marginTop: 6 }}>
-                    Generate 10 themed challenges based on the archetype details.
+                    Generate 10 themed challenges based on the archetype
+                    details.
                   </p>
                   <div className="qa-inline" style={{ marginTop: 10 }}>
                     <button
@@ -1151,7 +1399,9 @@ const LocationArchetypes: React.FC = () => {
                       }
                       disabled={editGenerating}
                     >
-                      {editGenerating ? "Generating..." : "Generate 10 Challenges"}
+                      {editGenerating
+                        ? 'Generating...'
+                        : 'Generate 10 Challenges'}
                     </button>
                     {editGeneratedChallenges.length > 0 && (
                       <button
@@ -1172,17 +1422,26 @@ const LocationArchetypes: React.FC = () => {
                 {editGeneratedChallenges.length > 0 && (
                   <div className="qa-panel" style={{ marginTop: 12 }}>
                     <div className="qa-meta">Generated options</div>
-                    <div className="qa-generated-list" style={{ marginTop: 10 }}>
+                    <div
+                      className="qa-generated-list"
+                      style={{ marginTop: 10 }}
+                    >
                       {editGeneratedChallenges.map((challenge) => (
                         <div key={challenge.id} className="qa-generated-row">
                           <div className="qa-generated-info">
-                            <div className="qa-option-title">{challenge.question}</div>
+                            <div className="qa-option-title">
+                              {challenge.question}
+                            </div>
                             <div className="qa-option-sub">
-                              Input: {formatSubmissionType(challenge.submissionType)}
-                              {challenge.proficiency ? ` · Proficiency: ${challenge.proficiency}` : ""}
-                              {challenge.difficulty !== undefined && challenge.difficulty !== null
+                              Input:{' '}
+                              {formatSubmissionType(challenge.submissionType)}
+                              {challenge.proficiency
+                                ? ` · Proficiency: ${challenge.proficiency}`
+                                : ''}
+                              {challenge.difficulty !== undefined &&
+                              challenge.difficulty !== null
                                 ? ` · Difficulty: ${challenge.difficulty}`
-                                : ""}
+                                : ''}
                             </div>
                           </div>
                           <button
@@ -1193,12 +1452,17 @@ const LocationArchetypes: React.FC = () => {
                                 prev
                                   ? {
                                       ...prev,
-                                      challenges: addChallengeUnique(prev.challenges, {
-                                        question: challenge.question,
-                                        submissionType: challenge.submissionType as QuestNodeSubmissionType,
-                                        proficiency: challenge.proficiency ?? undefined,
-                                        difficulty: challenge.difficulty ?? 0,
-                                      }),
+                                      challenges: addChallengeUnique(
+                                        prev.challenges,
+                                        {
+                                          question: challenge.question,
+                                          submissionType:
+                                            challenge.submissionType as QuestNodeSubmissionType,
+                                          proficiency:
+                                            challenge.proficiency ?? undefined,
+                                          difficulty: challenge.difficulty ?? 0,
+                                        }
+                                      ),
                                     }
                                   : prev
                               );
@@ -1220,12 +1484,16 @@ const LocationArchetypes: React.FC = () => {
                                   ...prev,
                                   challenges: mergeUniqueChallenges(
                                     prev.challenges,
-                                    editGeneratedChallenges.map((challenge) => ({
-                                      question: challenge.question,
-                                      submissionType: challenge.submissionType as QuestNodeSubmissionType,
-                                      proficiency: challenge.proficiency ?? undefined,
-                                      difficulty: challenge.difficulty ?? 0,
-                                    }))
+                                    editGeneratedChallenges.map(
+                                      (challenge) => ({
+                                        question: challenge.question,
+                                        submissionType:
+                                          challenge.submissionType as QuestNodeSubmissionType,
+                                        proficiency:
+                                          challenge.proficiency ?? undefined,
+                                        difficulty: challenge.difficulty ?? 0,
+                                      })
+                                    )
                                   ),
                                 }
                               : prev
@@ -1248,22 +1516,26 @@ const LocationArchetypes: React.FC = () => {
                         style={{ marginBottom: 8 }}
                       >
                         <span className="qa-chip success">
-                          {challenge.question} · {formatSubmissionType(challenge.submissionType)} · Difficulty:{" "}
-                          {challenge.difficulty ?? 0}
+                          {challenge.question} ·{' '}
+                          {formatSubmissionType(challenge.submissionType)} ·
+                          Difficulty: {challenge.difficulty ?? 0}
                         </span>
                         <input
                           type="text"
                           className="qa-input"
-                          style={{ minWidth: 180, flex: "1 1 200px" }}
-                          value={challenge.proficiency ?? ""}
+                          style={{ minWidth: 180, flex: '1 1 200px' }}
+                          value={challenge.proficiency ?? ''}
                           onChange={(event) => {
                             const value = event.target.value;
                             setEditDraft((prev) =>
                               prev
                                 ? {
                                     ...prev,
-                                    challenges: prev.challenges.map((item, i) =>
-                                      i === index ? { ...item, proficiency: value } : item
+                                    challenges: prev.challenges.map(
+                                      (item, i) =>
+                                        i === index
+                                          ? { ...item, proficiency: value }
+                                          : item
                                     ),
                                   }
                                 : prev
@@ -1283,8 +1555,11 @@ const LocationArchetypes: React.FC = () => {
                               prev
                                 ? {
                                     ...prev,
-                                    challenges: prev.challenges.map((item, i) =>
-                                      i === index ? { ...item, difficulty: value } : item
+                                    challenges: prev.challenges.map(
+                                      (item, i) =>
+                                        i === index
+                                          ? { ...item, difficulty: value }
+                                          : item
                                     ),
                                   }
                                 : prev
@@ -1298,7 +1573,9 @@ const LocationArchetypes: React.FC = () => {
                           onClick={() =>
                             setEditDraft({
                               ...editDraft,
-                              challenges: editDraft.challenges.filter((_, i) => i !== index),
+                              challenges: editDraft.challenges.filter(
+                                (_, i) => i !== index
+                              ),
                             })
                           }
                         >

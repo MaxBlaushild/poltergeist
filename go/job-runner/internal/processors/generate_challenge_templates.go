@@ -46,7 +46,12 @@ Return JSON only:
 Hard rules:
 - Output exactly %d challenges.
 - These are reusable templates, not tied to any specific business name, coordinates, or one-off landmark.
-- Each challenge should clearly fit the archetype and invite roleplay in a public-space fantasy MMO tone.
+- Each challenge should clearly fit the archetype and feel fun to do in a public-space fantasy MMO tone.
+- Every challenge must be a concrete real-world task the player can actually complete on site right now.
+- The result must be gradable from the player's photo or text submission alone.
+- Never rely on fictional missing items, hidden clues, asking strangers, interviewing locals, NPC cooperation, or facts that may not exist at the real place.
+- If the idea is really about how the player would solve a problem, investigate, negotiate, persuade, or respond to a roleplaying situation, that belongs in a scenario template, not a challenge template.
+- Write challenge questions as direct action prompts, not mystery questions.
 - Keep each challenge materially distinct from the others and from the recent templates list.
 - Use only submissionType values: "photo" or "text".
 `

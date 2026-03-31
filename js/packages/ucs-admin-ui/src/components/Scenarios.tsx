@@ -43,6 +43,28 @@ type ScenarioFailureStatus = {
   intelligenceMod: number;
   wisdomMod: number;
   charismaMod: number;
+  physicalDamageBonusPercent: number;
+  piercingDamageBonusPercent: number;
+  slashingDamageBonusPercent: number;
+  bludgeoningDamageBonusPercent: number;
+  fireDamageBonusPercent: number;
+  iceDamageBonusPercent: number;
+  lightningDamageBonusPercent: number;
+  poisonDamageBonusPercent: number;
+  arcaneDamageBonusPercent: number;
+  holyDamageBonusPercent: number;
+  shadowDamageBonusPercent: number;
+  physicalResistancePercent: number;
+  piercingResistancePercent: number;
+  slashingResistancePercent: number;
+  bludgeoningResistancePercent: number;
+  fireResistancePercent: number;
+  iceResistancePercent: number;
+  lightningResistancePercent: number;
+  poisonResistancePercent: number;
+  arcaneResistancePercent: number;
+  holyResistancePercent: number;
+  shadowResistancePercent: number;
 };
 
 type ScenarioOption = {
@@ -263,6 +285,34 @@ const statusEffectTypes = [
   'mana_over_time',
 ] as const;
 
+const resistanceFieldOptions = [
+  { key: 'physicalResistancePercent', label: 'Physical %' },
+  { key: 'piercingResistancePercent', label: 'Piercing %' },
+  { key: 'slashingResistancePercent', label: 'Slashing %' },
+  { key: 'bludgeoningResistancePercent', label: 'Bludgeoning %' },
+  { key: 'fireResistancePercent', label: 'Fire %' },
+  { key: 'iceResistancePercent', label: 'Ice %' },
+  { key: 'lightningResistancePercent', label: 'Lightning %' },
+  { key: 'poisonResistancePercent', label: 'Poison %' },
+  { key: 'arcaneResistancePercent', label: 'Arcane %' },
+  { key: 'holyResistancePercent', label: 'Holy %' },
+  { key: 'shadowResistancePercent', label: 'Shadow %' },
+] as const;
+
+const damageBonusFieldOptions = [
+  { key: 'physicalDamageBonusPercent', label: 'Physical Dmg %' },
+  { key: 'piercingDamageBonusPercent', label: 'Piercing Dmg %' },
+  { key: 'slashingDamageBonusPercent', label: 'Slashing Dmg %' },
+  { key: 'bludgeoningDamageBonusPercent', label: 'Bludgeoning Dmg %' },
+  { key: 'fireDamageBonusPercent', label: 'Fire Dmg %' },
+  { key: 'iceDamageBonusPercent', label: 'Ice Dmg %' },
+  { key: 'lightningDamageBonusPercent', label: 'Lightning Dmg %' },
+  { key: 'poisonDamageBonusPercent', label: 'Poison Dmg %' },
+  { key: 'arcaneDamageBonusPercent', label: 'Arcane Dmg %' },
+  { key: 'holyDamageBonusPercent', label: 'Holy Dmg %' },
+  { key: 'shadowDamageBonusPercent', label: 'Shadow Dmg %' },
+] as const;
+
 const emptyFailureStatus = (): ScenarioFailureStatus => ({
   name: '',
   description: '',
@@ -279,6 +329,28 @@ const emptyFailureStatus = (): ScenarioFailureStatus => ({
   intelligenceMod: 0,
   wisdomMod: 0,
   charismaMod: 0,
+  physicalDamageBonusPercent: 0,
+  piercingDamageBonusPercent: 0,
+  slashingDamageBonusPercent: 0,
+  bludgeoningDamageBonusPercent: 0,
+  fireDamageBonusPercent: 0,
+  iceDamageBonusPercent: 0,
+  lightningDamageBonusPercent: 0,
+  poisonDamageBonusPercent: 0,
+  arcaneDamageBonusPercent: 0,
+  holyDamageBonusPercent: 0,
+  shadowDamageBonusPercent: 0,
+  physicalResistancePercent: 0,
+  piercingResistancePercent: 0,
+  slashingResistancePercent: 0,
+  bludgeoningResistancePercent: 0,
+  fireResistancePercent: 0,
+  iceResistancePercent: 0,
+  lightningResistancePercent: 0,
+  poisonResistancePercent: 0,
+  arcaneResistancePercent: 0,
+  holyResistancePercent: 0,
+  shadowResistancePercent: 0,
 });
 
 const emptyOption = (): ScenarioOption => ({
@@ -445,6 +517,86 @@ const normalizeFailureStatus = (
     wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
     charismaMod: Number.isFinite(status.charismaMod)
       ? Number(status.charismaMod)
+      : 0,
+    physicalDamageBonusPercent: Number.isFinite(
+      status.physicalDamageBonusPercent
+    )
+      ? Number(status.physicalDamageBonusPercent)
+      : 0,
+    piercingDamageBonusPercent: Number.isFinite(
+      status.piercingDamageBonusPercent
+    )
+      ? Number(status.piercingDamageBonusPercent)
+      : 0,
+    slashingDamageBonusPercent: Number.isFinite(
+      status.slashingDamageBonusPercent
+    )
+      ? Number(status.slashingDamageBonusPercent)
+      : 0,
+    bludgeoningDamageBonusPercent: Number.isFinite(
+      status.bludgeoningDamageBonusPercent
+    )
+      ? Number(status.bludgeoningDamageBonusPercent)
+      : 0,
+    fireDamageBonusPercent: Number.isFinite(status.fireDamageBonusPercent)
+      ? Number(status.fireDamageBonusPercent)
+      : 0,
+    iceDamageBonusPercent: Number.isFinite(status.iceDamageBonusPercent)
+      ? Number(status.iceDamageBonusPercent)
+      : 0,
+    lightningDamageBonusPercent: Number.isFinite(
+      status.lightningDamageBonusPercent
+    )
+      ? Number(status.lightningDamageBonusPercent)
+      : 0,
+    poisonDamageBonusPercent: Number.isFinite(status.poisonDamageBonusPercent)
+      ? Number(status.poisonDamageBonusPercent)
+      : 0,
+    arcaneDamageBonusPercent: Number.isFinite(status.arcaneDamageBonusPercent)
+      ? Number(status.arcaneDamageBonusPercent)
+      : 0,
+    holyDamageBonusPercent: Number.isFinite(status.holyDamageBonusPercent)
+      ? Number(status.holyDamageBonusPercent)
+      : 0,
+    shadowDamageBonusPercent: Number.isFinite(status.shadowDamageBonusPercent)
+      ? Number(status.shadowDamageBonusPercent)
+      : 0,
+    physicalResistancePercent: Number.isFinite(status.physicalResistancePercent)
+      ? Number(status.physicalResistancePercent)
+      : 0,
+    piercingResistancePercent: Number.isFinite(status.piercingResistancePercent)
+      ? Number(status.piercingResistancePercent)
+      : 0,
+    slashingResistancePercent: Number.isFinite(status.slashingResistancePercent)
+      ? Number(status.slashingResistancePercent)
+      : 0,
+    bludgeoningResistancePercent: Number.isFinite(
+      status.bludgeoningResistancePercent
+    )
+      ? Number(status.bludgeoningResistancePercent)
+      : 0,
+    fireResistancePercent: Number.isFinite(status.fireResistancePercent)
+      ? Number(status.fireResistancePercent)
+      : 0,
+    iceResistancePercent: Number.isFinite(status.iceResistancePercent)
+      ? Number(status.iceResistancePercent)
+      : 0,
+    lightningResistancePercent: Number.isFinite(
+      status.lightningResistancePercent
+    )
+      ? Number(status.lightningResistancePercent)
+      : 0,
+    poisonResistancePercent: Number.isFinite(status.poisonResistancePercent)
+      ? Number(status.poisonResistancePercent)
+      : 0,
+    arcaneResistancePercent: Number.isFinite(status.arcaneResistancePercent)
+      ? Number(status.arcaneResistancePercent)
+      : 0,
+    holyResistancePercent: Number.isFinite(status.holyResistancePercent)
+      ? Number(status.holyResistancePercent)
+      : 0,
+    shadowResistancePercent: Number.isFinite(status.shadowResistancePercent)
+      ? Number(status.shadowResistancePercent)
       : 0,
     positive: status.positive ?? true,
   };
@@ -2247,6 +2399,42 @@ export const Scenarios = () => {
             </label>
           </div>
 
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            {damageBonusFieldOptions.map(({ key, label }) => (
+              <label className="text-xs" key={key}>
+                {label}
+                <input
+                  value={status[key]}
+                  onChange={(e) =>
+                    config.onUpdateStatus(statusIndex, {
+                      [key]: parseIntValue(e.target.value, 0),
+                    })
+                  }
+                  className="w-full border rounded-md p-1"
+                  type="number"
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            {resistanceFieldOptions.map(({ key, label }) => (
+              <label className="text-xs" key={key}>
+                {label}
+                <input
+                  value={status[key]}
+                  onChange={(e) =>
+                    config.onUpdateStatus(statusIndex, {
+                      [key]: parseIntValue(e.target.value, 0),
+                    })
+                  }
+                  className="w-full border rounded-md p-1"
+                  type="number"
+                />
+              </label>
+            ))}
+          </div>
+
           <button
             type="button"
             className="bg-red-500 text-white px-3 py-1 rounded-md text-xs"
@@ -2569,6 +2757,42 @@ export const Scenarios = () => {
                 type="number"
               />
             </label>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            {damageBonusFieldOptions.map(({ key, label }) => (
+              <label className="text-xs" key={key}>
+                {label}
+                <input
+                  value={status[key]}
+                  onChange={(e) =>
+                    config.onUpdateStatus(statusIndex, {
+                      [key]: parseIntValue(e.target.value, 0),
+                    })
+                  }
+                  className="w-full border rounded-md p-1"
+                  type="number"
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            {resistanceFieldOptions.map(({ key, label }) => (
+              <label className="text-xs" key={key}>
+                {label}
+                <input
+                  value={status[key]}
+                  onChange={(e) =>
+                    config.onUpdateStatus(statusIndex, {
+                      [key]: parseIntValue(e.target.value, 0),
+                    })
+                  }
+                  className="w-full border rounded-md p-1"
+                  type="number"
+                />
+              </label>
+            ))}
           </div>
 
           <button

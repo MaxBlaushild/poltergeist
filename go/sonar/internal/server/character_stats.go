@@ -13,23 +13,25 @@ import (
 )
 
 type characterStatsResponse struct {
-	Strength         int                            `json:"strength"`
-	Dexterity        int                            `json:"dexterity"`
-	Constitution     int                            `json:"constitution"`
-	Intelligence     int                            `json:"intelligence"`
-	Wisdom           int                            `json:"wisdom"`
-	Charisma         int                            `json:"charisma"`
-	Health           int                            `json:"health"`
-	MaxHealth        int                            `json:"maxHealth"`
-	Mana             int                            `json:"mana"`
-	MaxMana          int                            `json:"maxMana"`
-	EquipmentBonuses map[string]int                 `json:"equipmentBonuses"`
-	StatusBonuses    map[string]int                 `json:"statusBonuses"`
-	UnspentPoints    int                            `json:"unspentPoints"`
-	Level            int                            `json:"level"`
-	Proficiencies    []characterProficiencyResponse `json:"proficiencies"`
-	Statuses         []characterStatusResponse      `json:"statuses"`
-	Spells           []characterSpellResponse       `json:"spells"`
+	Strength              int                            `json:"strength"`
+	Dexterity             int                            `json:"dexterity"`
+	Constitution          int                            `json:"constitution"`
+	Intelligence          int                            `json:"intelligence"`
+	Wisdom                int                            `json:"wisdom"`
+	Charisma              int                            `json:"charisma"`
+	Health                int                            `json:"health"`
+	MaxHealth             int                            `json:"maxHealth"`
+	Mana                  int                            `json:"mana"`
+	MaxMana               int                            `json:"maxMana"`
+	EquipmentBonuses      map[string]int                 `json:"equipmentBonuses"`
+	StatusBonuses         map[string]int                 `json:"statusBonuses"`
+	AffinityDamageBonuses map[string]int                 `json:"affinityDamageBonuses"`
+	AffinityResistances   map[string]int                 `json:"affinityResistances"`
+	UnspentPoints         int                            `json:"unspentPoints"`
+	Level                 int                            `json:"level"`
+	Proficiencies         []characterProficiencyResponse `json:"proficiencies"`
+	Statuses              []characterStatusResponse      `json:"statuses"`
+	Spells                []characterSpellResponse       `json:"spells"`
 }
 
 type characterProficiencyResponse struct {
@@ -303,23 +305,25 @@ func characterStatsResponseFrom(
 		})
 	}
 	return characterStatsResponse{
-		Strength:         stats.Strength,
-		Dexterity:        stats.Dexterity,
-		Constitution:     stats.Constitution,
-		Intelligence:     stats.Intelligence,
-		Wisdom:           stats.Wisdom,
-		Charisma:         stats.Charisma,
-		Health:           currentHealth,
-		MaxHealth:        maxHealth,
-		Mana:             currentMana,
-		MaxMana:          maxMana,
-		EquipmentBonuses: equipmentBonuses.ToMap(),
-		StatusBonuses:    statusBonuses.ToMap(),
-		UnspentPoints:    stats.UnspentPoints,
-		Level:            level,
-		Proficiencies:    proficiencyResponse,
-		Statuses:         characterStatusResponsesFrom(statuses),
-		Spells:           characterSpellResponsesFrom(spells),
+		Strength:              stats.Strength,
+		Dexterity:             stats.Dexterity,
+		Constitution:          stats.Constitution,
+		Intelligence:          stats.Intelligence,
+		Wisdom:                stats.Wisdom,
+		Charisma:              stats.Charisma,
+		Health:                currentHealth,
+		MaxHealth:             maxHealth,
+		Mana:                  currentMana,
+		MaxMana:               maxMana,
+		EquipmentBonuses:      equipmentBonuses.ToMap(),
+		StatusBonuses:         statusBonuses.ToMap(),
+		AffinityDamageBonuses: totalBonuses.AffinityDamageBonusMap(),
+		AffinityResistances:   totalBonuses.AffinityResistanceMap(),
+		UnspentPoints:         stats.UnspentPoints,
+		Level:                 level,
+		Proficiencies:         proficiencyResponse,
+		Statuses:              characterStatusResponsesFrom(statuses),
+		Spells:                characterSpellResponsesFrom(spells),
 	}
 }
 
@@ -392,6 +396,21 @@ func (s *server) getActiveStatusBonusesAndStatuses(
 		return models.CharacterStatBonuses{}, nil, err
 	}
 	return statusBonuses, statuses, nil
+}
+
+func (s *server) getCharacterTotalBonuses(
+	ctx context.Context,
+	userID uuid.UUID,
+) (models.CharacterStatBonuses, error) {
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return models.CharacterStatBonuses{}, err
+	}
+	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
+	if err != nil {
+		return models.CharacterStatBonuses{}, err
+	}
+	return equipmentBonuses.Add(statusBonuses), nil
 }
 
 func deriveCharacterHealth(constitution int) int {

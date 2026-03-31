@@ -25,21 +25,42 @@ import (
 )
 
 type monsterTemplateUpsertRequest struct {
-	Archived              *bool    `json:"archived"`
-	MonsterType           string   `json:"monsterType"`
-	Name                  string   `json:"name"`
-	Description           string   `json:"description"`
-	ImageURL              string   `json:"imageUrl"`
-	ThumbnailURL          string   `json:"thumbnailUrl"`
-	BaseStrength          int      `json:"baseStrength"`
-	BaseDexterity         int      `json:"baseDexterity"`
-	BaseConstitution      int      `json:"baseConstitution"`
-	BaseIntelligence      int      `json:"baseIntelligence"`
-	BaseWisdom            int      `json:"baseWisdom"`
-	BaseCharisma          int      `json:"baseCharisma"`
-	StrongAgainstAffinity string   `json:"strongAgainstAffinity"`
-	WeakAgainstAffinity   string   `json:"weakAgainstAffinity"`
-	SpellIDs              []string `json:"spellIds"`
+	Archived                      *bool    `json:"archived"`
+	MonsterType                   string   `json:"monsterType"`
+	Name                          string   `json:"name"`
+	Description                   string   `json:"description"`
+	ImageURL                      string   `json:"imageUrl"`
+	ThumbnailURL                  string   `json:"thumbnailUrl"`
+	BaseStrength                  int      `json:"baseStrength"`
+	BaseDexterity                 int      `json:"baseDexterity"`
+	BaseConstitution              int      `json:"baseConstitution"`
+	BaseIntelligence              int      `json:"baseIntelligence"`
+	BaseWisdom                    int      `json:"baseWisdom"`
+	BaseCharisma                  int      `json:"baseCharisma"`
+	PhysicalDamageBonusPercent    int      `json:"physicalDamageBonusPercent"`
+	PiercingDamageBonusPercent    int      `json:"piercingDamageBonusPercent"`
+	SlashingDamageBonusPercent    int      `json:"slashingDamageBonusPercent"`
+	BludgeoningDamageBonusPercent int      `json:"bludgeoningDamageBonusPercent"`
+	FireDamageBonusPercent        int      `json:"fireDamageBonusPercent"`
+	IceDamageBonusPercent         int      `json:"iceDamageBonusPercent"`
+	LightningDamageBonusPercent   int      `json:"lightningDamageBonusPercent"`
+	PoisonDamageBonusPercent      int      `json:"poisonDamageBonusPercent"`
+	ArcaneDamageBonusPercent      int      `json:"arcaneDamageBonusPercent"`
+	HolyDamageBonusPercent        int      `json:"holyDamageBonusPercent"`
+	ShadowDamageBonusPercent      int      `json:"shadowDamageBonusPercent"`
+	PhysicalResistancePercent     int      `json:"physicalResistancePercent"`
+	PiercingResistancePercent     int      `json:"piercingResistancePercent"`
+	SlashingResistancePercent     int      `json:"slashingResistancePercent"`
+	BludgeoningResistancePercent  int      `json:"bludgeoningResistancePercent"`
+	FireResistancePercent         int      `json:"fireResistancePercent"`
+	IceResistancePercent          int      `json:"iceResistancePercent"`
+	LightningResistancePercent    int      `json:"lightningResistancePercent"`
+	PoisonResistancePercent       int      `json:"poisonResistancePercent"`
+	ArcaneResistancePercent       int      `json:"arcaneResistancePercent"`
+	HolyResistancePercent         int      `json:"holyResistancePercent"`
+	ShadowResistancePercent       int      `json:"shadowResistancePercent"`
+	SpellIDs                      []string `json:"spellIds"`
+	ProgressionIDs                []string `json:"progressionIds"`
 }
 
 type bulkGenerateMonsterTemplatesRequest struct {
@@ -307,26 +328,33 @@ type monsterBattleActionRequest struct {
 }
 
 type monsterTemplateResponse struct {
-	ID                    uuid.UUID      `json:"id"`
-	CreatedAt             time.Time      `json:"createdAt"`
-	UpdatedAt             time.Time      `json:"updatedAt"`
-	Archived              bool           `json:"archived"`
-	MonsterType           string         `json:"monsterType"`
-	Name                  string         `json:"name"`
-	Description           string         `json:"description"`
-	ImageURL              string         `json:"imageUrl"`
-	ThumbnailURL          string         `json:"thumbnailUrl"`
-	BaseStrength          int            `json:"baseStrength"`
-	BaseDexterity         int            `json:"baseDexterity"`
-	BaseConstitution      int            `json:"baseConstitution"`
-	BaseIntelligence      int            `json:"baseIntelligence"`
-	BaseWisdom            int            `json:"baseWisdom"`
-	BaseCharisma          int            `json:"baseCharisma"`
-	StrongAgainstAffinity *string        `json:"strongAgainstAffinity,omitempty"`
-	WeakAgainstAffinity   *string        `json:"weakAgainstAffinity,omitempty"`
-	Spells                []models.Spell `json:"spells"`
-	ImageGenerationStatus string         `json:"imageGenerationStatus"`
-	ImageGenerationError  *string        `json:"imageGenerationError,omitempty"`
+	ID                    uuid.UUID                            `json:"id"`
+	CreatedAt             time.Time                            `json:"createdAt"`
+	UpdatedAt             time.Time                            `json:"updatedAt"`
+	Archived              bool                                 `json:"archived"`
+	MonsterType           string                               `json:"monsterType"`
+	Name                  string                               `json:"name"`
+	Description           string                               `json:"description"`
+	ImageURL              string                               `json:"imageUrl"`
+	ThumbnailURL          string                               `json:"thumbnailUrl"`
+	BaseStrength          int                                  `json:"baseStrength"`
+	BaseDexterity         int                                  `json:"baseDexterity"`
+	BaseConstitution      int                                  `json:"baseConstitution"`
+	BaseIntelligence      int                                  `json:"baseIntelligence"`
+	BaseWisdom            int                                  `json:"baseWisdom"`
+	BaseCharisma          int                                  `json:"baseCharisma"`
+	AffinityDamageBonuses map[string]int                       `json:"affinityDamageBonuses"`
+	AffinityResistances   map[string]int                       `json:"affinityResistances"`
+	Progressions          []monsterTemplateProgressionResponse `json:"progressions"`
+	Spells                []models.Spell                       `json:"spells"`
+	ImageGenerationStatus string                               `json:"imageGenerationStatus"`
+	ImageGenerationError  *string                              `json:"imageGenerationError,omitempty"`
+}
+
+type monsterTemplateProgressionResponse struct {
+	ID          uuid.UUID               `json:"id"`
+	Name        string                  `json:"name"`
+	AbilityType models.SpellAbilityType `json:"abilityType"`
 }
 
 type monsterResponse struct {
@@ -363,8 +391,8 @@ type monsterResponse struct {
 	AttackDamageMin             int                        `json:"attackDamageMin"`
 	AttackDamageMax             int                        `json:"attackDamageMax"`
 	AttackSwipesPerAttack       int                        `json:"attackSwipesPerAttack"`
-	StrongAgainstAffinity       *string                    `json:"strongAgainstAffinity,omitempty"`
-	WeakAgainstAffinity         *string                    `json:"weakAgainstAffinity,omitempty"`
+	AffinityDamageBonuses       map[string]int             `json:"affinityDamageBonuses"`
+	AffinityResistances         map[string]int             `json:"affinityResistances"`
 	Spells                      []models.Spell             `json:"spells"`
 	Statuses                    []models.MonsterStatus     `json:"statuses"`
 	ActiveBattleID              *uuid.UUID                 `json:"activeBattleId,omitempty"`
@@ -737,14 +765,38 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 	if template == nil {
 		return nil
 	}
-	strongAgainst := models.NormalizeOptionalDamageAffinity(template.StrongAgainstAffinity)
-	weakAgainst := models.NormalizeOptionalDamageAffinity(template.WeakAgainstAffinity)
-	spells := make([]models.Spell, 0, len(template.Spells))
+	affinityBonuses := template.AffinityBonuses()
+	progressions := make([]monsterTemplateProgressionResponse, 0, len(template.Progressions))
+	seenProgressionIDs := make(map[uuid.UUID]struct{}, len(template.Progressions))
+	for _, link := range template.Progressions {
+		progression := link.Progression
+		if progression.ID == uuid.Nil {
+			continue
+		}
+		if _, exists := seenProgressionIDs[progression.ID]; exists {
+			continue
+		}
+		seenProgressionIDs[progression.ID] = struct{}{}
+		progressions = append(progressions, monsterTemplateProgressionResponse{
+			ID:          progression.ID,
+			Name:        progression.Name,
+			AbilityType: progression.AbilityType,
+		})
+	}
+	spells := make([]models.Spell, 0, len(template.Spells)+len(template.Progressions))
+	for _, spell := range monsterTemplateResolvedAbilitiesForLevel(template, 1) {
+		spells = append(spells, spell)
+	}
+	if len(spells) == 0 {
+		spells = make([]models.Spell, 0, len(template.Spells))
+	}
 	for _, templateSpell := range template.Spells {
 		if templateSpell.Spell.ID == uuid.Nil {
 			continue
 		}
-		spells = append(spells, templateSpell.Spell)
+		if len(template.Progressions) == 0 {
+			spells = append(spells, templateSpell.Spell)
+		}
 	}
 	return &monsterTemplateResponse{
 		ID:                    template.ID,
@@ -762,12 +814,97 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		BaseIntelligence:      template.BaseIntelligence,
 		BaseWisdom:            template.BaseWisdom,
 		BaseCharisma:          template.BaseCharisma,
-		StrongAgainstAffinity: strongAgainst,
-		WeakAgainstAffinity:   weakAgainst,
+		AffinityDamageBonuses: affinityBonuses.AffinityDamageBonusMap(),
+		AffinityResistances:   affinityBonuses.AffinityResistanceMap(),
+		Progressions:          progressions,
 		Spells:                spells,
 		ImageGenerationStatus: template.ImageGenerationStatus,
 		ImageGenerationError:  template.ImageGenerationError,
 	}
+}
+
+func monsterTemplateResolvedAbilitiesForLevel(
+	template *models.MonsterTemplate,
+	level int,
+) []models.Spell {
+	if template == nil {
+		return []models.Spell{}
+	}
+	if level < 1 {
+		level = 1
+	}
+	estimatedSize := len(template.Progressions)
+	if estimatedSize == 0 {
+		estimatedSize = len(template.Spells)
+	}
+	abilities := make([]models.Spell, 0, estimatedSize)
+	seen := map[uuid.UUID]struct{}{}
+	appendAbility := func(spell models.Spell) {
+		if spell.ID == uuid.Nil {
+			return
+		}
+		if _, exists := seen[spell.ID]; exists {
+			return
+		}
+		seen[spell.ID] = struct{}{}
+		abilities = append(abilities, spell)
+	}
+
+	for _, link := range template.Progressions {
+		best := monsterTemplateProgressionClosestSpell(link.Progression, level)
+		if best != nil {
+			appendAbility(*best)
+		}
+	}
+
+	if len(abilities) > 0 {
+		return abilities
+	}
+
+	for _, templateSpell := range template.Spells {
+		appendAbility(templateSpell.Spell)
+	}
+	return abilities
+}
+
+func monsterTemplateProgressionClosestSpell(
+	progression models.SpellProgression,
+	level int,
+) *models.Spell {
+	if level < 1 {
+		level = 1
+	}
+	bestIndex := -1
+	bestDistance := 0
+	bestLevel := 0
+	for index, member := range progression.Members {
+		if member.Spell.ID == uuid.Nil {
+			continue
+		}
+		memberLevel := member.Spell.AbilityLevel
+		if memberLevel <= 0 {
+			memberLevel = member.LevelBand
+		}
+		if memberLevel <= 0 {
+			memberLevel = 1
+		}
+		distance := memberLevel - level
+		if distance < 0 {
+			distance = -distance
+		}
+		if bestIndex == -1 ||
+			distance < bestDistance ||
+			(distance == bestDistance && memberLevel < bestLevel) {
+			bestIndex = index
+			bestDistance = distance
+			bestLevel = memberLevel
+		}
+	}
+	if bestIndex == -1 {
+		return nil
+	}
+	spell := progression.Members[bestIndex].Spell
+	return &spell
 }
 
 func monsterResponseFrom(
@@ -792,15 +929,7 @@ func monsterResponseFrom(
 			currentMana = 0
 		}
 	}
-	spells := []models.Spell{}
-	if monster.Template != nil {
-		for _, templateSpell := range monster.Template.Spells {
-			if templateSpell.Spell.ID == uuid.Nil {
-				continue
-			}
-			spells = append(spells, templateSpell.Spell)
-		}
-	}
+	spells := monsterTemplateResolvedAbilitiesForLevel(monster.Template, monster.EffectiveLevel())
 	imageURL := monster.ImageURL
 	if imageURL == "" && monster.Template != nil {
 		imageURL = monster.Template.ImageURL
@@ -812,11 +941,9 @@ func monsterResponseFrom(
 	if thumbnailURL == "" {
 		thumbnailURL = imageURL
 	}
-	var strongAgainstAffinity *string
-	var weakAgainstAffinity *string
+	totalAffinityBonuses := statusBonuses
 	if monster.Template != nil {
-		strongAgainstAffinity = models.NormalizeOptionalDamageAffinity(monster.Template.StrongAgainstAffinity)
-		weakAgainstAffinity = models.NormalizeOptionalDamageAffinity(monster.Template.WeakAgainstAffinity)
+		totalAffinityBonuses = monster.Template.AffinityBonuses().Add(totalAffinityBonuses)
 	}
 
 	dominantItemID := monster.DominantHandInventoryItemID
@@ -862,8 +989,8 @@ func monsterResponseFrom(
 		AttackDamageMin:             damageMin,
 		AttackDamageMax:             damageMax,
 		AttackSwipesPerAttack:       swipes,
-		StrongAgainstAffinity:       strongAgainstAffinity,
-		WeakAgainstAffinity:         weakAgainstAffinity,
+		AffinityDamageBonuses:       totalAffinityBonuses.AffinityDamageBonusMap(),
+		AffinityResistances:         totalAffinityBonuses.AffinityResistanceMap(),
 		Spells:                      spells,
 		Statuses:                    activeStatuses,
 		ActiveBattleID: func() *uuid.UUID {
@@ -1121,10 +1248,10 @@ func (s *server) buildMonsterResponse(
 func (s *server) parseMonsterTemplateUpsertRequest(
 	ctx context.Context,
 	body monsterTemplateUpsertRequest,
-) (*models.MonsterTemplate, []models.MonsterTemplateSpell, error) {
+) (*models.MonsterTemplate, []models.MonsterTemplateProgression, []models.MonsterTemplateSpell, error) {
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
-		return nil, nil, fmt.Errorf("name is required")
+		return nil, nil, nil, fmt.Errorf("name is required")
 	}
 	if body.BaseStrength < 1 ||
 		body.BaseDexterity < 1 ||
@@ -1132,35 +1259,38 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 		body.BaseIntelligence < 1 ||
 		body.BaseWisdom < 1 ||
 		body.BaseCharisma < 1 {
-		return nil, nil, fmt.Errorf("all base stats must be positive")
-	}
-	strongAgainstAffinity, err := parseOptionalDamageAffinity(
-		body.StrongAgainstAffinity,
-		"strongAgainstAffinity",
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	weakAgainstAffinity, err := parseOptionalDamageAffinity(
-		body.WeakAgainstAffinity,
-		"weakAgainstAffinity",
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	if strongAgainstAffinity != nil &&
-		weakAgainstAffinity != nil &&
-		*strongAgainstAffinity == *weakAgainstAffinity {
-		return nil, nil, fmt.Errorf("strongAgainstAffinity and weakAgainstAffinity must be different")
+		return nil, nil, nil, fmt.Errorf("all base stats must be positive")
 	}
 	monsterType := models.NormalizeMonsterTemplateType(body.MonsterType)
+
+	progressions := []models.MonsterTemplateProgression{}
+	seenProgressionIDs := map[uuid.UUID]bool{}
+	for index, progressionIDString := range body.ProgressionIDs {
+		progressionID, err := uuid.Parse(strings.TrimSpace(progressionIDString))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("progressionIds[%d] must be a valid UUID", index)
+		}
+		if seenProgressionIDs[progressionID] {
+			continue
+		}
+		seenProgressionIDs[progressionID] = true
+		if _, err := s.dbClient.Spell().FindProgressionByID(ctx, progressionID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, nil, fmt.Errorf("progressionIds[%d] not found", index)
+			}
+			return nil, nil, nil, err
+		}
+		progressions = append(progressions, models.MonsterTemplateProgression{
+			ProgressionID: progressionID,
+		})
+	}
 
 	spells := []models.MonsterTemplateSpell{}
 	seenSpellIDs := map[uuid.UUID]bool{}
 	for index, spellIDString := range body.SpellIDs {
 		spellID, err := uuid.Parse(strings.TrimSpace(spellIDString))
 		if err != nil {
-			return nil, nil, fmt.Errorf("spellIds[%d] must be a valid UUID", index)
+			return nil, nil, nil, fmt.Errorf("spellIds[%d] must be a valid UUID", index)
 		}
 		if seenSpellIDs[spellID] {
 			continue
@@ -1168,33 +1298,53 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 		seenSpellIDs[spellID] = true
 		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil, fmt.Errorf("spellIds[%d] not found", index)
+				return nil, nil, nil, fmt.Errorf("spellIds[%d] not found", index)
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		spells = append(spells, models.MonsterTemplateSpell{SpellID: spellID})
 	}
 
 	template := &models.MonsterTemplate{
-		Archived:              body.Archived != nil && *body.Archived,
-		MonsterType:           monsterType,
-		Name:                  name,
-		Description:           strings.TrimSpace(body.Description),
-		ImageURL:              strings.TrimSpace(body.ImageURL),
-		ThumbnailURL:          strings.TrimSpace(body.ThumbnailURL),
-		BaseStrength:          body.BaseStrength,
-		BaseDexterity:         body.BaseDexterity,
-		BaseConstitution:      body.BaseConstitution,
-		BaseIntelligence:      body.BaseIntelligence,
-		BaseWisdom:            body.BaseWisdom,
-		BaseCharisma:          body.BaseCharisma,
-		StrongAgainstAffinity: strongAgainstAffinity,
-		WeakAgainstAffinity:   weakAgainstAffinity,
+		Archived:                      body.Archived != nil && *body.Archived,
+		MonsterType:                   monsterType,
+		Name:                          name,
+		Description:                   strings.TrimSpace(body.Description),
+		ImageURL:                      strings.TrimSpace(body.ImageURL),
+		ThumbnailURL:                  strings.TrimSpace(body.ThumbnailURL),
+		BaseStrength:                  body.BaseStrength,
+		BaseDexterity:                 body.BaseDexterity,
+		BaseConstitution:              body.BaseConstitution,
+		BaseIntelligence:              body.BaseIntelligence,
+		BaseWisdom:                    body.BaseWisdom,
+		BaseCharisma:                  body.BaseCharisma,
+		PhysicalDamageBonusPercent:    body.PhysicalDamageBonusPercent,
+		PiercingDamageBonusPercent:    body.PiercingDamageBonusPercent,
+		SlashingDamageBonusPercent:    body.SlashingDamageBonusPercent,
+		BludgeoningDamageBonusPercent: body.BludgeoningDamageBonusPercent,
+		FireDamageBonusPercent:        body.FireDamageBonusPercent,
+		IceDamageBonusPercent:         body.IceDamageBonusPercent,
+		LightningDamageBonusPercent:   body.LightningDamageBonusPercent,
+		PoisonDamageBonusPercent:      body.PoisonDamageBonusPercent,
+		ArcaneDamageBonusPercent:      body.ArcaneDamageBonusPercent,
+		HolyDamageBonusPercent:        body.HolyDamageBonusPercent,
+		ShadowDamageBonusPercent:      body.ShadowDamageBonusPercent,
+		PhysicalResistancePercent:     body.PhysicalResistancePercent,
+		PiercingResistancePercent:     body.PiercingResistancePercent,
+		SlashingResistancePercent:     body.SlashingResistancePercent,
+		BludgeoningResistancePercent:  body.BludgeoningResistancePercent,
+		FireResistancePercent:         body.FireResistancePercent,
+		IceResistancePercent:          body.IceResistancePercent,
+		LightningResistancePercent:    body.LightningResistancePercent,
+		PoisonResistancePercent:       body.PoisonResistancePercent,
+		ArcaneResistancePercent:       body.ArcaneResistancePercent,
+		HolyResistancePercent:         body.HolyResistancePercent,
+		ShadowResistancePercent:       body.ShadowResistancePercent,
 	}
 	if template.ThumbnailURL == "" && template.ImageURL != "" {
 		template.ThumbnailURL = template.ImageURL
 	}
-	return template, spells, nil
+	return template, progressions, spells, nil
 }
 
 func (s *server) parseMonsterUpsertRequest(
@@ -1666,7 +1816,7 @@ func (s *server) createMonsterTemplate(ctx *gin.Context) {
 		return
 	}
 
-	template, spells, err := s.parseMonsterTemplateUpsertRequest(ctx, requestBody)
+	template, progressions, spells, err := s.parseMonsterTemplateUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -1682,6 +1832,10 @@ func (s *server) createMonsterTemplate(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.MonsterTemplate().ReplaceProgressions(ctx, template.ID, progressions); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2020,6 +2174,47 @@ func (s *server) getMonsterTemplateBulkStatus(ctx context.Context, jobID uuid.UU
 	return &status, nil
 }
 
+func (s *server) setMonsterTemplateAffinityRefreshStatus(
+	ctx context.Context,
+	status jobs.MonsterTemplateAffinityRefreshStatus,
+) error {
+	if s.redisClient == nil {
+		return fmt.Errorf("redis client unavailable")
+	}
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return s.redisClient.Set(
+		ctx,
+		jobs.MonsterTemplateAffinityRefreshStatusKey(status.JobID),
+		payload,
+		jobs.MonsterTemplateAffinityRefreshStatusTTL,
+	).Err()
+}
+
+func (s *server) getMonsterTemplateAffinityRefreshStatus(
+	ctx context.Context,
+	jobID uuid.UUID,
+) (*jobs.MonsterTemplateAffinityRefreshStatus, error) {
+	if s.redisClient == nil {
+		return nil, fmt.Errorf("redis client unavailable")
+	}
+	value, err := s.redisClient.Get(ctx, jobs.MonsterTemplateAffinityRefreshStatusKey(jobID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var status jobs.MonsterTemplateAffinityRefreshStatus
+	if err := json.Unmarshal([]byte(value), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -2151,6 +2346,117 @@ func (s *server) getBulkGenerateMonsterTemplatesStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, status)
 }
 
+func (s *server) refreshMonsterTemplateAffinities(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+	if s.redisClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
+		return
+	}
+
+	var requestBody struct {
+		IDs []string `json:"ids"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && !errors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	templateIDs := make([]uuid.UUID, 0, len(requestBody.IDs))
+	seen := map[uuid.UUID]struct{}{}
+	for _, rawID := range requestBody.IDs {
+		templateID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid template ID: %s", rawID)})
+			return
+		}
+		if _, exists := seen[templateID]; exists {
+			continue
+		}
+		seen[templateID] = struct{}{}
+		templateIDs = append(templateIDs, templateID)
+	}
+
+	totalCount := len(templateIDs)
+	if totalCount == 0 {
+		templates, err := s.dbClient.MonsterTemplate().FindAll(ctx)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		totalCount = len(templates)
+	}
+
+	jobID := uuid.New()
+	queuedAt := time.Now().UTC()
+	status := jobs.MonsterTemplateAffinityRefreshStatus{
+		JobID:        jobID,
+		Status:       jobs.MonsterTemplateAffinityRefreshStatusQueued,
+		TotalCount:   totalCount,
+		UpdatedCount: 0,
+		TemplateIDs:  templateIDs,
+		QueuedAt:     &queuedAt,
+		UpdatedAt:    queuedAt,
+	}
+	if err := s.setMonsterTemplateAffinityRefreshStatus(ctx.Request.Context(), status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.RefreshMonsterTemplateAffinitiesTaskPayload{
+		JobID:              jobID,
+		MonsterTemplateIDs: templateIDs,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.RefreshMonsterTemplateAffinitiesTaskType, payloadBytes)); err != nil {
+		failedAt := time.Now().UTC()
+		status.Status = jobs.MonsterTemplateAffinityRefreshStatusFailed
+		status.Error = err.Error()
+		status.CompletedAt = &failedAt
+		status.UpdatedAt = failedAt
+		_ = s.setMonsterTemplateAffinityRefreshStatus(ctx.Request.Context(), status)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, status)
+}
+
+func (s *server) getRefreshMonsterTemplateAffinitiesStatus(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	jobID, err := uuid.Parse(ctx.Param("jobId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
+		return
+	}
+
+	status, err := s.getMonsterTemplateAffinityRefreshStatus(ctx.Request.Context(), jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if status == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "affinity refresh job not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status)
+}
+
 func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -2178,7 +2484,7 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 		return
 	}
 
-	template, spells, err := s.parseMonsterTemplateUpsertRequest(ctx, requestBody)
+	template, progressions, spells, err := s.parseMonsterTemplateUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -2202,6 +2508,10 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.MonsterTemplate().Update(ctx, templateID, template); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.MonsterTemplate().ReplaceProgressions(ctx, templateID, progressions); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -3264,10 +3574,26 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
-		monster,
+	statusBonuses, err := s.dbClient.MonsterStatus().GetActiveStatBonuses(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	attackerBonuses, err := s.getCharacterTotalBonuses(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	damageWithBonus, _, _ := applyAffinityDamageBonus(
 		requestBody.Damage,
 		damageAffinity,
+		attackerBonuses,
+	)
+	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
+		monster,
+		damageWithBonus,
+		damageAffinity,
+		statusBonuses,
 	)
 
 	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, appliedDamage); err != nil {
@@ -3436,10 +3762,26 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
-		monster,
+	statusBonuses, err := s.dbClient.MonsterStatus().GetActiveStatBonuses(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	attackerBonuses, err := s.getCharacterTotalBonuses(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	damageWithBonus, _, _ := applyAffinityDamageBonus(
 		requestBody.Damage,
 		damageAffinity,
+		attackerBonuses,
+	)
+	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
+		monster,
+		damageWithBonus,
+		damageAffinity,
+		statusBonuses,
 	)
 
 	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, appliedDamage); err != nil {

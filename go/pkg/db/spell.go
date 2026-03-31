@@ -93,6 +93,18 @@ func (h *spellHandler) CreateProgression(ctx context.Context, progression *model
 	return h.db.WithContext(ctx).Create(progression).Error
 }
 
+func (h *spellHandler) FindProgressionByID(ctx context.Context, progressionID uuid.UUID) (*models.SpellProgression, error) {
+	var progression models.SpellProgression
+	if err := h.db.WithContext(ctx).
+		Preload("Members").
+		Preload("Members.Spell").
+		Where("id = ?", progressionID).
+		First(&progression).Error; err != nil {
+		return nil, err
+	}
+	return &progression, nil
+}
+
 func (h *spellHandler) FindProgressionBySpellID(ctx context.Context, spellID uuid.UUID) (*models.SpellProgression, error) {
 	var link models.SpellProgressionSpell
 	if err := h.db.WithContext(ctx).

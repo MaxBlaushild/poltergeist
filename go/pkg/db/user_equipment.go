@@ -70,7 +70,29 @@ func (h *userEquipmentHandler) GetStatBonuses(ctx context.Context, userID uuid.U
 			COALESCE(SUM(inventory_items.constitution_mod), 0) AS constitution,
 			COALESCE(SUM(inventory_items.intelligence_mod), 0) AS intelligence,
 			COALESCE(SUM(inventory_items.wisdom_mod), 0) AS wisdom,
-			COALESCE(SUM(inventory_items.charisma_mod), 0) AS charisma
+			COALESCE(SUM(inventory_items.charisma_mod), 0) AS charisma,
+			COALESCE(SUM(inventory_items.physical_damage_bonus_percent), 0) AS physical_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.piercing_damage_bonus_percent), 0) AS piercing_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.slashing_damage_bonus_percent), 0) AS slashing_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.bludgeoning_damage_bonus_percent), 0) AS bludgeoning_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.fire_damage_bonus_percent), 0) AS fire_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.ice_damage_bonus_percent), 0) AS ice_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.lightning_damage_bonus_percent), 0) AS lightning_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.poison_damage_bonus_percent), 0) AS poison_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.arcane_damage_bonus_percent), 0) AS arcane_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.holy_damage_bonus_percent), 0) AS holy_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.shadow_damage_bonus_percent), 0) AS shadow_damage_bonus_percent,
+			COALESCE(SUM(inventory_items.physical_resistance_percent), 0) AS physical_resistance_percent,
+			COALESCE(SUM(inventory_items.piercing_resistance_percent), 0) AS piercing_resistance_percent,
+			COALESCE(SUM(inventory_items.slashing_resistance_percent), 0) AS slashing_resistance_percent,
+			COALESCE(SUM(inventory_items.bludgeoning_resistance_percent), 0) AS bludgeoning_resistance_percent,
+			COALESCE(SUM(inventory_items.fire_resistance_percent), 0) AS fire_resistance_percent,
+			COALESCE(SUM(inventory_items.ice_resistance_percent), 0) AS ice_resistance_percent,
+			COALESCE(SUM(inventory_items.lightning_resistance_percent), 0) AS lightning_resistance_percent,
+			COALESCE(SUM(inventory_items.poison_resistance_percent), 0) AS poison_resistance_percent,
+			COALESCE(SUM(inventory_items.arcane_resistance_percent), 0) AS arcane_resistance_percent,
+			COALESCE(SUM(inventory_items.holy_resistance_percent), 0) AS holy_resistance_percent,
+			COALESCE(SUM(inventory_items.shadow_resistance_percent), 0) AS shadow_resistance_percent
 		`).
 		Joins("JOIN owned_inventory_items ON owned_inventory_items.id = user_equipment.owned_inventory_item_id").
 		Joins("JOIN inventory_items ON inventory_items.id = owned_inventory_items.inventory_item_id").

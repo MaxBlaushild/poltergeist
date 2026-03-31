@@ -490,6 +490,7 @@ type SpellHandle interface {
 	Update(ctx context.Context, spellID uuid.UUID, updates map[string]interface{}) error
 	Delete(ctx context.Context, spellID uuid.UUID) error
 	CreateProgression(ctx context.Context, progression *models.SpellProgression) error
+	FindProgressionByID(ctx context.Context, progressionID uuid.UUID) (*models.SpellProgression, error)
 	FindProgressionBySpellID(ctx context.Context, spellID uuid.UUID) (*models.SpellProgression, error)
 	FindProgressionMembers(ctx context.Context, progressionID uuid.UUID) ([]models.SpellProgressionSpell, error)
 	UpsertProgressionMember(ctx context.Context, progressionID uuid.UUID, spellID uuid.UUID, levelBand int) error
@@ -640,6 +641,7 @@ type TagGroupHandle interface {
 type ZoneHandle interface {
 	Create(ctx context.Context, zone *models.Zone) error
 	FindAll(ctx context.Context) ([]*models.Zone, error)
+	FindAdminSummaries(ctx context.Context) ([]models.ZoneAdminSummary, error)
 	Update(ctx context.Context, zone *models.Zone) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 	Delete(ctx context.Context, zoneID uuid.UUID) error
@@ -1332,6 +1334,7 @@ type MonsterTemplateHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceSpells(ctx context.Context, templateID uuid.UUID, spells []models.MonsterTemplateSpell) error
+	ReplaceProgressions(ctx context.Context, templateID uuid.UUID, progressions []models.MonsterTemplateProgression) error
 }
 
 type MonsterTemplateAdminListParams struct {

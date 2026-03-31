@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ import (
 // GenerateMonsterTemplatesBulkProcessor creates monster templates in the background.
 type GenerateMonsterTemplatesBulkProcessor struct {
 	dbClient    db.DbClient
+	deepPriest  deep_priest.DeepPriest
 	redisClient *redis.Client
 }
 
@@ -28,10 +30,15 @@ type monsterTemplateAbilityPool struct {
 	byName  map[string]models.Spell
 }
 
-func NewGenerateMonsterTemplatesBulkProcessor(dbClient db.DbClient, redisClient *redis.Client) GenerateMonsterTemplatesBulkProcessor {
+func NewGenerateMonsterTemplatesBulkProcessor(
+	dbClient db.DbClient,
+	redisClient *redis.Client,
+	deepPriest deep_priest.DeepPriest,
+) GenerateMonsterTemplatesBulkProcessor {
 	log.Println("Initializing GenerateMonsterTemplatesBulkProcessor")
 	return GenerateMonsterTemplatesBulkProcessor{
 		dbClient:    dbClient,
+		deepPriest:  deepPriest,
 		redisClient: redisClient,
 	}
 }
@@ -99,6 +106,10 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 		if template.Name == "" {
 			template.Name = fmt.Sprintf("Monster Template %d", index+1)
 		}
+		applyAffinityBonusesToMonsterTemplate(
+			template,
+			scoreMonsterTemplateAffinities(ctx, template, p.deepPriest),
+		)
 
 		if err := p.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
 			p.markFailed(ctx, statusKey, status, err)
