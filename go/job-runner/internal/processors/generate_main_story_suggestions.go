@@ -365,7 +365,6 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 	if err != nil {
 		return fmt.Errorf("failed to load main story templates: %w", err)
 	}
-
 	prompt := fmt.Sprintf(
 		mainStorySuggestionPromptTemplate,
 		maxInt(1, job.Count),

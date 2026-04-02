@@ -100,6 +100,7 @@ export const MainStoryGenerator = () => {
   const [queueing, setQueueing] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [jobActionError, setJobActionError] = useState<string | null>(null);
+  const [locationArchetypeSearch, setLocationArchetypeSearch] = useState('');
   const [convertingDraftId, setConvertingDraftId] = useState<string | null>(
     null
   );
@@ -117,6 +118,31 @@ export const MainStoryGenerator = () => {
     });
     return map;
   }, [locationArchetypes]);
+  const selectedLocationArchetypes = useMemo(
+    () =>
+      form.requiredLocationArchetypeIds
+        .map((id) =>
+          locationArchetypes.find((archetype) => archetype.id === id)
+        )
+        .filter(Boolean),
+    [form.requiredLocationArchetypeIds, locationArchetypes]
+  );
+  const filteredLocationArchetypes = useMemo(() => {
+    const query = locationArchetypeSearch.trim().toLowerCase();
+    return locationArchetypes
+      .filter(
+        (archetype) =>
+          !form.requiredLocationArchetypeIds.includes(archetype.id) &&
+          (!query ||
+            archetype.name.toLowerCase().includes(query) ||
+            (archetype.description || '').toLowerCase().includes(query))
+      )
+      .slice(0, 12);
+  }, [
+    form.requiredLocationArchetypeIds,
+    locationArchetypes,
+    locationArchetypeSearch,
+  ]);
 
   const selectedJobRequiredLocationArchetypes = useMemo(() => {
     if (!selectedJob?.requiredLocationArchetypeIds?.length) {
@@ -234,6 +260,7 @@ export const MainStoryGenerator = () => {
       ]);
       setSelectedJobId(created.id);
       setDrafts([]);
+      setLocationArchetypeSearch('');
     } catch (error) {
       console.error('Failed to queue main story suggestion job', error);
       setJobActionError(
@@ -279,6 +306,31 @@ export const MainStoryGenerator = () => {
     } finally {
       setDeletingDraftId(null);
     }
+  };
+
+  const addRequiredLocationArchetype = (archetypeId: string) => {
+    setForm((current) => {
+      if (current.requiredLocationArchetypeIds.includes(archetypeId)) {
+        return current;
+      }
+      return {
+        ...current,
+        requiredLocationArchetypeIds: [
+          ...current.requiredLocationArchetypeIds,
+          archetypeId,
+        ],
+      };
+    });
+    setLocationArchetypeSearch('');
+  };
+
+  const removeRequiredLocationArchetype = (archetypeId: string) => {
+    setForm((current) => ({
+      ...current,
+      requiredLocationArchetypeIds: current.requiredLocationArchetypeIds.filter(
+        (id) => id !== archetypeId
+      ),
+    }));
   };
 
   return (
@@ -420,40 +472,86 @@ export const MainStoryGenerator = () => {
               </div>
               <div className="qa-field qa-field--full">
                 <div className="qa-label">Required Location Archetypes</div>
-                <div className="qa-tag-picker">
-                  {locationArchetypes.map((archetype) => {
-                    const checked = form.requiredLocationArchetypeIds.includes(
-                      archetype.id
-                    );
-                    return (
-                      <label
-                        key={archetype.id}
-                        className={`qa-tag-option ${checked ? 'is-selected' : ''}`}
+                <div className="qa-tag-row" style={{ marginBottom: 10 }}>
+                  {selectedLocationArchetypes.length > 0 ? (
+                    selectedLocationArchetypes.map((archetype) => (
+                      <button
+                        key={archetype?.id}
+                        type="button"
+                        className="qa-chip"
+                        onClick={() =>
+                          archetype &&
+                          removeRequiredLocationArchetype(archetype.id)
+                        }
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          border: 'none',
+                          cursor: 'pointer',
+                        }}
+                        title="Remove archetype"
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            setForm((current) => {
-                              const next = event.target.checked
-                                ? [
-                                    ...current.requiredLocationArchetypeIds,
-                                    archetype.id,
-                                  ]
-                                : current.requiredLocationArchetypeIds.filter(
-                                    (id) => id !== archetype.id
-                                  );
-                              return {
-                                ...current,
-                                requiredLocationArchetypeIds: next,
-                              };
-                            });
-                          }}
-                        />
-                        <span>{archetype.name}</span>
-                      </label>
-                    );
-                  })}
+                        <span>{archetype?.name}</span>
+                        <span aria-hidden="true">x</span>
+                      </button>
+                    ))
+                  ) : (
+                    <span className="qa-muted">
+                      No required archetypes selected.
+                    </span>
+                  )}
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="qa-input"
+                    value={locationArchetypeSearch}
+                    onChange={(event) =>
+                      setLocationArchetypeSearch(event.target.value)
+                    }
+                    placeholder="Search location archetypes..."
+                  />
+                  {(locationArchetypeSearch.trim() ||
+                    filteredLocationArchetypes.length > 0) && (
+                    <div
+                      className="qa-panel"
+                      style={{
+                        marginTop: 8,
+                        maxHeight: 240,
+                        overflowY: 'auto',
+                        padding: 8,
+                      }}
+                    >
+                      {filteredLocationArchetypes.length > 0 ? (
+                        filteredLocationArchetypes.map((archetype) => (
+                          <button
+                            key={archetype.id}
+                            type="button"
+                            className="qa-job-card"
+                            style={{
+                              width: '100%',
+                              textAlign: 'left',
+                              marginBottom: 8,
+                            }}
+                            onClick={() =>
+                              addRequiredLocationArchetype(archetype.id)
+                            }
+                          >
+                            <div className="qa-job-card__title">
+                              {archetype.name}
+                            </div>
+                            <div className="qa-job-card__meta">
+                              {archetype.description || 'No description'}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="qa-empty">
+                          No matching location archetypes.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="qa-field qa-field--full">
