@@ -115,6 +115,29 @@ func normalizeQuestTemplateRecurrenceFrequency(value *string) (*string, error) {
 	return &recurrence, nil
 }
 
+func (s *server) normalizeQuestArchetypeQuestGiverCharacterID(
+	ctx context.Context,
+	category string,
+	rawID *uuid.UUID,
+) (*uuid.UUID, error) {
+	if rawID == nil || *rawID == uuid.Nil {
+		if models.IsMainStoryQuestCategory(category) {
+			return nil, fmt.Errorf("main story quest archetypes require questGiverCharacterId")
+		}
+		return nil, nil
+	}
+
+	character, err := s.dbClient.Character().FindByID(ctx, *rawID)
+	if err != nil {
+		return nil, fmt.Errorf("questGiverCharacterId could not be loaded")
+	}
+	if character == nil {
+		return nil, fmt.Errorf("questGiverCharacterId could not be loaded")
+	}
+
+	return rawID, nil
+}
+
 func buildQuestArchetypeItemRewards(
 	questArchetypeID uuid.UUID,
 	payloads []questArchetypeItemRewardPayload,
@@ -169,6 +192,12 @@ func (s *server) resolveQuestTemplateCharacterID(
 	zoneID uuid.UUID,
 	questArchetype *models.QuestArchetype,
 ) (*uuid.UUID, error) {
+	if questArchetype != nil && questArchetype.QuestGiverCharacterID != nil && *questArchetype.QuestGiverCharacterID != uuid.Nil {
+		return questArchetype.QuestGiverCharacterID, nil
+	}
+	if questArchetype != nil && models.IsMainStoryQuestCategory(questArchetype.Category) {
+		return nil, fmt.Errorf("main story quest archetype requires questGiverCharacterId")
+	}
 	if questArchetype == nil || len(questArchetype.CharacterTags) == 0 {
 		return nil, nil
 	}
@@ -246,15 +275,76 @@ func (s *server) resolveQuestTemplateCharacterID(
 	return &selectedID, nil
 }
 
+func (s *server) resolveMainStoryQuestTemplateCharacterID(
+	ctx context.Context,
+	rawTags []string,
+) (*uuid.UUID, error) {
+	normalizedTags := normalizeQuestTemplateCharacterTags(rawTags)
+	if len(normalizedTags) == 0 {
+		return nil, fmt.Errorf("main story quest archetypes require a specific quest giver")
+	}
+
+	characters, err := s.dbClient.Character().FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	desiredTags := make(map[string]struct{}, len(normalizedTags))
+	for _, tag := range normalizedTags {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed == "" {
+			continue
+		}
+		desiredTags[trimmed] = struct{}{}
+	}
+	if len(desiredTags) == 0 {
+		return nil, fmt.Errorf("main story quest archetypes require a specific quest giver")
+	}
+
+	matches := make([]*models.Character, 0)
+	for _, character := range characters {
+		if character == nil || !characterMatchesQuestTemplateTags(character, desiredTags) {
+			continue
+		}
+		matches = append(matches, character)
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf(
+			"could not resolve a specific quest giver from character tags: %s",
+			strings.Join([]string(normalizedTags), ", "),
+		)
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		iName := strings.ToLower(strings.TrimSpace(matches[i].Name))
+		jName := strings.ToLower(strings.TrimSpace(matches[j].Name))
+		if iName != jName {
+			return iName < jName
+		}
+		return matches[i].ID.String() < matches[j].ID.String()
+	})
+
+	if len(matches) > 1 {
+		names := make([]string, 0, len(matches))
+		for _, match := range matches {
+			names = append(names, strings.TrimSpace(match.Name))
+		}
+		return nil, fmt.Errorf(
+			"character tags resolve to multiple possible quest givers (%s); choose a specific character",
+			strings.Join(names, ", "),
+		)
+	}
+
+	selectedID := matches[0].ID
+	return &selectedID, nil
+}
+
 func (s *server) resolveZoneQuestArchetypeCharacterID(
 	ctx context.Context,
 	zoneQuestArchetype *models.ZoneQuestArchetype,
 ) (*uuid.UUID, error) {
 	if zoneQuestArchetype == nil {
 		return nil, nil
-	}
-	if zoneQuestArchetype.CharacterID != nil {
-		return zoneQuestArchetype.CharacterID, nil
 	}
 
 	questArchetype := &zoneQuestArchetype.QuestArchetype
@@ -264,6 +354,15 @@ func (s *server) resolveZoneQuestArchetypeCharacterID(
 			return nil, err
 		}
 		questArchetype = loaded
+	}
+	if questArchetype != nil && models.IsMainStoryQuestCategory(questArchetype.Category) {
+		if questArchetype.QuestGiverCharacterID != nil && *questArchetype.QuestGiverCharacterID != uuid.Nil {
+			return questArchetype.QuestGiverCharacterID, nil
+		}
+		return nil, fmt.Errorf("main story quest archetype requires questGiverCharacterId")
+	}
+	if zoneQuestArchetype.CharacterID != nil {
+		return zoneQuestArchetype.CharacterID, nil
 	}
 	return s.resolveQuestTemplateCharacterID(ctx, zoneQuestArchetype.ZoneID, questArchetype)
 }

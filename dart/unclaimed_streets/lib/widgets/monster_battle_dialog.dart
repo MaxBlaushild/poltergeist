@@ -3834,10 +3834,26 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     if (isSupportAbility) {
       if (requiresSupportTarget) {
-        selectedSupportTarget = await _pickSingleTargetAlly(
-          actionLabel: ability.name,
-        );
-        if (!mounted || !_canAct || selectedSupportTarget == null) return;
+        if (widget.isPartyBattle) {
+          selectedSupportTarget = await _pickSingleTargetAlly(
+            actionLabel: ability.name,
+          );
+          if (!mounted || !_canAct || selectedSupportTarget == null) return;
+        } else {
+          for (final ally in _supportTargetOptions()) {
+            if (ally.isSelf) {
+              selectedSupportTarget = ally;
+              break;
+            }
+          }
+          if (selectedSupportTarget == null) {
+            setState(() {
+              _battleLog.add('Unable to target yourself with ${ability.name}.');
+              _menuView = _BattleMenuView.root;
+            });
+            return;
+          }
+        }
         if (widget.isPartyBattle) {
           allyTargetIndex = _partyAllies.indexWhere(
             (ally) => ally.userId == selectedSupportTarget!.userId,

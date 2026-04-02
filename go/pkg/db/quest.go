@@ -41,6 +41,11 @@ func (h *questHandle) preloadDetail(ctx context.Context) *gorm.DB {
 
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 	if quest != nil {
+		quest.Category = models.NormalizeQuestCategory(quest.Category)
+		if !models.IsMainStoryQuestCategory(quest.Category) {
+			quest.MainStoryPreviousQuestID = nil
+			quest.MainStoryNextQuestID = nil
+		}
 		quest.DifficultyMode = models.NormalizeQuestDifficultyMode(string(quest.DifficultyMode))
 		quest.Difficulty = models.NormalizeQuestDifficulty(quest.Difficulty)
 		quest.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(quest.MonsterEncounterTargetLevel)
@@ -65,6 +70,11 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		return nil
 	}
 	updates.DifficultyMode = models.NormalizeQuestDifficultyMode(string(updates.DifficultyMode))
+	updates.Category = models.NormalizeQuestCategory(updates.Category)
+	if !models.IsMainStoryQuestCategory(updates.Category) {
+		updates.MainStoryPreviousQuestID = nil
+		updates.MainStoryNextQuestID = nil
+	}
 	updates.Difficulty = models.NormalizeQuestDifficulty(updates.Difficulty)
 	updates.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(updates.MonsterEncounterTargetLevel)
 	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
@@ -75,11 +85,14 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	payload := map[string]interface{}{
 		"name":                           updates.Name,
 		"description":                    updates.Description,
+		"category":                       updates.Category,
 		"acceptance_dialogue":            updates.AcceptanceDialogue,
 		"image_url":                      updates.ImageURL,
 		"zone_id":                        updates.ZoneID,
 		"quest_archetype_id":             updates.QuestArchetypeID,
 		"quest_giver_character_id":       updates.QuestGiverCharacterID,
+		"main_story_previous_quest_id":   updates.MainStoryPreviousQuestID,
+		"main_story_next_quest_id":       updates.MainStoryNextQuestID,
 		"recurring_quest_id":             updates.RecurringQuestID,
 		"recurrence_frequency":           updates.RecurrenceFrequency,
 		"next_recurrence_at":             updates.NextRecurrenceAt,

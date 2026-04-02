@@ -31,11 +31,14 @@ export interface Quest {
   detailLoaded?: boolean;
   name: string;
   description: string;
+  category?: 'side' | 'main_story';
   acceptanceDialogue?: string[];
   imageUrl?: string;
   zoneId?: string | null;
   questArchetypeId?: string | null;
   questGiverCharacterId?: string | null;
+  mainStoryPreviousQuestId?: string | null;
+  mainStoryNextQuestId?: string | null;
   recurringQuestId?: string | null;
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;

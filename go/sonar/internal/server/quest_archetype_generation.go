@@ -57,7 +57,17 @@ func (s *server) generateQuestForQuestArchetype(ctx *gin.Context) {
 	}
 
 	resolvedCharacterID := requestBody.CharacterID
-	if resolvedCharacterID != nil {
+	if models.IsMainStoryQuestCategory(questArchetype.Category) {
+		if questArchetype.QuestGiverCharacterID == nil || *questArchetype.QuestGiverCharacterID == uuid.Nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "main story quest archetype requires questGiverCharacterId"})
+			return
+		}
+		if resolvedCharacterID != nil && *resolvedCharacterID != *questArchetype.QuestGiverCharacterID {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "main story quest archetypes must use their configured quest giver"})
+			return
+		}
+		resolvedCharacterID = questArchetype.QuestGiverCharacterID
+	} else if resolvedCharacterID != nil {
 		character, err := s.dbClient.Character().FindByID(ctx, *resolvedCharacterID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

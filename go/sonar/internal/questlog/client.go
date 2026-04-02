@@ -67,23 +67,26 @@ type QuestSpellReward struct {
 }
 
 type Quest struct {
-	ID                    uuid.UUID               `json:"id"`
-	Name                  string                  `json:"name"`
-	Description           string                  `json:"description"`
-	AcceptanceDialogue    []string                `json:"acceptanceDialogue,omitempty"`
-	ImageUrl              string                  `json:"imageUrl"`
-	RewardMode            models.RewardMode       `json:"rewardMode"`
-	RandomRewardSize      models.RandomRewardSize `json:"randomRewardSize"`
-	Gold                  int                     `json:"gold"`
-	ItemRewards           []QuestItemReward       `json:"itemRewards"`
-	SpellRewards          []QuestSpellReward      `json:"spellRewards"`
-	QuestGiverCharacterID *uuid.UUID              `json:"questGiverCharacterId,omitempty"`
-	RecurringQuestID      *uuid.UUID              `json:"recurringQuestId,omitempty"`
-	IsAccepted            bool                    `json:"isAccepted"`
-	TurnedInAt            *time.Time              `json:"turnedInAt,omitempty"`
-	CompletionCount       int                     `json:"completionCount,omitempty"`
-	ReadyToTurnIn         bool                    `json:"readyToTurnIn"`
-	CurrentNode           *QuestNode              `json:"currentNode,omitempty"`
+	ID                       uuid.UUID               `json:"id"`
+	Name                     string                  `json:"name"`
+	Description              string                  `json:"description"`
+	Category                 string                  `json:"category"`
+	AcceptanceDialogue       []string                `json:"acceptanceDialogue,omitempty"`
+	ImageUrl                 string                  `json:"imageUrl"`
+	RewardMode               models.RewardMode       `json:"rewardMode"`
+	RandomRewardSize         models.RandomRewardSize `json:"randomRewardSize"`
+	Gold                     int                     `json:"gold"`
+	ItemRewards              []QuestItemReward       `json:"itemRewards"`
+	SpellRewards             []QuestSpellReward      `json:"spellRewards"`
+	QuestGiverCharacterID    *uuid.UUID              `json:"questGiverCharacterId,omitempty"`
+	MainStoryPreviousQuestID *uuid.UUID              `json:"mainStoryPreviousQuestId,omitempty"`
+	MainStoryNextQuestID     *uuid.UUID              `json:"mainStoryNextQuestId,omitempty"`
+	RecurringQuestID         *uuid.UUID              `json:"recurringQuestId,omitempty"`
+	IsAccepted               bool                    `json:"isAccepted"`
+	TurnedInAt               *time.Time              `json:"turnedInAt,omitempty"`
+	CompletionCount          int                     `json:"completionCount,omitempty"`
+	ReadyToTurnIn            bool                    `json:"readyToTurnIn"`
+	CurrentNode              *QuestNode              `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -209,22 +212,25 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		}
 		seriesIDCopy := seriesID
 		entry := Quest{
-			ID:                    quest.ID,
-			Name:                  quest.Name,
-			Description:           quest.Description,
-			AcceptanceDialogue:    []string(quest.AcceptanceDialogue),
-			ImageUrl:              quest.ImageURL,
-			RewardMode:            quest.RewardMode,
-			RandomRewardSize:      quest.RandomRewardSize,
-			Gold:                  quest.Gold,
-			ItemRewards:           itemRewards,
-			SpellRewards:          spellRewards,
-			QuestGiverCharacterID: quest.QuestGiverCharacterID,
-			RecurringQuestID:      &seriesIDCopy,
-			IsAccepted:            accepted,
-			TurnedInAt:            acceptance.TurnedInAt,
-			ReadyToTurnIn:         accepted && acceptance.TurnedInAt == nil && allCompleted,
-			CurrentNode:           currentNode,
+			ID:                       quest.ID,
+			Name:                     quest.Name,
+			Description:              quest.Description,
+			Category:                 quest.Category,
+			AcceptanceDialogue:       []string(quest.AcceptanceDialogue),
+			ImageUrl:                 quest.ImageURL,
+			RewardMode:               quest.RewardMode,
+			RandomRewardSize:         quest.RandomRewardSize,
+			Gold:                     quest.Gold,
+			ItemRewards:              itemRewards,
+			SpellRewards:             spellRewards,
+			QuestGiverCharacterID:    quest.QuestGiverCharacterID,
+			MainStoryPreviousQuestID: quest.MainStoryPreviousQuestID,
+			MainStoryNextQuestID:     quest.MainStoryNextQuestID,
+			RecurringQuestID:         &seriesIDCopy,
+			IsAccepted:               accepted,
+			TurnedInAt:               acceptance.TurnedInAt,
+			ReadyToTurnIn:            accepted && acceptance.TurnedInAt == nil && allCompleted,
+			CurrentNode:              currentNode,
 		}
 		if acceptance.TurnedInAt != nil {
 			completedCounts[seriesID]++

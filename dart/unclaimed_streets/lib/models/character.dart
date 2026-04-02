@@ -12,6 +12,7 @@ class Character {
   final double? pointOfInterestLng;
   final List<CharacterLocation> locations;
   final bool hasAvailableQuest;
+  final bool hasAvailableMainStoryQuest;
 
   const Character({
     required this.id,
@@ -25,6 +26,7 @@ class Character {
     this.pointOfInterestLng,
     this.locations = const [],
     this.hasAvailableQuest = false,
+    this.hasAvailableMainStoryQuest = false,
   });
 
   factory Character.fromJson(Map<String, dynamic> json) {
@@ -61,6 +63,8 @@ class Character {
               .toList() ??
           const [],
       hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
+      hasAvailableMainStoryQuest:
+          json['hasAvailableMainStoryQuest'] as bool? ?? false,
     );
   }
 }

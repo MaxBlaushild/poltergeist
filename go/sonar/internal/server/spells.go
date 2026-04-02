@@ -73,6 +73,10 @@ type spellProgressionFromPromptRequest struct {
 	AbilityType string `json:"abilityType"`
 }
 
+type rebalanceSpellDamageRequest struct {
+	SpellIDs []string `json:"spellIds"`
+}
+
 type generatedAbilityPayload struct {
 	Abilities  []jobs.SpellCreationSpec `json:"abilities"`
 	Spells     []jobs.SpellCreationSpec `json:"spells"`
@@ -769,6 +773,47 @@ func (s *server) getSpellProgressionPromptStatus(
 	return &status, nil
 }
 
+func (s *server) setSpellDamageRebalanceStatus(
+	ctx context.Context,
+	status jobs.SpellDamageRebalanceStatus,
+) error {
+	if s.redisClient == nil {
+		return fmt.Errorf("redis client unavailable")
+	}
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return s.redisClient.Set(
+		ctx,
+		jobs.SpellDamageRebalanceStatusKey(status.JobID),
+		payload,
+		jobs.SpellDamageRebalanceStatusTTL,
+	).Err()
+}
+
+func (s *server) getSpellDamageRebalanceStatus(
+	ctx context.Context,
+	jobID uuid.UUID,
+) (*jobs.SpellDamageRebalanceStatus, error) {
+	if s.redisClient == nil {
+		return nil, fmt.Errorf("redis client unavailable")
+	}
+	value, err := s.redisClient.Get(ctx, jobs.SpellDamageRebalanceStatusKey(jobID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var status jobs.SpellDamageRebalanceStatus
+	if err := json.Unmarshal([]byte(value), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.SpellAbilityType) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -1064,6 +1109,107 @@ func (s *server) getSpellProgressionFromPromptStatus(ctx *gin.Context) {
 	}
 	if status == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "spell progression generation job not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, status)
+}
+
+func (s *server) queueSpellDamageRebalance(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+	if s.redisClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
+		return
+	}
+
+	var requestBody rebalanceSpellDamageRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spellIDs := make([]uuid.UUID, 0, len(requestBody.SpellIDs))
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.SpellIDs))
+	for _, raw := range requestBody.SpellIDs {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		spellID, err := uuid.Parse(trimmed)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid spell ID %q", raw)})
+			return
+		}
+		if _, exists := seen[spellID]; exists {
+			continue
+		}
+		seen[spellID] = struct{}{}
+		spellIDs = append(spellIDs, spellID)
+	}
+
+	jobID := uuid.New()
+	queuedAt := time.Now().UTC()
+	status := jobs.SpellDamageRebalanceStatus{
+		JobID:        jobID,
+		Status:       jobs.SpellDamageRebalanceStatusQueued,
+		TotalCount:   0,
+		UpdatedCount: 0,
+		SpellIDs:     spellIDs,
+		QueuedAt:     &queuedAt,
+		UpdatedAt:    queuedAt,
+	}
+	if err := s.setSpellDamageRebalanceStatus(ctx.Request.Context(), status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.RebalanceSpellDamageTaskPayload{
+		JobID:    jobID,
+		SpellIDs: spellIDs,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.RebalanceSpellDamageTaskType, payloadBytes)); err != nil {
+		failedAt := time.Now().UTC()
+		status.Status = jobs.SpellDamageRebalanceStatusFailed
+		status.Error = err.Error()
+		status.CompletedAt = &failedAt
+		status.UpdatedAt = failedAt
+		_ = s.setSpellDamageRebalanceStatus(ctx.Request.Context(), status)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, status)
+}
+
+func (s *server) getSpellDamageRebalanceJobStatus(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	jobID, err := uuid.Parse(ctx.Param("jobId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
+		return
+	}
+
+	status, err := s.getSpellDamageRebalanceStatus(ctx.Request.Context(), jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if status == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "spell damage rebalance job not found"})
 		return
 	}
 	ctx.JSON(http.StatusOK, status)
@@ -1575,16 +1721,16 @@ func spellProgressionTargetAmount(
 ) int {
 	normalizedBand := normalizeSpellProgressionBand(levelBand)
 	if effectType == models.SpellEffectTypeDealDamage {
-		damagePerLevel := 10
+		damagePerLevel := 5
 		if abilityType == models.SpellAbilityTypeTechnique {
-			damagePerLevel = 8
+			damagePerLevel = 4
 		}
 		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
 	if effectType == models.SpellEffectTypeDealDamageAllEnemies {
-		damagePerLevel := 6
+		damagePerLevel := 4
 		if abilityType == models.SpellAbilityTypeTechnique {
-			damagePerLevel = 5
+			damagePerLevel = 3
 		}
 		return spellMaxInt(1, normalizedBand*damagePerLevel)
 	}
@@ -3731,6 +3877,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					HolyResistancePercent:         statusTemplate.HolyResistancePercent,
 					ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
 					StartedAt:                     now,
+					LastTickAt:                    &now,
 					ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 				}
 				if err := s.dbClient.MonsterStatus().Create(ctx, status); err != nil {
@@ -3818,6 +3965,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					HolyResistancePercent:         statusTemplate.HolyResistancePercent,
 					ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
 					StartedAt:                     now,
+					LastTickAt:                    &now,
 					ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 				}
 				if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {

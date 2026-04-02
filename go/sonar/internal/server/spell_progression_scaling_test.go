@@ -29,10 +29,10 @@ func TestSpellProgressionDamageFollowsLevelBaseline(t *testing.T) {
 		level    int
 		expected int
 	}{
-		{level: 10, expected: 100},
-		{level: 25, expected: 250},
-		{level: 50, expected: 500},
-		{level: 70, expected: 700},
+		{level: 10, expected: 50},
+		{level: 25, expected: 125},
+		{level: 50, expected: 250},
+		{level: 70, expected: 350},
 	}
 
 	for _, tc := range cases {
@@ -48,10 +48,10 @@ func TestSpellProgressionAllEnemiesDamageFollowsLevelBaseline(t *testing.T) {
 		level    int
 		expected int
 	}{
-		{level: 10, expected: 60},
-		{level: 25, expected: 150},
-		{level: 50, expected: 300},
-		{level: 70, expected: 420},
+		{level: 10, expected: 40},
+		{level: 25, expected: 100},
+		{level: 50, expected: 200},
+		{level: 70, expected: 280},
 	}
 
 	for _, tc := range cases {
@@ -81,7 +81,7 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		50,
 		models.SpellAbilityTypeSpell,
 	)
-	if level50FromSmallSeed < 400 {
+	if level50FromSmallSeed < 200 {
 		t.Fatalf(
 			"expected level 50 damage to be anchored to the new combat baseline, got %d",
 			level50FromSmallSeed,
@@ -95,9 +95,9 @@ func TestSpellProgressionCombatAmountUsesMonsterHealthBaseline(t *testing.T) {
 		70,
 		models.SpellAbilityTypeSpell,
 	)
-	if level70FromSmallSeed < 650 {
+	if level70FromSmallSeed < 300 {
 		t.Fatalf(
-			"expected level 70 damage to hit the more aggressive high-tier baseline, got %d",
+			"expected level 70 damage to hit the restored high-tier baseline, got %d",
 			level70FromSmallSeed,
 		)
 	}
@@ -148,8 +148,8 @@ func TestTechniqueProgressionUsesLowerDamageTargetsAndZeroMana(t *testing.T) {
 	if techniqueDamage >= spellDamage {
 		t.Fatalf("expected techniques to target lower damage than spells, got technique=%d spell=%d", techniqueDamage, spellDamage)
 	}
-	if techniqueDamage != 400 {
-		t.Fatalf("expected techniques to use the new 8x baseline at level 50, got %d", techniqueDamage)
+	if techniqueDamage != 200 {
+		t.Fatalf("expected techniques to use the restored 4x baseline at level 50, got %d", techniqueDamage)
 	}
 
 	techniqueMana := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70, models.SpellAbilityTypeTechnique)

@@ -105,6 +105,29 @@ type ConsumableQualitiesResponse = {
   message: string;
 };
 
+type InventorySeedPackResponse = {
+  processedCount: number;
+  createdCount: number;
+  updatedCount: number;
+};
+
+type InventorySetFamiliesResponse = {
+  requestedCount: number;
+  createdFamilyCount: number;
+  createdItemCount: number;
+  skippedFamilyCount: number;
+  families: InventorySetGenerationResponse[];
+  skippedReasons: string[];
+};
+
+type QueueMissingInventoryImagesResponse = {
+  totalCount: number;
+  missingCount: number;
+  queuedCount: number;
+  skippedCount: number;
+  failedCount: number;
+};
+
 type BulkTagAction = 'none' | 'replace' | 'add' | 'remove' | 'clear';
 
 type InventorySuggestionFormState = {
@@ -517,6 +540,37 @@ const itemSetRarityOptions: SelectOption[] = [
   { value: Rarity.Mythic, label: 'Mythic' },
 ];
 
+const inventorySetProfileOptions: SelectOption[] = [
+  { value: 'martial', label: 'Martial' },
+  { value: 'tank', label: 'Tank' },
+  { value: 'caster', label: 'Caster' },
+  { value: 'skirmisher', label: 'Skirmisher' },
+  { value: 'support', label: 'Support' },
+  { value: 'hybrid', label: 'Hybrid' },
+];
+
+const inventorySetPowerBiasOptions: SelectOption[] = [
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'offense', label: 'Offense' },
+  { value: 'defense', label: 'Defense' },
+  { value: 'utility', label: 'Utility' },
+];
+
+const inventorySetNamingStyleOptions: SelectOption[] = [
+  { value: 'grounded', label: 'Grounded' },
+  { value: 'heroic', label: 'Heroic' },
+  { value: 'occult', label: 'Occult' },
+  { value: 'royal', label: 'Royal' },
+  { value: 'wild', label: 'Wild' },
+];
+
+const inventorySetSlotScopeOptions: SelectOption[] = [
+  { value: 'full_set', label: 'Full Set' },
+  { value: 'armor_only', label: 'Armor Only' },
+  { value: 'jewelry_only', label: 'Jewelry Only' },
+  { value: 'hand_items_only', label: 'Hand Items Only' },
+];
+
 const damageAffinityOptions: SelectOption[] = [
   { value: 'physical', label: 'Physical' },
   { value: 'piercing', label: 'Piercing' },
@@ -744,6 +798,27 @@ const consumableQualityPrefixes = [
   'superb',
 ] as const;
 
+const parseCommaSeparatedValues = (value: string) =>
+  value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const toggleStringSetValue = (
+  current: Set<string>,
+  value: string,
+  nextChecked?: boolean
+) => {
+  const next = new Set(current);
+  const shouldAdd = nextChecked ?? !next.has(value);
+  if (shouldAdd) {
+    next.add(value);
+  } else {
+    next.delete(value);
+  }
+  return next;
+};
+
 const hasConsumableQualityPrefix = (name?: string | null) => {
   const normalized = (name ?? '').trim().toLowerCase();
   if (!normalized) return false;
@@ -807,6 +882,46 @@ export const InventoryItems = () => {
   const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
   const [bulkSetRarityTier, setBulkSetRarityTier] = useState('auto');
   const [bulkSetGenerationBusy, setBulkSetGenerationBusy] = useState(false);
+  const [setFamilyCount, setSetFamilyCount] = useState('6');
+  const [setFamilyLevelMin, setSetFamilyLevelMin] = useState('10');
+  const [setFamilyLevelMax, setSetFamilyLevelMax] = useState('60');
+  const [setFamilyThemesInput, setSetFamilyThemesInput] = useState('');
+  const [setFamilyRequiredTagsInput, setSetFamilyRequiredTagsInput] =
+    useState('');
+  const [setFamilyForbiddenTagsInput, setSetFamilyForbiddenTagsInput] =
+    useState('');
+  const [setFamilyRarityTiers, setSetFamilyRarityTiers] = useState<Set<string>>(
+    new Set([Rarity.Common, Rarity.Uncommon, Rarity.Epic])
+  );
+  const [setFamilyProfiles, setSetFamilyProfiles] = useState<Set<string>>(
+    new Set(['martial', 'tank', 'caster'])
+  );
+  const [setFamilyMajorStats, setSetFamilyMajorStats] = useState<Set<string>>(
+    new Set()
+  );
+  const [setFamilyMinorStats, setSetFamilyMinorStats] = useState<Set<string>>(
+    new Set()
+  );
+  const [setFamilyDamageAffinities, setSetFamilyDamageAffinities] = useState<
+    Set<string>
+  >(new Set(['physical', 'fire', 'ice', 'lightning', 'arcane', 'holy']));
+  const [setFamilyResistanceAffinities, setSetFamilyResistanceAffinities] =
+    useState<Set<string>>(
+      new Set(['physical', 'fire', 'ice', 'shadow', 'holy', 'arcane'])
+    );
+  const [setFamilySlotScope, setSetFamilySlotScope] = useState('full_set');
+  const [setFamilyPowerBias, setSetFamilyPowerBias] = useState('balanced');
+  const [setFamilyNamingStyle, setSetFamilyNamingStyle] = useState('grounded');
+  const [setFamilyAllowHybridAffinities, setSetFamilyAllowHybridAffinities] =
+    useState(true);
+  const [
+    setFamilyAvoidExistingThemeOverlap,
+    setSetFamilyAvoidExistingThemeOverlap,
+  ] = useState(true);
+  const [setFamilyQueueImages, setSetFamilyQueueImages] = useState(true);
+  const [setFamilyGenerationBusy, setSetFamilyGenerationBusy] = useState(false);
+  const [seedPackBusy, setSeedPackBusy] = useState(false);
+  const [queueMissingImagesBusy, setQueueMissingImagesBusy] = useState(false);
   const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] =
     useState<Set<number>>(new Set());
   const [sortField, setSortField] = useState('name');
@@ -2359,6 +2474,113 @@ export const InventoryItems = () => {
     }
   };
 
+  const handleGenerateSetFamilies = async () => {
+    const count = Number.parseInt(setFamilyCount, 10);
+    const levelMin = Number.parseInt(setFamilyLevelMin, 10);
+    const levelMax = Number.parseInt(setFamilyLevelMax, 10);
+
+    if (!Number.isFinite(count) || count < 1 || count > 40) {
+      alert('Family count must be between 1 and 40.');
+      return;
+    }
+    if (
+      !Number.isFinite(levelMin) ||
+      !Number.isFinite(levelMax) ||
+      levelMin < 1 ||
+      levelMax > 100 ||
+      levelMin > levelMax
+    ) {
+      alert('Level range must stay between 1 and 100, with min <= max.');
+      return;
+    }
+
+    setSetFamilyGenerationBusy(true);
+    try {
+      const response = await apiClient.post<InventorySetFamiliesResponse>(
+        '/sonar/inventory-items/generate-set-families',
+        {
+          count,
+          levelMin,
+          levelMax,
+          rarityTiers: Array.from(setFamilyRarityTiers),
+          themes: parseCommaSeparatedValues(setFamilyThemesInput),
+          majorStats: Array.from(setFamilyMajorStats),
+          minorStats: Array.from(setFamilyMinorStats),
+          profiles: Array.from(setFamilyProfiles),
+          damageAffinities: Array.from(setFamilyDamageAffinities),
+          resistanceAffinities: Array.from(setFamilyResistanceAffinities),
+          requiredInternalTags: parseCommaSeparatedValues(
+            setFamilyRequiredTagsInput
+          ),
+          forbiddenTags: parseCommaSeparatedValues(setFamilyForbiddenTagsInput),
+          slotScope: setFamilySlotScope,
+          powerBias: setFamilyPowerBias,
+          namingStyle: setFamilyNamingStyle,
+          allowHybridAffinities: setFamilyAllowHybridAffinities,
+          avoidExistingThemeOverlap: setFamilyAvoidExistingThemeOverlap,
+          queueImages: setFamilyQueueImages,
+        }
+      );
+      await fetchItems();
+
+      const warningCount = (response.families ?? []).reduce(
+        (countWarnings, family) =>
+          countWarnings + (family.enqueueWarnings?.length ?? 0),
+        0
+      );
+      alert(
+        `Generated ${response.createdFamilyCount} set family(s) and ${response.createdItemCount} item(s). Skipped ${response.skippedFamilyCount} family attempt(s)` +
+          (warningCount > 0
+            ? `, with ${warningCount} image queue warning(s).`
+            : '.')
+      );
+    } catch (error) {
+      console.error('Error generating equipment set families:', error);
+      alert('Error generating equipment set families.');
+    } finally {
+      setSetFamilyGenerationBusy(false);
+    }
+  };
+
+  const handleSeedCorePack = async () => {
+    setSeedPackBusy(true);
+    try {
+      const response = await apiClient.post<InventorySeedPackResponse>(
+        '/sonar/inventory-items/seed-pack',
+        {}
+      );
+      await fetchItems();
+      alert(
+        `Seeded core inventory pack. Processed ${response.processedCount} item(s) (${response.createdCount} created, ${response.updatedCount} updated).`
+      );
+    } catch (error) {
+      console.error('Error seeding core inventory pack:', error);
+      alert('Error seeding core inventory pack.');
+    } finally {
+      setSeedPackBusy(false);
+    }
+  };
+
+  const handleQueueMissingImages = async () => {
+    setQueueMissingImagesBusy(true);
+    try {
+      const response =
+        await apiClient.post<QueueMissingInventoryImagesResponse>(
+          '/sonar/inventory-items/queue-missing-images',
+          {}
+        );
+      await fetchItems();
+      alert(
+        `Queued ${response.queuedCount} missing inventory image job(s). ${response.skippedCount} skipped, ${response.failedCount} failed.`
+      );
+    } catch (error) {
+      console.error('Error queueing missing inventory item images:', error);
+      alert('Error queueing missing inventory item images.');
+    } finally {
+      setQueueMissingImagesBusy(false);
+    }
+  };
+
   const handleGenerateConsumableQualities = async (
     item: InventoryItemRecord
   ) => {
@@ -3088,6 +3310,15 @@ export const InventoryItems = () => {
     () => items.filter((item) => item.archived).length,
     [items]
   );
+  const missingImageCount = useMemo(
+    () =>
+      items.filter((item) => {
+        const hasImage = (item.imageUrl ?? '').trim() !== '';
+        const status = (item.imageGenerationStatus ?? '').trim().toLowerCase();
+        return !hasImage && status !== 'queued' && status !== 'in_progress';
+      }).length,
+    [items]
+  );
 
   const visibleItemIDs = useMemo(
     () => visibleItems.map((item) => item.id),
@@ -3145,6 +3376,22 @@ export const InventoryItems = () => {
             onClick={() => setShowGenerateItem(true)}
           >
             Generate Inventory Item
+          </button>
+          <button
+            className="bg-violet-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+            onClick={() => void handleSeedCorePack()}
+            disabled={seedPackBusy}
+          >
+            {seedPackBusy ? 'Seeding Core Pack...' : 'Seed Core Pack'}
+          </button>
+          <button
+            className="bg-amber-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+            onClick={() => void handleQueueMissingImages()}
+            disabled={queueMissingImagesBusy || missingImageCount === 0}
+          >
+            {queueMissingImagesBusy
+              ? 'Queueing Images...'
+              : `Queue Missing Images (${missingImageCount})`}
           </button>
           <button
             className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -3250,6 +3497,405 @@ export const InventoryItems = () => {
                 ? 'Generating Set...'
                 : 'Generate Full Set'}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+              Equipment Families
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              Generate more seeded-style set families
+            </div>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              This uses the same slot scaling and affinity identity logic as the
+              core equipment seed pack, but lets you steer the level bands,
+              profiles, stats, affinities, and naming lane.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleGenerateSetFamilies}
+            disabled={setFamilyGenerationBusy}
+            className="rounded-md bg-emerald-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {setFamilyGenerationBusy
+              ? 'Generating Families...'
+              : 'Generate Set Families'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
+            <div className="mb-3 text-sm font-semibold text-slate-800">
+              Identity
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Family Count
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={40}
+                  value={setFamilyCount}
+                  onChange={(event) => setSetFamilyCount(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Level Min
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={setFamilyLevelMin}
+                  onChange={(event) => setSetFamilyLevelMin(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Level Max
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={setFamilyLevelMax}
+                  onChange={(event) => setSetFamilyLevelMax(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                Theme Seeds
+              </label>
+              <input
+                type="text"
+                value={setFamilyThemesInput}
+                onChange={(event) =>
+                  setSetFamilyThemesInput(event.target.value)
+                }
+                placeholder="storm knight, fungal court, cathedral hunter"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Slot Scope
+                </label>
+                <select
+                  value={setFamilySlotScope}
+                  onChange={(event) =>
+                    setSetFamilySlotScope(event.target.value)
+                  }
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  {inventorySetSlotScopeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Power Bias
+                </label>
+                <select
+                  value={setFamilyPowerBias}
+                  onChange={(event) =>
+                    setSetFamilyPowerBias(event.target.value)
+                  }
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  {inventorySetPowerBiasOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Naming Style
+                </label>
+                <select
+                  value={setFamilyNamingStyle}
+                  onChange={(event) =>
+                    setSetFamilyNamingStyle(event.target.value)
+                  }
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  {inventorySetNamingStyleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Required Internal Tags
+                </label>
+                <input
+                  type="text"
+                  value={setFamilyRequiredTagsInput}
+                  onChange={(event) =>
+                    setSetFamilyRequiredTagsInput(event.target.value)
+                  }
+                  placeholder="frontline, cathedral, occult"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Forbidden Tags
+                </label>
+                <input
+                  type="text"
+                  value={setFamilyForbiddenTagsInput}
+                  onChange={(event) =>
+                    setSetFamilyForbiddenTagsInput(event.target.value)
+                  }
+                  placeholder="street, nautical"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={setFamilyAllowHybridAffinities}
+                  onChange={(event) =>
+                    setSetFamilyAllowHybridAffinities(event.target.checked)
+                  }
+                />
+                Allow hybrid affinities
+              </label>
+              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={setFamilyAvoidExistingThemeOverlap}
+                  onChange={(event) =>
+                    setSetFamilyAvoidExistingThemeOverlap(event.target.checked)
+                  }
+                />
+                Avoid theme overlap
+              </label>
+              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={setFamilyQueueImages}
+                  onChange={(event) =>
+                    setSetFamilyQueueImages(event.target.checked)
+                  }
+                />
+                Queue image generation
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
+            <div className="mb-3 text-sm font-semibold text-slate-800">
+              Mechanics
+            </div>
+
+            <div className="mb-3">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Rarity Tiers
+              </div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                {itemSetRarityOptions
+                  .filter((option) => option.value !== 'auto')
+                  .map((option) => (
+                    <label
+                      key={`family-rarity-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyRarityTiers.has(option.value)}
+                        onChange={(event) =>
+                          setSetFamilyRarityTiers((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Profiles
+              </div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                {inventorySetProfileOptions.map((option) => (
+                  <label
+                    key={`family-profile-${option.value}`}
+                    className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={setFamilyProfiles.has(option.value)}
+                      onChange={(event) =>
+                        setSetFamilyProfiles((current) =>
+                          toggleStringSetValue(
+                            current,
+                            option.value,
+                            event.target.checked
+                          )
+                        )
+                      }
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Major Stats
+                </div>
+                <div className="space-y-2">
+                  {itemSetStatOptions.map((option) => (
+                    <label
+                      key={`family-major-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyMajorStats.has(option.value)}
+                        onChange={(event) =>
+                          setSetFamilyMajorStats((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Minor Stats
+                </div>
+                <div className="space-y-2">
+                  {itemSetStatOptions.map((option) => (
+                    <label
+                      key={`family-minor-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyMinorStats.has(option.value)}
+                        onChange={(event) =>
+                          setSetFamilyMinorStats((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Damage Affinities
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {damageAffinityOptions.map((option) => (
+                    <label
+                      key={`family-damage-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyDamageAffinities.has(option.value)}
+                        onChange={(event) =>
+                          setSetFamilyDamageAffinities((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Resistance Affinities
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {damageAffinityOptions.map((option) => (
+                    <label
+                      key={`family-resistance-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyResistanceAffinities.has(
+                          option.value
+                        )}
+                        onChange={(event) =>
+                          setSetFamilyResistanceAffinities((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

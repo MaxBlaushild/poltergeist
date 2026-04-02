@@ -145,6 +145,19 @@ type SeedAbilityPackResponse = {
   updatedCount: number;
 };
 
+type SpellDamageRebalanceStatus = {
+  jobId: string;
+  status: string;
+  totalCount: number;
+  updatedCount: number;
+  spellIds?: string[];
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
 type BulkEffectCountsForm = {
   dealDamage: string;
   dealDamageAllEnemies: string;
@@ -631,7 +644,7 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     effectText: spell.effectText ?? '',
     schoolOfMagic: spell.schoolOfMagic ?? '',
     manaCost: String(
-      spell.abilityType === 'technique' ? 0 : spell.manaCost ?? 0
+      spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)
     ),
     effects,
   };
@@ -709,6 +722,15 @@ export const Spells = () => {
   const [tomeBusy, setTomeBusy] = useState(false);
   const [tomeError, setTomeError] = useState<string | null>(null);
   const [tomeMessage, setTomeMessage] = useState<string | null>(null);
+  const [damageRebalanceBusy, setDamageRebalanceBusy] = useState(false);
+  const [damageRebalanceError, setDamageRebalanceError] = useState<
+    string | null
+  >(null);
+  const [damageRebalanceMessage, setDamageRebalanceMessage] = useState<
+    string | null
+  >(null);
+  const [damageRebalanceJob, setDamageRebalanceJob] =
+    useState<SpellDamageRebalanceStatus | null>(null);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkAbilityCount, setBulkAbilityCount] = useState(
@@ -809,6 +831,20 @@ export const Spells = () => {
     () => filtered.map((spell) => spell.id),
     [filtered]
   );
+
+  const selectedSpellIds = useMemo(
+    () =>
+      selectedAbilityIds.filter((id) =>
+        spells.some(
+          (spell) =>
+            spell.id === id &&
+            (spell.abilityType ?? 'spell').toLowerCase() === 'spell'
+        )
+      ),
+    [selectedAbilityIds, spells]
+  );
+  const canQueueSpellDamageRebalance =
+    selectedAbilityIds.length === 0 || selectedSpellIds.length > 0;
 
   const progressionGroups = useMemo(() => {
     const groups = new Map<string, ProgressionGroup>();
@@ -1137,6 +1173,79 @@ export const Spells = () => {
     }
   };
 
+  const refreshSpellDamageRebalanceStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status = await apiClient.get<SpellDamageRebalanceStatus>(
+          `/sonar/admin/spells/rebalance-damage/${jobId}/status`
+        );
+        setDamageRebalanceJob(status);
+        if (status.status === 'completed') {
+          setDamageRebalanceBusy(false);
+          setDamageRebalanceError(null);
+          setDamageRebalanceMessage(
+            `Rebalanced damage for ${status.updatedCount} spell${
+              status.updatedCount === 1 ? '' : 's'
+            }.`
+          );
+          await load(true);
+        } else if (status.status === 'failed') {
+          setDamageRebalanceBusy(false);
+          setDamageRebalanceMessage(null);
+          setDamageRebalanceError(
+            status.error || 'Spell damage rebalance failed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh spell damage rebalance status', err);
+        setDamageRebalanceBusy(false);
+        setDamageRebalanceError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to refresh spell damage rebalance status.'
+        );
+      }
+    },
+    [apiClient, load]
+  );
+
+  const handleRebalanceSpellDamage = async () => {
+    try {
+      setDamageRebalanceBusy(true);
+      setDamageRebalanceError(null);
+      setDamageRebalanceMessage(null);
+      setDamageRebalanceJob(null);
+
+      const response = await apiClient.post<SpellDamageRebalanceStatus>(
+        '/sonar/admin/spells/rebalance-damage',
+        selectedSpellIds.length > 0 ? { spellIds: selectedSpellIds } : {}
+      );
+      setDamageRebalanceJob(response);
+      if (response.status === 'completed') {
+        setDamageRebalanceBusy(false);
+        setDamageRebalanceMessage(
+          `Rebalanced damage for ${response.updatedCount} spell${
+            response.updatedCount === 1 ? '' : 's'
+          }.`
+        );
+        await load(true);
+      } else if (response.status === 'failed') {
+        setDamageRebalanceBusy(false);
+        setDamageRebalanceError(
+          response.error || 'Spell damage rebalance failed.'
+        );
+      }
+    } catch (err) {
+      console.error('Failed to queue spell damage rebalance', err);
+      setDamageRebalanceBusy(false);
+      setDamageRebalanceError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to queue spell damage rebalance.'
+      );
+    }
+  };
+
   const refreshBulkAbilityJobStatus = useCallback(
     async (jobId: string) => {
       try {
@@ -1409,6 +1518,22 @@ export const Spells = () => {
     }, 3000);
     return () => window.clearInterval(interval);
   }, [progressionPromptJob, refreshProgressionPromptJobStatus]);
+
+  useEffect(() => {
+    if (!damageRebalanceJob?.jobId) {
+      return;
+    }
+    if (
+      damageRebalanceJob.status !== 'queued' &&
+      damageRebalanceJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshSpellDamageRebalanceStatus(damageRebalanceJob.jobId);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [damageRebalanceJob, refreshSpellDamageRebalanceStatus]);
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
@@ -1754,10 +1879,42 @@ export const Spells = () => {
                 ? 'Queueing Tomes...'
                 : `Generate Tomes for Selected (${selectedAbilityIds.length})`}
             </button>
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={handleRebalanceSpellDamage}
+              disabled={damageRebalanceBusy || !canQueueSpellDamageRebalance}
+            >
+              {damageRebalanceBusy
+                ? 'Rebalancing Spell Damage...'
+                : selectedSpellIds.length > 0
+                  ? `Rebalance Selected Spell Damage (${selectedSpellIds.length})`
+                  : 'Rebalance All Progression Spell Damage'}
+            </button>
             <span className="text-xs text-gray-600">
               {selectedAbilityIds.length} selected
             </span>
           </div>
+          {damageRebalanceJob ? (
+            <p className="mt-2 text-xs text-gray-600">
+              Rebalance job {damageRebalanceJob.jobId} ·{' '}
+              {damageRebalanceJob.status.replace('_', ' ')} ·{' '}
+              {damageRebalanceJob.updatedCount}/{damageRebalanceJob.totalCount}
+            </p>
+          ) : null}
+          {damageRebalanceMessage ? (
+            <p className="mt-2 text-sm text-emerald-700">
+              {damageRebalanceMessage}
+            </p>
+          ) : null}
+          {damageRebalanceError ? (
+            <p className="mt-2 text-sm text-red-700">{damageRebalanceError}</p>
+          ) : null}
+          {!canQueueSpellDamageRebalance ? (
+            <p className="mt-2 text-xs text-amber-700">
+              Select at least one spell or clear the current selection to
+              rebalance all progression spells.
+            </p>
+          ) : null}
           {tomeMessage ? (
             <p className="mt-2 text-sm text-emerald-700">{tomeMessage}</p>
           ) : null}

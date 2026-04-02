@@ -817,10 +817,14 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                   action,
                                 );
                                 if (questReadyToTurnIn != null) {
+                                  final turnInPrefix =
+                                      questReadyToTurnIn.isMainStory
+                                      ? 'Main Story: '
+                                      : '';
                                   return _DialogueChoiceButton(
                                     label: _turningInQuest
                                         ? 'Turning in…'
-                                        : 'Turn in: ${questReadyToTurnIn.name}',
+                                        : '${turnInPrefix}Turn in: ${questReadyToTurnIn.name}',
                                     icon: Icons.assignment_turned_in,
                                     onTap: _turningInQuest
                                         ? null
@@ -839,7 +843,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                 return _DialogueChoiceButton(
                                   label: _acceptingQuest
                                       ? 'Accepting quest…'
-                                      : 'Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
+                                      : '${action.isMainStoryQuest ? 'Main Story: ' : ''}Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
                                   icon: Icons.assignment_turned_in,
                                   subtitle: questAcceptBlocked
                                       ? questAcceptDisabledReason

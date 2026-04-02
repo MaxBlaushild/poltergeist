@@ -36,6 +36,7 @@ import LocationArchetypes from './components/LocationArchetypes.tsx';
 import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
 import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import QuestArchetypeGenerator from './components/QuestArchetypeGenerator.tsx';
+import MainStoryGenerator from './components/MainStoryGenerator.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
@@ -139,7 +140,10 @@ const Navigation = ({
       </Link>
 
       <div className="admin-sidebar__search">
-        <label htmlFor="admin-nav-search" className="admin-sidebar__search-label">
+        <label
+          htmlFor="admin-nav-search"
+          className="admin-sidebar__search-label"
+        >
           Find a tool
         </label>
         <input
@@ -225,7 +229,10 @@ const Layout = () => {
         onClick={() => setNavOpen(false)}
       />
       <aside className={`admin-sidebar ${navOpen ? 'is-open' : ''}`}>
-        <Navigation pathname={location.pathname} onNavigate={() => setNavOpen(false)} />
+        <Navigation
+          pathname={location.pathname}
+          onNavigate={() => setNavOpen(false)}
+        />
       </aside>
       <div className="admin-main">
         <header className="admin-topbar">
@@ -240,7 +247,11 @@ const Layout = () => {
             <div className="admin-topbar__eyebrow">
               {activeNavItem?.group.label ?? 'Overview'}
             </div>
-            <h1>{location.pathname === '/' ? 'Admin Home' : activeNavItem?.label ?? 'Admin Dashboard'}</h1>
+            <h1>
+              {location.pathname === '/'
+                ? 'Admin Home'
+                : activeNavItem?.label ?? 'Admin Dashboard'}
+            </h1>
             <p>
               {location.pathname === '/'
                 ? 'Use the new grouped navigation or start from one of the workflow launchpads below.'
@@ -254,7 +265,9 @@ const Layout = () => {
                 key={item.id}
                 to={item.path}
                 className={`admin-topbar__quicklink ${
-                  adminNavItemMatchesPath(item, location.pathname) ? 'is-active' : ''
+                  adminNavItemMatchesPath(item, location.pathname)
+                    ? 'is-active'
+                    : ''
                 }`}
               >
                 {item.label}
@@ -347,6 +360,11 @@ const router = createBrowserRouter([
       {
         path: '/quest-archetype-generator',
         element: <QuestArchetypeGenerator />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/main-story-generator',
+        element: <MainStoryGenerator />,
         loader: onlyAuthenticated,
       },
       {

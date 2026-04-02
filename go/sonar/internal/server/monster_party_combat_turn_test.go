@@ -194,7 +194,7 @@ func TestMonsterAbilityDamageForCombatTechniqueAddsStrengthBonus(t *testing.T) {
 	}
 }
 
-func TestMonsterCombatAbilitiesUsesClosestProgressionMemberForLevel(t *testing.T) {
+func TestMonsterCombatAbilitiesUsesHighestProgressionMemberAtOrBelowLevel(t *testing.T) {
 	low := models.Spell{
 		ID:           uuid.New(),
 		Name:         "Cinder Snap",
@@ -235,7 +235,52 @@ func TestMonsterCombatAbilitiesUsesClosestProgressionMemberForLevel(t *testing.T
 	if len(abilities) != 1 {
 		t.Fatalf("expected exactly one resolved progression ability, got %d", len(abilities))
 	}
+	if abilities[0].ID != low.ID {
+		t.Fatalf("expected highest eligible level ability %q, got %q", low.Name, abilities[0].Name)
+	}
+
+	monster.Level = 25
+	abilities = monsterCombatAbilities(monster)
+	if len(abilities) != 1 {
+		t.Fatalf("expected exactly one resolved progression ability at level 25, got %d", len(abilities))
+	}
 	if abilities[0].ID != mid.ID {
-		t.Fatalf("expected closest level ability %q, got %q", mid.Name, abilities[0].Name)
+		t.Fatalf("expected level-25 monster to resolve to %q, got %q", mid.Name, abilities[0].Name)
+	}
+}
+
+func TestMonsterCombatAbilitiesSkipsProgressionWhenAllMembersAreAboveLevel(t *testing.T) {
+	low := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Cinder Snap",
+		AbilityLevel: 10,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	mid := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Cinder Lance",
+		AbilityLevel: 25,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	monster := &models.Monster{
+		Level: 5,
+		Template: &models.MonsterTemplate{
+			Progressions: []models.MonsterTemplateProgression{
+				{
+					Progression: models.SpellProgression{
+						ID: uuid.New(),
+						Members: []models.SpellProgressionSpell{
+							{LevelBand: 10, Spell: low},
+							{LevelBand: 25, Spell: mid},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	abilities := monsterCombatAbilities(monster)
+	if len(abilities) != 0 {
+		t.Fatalf("expected no resolved progression abilities below level threshold, got %d", len(abilities))
 	}
 }

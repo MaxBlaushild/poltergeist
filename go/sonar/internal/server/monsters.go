@@ -851,7 +851,7 @@ func monsterTemplateResolvedAbilitiesForLevel(
 	}
 
 	for _, link := range template.Progressions {
-		best := monsterTemplateProgressionClosestSpell(link.Progression, level)
+		best := monsterTemplateProgressionSpellAtOrBelowLevel(link.Progression, level)
 		if best != nil {
 			appendAbility(*best)
 		}
@@ -867,7 +867,7 @@ func monsterTemplateResolvedAbilitiesForLevel(
 	return abilities
 }
 
-func monsterTemplateProgressionClosestSpell(
+func monsterTemplateProgressionSpellAtOrBelowLevel(
 	progression models.SpellProgression,
 	level int,
 ) *models.Spell {
@@ -875,7 +875,6 @@ func monsterTemplateProgressionClosestSpell(
 		level = 1
 	}
 	bestIndex := -1
-	bestDistance := 0
 	bestLevel := 0
 	for index, member := range progression.Members {
 		if member.Spell.ID == uuid.Nil {
@@ -888,15 +887,11 @@ func monsterTemplateProgressionClosestSpell(
 		if memberLevel <= 0 {
 			memberLevel = 1
 		}
-		distance := memberLevel - level
-		if distance < 0 {
-			distance = -distance
+		if memberLevel > level {
+			continue
 		}
-		if bestIndex == -1 ||
-			distance < bestDistance ||
-			(distance == bestDistance && memberLevel < bestLevel) {
+		if bestIndex == -1 || memberLevel > bestLevel {
 			bestIndex = index
-			bestDistance = distance
 			bestLevel = memberLevel
 		}
 	}
@@ -3484,6 +3479,27 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 	if battle == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
 		return
+	}
+
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(participants) == 0 {
+		participants = []models.MonsterBattleParticipant{{BattleID: battle.ID, UserID: user.ID}}
+	}
+	log.Printf(
+		"[combat][defeat-recovery][end-battle] battle=%s monster=%s participants=%d",
+		battle.ID,
+		monsterID,
+		len(participants),
+	)
+	for _, participant := range participants {
+		if err := s.restoreUserToOneHealthIfDowned(ctx, participant.UserID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	if err := s.dbClient.MonsterStatus().DeleteAllForBattleID(ctx, battle.ID); err != nil {

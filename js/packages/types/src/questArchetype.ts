@@ -3,6 +3,7 @@ import { LocationArchetype } from './locationArchetype';
 import { QuestDifficultyMode } from './questDifficulty';
 import { QuestMaterialReward } from './quest';
 import { Spell } from './spell';
+import { Character } from './character';
 
 export interface QuestArchetypeChallenge {
   id: string;
@@ -67,6 +68,9 @@ export interface QuestArchetype {
   id: string;
   name: string;
   description: string;
+  category?: 'side' | 'main_story';
+  questGiverCharacterId?: string | null;
+  questGiverCharacter?: Character | null;
   acceptanceDialogue?: string[];
   imageUrl?: string;
   difficultyMode?: QuestDifficultyMode;

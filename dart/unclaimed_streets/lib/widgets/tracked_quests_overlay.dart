@@ -105,9 +105,17 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   Widget build(BuildContext context) {
     return Consumer2<QuestLogProvider, DiscoveriesProvider>(
       builder: (context, ql, discoveries, _) {
-        final tracked = ql.quests
-            .where((q) => ql.trackedQuestIds.contains(q.id))
-            .toList();
+        final tracked =
+            ql.quests.where((q) => ql.trackedQuestIds.contains(q.id)).toList()
+              ..sort((a, b) {
+                if (a.isMainStory != b.isMainStory) {
+                  return a.isMainStory ? -1 : 1;
+                }
+                if (a.readyToTurnIn != b.readyToTurnIn) {
+                  return a.readyToTurnIn ? -1 : 1;
+                }
+                return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              });
         if (tracked.isNotEmpty) {
           _cachedTracked = List<Quest>.from(tracked);
         } else if (ql.trackedQuestIds.isEmpty) {
@@ -240,18 +248,47 @@ class _TrackedQuestCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.black26,
+        color: quest.isMainStory
+            ? const Color(0xFF5C1520).withValues(alpha: 0.88)
+            : Colors.black26,
         borderRadius: BorderRadius.circular(8),
+        border: quest.isMainStory
+            ? Border.all(color: const Color(0xFFE7C36A))
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            quest.name,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  quest.name,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (quest.isMainStory)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE7C36A),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Story',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: const Color(0xFF5C1520),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           if (node == null)

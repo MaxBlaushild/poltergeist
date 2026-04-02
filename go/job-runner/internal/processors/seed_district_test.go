@@ -1,6 +1,7 @@
 package processors
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -61,5 +62,40 @@ func TestSelectBestDistrictSeedZoneAllowsZeroTagTie(t *testing.T) {
 	}
 	if selected.ID != zones[0].ID && selected.ID != zones[1].ID {
 		t.Fatalf("selected unexpected zone: %+v", selected)
+	}
+}
+
+func TestFinalizeDistrictSeedJobKeepsCompletedStatusWhenSomeResultsFail(t *testing.T) {
+	message := "older error"
+	job := &models.DistrictSeedJob{
+		ID:           uuid.New(),
+		Status:       models.DistrictSeedJobStatusInProgress,
+		ErrorMessage: &message,
+	}
+
+	finalizeDistrictSeedJob(job, 2, 5)
+
+	if job.Status != models.DistrictSeedJobStatusCompleted {
+		t.Fatalf("expected completed status, got %q", job.Status)
+	}
+	if job.ErrorMessage != nil {
+		t.Fatalf("expected error message to be cleared, got %v", *job.ErrorMessage)
+	}
+}
+
+func TestShouldRetryDistrictSeedQuestInAnotherZone(t *testing.T) {
+	err := fmt.Errorf("no unused points of interest found for location archetype 123 in zone 456 after checking 4 candidates")
+	if !shouldRetryDistrictSeedQuestInAnotherZone(err) {
+		t.Fatal("expected zone compatibility error to be retried in another zone")
+	}
+}
+
+func TestShouldNotRetryDistrictSeedQuestInAnotherZoneForOtherErrors(t *testing.T) {
+	err := fmt.Errorf("location archetype 123 not found")
+	if shouldRetryDistrictSeedQuestInAnotherZone(err) {
+		t.Fatal("expected non-POI configuration errors to avoid retrying other zones")
+	}
+	if shouldRetryDistrictSeedQuestInAnotherZone(fmt.Errorf("temporary network failure")) {
+		t.Fatal("expected general errors to avoid district zone fallback retry")
 	}
 }

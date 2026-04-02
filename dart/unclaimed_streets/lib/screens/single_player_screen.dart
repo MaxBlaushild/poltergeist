@@ -211,6 +211,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String? _questLogRequestedZoneId;
   bool _questLogRefreshInFlight = false;
   bool _questAvailabilityRefreshInFlight = false;
+  int _skipQuestLogMapRefreshCount = 0;
   DateTime? _lastQuestLogRefreshAt;
   bool _questLogNeedsOverlayApply = false;
   bool _scenarioVisibilityRefreshPending = false;
@@ -726,14 +727,48 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           encounterId,
         );
         if (!wasTutorialMonster) return;
+        await _removeMonsterEncounterLocally(encounterId);
+        if (!mounted) return;
         setState(() {
           _tutorialFocusedMonsterEncounterId = null;
-          _monsters.removeWhere((item) => item.id == encounterId);
         });
         _tutorialRevealPendingAfterCompletionModal = true;
         return;
       default:
         return;
+    }
+  }
+
+  Future<void> _removeMonsterEncounterLocally(String encounterId) async {
+    final trimmedId = encounterId.trim();
+    if (trimmedId.isEmpty) return;
+
+    if (mounted) {
+      setState(() {
+        _monsters.removeWhere((item) => item.id == trimmedId);
+      });
+    } else {
+      _monsters.removeWhere((item) => item.id == trimmedId);
+    }
+
+    final controller = _mapController;
+    if (controller == null || !_styleLoaded) return;
+
+    final symbol = _monsterSymbolById.remove(trimmedId);
+    if (symbol != null) {
+      _setQuestPoiHighlight(symbol, false);
+      _monsterSymbols.remove(symbol);
+      try {
+        await controller.removeSymbols([symbol]);
+      } catch (_) {}
+    }
+
+    final circle = _monsterCircleById.remove(trimmedId);
+    if (circle != null) {
+      _monsterCircles.remove(circle);
+      try {
+        await controller.removeCircle(circle);
+      } catch (_) {}
     }
   }
 
@@ -880,6 +915,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (questLog.loading) return;
     _openTrackedQuestsForObjectiveUpdates(questLog);
     _applyQuestLogOverlaysIfChanged();
+    if (_skipQuestLogMapRefreshCount > 0) {
+      _skipQuestLogMapRefreshCount -= 1;
+      return;
+    }
     unawaited(_loadTreasureChestsForSelectedZone());
     unawaited(_refreshQuestAvailabilityMarkers());
   }
@@ -1146,6 +1185,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         .where((q) => q.readyToTurnIn && q.questGiverCharacterId != null)
         .map((q) => q.questGiverCharacterId!)
         .toSet();
+  }
+
+  Set<String> _currentMainStoryQuestPoiIds(QuestLogProvider questLog) {
+    return questLog.quests
+        .where((q) => q.isAccepted && q.isMainStory)
+        .map((q) => q.currentNode?.pointOfInterest?.id ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Set<String> _currentMainStoryTurnInCharacterIds(QuestLogProvider questLog) {
+    return questLog.quests
+        .where(
+          (q) =>
+              q.isMainStory &&
+              q.readyToTurnIn &&
+              q.questGiverCharacterId != null,
+        )
+        .map((q) => q.questGiverCharacterId!)
+        .toSet();
+  }
+
+  bool _poiHasMainStoryAccent(PointOfInterest poi, QuestLogProvider questLog) {
+    return poi.hasAvailableMainStoryQuest ||
+        _currentMainStoryQuestPoiIds(questLog).contains(poi.id);
+  }
+
+  bool _characterHasMainStoryAccent(
+    Character character,
+    QuestLogProvider questLog,
+  ) {
+    return character.hasAvailableMainStoryQuest ||
+        _currentMainStoryTurnInCharacterIds(questLog).contains(character.id);
   }
 
   Set<String> _currentQuestScenarioIds() {
@@ -4332,11 +4404,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final availablePlaceholderFuture = loadPoiThumbnailWithQuestMarker(
         null,
       ).catchError((_) => null);
+      final mainStoryPlaceholderFuture = loadPoiThumbnailWithMainStoryMarker(
+        null,
+      ).catchError((_) => null);
       final characterPlaceholderFuture = loadPoiThumbnail(
         _characterMysteryImageUrl,
       ).catchError((_) => null);
       final characterAvailablePlaceholderFuture =
           loadPoiThumbnailWithQuestMarker(
+            _characterMysteryImageUrl,
+          ).catchError((_) => null);
+      final characterMainStoryPlaceholderFuture =
+          loadPoiThumbnailWithMainStoryMarker(
             _characterMysteryImageUrl,
           ).catchError((_) => null);
       final chestFuture = loadPoiThumbnail(
@@ -4361,9 +4440,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           );
         } catch (_) {}
       }
+      final mainStoryPlaceholderBytes = await mainStoryPlaceholderFuture;
+      if (mainStoryPlaceholderBytes != null) {
+        try {
+          await c.addImage(
+            'poi_placeholder_main_story_$_mapThumbnailVersion',
+            mainStoryPlaceholderBytes,
+          );
+        } catch (_) {}
+      }
       final characterPlaceholderBytes = await characterPlaceholderFuture;
       final characterAvailablePlaceholderBytes =
           await characterAvailablePlaceholderFuture;
+      final characterMainStoryPlaceholderBytes =
+          await characterMainStoryPlaceholderFuture;
 
       final chestBytes = await chestFuture;
       if (chestBytes != null) {
@@ -4397,6 +4487,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final undiscovered = !useRealImage;
         final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
         final isQuestCurrent = questPoiIds.contains(poi.id);
+        final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
         final hasMapContent = _poiHasMapContent(
           poi,
           isQuestCurrent: isQuestCurrent,
@@ -4419,7 +4510,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
         String? placeholderId;
         String? symbolImageId;
-        if (hasMapContent) {
+        if (hasMapContent && hasMainStoryAccent) {
+          placeholderId = mainStoryPlaceholderBytes != null
+              ? 'poi_placeholder_main_story'
+              : null;
+        } else if (hasMapContent) {
           placeholderId = availablePlaceholderBytes != null
               ? 'poi_placeholder_available'
               : null;
@@ -4430,11 +4525,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         var addedSymbol = false;
         if (useRealImage && imageUrl != null) {
           final cachedImageBytes = hasMapContent
-              ? peekPoiThumbnailWithQuestMarker(imageUrl)
+              ? (hasMainStoryAccent
+                    ? peekPoiThumbnailWithMainStoryMarker(imageUrl)
+                    : peekPoiThumbnailWithQuestMarker(imageUrl))
               : peekPoiThumbnail(imageUrl);
           if (cachedImageBytes != null) {
             symbolImageId = hasMapContent
-                ? 'poi_${poi.id}_activity'
+                ? (hasMainStoryAccent
+                      ? 'poi_${poi.id}_main_story'
+                      : 'poi_${poi.id}_activity')
                 : 'poi_${poi.id}';
             await _ensureMapImage(
               c,
@@ -4503,6 +4602,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               imageUrl: imageUrl,
               isQuestCurrent: isQuestCurrent,
               hasMapContent: hasMapContent,
+              hasMainStoryAccent: hasMainStoryAccent,
               undiscovered: undiscovered,
             ),
           );
@@ -4545,29 +4645,42 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (visiblePoints.isEmpty) continue;
         final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
         final hasQuestAvailable = ch.hasAvailableQuest;
+        final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
         final shouldPulseLikeQuest = _isCurrentQuestTurnInCharacter(ch.id);
+        final useAccentMarker = hasQuestAvailable || hasMainStoryAccent;
         Uint8List? markerBytes;
         String? markerId;
         if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
           try {
-            markerBytes = hasQuestAvailable
-                ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
+            markerBytes = useAccentMarker
+                ? (hasMainStoryAccent
+                      ? await loadPoiThumbnailWithMainStoryMarker(thumbnailUrl)
+                      : await loadPoiThumbnailWithQuestMarker(thumbnailUrl))
                 : await loadPoiThumbnail(thumbnailUrl);
             if (markerBytes != null) {
-              markerId = hasQuestAvailable
-                  ? 'character_${ch.id}_quest'
+              markerId = useAccentMarker
+                  ? (hasMainStoryAccent
+                        ? 'character_${ch.id}_main_story'
+                        : 'character_${ch.id}_quest')
                   : 'character_${ch.id}';
             }
           } catch (_) {}
         }
 
         if (markerBytes == null) {
-          markerBytes = hasQuestAvailable
-              ? (characterAvailablePlaceholderBytes ??
-                    availablePlaceholderBytes)
+          markerBytes = useAccentMarker
+              ? (hasMainStoryAccent
+                    ? (characterMainStoryPlaceholderBytes ??
+                          characterAvailablePlaceholderBytes ??
+                          mainStoryPlaceholderBytes ??
+                          availablePlaceholderBytes)
+                    : (characterAvailablePlaceholderBytes ??
+                          availablePlaceholderBytes))
               : (characterPlaceholderBytes ?? placeholderBytes);
-          markerId = hasQuestAvailable
-              ? 'character_placeholder_available'
+          markerId = useAccentMarker
+              ? (hasMainStoryAccent
+                    ? 'character_placeholder_main_story'
+                    : 'character_placeholder_available')
               : 'character_placeholder';
         }
 
@@ -4844,9 +4957,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     Uint8List? imageBytes;
     String? imageId;
     if (update.hasMapContent) {
-      imageBytes = await loadPoiThumbnailWithQuestMarker(update.imageUrl);
+      imageBytes = update.hasMainStoryAccent
+          ? await loadPoiThumbnailWithMainStoryMarker(update.imageUrl)
+          : await loadPoiThumbnailWithQuestMarker(update.imageUrl);
       if (imageBytes != null) {
-        imageId = 'poi_${update.poi.id}_activity';
+        imageId = update.hasMainStoryAccent
+            ? 'poi_${update.poi.id}_main_story'
+            : 'poi_${update.poi.id}_activity';
       }
     } else {
       imageBytes = await loadPoiThumbnail(update.imageUrl);
@@ -5822,6 +5939,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               .toSet()
         : <String>{};
     final discoveries = context.read<DiscoveriesProvider>();
+    final questLog = context.read<QuestLogProvider>();
     final useRealImage = discoveries.hasDiscovered(poi.id);
     final undiscovered = !useRealImage;
     final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
@@ -5831,6 +5949,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       isQuestCurrent: isQuestCurrent,
       mapContentPoiIds: mapContentPoiIds,
     );
+    final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
     final hasCharacter = poi.characters.isNotEmpty;
     final baseEligible = !undiscovered || hasCharacter || hasMapContent;
     final tagMatch =
@@ -5858,10 +5977,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     late final String imageId;
     Uint8List? imageBytes;
     if (hasMapContent) {
-      imageBytes = await loadPoiThumbnailWithQuestMarker(imageUrl);
+      imageBytes = hasMainStoryAccent
+          ? await loadPoiThumbnailWithMainStoryMarker(imageUrl)
+          : await loadPoiThumbnailWithQuestMarker(imageUrl);
       imageId = imageBytes != null
-          ? 'poi_${poi.id}_activity'
-          : 'poi_placeholder_available';
+          ? (hasMainStoryAccent
+                ? 'poi_${poi.id}_main_story'
+                : 'poi_${poi.id}_activity')
+          : (hasMainStoryAccent
+                ? 'poi_placeholder_main_story'
+                : 'poi_placeholder_available');
     } else if (useRealImage) {
       imageBytes = await loadPoiThumbnail(imageUrl);
       imageId = imageBytes != null ? 'poi_${poi.id}' : 'poi_placeholder';
@@ -5875,6 +6000,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           imageBytes = await loadPoiThumbnail(null);
         } else if (imageId == 'poi_placeholder_available') {
           imageBytes = await loadPoiThumbnailWithQuestMarker(null);
+        } else if (imageId == 'poi_placeholder_main_story') {
+          imageBytes = await loadPoiThumbnailWithMainStoryMarker(null);
         }
       } catch (_) {}
     }
@@ -6038,41 +6165,60 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final hasDiscovered = _hasDiscoveredCharacter(ch);
     final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
     final hasQuestAvailable = ch.hasAvailableQuest;
+    final questLog = context.read<QuestLogProvider>();
+    final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
     final shouldPulseLikeQuest = _isCurrentQuestTurnInCharacter(ch.id);
+    final useAccentMarker = hasQuestAvailable || hasMainStoryAccent;
     Uint8List? imageBytes;
     String? imageId;
     if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
       try {
-        imageBytes = hasQuestAvailable
-            ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
+        imageBytes = useAccentMarker
+            ? (hasMainStoryAccent
+                  ? await loadPoiThumbnailWithMainStoryMarker(thumbnailUrl)
+                  : await loadPoiThumbnailWithQuestMarker(thumbnailUrl))
             : await loadPoiThumbnail(thumbnailUrl);
         if (imageBytes != null) {
-          imageId = hasQuestAvailable
-              ? 'character_${ch.id}_quest'
+          imageId = useAccentMarker
+              ? (hasMainStoryAccent
+                    ? 'character_${ch.id}_main_story'
+                    : 'character_${ch.id}_quest')
               : 'character_${ch.id}';
         }
       } catch (_) {}
     }
     if (imageBytes == null) {
       try {
-        imageBytes = hasQuestAvailable
-            ? await loadPoiThumbnailWithQuestMarker(_characterMysteryImageUrl)
+        imageBytes = useAccentMarker
+            ? (hasMainStoryAccent
+                  ? await loadPoiThumbnailWithMainStoryMarker(
+                      _characterMysteryImageUrl,
+                    )
+                  : await loadPoiThumbnailWithQuestMarker(
+                      _characterMysteryImageUrl,
+                    ))
             : await loadPoiThumbnail(_characterMysteryImageUrl);
         if (imageBytes != null) {
-          imageId = hasQuestAvailable
-              ? 'character_placeholder_available'
+          imageId = useAccentMarker
+              ? (hasMainStoryAccent
+                    ? 'character_placeholder_main_story'
+                    : 'character_placeholder_available')
               : 'character_placeholder';
         }
       } catch (_) {}
     }
     if (imageBytes == null) {
       try {
-        imageBytes = hasQuestAvailable
-            ? await loadPoiThumbnailWithQuestMarker(null)
+        imageBytes = useAccentMarker
+            ? (hasMainStoryAccent
+                  ? await loadPoiThumbnailWithMainStoryMarker(null)
+                  : await loadPoiThumbnailWithQuestMarker(null))
             : await loadPoiThumbnail(null);
         if (imageBytes != null) {
-          imageId = hasQuestAvailable
-              ? 'character_placeholder_available'
+          imageId = useAccentMarker
+              ? (hasMainStoryAccent
+                    ? 'character_placeholder_main_story'
+                    : 'character_placeholder_available')
               : 'character_placeholder';
         }
       } catch (_) {}
@@ -9192,19 +9338,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final statsProvider = context.read<CharacterStatsProvider>();
     final questLogProvider = context.read<QuestLogProvider>();
 
+    await statsProvider.setHealthAndManaTo(
+      health: result.playerHealthRemaining,
+      mana: result.playerManaRemaining,
+    );
+
     if (result.outcome == MonsterBattleOutcome.escaped) {
-      await statsProvider.setHealthAndManaTo(
-        health: result.playerHealthRemaining,
-        mana: result.playerManaRemaining,
-      );
       return;
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {
-      await statsProvider.setHealthAndManaTo(
-        health: result.playerHealthRemaining,
-        mana: result.playerManaRemaining,
-      );
       await Future.wait([
         statsProvider.refresh(silent: true),
         context.read<AuthProvider>().refresh(),
@@ -9216,18 +9359,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final wasTutorialMonster = _isTutorialFocusedMonsterEncounterId(
         monster.id,
       );
+      await _removeMonsterEncounterLocally(monster.id);
+      if (!mounted) return;
       setState(() {
         _defeatedMonsterIds.add(monster.id);
-        _monsters.removeWhere((item) => item.id == monster.id);
         if (wasTutorialMonster) {
           _tutorialFocusedMonsterEncounterId = null;
           _tutorialRevealPendingAfterCompletionModal = true;
         }
       });
       await _persistDefeatedMonsterIds();
+      _skipQuestLogMapRefreshCount += 1;
       await questLogProvider.refresh();
-      if (!mounted) return;
-      await _loadTreasureChestsForSelectedZone();
+      if (_skipQuestLogMapRefreshCount > 0) {
+        _skipQuestLogMapRefreshCount = 0;
+      }
       if (!mounted || !parentContext.mounted) return;
 
       parentContext.read<CompletedTaskProvider>().showModal(
@@ -9746,6 +9892,7 @@ class _PoiImageUpdate {
     required this.imageUrl,
     required this.isQuestCurrent,
     required this.hasMapContent,
+    required this.hasMainStoryAccent,
     required this.undiscovered,
   });
 
@@ -9753,6 +9900,7 @@ class _PoiImageUpdate {
   final String? imageUrl;
   final bool isQuestCurrent;
   final bool hasMapContent;
+  final bool hasMainStoryAccent;
   final bool undiscovered;
 }
 

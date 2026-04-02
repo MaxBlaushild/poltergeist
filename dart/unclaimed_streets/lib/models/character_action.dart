@@ -1,5 +1,3 @@
-import 'character.dart';
-
 class DialogueMessage {
   final String speaker;
   final String text;
@@ -24,10 +22,7 @@ class ShopInventoryItem {
   final int itemId;
   final int price;
 
-  const ShopInventoryItem({
-    required this.itemId,
-    required this.price,
-  });
+  const ShopInventoryItem({required this.itemId, required this.price});
 
   factory ShopInventoryItem.fromJson(Map<String, dynamic> json) {
     return ShopInventoryItem(
@@ -63,7 +58,8 @@ class CharacterAction {
       updatedAt: json['updatedAt']?.toString() ?? '',
       characterId: json['characterId'] as String? ?? '',
       actionType: json['actionType'] as String? ?? '',
-      dialogue: (json['dialogue'] as List<dynamic>?)
+      dialogue:
+          (json['dialogue'] as List<dynamic>?)
               ?.map((e) => DialogueMessage.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -79,21 +75,27 @@ class CharacterAction {
         .toList();
   }
 
-  String? get pointOfInterestGroupId => metadata?['pointOfInterestGroupId'] as String?;
-  String? get questId => (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
+  String? get pointOfInterestGroupId =>
+      metadata?['pointOfInterestGroupId'] as String?;
+  String? get questId =>
+      (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
   String? get questName => metadata?['questName'] as String?;
   String? get questDescription => metadata?['questDescription'] as String?;
+  String? get questCategory => metadata?['questCategory'] as String?;
+  bool get isMainStoryQuest => questCategory == 'main_story';
   double? get questAverageDifficulty {
     final raw = metadata?['questAverageDifficulty'];
     if (raw is num) return raw.toDouble();
     if (raw is String) return double.tryParse(raw);
     return null;
   }
+
   List<String> get questStatTags {
     final raw = metadata?['questStatTags'] as List<dynamic>?;
     if (raw == null) return const [];
     return raw.map((e) => e.toString()).toList();
   }
+
   List<String> get questAcceptanceDialogue {
     final raw = metadata?['acceptanceDialogue'] as List<dynamic>?;
     if (raw == null) return const [];

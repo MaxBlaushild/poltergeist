@@ -25,6 +25,19 @@ type DistrictSeedJob = {
   status: string;
   errorMessage?: string | null;
   questArchetypeIds: string[];
+  zoneSeedSettings?: {
+    placeCount?: number;
+    monsterCount?: number;
+    bossEncounterCount?: number;
+    raidEncounterCount?: number;
+    inputEncounterCount?: number;
+    optionEncounterCount?: number;
+    treasureChestCount?: number;
+    healingFountainCount?: number;
+    requiredPlaceTags?: string[];
+    shopkeeperItemTags?: string[];
+  };
+  zoneSeedJobIds?: string[];
   results: DistrictSeedResult[];
   createdAt: string;
   updatedAt: string;
@@ -109,12 +122,64 @@ export const DistrictSeedJobsPanel = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [templateSearch, setTemplateSearch] = useState('');
+  const [placeCount, setPlaceCount] = useState('0');
+  const [monsterCount, setMonsterCount] = useState('0');
+  const [bossEncounterCount, setBossEncounterCount] = useState('0');
+  const [raidEncounterCount, setRaidEncounterCount] = useState('0');
+  const [inputEncounterCount, setInputEncounterCount] = useState('0');
+  const [optionEncounterCount, setOptionEncounterCount] = useState('0');
+  const [treasureChestCount, setTreasureChestCount] = useState('0');
+  const [healingFountainCount, setHealingFountainCount] = useState('0');
+  const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
+  const [requiredTagQuery, setRequiredTagQuery] = useState('');
+  const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
+  const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
   const [selectedQuestArchetypeIds, setSelectedQuestArchetypeIds] = useState<
     Set<string>
   >(new Set());
 
   const districtId = district?.id || '';
   const hasZones = (district?.zones?.length || 0) > 0;
+  const knownPlaceTags = useMemo(
+    () => [
+      'cafe',
+      'coffee_shop',
+      'bakery',
+      'restaurant',
+      'bar',
+      'ice_cream_shop',
+      'dessert',
+      'park',
+      'garden',
+      'playground',
+      'trail',
+      'hiking_area',
+      'natural_feature',
+      'beach',
+      'plaza',
+      'square',
+      'bridge',
+      'museum',
+      'art_gallery',
+      'gallery',
+      'library',
+      'book_store',
+      'movie_theater',
+      'theater',
+      'music_venue',
+      'stadium',
+      'sports_complex',
+      'amusement_park',
+      'zoo',
+      'aquarium',
+      'market',
+      'shopping_mall',
+      'store',
+      'clothing_store',
+      'florist',
+    ],
+    []
+  );
 
   const loadJobs = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -171,6 +236,38 @@ export const DistrictSeedJobsPanel = ({
   }, [questArchetypes, templateSearch]);
 
   const selectedCount = selectedQuestArchetypeIds.size;
+  const hasZoneSeedSettings =
+    requiredPlaceTags.length > 0 ||
+    shopkeeperItemTags.length > 0 ||
+    [
+      placeCount,
+      monsterCount,
+      bossEncounterCount,
+      raidEncounterCount,
+      inputEncounterCount,
+      optionEncounterCount,
+      treasureChestCount,
+      healingFountainCount,
+    ].some((value) => Number.parseInt(value, 10) > 0);
+
+  const addTag = (
+    rawValue: string,
+    current: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    const normalized = rawValue.trim().toLowerCase();
+    if (!normalized || current.includes(normalized)) {
+      return;
+    }
+    setter([...current, normalized]);
+  };
+
+  const removeTag = (
+    tag: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter((current) => current.filter((entry) => entry !== tag));
+  };
 
   const toggleQuestArchetype = (questArchetypeId: string) => {
     setSelectedQuestArchetypeIds((current) => {
@@ -185,7 +282,26 @@ export const DistrictSeedJobsPanel = ({
   };
 
   const handleQueueJob = async () => {
-    if (!districtId || selectedCount === 0 || !hasZones) {
+    if (
+      !districtId ||
+      (!hasZoneSeedSettings && selectedCount === 0) ||
+      !hasZones
+    ) {
+      return;
+    }
+
+    const numericValues = {
+      placeCount: Number.parseInt(placeCount, 10),
+      monsterCount: Number.parseInt(monsterCount, 10),
+      bossEncounterCount: Number.parseInt(bossEncounterCount, 10),
+      raidEncounterCount: Number.parseInt(raidEncounterCount, 10),
+      inputEncounterCount: Number.parseInt(inputEncounterCount, 10),
+      optionEncounterCount: Number.parseInt(optionEncounterCount, 10),
+      treasureChestCount: Number.parseInt(treasureChestCount, 10),
+      healingFountainCount: Number.parseInt(healingFountainCount, 10),
+    };
+    if (Object.values(numericValues).some((value) => Number.isNaN(value))) {
+      setError('Counts must be integers.');
       return;
     }
 
@@ -198,12 +314,17 @@ export const DistrictSeedJobsPanel = ({
         {
           districtId,
           questArchetypeIds: Array.from(selectedQuestArchetypeIds),
+          ...numericValues,
+          requiredPlaceTags,
+          shopkeeperItemTags,
         }
       );
       setJobs((current) => [created, ...current]);
       setSelectedQuestArchetypeIds(new Set());
+      setRequiredTagQuery('');
+      setShopkeeperTagQuery('');
       setSuccess(
-        `Queued district seed job for ${created.questArchetypeIds.length} quest templates.`
+        `Queued district seed job for ${created.questArchetypeIds.length} quest templates and ${created.zoneSeedJobIds?.length || 0} child-zone seed jobs.`
       );
     } catch (err) {
       console.error('Failed to queue district seed job', err);
@@ -260,8 +381,9 @@ export const DistrictSeedJobsPanel = ({
               District seeding
             </h2>
             <p className="text-sm text-gray-500">
-              Pick quest templates to apply across this district. Each one lands
-              in the district zone with the strongest internal-tag overlap.
+              Queue full child-zone seed drafts and optionally layer quest
+              templates across the district. Each quest template lands in the
+              child zone with the strongest internal-tag overlap.
             </p>
           </div>
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-right">
@@ -278,6 +400,165 @@ export const DistrictSeedJobsPanel = ({
           {hasZones
             ? `${district?.zones?.length || 0} district zones are available for matching.`
             : 'Add at least one zone to this district before queueing a seed job.'}
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {[
+            ['Places', placeCount, setPlaceCount],
+            ['Monsters', monsterCount, setMonsterCount],
+            ['Bosses', bossEncounterCount, setBossEncounterCount],
+            ['Raids', raidEncounterCount, setRaidEncounterCount],
+            ['Input Encounters', inputEncounterCount, setInputEncounterCount],
+            [
+              'Option Encounters',
+              optionEncounterCount,
+              setOptionEncounterCount,
+            ],
+            ['Treasure Chests', treasureChestCount, setTreasureChestCount],
+            [
+              'Healing Fountains',
+              healingFountainCount,
+              setHealingFountainCount,
+            ],
+          ].map(([label, value, setter]) => (
+            <label
+              key={label}
+              className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-gray-500"
+            >
+              {label}
+              <input
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-gray-900"
+                value={value as string}
+                onChange={(event) =>
+                  (setter as (value: string) => void)(event.target.value)
+                }
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Required Place Tags
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {requiredPlaceTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => removeTag(tag, setRequiredPlaceTags)}
+                className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700"
+              >
+                {tag} x
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Add required place tag"
+              value={requiredTagQuery}
+              onChange={(event) => setRequiredTagQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ',') {
+                  event.preventDefault();
+                  addTag(
+                    requiredTagQuery,
+                    requiredPlaceTags,
+                    setRequiredPlaceTags
+                  );
+                  setRequiredTagQuery('');
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                addTag(
+                  requiredTagQuery,
+                  requiredPlaceTags,
+                  setRequiredPlaceTags
+                );
+                setRequiredTagQuery('');
+              }}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+            >
+              Add
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {knownPlaceTags
+              .filter(
+                (tag) =>
+                  !requiredPlaceTags.includes(tag) &&
+                  (!requiredTagQuery.trim() ||
+                    tag.includes(requiredTagQuery.trim().toLowerCase()))
+              )
+              .slice(0, 12)
+              .map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() =>
+                    addTag(tag, requiredPlaceTags, setRequiredPlaceTags)
+                  }
+                  className="rounded-full bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                >
+                  {tag}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Shopkeeper Item Tags
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {shopkeeperItemTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => removeTag(tag, setShopkeeperItemTags)}
+                className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700"
+              >
+                {tag} x
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Add shopkeeper item tag"
+              value={shopkeeperTagQuery}
+              onChange={(event) => setShopkeeperTagQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ',') {
+                  event.preventDefault();
+                  addTag(
+                    shopkeeperTagQuery,
+                    shopkeeperItemTags,
+                    setShopkeeperItemTags
+                  );
+                  setShopkeeperTagQuery('');
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                addTag(
+                  shopkeeperTagQuery,
+                  shopkeeperItemTags,
+                  setShopkeeperItemTags
+                );
+                setShopkeeperTagQuery('');
+              }}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+            >
+              Add
+            </button>
+          </div>
         </div>
 
         <input
@@ -328,13 +609,18 @@ export const DistrictSeedJobsPanel = ({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div className="text-xs text-gray-500">
-            Missing quest-giver characters are generated automatically. Missing
-            POIs are filled in during quest generation.
+            Zone seed settings queue regular zone-seed drafts for every child
+            zone. Missing quest-giver characters are generated automatically,
+            and quest templates still match to the strongest child-zone tag fit.
           </div>
           <button
             type="button"
             onClick={() => void handleQueueJob()}
-            disabled={!hasZones || selectedCount === 0 || submitting}
+            disabled={
+              !hasZones ||
+              (!hasZoneSeedSettings && selectedCount === 0) ||
+              submitting
+            }
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
             {submitting ? 'Queueing...' : 'Queue seed job'}
@@ -408,7 +694,8 @@ export const DistrictSeedJobsPanel = ({
                     </span>
                   </div>
                   <div className="mt-2 text-sm text-gray-700">
-                    {job.questArchetypeIds.length} quest templates
+                    {job.questArchetypeIds.length} quest templates and{' '}
+                    {job.zoneSeedJobIds?.length || 0} child-zone seed jobs
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     Job ID: {job.id}

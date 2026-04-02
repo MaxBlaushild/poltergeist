@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
 import {
   Candidate,
@@ -169,11 +175,14 @@ mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 const emptyQuestForm = {
   name: '',
   description: '',
+  category: 'side' as 'side' | 'main_story',
   acceptanceDialogue: [] as string[],
   imageUrl: '',
   zoneId: '',
   questGiverCharacterId: '',
   questArchetypeId: '',
+  mainStoryPreviousQuestId: '',
+  mainStoryNextQuestId: '',
   recurrenceFrequency: '',
   difficultyMode: 'scale' as QuestDifficultyMode,
   difficulty: 1,
@@ -192,11 +201,14 @@ const buildQuestFormFromQuest = (quest: Quest) => {
   return {
     name: quest.name ?? '',
     description: quest.description ?? '',
+    category: quest.category === 'main_story' ? 'main_story' : 'side',
     acceptanceDialogue: quest.acceptanceDialogue ?? [],
     imageUrl: quest.imageUrl ?? '',
     zoneId: quest.zoneId ?? '',
     questGiverCharacterId: quest.questGiverCharacterId ?? '',
     questArchetypeId: quest.questArchetypeId ?? '',
+    mainStoryPreviousQuestId: quest.mainStoryPreviousQuestId ?? '',
+    mainStoryNextQuestId: quest.mainStoryNextQuestId ?? '',
     recurrenceFrequency: quest.recurrenceFrequency ?? '',
     difficultyMode: quest.difficultyMode === 'fixed' ? 'fixed' : 'scale',
     difficulty: quest.difficulty ?? 1,
@@ -558,7 +570,10 @@ const getPointOfInterestAliases = (poi?: PointOfInterest | null) => {
   if (!poi) return [];
   return [poi.googleMapsPlaceName, poi.originalName]
     .map((value) => (value ?? '').trim())
-    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
+    .filter(
+      (value, index, items) =>
+        value.length > 0 && items.indexOf(value) === index
+    );
 };
 
 const formatPoiCoordinate = (value?: string | number | null) => {
@@ -708,9 +723,13 @@ const resolveChallengeSubmissionType = (
     'photo') as QuestNodeSubmissionType;
 
 const getLegacyQuestNodePrompts = (node?: QuestNode | null) =>
-  (((node ?? null) as (QuestNode & {
-    challenges?: LegacyQuestNodePrompt[];
-  }) | null)?.challenges ?? []) as LegacyQuestNodePrompt[];
+  ((
+    (node ?? null) as
+      | (QuestNode & {
+          challenges?: LegacyQuestNodePrompt[];
+        })
+      | null
+  )?.challenges ?? []) as LegacyQuestNodePrompt[];
 
 const questNodeUsesLinkedObjective = (node?: QuestNode | null) =>
   Boolean(
@@ -992,7 +1011,13 @@ export const Quests = () => {
           label: 'Drawn Area',
         };
       }),
-    [challenges, monsterEncounters, orderedQuestNodes, pointsOfInterest, scenarios]
+    [
+      challenges,
+      monsterEncounters,
+      orderedQuestNodes,
+      pointsOfInterest,
+      scenarios,
+    ]
   );
 
   useEffect(() => {
@@ -1733,7 +1758,9 @@ export const Quests = () => {
           const aliases = getPointOfInterestAliases(poi);
           const summary =
             summarizePoiText(poi.description) || summarizePoiText(poi.clue);
-          const tagNames = (poi.tags ?? []).map((tag) => tag.name).filter(Boolean);
+          const tagNames = (poi.tags ?? [])
+            .map((tag) => tag.name)
+            .filter(Boolean);
           return {
             nodeId: node.id,
             orderIndex: node.orderIndex,
@@ -1972,10 +1999,7 @@ export const Quests = () => {
 
     if (!hasBounds) return;
 
-    if (
-      questNodePoints.length === 1 &&
-      questPolygons.length === 0
-    ) {
+    if (questNodePoints.length === 1 && questPolygons.length === 0) {
       const point = questNodePoints[0];
       questMap.current.easeTo({
         center: [point.lng, point.lat],
@@ -2144,12 +2168,22 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
+        category: questForm.category,
         acceptanceDialogue: normalizeAcceptanceDialogue(
           questForm.acceptanceDialogue
         ),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
+        mainStoryPreviousQuestId:
+          questForm.category === 'main_story' &&
+          questForm.mainStoryPreviousQuestId
+            ? questForm.mainStoryPreviousQuestId
+            : null,
+        mainStoryNextQuestId:
+          questForm.category === 'main_story' && questForm.mainStoryNextQuestId
+            ? questForm.mainStoryNextQuestId
+            : null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
         difficultyMode: questForm.difficultyMode,
         difficulty: Math.max(1, Number(questForm.difficulty) || 1),
@@ -2205,12 +2239,22 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
+        category: questForm.category,
         acceptanceDialogue: normalizeAcceptanceDialogue(
           questForm.acceptanceDialogue
         ),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
+        mainStoryPreviousQuestId:
+          questForm.category === 'main_story' &&
+          questForm.mainStoryPreviousQuestId
+            ? questForm.mainStoryPreviousQuestId
+            : null,
+        mainStoryNextQuestId:
+          questForm.category === 'main_story' && questForm.mainStoryNextQuestId
+            ? questForm.mainStoryNextQuestId
+            : null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
         difficultyMode: questForm.difficultyMode,
         difficulty: Math.max(1, Number(questForm.difficulty) || 1),
@@ -2283,10 +2327,13 @@ export const Quests = () => {
     const nodeLocationArchetypeIds: string[] = [];
     const linkedChallengesForNodes: (ChallengeNodeOption | undefined)[] = [];
     nodes.forEach((node) => {
-      const linkedScenario = resolveLinkedQuestScenario(node, scenarios) ?? undefined;
+      const linkedScenario =
+        resolveLinkedQuestScenario(node, scenarios) ?? undefined;
       const linkedMonsterEncounter =
-        resolveLinkedQuestMonsterEncounter(node, monsterEncounters) ?? undefined;
-      const linkedChallenge = resolveLinkedQuestChallenge(node, challenges) ?? undefined;
+        resolveLinkedQuestMonsterEncounter(node, monsterEncounters) ??
+        undefined;
+      const linkedChallenge =
+        resolveLinkedQuestChallenge(node, challenges) ?? undefined;
       linkedChallengesForNodes.push(linkedChallenge ?? undefined);
       const sourcePointOfInterestId = getLinkedQuestNodePoiId(
         node,
@@ -3484,6 +3531,80 @@ export const Quests = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
+                  Quest Category
+                </label>
+                <select
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={questForm.category}
+                  onChange={(e) =>
+                    setQuestForm((prev) => ({
+                      ...prev,
+                      category: e.target.value as 'side' | 'main_story',
+                      mainStoryPreviousQuestId:
+                        e.target.value === 'main_story'
+                          ? prev.mainStoryPreviousQuestId
+                          : '',
+                      mainStoryNextQuestId:
+                        e.target.value === 'main_story'
+                          ? prev.mainStoryNextQuestId
+                          : '',
+                    }))
+                  }
+                >
+                  <option value="side">Side Quest</option>
+                  <option value="main_story">Main Story</option>
+                </select>
+              </div>
+              {questForm.category === 'main_story' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Previous Main Story Quest
+                    </label>
+                    <select
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      value={questForm.mainStoryPreviousQuestId}
+                      onChange={(e) =>
+                        setQuestForm((prev) => ({
+                          ...prev,
+                          mainStoryPreviousQuestId: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">None</option>
+                      {quests.map((quest) => (
+                        <option key={quest.id} value={quest.id}>
+                          {quest.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Next Main Story Quest
+                    </label>
+                    <select
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      value={questForm.mainStoryNextQuestId}
+                      onChange={(e) =>
+                        setQuestForm((prev) => ({
+                          ...prev,
+                          mainStoryNextQuestId: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">None</option>
+                      {quests.map((quest) => (
+                        <option key={quest.id} value={quest.id}>
+                          {quest.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
                   Recurrence
                 </label>
                 <select
@@ -3866,7 +3987,9 @@ export const Quests = () => {
                         className="qa-library-item-body"
                         onClick={() => handleSelectQuest(quest)}
                       >
-                        <div className="qa-library-item-title">{quest.name}</div>
+                        <div className="qa-library-item-title">
+                          {quest.name}
+                        </div>
                         <div className="qa-library-item-meta">
                           <span>
                             {quest.nodeCount ?? quest.nodes?.length ?? 0} nodes
@@ -3886,7 +4009,9 @@ export const Quests = () => {
                           deletingQuestId === quest.id || bulkDeletingQuests
                         }
                       >
-                        {deletingQuestId === quest.id ? 'Deleting...' : 'Delete'}
+                        {deletingQuestId === quest.id
+                          ? 'Deleting...'
+                          : 'Delete'}
                       </button>
                     </div>
                   );
@@ -4021,9 +4146,7 @@ export const Quests = () => {
                     <div className="qa-stat">
                       <div className="qa-stat-label">Recurrence</div>
                       <div className="qa-stat-value">
-                        {getQuestRecurrenceLabel(
-                          questForm.recurrenceFrequency
-                        )}
+                        {getQuestRecurrenceLabel(questForm.recurrenceFrequency)}
                       </div>
                     </div>
                     <div className="qa-stat">
@@ -4061,10 +4184,16 @@ export const Quests = () => {
 
                   {selectedQuestLocationDetails.length > 0 && (
                     <div className="qa-panel" style={{ marginTop: 16 }}>
-                      <div className="qa-card-header" style={{ marginBottom: 12 }}>
+                      <div
+                        className="qa-card-header"
+                        style={{ marginBottom: 12 }}
+                      >
                         <div>
                           <div className="qa-meta">Quest Locations</div>
-                          <div className="qa-card-title" style={{ fontSize: 16 }}>
+                          <div
+                            className="qa-card-title"
+                            style={{ fontSize: 16 }}
+                          >
                             Linked Points of Interest
                           </div>
                         </div>
@@ -4079,7 +4208,8 @@ export const Quests = () => {
                             className="rounded-md border border-gray-200 bg-white p-3"
                           >
                             <div className="flex gap-3">
-                              {location.poi.thumbnailUrl || location.poi.imageURL ? (
+                              {location.poi.thumbnailUrl ||
+                              location.poi.imageURL ? (
                                 <img
                                   src={
                                     location.poi.thumbnailUrl ||
@@ -4122,22 +4252,26 @@ export const Quests = () => {
                                       Archetype: {location.archetype.name}
                                     </span>
                                   )}
-                                  {(location.latitude || location.longitude) && (
+                                  {(location.latitude ||
+                                    location.longitude) && (
                                     <span className="qa-chip muted">
-                                      {location.latitude ?? '?'}, {location.longitude ?? '?'}
+                                      {location.latitude ?? '?'},{' '}
+                                      {location.longitude ?? '?'}
                                     </span>
                                   )}
                                 </div>
                                 {location.tagNames.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-2">
-                                    {location.tagNames.slice(0, 5).map((tagName) => (
-                                      <span
-                                        key={`${location.poi.id}-${tagName}`}
-                                        className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
-                                      >
-                                        {tagName}
-                                      </span>
-                                    ))}
+                                    {location.tagNames
+                                      .slice(0, 5)
+                                      .map((tagName) => (
+                                        <span
+                                          key={`${location.poi.id}-${tagName}`}
+                                          className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                                        >
+                                          {tagName}
+                                        </span>
+                                      ))}
                                     {location.tagNames.length > 5 && (
                                       <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-500">
                                         +{location.tagNames.length - 5} more
@@ -4170,436 +4304,517 @@ export const Quests = () => {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div className="md:col-span-2 qa-form-section">
-                    <div className="qa-card-kicker">Narrative</div>
-                    <div className="qa-section-title">Overview</div>
-                    <p className="qa-section-copy">
-                      Define the player-facing quest identity before tuning the
-                      route itself.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Name
-                    </label>
-                    <input
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.name}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Description
-                    </label>
-                    <textarea
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      rows={3}
-                      value={questForm.description}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          description: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Quest Acceptance Dialogue
-                    </label>
-                    <textarea
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      rows={4}
-                      placeholder="One line per dialogue message shown before accepting the quest."
-                      value={questForm.acceptanceDialogue.join('\n')}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          acceptanceDialogue: e.target.value.split('\n'),
-                        }))
-                      }
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Each line becomes a separate dialogue line in the quest
-                      acceptance prompt.
-                    </p>
-                  </div>
-                  <div className="md:col-span-2 qa-form-section">
-                    <div className="qa-card-kicker">Assignment</div>
-                    <div className="qa-section-title">Quest Framing</div>
-                    <p className="qa-section-copy">
-                      Set where the quest lives, who gives it, and how it
-                      should scale over time.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Zone
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.zoneId}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          zoneId: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">No Zone</option>
-                      {zones.map((zone) => (
-                        <option key={zone.id} value={zone.id}>
-                          {zone.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Quest Giver Character
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.questGiverCharacterId}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          questGiverCharacterId: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">None</option>
-                      {characters.map((character) => (
-                        <option key={character.id} value={character.id}>
-                          {character.name}
-                        </option>
-                      ))}
-                    </select>
-                    {questForm.questGiverCharacterId && (
-                      <button
-                        type="button"
-                        className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        onClick={openCharacterLocations}
+                    <div className="md:col-span-2 qa-form-section">
+                      <div className="qa-card-kicker">Narrative</div>
+                      <div className="qa-section-title">Overview</div>
+                      <p className="qa-section-copy">
+                        Define the player-facing quest identity before tuning
+                        the route itself.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Name
+                      </label>
+                      <input
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.name}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Description
+                      </label>
+                      <textarea
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        rows={3}
+                        value={questForm.description}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Quest Acceptance Dialogue
+                      </label>
+                      <textarea
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        rows={4}
+                        placeholder="One line per dialogue message shown before accepting the quest."
+                        value={questForm.acceptanceDialogue.join('\n')}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            acceptanceDialogue: e.target.value.split('\n'),
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Each line becomes a separate dialogue line in the quest
+                        acceptance prompt.
+                      </p>
+                    </div>
+                    <div className="md:col-span-2 qa-form-section">
+                      <div className="qa-card-kicker">Assignment</div>
+                      <div className="qa-section-title">Quest Framing</div>
+                      <p className="qa-section-copy">
+                        Set where the quest lives, who gives it, and how it
+                        should scale over time.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Zone
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.zoneId}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            zoneId: e.target.value,
+                          }))
+                        }
                       >
-                        Edit Character Locations
-                      </button>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Quest Archetype ID
-                    </label>
-                    <input
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.questArchetypeId}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          questArchetypeId: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Recurrence
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.recurrenceFrequency}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          recurrenceFrequency: e.target.value,
-                        }))
-                      }
-                    >
-                      {questRecurrenceOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                        <option value="">No Zone</option>
+                        {zones.map((zone) => (
+                          <option key={zone.id} value={zone.id}>
+                            {zone.name}
+                          </option>
                         ))}
                       </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Difficulty Mode
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.difficultyMode}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          difficultyMode: e.target.value as QuestDifficultyMode,
-                        }))
-                      }
-                    >
-                      <option value="scale">Scale With User Level</option>
-                      <option value="fixed">Fixed Difficulty</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Difficulty
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.difficulty}
-                      disabled={questForm.difficultyMode !== 'fixed'}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          difficulty: Math.max(1, Number(e.target.value) || 1),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Monster Encounter Target Level
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.monsterEncounterTargetLevel}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          monsterEncounterTargetLevel: Math.max(
-                            1,
-                            Number(e.target.value) || 1
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2 qa-form-section">
-                    <div className="qa-card-kicker">Rewards</div>
-                    <div className="qa-section-title">Quest Payoff</div>
-                    <p className="qa-section-copy">
-                      Rewards are configured at the quest level so every node
-                      stays focused on structure rather than loot.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Reward Mode
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.rewardMode}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          rewardMode: e.target.value as 'explicit' | 'random',
-                        }))
-                      }
-                    >
-                      <option value="random">Random Reward</option>
-                      <option value="explicit">Explicit Reward</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Random Reward Size
-                    </label>
-                    <select
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.randomRewardSize}
-                      disabled={questForm.rewardMode !== 'random'}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          randomRewardSize: e.target.value as
-                            | 'small'
-                            | 'medium'
-                            | 'large',
-                        }))
-                      }
-                    >
-                      <option value="small">Small</option>
-                      <option value="medium">Medium</option>
-                      <option value="large">Large</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Experience Reward
-                    </label>
-                    <input
-                      type="number"
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.rewardExperience}
-                      disabled={questForm.rewardMode !== 'explicit'}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          rewardExperience: Number(e.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Gold Reward
-                    </label>
-                    <input
-                      type="number"
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                      value={questForm.gold}
-                      disabled={questForm.rewardMode !== 'explicit'}
-                      onChange={(e) =>
-                        setQuestForm((prev) => ({
-                          ...prev,
-                          gold: Number(e.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  {questForm.rewardMode === 'random' && (
-                    <div className="md:col-span-2 text-xs text-gray-500">
-                      Random rewards ignore explicit gold/material/item/spell
-                      fields.
                     </div>
-                  )}
-                  <div className="md:col-span-2">
-                    <MaterialRewardsEditor
-                      value={questForm.materialRewards}
-                      onChange={(materialRewards) =>
-                        setQuestForm((prev) => ({ ...prev, materialRewards }))
-                      }
-                      disabled={questForm.rewardMode !== 'explicit'}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <div className="flex items-center justify-between">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700">
-                        Item Rewards
+                        Quest Giver Character
                       </label>
-                      <button
-                        type="button"
-                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        onClick={handleAddQuestReward}
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.questGiverCharacterId}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            questGiverCharacterId: e.target.value,
+                          }))
+                        }
                       >
-                        Add Item Reward
-                      </button>
+                        <option value="">None</option>
+                        {characters.map((character) => (
+                          <option key={character.id} value={character.id}>
+                            {character.name}
+                          </option>
+                        ))}
+                      </select>
+                      {questForm.questGiverCharacterId && (
+                        <button
+                          type="button"
+                          className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          onClick={openCharacterLocations}
+                        >
+                          Edit Character Locations
+                        </button>
+                      )}
                     </div>
-                    {questForm.itemRewards.length === 0 ? (
-                      <div className="mt-2 text-xs text-gray-500">
-                        No item rewards yet.
-                      </div>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        {questForm.itemRewards.map((reward, index) => (
-                          <div
-                            key={`edit-reward-${index}`}
-                            className="grid grid-cols-[1fr_120px_auto] gap-2 items-center"
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Quest Archetype ID
+                      </label>
+                      <input
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.questArchetypeId}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            questArchetypeId: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Quest Category
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.category}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            category: e.target.value as 'side' | 'main_story',
+                            mainStoryPreviousQuestId:
+                              e.target.value === 'main_story'
+                                ? prev.mainStoryPreviousQuestId
+                                : '',
+                            mainStoryNextQuestId:
+                              e.target.value === 'main_story'
+                                ? prev.mainStoryNextQuestId
+                                : '',
+                          }))
+                        }
+                      >
+                        <option value="side">Side Quest</option>
+                        <option value="main_story">Main Story</option>
+                      </select>
+                    </div>
+                    {questForm.category === 'main_story' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Previous Main Story Quest
+                          </label>
+                          <select
+                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                            value={questForm.mainStoryPreviousQuestId}
+                            onChange={(e) =>
+                              setQuestForm((prev) => ({
+                                ...prev,
+                                mainStoryPreviousQuestId: e.target.value,
+                              }))
+                            }
                           >
-                            <select
-                              className="block w-full border border-gray-300 rounded-md p-2"
-                              value={reward.inventoryItemId}
-                              onChange={(e) =>
-                                handleUpdateQuestReward(index, {
-                                  inventoryItemId: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="">Select item</option>
-                              {inventoryItems.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name}
+                            <option value="">None</option>
+                            {quests
+                              .filter((quest) => quest.id !== selectedQuest?.id)
+                              .map((quest) => (
+                                <option key={quest.id} value={quest.id}>
+                                  {quest.name}
                                 </option>
                               ))}
-                            </select>
-                            <input
-                              type="number"
-                              className="block w-full border border-gray-300 rounded-md p-2"
-                              min={1}
-                              value={reward.quantity}
-                              onChange={(e) =>
-                                handleUpdateQuestReward(index, {
-                                  quantity: Number(e.target.value),
-                                })
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                              onClick={() => handleRemoveQuestReward(index)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="md:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Spell Rewards
-                      </label>
-                      <button
-                        type="button"
-                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        onClick={handleAddQuestSpellReward}
-                      >
-                        Add Spell Reward
-                      </button>
-                    </div>
-                    {questForm.spellRewards.length === 0 ? (
-                      <div className="mt-2 text-xs text-gray-500">
-                        No spell rewards yet.
-                      </div>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        {questForm.spellRewards.map((reward, index) => (
-                          <div
-                            key={`edit-spell-reward-${index}`}
-                            className="grid grid-cols-[1fr_auto] gap-2 items-center"
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Next Main Story Quest
+                          </label>
+                          <select
+                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                            value={questForm.mainStoryNextQuestId}
+                            onChange={(e) =>
+                              setQuestForm((prev) => ({
+                                ...prev,
+                                mainStoryNextQuestId: e.target.value,
+                              }))
+                            }
                           >
-                            <select
-                              className="block w-full border border-gray-300 rounded-md p-2"
-                              value={reward.spellId}
-                              onChange={(e) =>
-                                handleUpdateQuestSpellReward(index, {
-                                  spellId: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="">Select spell</option>
-                              {spells.map((spell) => (
-                                <option key={spell.id} value={spell.id}>
-                                  {spell.name}
+                            <option value="">None</option>
+                            {quests
+                              .filter((quest) => quest.id !== selectedQuest?.id)
+                              .map((quest) => (
+                                <option key={quest.id} value={quest.id}>
+                                  {quest.name}
                                 </option>
                               ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                              onClick={() =>
-                                handleRemoveQuestSpellReward(index)
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
+                          </select>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Recurrence
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.recurrenceFrequency}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            recurrenceFrequency: e.target.value,
+                          }))
+                        }
+                      >
+                        {questRecurrenceOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
                         ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Difficulty Mode
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.difficultyMode}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            difficultyMode: e.target
+                              .value as QuestDifficultyMode,
+                          }))
+                        }
+                      >
+                        <option value="scale">Scale With User Level</option>
+                        <option value="fixed">Fixed Difficulty</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Difficulty
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.difficulty}
+                        disabled={questForm.difficultyMode !== 'fixed'}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            difficulty: Math.max(
+                              1,
+                              Number(e.target.value) || 1
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Monster Encounter Target Level
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.monsterEncounterTargetLevel}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            monsterEncounterTargetLevel: Math.max(
+                              1,
+                              Number(e.target.value) || 1
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2 qa-form-section">
+                      <div className="qa-card-kicker">Rewards</div>
+                      <div className="qa-section-title">Quest Payoff</div>
+                      <p className="qa-section-copy">
+                        Rewards are configured at the quest level so every node
+                        stays focused on structure rather than loot.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Reward Mode
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.rewardMode}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            rewardMode: e.target.value as 'explicit' | 'random',
+                          }))
+                        }
+                      >
+                        <option value="random">Random Reward</option>
+                        <option value="explicit">Explicit Reward</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Random Reward Size
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.randomRewardSize}
+                        disabled={questForm.rewardMode !== 'random'}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            randomRewardSize: e.target.value as
+                              | 'small'
+                              | 'medium'
+                              | 'large',
+                          }))
+                        }
+                      >
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Experience Reward
+                      </label>
+                      <input
+                        type="number"
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.rewardExperience}
+                        disabled={questForm.rewardMode !== 'explicit'}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            rewardExperience: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Gold Reward
+                      </label>
+                      <input
+                        type="number"
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.gold}
+                        disabled={questForm.rewardMode !== 'explicit'}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            gold: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    {questForm.rewardMode === 'random' && (
+                      <div className="md:col-span-2 text-xs text-gray-500">
+                        Random rewards ignore explicit gold/material/item/spell
+                        fields.
                       </div>
                     )}
+                    <div className="md:col-span-2">
+                      <MaterialRewardsEditor
+                        value={questForm.materialRewards}
+                        onChange={(materialRewards) =>
+                          setQuestForm((prev) => ({ ...prev, materialRewards }))
+                        }
+                        disabled={questForm.rewardMode !== 'explicit'}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Item Rewards
+                        </label>
+                        <button
+                          type="button"
+                          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          onClick={handleAddQuestReward}
+                        >
+                          Add Item Reward
+                        </button>
+                      </div>
+                      {questForm.itemRewards.length === 0 ? (
+                        <div className="mt-2 text-xs text-gray-500">
+                          No item rewards yet.
+                        </div>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {questForm.itemRewards.map((reward, index) => (
+                            <div
+                              key={`edit-reward-${index}`}
+                              className="grid grid-cols-[1fr_120px_auto] gap-2 items-center"
+                            >
+                              <select
+                                className="block w-full border border-gray-300 rounded-md p-2"
+                                value={reward.inventoryItemId}
+                                onChange={(e) =>
+                                  handleUpdateQuestReward(index, {
+                                    inventoryItemId: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">Select item</option>
+                                {inventoryItems.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                className="block w-full border border-gray-300 rounded-md p-2"
+                                min={1}
+                                value={reward.quantity}
+                                onChange={(e) =>
+                                  handleUpdateQuestReward(index, {
+                                    quantity: Number(e.target.value),
+                                  })
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                onClick={() => handleRemoveQuestReward(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Spell Rewards
+                        </label>
+                        <button
+                          type="button"
+                          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          onClick={handleAddQuestSpellReward}
+                        >
+                          Add Spell Reward
+                        </button>
+                      </div>
+                      {questForm.spellRewards.length === 0 ? (
+                        <div className="mt-2 text-xs text-gray-500">
+                          No spell rewards yet.
+                        </div>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {questForm.spellRewards.map((reward, index) => (
+                            <div
+                              key={`edit-spell-reward-${index}`}
+                              className="grid grid-cols-[1fr_auto] gap-2 items-center"
+                            >
+                              <select
+                                className="block w-full border border-gray-300 rounded-md p-2"
+                                value={reward.spellId}
+                                onChange={(e) =>
+                                  handleUpdateQuestSpellReward(index, {
+                                    spellId: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">Select spell</option>
+                                {spells.map((spell) => (
+                                  <option key={spell.id} value={spell.id}>
+                                    {spell.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                onClick={() =>
+                                  handleRemoveQuestSpellReward(index)
+                                }
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-
                 </div>
 
                 <div className="qa-card qa-route-card">
@@ -4632,292 +4847,895 @@ export const Quests = () => {
                   </div>
                   <div className="qa-divider" />
                   <div className="qa-route-builder">
-                  <div className="bg-gray-50 border border-gray-200 rounded-md p-4 mb-4">
-                    <h4 className="font-semibold mb-3">Add Node</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Order Index
-                        </label>
-                        <input
-                          type="number"
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                          value={nodeForm.orderIndex}
-                          onChange={(e) =>
-                            setNodeForm((prev) => ({
-                              ...prev,
-                              orderIndex: Number(e.target.value),
-                            }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Node Type
-                        </label>
-                        <select
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                          value={nodeForm.nodeType}
-                          onChange={(e) => {
-                            const nextNodeType = e.target
-                              .value as QuestNodeType;
-                            setNodeForm((prev) => ({
-                              ...prev,
-                              nodeType: nextNodeType,
-                              pointOfInterestId:
-                                nextNodeType === 'poi'
-                                  ? prev.pointOfInterestId
-                                  : '',
-                              scenarioId:
-                                nextNodeType === 'scenario'
-                                  ? prev.scenarioId
-                                  : '',
-                              monsterEncounterId:
-                                nextNodeType === 'monster'
-                                  ? prev.monsterEncounterId
-                                  : '',
-                              challengeId:
-                                nextNodeType === 'challenge'
-                                  ? prev.challengeId
-                                  : '',
-                              polygonPoints:
-                                nextNodeType === 'polygon'
-                                  ? prev.polygonPoints
-                                  : '',
-                            }));
-                          }}
-                        >
-                          <option value="scenario">Scenario</option>
-                          <option value="monster">Monster</option>
-                          <option value="challenge">Challenge Objective</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Submission Type
-                        </label>
-                        <select
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                          value={nodeForm.submissionType}
-                          onChange={(e) =>
-                            setNodeForm((prev) => ({
-                              ...prev,
-                              submissionType: e.target
-                                .value as QuestNodeSubmissionType,
-                            }))
-                          }
-                        >
-                          {questNodeSubmissionOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      {nodeForm.nodeType === 'poi' ? (
-                        <div className="md:col-span-2">
+                    <div className="bg-gray-50 border border-gray-200 rounded-md p-4 mb-4">
+                      <h4 className="font-semibold mb-3">Add Node</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
                           <label className="block text-sm font-medium text-gray-700">
-                            Point of Interest
+                            Order Index
                           </label>
                           <input
-                            className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
-                            placeholder="Search points of interest..."
-                            value={poiSearch}
-                            onChange={(e) => setPoiSearch(e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            className="mb-2 flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                            onClick={() => setPoiFiltersOpen((prev) => !prev)}
-                          >
-                            <span>Filters</span>
-                            <span>{poiFiltersOpen ? 'Hide' : 'Show'}</span>
-                          </button>
-                          {poiFiltersOpen && (
-                            <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-                              <div className="mb-3">
-                                <label className="block text-xs font-medium text-gray-700">
-                                  Zone
-                                </label>
-                                <select
-                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                  value={poiZoneFilterId}
-                                  onChange={(e) =>
-                                    setPoiZoneFilterId(e.target.value)
-                                  }
-                                >
-                                  <option value="">All zones</option>
-                                  {zones.map((zone) => (
-                                    <option key={zone.id} value={zone.id}>
-                                      {zone.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                {poiZoneFilterId && zonePoiMapLoading && (
-                                  <p className="mt-1 text-xs text-gray-500">
-                                    Loading zone points of interest…
-                                  </p>
-                                )}
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700">
-                                  Tags
-                                </label>
-                                <input
-                                  className="mt-1 mb-2 block w-full rounded-md border border-gray-300 p-2"
-                                  placeholder="Search tags..."
-                                  value={poiTagSearch}
-                                  onChange={(e) =>
-                                    setPoiTagSearch(e.target.value)
-                                  }
-                                />
-                                <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white p-2">
-                                  {filteredTags.length === 0 && (
-                                    <div className="text-xs text-gray-500">
-                                      No tags found.
-                                    </div>
-                                  )}
-                                  {filteredTags.map((tag) => {
-                                    const isSelected = poiTagFilterIds.includes(
-                                      tag.id
-                                    );
-                                    return (
-                                      <label
-                                        key={tag.id}
-                                        className="flex items-center gap-2 text-xs text-gray-700"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={(e) => {
-                                            if (e.target.checked) {
-                                              setPoiTagFilterIds((prev) => [
-                                                ...prev,
-                                                tag.id,
-                                              ]);
-                                            } else {
-                                              setPoiTagFilterIds((prev) =>
-                                                prev.filter(
-                                                  (id) => id !== tag.id
-                                                )
-                                              );
-                                            }
-                                          }}
-                                        />
-                                        {tag.name}
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="mt-3 flex items-center gap-2 text-xs">
-                                <button
-                                  type="button"
-                                  className="rounded-md border border-gray-300 bg-white px-2 py-1"
-                                  onClick={() => {
-                                    setPoiZoneFilterId('');
-                                    setPoiTagFilterIds([]);
-                                    setPoiTagSearch('');
-                                  }}
-                                >
-                                  Clear filters
-                                </button>
-                                <span className="text-gray-500">
-                                  Showing {filteredPointsOfInterest.length} /{' '}
-                                  {pointsOfInterest.length}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                          <select
+                            type="number"
                             className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                            value={nodeForm.pointOfInterestId}
+                            value={nodeForm.orderIndex}
                             onChange={(e) =>
                               setNodeForm((prev) => ({
                                 ...prev,
-                                pointOfInterestId: e.target.value,
+                                orderIndex: Number(e.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Node Type
+                          </label>
+                          <select
+                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                            value={nodeForm.nodeType}
+                            onChange={(e) => {
+                              const nextNodeType = e.target
+                                .value as QuestNodeType;
+                              setNodeForm((prev) => ({
+                                ...prev,
+                                nodeType: nextNodeType,
+                                pointOfInterestId:
+                                  nextNodeType === 'poi'
+                                    ? prev.pointOfInterestId
+                                    : '',
+                                scenarioId:
+                                  nextNodeType === 'scenario'
+                                    ? prev.scenarioId
+                                    : '',
+                                monsterEncounterId:
+                                  nextNodeType === 'monster'
+                                    ? prev.monsterEncounterId
+                                    : '',
+                                challengeId:
+                                  nextNodeType === 'challenge'
+                                    ? prev.challengeId
+                                    : '',
+                                polygonPoints:
+                                  nextNodeType === 'polygon'
+                                    ? prev.polygonPoints
+                                    : '',
+                              }));
+                            }}
+                          >
+                            <option value="scenario">Scenario</option>
+                            <option value="monster">Monster</option>
+                            <option value="challenge">
+                              Challenge Objective
+                            </option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Submission Type
+                          </label>
+                          <select
+                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                            value={nodeForm.submissionType}
+                            onChange={(e) =>
+                              setNodeForm((prev) => ({
+                                ...prev,
+                                submissionType: e.target
+                                  .value as QuestNodeSubmissionType,
                               }))
                             }
                           >
-                            <option value="">Select a POI</option>
-                            {filteredPointsOfInterest.map((poi) => (
-                              <option key={poi.id} value={poi.id}>
-                                {poi.name}
+                            {questNodeSubmissionOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
                               </option>
                             ))}
                           </select>
                         </div>
-                      ) : nodeForm.nodeType === 'scenario' ? (
-                        <div className="md:col-span-2">
-                          <div className="flex items-center justify-between gap-3">
+                        {nodeForm.nodeType === 'poi' ? (
+                          <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700">
-                              Scenario
+                              Point of Interest
                             </label>
+                            <input
+                              className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
+                              placeholder="Search points of interest..."
+                              value={poiSearch}
+                              onChange={(e) => setPoiSearch(e.target.value)}
+                            />
                             <button
                               type="button"
-                              className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                              onClick={() => toggleQuickCreate('scenario')}
+                              className="mb-2 flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                              onClick={() => setPoiFiltersOpen((prev) => !prev)}
                             >
-                              {quickCreateOpen.scenario
-                                ? 'Hide Quick Create'
-                                : 'Create New Scenario'}
+                              <span>Filters</span>
+                              <span>{poiFiltersOpen ? 'Hide' : 'Show'}</span>
                             </button>
-                          </div>
-                          <select
-                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                            value={nodeForm.scenarioId}
-                            onChange={(e) =>
-                              setNodeForm((prev) => ({
-                                ...prev,
-                                scenarioId: e.target.value,
-                              }))
-                            }
-                          >
-                            <option value="">Select a scenario</option>
-                            {filteredScenarios.map((scenario) => (
-                              <option key={scenario.id} value={scenario.id}>
-                                {summarizeScenarioPrompt(scenario.prompt)}
-                              </option>
-                            ))}
-                          </select>
-                          {nodeForm.scenarioId ? (
-                            <div className="mt-2">
-                              <Link
-                                to={adminEntityHref(
-                                  'scenario',
-                                  nodeForm.scenarioId
-                                )}
-                                className={adminEntityLinkClass}
-                              >
-                                Open Scenario Page
-                              </Link>
-                            </div>
-                          ) : null}
-                          {quickCreateOpen.scenario && (
-                            <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <label className="text-sm">
-                                  Prompt
-                                  <textarea
+                            {poiFiltersOpen && (
+                              <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+                                <div className="mb-3">
+                                  <label className="block text-xs font-medium text-gray-700">
+                                    Zone
+                                  </label>
+                                  <select
                                     className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    rows={3}
-                                    value={quickCreateScenarioForm.prompt}
+                                    value={poiZoneFilterId}
                                     onChange={(e) =>
-                                      setQuickCreateScenarioForm((prev) => ({
-                                        ...prev,
-                                        prompt: e.target.value,
-                                      }))
+                                      setPoiZoneFilterId(e.target.value)
+                                    }
+                                  >
+                                    <option value="">All zones</option>
+                                    {zones.map((zone) => (
+                                      <option key={zone.id} value={zone.id}>
+                                        {zone.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {poiZoneFilterId && zonePoiMapLoading && (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      Loading zone points of interest…
+                                    </p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700">
+                                    Tags
+                                  </label>
+                                  <input
+                                    className="mt-1 mb-2 block w-full rounded-md border border-gray-300 p-2"
+                                    placeholder="Search tags..."
+                                    value={poiTagSearch}
+                                    onChange={(e) =>
+                                      setPoiTagSearch(e.target.value)
                                     }
                                   />
-                                </label>
-                                <div className="grid grid-cols-1 gap-3">
+                                  <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white p-2">
+                                    {filteredTags.length === 0 && (
+                                      <div className="text-xs text-gray-500">
+                                        No tags found.
+                                      </div>
+                                    )}
+                                    {filteredTags.map((tag) => {
+                                      const isSelected =
+                                        poiTagFilterIds.includes(tag.id);
+                                      return (
+                                        <label
+                                          key={tag.id}
+                                          className="flex items-center gap-2 text-xs text-gray-700"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setPoiTagFilterIds((prev) => [
+                                                  ...prev,
+                                                  tag.id,
+                                                ]);
+                                              } else {
+                                                setPoiTagFilterIds((prev) =>
+                                                  prev.filter(
+                                                    (id) => id !== tag.id
+                                                  )
+                                                );
+                                              }
+                                            }}
+                                          />
+                                          {tag.name}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2 text-xs">
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-gray-300 bg-white px-2 py-1"
+                                    onClick={() => {
+                                      setPoiZoneFilterId('');
+                                      setPoiTagFilterIds([]);
+                                      setPoiTagSearch('');
+                                    }}
+                                  >
+                                    Clear filters
+                                  </button>
+                                  <span className="text-gray-500">
+                                    Showing {filteredPointsOfInterest.length} /{' '}
+                                    {pointsOfInterest.length}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                            <select
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              value={nodeForm.pointOfInterestId}
+                              onChange={(e) =>
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  pointOfInterestId: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Select a POI</option>
+                              {filteredPointsOfInterest.map((poi) => (
+                                <option key={poi.id} value={poi.id}>
+                                  {poi.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : nodeForm.nodeType === 'scenario' ? (
+                          <div className="md:col-span-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Scenario
+                              </label>
+                              <button
+                                type="button"
+                                className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                onClick={() => toggleQuickCreate('scenario')}
+                              >
+                                {quickCreateOpen.scenario
+                                  ? 'Hide Quick Create'
+                                  : 'Create New Scenario'}
+                              </button>
+                            </div>
+                            <select
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              value={nodeForm.scenarioId}
+                              onChange={(e) =>
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  scenarioId: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Select a scenario</option>
+                              {filteredScenarios.map((scenario) => (
+                                <option key={scenario.id} value={scenario.id}>
+                                  {summarizeScenarioPrompt(scenario.prompt)}
+                                </option>
+                              ))}
+                            </select>
+                            {nodeForm.scenarioId ? (
+                              <div className="mt-2">
+                                <Link
+                                  to={adminEntityHref(
+                                    'scenario',
+                                    nodeForm.scenarioId
+                                  )}
+                                  className={adminEntityLinkClass}
+                                >
+                                  Open Scenario Page
+                                </Link>
+                              </div>
+                            ) : null}
+                            {quickCreateOpen.scenario && (
+                              <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <label className="text-sm">
+                                    Prompt
+                                    <textarea
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      rows={3}
+                                      value={quickCreateScenarioForm.prompt}
+                                      onChange={(e) =>
+                                        setQuickCreateScenarioForm((prev) => ({
+                                          ...prev,
+                                          prompt: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <div className="grid grid-cols-1 gap-3">
+                                    <label className="text-sm">
+                                      Image URL
+                                      <input
+                                        className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                        value={quickCreateScenarioForm.imageUrl}
+                                        onChange={(e) =>
+                                          setQuickCreateScenarioForm(
+                                            (prev) => ({
+                                              ...prev,
+                                              imageUrl: e.target.value,
+                                            })
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-sm">
+                                      Thumbnail URL
+                                      <input
+                                        className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                        value={
+                                          quickCreateScenarioForm.thumbnailUrl
+                                        }
+                                        onChange={(e) =>
+                                          setQuickCreateScenarioForm(
+                                            (prev) => ({
+                                              ...prev,
+                                              thumbnailUrl: e.target.value,
+                                            })
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+                                  <label className="text-sm">
+                                    Latitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={quickCreateScenarioForm.latitude}
+                                      onChange={(e) =>
+                                        setQuickCreateScenarioForm((prev) => ({
+                                          ...prev,
+                                          latitude: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Longitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={quickCreateScenarioForm.longitude}
+                                      onChange={(e) =>
+                                        setQuickCreateScenarioForm((prev) => ({
+                                          ...prev,
+                                          longitude: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="rounded-md border border-gray-200 p-3">
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <div className="text-sm font-medium text-gray-700">
+                                      Options
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                      onClick={handleAddQuickScenarioOption}
+                                    >
+                                      Add Option
+                                    </button>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {quickCreateScenarioForm.options.map(
+                                      (option, index) => (
+                                        <div
+                                          key={`quick-scenario-option-${index}`}
+                                          className="rounded-md border border-gray-200 p-3"
+                                        >
+                                          <div className="mb-2 flex items-center justify-between">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                              Option {index + 1}
+                                            </div>
+                                            {quickCreateScenarioForm.options
+                                              .length > 1 && (
+                                              <button
+                                                type="button"
+                                                className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                                onClick={() =>
+                                                  handleRemoveQuickScenarioOption(
+                                                    index
+                                                  )
+                                                }
+                                              >
+                                                Remove
+                                              </button>
+                                            )}
+                                          </div>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <label className="text-sm md:col-span-2">
+                                              Option Text
+                                              <input
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                value={option.optionText}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    {
+                                                      optionText:
+                                                        e.target.value,
+                                                    }
+                                                  )
+                                                }
+                                              />
+                                            </label>
+                                            <label className="text-sm">
+                                              Stat
+                                              <select
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                value={option.statTag}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    { statTag: e.target.value }
+                                                  )
+                                                }
+                                              >
+                                                {questStatOptions.map(
+                                                  (stat) => (
+                                                    <option
+                                                      key={stat.id}
+                                                      value={stat.id}
+                                                    >
+                                                      {stat.label}
+                                                    </option>
+                                                  )
+                                                )}
+                                              </select>
+                                            </label>
+                                            <label className="text-sm">
+                                              Difficulty
+                                              <input
+                                                type="number"
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                value={option.difficulty}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    {
+                                                      difficulty:
+                                                        e.target.value,
+                                                    }
+                                                  )
+                                                }
+                                              />
+                                            </label>
+                                            <label className="text-sm md:col-span-2">
+                                              Proficiencies
+                                              <input
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                placeholder="comma, separated, proficiencies"
+                                                value={option.proficiencies}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    {
+                                                      proficiencies:
+                                                        e.target.value,
+                                                    }
+                                                  )
+                                                }
+                                              />
+                                            </label>
+                                            <label className="text-sm">
+                                              Success Text
+                                              <textarea
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                rows={2}
+                                                value={option.successText}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    {
+                                                      successText:
+                                                        e.target.value,
+                                                    }
+                                                  )
+                                                }
+                                              />
+                                            </label>
+                                            <label className="text-sm">
+                                              Failure Text
+                                              <textarea
+                                                className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                                rows={2}
+                                                value={option.failureText}
+                                                onChange={(e) =>
+                                                  handleUpdateQuickScenarioOption(
+                                                    index,
+                                                    {
+                                                      failureText:
+                                                        e.target.value,
+                                                    }
+                                                  )
+                                                }
+                                              />
+                                            </label>
+                                          </div>
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                                  onClick={handleCreateStandaloneScenario}
+                                  disabled={
+                                    quickCreateSubmitting === 'scenario'
+                                  }
+                                >
+                                  {quickCreateSubmitting === 'scenario'
+                                    ? 'Creating Scenario...'
+                                    : 'Create and Select Scenario'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : nodeForm.nodeType === 'monster' ? (
+                          <div className="md:col-span-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Monster Encounter
+                              </label>
+                              <button
+                                type="button"
+                                className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                onClick={() => toggleQuickCreate('monster')}
+                              >
+                                {quickCreateOpen.monster
+                                  ? 'Hide Quick Create'
+                                  : 'Create New Encounter'}
+                              </button>
+                            </div>
+                            <select
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              value={nodeForm.monsterEncounterId}
+                              onChange={(e) =>
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  monsterEncounterId: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">
+                                Select a monster encounter
+                              </option>
+                              {filteredMonsters.map((monster) => (
+                                <option key={monster.id} value={monster.id}>
+                                  {monster.name}
+                                  {monster.monsterCount &&
+                                  monster.monsterCount > 1
+                                    ? ` (${monster.monsterCount} monsters)`
+                                    : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {nodeForm.monsterEncounterId ? (
+                              <div className="mt-2">
+                                <Link
+                                  to={adminEntityHref(
+                                    'monster',
+                                    nodeForm.monsterEncounterId
+                                  )}
+                                  className={adminEntityLinkClass}
+                                >
+                                  Open Monster Encounters Page
+                                </Link>
+                              </div>
+                            ) : null}
+                            {quickCreateOpen.monster && (
+                              <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <label className="text-sm">
+                                    Name
+                                    <input
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateMonsterEncounterForm.name
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            name: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Description
+                                    <input
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateMonsterEncounterForm.description
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            description: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
                                   <label className="text-sm">
                                     Image URL
                                     <input
                                       className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                      value={quickCreateScenarioForm.imageUrl}
+                                      value={
+                                        quickCreateMonsterEncounterForm.imageUrl
+                                      }
                                       onChange={(e) =>
-                                        setQuickCreateScenarioForm((prev) => ({
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            imageUrl: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Thumbnail URL
+                                    <input
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateMonsterEncounterForm.thumbnailUrl
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            thumbnailUrl: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Latitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateMonsterEncounterForm.latitude
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            latitude: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Longitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateMonsterEncounterForm.longitude
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateMonsterEncounterForm(
+                                          (prev) => ({
+                                            ...prev,
+                                            longitude: e.target.value,
+                                          })
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      quickCreateMonsterEncounterForm.scaleWithUserLevel
+                                    }
+                                    onChange={(e) =>
+                                      setQuickCreateMonsterEncounterForm(
+                                        (prev) => ({
+                                          ...prev,
+                                          scaleWithUserLevel: e.target.checked,
+                                        })
+                                      )
+                                    }
+                                  />
+                                  Scale encounter with user level
+                                </label>
+                                <div>
+                                  <div className="mb-2 text-sm font-medium text-gray-700">
+                                    Monsters
+                                  </div>
+                                  <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3">
+                                    {availableMonstersForQuickCreate.length ===
+                                    0 ? (
+                                      <div className="text-sm text-gray-500">
+                                        No monsters available in this quest
+                                        zone.
+                                      </div>
+                                    ) : (
+                                      availableMonstersForQuickCreate.map(
+                                        (monster) => {
+                                          const checked =
+                                            quickCreateMonsterEncounterForm.monsterIds.includes(
+                                              monster.id
+                                            );
+                                          return (
+                                            <label
+                                              key={monster.id}
+                                              className="flex items-center gap-2 text-sm text-gray-700"
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={(e) => {
+                                                  setQuickCreateMonsterEncounterForm(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      monsterIds: e.target
+                                                        .checked
+                                                        ? [
+                                                            ...prev.monsterIds,
+                                                            monster.id,
+                                                          ]
+                                                        : prev.monsterIds.filter(
+                                                            (id) =>
+                                                              id !== monster.id
+                                                          ),
+                                                    })
+                                                  );
+                                                }}
+                                              />
+                                              <span>{monster.name}</span>
+                                              {typeof monster.level ===
+                                                'number' && (
+                                                <span className="text-xs text-gray-500">
+                                                  Lvl {monster.level}
+                                                </span>
+                                              )}
+                                            </label>
+                                          );
+                                        }
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                                  onClick={handleCreateMonsterEncounter}
+                                  disabled={quickCreateSubmitting === 'monster'}
+                                >
+                                  {quickCreateSubmitting === 'monster'
+                                    ? 'Creating Encounter...'
+                                    : 'Create and Select Encounter'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : nodeForm.nodeType === 'challenge' ? (
+                          <div className="md:col-span-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Challenge Objective
+                              </label>
+                              <button
+                                type="button"
+                                className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                onClick={() => toggleQuickCreate('challenge')}
+                              >
+                                {quickCreateOpen.challenge
+                                  ? 'Hide Quick Create'
+                                  : 'Create New Challenge Objective'}
+                              </button>
+                            </div>
+                            <select
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              value={nodeForm.challengeId}
+                              onChange={(e) =>
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  challengeId: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">
+                                Select a challenge objective
+                              </option>
+                              {filteredChallenges.map((challenge) => (
+                                <option key={challenge.id} value={challenge.id}>
+                                  {challenge.question}
+                                </option>
+                              ))}
+                            </select>
+                            {nodeForm.challengeId ? (
+                              <div className="mt-2">
+                                <Link
+                                  to={adminEntityHref(
+                                    'challenge',
+                                    nodeForm.challengeId
+                                  )}
+                                  className={adminEntityLinkClass}
+                                >
+                                  Open Challenge Page
+                                </Link>
+                              </div>
+                            ) : null}
+                            {quickCreateOpen.challenge && (
+                              <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="md:col-span-2">
+                                    <SearchableSelect
+                                      label="Point of Interest (Optional)"
+                                      placeholder="Search points of interest..."
+                                      options={quickCreateChallengePoiOptions}
+                                      value={
+                                        quickCreateChallengeForm.pointOfInterestId
+                                      }
+                                      onChange={(pointOfInterestId) => {
+                                        const selectedPoint =
+                                          quickCreateChallengePointsOfInterest.find(
+                                            (point) =>
+                                              point.id === pointOfInterestId
+                                          );
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          pointOfInterestId,
+                                          latitude:
+                                            selectedPoint?.lat !== undefined
+                                              ? selectedPoint.lat
+                                              : prev.latitude,
+                                          longitude:
+                                            selectedPoint?.lng !== undefined
+                                              ? selectedPoint.lng
+                                              : prev.longitude,
+                                        }));
+                                      }}
+                                      disabled={!questForm.zoneId}
+                                      noMatchesLabel={
+                                        questForm.zoneId
+                                          ? 'No matching points of interest.'
+                                          : 'Select a quest zone first.'
+                                      }
+                                    />
+                                    {zonePoiMapLoading && questForm.zoneId ? (
+                                      <div className="mt-1 text-xs text-gray-500">
+                                        Loading points of interest...
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  <label className="text-sm md:col-span-2">
+                                    Question
+                                    <textarea
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      rows={2}
+                                      value={quickCreateChallengeForm.question}
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          question: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm md:col-span-2">
+                                    Description
+                                    <textarea
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      rows={2}
+                                      value={
+                                        quickCreateChallengeForm.description
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          description: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Image URL
+                                    <input
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={quickCreateChallengeForm.imageUrl}
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
                                           ...prev,
                                           imageUrl: e.target.value,
                                         }))
@@ -4929,1154 +5747,592 @@ export const Quests = () => {
                                     <input
                                       className="mt-1 block w-full rounded-md border border-gray-300 p-2"
                                       value={
-                                        quickCreateScenarioForm.thumbnailUrl
+                                        quickCreateChallengeForm.thumbnailUrl
                                       }
                                       onChange={(e) =>
-                                        setQuickCreateScenarioForm((prev) => ({
+                                        setQuickCreateChallengeForm((prev) => ({
                                           ...prev,
                                           thumbnailUrl: e.target.value,
                                         }))
                                       }
                                     />
                                   </label>
-                                </div>
-                                <label className="text-sm">
-                                  Latitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateScenarioForm.latitude}
-                                    onChange={(e) =>
-                                      setQuickCreateScenarioForm((prev) => ({
-                                        ...prev,
-                                        latitude: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Longitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateScenarioForm.longitude}
-                                    onChange={(e) =>
-                                      setQuickCreateScenarioForm((prev) => ({
-                                        ...prev,
-                                        longitude: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                              </div>
-
-                              <div className="rounded-md border border-gray-200 p-3">
-                                <div className="mb-2 flex items-center justify-between">
-                                  <div className="text-sm font-medium text-gray-700">
-                                    Options
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                                    onClick={handleAddQuickScenarioOption}
-                                  >
-                                    Add Option
-                                  </button>
-                                </div>
-                                <div className="space-y-3">
-                                  {quickCreateScenarioForm.options.map(
-                                    (option, index) => (
-                                      <div
-                                        key={`quick-scenario-option-${index}`}
-                                        className="rounded-md border border-gray-200 p-3"
-                                      >
-                                        <div className="mb-2 flex items-center justify-between">
-                                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                            Option {index + 1}
-                                          </div>
-                                          {quickCreateScenarioForm.options
-                                            .length > 1 && (
-                                            <button
-                                              type="button"
-                                              className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                                              onClick={() =>
-                                                handleRemoveQuickScenarioOption(
-                                                  index
-                                                )
-                                              }
-                                            >
-                                              Remove
-                                            </button>
-                                          )}
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                          <label className="text-sm md:col-span-2">
-                                            Option Text
-                                            <input
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              value={option.optionText}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  { optionText: e.target.value }
-                                                )
-                                              }
-                                            />
-                                          </label>
-                                          <label className="text-sm">
-                                            Stat
-                                            <select
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              value={option.statTag}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  { statTag: e.target.value }
-                                                )
-                                              }
-                                            >
-                                              {questStatOptions.map((stat) => (
-                                                <option
-                                                  key={stat.id}
-                                                  value={stat.id}
-                                                >
-                                                  {stat.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          </label>
-                                          <label className="text-sm">
-                                            Difficulty
-                                            <input
-                                              type="number"
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              value={option.difficulty}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  { difficulty: e.target.value }
-                                                )
-                                              }
-                                            />
-                                          </label>
-                                          <label className="text-sm md:col-span-2">
-                                            Proficiencies
-                                            <input
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              placeholder="comma, separated, proficiencies"
-                                              value={option.proficiencies}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  {
-                                                    proficiencies:
-                                                      e.target.value,
-                                                  }
-                                                )
-                                              }
-                                            />
-                                          </label>
-                                          <label className="text-sm">
-                                            Success Text
-                                            <textarea
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              rows={2}
-                                              value={option.successText}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  {
-                                                    successText: e.target.value,
-                                                  }
-                                                )
-                                              }
-                                            />
-                                          </label>
-                                          <label className="text-sm">
-                                            Failure Text
-                                            <textarea
-                                              className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                              rows={2}
-                                              value={option.failureText}
-                                              onChange={(e) =>
-                                                handleUpdateQuickScenarioOption(
-                                                  index,
-                                                  {
-                                                    failureText: e.target.value,
-                                                  }
-                                                )
-                                              }
-                                            />
-                                          </label>
-                                        </div>
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                                onClick={handleCreateStandaloneScenario}
-                                disabled={quickCreateSubmitting === 'scenario'}
-                              >
-                                {quickCreateSubmitting === 'scenario'
-                                  ? 'Creating Scenario...'
-                                  : 'Create and Select Scenario'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : nodeForm.nodeType === 'monster' ? (
-                        <div className="md:col-span-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <label className="block text-sm font-medium text-gray-700">
-                              Monster Encounter
-                            </label>
-                            <button
-                              type="button"
-                              className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                              onClick={() => toggleQuickCreate('monster')}
-                            >
-                              {quickCreateOpen.monster
-                                ? 'Hide Quick Create'
-                                : 'Create New Encounter'}
-                            </button>
-                          </div>
-                          <select
-                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                            value={nodeForm.monsterEncounterId}
-                            onChange={(e) =>
-                              setNodeForm((prev) => ({
-                                ...prev,
-                                monsterEncounterId: e.target.value,
-                              }))
-                            }
-                          >
-                            <option value="">Select a monster encounter</option>
-                            {filteredMonsters.map((monster) => (
-                              <option key={monster.id} value={monster.id}>
-                                {monster.name}
-                                {monster.monsterCount &&
-                                monster.monsterCount > 1
-                                  ? ` (${monster.monsterCount} monsters)`
-                                  : ''}
-                              </option>
-                            ))}
-                          </select>
-                          {nodeForm.monsterEncounterId ? (
-                            <div className="mt-2">
-                              <Link
-                                to={adminEntityHref(
-                                  'monster',
-                                  nodeForm.monsterEncounterId
-                                )}
-                                className={adminEntityLinkClass}
-                              >
-                                Open Monster Encounters Page
-                              </Link>
-                            </div>
-                          ) : null}
-                          {quickCreateOpen.monster && (
-                            <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <label className="text-sm">
-                                  Name
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateMonsterEncounterForm.name}
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
+                                  <label className="text-sm">
+                                    Latitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={quickCreateChallengeForm.latitude}
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
                                           ...prev,
-                                          name: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Description
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateMonsterEncounterForm.description
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
-                                          ...prev,
-                                          description: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Image URL
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateMonsterEncounterForm.imageUrl
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
-                                          ...prev,
-                                          imageUrl: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Thumbnail URL
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateMonsterEncounterForm.thumbnailUrl
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
-                                          ...prev,
-                                          thumbnailUrl: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Latitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateMonsterEncounterForm.latitude
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
-                                          ...prev,
+                                          pointOfInterestId: '',
                                           latitude: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Longitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateMonsterEncounterForm.longitude
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateMonsterEncounterForm(
-                                        (prev) => ({
-                                          ...prev,
-                                          longitude: e.target.value,
-                                        })
-                                      )
-                                    }
-                                  />
-                                </label>
-                              </div>
-                              <label className="flex items-center gap-2 text-sm text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    quickCreateMonsterEncounterForm.scaleWithUserLevel
-                                  }
-                                  onChange={(e) =>
-                                    setQuickCreateMonsterEncounterForm(
-                                      (prev) => ({
-                                        ...prev,
-                                        scaleWithUserLevel: e.target.checked,
-                                      })
-                                    )
-                                  }
-                                />
-                                Scale encounter with user level
-                              </label>
-                              <div>
-                                <div className="mb-2 text-sm font-medium text-gray-700">
-                                  Monsters
-                                </div>
-                                <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3">
-                                  {availableMonstersForQuickCreate.length ===
-                                  0 ? (
-                                    <div className="text-sm text-gray-500">
-                                      No monsters available in this quest zone.
-                                    </div>
-                                  ) : (
-                                    availableMonstersForQuickCreate.map(
-                                      (monster) => {
-                                        const checked =
-                                          quickCreateMonsterEncounterForm.monsterIds.includes(
-                                            monster.id
-                                          );
-                                        return (
-                                          <label
-                                            key={monster.id}
-                                            className="flex items-center gap-2 text-sm text-gray-700"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={checked}
-                                              onChange={(e) => {
-                                                setQuickCreateMonsterEncounterForm(
-                                                  (prev) => ({
-                                                    ...prev,
-                                                    monsterIds: e.target.checked
-                                                      ? [
-                                                          ...prev.monsterIds,
-                                                          monster.id,
-                                                        ]
-                                                      : prev.monsterIds.filter(
-                                                          (id) =>
-                                                            id !== monster.id
-                                                        ),
-                                                  })
-                                                );
-                                              }}
-                                            />
-                                            <span>{monster.name}</span>
-                                            {typeof monster.level ===
-                                              'number' && (
-                                              <span className="text-xs text-gray-500">
-                                                Lvl {monster.level}
-                                              </span>
-                                            )}
-                                          </label>
-                                        );
+                                        }))
                                       }
-                                    )
-                                  )}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                                onClick={handleCreateMonsterEncounter}
-                                disabled={quickCreateSubmitting === 'monster'}
-                              >
-                                {quickCreateSubmitting === 'monster'
-                                  ? 'Creating Encounter...'
-                                  : 'Create and Select Encounter'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : nodeForm.nodeType === 'challenge' ? (
-                        <div className="md:col-span-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <label className="block text-sm font-medium text-gray-700">
-                              Challenge Objective
-                            </label>
-                            <button
-                              type="button"
-                              className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                              onClick={() => toggleQuickCreate('challenge')}
-                            >
-                              {quickCreateOpen.challenge
-                                ? 'Hide Quick Create'
-                                : 'Create New Challenge Objective'}
-                            </button>
-                          </div>
-                          <select
-                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                            value={nodeForm.challengeId}
-                            onChange={(e) =>
-                              setNodeForm((prev) => ({
-                                ...prev,
-                                challengeId: e.target.value,
-                              }))
-                            }
-                          >
-                            <option value="">Select a challenge objective</option>
-                            {filteredChallenges.map((challenge) => (
-                              <option key={challenge.id} value={challenge.id}>
-                                {challenge.question}
-                              </option>
-                            ))}
-                          </select>
-                          {nodeForm.challengeId ? (
-                            <div className="mt-2">
-                              <Link
-                                to={adminEntityHref(
-                                  'challenge',
-                                  nodeForm.challengeId
-                                )}
-                                className={adminEntityLinkClass}
-                              >
-                                Open Challenge Page
-                              </Link>
-                            </div>
-                          ) : null}
-                          {quickCreateOpen.challenge && (
-                            <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className="md:col-span-2">
-                                  <SearchableSelect
-                                    label="Point of Interest (Optional)"
-                                    placeholder="Search points of interest..."
-                                    options={quickCreateChallengePoiOptions}
-                                    value={
-                                      quickCreateChallengeForm.pointOfInterestId
-                                    }
-                                    onChange={(pointOfInterestId) => {
-                                      const selectedPoint =
-                                        quickCreateChallengePointsOfInterest.find(
-                                          (point) =>
-                                            point.id === pointOfInterestId
-                                        );
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        pointOfInterestId,
-                                        latitude:
-                                          selectedPoint?.lat !== undefined
-                                            ? selectedPoint.lat
-                                            : prev.latitude,
-                                        longitude:
-                                          selectedPoint?.lng !== undefined
-                                            ? selectedPoint.lng
-                                            : prev.longitude,
-                                      }));
-                                    }}
-                                    disabled={!questForm.zoneId}
-                                    noMatchesLabel={
-                                      questForm.zoneId
-                                        ? 'No matching points of interest.'
-                                        : 'Select a quest zone first.'
-                                    }
-                                  />
-                                  {zonePoiMapLoading && questForm.zoneId ? (
-                                    <div className="mt-1 text-xs text-gray-500">
-                                      Loading points of interest...
-                                    </div>
-                                  ) : null}
-                                </div>
-                                <label className="text-sm md:col-span-2">
-                                  Question
-                                  <textarea
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    rows={2}
-                                    value={quickCreateChallengeForm.question}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        question: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm md:col-span-2">
-                                  Description
-                                  <textarea
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    rows={2}
-                                    value={quickCreateChallengeForm.description}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        description: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Image URL
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.imageUrl}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        imageUrl: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Thumbnail URL
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateChallengeForm.thumbnailUrl
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        thumbnailUrl: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Latitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.latitude}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        pointOfInterestId: '',
-                                        latitude: e.target.value,
-                                      }))
-                                    }
-                                    disabled={Boolean(
-                                      quickCreateChallengeForm.pointOfInterestId
-                                    )}
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Longitude
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.longitude}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        pointOfInterestId: '',
-                                        longitude: e.target.value,
-                                      }))
-                                    }
-                                    disabled={Boolean(
-                                      quickCreateChallengeForm.pointOfInterestId
-                                    )}
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Submission Type
-                                  <select
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateChallengeForm.submissionType
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        submissionType: e.target
-                                          .value as QuestNodeSubmissionType,
-                                      }))
-                                    }
-                                  >
-                                    {questNodeSubmissionOptions.map(
-                                      (option) => (
-                                        <option
-                                          key={option.value}
-                                          value={option.value}
-                                        >
-                                          {option.label}
-                                        </option>
-                                      )
-                                    )}
-                                  </select>
-                                </label>
-                                <label className="text-sm">
-                                  Difficulty
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.difficulty}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        difficulty: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Reward XP
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={
-                                      quickCreateChallengeForm.rewardExperience
-                                    }
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        rewardExperience: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  Reward Gold
-                                  <input
-                                    type="number"
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.rewardGold}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        rewardGold: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="text-sm md:col-span-2">
-                                  Proficiency
-                                  <input
-                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
-                                    value={quickCreateChallengeForm.proficiency}
-                                    onChange={(e) =>
-                                      setQuickCreateChallengeForm((prev) => ({
-                                        ...prev,
-                                        proficiency: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </label>
-                              </div>
-                              <div>
-                                <div className="mb-2 text-sm font-medium text-gray-700">
-                                  Stat Tags
-                                </div>
-                                <div className="flex flex-wrap gap-3">
-                                  {questStatOptions.map((stat) => (
-                                    <label
-                                      key={`quick-challenge-stat-${stat.id}`}
-                                      className="flex items-center gap-2 text-sm text-gray-700"
+                                      disabled={Boolean(
+                                        quickCreateChallengeForm.pointOfInterestId
+                                      )}
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Longitude
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={quickCreateChallengeForm.longitude}
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          pointOfInterestId: '',
+                                          longitude: e.target.value,
+                                        }))
+                                      }
+                                      disabled={Boolean(
+                                        quickCreateChallengeForm.pointOfInterestId
+                                      )}
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Submission Type
+                                    <select
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateChallengeForm.submissionType
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          submissionType: e.target
+                                            .value as QuestNodeSubmissionType,
+                                        }))
+                                      }
                                     >
-                                      <input
-                                        type="checkbox"
-                                        checked={quickCreateChallengeForm.statTags.includes(
-                                          stat.id
-                                        )}
-                                        onChange={(e) =>
-                                          setQuickCreateChallengeForm(
-                                            (prev) => ({
-                                              ...prev,
-                                              statTags: e.target.checked
-                                                ? [...prev.statTags, stat.id]
-                                                : prev.statTags.filter(
-                                                    (tag) => tag !== stat.id
-                                                  ),
-                                            })
-                                          )
-                                        }
-                                      />
-                                      {stat.label}
-                                    </label>
-                                  ))}
+                                      {questNodeSubmissionOptions.map(
+                                        (option) => (
+                                          <option
+                                            key={option.value}
+                                            value={option.value}
+                                          >
+                                            {option.label}
+                                          </option>
+                                        )
+                                      )}
+                                    </select>
+                                  </label>
+                                  <label className="text-sm">
+                                    Difficulty
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateChallengeForm.difficulty
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          difficulty: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Reward XP
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateChallengeForm.rewardExperience
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          rewardExperience: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm">
+                                    Reward Gold
+                                    <input
+                                      type="number"
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateChallengeForm.rewardGold
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          rewardGold: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-sm md:col-span-2">
+                                    Proficiency
+                                    <input
+                                      className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                      value={
+                                        quickCreateChallengeForm.proficiency
+                                      }
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          proficiency: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </label>
                                 </div>
-                              </div>
-                              <button
-                                type="button"
-                                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                                onClick={handleCreateStandaloneChallenge}
-                                disabled={quickCreateSubmitting === 'challenge'}
-                              >
-                                {quickCreateSubmitting === 'challenge'
-                                  ? 'Creating Challenge...'
-                                  : 'Create and Select Challenge'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700">
-                            Polygon Points
-                          </label>
-                          <textarea
-                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                            rows={3}
-                            placeholder="[[lng,lat],[lng,lat],[lng,lat]]"
-                            value={nodeForm.polygonPoints}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setNodeForm((prev) => ({
-                                ...prev,
-                                polygonPoints: value,
-                              }));
-                              const parsed = parsePolygonPoints(value);
-                              if (parsed) {
-                                setPolygonDraftPoints(parsed);
-                              }
-                            }}
-                          />
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
-                            <span className="rounded-md bg-teal-50 px-2 py-1 text-teal-700">
-                              Click on the map to add polygon points.
-                            </span>
-                            <button
-                              type="button"
-                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
-                              onClick={() => {
-                                setPolygonDraftPoints([]);
-                                setNodeForm((prev) => ({
-                                  ...prev,
-                                  polygonPoints: '',
-                                }));
-                              }}
-                            >
-                              Clear polygon
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
-                              onClick={() => {
-                                setPolygonDraftPoints((prev) => {
-                                  if (prev.length === 0) return prev;
-                                  const next = prev.slice(0, -1);
-                                  setNodeForm((formPrev) => ({
-                                    ...formPrev,
-                                    polygonPoints: JSON.stringify(next),
-                                  }));
-                                  return next;
-                                });
-                              }}
-                            >
-                              Undo last point
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      className="mt-4 bg-green-600 text-white px-4 py-2 rounded-md"
-                      onClick={handleCreateNode}
-                      disabled={
-                        nodeForm.nodeType === 'poi' ||
-                        nodeForm.nodeType === 'polygon' ||
-                        (nodeForm.nodeType === 'poi' &&
-                          !nodeForm.pointOfInterestId) ||
-                        (nodeForm.nodeType === 'scenario' &&
-                          !nodeForm.scenarioId) ||
-                        (nodeForm.nodeType === 'monster' &&
-                          !nodeForm.monsterEncounterId) ||
-                        (nodeForm.nodeType === 'challenge' &&
-                          !nodeForm.challengeId)
-                      }
-                    >
-                      Add Node
-                    </button>
-                  </div>
-
-                  <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold">Quest Map</h4>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                          onClick={focusQuestArea}
-                        >
-                          Focus Quest Area
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                          onClick={() =>
-                            setPolygonRefreshNonce((prev) => prev + 1)
-                          }
-                        >
-                          Add Polygons to Map
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 border border-amber-800" />
-                          Quest locations
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-teal-500 border border-teal-800" />
-                          Scenario nodes
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 border border-red-900" />
-                          Monster nodes
-                        </span>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-sm text-gray-600">
-                      The map now shows only this quest&apos;s nodes and polygons,
-                      then automatically zooms to the quest footprint.
-                    </p>
-                    <div className="mt-3 h-80 w-full overflow-hidden rounded-md border border-gray-200 relative">
-                      <div ref={questMapContainer} className="h-full w-full" />
-                    </div>
-                  </div>
-
-                  {showImportModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
-                        <div className="flex items-start justify-between">
-                          <h3 className="text-lg font-semibold">
-                            Import Point of Interest
-                          </h3>
-                          <button
-                            className="text-gray-500 hover:text-gray-700"
-                            onClick={() => {
-                              setShowImportModal(false);
-                              resetImportForm();
-                            }}
-                          >
-                            Close
-                          </button>
-                        </div>
-
-                        {importError && (
-                          <div className="mt-3 text-sm text-red-600">
-                            {importError}
-                          </div>
-                        )}
-
-                        <div className="mt-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Zone
-                          </label>
-                          <select
-                            className="w-full border border-gray-300 rounded-md px-3 py-2"
-                            value={importZoneId || questForm.zoneId}
-                            onChange={(e) => setImportZoneId(e.target.value)}
-                          >
-                            <option value="">Select a zone</option>
-                            {zones.map((zone) => (
-                              <option key={zone.id} value={zone.id}>
-                                {zone.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="mt-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Search Google Maps
-                          </label>
-                          <input
-                            type="text"
-                            className="w-full border border-gray-300 rounded-md px-3 py-2"
-                            value={importQuery}
-                            onChange={(e) => setImportQuery(e.target.value)}
-                            placeholder="Search for a place..."
-                          />
-                        </div>
-
-                        <div className="mt-4 border border-gray-200 rounded-md max-h-64 overflow-y-auto">
-                          {candidates.length === 0 && (
-                            <div className="p-4 text-sm text-gray-500">
-                              No results yet.
-                            </div>
-                          )}
-                          {candidates.map((candidate) => (
-                            <button
-                              key={candidate.place_id}
-                              type="button"
-                              className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
-                                selectedCandidate?.place_id ===
-                                candidate.place_id
-                                  ? 'bg-blue-50'
-                                  : ''
-                              }`}
-                              onClick={() => setSelectedCandidate(candidate)}
-                            >
-                              <div className="font-medium">
-                                {candidate.name}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {candidate.formatted_address}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="mt-6">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-semibold">
-                              Import Status
-                            </h4>
-                            <button
-                              type="button"
-                              className="text-xs text-blue-600"
-                              onClick={() =>
-                                fetchImportJobs(
-                                  importZoneId || questForm.zoneId || undefined
-                                )
-                              }
-                            >
-                              Refresh
-                            </button>
-                          </div>
-                          <div className="border border-gray-200 rounded-md max-h-40 overflow-y-auto">
-                            {importJobs.length === 0 && (
-                              <div className="p-3 text-xs text-gray-500">
-                                No import activity yet.
+                                <div>
+                                  <div className="mb-2 text-sm font-medium text-gray-700">
+                                    Stat Tags
+                                  </div>
+                                  <div className="flex flex-wrap gap-3">
+                                    {questStatOptions.map((stat) => (
+                                      <label
+                                        key={`quick-challenge-stat-${stat.id}`}
+                                        className="flex items-center gap-2 text-sm text-gray-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={quickCreateChallengeForm.statTags.includes(
+                                            stat.id
+                                          )}
+                                          onChange={(e) =>
+                                            setQuickCreateChallengeForm(
+                                              (prev) => ({
+                                                ...prev,
+                                                statTags: e.target.checked
+                                                  ? [...prev.statTags, stat.id]
+                                                  : prev.statTags.filter(
+                                                      (tag) => tag !== stat.id
+                                                    ),
+                                              })
+                                            )
+                                          }
+                                        />
+                                        {stat.label}
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                                  onClick={handleCreateStandaloneChallenge}
+                                  disabled={
+                                    quickCreateSubmitting === 'challenge'
+                                  }
+                                >
+                                  {quickCreateSubmitting === 'challenge'
+                                    ? 'Creating Challenge...'
+                                    : 'Create and Select Challenge'}
+                                </button>
                               </div>
                             )}
-                            {importJobs.map((job) => (
-                              <div
-                                key={job.id}
-                                className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-xs"
-                              >
-                                <div>
-                                  <div className="font-medium">
-                                    {job.placeId}
-                                  </div>
-                                  {job.errorMessage && (
-                                    <div className="text-red-600">
-                                      {job.errorMessage}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <div className="uppercase text-[10px] text-gray-600">
-                                    {job.status}
-                                  </div>
-                                  {job.status === 'failed' && (
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-gray-300 px-2 py-1 text-[10px] text-gray-700"
-                                      onClick={() =>
-                                        handleRetryImport(
-                                          job.placeId,
-                                          job.zoneId
-                                        )
-                                      }
-                                    >
-                                      Retry
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="mt-6 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded-md border border-gray-300"
-                            onClick={() => {
-                              setShowImportModal(false);
-                              resetImportForm();
-                            }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded-md bg-green-600 text-white"
-                            onClick={handleImportPointOfInterest}
-                          >
-                            Import
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {characterLocationsOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
-                        <div className="flex items-start justify-between">
-                          <h3 className="text-lg font-semibold">
-                            Character Locations
-                          </h3>
-                          <button
-                            className="text-gray-500 hover:text-gray-700"
-                            onClick={() => setCharacterLocationsOpen(false)}
-                          >
-                            Close
-                          </button>
-                        </div>
-                        {characterLocationsLoading ? (
-                          <div className="mt-4 text-sm text-gray-600">
-                            Loading locations...
                           </div>
                         ) : (
-                          <div className="mt-4 space-y-3">
-                            {selectedCharacterLocations.length === 0 && (
-                              <div className="text-sm text-gray-500">
-                                No locations yet.
-                              </div>
-                            )}
-                            {selectedCharacterLocations.map(
-                              (location, index) => (
-                                <div
-                                  key={`${location.latitude}-${location.longitude}-${index}`}
-                                  className="flex items-center gap-2"
-                                >
-                                  <input
-                                    type="number"
-                                    className="w-1/2 rounded-md border border-gray-300 p-2 text-sm"
-                                    value={location.latitude}
-                                    onChange={(e) =>
-                                      handleUpdateCharacterLocation(
-                                        index,
-                                        'latitude',
-                                        Number(e.target.value)
-                                      )
-                                    }
-                                    placeholder="Latitude"
-                                  />
-                                  <input
-                                    type="number"
-                                    className="w-1/2 rounded-md border border-gray-300 p-2 text-sm"
-                                    value={location.longitude}
-                                    onChange={(e) =>
-                                      handleUpdateCharacterLocation(
-                                        index,
-                                        'longitude',
-                                        Number(e.target.value)
-                                      )
-                                    }
-                                    placeholder="Longitude"
-                                  />
-                                  <button
-                                    className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700"
-                                    onClick={() =>
-                                      handleRemoveCharacterLocation(index)
-                                    }
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              )
-                            )}
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Polygon Points
+                            </label>
+                            <textarea
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              rows={3}
+                              placeholder="[[lng,lat],[lng,lat],[lng,lat]]"
+                              value={nodeForm.polygonPoints}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  polygonPoints: value,
+                                }));
+                                const parsed = parsePolygonPoints(value);
+                                if (parsed) {
+                                  setPolygonDraftPoints(parsed);
+                                }
+                              }}
+                            />
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                              <span className="rounded-md bg-teal-50 px-2 py-1 text-teal-700">
+                                Click on the map to add polygon points.
+                              </span>
+                              <button
+                                type="button"
+                                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                                onClick={() => {
+                                  setPolygonDraftPoints([]);
+                                  setNodeForm((prev) => ({
+                                    ...prev,
+                                    polygonPoints: '',
+                                  }));
+                                }}
+                              >
+                                Clear polygon
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                                onClick={() => {
+                                  setPolygonDraftPoints((prev) => {
+                                    if (prev.length === 0) return prev;
+                                    const next = prev.slice(0, -1);
+                                    setNodeForm((formPrev) => ({
+                                      ...formPrev,
+                                      polygonPoints: JSON.stringify(next),
+                                    }));
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Undo last point
+                              </button>
+                            </div>
                           </div>
                         )}
-                        <div className="mt-4 flex items-center justify-between">
+                      </div>
+                      <button
+                        className="mt-4 bg-green-600 text-white px-4 py-2 rounded-md"
+                        onClick={handleCreateNode}
+                        disabled={
+                          nodeForm.nodeType === 'poi' ||
+                          nodeForm.nodeType === 'polygon' ||
+                          (nodeForm.nodeType === 'poi' &&
+                            !nodeForm.pointOfInterestId) ||
+                          (nodeForm.nodeType === 'scenario' &&
+                            !nodeForm.scenarioId) ||
+                          (nodeForm.nodeType === 'monster' &&
+                            !nodeForm.monsterEncounterId) ||
+                          (nodeForm.nodeType === 'challenge' &&
+                            !nodeForm.challengeId)
+                        }
+                      >
+                        Add Node
+                      </button>
+                    </div>
+
+                    <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">Quest Map</h4>
+                        <div className="flex items-center gap-2">
                           <button
+                            type="button"
                             className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                            onClick={handleAddCharacterLocation}
+                            onClick={focusQuestArea}
                           >
-                            Add Location
+                            Focus Quest Area
                           </button>
                           <button
-                            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white"
-                            onClick={handleSaveCharacterLocations}
-                            disabled={characterLocationsLoading}
+                            type="button"
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            onClick={() =>
+                              setPolygonRefreshNonce((prev) => prev + 1)
+                            }
                           >
-                            Save Locations
+                            Add Polygons to Map
                           </button>
                         </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-600">
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 border border-amber-800" />
+                            Quest locations
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-teal-500 border border-teal-800" />
+                            Scenario nodes
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 border border-red-900" />
+                            Monster nodes
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-sm text-gray-600">
+                        The map now shows only this quest&apos;s nodes and
+                        polygons, then automatically zooms to the quest
+                        footprint.
+                      </p>
+                      <div className="mt-3 h-80 w-full overflow-hidden rounded-md border border-gray-200 relative">
+                        <div
+                          ref={questMapContainer}
+                          className="h-full w-full"
+                        />
                       </div>
                     </div>
-                  )}
 
-                  <div className="qa-route-list-header">
-                    <div>
-                      <div className="qa-card-kicker">Current Route</div>
-                      <div className="qa-section-title">Node Breakdown</div>
-                    </div>
-                    <div className="qa-section-copy">
-                      Modern quest nodes use their linked objective directly.
-                      Any nested prompt rows shown here are legacy-only data.
-                    </div>
-                  </div>
+                    {showImportModal && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                        <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
+                          <div className="flex items-start justify-between">
+                            <h3 className="text-lg font-semibold">
+                              Import Point of Interest
+                            </h3>
+                            <button
+                              className="text-gray-500 hover:text-gray-700"
+                              onClick={() => {
+                                setShowImportModal(false);
+                                resetImportForm();
+                              }}
+                            >
+                              Close
+                            </button>
+                          </div>
 
-                  <div className="space-y-4">
-                    {orderedQuestNodes.map((node) => {
+                          {importError && (
+                            <div className="mt-3 text-sm text-red-600">
+                              {importError}
+                            </div>
+                          )}
+
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Zone
+                            </label>
+                            <select
+                              className="w-full border border-gray-300 rounded-md px-3 py-2"
+                              value={importZoneId || questForm.zoneId}
+                              onChange={(e) => setImportZoneId(e.target.value)}
+                            >
+                              <option value="">Select a zone</option>
+                              {zones.map((zone) => (
+                                <option key={zone.id} value={zone.id}>
+                                  {zone.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Search Google Maps
+                            </label>
+                            <input
+                              type="text"
+                              className="w-full border border-gray-300 rounded-md px-3 py-2"
+                              value={importQuery}
+                              onChange={(e) => setImportQuery(e.target.value)}
+                              placeholder="Search for a place..."
+                            />
+                          </div>
+
+                          <div className="mt-4 border border-gray-200 rounded-md max-h-64 overflow-y-auto">
+                            {candidates.length === 0 && (
+                              <div className="p-4 text-sm text-gray-500">
+                                No results yet.
+                              </div>
+                            )}
+                            {candidates.map((candidate) => (
+                              <button
+                                key={candidate.place_id}
+                                type="button"
+                                className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
+                                  selectedCandidate?.place_id ===
+                                  candidate.place_id
+                                    ? 'bg-blue-50'
+                                    : ''
+                                }`}
+                                onClick={() => setSelectedCandidate(candidate)}
+                              >
+                                <div className="font-medium">
+                                  {candidate.name}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {candidate.formatted_address}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-6">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-semibold">
+                                Import Status
+                              </h4>
+                              <button
+                                type="button"
+                                className="text-xs text-blue-600"
+                                onClick={() =>
+                                  fetchImportJobs(
+                                    importZoneId ||
+                                      questForm.zoneId ||
+                                      undefined
+                                  )
+                                }
+                              >
+                                Refresh
+                              </button>
+                            </div>
+                            <div className="border border-gray-200 rounded-md max-h-40 overflow-y-auto">
+                              {importJobs.length === 0 && (
+                                <div className="p-3 text-xs text-gray-500">
+                                  No import activity yet.
+                                </div>
+                              )}
+                              {importJobs.map((job) => (
+                                <div
+                                  key={job.id}
+                                  className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-xs"
+                                >
+                                  <div>
+                                    <div className="font-medium">
+                                      {job.placeId}
+                                    </div>
+                                    {job.errorMessage && (
+                                      <div className="text-red-600">
+                                        {job.errorMessage}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="uppercase text-[10px] text-gray-600">
+                                      {job.status}
+                                    </div>
+                                    {job.status === 'failed' && (
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-gray-300 px-2 py-1 text-[10px] text-gray-700"
+                                        onClick={() =>
+                                          handleRetryImport(
+                                            job.placeId,
+                                            job.zoneId
+                                          )
+                                        }
+                                      >
+                                        Retry
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="mt-6 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              className="px-4 py-2 rounded-md border border-gray-300"
+                              onClick={() => {
+                                setShowImportModal(false);
+                                resetImportForm();
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="px-4 py-2 rounded-md bg-green-600 text-white"
+                              onClick={handleImportPointOfInterest}
+                            >
+                              Import
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {characterLocationsOpen && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                        <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+                          <div className="flex items-start justify-between">
+                            <h3 className="text-lg font-semibold">
+                              Character Locations
+                            </h3>
+                            <button
+                              className="text-gray-500 hover:text-gray-700"
+                              onClick={() => setCharacterLocationsOpen(false)}
+                            >
+                              Close
+                            </button>
+                          </div>
+                          {characterLocationsLoading ? (
+                            <div className="mt-4 text-sm text-gray-600">
+                              Loading locations...
+                            </div>
+                          ) : (
+                            <div className="mt-4 space-y-3">
+                              {selectedCharacterLocations.length === 0 && (
+                                <div className="text-sm text-gray-500">
+                                  No locations yet.
+                                </div>
+                              )}
+                              {selectedCharacterLocations.map(
+                                (location, index) => (
+                                  <div
+                                    key={`${location.latitude}-${location.longitude}-${index}`}
+                                    className="flex items-center gap-2"
+                                  >
+                                    <input
+                                      type="number"
+                                      className="w-1/2 rounded-md border border-gray-300 p-2 text-sm"
+                                      value={location.latitude}
+                                      onChange={(e) =>
+                                        handleUpdateCharacterLocation(
+                                          index,
+                                          'latitude',
+                                          Number(e.target.value)
+                                        )
+                                      }
+                                      placeholder="Latitude"
+                                    />
+                                    <input
+                                      type="number"
+                                      className="w-1/2 rounded-md border border-gray-300 p-2 text-sm"
+                                      value={location.longitude}
+                                      onChange={(e) =>
+                                        handleUpdateCharacterLocation(
+                                          index,
+                                          'longitude',
+                                          Number(e.target.value)
+                                        )
+                                      }
+                                      placeholder="Longitude"
+                                    />
+                                    <button
+                                      className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700"
+                                      onClick={() =>
+                                        handleRemoveCharacterLocation(index)
+                                      }
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          )}
+                          <div className="mt-4 flex items-center justify-between">
+                            <button
+                              className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                              onClick={handleAddCharacterLocation}
+                            >
+                              Add Location
+                            </button>
+                            <button
+                              className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white"
+                              onClick={handleSaveCharacterLocations}
+                              disabled={characterLocationsLoading}
+                            >
+                              Save Locations
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="qa-route-list-header">
+                      <div>
+                        <div className="qa-card-kicker">Current Route</div>
+                        <div className="qa-section-title">Node Breakdown</div>
+                      </div>
+                      <div className="qa-section-copy">
+                        Modern quest nodes use their linked objective directly.
+                        Any nested prompt rows shown here are legacy-only data.
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {orderedQuestNodes.map((node) => {
                         const linkedScenario = resolveLinkedQuestScenario(
                           node,
                           scenarios
@@ -6097,12 +6353,12 @@ export const Quests = () => {
                         );
                         const usesLinkedObjective =
                           questNodeUsesLinkedObjective(node);
-                        const nodeObjectivePrompts = getLegacyQuestNodePrompts(node);
-                        const challengeObjectiveSubmissionType = (
-                          linkedChallenge?.submissionType ||
-                          node.submissionType ||
-                          'photo'
-                        ) as QuestNodeSubmissionType;
+                        const nodeObjectivePrompts =
+                          getLegacyQuestNodePrompts(node);
+                        const challengeObjectiveSubmissionType =
+                          (linkedChallenge?.submissionType ||
+                            node.submissionType ||
+                            'photo') as QuestNodeSubmissionType;
                         const linkedPoi = resolveLinkedQuestNodePoi(
                           node,
                           pointsOfInterest,
@@ -6113,9 +6369,8 @@ export const Quests = () => {
                         const linkedPoiArchetype = linkedPoi
                           ? archetypeByPoiId[linkedPoi.id] ?? null
                           : null;
-                        const linkedPoiAliases = getPointOfInterestAliases(
-                          linkedPoi
-                        );
+                        const linkedPoiAliases =
+                          getPointOfInterestAliases(linkedPoi);
                         const linkedPoiSummary = linkedPoi
                           ? summarizePoiText(linkedPoi.description) ||
                             summarizePoiText(linkedPoi.clue)
@@ -6131,25 +6386,24 @@ export const Quests = () => {
                         const linkedPoiLongitude = linkedPoi
                           ? formatPoiCoordinate(linkedPoi.lng)
                           : null;
-                        const linkedObjectiveCoordinates =
-                          linkedPoi
-                            ? null
-                            : linkedScenario
+                        const linkedObjectiveCoordinates = linkedPoi
+                          ? null
+                          : linkedScenario
+                            ? formatNodeCoordinatePair(
+                                linkedScenario.latitude,
+                                linkedScenario.longitude
+                              )
+                            : linkedMonsterEncounter
                               ? formatNodeCoordinatePair(
-                                  linkedScenario.latitude,
-                                  linkedScenario.longitude
+                                  linkedMonsterEncounter.latitude,
+                                  linkedMonsterEncounter.longitude
                                 )
-                              : linkedMonsterEncounter
+                              : linkedChallenge
                                 ? formatNodeCoordinatePair(
-                                    linkedMonsterEncounter.latitude,
-                                    linkedMonsterEncounter.longitude
+                                    linkedChallenge.latitude,
+                                    linkedChallenge.longitude
                                   )
-                                : linkedChallenge
-                                  ? formatNodeCoordinatePair(
-                                      linkedChallenge.latitude,
-                                      linkedChallenge.longitude
-                                    )
-                                  : null;
+                                : null;
                         const hasLegacyChallengeOverrides =
                           usesLinkedObjective &&
                           nodeObjectivePrompts.length > 0;
@@ -6232,7 +6486,8 @@ export const Quests = () => {
                               {linkedPoi ? (
                                 <div className="mt-2 flex items-center gap-2 text-sm text-gray-700">
                                   <span>
-                                    Point of Interest: <strong>{linkedPoi.name}</strong>
+                                    Point of Interest:{' '}
+                                    <strong>{linkedPoi.name}</strong>
                                   </span>
                                   <Link
                                     to={`/points-of-interest/${linkedPoi.id}`}
@@ -6243,7 +6498,8 @@ export const Quests = () => {
                                 </div>
                               ) : linkedObjectiveCoordinates ? (
                                 <div className="mt-2 text-sm text-gray-700">
-                                  Coordinates: <strong>{linkedObjectiveCoordinates}</strong>
+                                  Coordinates:{' '}
+                                  <strong>{linkedObjectiveCoordinates}</strong>
                                 </div>
                               ) : node.polygon ? (
                                 <div className="mt-2 text-sm text-gray-700">
@@ -6290,9 +6546,11 @@ export const Quests = () => {
                                       Archetype: {linkedPoiArchetype.name}
                                     </span>
                                   )}
-                                  {(linkedPoiLatitude || linkedPoiLongitude) && (
+                                  {(linkedPoiLatitude ||
+                                    linkedPoiLongitude) && (
                                     <span className="qa-chip muted">
-                                      {linkedPoiLatitude ?? '?'}, {linkedPoiLongitude ?? '?'}
+                                      {linkedPoiLatitude ?? '?'},{' '}
+                                      {linkedPoiLongitude ?? '?'}
                                     </span>
                                   )}
                                 </div>
@@ -6409,7 +6667,8 @@ export const Quests = () => {
                                           {(linkedMonsterEncounter?.members
                                             ?.length ??
                                             linkedMonsterEncounter?.monsterCount ??
-                                            0) || 0}{' '}
+                                            0) ||
+                                            0}{' '}
                                           monsters
                                         </span>
                                         <span>
@@ -6422,8 +6681,8 @@ export const Quests = () => {
                                   ) : null}
                                   <p className="mt-2 text-xs text-gray-500">
                                     Target-backed quest nodes now use their
-                                    linked objective directly. Nested
-                                    quest-node prompt rows are legacy-only.
+                                    linked objective directly. Nested quest-node
+                                    prompt rows are legacy-only.
                                   </p>
                                 </div>
                               ) : (
@@ -6454,708 +6713,717 @@ export const Quests = () => {
                                 !usesLinkedObjective) && (
                                 <div className="space-y-2 mb-3">
                                   {nodeObjectivePrompts.map((challenge) => {
-                                  const editDraft =
-                                    challengeEdits[challenge.id] ??
-                                    emptyChallengeForm;
-                                  const isEditing = Boolean(
-                                    challengeEdits[challenge.id]
-                                  );
-                                  return (
-                                    <div
-                                      key={challenge.id}
-                                      className="border border-gray-200 rounded-md p-2 text-sm"
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div>
+                                    const editDraft =
+                                      challengeEdits[challenge.id] ??
+                                      emptyChallengeForm;
+                                    const isEditing = Boolean(
+                                      challengeEdits[challenge.id]
+                                    );
+                                    return (
+                                      <div
+                                        key={challenge.id}
+                                        className="border border-gray-200 rounded-md p-2 text-sm"
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            Tier {challenge.tier} · Difficulty{' '}
-                                            {challenge.difficulty ?? 0} · Reward{' '}
-                                            {challenge.reward} · Input{' '}
-                                            {resolveChallengeSubmissionType(
-                                              challenge,
-                                              node
-                                            ).toUpperCase()}
-                                          </div>
-                                          <div className="text-xs text-gray-500">
-                                            Shuffle:{' '}
-                                            {formatChallengeShuffleStatus(
-                                              challenge.challengeShuffleStatus
-                                            )}
-                                          </div>
-                                          {!isEditing && (
-                                            <>
-                                              <div className="text-gray-600">
-                                                {challenge.question}
-                                              </div>
-                                              {challenge.statTags &&
-                                                challenge.statTags.length >
-                                                  0 && (
+                                            <div>
+                                              Tier {challenge.tier} · Difficulty{' '}
+                                              {challenge.difficulty ?? 0} ·
+                                              Reward {challenge.reward} · Input{' '}
+                                              {resolveChallengeSubmissionType(
+                                                challenge,
+                                                node
+                                              ).toUpperCase()}
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                              Shuffle:{' '}
+                                              {formatChallengeShuffleStatus(
+                                                challenge.challengeShuffleStatus
+                                              )}
+                                            </div>
+                                            {!isEditing && (
+                                              <>
+                                                <div className="text-gray-600">
+                                                  {challenge.question}
+                                                </div>
+                                                {challenge.statTags &&
+                                                  challenge.statTags.length >
+                                                    0 && (
+                                                    <div className="text-xs text-gray-500">
+                                                      Stats:{' '}
+                                                      {challenge.statTags
+                                                        .map(formatStatTagLabel)
+                                                        .join(', ')}
+                                                    </div>
+                                                  )}
+                                                {challenge.proficiency && (
                                                   <div className="text-xs text-gray-500">
-                                                    Stats:{' '}
-                                                    {challenge.statTags
-                                                      .map(formatStatTagLabel)
-                                                      .join(', ')}
+                                                    Proficiency:{' '}
+                                                    {challenge.proficiency}
                                                   </div>
                                                 )}
-                                              {challenge.proficiency && (
-                                                <div className="text-xs text-gray-500">
-                                                  Proficiency:{' '}
-                                                  {challenge.proficiency}
-                                                </div>
-                                              )}
-                                              {challenge.challengeShuffleError && (
-                                                <div className="text-xs text-red-600">
-                                                  Shuffle error:{' '}
-                                                  {
-                                                    challenge.challengeShuffleError
-                                                  }
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
-                                        </div>
-                                        {!usesLinkedObjective && (
-                                          <div className="flex items-center gap-2">
-                                            <button
-                                              type="button"
-                                              className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-                                              onClick={() =>
-                                                handleShuffleSavedChallenge(
-                                                  node,
-                                                  challenge
-                                                )
-                                              }
-                                              disabled={
-                                                isEditing ||
-                                                shufflingChallengeId ===
+                                                {challenge.challengeShuffleError && (
+                                                  <div className="text-xs text-red-600">
+                                                    Shuffle error:{' '}
+                                                    {
+                                                      challenge.challengeShuffleError
+                                                    }
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
+                                          </div>
+                                          {!usesLinkedObjective && (
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                                                onClick={() =>
+                                                  handleShuffleSavedChallenge(
+                                                    node,
+                                                    challenge
+                                                  )
+                                                }
+                                                disabled={
+                                                  isEditing ||
+                                                  shufflingChallengeId ===
+                                                    challenge.id ||
+                                                  challenge.challengeShuffleStatus ===
+                                                    'queued' ||
+                                                  challenge.challengeShuffleStatus ===
+                                                    'in_progress'
+                                                }
+                                              >
+                                                {shufflingChallengeId ===
                                                   challenge.id ||
                                                 challenge.challengeShuffleStatus ===
                                                   'queued' ||
                                                 challenge.challengeShuffleStatus ===
                                                   'in_progress'
-                                              }
-                                            >
-                                              {shufflingChallengeId ===
-                                                challenge.id ||
-                                              challenge.challengeShuffleStatus ===
-                                                'queued' ||
-                                              challenge.challengeShuffleStatus ===
-                                                'in_progress'
-                                                ? 'Shuffling...'
-                                                : 'Shuffle'}
-                                            </button>
+                                                  ? 'Shuffling...'
+                                                  : 'Shuffle'}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                                onClick={() =>
+                                                  isEditing
+                                                    ? handleCancelEditChallenge(
+                                                        challenge.id
+                                                      )
+                                                    : handleStartEditChallenge(
+                                                        node,
+                                                        challenge
+                                                      )
+                                                }
+                                              >
+                                                {isEditing ? 'Cancel' : 'Edit'}
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                        {isEditing && (
+                                          <div className="mt-3">
+                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                              <div>
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Tier
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={editDraft.tier}
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        tier: Number(
+                                                          e.target.value
+                                                        ),
+                                                      }
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Difficulty
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={editDraft.difficulty}
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        difficulty: Number(
+                                                          e.target.value
+                                                        ),
+                                                      }
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Input Type
+                                                </label>
+                                                <select
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={
+                                                    editDraft.submissionType
+                                                  }
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        submissionType: e.target
+                                                          .value as QuestNodeSubmissionType,
+                                                      }
+                                                    )
+                                                  }
+                                                >
+                                                  {questNodeSubmissionOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    )
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div>
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Reward
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={editDraft.reward}
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        reward: Number(
+                                                          e.target.value
+                                                        ),
+                                                      }
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Inventory Item
+                                                </label>
+                                                <select
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={
+                                                    editDraft.inventoryItemId
+                                                  }
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        inventoryItemId:
+                                                          e.target.value,
+                                                      }
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">None</option>
+                                                  {inventoryItems.map(
+                                                    (item) => (
+                                                      <option
+                                                        key={item.id}
+                                                        value={item.id}
+                                                      >
+                                                        {item.name}
+                                                      </option>
+                                                    )
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="md:col-span-4">
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Stat Tags
+                                                </label>
+                                                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                                  {questStatOptions.map(
+                                                    (stat) => (
+                                                      <label
+                                                        key={stat.id}
+                                                        className="flex items-center gap-2 text-xs text-gray-700"
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={editDraft.statTags.includes(
+                                                            stat.id
+                                                          )}
+                                                          onChange={(e) => {
+                                                            const current =
+                                                              editDraft.statTags;
+                                                            const next = e
+                                                              .target.checked
+                                                              ? [
+                                                                  ...current,
+                                                                  stat.id,
+                                                                ]
+                                                              : current.filter(
+                                                                  (tag) =>
+                                                                    tag !==
+                                                                    stat.id
+                                                                );
+                                                            handleEditChallengeDraftChange(
+                                                              challenge.id,
+                                                              { statTags: next }
+                                                            );
+                                                          }}
+                                                        />
+                                                        {stat.label}
+                                                      </label>
+                                                    )
+                                                  )}
+                                                </div>
+                                              </div>
+                                              <div className="md:col-span-2">
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Proficiency
+                                                </label>
+                                                <input
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={editDraft.proficiency}
+                                                  list="proficiency-options"
+                                                  onChange={(e) => {
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        proficiency:
+                                                          e.target.value,
+                                                      }
+                                                    );
+                                                    handleProficiencyInputChange(
+                                                      e.target.value
+                                                    );
+                                                  }}
+                                                  placeholder="Drawing"
+                                                />
+                                              </div>
+                                              <div className="md:col-span-4">
+                                                <label className="block text-xs font-medium text-gray-700">
+                                                  Question
+                                                </label>
+                                                <textarea
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  rows={2}
+                                                  value={editDraft.question}
+                                                  onChange={(e) =>
+                                                    handleEditChallengeDraftChange(
+                                                      challenge.id,
+                                                      {
+                                                        question:
+                                                          e.target.value,
+                                                      }
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </div>
                                             <button
                                               type="button"
-                                              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                              className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
                                               onClick={() =>
-                                                isEditing
-                                                  ? handleCancelEditChallenge(
-                                                      challenge.id
-                                                    )
-                                                  : handleStartEditChallenge(
-                                                      node,
-                                                      challenge
-                                                    )
+                                                handleUpdateChallenge(
+                                                  node,
+                                                  challenge
+                                                )
                                               }
                                             >
-                                              {isEditing ? 'Cancel' : 'Edit'}
+                                              Save Changes
                                             </button>
                                           </div>
                                         )}
                                       </div>
-                                      {isEditing && (
-                                        <div className="mt-3">
-                                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                            <div>
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Tier
-                                              </label>
-                                              <input
-                                                type="number"
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={editDraft.tier}
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      tier: Number(
-                                                        e.target.value
-                                                      ),
-                                                    }
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Difficulty
-                                              </label>
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={editDraft.difficulty}
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      difficulty: Number(
-                                                        e.target.value
-                                                      ),
-                                                    }
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Input Type
-                                              </label>
-                                              <select
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={editDraft.submissionType}
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      submissionType: e.target
-                                                        .value as QuestNodeSubmissionType,
-                                                    }
-                                                  )
-                                                }
-                                              >
-                                                {questNodeSubmissionOptions.map(
-                                                  (option) => (
-                                                    <option
-                                                      key={option.value}
-                                                      value={option.value}
-                                                    >
-                                                      {option.label}
-                                                    </option>
-                                                  )
-                                                )}
-                                              </select>
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Reward
-                                              </label>
-                                              <input
-                                                type="number"
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={editDraft.reward}
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      reward: Number(
-                                                        e.target.value
-                                                      ),
-                                                    }
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Inventory Item
-                                              </label>
-                                              <select
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={
-                                                  editDraft.inventoryItemId
-                                                }
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      inventoryItemId:
-                                                        e.target.value,
-                                                    }
-                                                  )
-                                                }
-                                              >
-                                                <option value="">None</option>
-                                                {inventoryItems.map((item) => (
-                                                  <option
-                                                    key={item.id}
-                                                    value={item.id}
-                                                  >
-                                                    {item.name}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="md:col-span-4">
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Stat Tags
-                                              </label>
-                                              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                                {questStatOptions.map(
-                                                  (stat) => (
-                                                    <label
-                                                      key={stat.id}
-                                                      className="flex items-center gap-2 text-xs text-gray-700"
-                                                    >
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={editDraft.statTags.includes(
-                                                          stat.id
-                                                        )}
-                                                        onChange={(e) => {
-                                                          const current =
-                                                            editDraft.statTags;
-                                                          const next = e.target
-                                                            .checked
-                                                            ? [
-                                                                ...current,
-                                                                stat.id,
-                                                              ]
-                                                            : current.filter(
-                                                                (tag) =>
-                                                                  tag !==
-                                                                  stat.id
-                                                              );
-                                                          handleEditChallengeDraftChange(
-                                                            challenge.id,
-                                                            { statTags: next }
-                                                          );
-                                                        }}
-                                                      />
-                                                      {stat.label}
-                                                    </label>
-                                                  )
-                                                )}
-                                              </div>
-                                            </div>
-                                            <div className="md:col-span-2">
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Proficiency
-                                              </label>
-                                              <input
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={editDraft.proficiency}
-                                                list="proficiency-options"
-                                                onChange={(e) => {
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    {
-                                                      proficiency:
-                                                        e.target.value,
-                                                    }
-                                                  );
-                                                  handleProficiencyInputChange(
-                                                    e.target.value
-                                                  );
-                                                }}
-                                                placeholder="Drawing"
-                                              />
-                                            </div>
-                                            <div className="md:col-span-4">
-                                              <label className="block text-xs font-medium text-gray-700">
-                                                Question
-                                              </label>
-                                              <textarea
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                rows={2}
-                                                value={editDraft.question}
-                                                onChange={(e) =>
-                                                  handleEditChallengeDraftChange(
-                                                    challenge.id,
-                                                    { question: e.target.value }
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                          </div>
-                                          <button
-                                            type="button"
-                                            className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
-                                            onClick={() =>
-                                              handleUpdateChallenge(
-                                                node,
-                                                challenge
-                                              )
-                                            }
-                                          >
-                                            Save Changes
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                                {nodeObjectivePrompts.length === 0 &&
-                                  !usesLinkedObjective && (
-                                  <div className="text-sm text-gray-500">
-                                    No objective prompts yet.
-                                  </div>
-                                )}
+                                    );
+                                  })}
+                                  {nodeObjectivePrompts.length === 0 &&
+                                    !usesLinkedObjective && (
+                                      <div className="text-sm text-gray-500">
+                                        No objective prompts yet.
+                                      </div>
+                                    )}
                                 </div>
                               )}
 
                               {!usesLinkedObjective && (
                                 <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
-                                <h5 className="font-semibold mb-2">
-                                  Add Objective Prompt
-                                </h5>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                  {node.pointOfInterestId && (
-                                    <div className="md:col-span-4 rounded-md border border-amber-200 bg-amber-50 p-3">
-                                      <div className="text-xs font-semibold text-amber-900">
-                                        Location Archetype Prompt
-                                      </div>
-                                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div>
-                                          <label className="block text-xs font-medium text-gray-700">
-                                            Archetype
-                                          </label>
-                                          <select
-                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                            value={
-                                              (
-                                                challengeDrafts[node.id] ??
-                                                emptyChallengeForm
-                                              ).locationArchetypeId
-                                            }
-                                            onChange={(e) =>
-                                              handleChallengeDraftChange(
-                                                node.id,
-                                                {
-                                                  locationArchetypeId:
-                                                    e.target.value,
-                                                  locationChallenge: '',
-                                                  question: '',
-                                                  submissionType: 'photo',
-                                                  proficiency: '',
-                                                }
-                                              )
-                                            }
-                                          >
-                                            <option value="">
-                                              Select archetype
-                                            </option>
-                                            {locationArchetypes.map(
-                                              (archetype) => (
-                                                <option
-                                                  key={archetype.id}
-                                                  value={archetype.id}
+                                  <h5 className="font-semibold mb-2">
+                                    Add Objective Prompt
+                                  </h5>
+                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    {node.pointOfInterestId && (
+                                      <div className="md:col-span-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                                        <div className="text-xs font-semibold text-amber-900">
+                                          Location Archetype Prompt
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700">
+                                              Archetype
+                                            </label>
+                                            <select
+                                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                              value={
+                                                (
+                                                  challengeDrafts[node.id] ??
+                                                  emptyChallengeForm
+                                                ).locationArchetypeId
+                                              }
+                                              onChange={(e) =>
+                                                handleChallengeDraftChange(
+                                                  node.id,
+                                                  {
+                                                    locationArchetypeId:
+                                                      e.target.value,
+                                                    locationChallenge: '',
+                                                    question: '',
+                                                    submissionType: 'photo',
+                                                    proficiency: '',
+                                                  }
+                                                )
+                                              }
+                                            >
+                                              <option value="">
+                                                Select archetype
+                                              </option>
+                                              {locationArchetypes.map(
+                                                (archetype) => (
+                                                  <option
+                                                    key={archetype.id}
+                                                    value={archetype.id}
+                                                  >
+                                                    {archetype.name}
+                                                  </option>
+                                                )
+                                              )}
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700">
+                                              Prompt Template
+                                            </label>
+                                            {(() => {
+                                              const selectedArchetype =
+                                                locationArchetypes.find(
+                                                  (archetype) =>
+                                                    archetype.id ===
+                                                    (
+                                                      challengeDrafts[
+                                                        node.id
+                                                      ] ?? emptyChallengeForm
+                                                    ).locationArchetypeId
+                                                );
+                                              const challenges =
+                                                selectedArchetype?.challenges ??
+                                                [];
+                                              return (
+                                                <select
+                                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                                  value={
+                                                    (
+                                                      challengeDrafts[
+                                                        node.id
+                                                      ] ?? emptyChallengeForm
+                                                    ).locationChallenge
+                                                  }
+                                                  onChange={(e) =>
+                                                    (() => {
+                                                      const value =
+                                                        e.target.value;
+                                                      const index =
+                                                        value === ''
+                                                          ? NaN
+                                                          : Number(value);
+                                                      const selected =
+                                                        Number.isFinite(index)
+                                                          ? challenges[index]
+                                                          : undefined;
+                                                      handleChallengeDraftChange(
+                                                        node.id,
+                                                        {
+                                                          locationChallenge:
+                                                            value,
+                                                          question:
+                                                            selected?.question ??
+                                                            '',
+                                                          submissionType:
+                                                            (selected?.submissionType ??
+                                                              'photo') as QuestNodeSubmissionType,
+                                                          proficiency:
+                                                            selected?.proficiency ??
+                                                            '',
+                                                          difficulty:
+                                                            selected?.difficulty ??
+                                                            (
+                                                              challengeDrafts[
+                                                                node.id
+                                                              ] ??
+                                                              emptyChallengeForm
+                                                            ).difficulty,
+                                                        }
+                                                      );
+                                                    })()
+                                                  }
                                                 >
-                                                  {archetype.name}
-                                                </option>
-                                              )
-                                            )}
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs font-medium text-gray-700">
-                                            Prompt Template
-                                          </label>
-                                          {(() => {
-                                            const selectedArchetype =
-                                              locationArchetypes.find(
-                                                (archetype) =>
-                                                  archetype.id ===
-                                                  (
-                                                    challengeDrafts[node.id] ??
-                                                    emptyChallengeForm
-                                                  ).locationArchetypeId
+                                                  <option value="">
+                                                    Select prompt template
+                                                  </option>
+                                                  {challenges.map(
+                                                    (challenge, index) => (
+                                                      <option
+                                                        key={`${challenge.question}-${index}`}
+                                                        value={index}
+                                                      >
+                                                        {challenge.question} ·{' '}
+                                                        {challenge.submissionType.toUpperCase()}
+                                                        {challenge.proficiency
+                                                          ? ` · ${challenge.proficiency}`
+                                                          : ''}
+                                                      </option>
+                                                    )
+                                                  )}
+                                                </select>
                                               );
-                                            const challenges =
-                                              selectedArchetype?.challenges ??
-                                              [];
-                                            return (
-                                              <select
-                                                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                                value={
-                                                  (
-                                                    challengeDrafts[node.id] ??
-                                                    emptyChallengeForm
-                                                  ).locationChallenge
-                                                }
-                                                onChange={(e) =>
-                                                  (() => {
-                                                    const value =
-                                                      e.target.value;
-                                                    const index =
-                                                      value === ''
-                                                        ? NaN
-                                                        : Number(value);
-                                                    const selected =
-                                                      Number.isFinite(index)
-                                                        ? challenges[index]
-                                                        : undefined;
-                                                    handleChallengeDraftChange(
-                                                      node.id,
-                                                      {
-                                                        locationChallenge:
-                                                          value,
-                                                        question:
-                                                          selected?.question ??
-                                                          '',
-                                                        submissionType:
-                                                          (selected?.submissionType ??
-                                                            'photo') as QuestNodeSubmissionType,
-                                                        proficiency:
-                                                          selected?.proficiency ??
-                                                          '',
-                                                        difficulty:
-                                                          selected?.difficulty ??
-                                                          (
-                                                            challengeDrafts[
-                                                              node.id
-                                                            ] ??
-                                                            emptyChallengeForm
-                                                          ).difficulty,
-                                                      }
-                                                    );
-                                                  })()
-                                                }
-                                              >
-                                                <option value="">
-                                                  Select prompt template
-                                                </option>
-                                                {challenges.map(
-                                                  (challenge, index) => (
-                                                    <option
-                                                      key={`${challenge.question}-${index}`}
-                                                      value={index}
-                                                    >
-                                                      {challenge.question} ·{' '}
-                                                      {challenge.submissionType.toUpperCase()}
-                                                      {challenge.proficiency
-                                                        ? ` · ${challenge.proficiency}`
-                                                        : ''}
-                                                    </option>
-                                                  )
-                                                )}
-                                              </select>
-                                            );
-                                          })()}
+                                            })()}
+                                          </div>
                                         </div>
+                                        <p className="mt-2 text-xs text-amber-800">
+                                          Selecting a prompt template will
+                                          auto-fill the question field and input
+                                          type.
+                                        </p>
                                       </div>
-                                      <p className="mt-2 text-xs text-amber-800">
-                                        Selecting a prompt template will
-                                        auto-fill the question field and input
-                                        type.
-                                      </p>
+                                    )}
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Tier
+                                      </label>
+                                      <input
+                                        type="number"
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).tier
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            tier: Number(e.target.value),
+                                          })
+                                        }
+                                      />
                                     </div>
-                                  )}
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Tier
-                                    </label>
-                                    <input
-                                      type="number"
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).tier
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          tier: Number(e.target.value),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Difficulty
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).difficulty
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          difficulty: Number(e.target.value),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Input Type
-                                    </label>
-                                    <select
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).submissionType
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          submissionType: e.target
-                                            .value as QuestNodeSubmissionType,
-                                        })
-                                      }
-                                    >
-                                      {questNodeSubmissionOptions.map(
-                                        (option) => (
-                                          <option
-                                            key={option.value}
-                                            value={option.value}
-                                          >
-                                            {option.label}
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Difficulty
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).difficulty
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            difficulty: Number(e.target.value),
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Input Type
+                                      </label>
+                                      <select
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).submissionType
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            submissionType: e.target
+                                              .value as QuestNodeSubmissionType,
+                                          })
+                                        }
+                                      >
+                                        {questNodeSubmissionOptions.map(
+                                          (option) => (
+                                            <option
+                                              key={option.value}
+                                              value={option.value}
+                                            >
+                                              {option.label}
+                                            </option>
+                                          )
+                                        )}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Reward
+                                      </label>
+                                      <input
+                                        type="number"
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).reward
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            reward: Number(e.target.value),
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Inventory Item
+                                      </label>
+                                      <select
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).inventoryItemId
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            inventoryItemId: e.target.value,
+                                          })
+                                        }
+                                      >
+                                        <option value="">None</option>
+                                        {inventoryItems.map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {item.name}
                                           </option>
-                                        )
-                                      )}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Reward
-                                    </label>
-                                    <input
-                                      type="number"
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).reward
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          reward: Number(e.target.value),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Inventory Item
-                                    </label>
-                                    <select
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).inventoryItemId
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          inventoryItemId: e.target.value,
-                                        })
-                                      }
-                                    >
-                                      <option value="">None</option>
-                                      {inventoryItems.map((item) => (
-                                        <option key={item.id} value={item.id}>
-                                          {item.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div className="md:col-span-4">
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Stat Tags
-                                    </label>
-                                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                      {questStatOptions.map((stat) => (
-                                        <label
-                                          key={stat.id}
-                                          className="flex items-center gap-2 text-xs text-gray-700"
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={(
-                                              challengeDrafts[node.id] ??
-                                              emptyChallengeForm
-                                            ).statTags.includes(stat.id)}
-                                            onChange={(e) => {
-                                              const current = (
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="md:col-span-4">
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Stat Tags
+                                      </label>
+                                      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                        {questStatOptions.map((stat) => (
+                                          <label
+                                            key={stat.id}
+                                            className="flex items-center gap-2 text-xs text-gray-700"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={(
                                                 challengeDrafts[node.id] ??
                                                 emptyChallengeForm
-                                              ).statTags;
-                                              const next = e.target.checked
-                                                ? [...current, stat.id]
-                                                : current.filter(
-                                                    (tag) => tag !== stat.id
-                                                  );
-                                              handleChallengeDraftChange(
-                                                node.id,
-                                                { statTags: next }
-                                              );
-                                            }}
-                                          />
-                                          {stat.label}
-                                        </label>
-                                      ))}
+                                              ).statTags.includes(stat.id)}
+                                              onChange={(e) => {
+                                                const current = (
+                                                  challengeDrafts[node.id] ??
+                                                  emptyChallengeForm
+                                                ).statTags;
+                                                const next = e.target.checked
+                                                  ? [...current, stat.id]
+                                                  : current.filter(
+                                                      (tag) => tag !== stat.id
+                                                    );
+                                                handleChallengeDraftChange(
+                                                  node.id,
+                                                  { statTags: next }
+                                                );
+                                              }}
+                                            />
+                                            {stat.label}
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Proficiency
+                                      </label>
+                                      <input
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).proficiency
+                                        }
+                                        list="proficiency-options"
+                                        onChange={(e) => {
+                                          handleChallengeDraftChange(node.id, {
+                                            proficiency: e.target.value,
+                                          });
+                                          handleProficiencyInputChange(
+                                            e.target.value
+                                          );
+                                        }}
+                                        placeholder="Drawing"
+                                      />
+                                    </div>
+                                    <div className="md:col-span-4">
+                                      <label className="block text-xs font-medium text-gray-700">
+                                        Question
+                                      </label>
+                                      <textarea
+                                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                        rows={2}
+                                        value={
+                                          (
+                                            challengeDrafts[node.id] ??
+                                            emptyChallengeForm
+                                          ).question
+                                        }
+                                        onChange={(e) =>
+                                          handleChallengeDraftChange(node.id, {
+                                            question: e.target.value,
+                                          })
+                                        }
+                                      />
                                     </div>
                                   </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Proficiency
-                                    </label>
-                                    <input
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).proficiency
-                                      }
-                                      list="proficiency-options"
-                                      onChange={(e) => {
-                                        handleChallengeDraftChange(node.id, {
-                                          proficiency: e.target.value,
-                                        });
-                                        handleProficiencyInputChange(
-                                          e.target.value
-                                        );
-                                      }}
-                                      placeholder="Drawing"
-                                    />
-                                  </div>
-                                  <div className="md:col-span-4">
-                                    <label className="block text-xs font-medium text-gray-700">
-                                      Question
-                                    </label>
-                                    <textarea
-                                      className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                                      rows={2}
-                                      value={
-                                        (
-                                          challengeDrafts[node.id] ??
-                                          emptyChallengeForm
-                                        ).question
-                                      }
-                                      onChange={(e) =>
-                                        handleChallengeDraftChange(node.id, {
-                                          question: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
+                                  <button
+                                    className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
+                                    onClick={() => handleCreateChallenge(node)}
+                                  >
+                                    Add Objective Prompt
+                                  </button>
                                 </div>
-                                <button
-                                  className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
-                                  onClick={() => handleCreateChallenge(node)}
-                                >
-                                  Add Objective Prompt
-                                </button>
-                              </div>
                               )}
                             </div>
                           </div>
                         );
                       })}
+                    </div>
                   </div>
                 </div>
-              </div>
               </>
             )}
           </div>

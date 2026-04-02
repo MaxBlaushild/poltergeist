@@ -57,6 +57,14 @@ func userStatusTickDeltas(status models.UserStatus) (healthDelta int, manaDelta 
 	}
 }
 
+func battleStatusTickReady(startedAt time.Time, lastTickAt *time.Time, now time.Time) bool {
+	lastTickAnchor := startedAt
+	if lastTickAt != nil && lastTickAt.After(lastTickAnchor) {
+		lastTickAnchor = *lastTickAt
+	}
+	return lastTickAnchor.Before(now)
+}
+
 func monsterStatusHealthTickDelta(status models.MonsterStatus) (healthDelta int, applies bool) {
 	switch normalizeMonsterStatusEffectType(string(status.EffectType)) {
 	case models.MonsterStatusEffectTypeDamageOverTime:
@@ -145,6 +153,9 @@ func (s *server) applyBattleTurnDamageOverTime(
 		if !applies {
 			continue
 		}
+		if !battleStatusTickReady(status.StartedAt, status.LastTickAt, now) {
+			continue
+		}
 		if healthDelta < 0 {
 			userDamage += -healthDelta
 		}
@@ -165,6 +176,9 @@ func (s *server) applyBattleTurnDamageOverTime(
 	for _, status := range monsterStatuses {
 		healthDelta, applies := monsterStatusHealthTickDelta(status)
 		if !applies {
+			continue
+		}
+		if !battleStatusTickReady(status.StartedAt, status.LastTickAt, now) {
 			continue
 		}
 		if healthDelta < 0 {

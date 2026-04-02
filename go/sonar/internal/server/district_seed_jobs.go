@@ -19,6 +19,7 @@ func (s *server) createAndEnqueueDistrictSeedJob(
 	ctx *gin.Context,
 	districtID uuid.UUID,
 	questArchetypes []*models.QuestArchetype,
+	zoneSeedSettings models.DistrictZoneSeedSettings,
 ) (*models.DistrictSeedJob, error) {
 	questArchetypeIDs := make(models.StringArray, 0, len(questArchetypes))
 	results := make(models.DistrictSeedResults, 0, len(questArchetypes))
@@ -34,8 +35,8 @@ func (s *server) createAndEnqueueDistrictSeedJob(
 			Status:             models.DistrictSeedResultStatusQueued,
 		})
 	}
-	if len(questArchetypeIDs) == 0 {
-		return nil, fmt.Errorf("at least one quest template is required")
+	if len(questArchetypeIDs) == 0 && !zoneSeedSettings.HasContent() {
+		return nil, fmt.Errorf("at least one quest template or one zone seed setting is required")
 	}
 
 	job := &models.DistrictSeedJob{
@@ -45,6 +46,8 @@ func (s *server) createAndEnqueueDistrictSeedJob(
 		DistrictID:        districtID,
 		Status:            models.DistrictSeedJobStatusQueued,
 		QuestArchetypeIDs: questArchetypeIDs,
+		ZoneSeedSettings:  zoneSeedSettings,
+		ZoneSeedJobIDs:    models.StringArray{},
 		Results:           results,
 	}
 	if err := s.dbClient.DistrictSeedJob().Create(ctx, job); err != nil {
@@ -60,6 +63,26 @@ func (s *server) createAndEnqueueDistrictSeedJob(
 	}
 
 	return job, nil
+}
+
+func districtZoneSeedSettingsFromNormalized(
+	settings *normalizedZoneSeedDraftRequest,
+) models.DistrictZoneSeedSettings {
+	if settings == nil {
+		return models.DistrictZoneSeedSettings{}
+	}
+	return models.DistrictZoneSeedSettings{
+		PlaceCount:           settings.PlaceCount,
+		MonsterCount:         settings.MonsterCount,
+		BossEncounterCount:   settings.BossEncounterCount,
+		RaidEncounterCount:   settings.RaidEncounterCount,
+		InputEncounterCount:  settings.InputEncounterCount,
+		OptionEncounterCount: settings.OptionEncounterCount,
+		TreasureChestCount:   settings.TreasureChestCount,
+		HealingFountainCount: settings.HealingFountainCount,
+		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
+		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
+	}
 }
 
 func normalizeDistrictSeedJobStatuses(rawStatuses []string) ([]string, error) {
@@ -124,8 +147,18 @@ func (s *server) loadDistrictSeedQuestArchetypes(
 
 func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 	var requestBody struct {
-		DistrictID        string   `json:"districtId"`
-		QuestArchetypeIDs []string `json:"questArchetypeIds"`
+		DistrictID           string   `json:"districtId"`
+		QuestArchetypeIDs    []string `json:"questArchetypeIds"`
+		PlaceCount           *int     `json:"placeCount"`
+		MonsterCount         *int     `json:"monsterCount"`
+		BossEncounterCount   *int     `json:"bossEncounterCount"`
+		RaidEncounterCount   *int     `json:"raidEncounterCount"`
+		InputEncounterCount  *int     `json:"inputEncounterCount"`
+		OptionEncounterCount *int     `json:"optionEncounterCount"`
+		TreasureChestCount   *int     `json:"treasureChestCount"`
+		HealingFountainCount *int     `json:"healingFountainCount"`
+		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
+		ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
 	}
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -152,13 +185,38 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 		return
 	}
 
-	questArchetypes, err := s.loadDistrictSeedQuestArchetypes(ctx, requestBody.QuestArchetypeIDs)
+	zoneSeedSettingsInput, err := normalizeZoneSeedDraftRequest(zoneSeedDraftRequest{
+		PlaceCount:           requestBody.PlaceCount,
+		MonsterCount:         requestBody.MonsterCount,
+		BossEncounterCount:   requestBody.BossEncounterCount,
+		RaidEncounterCount:   requestBody.RaidEncounterCount,
+		InputEncounterCount:  requestBody.InputEncounterCount,
+		OptionEncounterCount: requestBody.OptionEncounterCount,
+		TreasureChestCount:   requestBody.TreasureChestCount,
+		HealingFountainCount: requestBody.HealingFountainCount,
+		RequiredPlaceTags:    requestBody.RequiredPlaceTags,
+		ShopkeeperItemTags:   requestBody.ShopkeeperItemTags,
+	})
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	zoneSeedSettings := districtZoneSeedSettingsFromNormalized(zoneSeedSettingsInput)
 
-	job, err := s.createAndEnqueueDistrictSeedJob(ctx, districtID, questArchetypes)
+	var questArchetypes []*models.QuestArchetype
+	if len(requestBody.QuestArchetypeIDs) > 0 {
+		questArchetypes, err = s.loadDistrictSeedQuestArchetypes(ctx, requestBody.QuestArchetypeIDs)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if len(questArchetypes) == 0 && !zoneSeedSettings.HasContent() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "provide at least one quest template or one zone seed setting"})
+		return
+	}
+
+	job, err := s.createAndEnqueueDistrictSeedJob(ctx, districtID, questArchetypes, zoneSeedSettings)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

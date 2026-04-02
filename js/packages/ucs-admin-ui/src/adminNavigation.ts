@@ -23,13 +23,15 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'zones',
         label: 'Zones',
         path: '/zones',
-        description: 'Manage zone boundaries, map data, and zone-level content.',
+        description:
+          'Manage zone boundaries, map data, and zone-level content.',
       },
       {
         id: 'districts',
         label: 'Districts',
         path: '/districts',
-        description: 'Group zones into higher-level neighborhoods and seed them.',
+        description:
+          'Group zones into higher-level neighborhoods and seed them.',
       },
       {
         id: 'zone-tagging',
@@ -42,7 +44,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'points-of-interest',
         label: 'Points of Interest',
         path: '/points-of-interest',
-        description: 'Inspect imported places, clues, media, and place metadata.',
+        description:
+          'Inspect imported places, clues, media, and place metadata.',
         matchPrefixes: ['/place/'],
       },
       {
@@ -78,6 +81,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Generate draft archetype bundles, review them, and convert the best ones into live templates.',
       },
       {
+        id: 'main-story-generator',
+        label: 'Main Story Generator',
+        path: '/main-story-generator',
+        description:
+          'Generate district-scale campaign drafts with ordered beats and convert them into reusable main story templates.',
+      },
+      {
         id: 'zone-quest-archetypes',
         label: 'Zone Quest Archetypes',
         path: '/zone-quest-archetypes',
@@ -87,7 +97,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'quests',
         label: 'Quests',
         path: '/quests',
-        description: 'Inspect concrete quests, routes, objectives, and rewards.',
+        description:
+          'Inspect concrete quests, routes, objectives, and rewards.',
       },
       {
         id: 'scenarios',
@@ -105,7 +116,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'challenges',
         label: 'Challenges',
         path: '/challenges',
-        description: 'Manage explicit challenge objectives and location prompts.',
+        description:
+          'Manage explicit challenge objectives and location prompts.',
       },
       {
         id: 'challenge-templates',
@@ -124,7 +136,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
   {
     id: 'systems',
     label: 'Systems',
-    description: 'Characters, progression, combat content, and reward infrastructure.',
+    description:
+      'Characters, progression, combat content, and reward infrastructure.',
     items: [
       {
         id: 'users',
@@ -142,7 +155,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'parties',
         label: 'Parties',
         path: '/parties',
-        description: 'Monitor party state, membership, and cooperative progress.',
+        description:
+          'Monitor party state, membership, and cooperative progress.',
       },
       {
         id: 'inventory-items',
@@ -196,7 +210,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         id: 'tutorial',
         label: 'Tutorial',
         path: '/tutorial',
-        description: 'Configure tutorial flows, encounters, and onboarding beats.',
+        description:
+          'Configure tutorial flows, encounters, and onboarding beats.',
       },
     ],
   },
@@ -302,7 +317,10 @@ export const adminNavItemMatchesPath = (
   if (normalizedPathname === normalizedItemPath) {
     return true;
   }
-  if (normalizedItemPath !== '/' && normalizedPathname.startsWith(`${normalizedItemPath}/`)) {
+  if (
+    normalizedItemPath !== '/' &&
+    normalizedPathname.startsWith(`${normalizedItemPath}/`)
+  ) {
     return true;
   }
   return (item.matchPrefixes ?? []).some((prefix) =>
@@ -311,12 +329,12 @@ export const adminNavItemMatchesPath = (
 };
 
 export const findActiveAdminNavItem = (pathname: string) =>
-  flattenAdminNavItems().find((item) => adminNavItemMatchesPath(item, pathname));
+  flattenAdminNavItems().find((item) =>
+    adminNavItemMatchesPath(item, pathname)
+  );
 
 export const featuredAdminNavItems = adminFeaturedNavItemIds
   .map((id) => flattenAdminNavItems().find((item) => item.id === id))
-  .filter(
-    (
-      item
-    ): item is ReturnType<typeof flattenAdminNavItems>[number] => Boolean(item)
+  .filter((item): item is ReturnType<typeof flattenAdminNavItems>[number] =>
+    Boolean(item)
   );

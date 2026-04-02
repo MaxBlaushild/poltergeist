@@ -37,6 +37,7 @@ export * from './candidate';
 export * from './googlePlace';
 export * from './questArchetype';
 export * from './questArchetypeSuggestion';
+export * from './mainStory';
 export * from './locationArchetype';
 export * from './zoneQuestArchetype';
 export * from './zone';

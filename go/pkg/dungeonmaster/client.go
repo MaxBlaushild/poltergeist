@@ -158,6 +158,7 @@ func (c *client) GenerateQuest(
 		UpdatedAt:                   time.Now(),
 		Name:                        strings.TrimSpace(questArchType.Name),
 		Description:                 questArchType.Description,
+		Category:                    questArchType.Category,
 		AcceptanceDialogue:          acceptanceDialogue,
 		ImageURL:                    questArchType.ImageURL,
 		ZoneID:                      &zone.ID,
@@ -1495,6 +1496,12 @@ func (c *client) resolveQuestTemplateCharacterID(
 	zone *models.Zone,
 	questArchetype *models.QuestArchetype,
 ) (*uuid.UUID, error) {
+	if questArchetype != nil && questArchetype.QuestGiverCharacterID != nil && *questArchetype.QuestGiverCharacterID != uuid.Nil {
+		return questArchetype.QuestGiverCharacterID, nil
+	}
+	if questArchetype != nil && models.IsMainStoryQuestCategory(questArchetype.Category) {
+		return nil, fmt.Errorf("main story quest archetype requires questGiverCharacterId")
+	}
 	if zone == nil || questArchetype == nil || len(questArchetype.CharacterTags) == 0 {
 		return nil, nil
 	}

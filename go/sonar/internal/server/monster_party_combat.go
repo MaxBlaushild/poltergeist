@@ -1048,6 +1048,7 @@ func (s *server) applyMonsterBattleUserStatuses(
 	statusTemplates models.ScenarioFailureStatusTemplates,
 ) ([]scenarioAppliedFailureStatus, error) {
 	applied := make([]scenarioAppliedFailureStatus, 0, len(statusTemplates))
+	now := time.Now()
 	for _, targetUserID := range targetUserIDs {
 		activeNames := make([]string, 0, len(statusTemplates))
 		for _, statusTemplate := range statusTemplates {
@@ -1103,8 +1104,9 @@ func (s *server) applyMonsterBattleUserStatuses(
 				ArcaneResistancePercent:       statusTemplate.ArcaneResistancePercent,
 				HolyResistancePercent:         statusTemplate.HolyResistancePercent,
 				ShadowResistancePercent:       statusTemplate.ShadowResistancePercent,
-				StartedAt:                     time.Now(),
-				ExpiresAt:                     time.Now().Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+				StartedAt:                     now,
+				LastTickAt:                    &now,
+				ExpiresAt:                     now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
 			}
 			if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
 				return nil, err
@@ -1693,19 +1695,13 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		); err != nil {
 			return nil, err
 		}
-		_, _, _, health, _, err := s.getScenarioResourceState(ctx, participant.UserID)
-		if err != nil {
+		log.Printf(
+			"[combat][defeat-recovery][finalize-battle] battle=%s user=%s outcome=victory-or-cleanup",
+			battle.ID,
+			participant.UserID,
+		)
+		if err := s.restoreUserToOneHealthIfDowned(ctx, participant.UserID); err != nil {
 			return nil, err
-		}
-		if health <= 0 {
-			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(
-				ctx,
-				participant.UserID,
-				-1,
-				0,
-			); err != nil {
-				return nil, err
-			}
 		}
 	}
 

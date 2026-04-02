@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/base.dart';
 import '../models/base_progression.dart';
+import '../providers/character_stats_provider.dart';
 import '../services/base_service.dart';
 import '../widgets/paper_texture.dart';
 
@@ -787,7 +788,18 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       final nextSnapshot = BaseProgressionSnapshot.fromJson(response);
       final healthRestored = (response['healthRestored'] as num?)?.toInt() ?? 0;
       final manaRestored = (response['manaRestored'] as num?)?.toInt() ?? 0;
+      final currentHealth = (response['currentHealth'] as num?)?.toInt();
+      final currentMana = (response['currentMana'] as num?)?.toInt();
       final statusesApplied = _statusCount(response['statusesApplied']);
+      final statsProvider = context.read<CharacterStatsProvider>();
+      if (currentHealth != null && currentMana != null) {
+        await statsProvider.setHealthAndManaTo(
+          health: currentHealth,
+          mana: currentMana,
+        );
+      }
+      await statsProvider.refresh(silent: true);
+      if (!mounted) return;
       setState(() {
         _snapshot = nextSnapshot;
         _busyStructureKey = null;

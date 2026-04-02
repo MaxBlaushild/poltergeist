@@ -16,6 +16,7 @@ import {
   QuestDifficultyMode,
   InventoryItem,
   Spell,
+  Character,
 } from '@poltergeist/types';
 import {
   MaterialRewardsEditor,
@@ -1922,6 +1923,8 @@ type QuestArchetypeSpellRewardRow = {
 type QuestArchetypeFormState = {
   name: string;
   description: string;
+  category: 'side' | 'main_story';
+  questGiverCharacterId: string;
   acceptanceDialogueText: string;
   imageUrl: string;
   locationArchetypeId: string;
@@ -1944,6 +1947,8 @@ type QuestArchetypeFormState = {
 const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   name: '',
   description: '',
+  category: 'side',
+  questGiverCharacterId: '',
   acceptanceDialogueText: '',
   imageUrl: '',
   locationArchetypeId: '',
@@ -1969,6 +1974,8 @@ const buildQuestArchetypeFormFromRecord = (
 ): QuestArchetypeFormState => ({
   name: archetype.name ?? '',
   description: archetype.description ?? '',
+  category: archetype.category === 'main_story' ? 'main_story' : 'side',
+  questGiverCharacterId: archetype.questGiverCharacterId ?? '',
   acceptanceDialogueText: (archetype.acceptanceDialogue ?? []).join('\n'),
   imageUrl: archetype.imageUrl ?? '',
   locationArchetypeId: archetype.root?.locationArchetypeId ?? '',
@@ -2025,6 +2032,11 @@ const normalizeQuestArchetypeDraft = (
   return {
     name: form.name.trim(),
     description: form.description.trim(),
+    category: form.category,
+    questGiverCharacterId:
+      form.category === 'main_story' && form.questGiverCharacterId
+        ? form.questGiverCharacterId
+        : null,
     acceptanceDialogue,
     imageUrl: form.imageUrl.trim(),
     rootNode: {
@@ -2062,7 +2074,7 @@ const normalizeQuestArchetypeDraft = (
       rewardMode === 'explicit'
         ? form.spellRewards.filter((reward) => reward.spellId.trim().length > 0)
         : [],
-    characterTags,
+    characterTags: form.category === 'main_story' ? [] : characterTags,
     internalTags,
   };
 };
@@ -2182,6 +2194,7 @@ export const QuestArchetypeComponent = () => {
     deleteQuestArchetypeChallenge,
     updateQuestArchetypeNode,
   } = useQuestArchetypes();
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [monsterTemplates, setMonsterTemplates] = useState<
     MonsterTemplateRecord[]
@@ -2320,6 +2333,34 @@ export const QuestArchetypeComponent = () => {
         (archetype) => archetype.id === selectedArchetypeId
       ) ?? null,
     [questArchetypes, selectedArchetypeId]
+  );
+  const charactersById = useMemo(
+    () =>
+      new Map(
+        characters.map((character) => [character.id, character] as const)
+      ),
+    [characters]
+  );
+  const selectedArchetypeQuestGiver = useMemo(
+    () =>
+      selectedArchetype?.questGiverCharacterId
+        ? charactersById.get(selectedArchetype.questGiverCharacterId) ?? null
+        : null,
+    [charactersById, selectedArchetype?.questGiverCharacterId]
+  );
+  const sortedCharacters = useMemo(
+    () =>
+      [...characters].sort((left, right) =>
+        left.name.localeCompare(right.name)
+      ),
+    [characters]
+  );
+  const editingQuestGiver = useMemo(
+    () =>
+      editForm.questGiverCharacterId
+        ? charactersById.get(editForm.questGiverCharacterId) ?? null
+        : null,
+    [charactersById, editForm.questGiverCharacterId]
   );
 
   const filteredGenerationZones = useMemo(() => {
@@ -2539,12 +2580,14 @@ export const QuestArchetypeComponent = () => {
       setInventoryItemsLoading(true);
       try {
         const [
+          characterResponse,
           inventoryResponse,
           spellsResponse,
           monsterTemplateResponse,
           scenarioTemplateResponse,
           challengeTemplateResponse,
         ] = await Promise.all([
+          apiClient.get<Character[]>('/sonar/characters'),
           apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
           apiClient.get<Spell[]>('/sonar/spells'),
           apiClient.get<PaginatedResponse<MonsterTemplateRecord>>(
@@ -2557,6 +2600,7 @@ export const QuestArchetypeComponent = () => {
             '/sonar/challenge-templates'
           ),
         ]);
+        setCharacters(characterResponse ?? []);
         setInventoryItems(inventoryResponse);
         setSpells(spellsResponse);
         setMonsterTemplates(monsterTemplateResponse.items ?? []);
@@ -3000,11 +3044,17 @@ export const QuestArchetypeComponent = () => {
                       </div>
                     </div>
                     <div className="qa-stat">
-                      <div className="qa-stat-label">Quest Giver Tags</div>
+                      <div className="qa-stat-label">
+                        {selectedArchetype.category === 'main_story'
+                          ? 'Quest Giver'
+                          : 'Quest Giver Tags'}
+                      </div>
                       <div className="qa-stat-value">
-                        {(selectedArchetype.characterTags ?? []).length > 0
-                          ? (selectedArchetype.characterTags ?? []).join(', ')
-                          : 'Any'}
+                        {selectedArchetype.category === 'main_story'
+                          ? selectedArchetypeQuestGiver?.name ?? 'Unassigned'
+                          : (selectedArchetype.characterTags ?? []).length > 0
+                            ? (selectedArchetype.characterTags ?? []).join(', ')
+                            : 'Any'}
                       </div>
                     </div>
                     <div className="qa-stat">
@@ -4834,9 +4884,11 @@ export const QuestArchetypeComponent = () => {
                     )}
                   </div>
                   <p className="qa-muted" style={{ marginTop: 8 }}>
-                    {(selectedArchetype.characterTags ?? []).length > 0
-                      ? `Quest giver tags: ${selectedArchetype.characterTags?.join(', ')}`
-                      : 'Quest giver: no tag preference'}
+                    {selectedArchetype.category === 'main_story'
+                      ? `Quest giver: ${selectedArchetypeQuestGiver?.name ?? 'Unassigned'}`
+                      : (selectedArchetype.characterTags ?? []).length > 0
+                        ? `Quest giver tags: ${selectedArchetype.characterTags?.join(', ')}`
+                        : 'Quest giver: no tag preference'}
                   </p>
                   <p className="qa-muted" style={{ marginTop: 8 }}>
                     {(selectedArchetype.internalTags ?? []).length > 0
@@ -5376,8 +5428,9 @@ export const QuestArchetypeComponent = () => {
           <div className="qa-modal-card">
             <h2 className="qa-modal-title">Create Quest Archetype</h2>
             <p className="qa-muted" style={{ marginBottom: 16 }}>
-              Define the explicit quest copy up front, then use zone assignment
-              to auto-match quest givers by character tags.
+              Define the explicit quest copy up front. Side quests can still
+              auto-match quest givers by character tags, while main-story quests
+              use a fixed quest giver.
             </p>
             <form
               className="qa-form-grid"
@@ -5455,23 +5508,72 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Quest Giver Tags</div>
-                <input
-                  type="text"
-                  className="qa-input"
-                  value={createForm.characterTagsText}
+                <div className="qa-label">Quest Category</div>
+                <select
+                  className="qa-select"
+                  value={createForm.category}
                   onChange={(e) =>
                     setCreateForm((prev) => ({
                       ...prev,
-                      characterTagsText: e.target.value,
+                      category: e.target.value as 'side' | 'main_story',
                     }))
                   }
-                  placeholder="merchant, scholar, ranger"
-                />
-                <div className="qa-helper">
-                  Used to auto-match a character when quests are generated from
-                  this archetype.
+                >
+                  <option value="side">Side Quest</option>
+                  <option value="main_story">Main Story</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">
+                  {createForm.category === 'main_story'
+                    ? 'Quest Giver'
+                    : 'Quest Giver Tags'}
                 </div>
+                {createForm.category === 'main_story' ? (
+                  <>
+                    <select
+                      className="qa-select"
+                      value={createForm.questGiverCharacterId}
+                      onChange={(e) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          questGiverCharacterId: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Select a character</option>
+                      {sortedCharacters.map((character) => (
+                        <option key={character.id} value={character.id}>
+                          {character.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="qa-helper">
+                      {editingQuestGiver
+                        ? `Main-story archetypes use a specific quest giver. Current: ${editingQuestGiver.name}`
+                        : 'Main-story archetypes use a specific quest giver.'}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      className="qa-input"
+                      value={createForm.characterTagsText}
+                      onChange={(e) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          characterTagsText: e.target.value,
+                        }))
+                      }
+                      placeholder="merchant, scholar, ranger"
+                    />
+                    <div className="qa-helper">
+                      Used to auto-match a character when quests are generated
+                      from this archetype.
+                    </div>
+                  </>
+                )}
               </div>
               <div className="qa-field">
                 <div className="qa-label">Internal Tags</div>
@@ -5856,7 +5958,9 @@ export const QuestArchetypeComponent = () => {
                   className="qa-btn qa-btn-primary"
                   disabled={
                     !questArchetypeFormHasExplicitCopy(createForm) ||
-                    !createForm.locationArchetypeId
+                    !createForm.locationArchetypeId ||
+                    (createForm.category === 'main_story' &&
+                      !createForm.questGiverCharacterId)
                   }
                 >
                   Create
@@ -5927,19 +6031,70 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Quest Giver Tags</div>
-                <input
-                  type="text"
-                  className="qa-input"
-                  value={editForm.characterTagsText}
+                <div className="qa-label">Quest Category</div>
+                <select
+                  className="qa-select"
+                  value={editForm.category}
                   onChange={(e) =>
                     setEditForm((prev) => ({
                       ...prev,
-                      characterTagsText: e.target.value,
+                      category: e.target.value as 'side' | 'main_story',
                     }))
                   }
-                  placeholder="merchant, scholar, ranger"
-                />
+                >
+                  <option value="side">Side Quest</option>
+                  <option value="main_story">Main Story</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">
+                  {editForm.category === 'main_story'
+                    ? 'Quest Giver'
+                    : 'Quest Giver Tags'}
+                </div>
+                {editForm.category === 'main_story' ? (
+                  <>
+                    <select
+                      className="qa-select"
+                      value={editForm.questGiverCharacterId}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          questGiverCharacterId: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Select a character</option>
+                      {sortedCharacters.map((character) => (
+                        <option key={character.id} value={character.id}>
+                          {character.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="qa-helper">
+                      Main-story archetypes use a specific quest giver.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      className="qa-input"
+                      value={editForm.characterTagsText}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          characterTagsText: e.target.value,
+                        }))
+                      }
+                      placeholder="merchant, scholar, ranger"
+                    />
+                    <div className="qa-helper">
+                      Used to auto-match a character when quests are generated
+                      from this archetype.
+                    </div>
+                  </>
+                )}
               </div>
               <div className="qa-field">
                 <div className="qa-label">Internal Tags</div>
@@ -6273,7 +6428,11 @@ export const QuestArchetypeComponent = () => {
               </button>
               <button
                 className="qa-btn qa-btn-primary"
-                disabled={!questArchetypeFormHasExplicitCopy(editForm)}
+                disabled={
+                  !questArchetypeFormHasExplicitCopy(editForm) ||
+                  (editForm.category === 'main_story' &&
+                    !editForm.questGiverCharacterId)
+                }
                 onClick={async () => {
                   if (!editingArchetype) return;
                   const draft = normalizeQuestArchetypeDraft(editForm);
@@ -6281,6 +6440,8 @@ export const QuestArchetypeComponent = () => {
                     ...editingArchetype,
                     name: draft.name,
                     description: draft.description,
+                    category: draft.category,
+                    questGiverCharacterId: draft.questGiverCharacterId,
                     acceptanceDialogue: draft.acceptanceDialogue,
                     imageUrl: draft.imageUrl,
                     difficultyMode: draft.difficultyMode,

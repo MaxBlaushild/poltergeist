@@ -11,6 +11,9 @@ const (
 	QuestRecurrenceDaily   = "daily"
 	QuestRecurrenceWeekly  = "weekly"
 	QuestRecurrenceMonthly = "monthly"
+
+	QuestCategorySide      = "side"
+	QuestCategoryMainStory = "main_story"
 )
 
 func NormalizeQuestRecurrenceFrequency(value string) string {
@@ -24,6 +27,19 @@ func IsValidQuestRecurrenceFrequency(value string) bool {
 	default:
 		return false
 	}
+}
+
+func NormalizeQuestCategory(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case QuestCategoryMainStory:
+		return QuestCategoryMainStory
+	default:
+		return QuestCategorySide
+	}
+}
+
+func IsMainStoryQuestCategory(value string) bool {
+	return NormalizeQuestCategory(value) == QuestCategoryMainStory
 }
 
 func NextQuestRecurrenceAt(base time.Time, frequency string) (time.Time, bool) {
@@ -46,11 +62,14 @@ type Quest struct {
 	NodeCount                   int                 `json:"nodeCount,omitempty" gorm:"column:node_count;->"`
 	Name                        string              `json:"name"`
 	Description                 string              `json:"description"`
+	Category                    string              `json:"category" gorm:"column:category;default:'side'"`
 	AcceptanceDialogue          StringArray         `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
 	ImageURL                    string              `json:"imageUrl"`
 	ZoneID                      *uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
 	QuestArchetypeID            *uuid.UUID          `json:"questArchetypeId" gorm:"type:uuid"`
 	QuestGiverCharacterID       *uuid.UUID          `json:"questGiverCharacterId" gorm:"type:uuid"`
+	MainStoryPreviousQuestID    *uuid.UUID          `json:"mainStoryPreviousQuestId,omitempty" gorm:"column:main_story_previous_quest_id;type:uuid"`
+	MainStoryNextQuestID        *uuid.UUID          `json:"mainStoryNextQuestId,omitempty" gorm:"column:main_story_next_quest_id;type:uuid"`
 	RecurringQuestID            *uuid.UUID          `json:"recurringQuestId,omitempty" gorm:"type:uuid"`
 	RecurrenceFrequency         *string             `json:"recurrenceFrequency,omitempty"`
 	NextRecurrenceAt            *time.Time          `json:"nextRecurrenceAt,omitempty"`

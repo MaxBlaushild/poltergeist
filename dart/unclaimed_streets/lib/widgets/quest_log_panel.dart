@@ -191,15 +191,22 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         final readyToTurnIn = ql.quests
             .where(
               (q) =>
+                  !q.isMainStory &&
                   q.turnedInAt == null &&
                   (q.readyToTurnIn || (q.currentNode == null && q.isAccepted)),
             )
             .toList();
+        final mainStoryActive = ql.quests
+            .where((q) => q.turnedInAt == null && q.isMainStory)
+            .toList();
+        final mainStoryIds = mainStoryActive.map((q) => q.id).toSet();
         final readyIds = readyToTurnIn.map((q) => q.id).toSet();
         final tracked = ql.quests
             .where(
               (q) =>
-                  ql.trackedQuestIds.contains(q.id) && !readyIds.contains(q.id),
+                  !q.isMainStory &&
+                  ql.trackedQuestIds.contains(q.id) &&
+                  !readyIds.contains(q.id),
             )
             .toList();
         final tagBuckets = <String, List<Quest>>{};
@@ -209,6 +216,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         final untagged = <Quest>[];
 
         for (final q in ql.quests) {
+          if (mainStoryIds.contains(q.id)) continue;
           if (readyIds.contains(q.id)) continue;
           if (ql.trackedQuestIds.contains(q.id)) continue;
           final tagNames = _questTags(q);
@@ -226,12 +234,18 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           if (!added) untagged.add(q);
         }
 
-        final completed = ql.completedQuests;
+        final completedMainStory = ql.completedQuests
+            .where((q) => q.isMainStory)
+            .toList();
+        final completed = ql.completedQuests
+            .where((q) => !q.isMainStory)
+            .toList();
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
 
         final hasQuestListItems =
+            mainStoryActive.isNotEmpty ||
             readyToTurnIn.isNotEmpty ||
             tracked.isNotEmpty ||
             tagBuckets.values.any((list) => list.isNotEmpty) ||
@@ -257,6 +271,22 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                if (mainStoryActive.isNotEmpty)
+                                  _QuestAccordion(
+                                    title: 'Main Story',
+                                    quests: mainStoryActive,
+                                    discoveredPoiIds: discoveredIds,
+                                    expanded: _expanded['main_story'] ?? true,
+                                    onToggle: () {
+                                      setState(() {
+                                        _expanded['main_story'] =
+                                            !(_expanded['main_story'] ?? true);
+                                      });
+                                    },
+                                    onQuestTap: (q) =>
+                                        setState(() => _selectedQuest = q),
+                                    onReadyQuestTap: _focusTurnInQuest,
+                                  ),
                                 if (readyToTurnIn.isNotEmpty)
                                   _QuestAccordion(
                                     title: 'Ready to Turn In',
@@ -338,7 +368,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                               ),
                             ),
                     ),
-                    if (completed.isEmpty)
+                    if (completed.isEmpty && completedMainStory.isEmpty)
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.all(24),
@@ -348,18 +378,42 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     else
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
-                        child: _QuestAccordion(
-                          title: 'Completed Quests',
-                          quests: completed,
-                          discoveredPoiIds: discoveredIds,
-                          expanded: _expanded['completed'] ?? true,
-                          onToggle: () {
-                            setState(() {
-                              _expanded['completed'] =
-                                  !(_expanded['completed'] ?? true);
-                            });
-                          },
-                          onQuestTap: (q) => setState(() => _selectedQuest = q),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (completedMainStory.isNotEmpty)
+                              _QuestAccordion(
+                                title: 'Main Story Archive',
+                                quests: completedMainStory,
+                                discoveredPoiIds: discoveredIds,
+                                expanded:
+                                    _expanded['completed_main_story'] ?? true,
+                                onToggle: () {
+                                  setState(() {
+                                    _expanded['completed_main_story'] =
+                                        !(_expanded['completed_main_story'] ??
+                                            true);
+                                  });
+                                },
+                                onQuestTap: (q) =>
+                                    setState(() => _selectedQuest = q),
+                              ),
+                            if (completed.isNotEmpty)
+                              _QuestAccordion(
+                                title: 'Completed Quests',
+                                quests: completed,
+                                discoveredPoiIds: discoveredIds,
+                                expanded: _expanded['completed'] ?? true,
+                                onToggle: () {
+                                  setState(() {
+                                    _expanded['completed'] =
+                                        !(_expanded['completed'] ?? true);
+                                  });
+                                },
+                                onQuestTap: (q) =>
+                                    setState(() => _selectedQuest = q),
+                              ),
+                          ],
                         ),
                       ),
                   ],
@@ -489,6 +543,30 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              if (quest.isMainStory) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7A1823),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFE7C36A)),
+                    ),
+                    child: Text(
+                      'Main Story',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               const SizedBox(height: 8),
               Row(
@@ -784,171 +862,230 @@ class _QuestAccordion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMainStorySection =
+        title == 'Main Story' || title == 'Main Story Archive';
+    final headerColor = isMainStorySection
+        ? const Color(0xFFF8E7D0)
+        : Theme.of(context).colorScheme.surface;
+    final borderColor = isMainStorySection
+        ? const Color(0xFFE7C36A)
+        : Colors.transparent;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         elevation: 1,
         borderRadius: BorderRadius.circular(12),
-        child: Column(
-          children: [
-            InkWell(
-              onTap: onToggle,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    if (title == 'Tracked Quests')
-                      const Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Text('⭐', style: TextStyle(fontSize: 20)),
+        color: headerColor,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            children: [
+              InkWell(
+                onTap: onToggle,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      if (title == 'Tracked Quests')
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Text('⭐', style: TextStyle(fontSize: 20)),
+                        ),
+                      if (isMainStorySection)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Icon(
+                            Icons.auto_stories_outlined,
+                            size: 20,
+                            color: Color(0xFF7A1823),
+                          ),
+                        ),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                      Text(
+                        '(${quests.length})',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
                       ),
-                    ),
-                    Text(
-                      '(${quests.length})',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
                         color: Theme.of(
                           context,
                         ).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
-                    ),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.7),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (expanded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Column(
-                  children: quests.map((q) {
-                    final node = q.currentNode;
-                    final objectiveSummary = questObjectiveSummary(node);
-                    return InkWell(
-                      onTap: () {
-                        if (q.readyToTurnIn && onReadyQuestTap != null) {
-                          onReadyQuestTap!(q);
-                          return;
-                        }
-                        onQuestTap(q);
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            q.turnedInAt != null || q.readyToTurnIn
-                                ? Container(
-                                    width: 22,
-                                    height: 22,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF3BB54A),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.check,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Icon(
-                                    q.isAccepted
-                                        ? Icons.play_circle_fill
-                                        : Icons.radio_button_unchecked,
-                                    size: 22,
-                                    color: q.isAccepted
-                                        ? Colors.orange
-                                        : Colors.grey.shade400,
-                                  ),
-                            const SizedBox(width: 12),
-                            QuestObjectiveIcon(
-                              node: node,
-                              discoveredPoiIds: discoveredPoiIds,
-                              size: 36,
-                              borderRadius: 6,
-                              iconColor: Theme.of(
-                                context,
-                              ).colorScheme.onSurface,
-                              backgroundColor: Colors.grey.shade300,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    q.name,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge,
-                                  ),
-                                  if (objectiveSummary.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      objectiveSummary,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withValues(alpha: 0.72),
-                                          ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            if (q.completionCount > 1)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.shade50,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: Colors.orange.shade200,
-                                  ),
-                                ),
-                                child: Text(
-                                  'x${q.completionCount}',
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.w600,
+              if (expanded)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Column(
+                    children: quests.map((q) {
+                      final node = q.currentNode;
+                      final objectiveSummary = questObjectiveSummary(node);
+                      return InkWell(
+                        onTap: () {
+                          if (q.readyToTurnIn && onReadyQuestTap != null) {
+                            onReadyQuestTap!(q);
+                            return;
+                          }
+                          onQuestTap(q);
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              q.turnedInAt != null || q.readyToTurnIn
+                                  ? Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF3BB54A),
+                                        shape: BoxShape.circle,
                                       ),
+                                      child: const Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Icon(
+                                      q.isAccepted
+                                          ? Icons.play_circle_fill
+                                          : Icons.radio_button_unchecked,
+                                      size: 22,
+                                      color: q.isAccepted
+                                          ? (q.isMainStory
+                                                ? const Color(0xFF7A1823)
+                                                : Colors.orange)
+                                          : Colors.grey.shade400,
+                                    ),
+                              const SizedBox(width: 12),
+                              QuestObjectiveIcon(
+                                node: node,
+                                discoveredPoiIds: discoveredPoiIds,
+                                size: 36,
+                                borderRadius: 6,
+                                iconColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                backgroundColor: Colors.grey.shade300,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            q.name,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodyLarge,
+                                          ),
+                                        ),
+                                        if (q.isMainStory)
+                                          Container(
+                                            margin: const EdgeInsets.only(
+                                              left: 8,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF7A1823),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              'Story',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    if (objectiveSummary.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        objectiveSummary,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.72),
+                                            ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
-                          ],
+                              if (q.completionCount > 1)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'x${q.completionCount}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Colors.orange.shade800,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

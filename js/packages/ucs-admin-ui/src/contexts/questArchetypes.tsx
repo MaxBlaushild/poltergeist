@@ -22,6 +22,8 @@ export type QuestArchetypeNodeDraft = {
 export type QuestArchetypeDraft = {
   name: string;
   description: string;
+  category?: 'side' | 'main_story';
+  questGiverCharacterId?: string | null;
   acceptanceDialogue?: string[];
   imageUrl?: string;
   rootNode: QuestArchetypeNodeDraft;
@@ -238,6 +240,8 @@ export const QuestArchetypesProvider = ({
       {
         name: draft.name,
         description: draft.description,
+        category: draft.category,
+        questGiverCharacterId: draft.questGiverCharacterId,
         acceptanceDialogue: draft.acceptanceDialogue,
         imageUrl: draft.imageUrl,
         rootId: node.id,

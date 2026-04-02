@@ -1443,6 +1443,12 @@ export const Monsters = () => {
   const filteredTemplates = templates;
   const filteredMonsters = records;
   const filteredEncounters = encounters;
+  const allFilteredTemplatesSelected = useMemo(() => {
+    if (filteredTemplates.length === 0) return false;
+    return filteredTemplates.every((template) =>
+      selectedTemplateIds.has(template.id)
+    );
+  }, [filteredTemplates, selectedTemplateIds]);
   const selectedMonsterIdSet = useMemo(
     () => selectedMonsterIds,
     [selectedMonsterIds]
@@ -3091,6 +3097,27 @@ export const Monsters = () => {
                   onClick={() => setTemplateTab('archived')}
                 >
                   Archived ({archivedTemplateCount})
+                </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={
+                    filteredTemplates.length === 0 ||
+                    allFilteredTemplatesSelected
+                  }
+                  onClick={() =>
+                    setSelectedTemplateIds(
+                      new Set(filteredTemplates.map((template) => template.id))
+                    )
+                  }
+                >
+                  Select All
+                </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={selectedTemplateIds.size === 0}
+                  onClick={() => setSelectedTemplateIds(new Set())}
+                >
+                  Clear Selection
                 </button>
                 <button
                   className="qa-btn qa-btn-secondary"

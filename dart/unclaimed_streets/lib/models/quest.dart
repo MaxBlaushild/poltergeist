@@ -51,10 +51,7 @@ class QuestMaterialReward {
   final String resourceKey;
   final int amount;
 
-  const QuestMaterialReward({
-    required this.resourceKey,
-    required this.amount,
-  });
+  const QuestMaterialReward({required this.resourceKey, required this.amount});
 
   factory QuestMaterialReward.fromJson(Map<String, dynamic> json) {
     return QuestMaterialReward(
@@ -65,6 +62,8 @@ class QuestMaterialReward {
 }
 
 class Quest {
+  static const categorySide = 'side';
+  static const categoryMainStory = 'main_story';
   static const rewardModeExplicit = 'explicit';
   static const rewardModeRandom = 'random';
   static const randomRewardSizeSmall = 'small';
@@ -74,6 +73,7 @@ class Quest {
   final String id;
   final String name;
   final String description;
+  final String category;
   final List<String> acceptanceDialogue;
   final String? imageUrl;
   final String rewardMode;
@@ -81,6 +81,8 @@ class Quest {
   final String? zoneId;
   final String? questArchetypeId;
   final String? questGiverCharacterId;
+  final String? mainStoryPreviousQuestId;
+  final String? mainStoryNextQuestId;
   final String? recurringQuestId;
   final String? recurrenceFrequency;
   final DateTime? nextRecurrenceAt;
@@ -99,6 +101,7 @@ class Quest {
     required this.id,
     required this.name,
     required this.description,
+    this.category = categorySide,
     this.acceptanceDialogue = const [],
     this.imageUrl,
     this.rewardMode = rewardModeRandom,
@@ -106,6 +109,8 @@ class Quest {
     this.zoneId,
     this.questArchetypeId,
     this.questGiverCharacterId,
+    this.mainStoryPreviousQuestId,
+    this.mainStoryNextQuestId,
     this.recurringQuestId,
     this.recurrenceFrequency,
     this.nextRecurrenceAt,
@@ -126,6 +131,7 @@ class Quest {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      category: json['category']?.toString() ?? categorySide,
       acceptanceDialogue:
           (json['acceptanceDialogue'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -138,6 +144,8 @@ class Quest {
       zoneId: json['zoneId'] as String?,
       questArchetypeId: json['questArchetypeId'] as String?,
       questGiverCharacterId: json['questGiverCharacterId'] as String?,
+      mainStoryPreviousQuestId: json['mainStoryPreviousQuestId'] as String?,
+      mainStoryNextQuestId: json['mainStoryNextQuestId'] as String?,
       recurringQuestId: json['recurringQuestId'] as String?,
       recurrenceFrequency: json['recurrenceFrequency'] as String?,
       nextRecurrenceAt: json['nextRecurrenceAt'] != null
@@ -199,4 +207,6 @@ class Quest {
   }
 
   bool get hasRandomRewards => rewardMode == rewardModeRandom;
+
+  bool get isMainStory => category == categoryMainStory;
 }

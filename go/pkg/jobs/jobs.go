@@ -16,6 +16,7 @@ const (
 	GenerateSpellIconTaskType                      = "generate_spell_icon"
 	GenerateSpellsBulkTaskType                     = "generate_spells_bulk"
 	GenerateSpellProgressionFromPromptTaskType     = "generate_spell_progression_from_prompt"
+	RebalanceSpellDamageTaskType                   = "rebalance_spell_damage"
 	GenerateMonsterImageTaskType                   = "generate_monster_image"
 	GenerateMonsterTemplateImageTaskType           = "generate_monster_template_image"
 	GenerateMonsterTemplatesBulkTaskType           = "generate_monster_templates_bulk"
@@ -34,6 +35,7 @@ const (
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
 	GenerateLocationArchetypesTaskType             = "generate_location_archetypes"
 	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
+	GenerateMainStorySuggestionsTaskType           = "generate_main_story_suggestions"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateZoneTagsTaskType                       = "generate_zone_tags"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
@@ -102,6 +104,15 @@ const (
 )
 
 const (
+	SpellDamageRebalanceStatusQueued     = "queued"
+	SpellDamageRebalanceStatusInProgress = "in_progress"
+	SpellDamageRebalanceStatusCompleted  = "completed"
+	SpellDamageRebalanceStatusFailed     = "failed"
+
+	SpellDamageRebalanceStatusTTL = 24 * time.Hour
+)
+
+const (
 	ThumbnailEntityCharacter                 = "character"
 	ThumbnailEntityPointOfInterest           = "point_of_interest"
 	ThumbnailEntityBase                      = "base"
@@ -119,6 +130,10 @@ type GenerateQuestForZoneTaskPayload struct {
 }
 
 type GenerateQuestArchetypeSuggestionsTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateMainStorySuggestionsTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
 }
 
@@ -214,6 +229,11 @@ type GenerateSpellProgressionFromPromptTaskPayload struct {
 	AbilityType string    `json:"abilityType"`
 }
 
+type RebalanceSpellDamageTaskPayload struct {
+	JobID    uuid.UUID   `json:"jobId"`
+	SpellIDs []uuid.UUID `json:"spellIds,omitempty"`
+}
+
 type SpellBulkStatus struct {
 	JobID        uuid.UUID              `json:"jobId"`
 	Status       string                 `json:"status"`
@@ -246,6 +266,19 @@ type SpellProgressionPromptStatus struct {
 	StartedAt       *time.Time  `json:"startedAt,omitempty"`
 	CompletedAt     *time.Time  `json:"completedAt,omitempty"`
 	UpdatedAt       time.Time   `json:"updatedAt"`
+}
+
+type SpellDamageRebalanceStatus struct {
+	JobID        uuid.UUID   `json:"jobId"`
+	Status       string      `json:"status"`
+	TotalCount   int         `json:"totalCount"`
+	UpdatedCount int         `json:"updatedCount"`
+	SpellIDs     []uuid.UUID `json:"spellIds,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	QueuedAt     *time.Time  `json:"queuedAt,omitempty"`
+	StartedAt    *time.Time  `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time  `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time   `json:"updatedAt"`
 }
 
 type GenerateMonsterImageTaskPayload struct {
@@ -419,4 +452,8 @@ func SpellBulkStatusKey(jobID uuid.UUID) string {
 
 func SpellProgressionPromptStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:spells:progression-from-prompt:%s", jobID.String())
+}
+
+func SpellDamageRebalanceStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:spells:damage-rebalance:%s", jobID.String())
 }

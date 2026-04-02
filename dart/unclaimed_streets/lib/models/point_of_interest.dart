@@ -30,6 +30,7 @@ class PointOfInterest {
   final List<PoiTag> tags;
   final List<Character> characters;
   final bool hasAvailableQuest;
+  final bool hasAvailableMainStoryQuest;
 
   const PointOfInterest({
     required this.id,
@@ -46,6 +47,7 @@ class PointOfInterest {
     this.tags = const [],
     this.characters = const [],
     this.hasAvailableQuest = false,
+    this.hasAvailableMainStoryQuest = false,
   });
 
   factory PointOfInterest.fromJson(Map<String, dynamic> json) {
@@ -86,6 +88,8 @@ class PointOfInterest {
       tags: tags,
       characters: characters,
       hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
+      hasAvailableMainStoryQuest:
+          json['hasAvailableMainStoryQuest'] as bool? ?? false,
     );
   }
 }

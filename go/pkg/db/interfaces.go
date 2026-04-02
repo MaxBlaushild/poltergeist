@@ -63,6 +63,9 @@ type DbClient interface {
 	QuestArchetype() QuestArchetypeHandle
 	QuestArchetypeSuggestionJob() QuestArchetypeSuggestionJobHandle
 	QuestArchetypeSuggestionDraft() QuestArchetypeSuggestionDraftHandle
+	MainStoryTemplate() MainStoryTemplateHandle
+	MainStorySuggestionJob() MainStorySuggestionJobHandle
+	MainStorySuggestionDraft() MainStorySuggestionDraftHandle
 	QuestArchetypeNode() QuestArchetypeNodeHandle
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
@@ -699,6 +702,28 @@ type QuestArchetypeSuggestionDraftHandle interface {
 	Update(ctx context.Context, draft *models.QuestArchetypeSuggestionDraft) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeSuggestionDraft, error)
 	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.QuestArchetypeSuggestionDraft, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type MainStoryTemplateHandle interface {
+	Create(ctx context.Context, template *models.MainStoryTemplate) error
+	Update(ctx context.Context, template *models.MainStoryTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStoryTemplate, error)
+	FindAll(ctx context.Context) ([]models.MainStoryTemplate, error)
+}
+
+type MainStorySuggestionJobHandle interface {
+	Create(ctx context.Context, job *models.MainStorySuggestionJob) error
+	Update(ctx context.Context, job *models.MainStorySuggestionJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStorySuggestionJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.MainStorySuggestionJob, error)
+}
+
+type MainStorySuggestionDraftHandle interface {
+	Create(ctx context.Context, draft *models.MainStorySuggestionDraft) error
+	Update(ctx context.Context, draft *models.MainStorySuggestionDraft) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStorySuggestionDraft, error)
+	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.MainStorySuggestionDraft, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -106,6 +107,18 @@ func (p *SeedDistrictProcessor) ProcessTask(ctx context.Context, task *asynq.Tas
 		return p.failDistrictSeedJob(ctx, job, fmt.Errorf("district has no zones"))
 	}
 
+	if job.ZoneSeedSettings.HasContent() && len(job.ZoneSeedJobIDs) == 0 {
+		zoneSeedJobIDs, err := p.queueZoneSeedJobsForDistrict(ctx, district.Zones, job.ZoneSeedSettings)
+		if err != nil {
+			return p.failDistrictSeedJob(ctx, job, fmt.Errorf("failed to queue district zone seed jobs: %w", err))
+		}
+		job.ZoneSeedJobIDs = models.StringArray(zoneSeedJobIDs)
+		job.UpdatedAt = time.Now()
+		if err := p.dbClient.DistrictSeedJob().Update(ctx, job); err != nil {
+			return err
+		}
+	}
+
 	results := job.Results
 	if len(results) == 0 && len(job.QuestArchetypeIDs) > 0 {
 		results = make(models.DistrictSeedResults, 0, len(job.QuestArchetypeIDs))
@@ -137,14 +150,73 @@ func (p *SeedDistrictProcessor) ProcessTask(ctx context.Context, task *asynq.Tas
 
 	job.Results = results
 	job.UpdatedAt = time.Now()
-	if failedCount > 0 {
-		err := fmt.Errorf("%d of %d district quest templates failed", failedCount, len(results))
-		return p.failDistrictSeedJob(ctx, job, err)
+	finalizeDistrictSeedJob(job, failedCount, len(results))
+	return p.dbClient.DistrictSeedJob().Update(ctx, job)
+}
+
+func (p *SeedDistrictProcessor) queueZoneSeedJobsForDistrict(
+	ctx context.Context,
+	zones []models.Zone,
+	settings models.DistrictZoneSeedSettings,
+) ([]string, error) {
+	if !settings.HasContent() || len(zones) == 0 {
+		return []string{}, nil
 	}
 
+	jobIDs := make([]string, 0, len(zones))
+	for _, zone := range zones {
+		job := &models.ZoneSeedJob{
+			ID:                   uuid.New(),
+			CreatedAt:            time.Now(),
+			UpdatedAt:            time.Now(),
+			ZoneID:               zone.ID,
+			Status:               models.ZoneSeedStatusQueued,
+			PlaceCount:           settings.PlaceCount,
+			CharacterCount:       0,
+			QuestCount:           0,
+			MainQuestCount:       0,
+			MonsterCount:         settings.MonsterCount,
+			BossEncounterCount:   settings.BossEncounterCount,
+			RaidEncounterCount:   settings.RaidEncounterCount,
+			InputEncounterCount:  settings.InputEncounterCount,
+			OptionEncounterCount: settings.OptionEncounterCount,
+			TreasureChestCount:   settings.TreasureChestCount,
+			HealingFountainCount: settings.HealingFountainCount,
+			RequiredPlaceTags:    settings.RequiredPlaceTags,
+			ShopkeeperItemTags:   settings.ShopkeeperItemTags,
+		}
+		if err := p.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
+			return nil, err
+		}
+
+		payloadBytes, err := json.Marshal(jobs.SeedZoneDraftTaskPayload{JobID: job.ID})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.SeedZoneDraftTaskType, payloadBytes)); err != nil {
+			return nil, err
+		}
+
+		jobIDs = append(jobIDs, job.ID.String())
+	}
+
+	return jobIDs, nil
+}
+
+func finalizeDistrictSeedJob(job *models.DistrictSeedJob, failedCount int, total int) {
+	if job == nil {
+		return
+	}
+	if failedCount > 0 {
+		log.Printf(
+			"District seed job %s completed with %d failed quest template(s) out of %d",
+			job.ID,
+			failedCount,
+			total,
+		)
+	}
 	job.Status = models.DistrictSeedJobStatusCompleted
 	job.ErrorMessage = nil
-	return p.dbClient.DistrictSeedJob().Update(ctx, job)
 }
 
 func (p *SeedDistrictProcessor) failDistrictSeedJob(ctx context.Context, job *models.DistrictSeedJob, err error) error {
@@ -196,22 +268,130 @@ func (p *SeedDistrictProcessor) processDistrictSeedResult(
 		result.ErrorMessage = &msg
 		return result, err
 	}
-	zoneID := zone.ID.String()
-	result.ZoneID = &zoneID
-	result.ZoneName = zone.Name
-	result.MatchCount = matchCount
-
-	questGiverCharacterID, questGiverName, generatedCharacterID, generatedCharacterName, err := p.ensureQuestGiverCharacter(
-		ctx,
-		zone,
-		questArchetype,
-	)
+	rankedZones, err := rankDistrictSeedZones(district.Zones, questArchetype.InternalTags)
 	if err != nil {
 		result.Status = models.DistrictSeedResultStatusFailed
-		msg := fmt.Sprintf("failed to ensure quest giver: %v", err)
+		msg := err.Error()
 		result.ErrorMessage = &msg
 		return result, err
 	}
+
+	orderedZones := make([]districtSeedZoneCandidate, 0, len(rankedZones))
+	orderedZones = append(orderedZones, districtSeedZoneCandidate{
+		zone:       zone,
+		matchCount: matchCount,
+	})
+	for _, candidate := range rankedZones {
+		if candidate.zone == nil || candidate.zone.ID == zone.ID {
+			continue
+		}
+		orderedZones = append(orderedZones, candidate)
+	}
+
+	var lastErr error
+	for zoneIndex, candidate := range orderedZones {
+		if candidate.zone == nil {
+			continue
+		}
+		applyDistrictSeedZoneToResult(&result, candidate.zone, candidate.matchCount)
+
+		questGiverCharacterID, questGiverName, generatedCharacterID, generatedCharacterName, err := p.ensureQuestGiverCharacter(
+			ctx,
+			candidate.zone,
+			questArchetype,
+		)
+		if err != nil {
+			result.Status = models.DistrictSeedResultStatusFailed
+			msg := fmt.Sprintf("failed to ensure quest giver: %v", err)
+			result.ErrorMessage = &msg
+			return result, err
+		}
+		applyDistrictSeedQuestGiverToResult(
+			&result,
+			questGiverCharacterID,
+			questGiverName,
+			generatedCharacterID,
+			generatedCharacterName,
+		)
+
+		quest, err := p.dungeonmaster.GenerateQuest(
+			ctx,
+			candidate.zone,
+			questArchetype.ID,
+			questGiverCharacterID,
+		)
+		if err == nil {
+			if quest == nil {
+				lastErr = fmt.Errorf("quest generation returned no quest")
+				break
+			}
+			questID := quest.ID.String()
+			result.QuestID = &questID
+			result.Status = models.DistrictSeedResultStatusCompleted
+			result.ErrorMessage = nil
+			return result, nil
+		}
+
+		lastErr = err
+		if shouldRetryDistrictSeedQuestInAnotherZone(err) && zoneIndex+1 < len(orderedZones) {
+			log.Printf(
+				"District seed retrying quest archetype %s in another zone after compatibility failure in zone %s: %v",
+				questArchetype.ID,
+				candidate.zone.ID,
+				err,
+			)
+			continue
+		}
+		break
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("quest generation returned no quest")
+	}
+	result.Status = models.DistrictSeedResultStatusFailed
+	msg := fmt.Sprintf("failed to generate quest: %v", lastErr)
+	result.ErrorMessage = &msg
+	return result, lastErr
+}
+
+type districtSeedZoneCandidate struct {
+	zone       *models.Zone
+	matchCount int
+}
+
+func applyDistrictSeedZoneToResult(
+	result *models.DistrictSeedResult,
+	zone *models.Zone,
+	matchCount int,
+) {
+	if result == nil {
+		return
+	}
+	result.ZoneID = nil
+	result.ZoneName = ""
+	result.MatchCount = matchCount
+	if zone == nil {
+		return
+	}
+	zoneID := zone.ID.String()
+	result.ZoneID = &zoneID
+	result.ZoneName = zone.Name
+}
+
+func applyDistrictSeedQuestGiverToResult(
+	result *models.DistrictSeedResult,
+	questGiverCharacterID *uuid.UUID,
+	questGiverName string,
+	generatedCharacterID *uuid.UUID,
+	generatedCharacterName string,
+) {
+	if result == nil {
+		return
+	}
+	result.QuestGiverCharacterID = nil
+	result.QuestGiverCharacterName = ""
+	result.GeneratedCharacterID = nil
+	result.GeneratedCharacterName = ""
 	if questGiverCharacterID != nil {
 		id := questGiverCharacterID.String()
 		result.QuestGiverCharacterID = &id
@@ -222,26 +402,15 @@ func (p *SeedDistrictProcessor) processDistrictSeedResult(
 		result.GeneratedCharacterID = &id
 		result.GeneratedCharacterName = generatedCharacterName
 	}
+}
 
-	quest, err := p.dungeonmaster.GenerateQuest(ctx, zone, questArchetype.ID, questGiverCharacterID)
-	if err != nil {
-		result.Status = models.DistrictSeedResultStatusFailed
-		msg := fmt.Sprintf("failed to generate quest: %v", err)
-		result.ErrorMessage = &msg
-		return result, err
+func shouldRetryDistrictSeedQuestInAnotherZone(err error) bool {
+	if err == nil {
+		return false
 	}
-	if quest == nil {
-		result.Status = models.DistrictSeedResultStatusFailed
-		msg := "quest generation returned no quest"
-		result.ErrorMessage = &msg
-		return result, fmt.Errorf("%s", msg)
-	}
-
-	questID := quest.ID.String()
-	result.QuestID = &questID
-	result.Status = models.DistrictSeedResultStatusCompleted
-	result.ErrorMessage = nil
-	return result, nil
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no points of interest found for location archetype") ||
+		strings.Contains(message, "no unused points of interest found for location archetype")
 }
 
 func selectBestDistrictSeedZone(zones []models.Zone, questInternalTags models.StringArray) (*models.Zone, int, error) {
@@ -266,6 +435,28 @@ func selectBestDistrictSeedZone(zones []models.Zone, questInternalTags models.St
 
 	selectedIndex := bestIndexes[rand.Intn(len(bestIndexes))]
 	return &zones[selectedIndex], bestScore, nil
+}
+
+func rankDistrictSeedZones(
+	zones []models.Zone,
+	questInternalTags models.StringArray,
+) ([]districtSeedZoneCandidate, error) {
+	if len(zones) == 0 {
+		return nil, fmt.Errorf("district has no zones")
+	}
+
+	desiredTags := normalizeDistrictSeedTags(questInternalTags)
+	ranked := make([]districtSeedZoneCandidate, 0, len(zones))
+	for idx := range zones {
+		ranked = append(ranked, districtSeedZoneCandidate{
+			zone:       &zones[idx],
+			matchCount: districtSeedMatchCount(zones[idx].InternalTags, desiredTags),
+		})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].matchCount > ranked[j].matchCount
+	})
+	return ranked, nil
 }
 
 func districtSeedMatchCount(tags models.StringArray, desired map[string]struct{}) int {

@@ -95,6 +95,13 @@ class CharacterStatsService {
         '/sonar/admin/users/$userId/resources',
         data: payload,
       );
+      final statsPayload = data['stats'];
+      if (statsPayload is Map<String, dynamic>) {
+        return CharacterStats.fromJson(statsPayload);
+      }
+      if (statsPayload is Map) {
+        return CharacterStats.fromJson(Map<String, dynamic>.from(statsPayload));
+      }
       return CharacterStats.fromJson(data);
     } catch (_) {
       return null;

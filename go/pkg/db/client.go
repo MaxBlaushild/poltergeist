@@ -66,6 +66,9 @@ type client struct {
 	questArchetypeHandle                 *questArchetypeHandle
 	questArchetypeSuggestionJobHandle    *questArchetypeSuggestionJobHandle
 	questArchetypeSuggestionDraftHandle  *questArchetypeSuggestionDraftHandle
+	mainStoryTemplateHandle              *mainStoryTemplateHandle
+	mainStorySuggestionJobHandle         *mainStorySuggestionJobHandle
+	mainStorySuggestionDraftHandle       *mainStorySuggestionDraftHandle
 	questArchetypeNodeHandle             *questArchetypeNodeHandle
 	questArchetypeChallengeHandle        *questArchetypeChallengeHandle
 	questArchetypeNodeChallengeHandle    *questArchetypeNodeChallengeHandle
@@ -234,6 +237,9 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questArchetypeHandle:                 &questArchetypeHandle{db: db},
 		questArchetypeSuggestionJobHandle:    &questArchetypeSuggestionJobHandle{db: db},
 		questArchetypeSuggestionDraftHandle:  &questArchetypeSuggestionDraftHandle{db: db},
+		mainStoryTemplateHandle:              &mainStoryTemplateHandle{db: db},
+		mainStorySuggestionJobHandle:         &mainStorySuggestionJobHandle{db: db},
+		mainStorySuggestionDraftHandle:       &mainStorySuggestionDraftHandle{db: db},
 		questArchetypeNodeHandle:             &questArchetypeNodeHandle{db: db},
 		questArchetypeChallengeHandle:        &questArchetypeChallengeHandle{db: db},
 		questArchetypeNodeChallengeHandle:    &questArchetypeNodeChallengeHandle{db: db},
@@ -460,6 +466,18 @@ func (c *client) QuestArchetypeSuggestionJob() QuestArchetypeSuggestionJobHandle
 
 func (c *client) QuestArchetypeSuggestionDraft() QuestArchetypeSuggestionDraftHandle {
 	return c.questArchetypeSuggestionDraftHandle
+}
+
+func (c *client) MainStoryTemplate() MainStoryTemplateHandle {
+	return c.mainStoryTemplateHandle
+}
+
+func (c *client) MainStorySuggestionJob() MainStorySuggestionJobHandle {
+	return c.mainStorySuggestionJobHandle
+}
+
+func (c *client) MainStorySuggestionDraft() MainStorySuggestionDraftHandle {
+	return c.mainStorySuggestionDraftHandle
 }
 
 func (c *client) QuestArchetypeNode() QuestArchetypeNodeHandle {

@@ -84,6 +84,13 @@ Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
   return _thumbnailCache['quest|$url'];
 }
 
+Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _thumbnailCache['main_story|$url'];
+}
+
 /// Fetches the POI image (or placeholder), resizes to a square, applies
 /// rounded corners, and returns PNG bytes suitable for MapLibre addImage.
 Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
@@ -173,6 +180,29 @@ Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
   });
 }
 
+Future<Uint8List?> loadPoiThumbnailWithMainStoryMarker(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  final cacheKey = 'main_story|$url';
+  return _loadThumbnailCached(cacheKey, () async {
+    final bytes = await _loadSourceCached(url);
+    if (bytes == null) return null;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final square = img.copyResizeCropSquare(
+      decoded,
+      size: _thumbnailSize,
+      radius: _cornerRadius,
+      antialias: true,
+    );
+    _applyParchmentFrame(square);
+    _drawMainStoryFrame(square);
+    _drawQuestMarker(square);
+    return Uint8List.fromList(img.encodePng(square));
+  });
+}
+
 void _applyParchmentFrame(img.Image image) {
   final width = image.width;
   final height = image.height;
@@ -250,4 +280,19 @@ void _drawQuestMarker(img.Image image) {
     radius: 3,
     color: dark,
   );
+}
+
+void _drawMainStoryFrame(img.Image image) {
+  final ruby = img.ColorRgba8(130, 16, 28, 255);
+  final gold = img.ColorRgba8(255, 219, 125, 255);
+  final outer = math.max(4, (_thumbnailSize * 0.028).round());
+  final inner = math.max(2, (_thumbnailSize * 0.014).round());
+  final max = _thumbnailSize - 1;
+
+  for (var i = 0; i < outer; i++) {
+    img.drawRect(image, x1: i, y1: i, x2: max - i, y2: max - i, color: ruby);
+  }
+  for (var i = outer; i < outer + inner; i++) {
+    img.drawRect(image, x1: i, y1: i, x2: max - i, y2: max - i, color: gold);
+  }
 }

@@ -231,6 +231,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllInventoryItems))
+	r.POST("/sonar/inventory-items/seed-pack", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedInventoryCorePack))
+	r.POST("/sonar/inventory-items/queue-missing-images", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueMissingInventoryItemImages))
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
 	r.POST("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItemSuggestionJob))
@@ -242,6 +244,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory-items/:id/generate-progression-drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItemProgressionDrafts))
 	r.POST("/sonar/inventory-items/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItem))
 	r.POST("/sonar/inventory-items/generate-equippable-set", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateEquippableInventorySet))
+	r.POST("/sonar/inventory-items/generate-set-families", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventorySetFamilies))
 	r.POST("/sonar/inventory-items/:id/generate-consumable-qualities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateConsumableQualities))
 	r.POST("/sonar/inventory-items/:id/generate-set", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItemSet))
 	r.POST("/sonar/inventory-items/:id/regenerate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.regenerateInventoryItemImage))
@@ -256,6 +259,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.POST("/sonar/spells/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueSpellProgressionFromPrompt))
 	r.GET("/sonar/spells/progression-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellProgressionFromPromptStatus))
+	r.POST("/sonar/admin/spells/rebalance-damage", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueSpellDamageRebalance))
+	r.GET("/sonar/admin/spells/rebalance-damage/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellDamageRebalanceJobStatus))
 	r.GET("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpell))
 	r.POST("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createSpell))
 	r.POST("/sonar/spells/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellIcon))
@@ -484,6 +489,14 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/questArchetypeSuggestionJobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeSuggestionDrafts))
 	r.POST("/sonar/questArchetypeSuggestionDrafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertQuestArchetypeSuggestionDraft))
 	r.DELETE("/sonar/questArchetypeSuggestionDrafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetypeSuggestionDraft))
+	r.POST("/sonar/mainStorySuggestionJobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStorySuggestionJob))
+	r.GET("/sonar/mainStorySuggestionJobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStorySuggestionJobs))
+	r.GET("/sonar/mainStorySuggestionJobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStorySuggestionJob))
+	r.GET("/sonar/mainStorySuggestionJobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStorySuggestionDrafts))
+	r.POST("/sonar/mainStorySuggestionDrafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertMainStorySuggestionDraft))
+	r.DELETE("/sonar/mainStorySuggestionDrafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStorySuggestionDraft))
+	r.GET("/sonar/mainStoryTemplates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplates))
+	r.GET("/sonar/mainStoryTemplates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplate))
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
@@ -1837,7 +1850,45 @@ func extractActionQuestID(metadata map[string]interface{}) string {
 	return ""
 }
 
-func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
+type characterQuestAvailability struct {
+	HasAvailableQuest          bool
+	HasAvailableMainStoryQuest bool
+}
+
+func mainStoryQuestUnlockedFromAcceptances(
+	quest *models.Quest,
+	acceptedByQuest map[uuid.UUID]models.QuestAcceptanceV2,
+) bool {
+	if quest == nil || !models.IsMainStoryQuestCategory(quest.Category) {
+		return true
+	}
+	if quest.MainStoryPreviousQuestID == nil || *quest.MainStoryPreviousQuestID == uuid.Nil {
+		return true
+	}
+	acceptance, exists := acceptedByQuest[*quest.MainStoryPreviousQuestID]
+	return exists && acceptance.TurnedInAt != nil
+}
+
+func (s *server) mainStoryQuestUnlockedForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	quest *models.Quest,
+) (bool, error) {
+	if quest == nil || !models.IsMainStoryQuestCategory(quest.Category) {
+		return true, nil
+	}
+	acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	acceptedByQuest := map[uuid.UUID]models.QuestAcceptanceV2{}
+	for _, acceptance := range acceptances {
+		acceptedByQuest[acceptance.QuestID] = acceptance
+	}
+	return mainStoryQuestUnlockedFromAcceptances(quest, acceptedByQuest), nil
+}
+
+func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]characterQuestAvailability, error) {
 	actions, err := s.dbClient.CharacterAction().FindAll(ctx)
 	if err != nil {
 		return nil, err
@@ -1865,7 +1916,7 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 	}
 
 	if len(questIDsSet) == 0 {
-		return map[uuid.UUID]bool{}, nil
+		return map[uuid.UUID]characterQuestAvailability{}, nil
 	}
 
 	acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
@@ -1891,7 +1942,7 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 		questByID[quests[i].ID] = &quests[i]
 	}
 
-	availableQuestIDs := map[uuid.UUID]bool{}
+	availableQuestIDs := map[uuid.UUID]characterQuestAvailability{}
 	for _, questID := range questIDs {
 		if acc, ok := acceptedByQuest[questID]; ok {
 			if acc.TurnedInAt == nil {
@@ -1907,16 +1958,27 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 		if err != nil || !meets {
 			continue
 		}
-		availableQuestIDs[questID] = true
+		if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedByQuest) {
+			continue
+		}
+		availableQuestIDs[questID] = characterQuestAvailability{
+			HasAvailableQuest:          true,
+			HasAvailableMainStoryQuest: models.IsMainStoryQuestCategory(quest.Category),
+		}
 	}
 
-	hasAvailable := map[uuid.UUID]bool{}
+	hasAvailable := map[uuid.UUID]characterQuestAvailability{}
 	for characterID, questIDs := range questsByCharacter {
 		for _, questID := range questIDs {
-			if availableQuestIDs[questID] {
-				hasAvailable[characterID] = true
-				break
+			availability, ok := availableQuestIDs[questID]
+			if !ok || !availability.HasAvailableQuest {
+				continue
 			}
+			existing := hasAvailable[characterID]
+			existing.HasAvailableQuest = true
+			existing.HasAvailableMainStoryQuest =
+				existing.HasAvailableMainStoryQuest || availability.HasAvailableMainStoryQuest
+			hasAvailable[characterID] = existing
 		}
 	}
 
@@ -2363,6 +2425,15 @@ func (s *server) shareQuest(ctx *gin.Context) {
 	targetAcceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, requestBody.TargetUserID, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	targetUnlocked, err := s.mainStoryQuestUnlockedForUser(ctx, requestBody.TargetUserID, quest)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !targetUnlocked {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has not unlocked this main story quest yet"})
 		return
 	}
 	if targetAcceptance != nil {
@@ -3161,6 +3232,8 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
 		Name                        string                              `json:"name"`
 		Description                 string                              `json:"description"`
+		Category                    string                              `json:"category"`
+		QuestGiverCharacterID       *uuid.UUID                          `json:"questGiverCharacterId"`
 		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
 		ImageURL                    string                              `json:"imageUrl"`
 		DefaultGold                 *int                                `json:"defaultGold"`
@@ -3220,10 +3293,26 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	questArchetype, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchetypeIDUUID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	category := questArchetype.Category
+	if strings.TrimSpace(requestBody.Category) != "" {
+		category = models.NormalizeQuestCategory(requestBody.Category)
+	}
+	questGiverCandidate := questArchetype.QuestGiverCharacterID
+	if requestBody.QuestGiverCharacterID != nil {
+		questGiverCandidate = requestBody.QuestGiverCharacterID
+	}
+	questGiverCharacterID, err := s.normalizeQuestArchetypeQuestGiverCharacterID(
+		ctx,
+		category,
+		questGiverCandidate,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	monsterEncounterTargetLevel, err := normalizeMonsterEncounterTargetLevel(
@@ -3237,6 +3326,8 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 
 	questArchetype.Name = name
 	questArchetype.Description = description
+	questArchetype.Category = category
+	questArchetype.QuestGiverCharacterID = questGiverCharacterID
 	questArchetype.AcceptanceDialogue = acceptanceDialogue
 	questArchetype.ImageURL = requestBody.ImageURL
 	questArchetype.DifficultyMode = difficultyMode
@@ -3256,7 +3347,11 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	}
 	questArchetype.RecurrenceFrequency = recurrenceFrequency
 	questArchetype.MaterialRewards = materialRewards
-	questArchetype.CharacterTags = normalizeQuestTemplateCharacterTags(requestBody.CharacterTags)
+	if models.IsMainStoryQuestCategory(questArchetype.Category) {
+		questArchetype.CharacterTags = models.StringArray{}
+	} else {
+		questArchetype.CharacterTags = normalizeQuestTemplateCharacterTags(requestBody.CharacterTags)
+	}
 	questArchetype.InternalTags = normalizeQuestTemplateInternalTags(requestBody.InternalTags)
 	questArchetype.UpdatedAt = time.Now()
 
@@ -3675,11 +3770,14 @@ func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
 		Name                        string                      `json:"name"`
 		Description                 string                      `json:"description"`
+		Category                    string                      `json:"category"`
 		AcceptanceDialogue          []string                    `json:"acceptanceDialogue"`
 		ImageURL                    string                      `json:"imageUrl"`
 		ZoneID                      *uuid.UUID                  `json:"zoneId"`
 		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
 		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID    *uuid.UUID                  `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID        *uuid.UUID                  `json:"mainStoryNextQuestId"`
 		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
 		DifficultyMode              string                      `json:"difficultyMode"`
 		Difficulty                  *int                        `json:"difficulty"`
@@ -3745,17 +3843,21 @@ func (s *server) createQuest(ctx *gin.Context) {
 	}
 
 	now := time.Now()
+	category := models.NormalizeQuestCategory(requestBody.Category)
 	quest := &models.Quest{
 		ID:                          uuid.New(),
 		CreatedAt:                   now,
 		UpdatedAt:                   now,
 		Name:                        requestBody.Name,
 		Description:                 requestBody.Description,
+		Category:                    category,
 		AcceptanceDialogue:          acceptanceDialogue,
 		ImageURL:                    requestBody.ImageURL,
 		ZoneID:                      requestBody.ZoneID,
 		QuestArchetypeID:            requestBody.QuestArchetypeID,
 		QuestGiverCharacterID:       requestBody.QuestGiverCharacterID,
+		MainStoryPreviousQuestID:    requestBody.MainStoryPreviousQuestID,
+		MainStoryNextQuestID:        requestBody.MainStoryNextQuestID,
 		DifficultyMode:              difficultyMode,
 		Difficulty:                  difficulty,
 		MonsterEncounterTargetLevel: monsterEncounterTargetLevel,
@@ -3764,6 +3866,18 @@ func (s *server) createQuest(ctx *gin.Context) {
 		RewardExperience:            0,
 		Gold:                        0,
 		MaterialRewards:             materialRewards,
+	}
+	if !models.IsMainStoryQuestCategory(category) {
+		quest.MainStoryPreviousQuestID = nil
+		quest.MainStoryNextQuestID = nil
+	}
+	if quest.MainStoryPreviousQuestID != nil && *quest.MainStoryPreviousQuestID == quest.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainStoryPreviousQuestId cannot reference this quest"})
+		return
+	}
+	if quest.MainStoryNextQuestID != nil && *quest.MainStoryNextQuestID == quest.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainStoryNextQuestId cannot reference this quest"})
+		return
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
@@ -3869,11 +3983,14 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	var requestBody struct {
 		Name                        string                      `json:"name"`
 		Description                 string                      `json:"description"`
+		Category                    string                      `json:"category"`
 		AcceptanceDialogue          *[]string                   `json:"acceptanceDialogue"`
 		ImageURL                    string                      `json:"imageUrl"`
 		ZoneID                      *uuid.UUID                  `json:"zoneId"`
 		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
 		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID    *uuid.UUID                  `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID        *uuid.UUID                  `json:"mainStoryNextQuestId"`
 		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
 		DifficultyMode              string                      `json:"difficultyMode"`
 		Difficulty                  *int                        `json:"difficulty"`
@@ -3941,6 +4058,9 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	previousQuestGiver := quest.QuestGiverCharacterID
 	quest.Name = requestBody.Name
 	quest.Description = requestBody.Description
+	if strings.TrimSpace(requestBody.Category) != "" {
+		quest.Category = models.NormalizeQuestCategory(requestBody.Category)
+	}
 	if requestBody.AcceptanceDialogue != nil {
 		quest.AcceptanceDialogue = models.StringArray(*requestBody.AcceptanceDialogue)
 	}
@@ -3948,6 +4068,20 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.ZoneID = requestBody.ZoneID
 	quest.QuestArchetypeID = requestBody.QuestArchetypeID
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
+	quest.MainStoryPreviousQuestID = requestBody.MainStoryPreviousQuestID
+	quest.MainStoryNextQuestID = requestBody.MainStoryNextQuestID
+	if !models.IsMainStoryQuestCategory(quest.Category) {
+		quest.MainStoryPreviousQuestID = nil
+		quest.MainStoryNextQuestID = nil
+	}
+	if quest.MainStoryPreviousQuestID != nil && *quest.MainStoryPreviousQuestID == quest.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainStoryPreviousQuestId cannot reference this quest"})
+		return
+	}
+	if quest.MainStoryNextQuestID != nil && *quest.MainStoryNextQuestID == quest.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainStoryNextQuestId cannot reference this quest"})
+		return
+	}
 	quest.DifficultyMode = difficultyMode
 	quest.Difficulty = difficulty
 	quest.MonsterEncounterTargetLevel = monsterEncounterTargetLevel
@@ -4270,6 +4404,8 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
 		Name                        string                              `json:"name"`
 		Description                 string                              `json:"description"`
+		Category                    string                              `json:"category"`
+		QuestGiverCharacterID       *uuid.UUID                          `json:"questGiverCharacterId"`
 		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
 		ImageURL                    string                              `json:"imageUrl"`
 		RootID                      uuid.UUID                           `json:"rootID"`
@@ -4338,10 +4474,22 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	category := models.NormalizeQuestCategory(requestBody.Category)
+	questGiverCharacterID, err := s.normalizeQuestArchetypeQuestGiverCharacterID(
+		ctx,
+		category,
+		requestBody.QuestGiverCharacterID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	questArchType := &models.QuestArchetype{
 		Name:                        name,
 		Description:                 description,
+		Category:                    category,
+		QuestGiverCharacterID:       questGiverCharacterID,
 		AcceptanceDialogue:          acceptanceDialogue,
 		ImageURL:                    requestBody.ImageURL,
 		RootID:                      requestBody.RootID,
@@ -4358,6 +4506,9 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		InternalTags:                normalizeQuestTemplateInternalTags(requestBody.InternalTags),
 		CreatedAt:                   time.Now(),
 		UpdatedAt:                   time.Now(),
+	}
+	if models.IsMainStoryQuestCategory(questArchType.Category) {
+		questArchType.CharacterTags = models.StringArray{}
 	}
 	if requestBody.DefaultGold != nil {
 		questArchType.DefaultGold = *requestBody.DefaultGold
@@ -9811,25 +9962,7 @@ func (s *server) regenerateInventoryItemImage(ctx *gin.Context) {
 		return
 	}
 
-	payload := jobs.GenerateInventoryItemImageTaskPayload{
-		InventoryItemID: item.ID,
-		Name:            item.Name,
-		Description:     item.FlavorText,
-		RarityTier:      item.RarityTier,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
-		errMsg := err.Error()
-		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, map[string]interface{}{
-			"image_generation_status": models.InventoryImageGenerationStatusFailed,
-			"image_generation_error":  errMsg,
-		})
+	if err := s.enqueueInventoryItemImageGeneration(ctx, item.ID, item.Name, item.FlavorText, item.RarityTier); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -11718,14 +11851,20 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 		for i := range match.PointsOfInterest {
 			poi := match.PointsOfInterest[i]
 			hasAvailable := false
+			hasAvailableMainStory := false
 			for j := range poi.Characters {
 				ch := poi.Characters[j]
-				if availability[ch.ID] {
+				if availability[ch.ID].HasAvailableQuest {
 					hasAvailable = true
 				}
-				poi.Characters[j].HasAvailableQuest = availability[ch.ID]
+				if availability[ch.ID].HasAvailableMainStoryQuest {
+					hasAvailableMainStory = true
+				}
+				poi.Characters[j].HasAvailableQuest = availability[ch.ID].HasAvailableQuest
+				poi.Characters[j].HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
 			}
 			match.PointsOfInterest[i].HasAvailableQuest = hasAvailable
+			match.PointsOfInterest[i].HasAvailableMainStoryQuest = hasAvailableMainStory
 		}
 		ctx.JSON(200, match.PointsOfInterest)
 		return
@@ -11744,14 +11883,20 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 	for i := range pointOfInterests {
 		poi := pointOfInterests[i]
 		hasAvailable := false
+		hasAvailableMainStory := false
 		for j := range poi.Characters {
 			ch := poi.Characters[j]
-			if availability[ch.ID] {
+			if availability[ch.ID].HasAvailableQuest {
 				hasAvailable = true
 			}
-			poi.Characters[j].HasAvailableQuest = availability[ch.ID]
+			if availability[ch.ID].HasAvailableMainStoryQuest {
+				hasAvailableMainStory = true
+			}
+			poi.Characters[j].HasAvailableQuest = availability[ch.ID].HasAvailableQuest
+			poi.Characters[j].HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
 		}
 		pointOfInterests[i].HasAvailableQuest = hasAvailable
+		pointOfInterests[i].HasAvailableMainStoryQuest = hasAvailableMainStory
 	}
 	ctx.JSON(200, pointOfInterests)
 }
@@ -12736,6 +12881,14 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 	)
 	healthDeficitDelta := -requestBody.HealthDelta
 	manaDeficitDelta := -requestBody.ManaDelta
+	requestedHealth := "nil"
+	if requestBody.Health != nil {
+		requestedHealth = strconv.Itoa(*requestBody.Health)
+	}
+	requestedMana := "nil"
+	if requestBody.Mana != nil {
+		requestedMana = strconv.Itoa(*requestBody.Mana)
+	}
 	if requestBody.Health != nil {
 		targetHealth := *requestBody.Health
 		if targetHealth < 0 {
@@ -12758,17 +12911,38 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 		targetManaDeficit := maxMana - targetMana
 		manaDeficitDelta = targetManaDeficit - stats.ManaDeficit
 	}
+	log.Printf(
+		"[admin][resources][adjust] user=%s requestedHealth=%s requestedMana=%s healthDelta=%d manaDelta=%d currentHealthDeficit=%d currentManaDeficit=%d effectiveMaxHealth=%d effectiveMaxMana=%d computedHealthDeficitDelta=%d computedManaDeficitDelta=%d",
+		userID,
+		requestedHealth,
+		requestedMana,
+		requestBody.HealthDelta,
+		requestBody.ManaDelta,
+		stats.HealthDeficit,
+		stats.ManaDeficit,
+		maxHealth,
+		maxMana,
+		healthDeficitDelta,
+		manaDeficitDelta,
+	)
 
-	_, err = s.dbClient.UserCharacterStats().AdjustResourceDeficits(
+	updatedStats, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(
 		ctx,
 		userID,
 		healthDeficitDelta,
 		manaDeficitDelta,
 	)
 	if err != nil {
+		log.Printf("[admin][resources][adjust][error] user=%s error=%v", userID, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf(
+		"[admin][resources][adjust][result] user=%s storedHealthDeficit=%d storedManaDeficit=%d",
+		userID,
+		updatedStats.HealthDeficit,
+		updatedStats.ManaDeficit,
+	)
 
 	if len(materialRewards) > 0 {
 		notes := "Granted by admin user tools"
@@ -12911,7 +13085,8 @@ func (s *server) getCharacters(ctx *gin.Context) {
 	for i := range characters {
 		ch := characters[i]
 		if ch != nil {
-			ch.HasAvailableQuest = availability[ch.ID]
+			ch.HasAvailableQuest = availability[ch.ID].HasAvailableQuest
+			ch.HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
 		}
 	}
 
@@ -13477,12 +13652,41 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		actions = filtered
 	}
 
-	if len(actions) > 0 && len(quests) > 0 {
-		questByID := make(map[string]*models.Quest, len(quests))
+	questByID := map[string]*models.Quest{}
+	if len(quests) > 0 {
 		for i := range quests {
 			quest := quests[i]
 			questByID[quest.ID.String()] = &quest
 		}
+	}
+
+	if len(actions) > 0 && len(questByID) > 0 {
+		filtered := actions[:0]
+		for _, action := range actions {
+			if action == nil || action.ActionType != models.ActionTypeGiveQuest {
+				filtered = append(filtered, action)
+				continue
+			}
+			questIDStr := extractActionQuestID(action.Metadata)
+			if questIDStr == "" {
+				filtered = append(filtered, action)
+				continue
+			}
+			quest := questByID[questIDStr]
+			if quest == nil {
+				filtered = append(filtered, action)
+				continue
+			}
+			if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedV2) {
+				log.Printf("getCharacterActions: hiding locked main story quest action=%s questId=%s userId=%s", action.ID, quest.ID, user.ID)
+				continue
+			}
+			filtered = append(filtered, action)
+		}
+		actions = filtered
+	}
+
+	if len(actions) > 0 && len(questByID) > 0 {
 		validStats := map[string]struct{}{
 			"strength":     {},
 			"dexterity":    {},
@@ -13592,6 +13796,7 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			if quest.Name != "" {
 				action.Metadata["questName"] = quest.Name
 			}
+			action.Metadata["questCategory"] = quest.Category
 			if quest.Description != "" {
 				action.Metadata["questDescription"] = quest.Description
 			}

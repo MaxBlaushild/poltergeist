@@ -100,23 +100,11 @@ func (h *userCharacterStatsHandler) AdjustResourceDeficits(
 			return err
 		}
 
-		stats.HealthDeficit += healthDeficitDelta
-		if stats.HealthDeficit < 0 {
-			stats.HealthDeficit = 0
-		}
-		maxHealthDeficit := stats.DerivedMaxHealth()
-		if stats.HealthDeficit > maxHealthDeficit {
-			stats.HealthDeficit = maxHealthDeficit
-		}
-
-		stats.ManaDeficit += manaDeficitDelta
-		if stats.ManaDeficit < 0 {
-			stats.ManaDeficit = 0
-		}
-		maxManaDeficit := stats.DerivedMaxMana()
-		if stats.ManaDeficit > maxManaDeficit {
-			stats.ManaDeficit = maxManaDeficit
-		}
+		// Resource deficits represent absolute missing health/mana. They need to
+		// be able to exceed the raw derived max so equipment/status bonuses and
+		// later max-resource changes still preserve the correct current value.
+		stats.HealthDeficit = applyResourceDeficitDelta(stats.HealthDeficit, healthDeficitDelta)
+		stats.ManaDeficit = applyResourceDeficitDelta(stats.ManaDeficit, manaDeficitDelta)
 
 		stats.UpdatedAt = time.Now()
 		if err := tx.Save(stats).Error; err != nil {
@@ -229,6 +217,14 @@ func defaultCharacterStats(userID uuid.UUID) *models.UserCharacterStats {
 		UnspentPoints:    0,
 		LastLevelAwarded: 1,
 	}
+}
+
+func applyResourceDeficitDelta(current int, delta int) int {
+	current += delta
+	if current < 0 {
+		return 0
+	}
+	return current
 }
 
 func applyLevelAwards(stats *models.UserCharacterStats, currentLevel int) {
