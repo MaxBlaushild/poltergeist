@@ -1,7 +1,7 @@
 import { InventoryItem } from './inventoryItem';
 import { LocationArchetype } from './locationArchetype';
 import { QuestDifficultyMode } from './questDifficulty';
-import { QuestMaterialReward } from './quest';
+import { CharacterRelationshipState, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 import { Character } from './character';
 
@@ -82,6 +82,10 @@ export interface QuestArchetype {
   rewardExperience?: number;
   recurrenceFrequency?: string | null;
   materialRewards?: QuestMaterialReward[];
+  requiredStoryFlags?: string[];
+  setStoryFlags?: string[];
+  clearStoryFlags?: string[];
+  questGiverRelationshipEffects?: CharacterRelationshipState;
   characterTags?: string[];
   internalTags?: string[];
   createdAt: Date;

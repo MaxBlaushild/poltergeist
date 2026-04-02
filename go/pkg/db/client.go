@@ -83,6 +83,9 @@ type client struct {
 	userCharacterStatsHandle             *userCharacterStatsHandler
 	userEquipmentHandle                  *userEquipmentHandler
 	userStatusHandle                     *userStatusHandler
+	userStoryFlagHandle                  *userStoryFlagHandle
+	userCharacterRelationshipHandle      *userCharacterRelationshipHandle
+	storyWorldChangeHandle               *storyWorldChangeHandle
 	monsterStatusHandle                  *monsterStatusHandler
 	userProficiencyHandle                *userProficiencyHandle
 	userZoneReputationHandle             *userZoneReputationHandler
@@ -254,6 +257,9 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		userCharacterStatsHandle:             &userCharacterStatsHandler{db: db},
 		userEquipmentHandle:                  &userEquipmentHandler{db: db},
 		userStatusHandle:                     &userStatusHandler{db: db},
+		userStoryFlagHandle:                  &userStoryFlagHandle{db: db},
+		userCharacterRelationshipHandle:      &userCharacterRelationshipHandle{db: db},
+		storyWorldChangeHandle:               &storyWorldChangeHandle{db: db},
 		monsterStatusHandle:                  &monsterStatusHandler{db: db},
 		userProficiencyHandle:                &userProficiencyHandle{db: db},
 		userZoneReputationHandle:             &userZoneReputationHandler{db: db},
@@ -422,6 +428,18 @@ func (c *client) UserEquipment() UserEquipmentHandle {
 
 func (c *client) UserStatus() UserStatusHandle {
 	return c.userStatusHandle
+}
+
+func (c *client) UserStoryFlag() UserStoryFlagHandle {
+	return c.userStoryFlagHandle
+}
+
+func (c *client) UserCharacterRelationship() UserCharacterRelationshipHandle {
+	return c.userCharacterRelationshipHandle
+}
+
+func (c *client) StoryWorldChange() StoryWorldChangeHandle {
+	return c.storyWorldChangeHandle
 }
 
 func (c *client) MonsterStatus() MonsterStatusHandle {

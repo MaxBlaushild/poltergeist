@@ -244,12 +244,19 @@ func (s *server) materializeMainStorySuggestionDraft(
 		return nil, errInvalid("draft does not contain any beats")
 	}
 
-	beatQuestGivers, err := s.resolveMainStoryBeatQuestGivers(ctx, draft)
+	generatedCharactersByKey, err := s.createMainStoryCharacters(ctx, draft)
 	if err != nil {
 		return nil, err
 	}
 
+	beatQuestGivers, err := s.resolveMainStoryBeatQuestGivers(ctx, draft, generatedCharactersByKey)
+	if err != nil {
+		return nil, err
+	}
+
+	templateID := uuid.New()
 	templateBeats := make(models.MainStoryBeatDrafts, 0, len(draft.Beats))
+	worldChanges := make([]models.StoryWorldChange, 0)
 	for index, beat := range draft.Beats {
 		resolution := beatQuestGivers[index]
 		beat.QuestGiverCharacterKey = resolution.CharacterKey
@@ -263,12 +270,32 @@ func (s *server) materializeMainStorySuggestionDraft(
 		}
 		beat.QuestArchetypeID = &questArchetype.ID
 		beat.QuestArchetypeName = questArchetype.Name
+		resolvedWorldChanges, worldChangeWarnings, err := s.resolveMainStoryBeatWorldChanges(
+			ctx,
+			templateID,
+			&questArchetype.ID,
+			beat,
+			resolution,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(worldChangeWarnings) > 0 {
+			beat.Warnings = append(append(models.StringArray{}, beat.Warnings...), worldChangeWarnings...)
+		}
+		worldChanges = append(worldChanges, resolvedWorldChanges...)
+		if unlockWarnings := s.materializeMainStoryBeatUnlocks(ctx, draft, beat, resolution); len(unlockWarnings) > 0 {
+			beat.Warnings = append(append(models.StringArray{}, beat.Warnings...), unlockWarnings...)
+		}
 		beat.Steps = nil
 		templateBeats = append(templateBeats, beat)
 	}
+	if err := s.applyMainStoryQuestGiverStoryVariants(ctx, templateBeats, beatQuestGivers); err != nil {
+		return nil, err
+	}
 
 	template := &models.MainStoryTemplate{
-		ID:                uuid.New(),
+		ID:                templateID,
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),
 		Name:              draft.Name,
@@ -286,6 +313,9 @@ func (s *server) materializeMainStorySuggestionDraft(
 		Beats:             templateBeats,
 	}
 	if err := s.dbClient.MainStoryTemplate().Create(ctx, template); err != nil {
+		return nil, err
+	}
+	if err := s.dbClient.StoryWorldChange().CreateBatch(ctx, worldChanges); err != nil {
 		return nil, err
 	}
 
@@ -341,11 +371,132 @@ func (s *server) materializeMainStoryBeat(
 	questArchetype.Category = models.QuestCategoryMainStory
 	questArchetype.QuestGiverCharacterID = questGiverCharacterID
 	questArchetype.CharacterTags = models.StringArray{}
+	questArchetype.RequiredStoryFlags = normalizeStoryFlagKeys([]string(beat.RequiredStoryFlags))
+	questArchetype.SetStoryFlags = normalizeStoryFlagKeys([]string(beat.SetStoryFlags))
+	questArchetype.ClearStoryFlags = normalizeStoryFlagKeys([]string(beat.ClearStoryFlags))
+	questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(beat.QuestGiverRelationshipEffects)
 	questArchetype.UpdatedAt = time.Now()
 	if err := s.dbClient.QuestArchetype().Update(ctx, questArchetype); err != nil {
 		return nil, err
 	}
 	return questArchetype, nil
+}
+
+func mainStoryBeatCompletionFlag(beat models.MainStoryBeatDraft) string {
+	for _, flag := range beat.SetStoryFlags {
+		normalized := strings.TrimSpace(strings.ToLower(flag))
+		if normalized == "" {
+			continue
+		}
+		if strings.Contains(normalized, "_beat_") && strings.HasSuffix(normalized, "_complete") {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func buildMainStoryQuestGiverStoryVariant(
+	beat models.MainStoryBeatDraft,
+) *models.CharacterStoryVariant {
+	completionFlag := mainStoryBeatCompletionFlag(beat)
+	if completionFlag == "" {
+		return nil
+	}
+	description := strings.TrimSpace(beat.QuestGiverAfterDescription)
+	dialogueLines := make(models.DialogueSequence, 0, len(beat.QuestGiverAfterDialogue))
+	for _, line := range beat.QuestGiverAfterDialogue {
+		text := strings.TrimSpace(line)
+		if text == "" {
+			continue
+		}
+		dialogueLines = append(dialogueLines, models.DialogueMessage{
+			Speaker: "character",
+			Text:    text,
+			Order:   len(dialogueLines),
+		})
+	}
+	if description == "" && len(dialogueLines) == 0 {
+		return nil
+	}
+	return &models.CharacterStoryVariant{
+		Priority:           1000 + max(0, beat.OrderIndex),
+		RequiredStoryFlags: models.StringArray{completionFlag},
+		Description:        description,
+		Dialogue:           dialogueLines,
+	}
+}
+
+func replaceCharacterStoryVariantForFlag(
+	existing models.CharacterStoryVariants,
+	flag string,
+	replacement *models.CharacterStoryVariant,
+) models.CharacterStoryVariants {
+	filtered := make(models.CharacterStoryVariants, 0, len(existing)+1)
+	for _, variant := range existing {
+		match := false
+		for _, requiredFlag := range variant.RequiredStoryFlags {
+			if strings.TrimSpace(strings.ToLower(requiredFlag)) == flag {
+				match = true
+				break
+			}
+		}
+		if match {
+			continue
+		}
+		filtered = append(filtered, variant)
+	}
+	if replacement != nil {
+		filtered = append(filtered, *replacement)
+	}
+	return filtered
+}
+
+func (s *server) applyMainStoryQuestGiverStoryVariants(
+	ctx context.Context,
+	beats models.MainStoryBeatDrafts,
+	resolutions []mainStoryBeatQuestGiverResolution,
+) error {
+	if len(beats) == 0 || len(resolutions) == 0 {
+		return nil
+	}
+	type characterVariantUpdate struct {
+		character *models.Character
+		variants  models.CharacterStoryVariants
+	}
+	updatesByCharacterID := map[uuid.UUID]*characterVariantUpdate{}
+	for index, beat := range beats {
+		if index >= len(resolutions) || resolutions[index].Character == nil {
+			continue
+		}
+		variant := buildMainStoryQuestGiverStoryVariant(beat)
+		if variant == nil {
+			continue
+		}
+		character := resolutions[index].Character
+		completionFlag := mainStoryBeatCompletionFlag(beat)
+		entry, ok := updatesByCharacterID[character.ID]
+		if !ok {
+			entry = &characterVariantUpdate{
+				character: character,
+				variants:  append(models.CharacterStoryVariants{}, character.StoryVariants...),
+			}
+			updatesByCharacterID[character.ID] = entry
+		}
+		entry.variants = replaceCharacterStoryVariantForFlag(
+			entry.variants,
+			completionFlag,
+			variant,
+		)
+	}
+	for characterID, entry := range updatesByCharacterID {
+		normalized := normalizeCharacterStoryVariants([]models.CharacterStoryVariant(entry.variants))
+		if err := s.dbClient.Character().UpdateFields(ctx, characterID, map[string]interface{}{
+			"story_variants": normalized,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type mainStoryBeatQuestGiverResolution struct {
@@ -356,14 +507,19 @@ type mainStoryBeatQuestGiverResolution struct {
 func (s *server) resolveMainStoryBeatQuestGivers(
 	ctx context.Context,
 	draft *models.MainStorySuggestionDraft,
+	generatedByKey map[string]*models.Character,
 ) ([]mainStoryBeatQuestGiverResolution, error) {
 	if draft == nil {
 		return nil, errRequired("draft")
 	}
-	characters, err := s.dbClient.Character().FindAll(ctx)
-	if err != nil {
-		return nil, err
+	generatedCharacters := make([]*models.Character, 0, len(generatedByKey))
+	for _, character := range generatedByKey {
+		if character == nil {
+			continue
+		}
+		generatedCharacters = append(generatedCharacters, character)
 	}
+	var existingCharacters []*models.Character
 
 	indexes := make([]int, 0, len(draft.Beats))
 	for index := range draft.Beats {
@@ -386,6 +542,17 @@ func (s *server) resolveMainStoryBeatQuestGivers(
 		beat := draft.Beats[beatIndex]
 		characterKey := resolveMainStoryBeatQuestGiverKey(beat, assignedByKey)
 		if characterKey != "" {
+			if generatedCharacter, ok := generatedByKey[characterKey]; ok && generatedCharacter != nil {
+				assignedByKey[characterKey] = generatedCharacter
+				usedCharacterIDs[generatedCharacter.ID] = characterKey
+				resolutions[beatIndex] = mainStoryBeatQuestGiverResolution{
+					CharacterKey: characterKey,
+					Character:    generatedCharacter,
+				}
+				continue
+			}
+		}
+		if characterKey != "" {
 			if assignedCharacter, ok := assignedByKey[characterKey]; ok && assignedCharacter != nil {
 				resolutions[beatIndex] = mainStoryBeatQuestGiverResolution{
 					CharacterKey: characterKey,
@@ -395,7 +562,17 @@ func (s *server) resolveMainStoryBeatQuestGivers(
 			}
 		}
 
-		candidates := rankedMainStoryQuestGiverCandidates(characters, beat, characterKey)
+		candidates := rankedMainStoryQuestGiverCandidates(generatedCharacters, beat, characterKey)
+		if len(candidates) == 0 {
+			if existingCharacters == nil {
+				var err error
+				existingCharacters, err = s.dbClient.Character().FindAll(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			candidates = rankedMainStoryQuestGiverCandidates(existingCharacters, beat, characterKey)
+		}
 		if len(candidates) == 0 {
 			return nil, fmt.Errorf(
 				"beat %q could not resolve a quest giver for story key %q",

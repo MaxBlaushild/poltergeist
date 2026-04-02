@@ -177,6 +177,68 @@ class _CharacterPanelState extends State<CharacterPanel> {
     return const Color(0xFFA35B4B);
   }
 
+  Widget _buildRelationshipSummary(BuildContext context) {
+    final relationship = widget.character.relationship;
+    if (relationship == null || relationship.isZero) {
+      return const SizedBox.shrink();
+    }
+
+    final entries = <String>[
+      if (relationship.trust != 0)
+        'Trust ${relationship.trust > 0 ? '+' : ''}${relationship.trust}',
+      if (relationship.respect != 0)
+        'Respect ${relationship.respect > 0 ? '+' : ''}${relationship.respect}',
+      if (relationship.fear != 0)
+        'Fear ${relationship.fear > 0 ? '+' : ''}${relationship.fear}',
+      if (relationship.debt != 0)
+        'Debt ${relationship.debt > 0 ? '+' : ''}${relationship.debt}',
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Relationship',
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: entries
+                .map(
+                  (entry) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Text(entry),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildQuestDifficultySummary(BuildContext context, Quest quest) {
     final statsProvider = context.watch<CharacterStatsProvider>();
     final avgDifficulty = _averageNodeDifficulty(quest);
@@ -789,6 +851,11 @@ class _CharacterPanelState extends State<CharacterPanel> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
+                  if (widget.character.relationship != null &&
+                      !widget.character.relationship!.isZero) ...[
+                    const SizedBox(height: 12),
+                    _buildRelationshipSummary(context),
+                  ],
                 ],
               ),
             ),
@@ -811,6 +878,47 @@ class _CharacterPanelState extends State<CharacterPanel> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (widget.character.hasAvailableMainStoryQuest)
+                                Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(bottom: 14),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF7A1823),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFE7C36A),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Main Story',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: const Color(0xFFF8EBD0),
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        '${widget.character.name} is carrying the next main story thread for this district.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ...questActions.map((action) {
                                 final quest = _questForAction(action);
                                 final questReadyToTurnIn = _questReadyToTurnIn(

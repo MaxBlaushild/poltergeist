@@ -2904,8 +2904,16 @@ func (s *server) getMonsterEncounters(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
+		if !monsterEncounterAvailableForStoryFlags(&encounters[i], activeStoryFlags) {
+			continue
+		}
 		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i], 1, false)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2980,6 +2988,15 @@ func (s *server) getMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !monsterEncounterAvailableForStoryFlags(encounter, activeStoryFlags) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+		return
+	}
 	userLevel, err := s.currentPartyMaxLevel(ctx, user)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -3012,6 +3029,11 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	defeatedEncounterIDs, err := s.dbClient.UserMonsterEncounterVictory().
 		FindEncounterIDsByUserAndZone(ctx, user.ID, zoneID)
 	if err != nil {
@@ -3030,6 +3052,9 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
+		if !monsterEncounterAvailableForStoryFlags(&encounters[i], activeStoryFlags) {
+			continue
+		}
 		if _, defeated := defeatedSet[encounters[i].ID]; defeated {
 			continue
 		}
@@ -3135,6 +3160,7 @@ func (s *server) updateMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	encounter.RequiredStoryFlags = existing.RequiredStoryFlags
 	if strings.TrimSpace(requestBody.PointOfInterestID) == "" &&
 		existing.PointOfInterestID != nil &&
 		requestBody.Latitude == existing.Latitude &&
@@ -3322,6 +3348,15 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 				return
 			}
 			if !monsterEncounterVisibleToUser(user.ID, encounter) {
+				ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+				return
+			}
+			activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if !monsterEncounterAvailableForStoryFlags(encounter, activeStoryFlags) {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
 				return
 			}

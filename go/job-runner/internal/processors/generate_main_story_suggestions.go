@@ -79,6 +79,62 @@ Return JSON only:
           "hook": "one line hook",
           "description": "quest archetype description",
           "acceptanceDialogue": ["line 1", "line 2", "line 3"],
+          "requiredStoryFlags": ["optional_flag"],
+          "setStoryFlags": ["optional_flag"],
+          "clearStoryFlags": ["optional_flag"],
+          "questGiverRelationshipEffects": {
+            "trust": 1,
+            "respect": 0,
+            "fear": 0,
+            "debt": -1
+          },
+          "worldChanges": [
+            {
+              "type": "show_poi_text",
+              "targetKey": "quest_giver_poi",
+              "description": "optional one-paragraph change to the surrounding place after this beat",
+              "clue": "optional short clue update"
+            },
+            {
+              "type": "move_character",
+              "targetKey": "quest_giver",
+              "destinationHint": "brief destination vibe like chapel refuge or hidden back room"
+            }
+          ],
+          "unlockedScenarios": [
+            {
+              "name": "string",
+              "prompt": "open-ended scenario prompt unlocked after this beat",
+              "pointOfInterestHint": "optional nearby place vibe",
+              "internalTags": ["tag_a", "tag_b"],
+              "difficulty": 2
+            }
+          ],
+          "unlockedChallenges": [
+            {
+              "question": "concrete enjoyable task prompt",
+              "description": "what the player actually does on site",
+              "pointOfInterestHint": "optional nearby place vibe",
+              "submissionType": "photo|text|video",
+              "proficiency": "optional short proficiency",
+              "statTags": ["strength", "wisdom"],
+              "difficulty": 2
+            }
+          ],
+          "unlockedMonsterEncounters": [
+            {
+              "name": "string",
+              "description": "what threat appears in the district after this beat",
+              "pointOfInterestHint": "optional nearby place vibe",
+              "encounterType": "monster|boss",
+              "monsterCount": 2,
+              "encounterTone": ["urban", "predatory"],
+              "monsterTemplateHints": ["feral choir brute", "ash-fed scavenger"],
+              "targetLevel": 8
+            }
+          ],
+          "questGiverAfterDescription": "optional one-paragraph ambient change for the quest giver after this beat is complete",
+          "questGiverAfterDialogue": ["line 1", "line 2"],
           "characterTags": ["tag_a", "tag_b"],
           "internalTags": ["tag_a", "tag_b"],
           "difficultyMode": "scale|fixed",
@@ -131,10 +187,19 @@ Rules:
 - Investigation, negotiation, helping someone, or “what do you do?” situations should become scenarios, not challenges.
 - Every campaign must feel district-specific and grounded in urban fantasy.
 - Use lowercase snake_case tags/keys for themeTags, internalTags, factionKeys, characterKeys, revealKeys, requiredZoneTags, characterTags, and preferredContentMix.
+- Use lowercase snake_case for requiredStoryFlags, setStoryFlags, and clearStoryFlags when you include them.
+- questGiverRelationshipEffects should use sparse, small integers between -3 and 3 and only when the beat meaningfully changes how that NPC feels about the player.
+- worldChanges should be sparse and legible. Use only move_character or show_poi_text in this format.
+- show_poi_text should usually target quest_giver_poi and describe how the place changes after the beat.
+- move_character should usually target quest_giver and use destinationHint to describe the kind of place they relocate to.
+- unlockedScenarios should be sparse, open-ended, and feel like optional story fallout the player can meaningfully engage with after the beat.
+- unlockedChallenges should be concrete, fun, gradeable real-world tasks that make sense at the hinted location.
+- unlockedMonsterEncounters should feel like consequences or escalating threats caused by the beat, not random filler combat.
 - Every beat must include 1-3 requiredZoneTags.
 - Every beat must include at least one requiredLocationArchetypeName.
 - Across the full campaign, include each required location archetype at least once when a required list is provided.
 - Vary the content mix across beats. Do not make every beat combat-heavy.
+- questGiverAfterDialogue should feel like reactive NPC follow-up dialogue that acknowledges what changed after this beat.
 `
 
 type mainStorySuggestionResponse struct {
@@ -158,35 +223,85 @@ type mainStorySuggestionDraftPayload struct {
 }
 
 type mainStorySuggestionBeatPayload struct {
-	OrderIndex                     int                                   `json:"orderIndex"`
-	Act                            int                                   `json:"act"`
-	StoryRole                      string                                `json:"storyRole"`
-	ChapterTitle                   string                                `json:"chapterTitle"`
-	ChapterSummary                 string                                `json:"chapterSummary"`
-	Purpose                        string                                `json:"purpose"`
-	WhatChanges                    string                                `json:"whatChanges"`
-	IntroducedCharacterKeys        []string                              `json:"introducedCharacterKeys"`
-	RequiredCharacterKeys          []string                              `json:"requiredCharacterKeys"`
-	IntroducedRevealKeys           []string                              `json:"introducedRevealKeys"`
-	RequiredRevealKeys             []string                              `json:"requiredRevealKeys"`
-	RequiredZoneTags               []string                              `json:"requiredZoneTags"`
-	RequiredLocationArchetypeNames []string                              `json:"requiredLocationArchetypeNames"`
-	PreferredContentMix            []string                              `json:"preferredContentMix"`
-	QuestGiverCharacterKey         string                                `json:"questGiverCharacterKey"`
-	Name                           string                                `json:"name"`
-	Hook                           string                                `json:"hook"`
-	Description                    string                                `json:"description"`
-	AcceptanceDialogue             []string                              `json:"acceptanceDialogue"`
-	CharacterTags                  []string                              `json:"characterTags"`
-	InternalTags                   []string                              `json:"internalTags"`
-	DifficultyMode                 string                                `json:"difficultyMode"`
-	Difficulty                     int                                   `json:"difficulty"`
-	MonsterEncounterTargetLevel    int                                   `json:"monsterEncounterTargetLevel"`
-	WhyThisScales                  string                                `json:"whyThisScales"`
-	ChallengeTemplateSeeds         []string                              `json:"challengeTemplateSeeds"`
-	ScenarioTemplateSeeds          []string                              `json:"scenarioTemplateSeeds"`
-	MonsterTemplateSeeds           []string                              `json:"monsterTemplateSeeds"`
-	Steps                          []questArchetypeSuggestionStepPayload `json:"steps"`
+	OrderIndex                     int                                     `json:"orderIndex"`
+	Act                            int                                     `json:"act"`
+	StoryRole                      string                                  `json:"storyRole"`
+	ChapterTitle                   string                                  `json:"chapterTitle"`
+	ChapterSummary                 string                                  `json:"chapterSummary"`
+	Purpose                        string                                  `json:"purpose"`
+	WhatChanges                    string                                  `json:"whatChanges"`
+	IntroducedCharacterKeys        []string                                `json:"introducedCharacterKeys"`
+	RequiredCharacterKeys          []string                                `json:"requiredCharacterKeys"`
+	IntroducedRevealKeys           []string                                `json:"introducedRevealKeys"`
+	RequiredRevealKeys             []string                                `json:"requiredRevealKeys"`
+	RequiredZoneTags               []string                                `json:"requiredZoneTags"`
+	RequiredLocationArchetypeNames []string                                `json:"requiredLocationArchetypeNames"`
+	PreferredContentMix            []string                                `json:"preferredContentMix"`
+	QuestGiverCharacterKey         string                                  `json:"questGiverCharacterKey"`
+	Name                           string                                  `json:"name"`
+	Hook                           string                                  `json:"hook"`
+	Description                    string                                  `json:"description"`
+	AcceptanceDialogue             []string                                `json:"acceptanceDialogue"`
+	RequiredStoryFlags             []string                                `json:"requiredStoryFlags"`
+	SetStoryFlags                  []string                                `json:"setStoryFlags"`
+	ClearStoryFlags                []string                                `json:"clearStoryFlags"`
+	QuestGiverRelationshipEffects  models.CharacterRelationshipState       `json:"questGiverRelationshipEffects"`
+	WorldChanges                   []mainStorySuggestionWorldChangePayload `json:"worldChanges"`
+	UnlockedScenarios              []mainStorySuggestionScenarioPayload    `json:"unlockedScenarios"`
+	UnlockedChallenges             []mainStorySuggestionChallengePayload   `json:"unlockedChallenges"`
+	UnlockedMonsterEncounters      []mainStorySuggestionEncounterPayload   `json:"unlockedMonsterEncounters"`
+	QuestGiverAfterDescription     string                                  `json:"questGiverAfterDescription"`
+	QuestGiverAfterDialogue        []string                                `json:"questGiverAfterDialogue"`
+	CharacterTags                  []string                                `json:"characterTags"`
+	InternalTags                   []string                                `json:"internalTags"`
+	DifficultyMode                 string                                  `json:"difficultyMode"`
+	Difficulty                     int                                     `json:"difficulty"`
+	MonsterEncounterTargetLevel    int                                     `json:"monsterEncounterTargetLevel"`
+	WhyThisScales                  string                                  `json:"whyThisScales"`
+	ChallengeTemplateSeeds         []string                                `json:"challengeTemplateSeeds"`
+	ScenarioTemplateSeeds          []string                                `json:"scenarioTemplateSeeds"`
+	MonsterTemplateSeeds           []string                                `json:"monsterTemplateSeeds"`
+	Steps                          []questArchetypeSuggestionStepPayload   `json:"steps"`
+}
+
+type mainStorySuggestionWorldChangePayload struct {
+	Type                string   `json:"type"`
+	TargetKey           string   `json:"targetKey"`
+	CharacterKey        string   `json:"characterKey"`
+	PointOfInterestHint string   `json:"pointOfInterestHint"`
+	DestinationHint     string   `json:"destinationHint"`
+	ZoneTags            []string `json:"zoneTags"`
+	Description         string   `json:"description"`
+	Clue                string   `json:"clue"`
+}
+
+type mainStorySuggestionScenarioPayload struct {
+	Name                string   `json:"name"`
+	Prompt              string   `json:"prompt"`
+	PointOfInterestHint string   `json:"pointOfInterestHint"`
+	InternalTags        []string `json:"internalTags"`
+	Difficulty          int      `json:"difficulty"`
+}
+
+type mainStorySuggestionChallengePayload struct {
+	Question            string   `json:"question"`
+	Description         string   `json:"description"`
+	PointOfInterestHint string   `json:"pointOfInterestHint"`
+	SubmissionType      string   `json:"submissionType"`
+	Proficiency         string   `json:"proficiency"`
+	StatTags            []string `json:"statTags"`
+	Difficulty          int      `json:"difficulty"`
+}
+
+type mainStorySuggestionEncounterPayload struct {
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	PointOfInterestHint  string   `json:"pointOfInterestHint"`
+	EncounterType        string   `json:"encounterType"`
+	MonsterCount         int      `json:"monsterCount"`
+	EncounterTone        []string `json:"encounterTone"`
+	MonsterTemplateHints []string `json:"monsterTemplateHints"`
+	TargetLevel          int      `json:"targetLevel"`
 }
 
 type GenerateMainStorySuggestionsProcessor struct {
@@ -364,6 +479,7 @@ func sanitizeMainStorySuggestionDraft(
 	job *models.MainStorySuggestionJob,
 ) *models.MainStorySuggestionDraft {
 	now := time.Now()
+	draftID := uuid.New()
 	warnings := models.StringArray{}
 	beats := make(models.MainStoryBeatDrafts, 0, len(payload.Beats))
 	usedRequiredLocations := map[uuid.UUID]struct{}{}
@@ -407,9 +523,11 @@ func sanitizeMainStorySuggestionDraft(
 		premise = "A district-scale urban fantasy mystery unfolds."
 		warnings = append(warnings, "premise was empty and replaced with a fallback")
 	}
+	flagPrefix := buildMainStoryFlagPrefix(payload.Name, draftID)
+	beats = applyMainStoryBeatAutoFlags(beats, flagPrefix)
 
 	return &models.MainStorySuggestionDraft{
-		ID:                uuid.New(),
+		ID:                draftID,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		Status:            models.MainStorySuggestionDraftStatusSuggested,
@@ -486,37 +604,234 @@ func sanitizeMainStorySuggestionBeat(
 	}
 
 	return models.MainStoryBeatDraft{
-		OrderIndex:                   orderIndex,
-		Act:                          act,
-		StoryRole:                    strings.TrimSpace(strings.ToLower(payload.StoryRole)),
-		ChapterTitle:                 strings.TrimSpace(payload.ChapterTitle),
-		ChapterSummary:               strings.TrimSpace(payload.ChapterSummary),
-		Purpose:                      strings.TrimSpace(payload.Purpose),
-		WhatChanges:                  strings.TrimSpace(payload.WhatChanges),
-		IntroducedCharacterKeys:      normalizeSuggestionTags(payload.IntroducedCharacterKeys),
-		RequiredCharacterKeys:        normalizeSuggestionTags(payload.RequiredCharacterKeys),
-		IntroducedRevealKeys:         normalizeSuggestionTags(payload.IntroducedRevealKeys),
-		RequiredRevealKeys:           normalizeSuggestionTags(payload.RequiredRevealKeys),
-		RequiredZoneTags:             normalizeSuggestionTags(payload.RequiredZoneTags),
-		RequiredLocationArchetypeIDs: requiredLocationIDs,
-		PreferredContentMix:          normalizeSuggestionTags(payload.PreferredContentMix),
-		QuestGiverCharacterKey:       sanitizeMainStoryQuestGiverCharacterKey(payload),
-		Name:                         name,
-		Hook:                         strings.TrimSpace(payload.Hook),
-		Description:                  strings.TrimSpace(payload.Description),
-		AcceptanceDialogue:           normalizeSuggestionLines(payload.AcceptanceDialogue),
-		CharacterTags:                normalizeSuggestionTags(payload.CharacterTags),
-		InternalTags:                 normalizeSuggestionTags(payload.InternalTags),
-		DifficultyMode:               difficultyMode,
-		Difficulty:                   difficulty,
-		MonsterEncounterTargetLevel:  monsterLevel,
-		WhyThisScales:                strings.TrimSpace(payload.WhyThisScales),
-		Steps:                        steps,
-		ChallengeTemplateSeeds:       normalizeSuggestionLines(payload.ChallengeTemplateSeeds),
-		ScenarioTemplateSeeds:        normalizeSuggestionLines(payload.ScenarioTemplateSeeds),
-		MonsterTemplateSeeds:         normalizeSuggestionLines(payload.MonsterTemplateSeeds),
-		Warnings:                     normalizeSuggestionLines(warnings),
+		OrderIndex:                    orderIndex,
+		Act:                           act,
+		StoryRole:                     strings.TrimSpace(strings.ToLower(payload.StoryRole)),
+		ChapterTitle:                  strings.TrimSpace(payload.ChapterTitle),
+		ChapterSummary:                strings.TrimSpace(payload.ChapterSummary),
+		Purpose:                       strings.TrimSpace(payload.Purpose),
+		WhatChanges:                   strings.TrimSpace(payload.WhatChanges),
+		IntroducedCharacterKeys:       normalizeSuggestionTags(payload.IntroducedCharacterKeys),
+		RequiredCharacterKeys:         normalizeSuggestionTags(payload.RequiredCharacterKeys),
+		IntroducedRevealKeys:          normalizeSuggestionTags(payload.IntroducedRevealKeys),
+		RequiredRevealKeys:            normalizeSuggestionTags(payload.RequiredRevealKeys),
+		RequiredZoneTags:              normalizeSuggestionTags(payload.RequiredZoneTags),
+		RequiredLocationArchetypeIDs:  requiredLocationIDs,
+		PreferredContentMix:           normalizeSuggestionTags(payload.PreferredContentMix),
+		QuestGiverCharacterKey:        sanitizeMainStoryQuestGiverCharacterKey(payload),
+		Name:                          name,
+		Hook:                          strings.TrimSpace(payload.Hook),
+		Description:                   strings.TrimSpace(payload.Description),
+		AcceptanceDialogue:            normalizeSuggestionLines(payload.AcceptanceDialogue),
+		RequiredStoryFlags:            normalizeSuggestionTags(payload.RequiredStoryFlags),
+		SetStoryFlags:                 normalizeSuggestionTags(payload.SetStoryFlags),
+		ClearStoryFlags:               normalizeSuggestionTags(payload.ClearStoryFlags),
+		QuestGiverRelationshipEffects: normalizeCharacterRelationshipState(payload.QuestGiverRelationshipEffects),
+		WorldChanges:                  sanitizeMainStoryWorldChanges(payload.WorldChanges),
+		UnlockedScenarios:             sanitizeMainStoryUnlockedScenarios(payload.UnlockedScenarios),
+		UnlockedChallenges:            sanitizeMainStoryUnlockedChallenges(payload.UnlockedChallenges),
+		UnlockedMonsterEncounters:     sanitizeMainStoryUnlockedEncounters(payload.UnlockedMonsterEncounters),
+		QuestGiverAfterDescription:    strings.TrimSpace(payload.QuestGiverAfterDescription),
+		QuestGiverAfterDialogue:       normalizeSuggestionLines(payload.QuestGiverAfterDialogue),
+		CharacterTags:                 normalizeSuggestionTags(payload.CharacterTags),
+		InternalTags:                  normalizeSuggestionTags(payload.InternalTags),
+		DifficultyMode:                difficultyMode,
+		Difficulty:                    difficulty,
+		MonsterEncounterTargetLevel:   monsterLevel,
+		WhyThisScales:                 strings.TrimSpace(payload.WhyThisScales),
+		Steps:                         steps,
+		ChallengeTemplateSeeds:        normalizeSuggestionLines(payload.ChallengeTemplateSeeds),
+		ScenarioTemplateSeeds:         normalizeSuggestionLines(payload.ScenarioTemplateSeeds),
+		MonsterTemplateSeeds:          normalizeSuggestionLines(payload.MonsterTemplateSeeds),
+		Warnings:                      normalizeSuggestionLines(warnings),
 	}
+}
+
+func sanitizeMainStoryWorldChanges(
+	payloads []mainStorySuggestionWorldChangePayload,
+) []models.MainStoryWorldChange {
+	changes := make([]models.MainStoryWorldChange, 0, len(payloads))
+	for _, payload := range payloads {
+		changeType := models.NormalizeStoryWorldChangeType(
+			strings.TrimSpace(strings.ToLower(payload.Type)),
+		)
+		if changeType == "" {
+			continue
+		}
+		targetKey := strings.TrimSpace(strings.ToLower(payload.TargetKey))
+		if targetKey == "" {
+			switch changeType {
+			case models.StoryWorldChangeTypeMoveCharacter:
+				targetKey = "quest_giver"
+			case models.StoryWorldChangeTypeShowPOIText:
+				targetKey = "quest_giver_poi"
+			}
+		}
+		changes = append(changes, models.MainStoryWorldChange{
+			Type:                changeType,
+			TargetKey:           targetKey,
+			CharacterKey:        strings.TrimSpace(strings.ToLower(payload.CharacterKey)),
+			PointOfInterestHint: strings.TrimSpace(payload.PointOfInterestHint),
+			DestinationHint:     strings.TrimSpace(payload.DestinationHint),
+			ZoneTags:            normalizeSuggestionTags(payload.ZoneTags),
+			Description:         strings.TrimSpace(payload.Description),
+			Clue:                strings.TrimSpace(payload.Clue),
+		})
+	}
+	return changes
+}
+
+func sanitizeMainStoryUnlockedScenarios(
+	payloads []mainStorySuggestionScenarioPayload,
+) []models.MainStoryUnlockedScenario {
+	out := make([]models.MainStoryUnlockedScenario, 0, len(payloads))
+	for _, payload := range payloads {
+		prompt := strings.TrimSpace(payload.Prompt)
+		if prompt == "" {
+			continue
+		}
+		out = append(out, models.MainStoryUnlockedScenario{
+			Name:                strings.TrimSpace(payload.Name),
+			Prompt:              prompt,
+			PointOfInterestHint: strings.TrimSpace(payload.PointOfInterestHint),
+			InternalTags:        normalizeSuggestionTags(payload.InternalTags),
+			Difficulty:          models.NormalizeQuestDifficulty(payload.Difficulty),
+		})
+	}
+	return out
+}
+
+func sanitizeMainStoryUnlockedChallenges(
+	payloads []mainStorySuggestionChallengePayload,
+) []models.MainStoryUnlockedChallenge {
+	out := make([]models.MainStoryUnlockedChallenge, 0, len(payloads))
+	for _, payload := range payloads {
+		question := strings.TrimSpace(payload.Question)
+		description := strings.TrimSpace(payload.Description)
+		if question == "" || description == "" {
+			continue
+		}
+		submissionType := models.QuestNodeSubmissionType(strings.TrimSpace(strings.ToLower(payload.SubmissionType)))
+		if !submissionType.IsValid() {
+			submissionType = models.DefaultQuestNodeSubmissionType()
+		}
+		var proficiency *string
+		if trimmed := strings.TrimSpace(payload.Proficiency); trimmed != "" {
+			proficiency = &trimmed
+		}
+		out = append(out, models.MainStoryUnlockedChallenge{
+			Question:            question,
+			Description:         description,
+			PointOfInterestHint: strings.TrimSpace(payload.PointOfInterestHint),
+			SubmissionType:      submissionType,
+			Proficiency:         proficiency,
+			StatTags:            normalizeSuggestionTags(payload.StatTags),
+			Difficulty:          models.NormalizeQuestDifficulty(payload.Difficulty),
+		})
+	}
+	return out
+}
+
+func sanitizeMainStoryUnlockedEncounters(
+	payloads []mainStorySuggestionEncounterPayload,
+) []models.MainStoryUnlockedEncounter {
+	out := make([]models.MainStoryUnlockedEncounter, 0, len(payloads))
+	for _, payload := range payloads {
+		name := strings.TrimSpace(payload.Name)
+		description := strings.TrimSpace(payload.Description)
+		if name == "" || description == "" {
+			continue
+		}
+		out = append(out, models.MainStoryUnlockedEncounter{
+			Name:                 name,
+			Description:          description,
+			PointOfInterestHint:  strings.TrimSpace(payload.PointOfInterestHint),
+			EncounterType:        models.NormalizeMonsterEncounterType(payload.EncounterType),
+			MonsterCount:         maxInt(1, minInt(4, payload.MonsterCount)),
+			EncounterTone:        normalizeSuggestionTags(payload.EncounterTone),
+			MonsterTemplateHints: normalizeSuggestionLines(payload.MonsterTemplateHints),
+			TargetLevel:          models.NormalizeMonsterEncounterTargetLevel(payload.TargetLevel),
+		})
+	}
+	return out
+}
+
+func buildMainStoryFlagPrefix(name string, draftID uuid.UUID) string {
+	slug := strings.ToLower(strings.TrimSpace(name))
+	slug = strings.ReplaceAll(slug, "'", "")
+	replacer := strings.NewReplacer(
+		" ", "_",
+		"-", "_",
+		"/", "_",
+		".", "_",
+		",", "_",
+		":", "_",
+		";", "_",
+	)
+	slug = replacer.Replace(slug)
+	for strings.Contains(slug, "__") {
+		slug = strings.ReplaceAll(slug, "__", "_")
+	}
+	slug = strings.Trim(slug, "_")
+	if slug == "" {
+		slug = "campaign"
+	}
+	return fmt.Sprintf("main_story_%s_%s", draftID.String()[:8], slug)
+}
+
+func applyMainStoryBeatAutoFlags(
+	beats models.MainStoryBeatDrafts,
+	flagPrefix string,
+) models.MainStoryBeatDrafts {
+	if len(beats) == 0 {
+		return beats
+	}
+	sorted := append(models.MainStoryBeatDrafts{}, beats...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].OrderIndex != sorted[j].OrderIndex {
+			return sorted[i].OrderIndex < sorted[j].OrderIndex
+		}
+		return i < j
+	})
+	var previousCompletionFlag string
+	for index := range sorted {
+		completionFlag := fmt.Sprintf(
+			"%s_beat_%02d_complete",
+			flagPrefix,
+			maxInt(1, sorted[index].OrderIndex),
+		)
+		phaseFlag := fmt.Sprintf(
+			"%s_phase_%d_reached",
+			flagPrefix,
+			maxInt(1, sorted[index].Act),
+		)
+		required := append([]string{}, []string(sorted[index].RequiredStoryFlags)...)
+		if previousCompletionFlag != "" {
+			required = append(required, previousCompletionFlag)
+		}
+		sorted[index].RequiredStoryFlags = normalizeSuggestionTags(required)
+		sorted[index].SetStoryFlags = normalizeSuggestionTags(
+			append(
+				append([]string{}, []string(sorted[index].SetStoryFlags)...),
+				completionFlag,
+				phaseFlag,
+			),
+		)
+		sorted[index].ClearStoryFlags = normalizeSuggestionTags(
+			[]string(sorted[index].ClearStoryFlags),
+		)
+		if len(sorted[index].QuestGiverAfterDialogue) == 0 {
+			fallbackLine := strings.TrimSpace(sorted[index].WhatChanges)
+			if fallbackLine == "" {
+				fallbackLine = strings.TrimSpace(sorted[index].ChapterSummary)
+			}
+			if fallbackLine != "" {
+				sorted[index].QuestGiverAfterDialogue = models.StringArray{fallbackLine}
+			}
+		}
+		previousCompletionFlag = completionFlag
+	}
+	return sorted
 }
 
 func sanitizeMainStoryQuestGiverCharacterKey(

@@ -57,6 +57,7 @@ func (h *monsterEncounterHandle) Create(ctx context.Context, encounter *models.M
 		encounter.CreatedAt = now
 	}
 	encounter.UpdatedAt = now
+	encounter.RequiredStoryFlags = normalizeJSONStringArray(encounter.RequiredStoryFlags)
 	if err := encounter.SetGeometry(encounter.Latitude, encounter.Longitude); err != nil {
 		return err
 	}
@@ -246,6 +247,7 @@ func (h *monsterEncounterHandle) Update(
 ) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	updates.RequiredStoryFlags = normalizeJSONStringArray(updates.RequiredStoryFlags)
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
 	}
@@ -267,6 +269,7 @@ func (h *monsterEncounterHandle) Update(
 		"next_recurrence_at":             updates.NextRecurrenceAt,
 		"retired_at":                     updates.RetiredAt,
 		"zone_id":                        updates.ZoneID,
+		"required_story_flags":           updates.RequiredStoryFlags,
 		"point_of_interest_id":           updates.PointOfInterestID,
 		"latitude":                       updates.Latitude,
 		"longitude":                      updates.Longitude,

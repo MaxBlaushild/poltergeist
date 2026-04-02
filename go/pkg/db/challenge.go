@@ -35,6 +35,7 @@ func (h *challengeHandle) visibleQuery(ctx context.Context) *gorm.DB {
 
 func (h *challengeHandle) Create(ctx context.Context, challenge *models.Challenge) error {
 	if challenge != nil {
+		challenge.RequiredStoryFlags = normalizeJSONStringArray(challenge.RequiredStoryFlags)
 		if strings.TrimSpace(string(challenge.RewardMode)) == "" {
 			if challenge.Reward > 0 || challenge.RewardExperience > 0 || challenge.InventoryItemID != nil {
 				challenge.RewardMode = models.RewardModeExplicit
@@ -207,6 +208,7 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		"polygon":                updates.Polygon,
 		"question":               updates.Question,
 		"description":            updates.Description,
+		"required_story_flags":   normalizeJSONStringArray(updates.RequiredStoryFlags),
 		"image_url":              updates.ImageURL,
 		"thumbnail_url":          updates.ThumbnailURL,
 		"scale_with_user_level":  updates.ScaleWithUserLevel,

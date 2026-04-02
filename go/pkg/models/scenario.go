@@ -22,6 +22,7 @@ type Scenario struct {
 	Longitude                 float64                        `json:"longitude"`
 	Geometry                  string                         `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Prompt                    string                         `json:"prompt"`
+	RequiredStoryFlags        StringArray                    `json:"requiredStoryFlags" gorm:"column:required_story_flags;type:jsonb;default:'[]'"`
 	InternalTags              StringArray                    `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	ImageURL                  string                         `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL              string                         `json:"thumbnailUrl" gorm:"column:thumbnail_url"`

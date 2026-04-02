@@ -1927,6 +1927,10 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 	for _, acc := range acceptances {
 		acceptedByQuest[acc.QuestID] = acc
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 
 	questIDs := make([]uuid.UUID, 0, len(questIDsSet))
 	for questID := range questIDsSet {
@@ -1956,6 +1960,9 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 		}
 		meets, _, _, err := s.userMeetsQuestReputationForQuest(ctx, userID, quest)
 		if err != nil || !meets {
+			continue
+		}
+		if !hasRequiredStoryFlags(quest.RequiredStoryFlags, activeStoryFlags) {
 			continue
 		}
 		if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedByQuest) {
@@ -2283,6 +2290,15 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("requires zone reputation level %d", requiredLevel)})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !hasRequiredStoryFlags(quest.RequiredStoryFlags, activeStoryFlags) {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "you have not unlocked the story state required for this quest"})
+		return
+	}
 
 	// Verify quest has this character as quest giver
 	if quest.QuestGiverCharacterID == nil || *quest.QuestGiverCharacterID != requestBody.CharacterID {
@@ -2436,6 +2452,15 @@ func (s *server) shareQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has not unlocked this main story quest yet"})
 		return
 	}
+	targetStoryFlags, err := s.loadUserStoryFlagMap(ctx, requestBody.TargetUserID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !hasRequiredStoryFlags(quest.RequiredStoryFlags, targetStoryFlags) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has not unlocked the story state required for this quest"})
+		return
+	}
 	if targetAcceptance != nil {
 		if targetAcceptance.TurnedInAt != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has already completed this quest"})
@@ -2549,6 +2574,14 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.QuestAcceptanceV2().MarkTurnedIn(ctx, acceptance.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyQuestStoryFlagsOnTurnIn(ctx, user.ID, quest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyQuestGiverRelationshipEffectsOnTurnIn(ctx, user.ID, quest); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -3230,25 +3263,29 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	var requestBody struct {
-		Name                        string                              `json:"name"`
-		Description                 string                              `json:"description"`
-		Category                    string                              `json:"category"`
-		QuestGiverCharacterID       *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
-		ImageURL                    string                              `json:"imageUrl"`
-		DefaultGold                 *int                                `json:"defaultGold"`
-		DifficultyMode              string                              `json:"difficultyMode"`
-		Difficulty                  *int                                `json:"difficulty"`
-		MonsterEncounterTargetLevel *int                                `json:"monsterEncounterTargetLevel"`
-		RewardMode                  string                              `json:"rewardMode"`
-		RandomRewardSize            string                              `json:"randomRewardSize"`
-		RewardExperience            *int                                `json:"rewardExperience"`
-		RecurrenceFrequency         *string                             `json:"recurrenceFrequency"`
-		MaterialRewards             []baseMaterialRewardPayload         `json:"materialRewards"`
-		CharacterTags               []string                            `json:"characterTags"`
-		InternalTags                []string                            `json:"internalTags"`
-		ItemRewards                 *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards                *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                          string                              `json:"name"`
+		Description                   string                              `json:"description"`
+		Category                      string                              `json:"category"`
+		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
+		AcceptanceDialogue            []string                            `json:"acceptanceDialogue"`
+		ImageURL                      string                              `json:"imageUrl"`
+		DefaultGold                   *int                                `json:"defaultGold"`
+		DifficultyMode                string                              `json:"difficultyMode"`
+		Difficulty                    *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel   *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                    string                              `json:"rewardMode"`
+		RandomRewardSize              string                              `json:"randomRewardSize"`
+		RewardExperience              *int                                `json:"rewardExperience"`
+		RecurrenceFrequency           *string                             `json:"recurrenceFrequency"`
+		MaterialRewards               []baseMaterialRewardPayload         `json:"materialRewards"`
+		RequiredStoryFlags            *[]string                           `json:"requiredStoryFlags"`
+		SetStoryFlags                 *[]string                           `json:"setStoryFlags"`
+		ClearStoryFlags               *[]string                           `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
+		CharacterTags                 []string                            `json:"characterTags"`
+		InternalTags                  []string                            `json:"internalTags"`
+		ItemRewards                   *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                  *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3347,6 +3384,18 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	}
 	questArchetype.RecurrenceFrequency = recurrenceFrequency
 	questArchetype.MaterialRewards = materialRewards
+	if requestBody.RequiredStoryFlags != nil {
+		questArchetype.RequiredStoryFlags = normalizeStoryFlagKeys(*requestBody.RequiredStoryFlags)
+	}
+	if requestBody.SetStoryFlags != nil {
+		questArchetype.SetStoryFlags = normalizeStoryFlagKeys(*requestBody.SetStoryFlags)
+	}
+	if requestBody.ClearStoryFlags != nil {
+		questArchetype.ClearStoryFlags = normalizeStoryFlagKeys(*requestBody.ClearStoryFlags)
+	}
+	if requestBody.QuestGiverRelationshipEffects != nil {
+		questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.QuestGiverRelationshipEffects)
+	}
 	if models.IsMainStoryQuestCategory(questArchetype.Category) {
 		questArchetype.CharacterTags = models.StringArray{}
 	} else {
@@ -3768,26 +3817,30 @@ func (s *server) getQuest(ctx *gin.Context) {
 
 func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
-		Name                        string                      `json:"name"`
-		Description                 string                      `json:"description"`
-		Category                    string                      `json:"category"`
-		AcceptanceDialogue          []string                    `json:"acceptanceDialogue"`
-		ImageURL                    string                      `json:"imageUrl"`
-		ZoneID                      *uuid.UUID                  `json:"zoneId"`
-		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
-		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
-		MainStoryPreviousQuestID    *uuid.UUID                  `json:"mainStoryPreviousQuestId"`
-		MainStoryNextQuestID        *uuid.UUID                  `json:"mainStoryNextQuestId"`
-		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
-		DifficultyMode              string                      `json:"difficultyMode"`
-		Difficulty                  *int                        `json:"difficulty"`
-		MonsterEncounterTargetLevel *int                        `json:"monsterEncounterTargetLevel"`
-		RewardMode                  string                      `json:"rewardMode"`
-		RandomRewardSize            string                      `json:"randomRewardSize"`
-		RewardExperience            *int                        `json:"rewardExperience"`
-		Gold                        *int                        `json:"gold"`
-		MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
-		ItemRewards                 *[]struct {
+		Name                          string                             `json:"name"`
+		Description                   string                             `json:"description"`
+		Category                      string                             `json:"category"`
+		AcceptanceDialogue            []string                           `json:"acceptanceDialogue"`
+		ImageURL                      string                             `json:"imageUrl"`
+		ZoneID                        *uuid.UUID                         `json:"zoneId"`
+		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
+		QuestGiverCharacterID         *uuid.UUID                         `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID      *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID          *uuid.UUID                         `json:"mainStoryNextQuestId"`
+		RecurrenceFrequency           *string                            `json:"recurrenceFrequency"`
+		DifficultyMode                string                             `json:"difficultyMode"`
+		Difficulty                    *int                               `json:"difficulty"`
+		MonsterEncounterTargetLevel   *int                               `json:"monsterEncounterTargetLevel"`
+		RewardMode                    string                             `json:"rewardMode"`
+		RandomRewardSize              string                             `json:"randomRewardSize"`
+		RewardExperience              *int                               `json:"rewardExperience"`
+		Gold                          *int                               `json:"gold"`
+		MaterialRewards               []baseMaterialRewardPayload        `json:"materialRewards"`
+		RequiredStoryFlags            []string                           `json:"requiredStoryFlags"`
+		SetStoryFlags                 []string                           `json:"setStoryFlags"`
+		ClearStoryFlags               []string                           `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
+		ItemRewards                   *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -3866,6 +3919,12 @@ func (s *server) createQuest(ctx *gin.Context) {
 		RewardExperience:            0,
 		Gold:                        0,
 		MaterialRewards:             materialRewards,
+		RequiredStoryFlags:          normalizeStoryFlagKeys(requestBody.RequiredStoryFlags),
+		SetStoryFlags:               normalizeStoryFlagKeys(requestBody.SetStoryFlags),
+		ClearStoryFlags:             normalizeStoryFlagKeys(requestBody.ClearStoryFlags),
+	}
+	if requestBody.QuestGiverRelationshipEffects != nil {
+		quest.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.QuestGiverRelationshipEffects)
 	}
 	if !models.IsMainStoryQuestCategory(category) {
 		quest.MainStoryPreviousQuestID = nil
@@ -3981,26 +4040,30 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                        string                      `json:"name"`
-		Description                 string                      `json:"description"`
-		Category                    string                      `json:"category"`
-		AcceptanceDialogue          *[]string                   `json:"acceptanceDialogue"`
-		ImageURL                    string                      `json:"imageUrl"`
-		ZoneID                      *uuid.UUID                  `json:"zoneId"`
-		QuestArchetypeID            *uuid.UUID                  `json:"questArchetypeId"`
-		QuestGiverCharacterID       *uuid.UUID                  `json:"questGiverCharacterId"`
-		MainStoryPreviousQuestID    *uuid.UUID                  `json:"mainStoryPreviousQuestId"`
-		MainStoryNextQuestID        *uuid.UUID                  `json:"mainStoryNextQuestId"`
-		RecurrenceFrequency         *string                     `json:"recurrenceFrequency"`
-		DifficultyMode              string                      `json:"difficultyMode"`
-		Difficulty                  *int                        `json:"difficulty"`
-		MonsterEncounterTargetLevel *int                        `json:"monsterEncounterTargetLevel"`
-		RewardMode                  string                      `json:"rewardMode"`
-		RandomRewardSize            string                      `json:"randomRewardSize"`
-		RewardExperience            *int                        `json:"rewardExperience"`
-		Gold                        *int                        `json:"gold"`
-		MaterialRewards             []baseMaterialRewardPayload `json:"materialRewards"`
-		ItemRewards                 *[]struct {
+		Name                          string                             `json:"name"`
+		Description                   string                             `json:"description"`
+		Category                      string                             `json:"category"`
+		AcceptanceDialogue            *[]string                          `json:"acceptanceDialogue"`
+		ImageURL                      string                             `json:"imageUrl"`
+		ZoneID                        *uuid.UUID                         `json:"zoneId"`
+		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
+		QuestGiverCharacterID         *uuid.UUID                         `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID      *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID          *uuid.UUID                         `json:"mainStoryNextQuestId"`
+		RecurrenceFrequency           *string                            `json:"recurrenceFrequency"`
+		DifficultyMode                string                             `json:"difficultyMode"`
+		Difficulty                    *int                               `json:"difficulty"`
+		MonsterEncounterTargetLevel   *int                               `json:"monsterEncounterTargetLevel"`
+		RewardMode                    string                             `json:"rewardMode"`
+		RandomRewardSize              string                             `json:"randomRewardSize"`
+		RewardExperience              *int                               `json:"rewardExperience"`
+		Gold                          *int                               `json:"gold"`
+		MaterialRewards               []baseMaterialRewardPayload        `json:"materialRewards"`
+		RequiredStoryFlags            *[]string                          `json:"requiredStoryFlags"`
+		SetStoryFlags                 *[]string                          `json:"setStoryFlags"`
+		ClearStoryFlags               *[]string                          `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
+		ItemRewards                   *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -4098,6 +4161,18 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		quest.Gold = *requestBody.Gold
 	}
 	quest.MaterialRewards = materialRewards
+	if requestBody.RequiredStoryFlags != nil {
+		quest.RequiredStoryFlags = normalizeStoryFlagKeys(*requestBody.RequiredStoryFlags)
+	}
+	if requestBody.SetStoryFlags != nil {
+		quest.SetStoryFlags = normalizeStoryFlagKeys(*requestBody.SetStoryFlags)
+	}
+	if requestBody.ClearStoryFlags != nil {
+		quest.ClearStoryFlags = normalizeStoryFlagKeys(*requestBody.ClearStoryFlags)
+	}
+	if requestBody.QuestGiverRelationshipEffects != nil {
+		quest.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.QuestGiverRelationshipEffects)
+	}
 	if strings.TrimSpace(requestBody.RewardMode) == "" {
 		if strings.TrimSpace(string(quest.RewardMode)) == "" {
 			quest.RewardMode = models.RewardModeRandom
@@ -4402,26 +4477,30 @@ func (s *server) getQuestArchetype(ctx *gin.Context) {
 
 func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name                        string                              `json:"name"`
-		Description                 string                              `json:"description"`
-		Category                    string                              `json:"category"`
-		QuestGiverCharacterID       *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue          []string                            `json:"acceptanceDialogue"`
-		ImageURL                    string                              `json:"imageUrl"`
-		RootID                      uuid.UUID                           `json:"rootID"`
-		DefaultGold                 *int                                `json:"defaultGold"`
-		DifficultyMode              string                              `json:"difficultyMode"`
-		Difficulty                  *int                                `json:"difficulty"`
-		MonsterEncounterTargetLevel *int                                `json:"monsterEncounterTargetLevel"`
-		RewardMode                  string                              `json:"rewardMode"`
-		RandomRewardSize            string                              `json:"randomRewardSize"`
-		RewardExperience            *int                                `json:"rewardExperience"`
-		RecurrenceFrequency         *string                             `json:"recurrenceFrequency"`
-		MaterialRewards             []baseMaterialRewardPayload         `json:"materialRewards"`
-		CharacterTags               []string                            `json:"characterTags"`
-		InternalTags                []string                            `json:"internalTags"`
-		ItemRewards                 *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards                *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                          string                              `json:"name"`
+		Description                   string                              `json:"description"`
+		Category                      string                              `json:"category"`
+		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
+		AcceptanceDialogue            []string                            `json:"acceptanceDialogue"`
+		ImageURL                      string                              `json:"imageUrl"`
+		RootID                        uuid.UUID                           `json:"rootID"`
+		DefaultGold                   *int                                `json:"defaultGold"`
+		DifficultyMode                string                              `json:"difficultyMode"`
+		Difficulty                    *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel   *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                    string                              `json:"rewardMode"`
+		RandomRewardSize              string                              `json:"randomRewardSize"`
+		RewardExperience              *int                                `json:"rewardExperience"`
+		RecurrenceFrequency           *string                             `json:"recurrenceFrequency"`
+		MaterialRewards               []baseMaterialRewardPayload         `json:"materialRewards"`
+		RequiredStoryFlags            []string                            `json:"requiredStoryFlags"`
+		SetStoryFlags                 []string                            `json:"setStoryFlags"`
+		ClearStoryFlags               []string                            `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
+		CharacterTags                 []string                            `json:"characterTags"`
+		InternalTags                  []string                            `json:"internalTags"`
+		ItemRewards                   *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                  *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4502,6 +4581,9 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		RewardExperience:            0,
 		RecurrenceFrequency:         recurrenceFrequency,
 		MaterialRewards:             materialRewards,
+		RequiredStoryFlags:          normalizeStoryFlagKeys(requestBody.RequiredStoryFlags),
+		SetStoryFlags:               normalizeStoryFlagKeys(requestBody.SetStoryFlags),
+		ClearStoryFlags:             normalizeStoryFlagKeys(requestBody.ClearStoryFlags),
 		CharacterTags:               normalizeQuestTemplateCharacterTags(requestBody.CharacterTags),
 		InternalTags:                normalizeQuestTemplateInternalTags(requestBody.InternalTags),
 		CreatedAt:                   time.Now(),
@@ -4509,6 +4591,9 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	}
 	if models.IsMainStoryQuestCategory(questArchType.Category) {
 		questArchType.CharacterTags = models.StringArray{}
+	}
+	if requestBody.QuestGiverRelationshipEffects != nil {
+		questArchType.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.QuestGiverRelationshipEffects)
 	}
 	if requestBody.DefaultGold != nil {
 		questArchType.DefaultGold = *requestBody.DefaultGold
@@ -4911,10 +4996,60 @@ func (s *server) getPointsOfInterestForZone(ctx *gin.Context) {
 		return
 	}
 
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zoneID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	relationshipMap, err := s.loadUserCharacterRelationshipMap(
+		ctx,
+		user.ID,
+		collectCharacterIDsFromPointsOfInterest(pointsOfInterest),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyStoryWorldChangesToPointOfInterests(ctx, pointsOfInterest, activeStoryFlags); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range pointsOfInterest {
+		hasAvailable := false
+		hasAvailableMainStory := false
+		applyPointOfInterestStoryVariant(&pointsOfInterest[i], activeStoryFlags)
+		for j := range pointsOfInterest[i].Characters {
+			pointsOfInterest[i].Characters[j].HasAvailableQuest =
+				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableQuest
+			pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest =
+				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableMainStoryQuest
+			applyCharacterStoryVariant(&pointsOfInterest[i].Characters[j], activeStoryFlags)
+			applyCharacterRelationship(&pointsOfInterest[i].Characters[j], relationshipMap)
+			if pointsOfInterest[i].Characters[j].HasAvailableQuest {
+				hasAvailable = true
+			}
+			if pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest {
+				hasAvailableMainStory = true
+			}
+		}
+		pointsOfInterest[i].HasAvailableQuest = hasAvailable
+		pointsOfInterest[i].HasAvailableMainStoryQuest = hasAvailableMainStory
 	}
 	ctx.JSON(http.StatusOK, pointsOfInterest)
 }
@@ -10422,6 +10557,15 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !challengeAvailableForStoryFlags(challenge, activeStoryFlags) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
+		return
+	}
 
 	partyID, participants, err := s.resolvePartySubmissionParticipants(ctx, user.ID)
 	if err != nil {
@@ -11848,10 +11992,29 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		relationshipMap, err := s.loadUserCharacterRelationshipMap(
+			ctx,
+			user.ID,
+			collectCharacterIDsFromPointsOfInterest(match.PointsOfInterest),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.applyStoryWorldChangesToPointOfInterests(ctx, match.PointsOfInterest, activeStoryFlags); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		for i := range match.PointsOfInterest {
 			poi := match.PointsOfInterest[i]
 			hasAvailable := false
 			hasAvailableMainStory := false
+			applyPointOfInterestStoryVariant(&match.PointsOfInterest[i], activeStoryFlags)
 			for j := range poi.Characters {
 				ch := poi.Characters[j]
 				if availability[ch.ID].HasAvailableQuest {
@@ -11862,6 +12025,8 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 				}
 				poi.Characters[j].HasAvailableQuest = availability[ch.ID].HasAvailableQuest
 				poi.Characters[j].HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
+				applyCharacterStoryVariant(&poi.Characters[j], activeStoryFlags)
+				applyCharacterRelationship(&poi.Characters[j], relationshipMap)
 			}
 			match.PointsOfInterest[i].HasAvailableQuest = hasAvailable
 			match.PointsOfInterest[i].HasAvailableMainStoryQuest = hasAvailableMainStory
@@ -11880,10 +12045,29 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	relationshipMap, err := s.loadUserCharacterRelationshipMap(
+		ctx,
+		user.ID,
+		collectCharacterIDsFromPointsOfInterest(pointOfInterests),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyStoryWorldChangesToPointOfInterests(ctx, pointOfInterests, activeStoryFlags); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	for i := range pointOfInterests {
 		poi := pointOfInterests[i]
 		hasAvailable := false
 		hasAvailableMainStory := false
+		applyPointOfInterestStoryVariant(&pointOfInterests[i], activeStoryFlags)
 		for j := range poi.Characters {
 			ch := poi.Characters[j]
 			if availability[ch.ID].HasAvailableQuest {
@@ -11894,6 +12078,8 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 			}
 			poi.Characters[j].HasAvailableQuest = availability[ch.ID].HasAvailableQuest
 			poi.Characters[j].HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
+			applyCharacterStoryVariant(&poi.Characters[j], activeStoryFlags)
+			applyCharacterRelationship(&poi.Characters[j], relationshipMap)
 		}
 		pointOfInterests[i].HasAvailableQuest = hasAvailable
 		pointOfInterests[i].HasAvailableMainStoryQuest = hasAvailableMainStory
@@ -13081,12 +13267,35 @@ func (s *server) getCharacters(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	characterIDs := make([]uuid.UUID, 0, len(characters))
+	for _, character := range characters {
+		if character == nil || character.ID == uuid.Nil {
+			continue
+		}
+		characterIDs = append(characterIDs, character.ID)
+	}
+	relationshipMap, err := s.loadUserCharacterRelationshipMap(ctx, user.ID, characterIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	for i := range characters {
 		ch := characters[i]
 		if ch != nil {
+			if err := s.applyStoryWorldChangesToCharacter(ctx, ch, activeStoryFlags); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 			ch.HasAvailableQuest = availability[ch.ID].HasAvailableQuest
 			ch.HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
+			applyCharacterStoryVariant(ch, activeStoryFlags)
+			applyCharacterRelationship(ch, relationshipMap)
 		}
 	}
 
@@ -13094,6 +13303,12 @@ func (s *server) getCharacters(ctx *gin.Context) {
 }
 
 func (s *server) getCharacter(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	idStr := ctx.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -13111,6 +13326,30 @@ func (s *server) getCharacter(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
+	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	relationshipMap, err := s.loadUserCharacterRelationshipMap(ctx, user.ID, []uuid.UUID{character.ID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyStoryWorldChangesToCharacter(ctx, character, activeStoryFlags); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	character.HasAvailableQuest = availability[character.ID].HasAvailableQuest
+	character.HasAvailableMainStoryQuest =
+		availability[character.ID].HasAvailableMainStoryQuest
+	applyCharacterStoryVariant(character, activeStoryFlags)
+	applyCharacterRelationship(character, relationshipMap)
 
 	ctx.JSON(http.StatusOK, character)
 }
@@ -13134,13 +13373,14 @@ func (s *server) getCharacterLocations(ctx *gin.Context) {
 
 func (s *server) createCharacter(ctx *gin.Context) {
 	var requestBody struct {
-		Name              string     `json:"name" binding:"required"`
-		Description       string     `json:"description"`
-		InternalTags      []string   `json:"internalTags"`
-		MapIconUrl        string     `json:"mapIconUrl"`
-		DialogueImageUrl  string     `json:"dialogueImageUrl"`
-		ThumbnailUrl      string     `json:"thumbnailUrl"`
-		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
+		Name              string                         `json:"name" binding:"required"`
+		Description       string                         `json:"description"`
+		InternalTags      []string                       `json:"internalTags"`
+		StoryVariants     []models.CharacterStoryVariant `json:"storyVariants"`
+		MapIconUrl        string                         `json:"mapIconUrl"`
+		DialogueImageUrl  string                         `json:"dialogueImageUrl"`
+		ThumbnailUrl      string                         `json:"thumbnailUrl"`
+		PointOfInterestID *uuid.UUID                     `json:"pointOfInterestId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -13164,6 +13404,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		Name:              requestBody.Name,
 		Description:       requestBody.Description,
 		InternalTags:      parseCharacterInternalTags(requestBody.InternalTags),
+		StoryVariants:     normalizeCharacterStoryVariants(requestBody.StoryVariants),
 		MapIconURL:        requestBody.MapIconUrl,
 		DialogueImageURL:  requestBody.DialogueImageUrl,
 		ThumbnailURL:      requestBody.ThumbnailUrl,
@@ -13376,6 +13617,16 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		}
 		updates["internal_tags"] = parseCharacterInternalTags(tags)
 	}
+	if raw, exists := requestBody["storyVariants"]; exists {
+		var variants []models.CharacterStoryVariant
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &variants); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid storyVariants"})
+				return
+			}
+		}
+		updates["story_variants"] = normalizeCharacterStoryVariants(variants)
+	}
 	if raw, exists := requestBody["pointOfInterestId"]; exists {
 		if string(raw) == "null" {
 			updates["point_of_interest_id"] = nil
@@ -13576,6 +13827,21 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+	character, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	matchedStoryVariant := applyCharacterStoryVariant(character, activeStoryFlags)
 
 	quests, err := s.dbClient.Quest().FindByQuestGiverCharacterID(ctx, id)
 	if err == nil {
@@ -13598,6 +13864,22 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		if err := s.hydrateShopActionMetadataForUser(ctx, user.ID, action); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve shop inventory: " + err.Error()})
 			return
+		}
+	}
+	if matchedStoryVariant != nil {
+		for _, action := range actions {
+			if action == nil {
+				continue
+			}
+			if action.Metadata == nil {
+				action.Metadata = models.MetadataJSONB{}
+			}
+			if strings.TrimSpace(character.Description) != "" {
+				action.Metadata["characterDescription"] = character.Description
+			}
+			if action.ActionType != models.ActionTypeGiveQuest && len(matchedStoryVariant.Dialogue) > 0 {
+				action.Dialogue = matchedStoryVariant.Dialogue
+			}
 		}
 	}
 
@@ -13675,6 +13957,10 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			quest := questByID[questIDStr]
 			if quest == nil {
 				filtered = append(filtered, action)
+				continue
+			}
+			if !hasRequiredStoryFlags(quest.RequiredStoryFlags, activeStoryFlags) {
+				log.Printf("getCharacterActions: hiding story-locked quest action=%s questId=%s userId=%s", action.ID, quest.ID, user.ID)
 				continue
 			}
 			if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedV2) {
@@ -16594,13 +16880,21 @@ func (s *server) getScenarios(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	response := make([]scenarioWithUserStatus, len(scenarios))
-	for i, scenario := range scenarios {
-		response[i] = scenarioWithUserStatus{
+	response := make([]scenarioWithUserStatus, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		if !scenarioAvailableForStoryFlags(&scenario, activeStoryFlags) {
+			continue
+		}
+		response = append(response, scenarioWithUserStatus{
 			Scenario:        scenario,
 			AttemptedByUser: attemptedMap[scenario.ID],
-		}
+		})
 	}
 	ctx.JSON(http.StatusOK, response)
 }
@@ -16668,6 +16962,15 @@ func (s *server) getScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !scenarioAvailableForStoryFlags(scenario, activeStoryFlags) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
 
 	attempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
 	if err != nil {
@@ -16704,6 +17007,11 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -16712,6 +17020,9 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 
 	response := make([]scenarioWithUserStatus, 0, len(scenarios))
 	for _, scenario := range scenarios {
+		if !scenarioAvailableForStoryFlags(&scenario, activeStoryFlags) {
+			continue
+		}
 		if attemptedMap[scenario.ID] {
 			// Hide resolved scenarios for this user so they no longer appear on map.
 			continue
@@ -16813,6 +17124,7 @@ func (s *server) updateScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	scenario.RequiredStoryFlags = existing.RequiredStoryFlags
 	scenario.RecurringScenarioID = existing.RecurringScenarioID
 	scenario.RecurrenceFrequency = existing.RecurrenceFrequency
 	scenario.NextRecurrenceAt = existing.NextRecurrenceAt
@@ -16979,6 +17291,15 @@ func (s *server) performScenario(ctx *gin.Context) {
 		return
 	}
 	if !scenarioVisibleToUser(user.ID, scenario) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !scenarioAvailableForStoryFlags(scenario, activeStoryFlags) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}

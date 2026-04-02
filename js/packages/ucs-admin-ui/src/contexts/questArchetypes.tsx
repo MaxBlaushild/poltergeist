@@ -36,6 +36,15 @@ export type QuestArchetypeDraft = {
   rewardExperience?: number;
   recurrenceFrequency?: string | null;
   materialRewards?: { resourceKey: string; amount: number }[];
+  requiredStoryFlags?: string[];
+  setStoryFlags?: string[];
+  clearStoryFlags?: string[];
+  questGiverRelationshipEffects?: {
+    trust?: number;
+    respect?: number;
+    fear?: number;
+    debt?: number;
+  };
   itemRewards?: { inventoryItemId: number; quantity: number }[];
   spellRewards?: { spellId: string }[];
   characterTags?: string[];
@@ -254,6 +263,10 @@ export const QuestArchetypesProvider = ({
         rewardExperience: draft.rewardExperience,
         recurrenceFrequency: draft.recurrenceFrequency,
         materialRewards: draft.materialRewards,
+        requiredStoryFlags: draft.requiredStoryFlags,
+        setStoryFlags: draft.setStoryFlags,
+        clearStoryFlags: draft.clearStoryFlags,
+        questGiverRelationshipEffects: draft.questGiverRelationshipEffects,
         itemRewards: draft.itemRewards,
         spellRewards: draft.spellRewards,
         characterTags: draft.characterTags,

@@ -164,6 +164,7 @@ func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) 
 	if scenario.InternalTags == nil {
 		scenario.InternalTags = models.StringArray{}
 	}
+	scenario.RequiredStoryFlags = normalizeJSONStringArray(scenario.RequiredStoryFlags)
 	normalizeScenarioFailurePenaltyDefaults(scenario)
 	if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
 		return err
@@ -336,6 +337,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"longitude":                    updates.Longitude,
 		"geometry":                     updates.Geometry,
 		"prompt":                       updates.Prompt,
+		"required_story_flags":         normalizeJSONStringArray(updates.RequiredStoryFlags),
 		"internal_tags":                updates.InternalTags,
 		"image_url":                    updates.ImageURL,
 		"scale_with_user_level":        updates.ScaleWithUserLevel,

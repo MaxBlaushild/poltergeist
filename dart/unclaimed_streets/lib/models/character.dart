@@ -1,5 +1,36 @@
 import 'character_location.dart';
 
+class CharacterRelationshipState {
+  final int trust;
+  final int respect;
+  final int fear;
+  final int debt;
+
+  const CharacterRelationshipState({
+    this.trust = 0,
+    this.respect = 0,
+    this.fear = 0,
+    this.debt = 0,
+  });
+
+  bool get isZero => trust == 0 && respect == 0 && fear == 0 && debt == 0;
+
+  factory CharacterRelationshipState.fromJson(Map<String, dynamic> json) {
+    int parseValue(dynamic raw) {
+      if (raw is num) return raw.toInt();
+      if (raw is String) return int.tryParse(raw.trim()) ?? 0;
+      return 0;
+    }
+
+    return CharacterRelationshipState(
+      trust: parseValue(json['trust']),
+      respect: parseValue(json['respect']),
+      fear: parseValue(json['fear']),
+      debt: parseValue(json['debt']),
+    );
+  }
+}
+
 class Character {
   final String id;
   final String name;
@@ -13,6 +44,7 @@ class Character {
   final List<CharacterLocation> locations;
   final bool hasAvailableQuest;
   final bool hasAvailableMainStoryQuest;
+  final CharacterRelationshipState? relationship;
 
   const Character({
     required this.id,
@@ -27,6 +59,7 @@ class Character {
     this.locations = const [],
     this.hasAvailableQuest = false,
     this.hasAvailableMainStoryQuest = false,
+    this.relationship,
   });
 
   factory Character.fromJson(Map<String, dynamic> json) {
@@ -65,6 +98,11 @@ class Character {
       hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
       hasAvailableMainStoryQuest:
           json['hasAvailableMainStoryQuest'] as bool? ?? false,
+      relationship: json['relationship'] is Map<String, dynamic>
+          ? CharacterRelationshipState.fromJson(
+              json['relationship'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 }

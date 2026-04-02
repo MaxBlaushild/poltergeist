@@ -1,43 +1,67 @@
-import { PointOfInterestChallenge } from "./pointOfInterestChallenge";
-import { PointOfInterestChallengeSubmission } from "./pointOfInterestChallengeSubmission";
-import { PointOfInterestDiscovery } from "./pointOfInterestDiscovery";
-import { Tag } from "./tag";
-export interface PointOfInterest {
-    id: string;
-    createdAt: Date;
-    updatedAt: Date;
-    name: string;
-    clue: string;
-    lat: string;
-    lng: string;
-    imageURL: string;
-    thumbnailUrl?: string;
-    imageGenerationStatus?: string;
-    imageGenerationError?: string | null;
-    description: string;
-	pointOfInterestChallenges: PointOfInterestChallenge[];
-	tags: Tag[];
-	googleMapsPlaceId: string;
-	googleMapsPlaceName?: string | null;
-	originalName: string;
-	geometry: string;
-	unlockTier?: number | null;
+import { PointOfInterestChallenge } from './pointOfInterestChallenge';
+import { PointOfInterestChallengeSubmission } from './pointOfInterestChallengeSubmission';
+import { PointOfInterestDiscovery } from './pointOfInterestDiscovery';
+import { Tag } from './tag';
+
+export interface PointOfInterestStoryVariant {
+  id?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  priority?: number;
+  requiredStoryFlags?: string[];
+  description?: string;
+  clue?: string;
 }
 
-export const getHighestFirstCompletedChallenge = (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]): { submission: PointOfInterestChallengeSubmission | null, challenge: PointOfInterestChallenge | null } => {
-	const sortedChallenges = pointOfInterest.pointOfInterestChallenges.sort((a, b) => b.tier - a.tier);
-	let firstCorrectSubmission = null;
-	let associatedChallenge = null;
+export interface PointOfInterest {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  name: string;
+  clue: string;
+  lat: string;
+  lng: string;
+  imageURL: string;
+  thumbnailUrl?: string;
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
+  description: string;
+  pointOfInterestChallenges: PointOfInterestChallenge[];
+  tags: Tag[];
+  googleMapsPlaceId: string;
+  googleMapsPlaceName?: string | null;
+  originalName: string;
+  geometry: string;
+  unlockTier?: number | null;
+  storyVariants?: PointOfInterestStoryVariant[];
+}
 
-	for (const challenge of sortedChallenges) {
-		const correctSubmissions = submissions.filter(submission => submission.pointOfInterestChallengeId === challenge.id && submission.isCorrect);
+export const getHighestFirstCompletedChallenge = (
+  pointOfInterest: PointOfInterest,
+  submissions: PointOfInterestChallengeSubmission[]
+): {
+  submission: PointOfInterestChallengeSubmission | null;
+  challenge: PointOfInterestChallenge | null;
+} => {
+  const sortedChallenges = pointOfInterest.pointOfInterestChallenges.sort(
+    (a, b) => b.tier - a.tier
+  );
+  let firstCorrectSubmission = null;
+  let associatedChallenge = null;
 
-		if (correctSubmissions?.length > 0) {
-			firstCorrectSubmission = correctSubmissions[0];
-			associatedChallenge = challenge;
-			break;
-		}
-	}
+  for (const challenge of sortedChallenges) {
+    const correctSubmissions = submissions.filter(
+      (submission) =>
+        submission.pointOfInterestChallengeId === challenge.id &&
+        submission.isCorrect
+    );
 
-	return { submission: firstCorrectSubmission, challenge: associatedChallenge };
+    if (correctSubmissions?.length > 0) {
+      firstCorrectSubmission = correctSubmissions[0];
+      associatedChallenge = challenge;
+      break;
+    }
+  }
+
+  return { submission: firstCorrectSubmission, challenge: associatedChallenge };
 };

@@ -29,6 +29,7 @@ type Challenge struct {
 	PolygonPoints        [][2]float64                `json:"polygonPoints,omitempty" gorm:"-"`
 	Question             string                      `json:"question"`
 	Description          string                      `json:"description"`
+	RequiredStoryFlags   StringArray                 `json:"requiredStoryFlags" gorm:"column:required_story_flags;type:jsonb;default:'[]'"`
 	ImageURL             string                      `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL         string                      `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
 	ScaleWithUserLevel   bool                        `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`

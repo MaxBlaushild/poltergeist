@@ -199,6 +199,35 @@ const parseInternalTagsInput = (input: string) =>
       .filter(Boolean)
   );
 
+type CharacterStoryVariantForm = {
+  id?: string;
+  priority: number;
+  requiredStoryFlagsText: string;
+  description: string;
+  dialogueText: string;
+};
+
+const buildStoryVariantDialogue = (input: string): DialogueMessage[] =>
+  input
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text, index) => ({
+      speaker: 'character',
+      text,
+      order: index,
+    }));
+
+const buildCharacterStoryVariantForm = (
+  variant?: NonNullable<Character['storyVariants']>[number]
+): CharacterStoryVariantForm => ({
+  id: variant?.id,
+  priority: variant?.priority ?? 0,
+  requiredStoryFlagsText: (variant?.requiredStoryFlags ?? []).join(', '),
+  description: variant?.description ?? '',
+  dialogueText: (variant?.dialogue ?? []).map((entry) => entry.text).join('\n'),
+});
+
 const defaultCharacterUndiscoveredIconPrompt =
   'A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
 
@@ -487,6 +516,7 @@ export const Characters = () => {
     name: '',
     description: '',
     internalTagsInput: '',
+    storyVariants: [] as CharacterStoryVariantForm[],
     mapIconUrl: '',
     dialogueImageUrl: '',
     thumbnailUrl: '',
@@ -893,6 +923,7 @@ export const Characters = () => {
       name: '',
       description: '',
       internalTagsInput: '',
+      storyVariants: [],
       mapIconUrl: '',
       dialogueImageUrl: '',
       thumbnailUrl: '',
@@ -918,6 +949,22 @@ export const Characters = () => {
       dialogueImageUrl: formData.dialogueImageUrl,
       thumbnailUrl: formData.thumbnailUrl,
       internalTags: parseInternalTagsInput(formData.internalTagsInput),
+      storyVariants: formData.storyVariants
+        .map((variant) => ({
+          id: variant.id,
+          priority: Number(variant.priority) || 0,
+          requiredStoryFlags: parseInternalTagsInput(
+            variant.requiredStoryFlagsText
+          ),
+          description: variant.description.trim(),
+          dialogue: buildStoryVariantDialogue(variant.dialogueText),
+        }))
+        .filter(
+          (variant) =>
+            variant.requiredStoryFlags.length > 0 ||
+            variant.description.length > 0 ||
+            variant.dialogue.length > 0
+        ),
       pointOfInterestId: formData.pointOfInterestId || null,
     };
   };
@@ -1151,6 +1198,9 @@ export const Characters = () => {
       name: character.name,
       description: character.description,
       internalTagsInput: (character.internalTags ?? []).join(', '),
+      storyVariants: (character.storyVariants ?? []).map((variant) =>
+        buildCharacterStoryVariantForm(variant)
+      ),
       mapIconUrl: character.mapIconUrl,
       dialogueImageUrl: character.dialogueImageUrl,
       thumbnailUrl: character.thumbnailUrl ?? '',
@@ -1613,6 +1663,198 @@ export const Characters = () => {
                 Comma-separated metadata tags used to link characters with quest
                 templates.
               </div>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>
+                Story Variants
+              </label>
+              <div style={{ fontSize: '12px', color: '#666', marginBottom: 8 }}>
+                Optional conditional overrides for this NPC&apos;s description
+                and dialogue, keyed off story flags.
+              </div>
+              {formData.storyVariants.length === 0 ? (
+                <div
+                  style={{ fontSize: '12px', color: '#999', marginBottom: 8 }}
+                >
+                  No story variants yet.
+                </div>
+              ) : (
+                formData.storyVariants.map((variant, index) => (
+                  <div
+                    key={variant.id ?? `story-variant-${index}`}
+                    style={{
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      marginBottom: '10px',
+                      backgroundColor: '#f9fafb',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '120px 1fr',
+                        gap: '10px',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <div>
+                        <label
+                          style={{ display: 'block', marginBottom: '5px' }}
+                        >
+                          Priority
+                        </label>
+                        <input
+                          type="number"
+                          value={variant.priority}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              storyVariants: prev.storyVariants.map(
+                                (entry, storyIndex) =>
+                                  storyIndex === index
+                                    ? {
+                                        ...entry,
+                                        priority:
+                                          parseInt(e.target.value, 10) || 0,
+                                      }
+                                    : entry
+                              ),
+                            }))
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{ display: 'block', marginBottom: '5px' }}
+                        >
+                          Required Story Flags
+                        </label>
+                        <input
+                          type="text"
+                          value={variant.requiredStoryFlagsText}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              storyVariants: prev.storyVariants.map(
+                                (entry, storyIndex) =>
+                                  storyIndex === index
+                                    ? {
+                                        ...entry,
+                                        requiredStoryFlagsText: e.target.value,
+                                      }
+                                    : entry
+                              ),
+                            }))
+                          }
+                          placeholder="chapter_2_started, warden_warned"
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>
+                        Description Override
+                      </label>
+                      <textarea
+                        value={variant.description}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            storyVariants: prev.storyVariants.map(
+                              (entry, storyIndex) =>
+                                storyIndex === index
+                                  ? {
+                                      ...entry,
+                                      description: e.target.value,
+                                    }
+                                  : entry
+                            ),
+                          }))
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                          minHeight: '70px',
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>
+                        Dialogue Override
+                      </label>
+                      <textarea
+                        value={variant.dialogueText}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            storyVariants: prev.storyVariants.map(
+                              (entry, storyIndex) =>
+                                storyIndex === index
+                                  ? {
+                                      ...entry,
+                                      dialogueText: e.target.value,
+                                    }
+                                  : entry
+                            ),
+                          }))
+                        }
+                        placeholder="One line per dialogue bubble"
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                          minHeight: '90px',
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="bg-red-100 text-red-700 px-3 py-1 rounded-md"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          storyVariants: prev.storyVariants.filter(
+                            (_, storyIndex) => storyIndex !== index
+                          ),
+                        }))
+                      }
+                    >
+                      Remove Variant
+                    </button>
+                  </div>
+                ))
+              )}
+              <button
+                type="button"
+                className="bg-gray-100 text-gray-800 px-3 py-2 rounded-md"
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    storyVariants: [
+                      ...prev.storyVariants,
+                      buildCharacterStoryVariantForm(),
+                    ],
+                  }))
+                }
+              >
+                Add Story Variant
+              </button>
             </div>
 
             <div style={{ marginBottom: '15px' }}>

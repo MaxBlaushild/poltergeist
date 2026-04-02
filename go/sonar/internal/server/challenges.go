@@ -205,12 +205,30 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 }
 
 func (s *server) getChallenges(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	challenges, err := s.dbClient.Challenge().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, challenges)
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response := make([]models.Challenge, 0, len(challenges))
+	for i := range challenges {
+		if !challengeAvailableForStoryFlags(&challenges[i], activeStoryFlags) {
+			continue
+		}
+		response = append(response, challenges[i])
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) getAdminChallenges(ctx *gin.Context) {
@@ -265,6 +283,15 @@ func (s *server) getChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !challengeAvailableForStoryFlags(challenge, activeStoryFlags) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
+		return
+	}
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -291,8 +318,16 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	challengeIDs := make([]uuid.UUID, 0, len(challenges))
 	for _, challenge := range challenges {
+		if !challengeAvailableForStoryFlags(&challenge, activeStoryFlags) {
+			continue
+		}
 		challengeIDs = append(challengeIDs, challenge.ID)
 	}
 	completedIDs, err := s.dbClient.Challenge().FindCompletedChallengeIDsByUser(ctx, user.ID, challengeIDs)
@@ -311,6 +346,9 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 	}
 	response := make([]models.Challenge, 0, len(challenges))
 	for i := range challenges {
+		if !challengeAvailableForStoryFlags(&challenges[i], activeStoryFlags) {
+			continue
+		}
 		if _, completed := completedSet[challenges[i].ID]; completed {
 			continue
 		}
@@ -403,6 +441,7 @@ func (s *server) updateChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	updates.RequiredStoryFlags = existing.RequiredStoryFlags
 	updates.RecurringChallengeID = existing.RecurringChallengeID
 	updates.RecurrenceFrequency = existing.RecurrenceFrequency
 	updates.NextRecurrenceAt = existing.NextRecurrenceAt

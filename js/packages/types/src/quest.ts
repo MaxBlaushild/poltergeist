@@ -23,6 +23,13 @@ export interface QuestMaterialReward {
   amount: number;
 }
 
+export interface CharacterRelationshipState {
+  trust?: number;
+  respect?: number;
+  fear?: number;
+  debt?: number;
+}
+
 export interface Quest {
   id: string;
   createdAt: string;
@@ -51,6 +58,10 @@ export interface Quest {
   rewardExperience?: number;
   gold?: number;
   materialRewards?: QuestMaterialReward[];
+  requiredStoryFlags?: string[];
+  setStoryFlags?: string[];
+  clearStoryFlags?: string[];
+  questGiverRelationshipEffects?: CharacterRelationshipState;
   itemRewards?: QuestItemReward[];
   spellRewards?: QuestSpellReward[];
   nodes?: QuestNode[];

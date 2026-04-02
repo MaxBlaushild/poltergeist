@@ -1938,6 +1938,13 @@ type QuestArchetypeFormState = {
   rewardExperience: number;
   recurrenceFrequency: string;
   materialRewards: ReturnType<typeof emptyMaterialReward>[];
+  requiredStoryFlagsText: string;
+  setStoryFlagsText: string;
+  clearStoryFlagsText: string;
+  relationshipTrust: number;
+  relationshipRespect: number;
+  relationshipFear: number;
+  relationshipDebt: number;
   itemRewards: QuestArchetypeRewardRow[];
   spellRewards: QuestArchetypeSpellRewardRow[];
   characterTagsText: string;
@@ -1962,6 +1969,13 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   rewardExperience: 0,
   recurrenceFrequency: '',
   materialRewards: [],
+  requiredStoryFlagsText: '',
+  setStoryFlagsText: '',
+  clearStoryFlagsText: '',
+  relationshipTrust: 0,
+  relationshipRespect: 0,
+  relationshipFear: 0,
+  relationshipDebt: 0,
   itemRewards: [],
   spellRewards: [],
   characterTagsText: '',
@@ -1999,6 +2013,13 @@ const buildQuestArchetypeFormFromRecord = (
     resourceKey: reward.resourceKey,
     amount: reward.amount,
   })),
+  requiredStoryFlagsText: (archetype.requiredStoryFlags ?? []).join(', '),
+  setStoryFlagsText: (archetype.setStoryFlags ?? []).join(', '),
+  clearStoryFlagsText: (archetype.clearStoryFlags ?? []).join(', '),
+  relationshipTrust: archetype.questGiverRelationshipEffects?.trust ?? 0,
+  relationshipRespect: archetype.questGiverRelationshipEffects?.respect ?? 0,
+  relationshipFear: archetype.questGiverRelationshipEffects?.fear ?? 0,
+  relationshipDebt: archetype.questGiverRelationshipEffects?.debt ?? 0,
   itemRewards: (archetype.itemRewards ?? []).map((reward) => ({
     inventoryItemId: reward.inventoryItemId
       ? String(reward.inventoryItemId)
@@ -2028,6 +2049,24 @@ const normalizeQuestArchetypeDraft = (
     .split(',')
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0);
+  const requiredStoryFlags = form.requiredStoryFlagsText
+    .split(',')
+    .map((flag) => flag.trim())
+    .filter((flag) => flag.length > 0);
+  const setStoryFlags = form.setStoryFlagsText
+    .split(',')
+    .map((flag) => flag.trim())
+    .filter((flag) => flag.length > 0);
+  const clearStoryFlags = form.clearStoryFlagsText
+    .split(',')
+    .map((flag) => flag.trim())
+    .filter((flag) => flag.length > 0);
+  const questGiverRelationshipEffects = {
+    trust: Math.max(-3, Math.min(3, Number(form.relationshipTrust) || 0)),
+    respect: Math.max(-3, Math.min(3, Number(form.relationshipRespect) || 0)),
+    fear: Math.max(-3, Math.min(3, Number(form.relationshipFear) || 0)),
+    debt: Math.max(-3, Math.min(3, Number(form.relationshipDebt) || 0)),
+  };
 
   return {
     name: form.name.trim(),
@@ -2059,6 +2098,10 @@ const normalizeQuestArchetypeDraft = (
       rewardMode === 'explicit'
         ? normalizeMaterialRewards(form.materialRewards)
         : [],
+    requiredStoryFlags,
+    setStoryFlags,
+    clearStoryFlags,
+    questGiverRelationshipEffects,
     itemRewards:
       rewardMode === 'explicit'
         ? form.itemRewards
@@ -5591,6 +5634,119 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
+                <div className="qa-label">Required Story Flags</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={createForm.requiredStoryFlagsText}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      requiredStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="met_the_warden, chapter_2_started"
+                />
+                <div className="qa-helper">
+                  Players must already have these flags to receive this quest.
+                </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Set Story Flags On Turn-In</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={createForm.setStoryFlagsText}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      setStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="warden_warned, chapter_2_complete"
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Clear Story Flags On Turn-In</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={createForm.clearStoryFlagsText}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      clearStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="chapter_2_started"
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Quest Giver Relationship Effects</div>
+                <div className="qa-inline-grid">
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={createForm.relationshipTrust}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        relationshipTrust: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Trust"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={createForm.relationshipRespect}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        relationshipRespect: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Respect"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={createForm.relationshipFear}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        relationshipFear: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Fear"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={createForm.relationshipDebt}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        relationshipDebt: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Debt"
+                  />
+                </div>
+                <div className="qa-helper">
+                  Applied to the player's relationship with the quest giver when
+                  the quest is turned in.
+                </div>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Location Archetype</div>
                 <div className="qa-combobox">
                   <input
@@ -6112,6 +6268,119 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
+                <div className="qa-label">Required Story Flags</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editForm.requiredStoryFlagsText}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      requiredStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="met_the_warden, chapter_2_started"
+                />
+                <div className="qa-helper">
+                  Players must already have these flags to receive this quest.
+                </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Set Story Flags On Turn-In</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editForm.setStoryFlagsText}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      setStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="warden_warned, chapter_2_complete"
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Clear Story Flags On Turn-In</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editForm.clearStoryFlagsText}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      clearStoryFlagsText: e.target.value,
+                    }))
+                  }
+                  placeholder="chapter_2_started"
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Quest Giver Relationship Effects</div>
+                <div className="qa-inline-grid">
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={editForm.relationshipTrust}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        relationshipTrust: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Trust"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={editForm.relationshipRespect}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        relationshipRespect: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Respect"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={editForm.relationshipFear}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        relationshipFear: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Fear"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    value={editForm.relationshipDebt}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        relationshipDebt: Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Debt"
+                  />
+                </div>
+                <div className="qa-helper">
+                  Applied to the player's relationship with the quest giver when
+                  the quest is turned in.
+                </div>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Reward Mode</div>
                 <select
                   className="qa-select"
@@ -6454,6 +6723,11 @@ export const QuestArchetypeComponent = () => {
                     rewardExperience: draft.rewardExperience ?? 0,
                     recurrenceFrequency: draft.recurrenceFrequency ?? null,
                     materialRewards: draft.materialRewards,
+                    requiredStoryFlags: draft.requiredStoryFlags,
+                    setStoryFlags: draft.setStoryFlags,
+                    clearStoryFlags: draft.clearStoryFlags,
+                    questGiverRelationshipEffects:
+                      draft.questGiverRelationshipEffects,
                     itemRewards: draft.itemRewards,
                     spellRewards: draft.spellRewards,
                     characterTags: draft.characterTags,

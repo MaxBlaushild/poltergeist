@@ -10,29 +10,30 @@ import (
 )
 
 type PointOfInterest struct {
-	ID                         uuid.UUID                  `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt                  time.Time                  `json:"createdAt"`
-	UpdatedAt                  time.Time                  `json:"updatedAt"`
-	Name                       string                     `json:"name"`
-	OriginalName               string                     `json:"originalName"`
-	Clue                       string                     `json:"clue"`
-	Lat                        string                     `json:"lat"`
-	Lng                        string                     `json:"lng"`
-	ImageUrl                   string                     `json:"imageURL"`
-	ThumbnailURL               string                     `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	ImageGenerationStatus      string                     `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
-	ImageGenerationError       *string                    `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
-	Description                string                     `json:"description"`
-	PointOfInterestChallenges  []PointOfInterestChallenge `json:"pointOfInterestChallenges"`
-	Characters                 []Character                `json:"characters" gorm:"foreignKey:PointOfInterestID"`
-	Geometry                   string                     `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	Tags                       []Tag                      `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
-	GoogleMapsPlaceID          *string                    `json:"googleMapsPlaceId"`
-	GoogleMapsPlaceName        *string                    `json:"googleMapsPlaceName"`
-	LastUsedInQuestAt          *time.Time                 `json:"lastUsedInQuestAt,omitempty"`
-	UnlockTier                 *int                       `json:"unlockTier" gorm:"column:unlock_tier"`
-	HasAvailableQuest          bool                       `json:"hasAvailableQuest" gorm:"-"`
-	HasAvailableMainStoryQuest bool                       `json:"hasAvailableMainStoryQuest" gorm:"-"`
+	ID                         uuid.UUID                    `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt                  time.Time                    `json:"createdAt"`
+	UpdatedAt                  time.Time                    `json:"updatedAt"`
+	Name                       string                       `json:"name"`
+	OriginalName               string                       `json:"originalName"`
+	Clue                       string                       `json:"clue"`
+	Lat                        string                       `json:"lat"`
+	Lng                        string                       `json:"lng"`
+	ImageUrl                   string                       `json:"imageURL"`
+	ThumbnailURL               string                       `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ImageGenerationStatus      string                       `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError       *string                      `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	Description                string                       `json:"description"`
+	StoryVariants              PointOfInterestStoryVariants `json:"storyVariants" gorm:"column:story_variants;type:jsonb;default:'[]'"`
+	PointOfInterestChallenges  []PointOfInterestChallenge   `json:"pointOfInterestChallenges"`
+	Characters                 []Character                  `json:"characters" gorm:"foreignKey:PointOfInterestID"`
+	Geometry                   string                       `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Tags                       []Tag                        `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
+	GoogleMapsPlaceID          *string                      `json:"googleMapsPlaceId"`
+	GoogleMapsPlaceName        *string                      `json:"googleMapsPlaceName"`
+	LastUsedInQuestAt          *time.Time                   `json:"lastUsedInQuestAt,omitempty"`
+	UnlockTier                 *int                         `json:"unlockTier" gorm:"column:unlock_tier"`
+	HasAvailableQuest          bool                         `json:"hasAvailableQuest" gorm:"-"`
+	HasAvailableMainStoryQuest bool                         `json:"hasAvailableMainStoryQuest" gorm:"-"`
 }
 
 func (p *PointOfInterest) TableName() string {

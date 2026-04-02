@@ -265,6 +265,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _creatingBase = false;
   Symbol? _basePlacementPreviewSymbol;
   Uint8List? _basePlacementPreviewBytes;
+  String? _dismissedMainStoryPromptZoneId;
 
   @override
   void initState() {
@@ -346,6 +347,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _onZoneChanged() {
     if (!mounted) return;
+    final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
+    if (_dismissedMainStoryPromptZoneId != null &&
+        _dismissedMainStoryPromptZoneId != selectedZoneId) {
+      _dismissedMainStoryPromptZoneId = null;
+    }
     if (_styleLoaded &&
         _mapController != null &&
         _markersAdded &&
@@ -1220,6 +1226,89 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _currentMainStoryTurnInCharacterIds(questLog).contains(character.id);
   }
 
+  _MainStoryLead? _currentZoneMainStoryLead(QuestLogProvider questLog) {
+    final selectedZone = context.read<ZoneProvider>().selectedZone;
+    final hasActiveMainStory = questLog.quests.any(
+      (quest) => quest.isMainStory && quest.turnedInAt == null,
+    );
+    if (hasActiveMainStory) return null;
+
+    final location = context.read<LocationProvider>().location;
+    final userLat = location?.latitude;
+    final userLng = location?.longitude;
+    PointOfInterest? bestPoi;
+    Character? bestCharacter;
+    double? bestDistance;
+    PointOfInterest? bestGlobalPoi;
+    Character? bestGlobalCharacter;
+    double? bestGlobalDistance;
+
+    for (final poi in _pois) {
+      final poiLat = double.tryParse(poi.lat);
+      final poiLng = double.tryParse(poi.lng);
+      if (poiLat == null || poiLng == null || !poi.hasAvailableMainStoryQuest) {
+        continue;
+      }
+      Character? featuredCharacter;
+      for (final character in poi.characters) {
+        if (character.hasAvailableMainStoryQuest) {
+          featuredCharacter = character;
+          break;
+        }
+      }
+      final distance = (userLat == null || userLng == null)
+          ? 0.0
+          : _haversineDistanceMeters(userLat, userLng, poiLat, poiLng);
+      if (bestGlobalPoi == null ||
+          bestGlobalDistance == null ||
+          distance < bestGlobalDistance) {
+        bestGlobalPoi = poi;
+        bestGlobalCharacter = featuredCharacter;
+        bestGlobalDistance = distance;
+      }
+      if (selectedZone == null ||
+          !_isPointInZone(selectedZone, poiLat, poiLng)) {
+        continue;
+      }
+      if (bestPoi == null || bestDistance == null || distance < bestDistance) {
+        bestPoi = poi;
+        bestCharacter = featuredCharacter;
+        bestDistance = distance;
+      }
+    }
+
+    bestPoi ??= bestGlobalPoi;
+    bestCharacter ??= bestGlobalCharacter;
+    bestDistance ??= bestGlobalDistance;
+    if (bestPoi == null) return null;
+    return _MainStoryLead(
+      poi: bestPoi,
+      character: bestCharacter,
+      distanceMeters: bestDistance,
+    );
+  }
+
+  double _haversineDistanceMeters(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    const earthRadiusMeters = 6371000.0;
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLng = _degreesToRadians(lng2 - lng1);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(lat1)) *
+            math.cos(_degreesToRadians(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusMeters * c;
+  }
+
+  double _degreesToRadians(double degrees) => degrees * math.pi / 180.0;
+
   Set<String> _currentQuestScenarioIds() {
     final questLog = context.read<QuestLogProvider>();
     return questLog.quests
@@ -1444,6 +1533,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       poi.id,
     );
     _showPointOfInterestPanel(poi, hasDiscovered);
+  }
+
+  void _focusMainStoryLead(_MainStoryLead lead) {
+    final lat = double.tryParse(lead.poi.lat) ?? 0.0;
+    final lng = double.tryParse(lead.poi.lng) ?? 0.0;
+    _flyToLocation(lat, lng);
+    _pulsePoi(lat, lng);
+    if (lead.character != null) {
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        if (!mounted) return;
+        _showCharacterPanel(lead.character!);
+      });
+      return;
+    }
+    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
+      lead.poi.id,
+    );
+    _showPointOfInterestPanel(lead.poi, hasDiscovered);
   }
 
   void _focusQuestTurnIn(Quest quest) {
@@ -7061,6 +7168,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final hasTrackedQuestOverlay = questLog.quests.any(
       (quest) => questLog.trackedQuestIds.contains(quest.id),
     );
+    final mainStoryLead = _currentZoneMainStoryLead(questLog);
+    final selectedZoneId = context.watch<ZoneProvider>().selectedZone?.id;
+    final shouldShowMainStoryPrompt =
+        mainStoryLead != null &&
+        _dismissedMainStoryPromptZoneId != selectedZoneId;
 
     Quest? polygonQuest;
     QuestNode? polygonNode;
@@ -7346,6 +7458,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             ),
                         ],
                       ),
+                    ),
+                  ),
+                ),
+              ),
+            if (!_isPlacingBase && shouldShowMainStoryPrompt)
+              Positioned(
+                top: 88,
+                left: 16,
+                right: 16,
+                child: PointerInterceptor(
+                  child: SafeArea(
+                    bottom: false,
+                    child: _MainStoryPromptBanner(
+                      lead: mainStoryLead,
+                      onFocus: () => _focusMainStoryLead(mainStoryLead),
+                      onOpenQuestLog: () => _showQuestLog(context),
+                      onDismiss: () {
+                        setState(() {
+                          _dismissedMainStoryPromptZoneId = selectedZoneId;
+                        });
+                      },
                     ),
                   ),
                 ),
@@ -9660,6 +9793,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _showQuestLog(BuildContext context, {Quest? initialSelectedQuest}) {
     _refreshQuestLog();
     context.read<TagsProvider>().refresh();
+    final featuredMainStoryLead = _currentZoneMainStoryLead(
+      context.read<QuestLogProvider>(),
+    );
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -9697,6 +9833,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   onFocusPoI: _focusQuestPoI,
                   onFocusTurnInQuest: _focusQuestTurnIn,
                   initialSelectedQuest: initialSelectedQuest,
+                  featuredMainStoryPoi: featuredMainStoryLead?.poi,
+                  featuredMainStoryQuestGiverName:
+                      featuredMainStoryLead?.character?.name,
                 ),
               ),
             ],
@@ -9836,6 +9975,143 @@ class _OverlayButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Icon(icon, size: 24, color: theme.colorScheme.onSurface),
+        ),
+      ),
+    );
+  }
+}
+
+class _MainStoryLead {
+  const _MainStoryLead({
+    required this.poi,
+    this.character,
+    this.distanceMeters,
+  });
+
+  final PointOfInterest poi;
+  final Character? character;
+  final double? distanceMeters;
+}
+
+class _MainStoryPromptBanner extends StatelessWidget {
+  const _MainStoryPromptBanner({
+    required this.lead,
+    required this.onFocus,
+    required this.onOpenQuestLog,
+    required this.onDismiss,
+  });
+
+  final _MainStoryLead lead;
+  final VoidCallback onFocus;
+  final VoidCallback onOpenQuestLog;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final questGiverName = lead.character?.name.trim() ?? '';
+    final locationName = lead.poi.name.trim().isNotEmpty
+        ? lead.poi.name.trim()
+        : 'nearby';
+    final distanceLabel = lead.distanceMeters != null
+        ? '${lead.distanceMeters!.round()} m away'
+        : null;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7A1823), Color(0xFF4E0F17)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE7C36A), width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE7C36A),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Main Story Available',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: const Color(0xFF3A1A11),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close, color: Color(0xFFF8EBD0)),
+                  tooltip: 'Dismiss',
+                ),
+              ],
+            ),
+            Text(
+              questGiverName.isNotEmpty
+                  ? '$questGiverName is carrying the first thread of this district story.'
+                  : 'The first thread of this district story is waiting nearby.',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              distanceLabel == null
+                  ? 'Start at $locationName.'
+                  : 'Start at $locationName, $distanceLabel.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFFF8EBD0),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: onFocus,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFF1E2BD),
+                      foregroundColor: const Color(0xFF4E0F17),
+                    ),
+                    child: const Text('Focus'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onOpenQuestLog,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFF8EBD0),
+                      side: const BorderSide(color: Color(0xFFE7C36A)),
+                    ),
+                    child: const Text('Quest Log'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

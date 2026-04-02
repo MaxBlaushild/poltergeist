@@ -21,40 +21,79 @@ const (
 )
 
 type MainStoryBeatDraft struct {
-	OrderIndex                   int                           `json:"orderIndex"`
-	Act                          int                           `json:"act"`
-	StoryRole                    string                        `json:"storyRole"`
-	ChapterTitle                 string                        `json:"chapterTitle"`
-	ChapterSummary               string                        `json:"chapterSummary"`
-	Purpose                      string                        `json:"purpose"`
-	WhatChanges                  string                        `json:"whatChanges"`
-	IntroducedCharacterKeys      StringArray                   `json:"introducedCharacterKeys"`
-	RequiredCharacterKeys        StringArray                   `json:"requiredCharacterKeys"`
-	IntroducedRevealKeys         StringArray                   `json:"introducedRevealKeys"`
-	RequiredRevealKeys           StringArray                   `json:"requiredRevealKeys"`
-	RequiredZoneTags             StringArray                   `json:"requiredZoneTags"`
-	RequiredLocationArchetypeIDs StringArray                   `json:"requiredLocationArchetypeIds"`
-	PreferredContentMix          StringArray                   `json:"preferredContentMix"`
-	QuestGiverCharacterKey       string                        `json:"questGiverCharacterKey"`
-	QuestGiverCharacterID        *uuid.UUID                    `json:"questGiverCharacterId,omitempty"`
-	QuestGiverCharacterName      string                        `json:"questGiverCharacterName,omitempty"`
-	Name                         string                        `json:"name"`
-	Hook                         string                        `json:"hook"`
-	Description                  string                        `json:"description"`
-	AcceptanceDialogue           StringArray                   `json:"acceptanceDialogue"`
-	CharacterTags                StringArray                   `json:"characterTags"`
-	InternalTags                 StringArray                   `json:"internalTags"`
-	DifficultyMode               QuestDifficultyMode           `json:"difficultyMode"`
-	Difficulty                   int                           `json:"difficulty"`
-	MonsterEncounterTargetLevel  int                           `json:"monsterEncounterTargetLevel"`
-	WhyThisScales                string                        `json:"whyThisScales"`
-	Steps                        QuestArchetypeSuggestionSteps `json:"steps"`
-	ChallengeTemplateSeeds       StringArray                   `json:"challengeTemplateSeeds"`
-	ScenarioTemplateSeeds        StringArray                   `json:"scenarioTemplateSeeds"`
-	MonsterTemplateSeeds         StringArray                   `json:"monsterTemplateSeeds"`
-	Warnings                     StringArray                   `json:"warnings"`
-	QuestArchetypeID             *uuid.UUID                    `json:"questArchetypeId,omitempty"`
-	QuestArchetypeName           string                        `json:"questArchetypeName,omitempty"`
+	OrderIndex                    int                           `json:"orderIndex"`
+	Act                           int                           `json:"act"`
+	StoryRole                     string                        `json:"storyRole"`
+	ChapterTitle                  string                        `json:"chapterTitle"`
+	ChapterSummary                string                        `json:"chapterSummary"`
+	Purpose                       string                        `json:"purpose"`
+	WhatChanges                   string                        `json:"whatChanges"`
+	IntroducedCharacterKeys       StringArray                   `json:"introducedCharacterKeys"`
+	RequiredCharacterKeys         StringArray                   `json:"requiredCharacterKeys"`
+	IntroducedRevealKeys          StringArray                   `json:"introducedRevealKeys"`
+	RequiredRevealKeys            StringArray                   `json:"requiredRevealKeys"`
+	RequiredZoneTags              StringArray                   `json:"requiredZoneTags"`
+	RequiredLocationArchetypeIDs  StringArray                   `json:"requiredLocationArchetypeIds"`
+	PreferredContentMix           StringArray                   `json:"preferredContentMix"`
+	QuestGiverCharacterKey        string                        `json:"questGiverCharacterKey"`
+	QuestGiverCharacterID         *uuid.UUID                    `json:"questGiverCharacterId,omitempty"`
+	QuestGiverCharacterName       string                        `json:"questGiverCharacterName,omitempty"`
+	Name                          string                        `json:"name"`
+	Hook                          string                        `json:"hook"`
+	Description                   string                        `json:"description"`
+	AcceptanceDialogue            StringArray                   `json:"acceptanceDialogue"`
+	RequiredStoryFlags            StringArray                   `json:"requiredStoryFlags"`
+	SetStoryFlags                 StringArray                   `json:"setStoryFlags"`
+	ClearStoryFlags               StringArray                   `json:"clearStoryFlags"`
+	QuestGiverRelationshipEffects CharacterRelationshipState    `json:"questGiverRelationshipEffects"`
+	WorldChanges                  []MainStoryWorldChange        `json:"worldChanges"`
+	UnlockedScenarios             []MainStoryUnlockedScenario   `json:"unlockedScenarios"`
+	UnlockedChallenges            []MainStoryUnlockedChallenge  `json:"unlockedChallenges"`
+	UnlockedMonsterEncounters     []MainStoryUnlockedEncounter  `json:"unlockedMonsterEncounters"`
+	QuestGiverAfterDescription    string                        `json:"questGiverAfterDescription"`
+	QuestGiverAfterDialogue       StringArray                   `json:"questGiverAfterDialogue"`
+	CharacterTags                 StringArray                   `json:"characterTags"`
+	InternalTags                  StringArray                   `json:"internalTags"`
+	DifficultyMode                QuestDifficultyMode           `json:"difficultyMode"`
+	Difficulty                    int                           `json:"difficulty"`
+	MonsterEncounterTargetLevel   int                           `json:"monsterEncounterTargetLevel"`
+	WhyThisScales                 string                        `json:"whyThisScales"`
+	Steps                         QuestArchetypeSuggestionSteps `json:"steps"`
+	ChallengeTemplateSeeds        StringArray                   `json:"challengeTemplateSeeds"`
+	ScenarioTemplateSeeds         StringArray                   `json:"scenarioTemplateSeeds"`
+	MonsterTemplateSeeds          StringArray                   `json:"monsterTemplateSeeds"`
+	Warnings                      StringArray                   `json:"warnings"`
+	QuestArchetypeID              *uuid.UUID                    `json:"questArchetypeId,omitempty"`
+	QuestArchetypeName            string                        `json:"questArchetypeName,omitempty"`
+}
+
+type MainStoryUnlockedScenario struct {
+	Name                string      `json:"name"`
+	Prompt              string      `json:"prompt"`
+	PointOfInterestHint string      `json:"pointOfInterestHint,omitempty"`
+	InternalTags        StringArray `json:"internalTags,omitempty"`
+	Difficulty          int         `json:"difficulty,omitempty"`
+}
+
+type MainStoryUnlockedChallenge struct {
+	Question            string                  `json:"question"`
+	Description         string                  `json:"description"`
+	PointOfInterestHint string                  `json:"pointOfInterestHint,omitempty"`
+	SubmissionType      QuestNodeSubmissionType `json:"submissionType,omitempty"`
+	Proficiency         *string                 `json:"proficiency,omitempty"`
+	StatTags            StringArray             `json:"statTags,omitempty"`
+	Difficulty          int                     `json:"difficulty,omitempty"`
+}
+
+type MainStoryUnlockedEncounter struct {
+	Name                 string               `json:"name"`
+	Description          string               `json:"description"`
+	PointOfInterestHint  string               `json:"pointOfInterestHint,omitempty"`
+	EncounterType        MonsterEncounterType `json:"encounterType,omitempty"`
+	MonsterCount         int                  `json:"monsterCount,omitempty"`
+	EncounterTone        StringArray          `json:"encounterTone,omitempty"`
+	MonsterTemplateHints StringArray          `json:"monsterTemplateHints,omitempty"`
+	TargetLevel          int                  `json:"targetLevel,omitempty"`
 }
 
 type MainStoryBeatDrafts []MainStoryBeatDraft

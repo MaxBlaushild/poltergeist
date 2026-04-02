@@ -637,6 +637,95 @@ export const MainStoryGenerator = () => {
                                 : ''}
                             </div>
                           )}
+                          {beat.requiredStoryFlags.length > 0 && (
+                            <div className="qa-copy">
+                              <strong>Requires:</strong>{' '}
+                              {beat.requiredStoryFlags.join(', ')}
+                            </div>
+                          )}
+                          {beat.setStoryFlags.length > 0 && (
+                            <div className="qa-copy">
+                              <strong>Sets:</strong>{' '}
+                              {beat.setStoryFlags.join(', ')}
+                            </div>
+                          )}
+                          {beat.clearStoryFlags.length > 0 && (
+                            <div className="qa-copy">
+                              <strong>Clears:</strong>{' '}
+                              {beat.clearStoryFlags.join(', ')}
+                            </div>
+                          )}
+                          {beat.questGiverRelationshipEffects &&
+                            Object.values(
+                              beat.questGiverRelationshipEffects
+                            ).some((value) => (value ?? 0) !== 0) && (
+                              <div className="qa-copy">
+                                <strong>Quest Giver Relationship:</strong>{' '}
+                                {[
+                                  beat.questGiverRelationshipEffects.trust
+                                    ? `Trust ${beat.questGiverRelationshipEffects.trust > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.trust}`
+                                    : null,
+                                  beat.questGiverRelationshipEffects.respect
+                                    ? `Respect ${beat.questGiverRelationshipEffects.respect > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.respect}`
+                                    : null,
+                                  beat.questGiverRelationshipEffects.fear
+                                    ? `Fear ${beat.questGiverRelationshipEffects.fear > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.fear}`
+                                    : null,
+                                  beat.questGiverRelationshipEffects.debt
+                                    ? `Debt ${beat.questGiverRelationshipEffects.debt > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.debt}`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(', ')}
+                              </div>
+                            )}
+                          {(beat.questGiverAfterDescription ||
+                            beat.questGiverAfterDialogue.length > 0) && (
+                            <div className="qa-copy">
+                              <strong>Quest Giver Aftermath:</strong>{' '}
+                              {beat.questGiverAfterDescription || 'n/a'}
+                              {beat.questGiverAfterDialogue.length > 0
+                                ? ` ${beat.questGiverAfterDialogue.join(' / ')}`
+                                : ''}
+                            </div>
+                          )}
+                          {(beat.worldChanges?.length ?? 0) > 0 && (
+                            <div className="qa-copy">
+                              <strong>World Changes:</strong>{' '}
+                              {(beat.worldChanges ?? [])
+                                .map((change) => {
+                                  if (change.type === 'move_character') {
+                                    return `Move ${change.targetKey || 'character'} to ${change.destinationHint || 'a new location'}`;
+                                  }
+                                  if (change.type === 'show_poi_text') {
+                                    return `Update ${change.targetKey || 'poi'} text`;
+                                  }
+                                  return change.type;
+                                })
+                                .join(' / ')}
+                            </div>
+                          )}
+                          {((beat.unlockedScenarios?.length ?? 0) > 0 ||
+                            (beat.unlockedChallenges?.length ?? 0) > 0 ||
+                            (beat.unlockedMonsterEncounters?.length ?? 0) >
+                              0) && (
+                            <div className="qa-copy">
+                              <strong>Unlocked Content:</strong>{' '}
+                              {[
+                                ...(beat.unlockedScenarios ?? []).map(
+                                  (scenario) =>
+                                    `Scenario: ${scenario.name || scenario.prompt}`
+                                ),
+                                ...(beat.unlockedChallenges ?? []).map(
+                                  (challenge) =>
+                                    `Challenge: ${challenge.question}`
+                                ),
+                                ...(beat.unlockedMonsterEncounters ?? []).map(
+                                  (encounter) => `Encounter: ${encounter.name}`
+                                ),
+                              ].join(' / ')}
+                            </div>
+                          )}
                           <div className="qa-tag-row">
                             {beat.requiredZoneTags.map((tag) => (
                               <span

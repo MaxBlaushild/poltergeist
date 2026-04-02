@@ -1,5 +1,6 @@
 import { QuestDifficultyMode } from './questDifficulty';
 import { QuestNodeSubmissionType } from './questNode';
+import { CharacterRelationshipState } from './quest';
 
 export interface MainStoryBeatStep {
   source: 'location' | 'proximity' | (string & {});
@@ -46,6 +47,16 @@ export interface MainStoryBeatDraft {
   hook: string;
   description: string;
   acceptanceDialogue: string[];
+  requiredStoryFlags: string[];
+  setStoryFlags: string[];
+  clearStoryFlags: string[];
+  questGiverRelationshipEffects?: CharacterRelationshipState;
+  worldChanges?: MainStoryWorldChange[];
+  unlockedScenarios?: MainStoryUnlockedScenario[];
+  unlockedChallenges?: MainStoryUnlockedChallenge[];
+  unlockedMonsterEncounters?: MainStoryUnlockedEncounter[];
+  questGiverAfterDescription?: string;
+  questGiverAfterDialogue: string[];
   characterTags: string[];
   internalTags: string[];
   difficultyMode: QuestDifficultyMode;
@@ -59,6 +70,46 @@ export interface MainStoryBeatDraft {
   warnings: string[];
   questArchetypeId?: string | null;
   questArchetypeName?: string;
+}
+
+export interface MainStoryWorldChange {
+  type: 'move_character' | 'show_poi_text' | (string & {});
+  targetKey: string;
+  characterKey?: string;
+  pointOfInterestHint?: string;
+  destinationHint?: string;
+  zoneTags?: string[];
+  description?: string;
+  clue?: string;
+}
+
+export interface MainStoryUnlockedScenario {
+  name: string;
+  prompt: string;
+  pointOfInterestHint?: string;
+  internalTags?: string[];
+  difficulty?: number;
+}
+
+export interface MainStoryUnlockedChallenge {
+  question: string;
+  description: string;
+  pointOfInterestHint?: string;
+  submissionType?: QuestNodeSubmissionType;
+  proficiency?: string | null;
+  statTags?: string[];
+  difficulty?: number;
+}
+
+export interface MainStoryUnlockedEncounter {
+  name: string;
+  description: string;
+  pointOfInterestHint?: string;
+  encounterType?: 'monster' | 'boss' | 'raid' | (string & {});
+  monsterCount?: number;
+  encounterTone?: string[];
+  monsterTemplateHints?: string[];
+  targetLevel?: number;
 }
 
 export interface MainStorySuggestionJob {

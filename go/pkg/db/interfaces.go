@@ -80,6 +80,9 @@ type DbClient interface {
 	UserCharacterStats() UserCharacterStatsHandle
 	UserEquipment() UserEquipmentHandle
 	UserStatus() UserStatusHandle
+	UserStoryFlag() UserStoryFlagHandle
+	UserCharacterRelationship() UserCharacterRelationshipHandle
+	StoryWorldChange() StoryWorldChangeHandle
 	MonsterStatus() MonsterStatusHandle
 	UserProficiency() UserProficiencyHandle
 	UserZoneReputation() UserZoneReputationHandle
@@ -219,6 +222,24 @@ type UserProficiencyHandle interface {
 	FindDistinctProficiencies(ctx context.Context, query string, limit int) ([]string, error)
 	Increment(ctx context.Context, userID uuid.UUID, proficiency string, delta int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type UserStoryFlagHandle interface {
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserStoryFlag, error)
+	Upsert(ctx context.Context, userID uuid.UUID, flagKey string, value bool) error
+	DeleteByUserAndKeys(ctx context.Context, userID uuid.UUID, keys []string) error
+}
+
+type UserCharacterRelationshipHandle interface {
+	FindByUserAndCharacterIDs(ctx context.Context, userID uuid.UUID, characterIDs []uuid.UUID) ([]models.UserCharacterRelationship, error)
+	FindByUserAndCharacterID(ctx context.Context, userID uuid.UUID, characterID uuid.UUID) (*models.UserCharacterRelationship, error)
+	ApplyDelta(ctx context.Context, userID uuid.UUID, characterID uuid.UUID, delta models.CharacterRelationshipDelta) (*models.UserCharacterRelationship, error)
+}
+
+type StoryWorldChangeHandle interface {
+	CreateBatch(ctx context.Context, changes []models.StoryWorldChange) error
+	FindAll(ctx context.Context) ([]models.StoryWorldChange, error)
+	FindByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.StoryWorldChange, error)
 }
 
 type SocialAccountHandle interface {

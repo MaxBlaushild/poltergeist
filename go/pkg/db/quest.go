@@ -10,6 +10,23 @@ import (
 	"gorm.io/gorm"
 )
 
+func normalizeJSONStringArray(input models.StringArray) models.StringArray {
+	normalized := make(models.StringArray, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, raw := range input {
+		value := strings.ToLower(strings.TrimSpace(raw))
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
 type questHandle struct {
 	db *gorm.DB
 }
@@ -42,6 +59,10 @@ func (h *questHandle) preloadDetail(ctx context.Context) *gorm.DB {
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 	if quest != nil {
 		quest.Category = models.NormalizeQuestCategory(quest.Category)
+		quest.RequiredStoryFlags = normalizeJSONStringArray(quest.RequiredStoryFlags)
+		quest.SetStoryFlags = normalizeJSONStringArray(quest.SetStoryFlags)
+		quest.ClearStoryFlags = normalizeJSONStringArray(quest.ClearStoryFlags)
+		quest.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(quest.QuestGiverRelationshipEffects)
 		if !models.IsMainStoryQuestCategory(quest.Category) {
 			quest.MainStoryPreviousQuestID = nil
 			quest.MainStoryNextQuestID = nil
@@ -71,6 +92,10 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	}
 	updates.DifficultyMode = models.NormalizeQuestDifficultyMode(string(updates.DifficultyMode))
 	updates.Category = models.NormalizeQuestCategory(updates.Category)
+	updates.RequiredStoryFlags = normalizeJSONStringArray(updates.RequiredStoryFlags)
+	updates.SetStoryFlags = normalizeJSONStringArray(updates.SetStoryFlags)
+	updates.ClearStoryFlags = normalizeJSONStringArray(updates.ClearStoryFlags)
+	updates.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(updates.QuestGiverRelationshipEffects)
 	if !models.IsMainStoryQuestCategory(updates.Category) {
 		updates.MainStoryPreviousQuestID = nil
 		updates.MainStoryNextQuestID = nil
@@ -83,27 +108,31 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		updates.RewardExperience = 0
 	}
 	payload := map[string]interface{}{
-		"name":                           updates.Name,
-		"description":                    updates.Description,
-		"category":                       updates.Category,
-		"acceptance_dialogue":            updates.AcceptanceDialogue,
-		"image_url":                      updates.ImageURL,
-		"zone_id":                        updates.ZoneID,
-		"quest_archetype_id":             updates.QuestArchetypeID,
-		"quest_giver_character_id":       updates.QuestGiverCharacterID,
-		"main_story_previous_quest_id":   updates.MainStoryPreviousQuestID,
-		"main_story_next_quest_id":       updates.MainStoryNextQuestID,
-		"recurring_quest_id":             updates.RecurringQuestID,
-		"recurrence_frequency":           updates.RecurrenceFrequency,
-		"next_recurrence_at":             updates.NextRecurrenceAt,
-		"difficulty_mode":                updates.DifficultyMode,
-		"difficulty":                     updates.Difficulty,
-		"monster_encounter_target_level": updates.MonsterEncounterTargetLevel,
-		"reward_mode":                    updates.RewardMode,
-		"random_reward_size":             updates.RandomRewardSize,
-		"reward_experience":              updates.RewardExperience,
-		"gold":                           updates.Gold,
-		"updated_at":                     updates.UpdatedAt,
+		"name":                             updates.Name,
+		"description":                      updates.Description,
+		"category":                         updates.Category,
+		"required_story_flags":             updates.RequiredStoryFlags,
+		"set_story_flags":                  updates.SetStoryFlags,
+		"clear_story_flags":                updates.ClearStoryFlags,
+		"quest_giver_relationship_effects": updates.QuestGiverRelationshipEffects,
+		"acceptance_dialogue":              updates.AcceptanceDialogue,
+		"image_url":                        updates.ImageURL,
+		"zone_id":                          updates.ZoneID,
+		"quest_archetype_id":               updates.QuestArchetypeID,
+		"quest_giver_character_id":         updates.QuestGiverCharacterID,
+		"main_story_previous_quest_id":     updates.MainStoryPreviousQuestID,
+		"main_story_next_quest_id":         updates.MainStoryNextQuestID,
+		"recurring_quest_id":               updates.RecurringQuestID,
+		"recurrence_frequency":             updates.RecurrenceFrequency,
+		"next_recurrence_at":               updates.NextRecurrenceAt,
+		"difficulty_mode":                  updates.DifficultyMode,
+		"difficulty":                       updates.Difficulty,
+		"monster_encounter_target_level":   updates.MonsterEncounterTargetLevel,
+		"reward_mode":                      updates.RewardMode,
+		"random_reward_size":               updates.RandomRewardSize,
+		"reward_experience":                updates.RewardExperience,
+		"gold":                             updates.Gold,
+		"updated_at":                       updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.Quest{}).Where("id = ?", id).Updates(payload).Error
 }

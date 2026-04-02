@@ -24,12 +24,16 @@ class QuestLogPanel extends StatefulWidget {
     required this.onFocusPoI,
     required this.onFocusTurnInQuest,
     this.initialSelectedQuest,
+    this.featuredMainStoryPoi,
+    this.featuredMainStoryQuestGiverName,
   });
 
   final VoidCallback onClose;
   final OnFocusPoI onFocusPoI;
   final OnFocusTurnInQuest onFocusTurnInQuest;
   final Quest? initialSelectedQuest;
+  final PointOfInterest? featuredMainStoryPoi;
+  final String? featuredMainStoryQuestGiverName;
 
   @override
   State<QuestLogPanel> createState() => _QuestLogPanelState();
@@ -245,6 +249,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         };
 
         final hasQuestListItems =
+            widget.featuredMainStoryPoi != null ||
             mainStoryActive.isNotEmpty ||
             readyToTurnIn.isNotEmpty ||
             tracked.isNotEmpty ||
@@ -271,6 +276,15 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                if (widget.featuredMainStoryPoi != null &&
+                                    mainStoryActive.isEmpty)
+                                  _MainStoryLeadCard(
+                                    poi: widget.featuredMainStoryPoi!,
+                                    questGiverName:
+                                        widget.featuredMainStoryQuestGiverName,
+                                    onTap: () =>
+                                        _focusPoI(widget.featuredMainStoryPoi!),
+                                  ),
                                 if (mainStoryActive.isNotEmpty)
                                   _QuestAccordion(
                                     title: 'Main Story',
@@ -769,6 +783,99 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           ),
         );
       },
+    );
+  }
+}
+
+class _MainStoryLeadCard extends StatelessWidget {
+  const _MainStoryLeadCard({
+    required this.poi,
+    required this.onTap,
+    this.questGiverName,
+  });
+
+  final PointOfInterest poi;
+  final VoidCallback onTap;
+  final String? questGiverName;
+
+  @override
+  Widget build(BuildContext context) {
+    final headline = (questGiverName ?? '').trim().isNotEmpty
+        ? '$questGiverName has something important to tell you.'
+        : 'A main story thread is waiting here.';
+    final locationName = poi.name.trim().isNotEmpty
+        ? poi.name.trim()
+        : 'this place';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF7A1823), Color(0xFF4E0F17)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE7C36A), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7C36A),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'Main Story Available',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: const Color(0xFF3A1A11),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            headline,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Start at $locationName.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFFF8EBD0)),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.tonal(
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFF1E2BD),
+              foregroundColor: const Color(0xFF4E0F17),
+            ),
+            child: const Text('Follow Lead'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -15,6 +15,10 @@ type questArchetypeHandle struct {
 func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *models.QuestArchetype) error {
 	if questArchetype != nil {
 		questArchetype.Category = models.NormalizeQuestCategory(questArchetype.Category)
+		questArchetype.RequiredStoryFlags = normalizeJSONStringArray(questArchetype.RequiredStoryFlags)
+		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
+		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)
+		questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.QuestGiverRelationshipEffects)
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
 		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
@@ -58,6 +62,10 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 func (h *questArchetypeHandle) Update(ctx context.Context, questArchetype *models.QuestArchetype) error {
 	if questArchetype != nil {
 		questArchetype.Category = models.NormalizeQuestCategory(questArchetype.Category)
+		questArchetype.RequiredStoryFlags = normalizeJSONStringArray(questArchetype.RequiredStoryFlags)
+		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
+		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)
+		questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.QuestGiverRelationshipEffects)
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
 		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
