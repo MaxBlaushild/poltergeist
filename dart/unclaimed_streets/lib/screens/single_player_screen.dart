@@ -41,6 +41,7 @@ import '../providers/quest_log_provider.dart';
 import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
 import '../providers/tutorial_replay_provider.dart';
+import '../providers/user_level_provider.dart';
 import '../providers/zone_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/party_provider.dart';
@@ -743,6 +744,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       default:
         return;
     }
+  }
+
+  Future<int> _refreshRewardDrivenPlayerState() async {
+    final statsProvider = context.read<CharacterStatsProvider>();
+    await Future.wait([
+      statsProvider.refresh(silent: true),
+      context.read<AuthProvider>().refresh(),
+      context.read<ActivityFeedProvider>().refresh(),
+      context.read<UserLevelProvider>().refresh(),
+    ]);
+    return statsProvider.level;
+  }
+
+  void _queueRewardLevelUpFromData(Map<String, dynamic> data) {
+    final leveledUp = data['leveledUp'] == true;
+    if (!leveledUp) return;
+    final completedTaskProvider = context.read<CompletedTaskProvider>();
+    completedTaskProvider.queueLevelUpModal(
+      newLevel:
+          (data['newLevel'] as num?)?.toInt() ??
+          context.read<CharacterStatsProvider>().level,
+      previousLevel: (data['previousLevel'] as num?)?.toInt(),
+      levelsGained: (data['levelsGained'] as num?)?.toInt() ?? 1,
+    );
   }
 
   Future<void> _removeMonsterEncounterLocally(String encounterId) async {
@@ -2009,6 +2034,59 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _flyToLocation(scenario.latitude, scenario.longitude);
       unawaited(_pulsePoi(scenario.latitude, scenario.longitude));
       unawaited(_loadTutorialStatus(force: true));
+    } catch (error) {
+      await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
+      if (!mounted) return;
+
+      final recoveredScenarioId =
+          _tutorialStatus != null && _tutorialStatus!.hasActiveScenario
+          ? _tutorialStatus!.scenarioId?.trim() ?? ''
+          : '';
+      if (recoveredScenarioId.isNotEmpty) {
+        Scenario? recoveredScenario;
+        for (final item in _scenarios) {
+          if (item.id == recoveredScenarioId) {
+            recoveredScenario = item;
+            break;
+          }
+        }
+        recoveredScenario ??= await context.read<PoiService>().getScenarioById(
+          recoveredScenarioId,
+        );
+        if (recoveredScenario != null && mounted) {
+          final recovered = recoveredScenario;
+          setState(() {
+            _tutorialReplayPending = false;
+            _tutorialFocusedScenarioId = recovered.id;
+            _tutorialFocusedMonsterEncounterId = null;
+            _tutorialNormalPinsRevealInProgress = false;
+            _tutorialLoadoutPendingAfterCompletionModal = false;
+            _tutorialRevealPendingAfterCompletionModal = false;
+            _scenarios = [
+              recovered,
+              ..._scenarios.where((item) => item.id != recovered.id),
+            ];
+          });
+          await _rebuildMapPins();
+          if (!mounted) return;
+          _flyToLocation(
+            recoveredScenario.latitude,
+            recoveredScenario.longitude,
+          );
+          unawaited(
+            _pulsePoi(recoveredScenario.latitude, recoveredScenario.longitude),
+          );
+          return;
+        }
+      }
+
+      final message = PoiService.extractApiErrorMessage(
+        error,
+        'Failed to start the tutorial scenario.',
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) {
         setState(() => _tutorialActivationInFlight = false);
@@ -6942,6 +7020,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               videoSubmissionUrl = url.split('?').first;
                             }
                             late final Map<String, dynamic> resp;
+                            final previousLevel = context
+                                .read<CharacterStatsProvider>()
+                                .level;
                             try {
                               resp = standaloneChallengeId == null
                                   ? await questLogProvider.submitQuestNode(
@@ -7029,28 +7110,34 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 ),
                               );
                             }
+                            final currentLevel =
+                                await _refreshRewardDrivenPlayerState();
+                            if (!mounted || !parentContext.mounted) return;
                             if (mounted && parentContext.mounted) {
-                              parentContext
-                                  .read<CompletedTaskProvider>()
-                                  .showModal(
-                                    'challengeOutcome',
-                                    data: {
-                                      ...Map<String, dynamic>.from(resp),
-                                      if (baseMessage.isNotEmpty &&
-                                          (resp['reason']?.toString().trim() ??
-                                                  '')
-                                              .isEmpty)
-                                        'reason': baseMessage,
-                                      if (score != null) 'score': score,
-                                      if (difficulty != null)
-                                        'difficulty': difficulty,
-                                      if (combined != null)
-                                        'combinedScore': combined,
-                                      if (statTags != null)
-                                        'statTags': statTags,
-                                      if (statValues != null)
-                                        'statValues': statValues,
-                                    },
+                              final completedTaskProvider = parentContext
+                                  .read<CompletedTaskProvider>();
+                              completedTaskProvider.showModal(
+                                'challengeOutcome',
+                                data: {
+                                  ...Map<String, dynamic>.from(resp),
+                                  if (baseMessage.isNotEmpty &&
+                                      (resp['reason']?.toString().trim() ?? '')
+                                          .isEmpty)
+                                    'reason': baseMessage,
+                                  if (score != null) 'score': score,
+                                  if (difficulty != null)
+                                    'difficulty': difficulty,
+                                  if (combined != null)
+                                    'combinedScore': combined,
+                                  if (statTags != null) 'statTags': statTags,
+                                  if (statValues != null)
+                                    'statValues': statValues,
+                                },
+                              );
+                              completedTaskProvider
+                                  .queueLevelUpFollowUpIfNeeded(
+                                    previousLevel: previousLevel,
+                                    currentLevel: currentLevel,
                                   );
                             }
                           },
@@ -8622,10 +8709,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           unawaited(_refreshTreasureChestSymbols());
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            parentContext.read<CompletedTaskProvider>().showModal(
+            final completedTaskProvider = parentContext
+                .read<CompletedTaskProvider>();
+            completedTaskProvider.showModal(
               'treasureChestOpened',
               data: rewardData,
             );
+            _queueRewardLevelUpFromData(rewardData);
           });
         },
       ),
@@ -9469,6 +9559,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       'itemsAwarded=${result.itemsAwarded.length}',
     );
     final statsProvider = context.read<CharacterStatsProvider>();
+    final previousLevel = statsProvider.level;
     final questLogProvider = context.read<QuestLogProvider>();
 
     await statsProvider.setHealthAndManaTo(
@@ -9481,11 +9572,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {
-      await Future.wait([
-        statsProvider.refresh(silent: true),
-        context.read<AuthProvider>().refresh(),
-        context.read<ActivityFeedProvider>().refresh(),
-      ]);
+      await _refreshRewardDrivenPlayerState();
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {
@@ -9509,7 +9596,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       if (!mounted || !parentContext.mounted) return;
 
-      parentContext.read<CompletedTaskProvider>().showModal(
+      final completedTaskProvider = parentContext.read<CompletedTaskProvider>();
+      completedTaskProvider.showModal(
         'monsterBattleVictory',
         data: {
           'monsterEncounterId': monster.id,
@@ -9519,6 +9607,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           'baseResourcesAwarded': result.baseResourcesAwarded,
           'itemsAwarded': result.itemsAwarded,
         },
+      );
+      completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+        previousLevel: previousLevel,
+        currentLevel: statsProvider.level,
       );
       return;
     }
@@ -9615,6 +9707,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onClose: () => Navigator.of(context).pop(),
         onPerformed: (result) async {
           if (!mounted) return;
+          final previousLevel = context.read<CharacterStatsProvider>().level;
 
           await _removeScenarioLocally(
             scenario.id,
@@ -9622,6 +9715,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             fallbackScenario: scenario,
           );
           unawaited(_loadTreasureChestsForSelectedZone());
+          final currentLevel = await _refreshRewardDrivenPlayerState();
           if (!mounted || !parentContext.mounted) return;
 
           ScenarioOption? selectedOption;
@@ -9647,7 +9741,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted || !parentContext.mounted) return;
-            parentContext.read<CompletedTaskProvider>().showModal(
+            final completedTaskProvider = parentContext
+                .read<CompletedTaskProvider>();
+            completedTaskProvider.showModal(
               'scenarioOutcome',
               data: {
                 'scenarioId': result.scenarioId,
@@ -9683,6 +9779,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     .map((spell) => spell.toJson())
                     .toList(),
               },
+            );
+            completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+              previousLevel: previousLevel,
+              currentLevel: currentLevel,
             );
           });
         },

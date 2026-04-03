@@ -66,6 +66,7 @@ type DbClient interface {
 	MainStoryTemplate() MainStoryTemplateHandle
 	MainStorySuggestionJob() MainStorySuggestionJobHandle
 	MainStorySuggestionDraft() MainStorySuggestionDraftHandle
+	MainStoryDistrictRun() MainStoryDistrictRunHandle
 	QuestArchetypeNode() QuestArchetypeNodeHandle
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
@@ -746,6 +747,14 @@ type MainStorySuggestionDraftHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStorySuggestionDraft, error)
 	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.MainStorySuggestionDraft, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type MainStoryDistrictRunHandle interface {
+	Create(ctx context.Context, run *models.MainStoryDistrictRun) error
+	Update(ctx context.Context, run *models.MainStoryDistrictRun) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStoryDistrictRun, error)
+	FindAll(ctx context.Context) ([]models.MainStoryDistrictRun, error)
+	FindByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.MainStoryDistrictRun, error)
 }
 
 type QuestArchetypeNodeHandle interface {

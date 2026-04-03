@@ -18,6 +18,10 @@ const (
 
 	MainStorySuggestionDraftStatusSuggested = "suggested"
 	MainStorySuggestionDraftStatusConverted = "converted"
+
+	MainStoryDistrictRunStatusInProgress = "in_progress"
+	MainStoryDistrictRunStatusCompleted  = "completed"
+	MainStoryDistrictRunStatusFailed     = "failed"
 )
 
 type MainStoryBeatDraft struct {
@@ -145,6 +149,67 @@ func (MainStoryTemplate) TableName() string {
 	return "main_story_templates"
 }
 
+type MainStoryDistrictBeatRun struct {
+	OrderIndex              int        `json:"orderIndex"`
+	Act                     int        `json:"act"`
+	ChapterTitle            string     `json:"chapterTitle"`
+	StoryRole               string     `json:"storyRole"`
+	Status                  string     `json:"status"`
+	ZoneID                  *uuid.UUID `json:"zoneId,omitempty"`
+	ZoneName                string     `json:"zoneName,omitempty"`
+	PointOfInterestID       *uuid.UUID `json:"pointOfInterestId,omitempty"`
+	PointOfInterestName     string     `json:"pointOfInterestName,omitempty"`
+	QuestID                 *uuid.UUID `json:"questId,omitempty"`
+	QuestName               string     `json:"questName,omitempty"`
+	QuestArchetypeID        *uuid.UUID `json:"questArchetypeId,omitempty"`
+	QuestArchetypeName      string     `json:"questArchetypeName,omitempty"`
+	QuestGiverCharacterID   *uuid.UUID `json:"questGiverCharacterId,omitempty"`
+	QuestGiverCharacterName string     `json:"questGiverCharacterName,omitempty"`
+	ErrorMessage            string     `json:"errorMessage,omitempty"`
+}
+
+type MainStoryDistrictBeatRuns []MainStoryDistrictBeatRun
+
+func (s MainStoryDistrictBeatRuns) Value() (driver.Value, error) {
+	if s == nil {
+		return json.Marshal([]MainStoryDistrictBeatRun{})
+	}
+	return json.Marshal(s)
+}
+
+func (s *MainStoryDistrictBeatRuns) Scan(value interface{}) error {
+	if value == nil {
+		*s = MainStoryDistrictBeatRuns{}
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("failed to scan MainStoryDistrictBeatRuns: value is not []byte")
+	}
+	var decoded []MainStoryDistrictBeatRun
+	if err := json.Unmarshal(bytes, &decoded); err != nil {
+		return err
+	}
+	*s = decoded
+	return nil
+}
+
+type MainStoryDistrictRun struct {
+	ID                    uuid.UUID                 `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt             time.Time                 `json:"createdAt"`
+	UpdatedAt             time.Time                 `json:"updatedAt"`
+	MainStoryTemplateID   uuid.UUID                 `json:"mainStoryTemplateId" gorm:"column:main_story_template_id;type:uuid"`
+	DistrictID            uuid.UUID                 `json:"districtId" gorm:"column:district_id;type:uuid"`
+	Status                string                    `json:"status"`
+	BeatRuns              MainStoryDistrictBeatRuns `json:"beatRuns" gorm:"column:beat_runs;type:jsonb"`
+	GeneratedCharacterIDs StringArray               `json:"generatedCharacterIds" gorm:"column:generated_character_ids;type:jsonb"`
+	ErrorMessage          *string                   `json:"errorMessage,omitempty" gorm:"column:error_message"`
+}
+
+func (MainStoryDistrictRun) TableName() string {
+	return "main_story_district_runs"
+}
+
 type MainStorySuggestionJob struct {
 	ID                           uuid.UUID   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt                    time.Time   `json:"createdAt"`
@@ -216,5 +281,16 @@ func NormalizeMainStorySuggestionDraftStatus(raw string) string {
 		return MainStorySuggestionDraftStatusConverted
 	default:
 		return MainStorySuggestionDraftStatusSuggested
+	}
+}
+
+func NormalizeMainStoryDistrictRunStatus(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case MainStoryDistrictRunStatusCompleted:
+		return MainStoryDistrictRunStatusCompleted
+	case MainStoryDistrictRunStatusFailed:
+		return MainStoryDistrictRunStatusFailed
+	default:
+		return MainStoryDistrictRunStatusInProgress
 	}
 }

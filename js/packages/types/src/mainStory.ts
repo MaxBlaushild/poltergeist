@@ -150,6 +150,37 @@ export interface MainStoryTemplate {
   beats: MainStoryBeatDraft[];
 }
 
+export interface MainStoryDistrictBeatRun {
+  orderIndex: number;
+  act: number;
+  chapterTitle: string;
+  storyRole: string;
+  status: string;
+  zoneId?: string | null;
+  zoneName?: string;
+  pointOfInterestId?: string | null;
+  pointOfInterestName?: string;
+  questId?: string | null;
+  questName?: string;
+  questArchetypeId?: string | null;
+  questArchetypeName?: string;
+  questGiverCharacterId?: string | null;
+  questGiverCharacterName?: string;
+  errorMessage?: string;
+}
+
+export interface MainStoryDistrictRun {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  mainStoryTemplateId: string;
+  districtId: string;
+  status: string;
+  beatRuns: MainStoryDistrictBeatRun[];
+  generatedCharacterIds: string[];
+  errorMessage?: string | null;
+}
+
 export interface MainStorySuggestionDraft {
   id: string;
   createdAt: string;

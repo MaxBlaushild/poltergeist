@@ -497,6 +497,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/mainStorySuggestionDrafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStorySuggestionDraft))
 	r.GET("/sonar/mainStoryTemplates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplates))
 	r.GET("/sonar/mainStoryTemplates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplate))
+	r.GET("/sonar/mainStoryDistrictRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryDistrictRuns))
+	r.POST("/sonar/mainStoryTemplates/:id/districtRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStoryDistrictRun))
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))

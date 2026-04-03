@@ -9,6 +9,7 @@ import '../constants/gameplay_constants.dart';
 import '../models/inventory_item.dart';
 import '../models/spell.dart';
 import '../models/treasure_chest.dart';
+import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/location_provider.dart';
@@ -412,6 +413,8 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       _error = null;
     });
     try {
+      final statsProvider = context.read<CharacterStatsProvider>();
+      final previousLevel = statsProvider.level;
       final result = await context.read<PoiService>().openTreasureChest(
         widget.treasureChest.id,
         unlockMethod: selection?.method,
@@ -420,12 +423,22 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       );
       if (!mounted) return;
       final rewardData = _buildRewardModalData(result);
-      unawaited(context.read<AuthProvider>().refresh());
-      unawaited(context.read<CharacterStatsProvider>().refresh(silent: true));
-      unawaited(context.read<UserLevelProvider>().refresh());
+      await Future.wait([
+        context.read<AuthProvider>().refresh(),
+        statsProvider.refresh(silent: true),
+        context.read<UserLevelProvider>().refresh(),
+        context.read<ActivityFeedProvider>().refresh(),
+      ]);
+      if (!mounted) return;
+      final modalData = {
+        ...rewardData,
+        'leveledUp': statsProvider.level > previousLevel,
+        'newLevel': statsProvider.level,
+        'levelsGained': math.max(0, statsProvider.level - previousLevel),
+      };
       setState(() => _loading = false);
       widget.onClose();
-      widget.onOpened?.call(rewardData);
+      widget.onOpened?.call(modalData);
     } catch (e) {
       if (mounted) {
         setState(() {

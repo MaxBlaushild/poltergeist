@@ -88,6 +88,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Generate district-scale campaign drafts with ordered beats and convert them into reusable main story templates.',
       },
       {
+        id: 'main-story-templates',
+        label: 'Main Story Templates',
+        path: '/main-story-templates',
+        description:
+          'Inspect converted campaign templates and instantiate live district quest chains.',
+      },
+      {
         id: 'zone-quest-archetypes',
         label: 'Zone Quest Archetypes',
         path: '/zone-quest-archetypes',

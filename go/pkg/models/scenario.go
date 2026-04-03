@@ -62,6 +62,15 @@ func (s *Scenario) TableName() string {
 }
 
 func (s *Scenario) BeforeSave(tx *gorm.DB) error {
+	if s.InternalTags == nil {
+		s.InternalTags = StringArray{}
+	}
+	if s.RequiredStoryFlags == nil {
+		s.RequiredStoryFlags = StringArray{}
+	}
+	if s.MaterialRewards == nil {
+		s.MaterialRewards = BaseMaterialRewards{}
+	}
 	if s.Latitude != 0 || s.Longitude != 0 {
 		if err := s.SetGeometry(s.Latitude, s.Longitude); err != nil {
 			return err

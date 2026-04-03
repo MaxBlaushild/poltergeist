@@ -345,6 +345,11 @@ export const MainStoryGenerator = () => {
               bible, ordered beats, and beat-level quest archetype packages.
             </p>
           </div>
+          <div className="qa-hero-actions">
+            <Link to="/main-story-templates" className="qa-btn qa-btn-outline">
+              View Templates
+            </Link>
+          </div>
         </header>
 
         <section
@@ -471,7 +476,13 @@ export const MainStoryGenerator = () => {
                 />
               </div>
               <div className="qa-field qa-field--full">
-                <div className="qa-label">Required Location Archetypes</div>
+                <div className="qa-label">
+                  Optional Forced Location Archetypes
+                </div>
+                <div className="qa-muted" style={{ marginBottom: 10 }}>
+                  Leave this blank and the job can generate fitting location
+                  archetypes on its own when the story needs them.
+                </div>
                 <div className="qa-tag-row" style={{ marginBottom: 10 }}>
                   {selectedLocationArchetypes.length > 0 ? (
                     selectedLocationArchetypes.map((archetype) => (

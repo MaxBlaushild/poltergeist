@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../constants/api_constants.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
@@ -261,15 +263,28 @@ class PoiService {
   }
 
   Future<Scenario?> activateTutorial({bool force = false}) async {
-    try {
-      final raw = await _api.post<Map<String, dynamic>>(
-        '/sonar/tutorial/activate',
-        data: {'force': force},
-      );
-      return Scenario.fromJson(raw);
-    } catch (_) {
-      return null;
+    final raw = await _api.post<Map<String, dynamic>>(
+      '/sonar/tutorial/activate',
+      data: {'force': force},
+    );
+    return Scenario.fromJson(raw);
+  }
+
+  static String extractApiErrorMessage(Object error, String fallback) {
+    if (error is DioException) {
+      final responseData = error.response?.data;
+      if (responseData is Map) {
+        final message = responseData['error']?.toString().trim() ?? '';
+        if (message.isNotEmpty) {
+          return message;
+        }
+      }
+      final message = error.message?.trim() ?? '';
+      if (message.isNotEmpty) {
+        return message;
+      }
     }
+    return fallback;
   }
 
   Future<Map<String, dynamic>> escapeMonsterBattle(String monsterId) async {

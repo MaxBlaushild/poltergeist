@@ -11,6 +11,7 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -72,7 +73,7 @@ Return JSON only:
           "introducedRevealKeys": ["tag_a"],
           "requiredRevealKeys": ["tag_b"],
           "requiredZoneTags": ["market", "nightlife"],
-          "requiredLocationArchetypeNames": ["name from allowed location archetypes"],
+          "requiredLocationArchetypeNames": ["existing or new reusable location archetype name"],
           "preferredContentMix": ["challenge", "scenario"],
           "questGiverCharacterKey": "tag_a",
           "name": "quest archetype name",
@@ -149,7 +150,7 @@ Return JSON only:
               "source": "location|proximity",
               "content": "challenge|scenario|monster",
               "locationConcept": "string",
-              "locationArchetypeName": "name from allowed location archetypes or empty string for proximity steps",
+              "locationArchetypeName": "existing or new reusable location archetype name, or empty string for proximity steps",
               "locationMetadataTags": ["market", "storefront"],
               "distanceMeters": 120,
               "templateConcept": "string",
@@ -197,9 +198,50 @@ Rules:
 - unlockedMonsterEncounters should feel like consequences or escalating threats caused by the beat, not random filler combat.
 - Every beat must include 1-3 requiredZoneTags.
 - Every beat must include at least one requiredLocationArchetypeName.
+- requiredLocationArchetypeNames and step locationArchetypeName values may reference an existing allowed archetype or propose a new reusable archetype if the story needs one.
+- When proposing a new archetype, keep the name practical, atmospheric, and reusable across many districts.
 - Across the full campaign, include each required location archetype at least once when a required list is provided.
 - Vary the content mix across beats. Do not make every beat combat-heavy.
 - questGiverAfterDialogue should feel like reactive NPC follow-up dialogue that acknowledges what changed after this beat.
+`
+
+const mainStoryMissingLocationArchetypePromptTemplate = `
+You are defining reusable location archetypes for an urban fantasy MMORPG.
+
+The story generator proposed location archetype names that do not already exist. For each missing name, map it to sensible Google place types so it can become a real reusable archetype.
+
+Story context:
+- theme prompt: %s
+- district fit: %s
+- tone: %s
+
+Existing archetype names to avoid duplicating semantically:
+%s
+
+Allowed Google place types:
+%s
+
+Missing location archetype names that need definitions:
+%s
+
+Return JSON only:
+{
+  "archetypes": [
+    {
+      "name": "must exactly match one of the missing names",
+      "includedTypes": ["1-6 exact place type values from the allowed list"],
+      "excludedTypes": ["0-6 exact place type values from the allowed list"]
+    }
+  ]
+}
+
+Rules:
+- Output one entry for each missing name when possible.
+- The name must exactly match one of the missing names.
+- includedTypes and excludedTypes must use exact allowed Google place types.
+- Favor broad, reusable mappings over narrow one-off concepts.
+- Keep excludedTypes sparse.
+- Do not invent extra names not in the missing list.
 `
 
 type mainStorySuggestionResponse struct {
@@ -384,17 +426,22 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 		maxInt(3, job.QuestCount),
 	)
 
-	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	generated, err := p.requestMainStorySuggestionResponse(prompt)
 	if err != nil {
-		return fmt.Errorf("failed to generate main story suggestions: %w", err)
-	}
-
-	generated := &mainStorySuggestionResponse{}
-	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), generated); err != nil {
-		return fmt.Errorf("failed to parse main story suggestion payload: %w", err)
+		return err
 	}
 	if len(generated.Drafts) == 0 {
 		return fmt.Errorf("main story suggestion payload did not include any drafts")
+	}
+
+	locationArchetypes, err = p.ensureGeneratedMainStoryLocationArchetypes(
+		ctx,
+		job,
+		locationArchetypes,
+		generated.Drafts,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create missing location archetypes: %w", err)
 	}
 
 	locationIndex := buildLocationArchetypeIndex(locationArchetypes)
@@ -424,6 +471,194 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 		return fmt.Errorf("failed to update main story suggestion job: %w", err)
 	}
 	return nil
+}
+
+func (p *GenerateMainStorySuggestionsProcessor) requestMainStorySuggestionResponse(
+	basePrompt string,
+) (*mainStorySuggestionResponse, error) {
+	var lastErr error
+	prompts := []string{
+		basePrompt,
+		basePrompt + "\n\nIMPORTANT: Your last response was malformed or incomplete. Return the full JSON object in one complete response with no markdown, no commentary, and no truncation.",
+		basePrompt + "\n\nIMPORTANT: Return a smaller, cleaner response body if needed, but it must still be valid complete JSON matching the schema exactly. Do not stop early.",
+	}
+	for attempt, prompt := range prompts {
+		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+		if err != nil {
+			lastErr = fmt.Errorf("failed to generate main story suggestions: %w", err)
+			continue
+		}
+
+		generated := &mainStorySuggestionResponse{}
+		rawJSON := extractGeneratedJSONObject(answer.Answer)
+		if err := json.Unmarshal([]byte(rawJSON), generated); err != nil {
+			lastErr = fmt.Errorf("failed to parse main story suggestion payload on attempt %d: %w", attempt+1, err)
+			log.Printf(
+				"main story suggestion payload parse failed on attempt %d: %v | payload preview=%q",
+				attempt+1,
+				err,
+				truncateForMainStoryLog(rawJSON, 500),
+			)
+			continue
+		}
+		return generated, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("failed to generate main story suggestions")
+	}
+	return nil, lastErr
+}
+
+func truncateForMainStoryLog(raw string, limit int) string {
+	trimmed := strings.TrimSpace(raw)
+	if limit <= 0 || len(trimmed) <= limit {
+		return trimmed
+	}
+	return trimmed[:limit] + "..."
+}
+
+func collectMissingMainStoryLocationArchetypeNames(
+	locationIndex map[string]locationArchetypeIndexEntry,
+	drafts []mainStorySuggestionDraftPayload,
+) []string {
+	missing := make([]string, 0)
+	seen := map[string]struct{}{}
+	addIfMissing := func(raw string) {
+		name := collapseWhitespace(raw)
+		if name == "" {
+			return
+		}
+		if _, ok := resolveLocationArchetypeByName(name, locationIndex); ok {
+			return
+		}
+		key := normalizeLocationArchetypeNameKey(name)
+		if key == "" {
+			return
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		missing = append(missing, name)
+	}
+	for _, draft := range drafts {
+		for _, beat := range draft.Beats {
+			for _, name := range beat.RequiredLocationArchetypeNames {
+				addIfMissing(name)
+			}
+			for _, step := range beat.Steps {
+				addIfMissing(step.LocationArchetypeName)
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func buildMissingMainStoryLocationArchetypePrompt(
+	job *models.MainStorySuggestionJob,
+	existing []*models.LocationArchetype,
+	missing []string,
+) string {
+	allowedPlaceTypes := googlemaps.GetAllPlaceTypes()
+	allowedNames := make([]string, 0, len(allowedPlaceTypes))
+	for _, placeType := range allowedPlaceTypes {
+		allowedNames = append(allowedNames, string(placeType))
+	}
+	existingNames := make([]string, 0, len(existing))
+	for _, archetype := range existing {
+		if archetype == nil {
+			continue
+		}
+		name := collapseWhitespace(archetype.Name)
+		if name == "" {
+			continue
+		}
+		existingNames = append(existingNames, name)
+	}
+	sort.Strings(existingNames)
+	return fmt.Sprintf(
+		mainStoryMissingLocationArchetypePromptTemplate,
+		quotedOrNone(job.ThemePrompt),
+		quotedOrNone(job.DistrictFit),
+		quotedOrNone(job.Tone),
+		joinLocationArchetypeAvoidanceNames(existingNames, 250),
+		strings.Join(allowedNames, ", "),
+		strings.Join(missing, "; "),
+	)
+}
+
+func (p *GenerateMainStorySuggestionsProcessor) ensureGeneratedMainStoryLocationArchetypes(
+	ctx context.Context,
+	job *models.MainStorySuggestionJob,
+	existing []*models.LocationArchetype,
+	drafts []mainStorySuggestionDraftPayload,
+) ([]*models.LocationArchetype, error) {
+	locationIndex := buildLocationArchetypeIndex(existing)
+	missingNames := collectMissingMainStoryLocationArchetypeNames(locationIndex, drafts)
+	if len(missingNames) == 0 {
+		return existing, nil
+	}
+	if p.deepPriestClient == nil {
+		return existing, nil
+	}
+
+	prompt := buildMissingMainStoryLocationArchetypePrompt(job, existing, missingNames)
+	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return existing, err
+	}
+
+	var generated generatedLocationArchetypesResponse
+	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &generated); err != nil {
+		return existing, err
+	}
+
+	allowedTypeIndex := buildLocationArchetypePlaceTypeIndex(googlemaps.GetAllPlaceTypes())
+	sanitized := sanitizeGeneratedLocationArchetypes(generated.Archetypes, allowedTypeIndex, len(missingNames))
+	missingByKey := make(map[string]string, len(missingNames))
+	for _, name := range missingNames {
+		key := normalizeLocationArchetypeNameKey(name)
+		if key == "" {
+			continue
+		}
+		missingByKey[key] = name
+	}
+
+	createdAny := false
+	for _, spec := range sanitized {
+		key := normalizeLocationArchetypeNameKey(spec.Name)
+		expectedName, ok := missingByKey[key]
+		if !ok {
+			continue
+		}
+		if _, exists := resolveLocationArchetypeByName(expectedName, locationIndex); exists {
+			continue
+		}
+		archetype := &models.LocationArchetype{
+			ID:            uuid.New(),
+			Name:          expectedName,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+			IncludedTypes: spec.IncludedTypes,
+			ExcludedTypes: spec.ExcludedTypes,
+			Challenges:    models.LocationArchetypeChallenges{},
+		}
+		if err := p.dbClient.LocationArchetype().Create(ctx, archetype); err != nil {
+			return existing, err
+		}
+		existing = append(existing, archetype)
+		locationIndex[strings.ToLower(expectedName)] = locationArchetypeIndexEntry{
+			ID:   archetype.ID,
+			Name: expectedName,
+		}
+		createdAny = true
+	}
+
+	if !createdAny {
+		return existing, nil
+	}
+	return existing, nil
 }
 
 func (p *GenerateMainStorySuggestionsProcessor) failJob(

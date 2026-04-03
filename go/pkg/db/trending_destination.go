@@ -42,6 +42,7 @@ func (h *trendingDestinationHandler) FindByType(ctx context.Context, locationTyp
 
 func (h *trendingDestinationHandler) DeleteAll(ctx context.Context) error {
 	return h.db.WithContext(ctx).
+		Session(&gorm.Session{AllowGlobalUpdate: true}).
 		Delete(&models.TrendingDestination{}).Error
 }
 

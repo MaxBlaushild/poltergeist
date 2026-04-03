@@ -10,11 +10,13 @@ import '../models/character_action.dart';
 import '../models/location.dart';
 import '../models/quest.dart';
 import '../providers/auth_provider.dart';
+import '../providers/activity_feed_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
+import '../providers/user_level_provider.dart';
 import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
@@ -444,15 +446,30 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final questId = action.questId ?? quest.id;
     if (questId.isEmpty) return;
     setState(() => _turningInQuest = true);
+    final statsProvider = context.read<CharacterStatsProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final userLevelProvider = context.read<UserLevelProvider>();
+    final activityFeedProvider = context.read<ActivityFeedProvider>();
+    final completedTaskProvider = context.read<CompletedTaskProvider>();
     try {
+      final previousLevel = statsProvider.level;
       final resp = await context.read<QuestLogProvider>().turnInQuest(questId);
       if (mounted) {
         try {
-          await context.read<AuthProvider>().refresh();
+          await Future.wait([
+            authProvider.refresh(),
+            statsProvider.refresh(silent: true),
+            userLevelProvider.refresh(),
+            activityFeedProvider.refresh(),
+          ]);
         } catch (_) {}
-        context.read<CompletedTaskProvider>().showModal(
+        completedTaskProvider.showModal(
           'questCompleted',
           data: {'questName': quest.name, ...resp},
+        );
+        completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+          previousLevel: previousLevel,
+          currentLevel: statsProvider.level,
         );
         widget.onClose();
       }

@@ -214,6 +214,8 @@ class CelebrationModalManager extends StatelessWidget {
           ],
         );
       case 'levelUp':
+        final newLevel = (data['newLevel'] as num?)?.toInt();
+        final levelsGained = (data['levelsGained'] as num?)?.toInt() ?? 1;
         return Column(
           children: [
             Container(
@@ -231,7 +233,15 @@ class CelebrationModalManager extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            const Text('You gained a level!'),
+            Text(
+              levelsGained > 1
+                  ? 'You gained $levelsGained levels!'
+                  : 'You gained a level!',
+            ),
+            if (newLevel != null) ...[
+              const SizedBox(height: 6),
+              Text('You reached level $newLevel.'),
+            ],
           ],
         );
       case 'reputationUp':

@@ -18,6 +18,33 @@ class CompletedTaskProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void queueLevelUpFollowUpIfNeeded({
+    required int previousLevel,
+    required int currentLevel,
+  }) {
+    if (currentLevel <= previousLevel) return;
+    queueLevelUpModal(
+      previousLevel: previousLevel,
+      newLevel: currentLevel,
+      levelsGained: currentLevel - previousLevel,
+    );
+  }
+
+  void queueLevelUpModal({
+    required int newLevel,
+    int? previousLevel,
+    int levelsGained = 1,
+  }) {
+    showModal(
+      'levelUp',
+      data: {
+        if (previousLevel != null) 'previousLevel': previousLevel,
+        'newLevel': newLevel,
+        'levelsGained': levelsGained,
+      },
+    );
+  }
+
   void clearModal() {
     if (_queuedModals.isNotEmpty) {
       _currentModal = _queuedModals.removeAt(0);

@@ -69,6 +69,7 @@ type client struct {
 	mainStoryTemplateHandle              *mainStoryTemplateHandle
 	mainStorySuggestionJobHandle         *mainStorySuggestionJobHandle
 	mainStorySuggestionDraftHandle       *mainStorySuggestionDraftHandle
+	mainStoryDistrictRunHandle           *mainStoryDistrictRunHandle
 	questArchetypeNodeHandle             *questArchetypeNodeHandle
 	questArchetypeChallengeHandle        *questArchetypeChallengeHandle
 	questArchetypeNodeChallengeHandle    *questArchetypeNodeChallengeHandle
@@ -243,6 +244,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		mainStoryTemplateHandle:              &mainStoryTemplateHandle{db: db},
 		mainStorySuggestionJobHandle:         &mainStorySuggestionJobHandle{db: db},
 		mainStorySuggestionDraftHandle:       &mainStorySuggestionDraftHandle{db: db},
+		mainStoryDistrictRunHandle:           &mainStoryDistrictRunHandle{db: db},
 		questArchetypeNodeHandle:             &questArchetypeNodeHandle{db: db},
 		questArchetypeChallengeHandle:        &questArchetypeChallengeHandle{db: db},
 		questArchetypeNodeChallengeHandle:    &questArchetypeNodeChallengeHandle{db: db},
@@ -496,6 +498,10 @@ func (c *client) MainStorySuggestionJob() MainStorySuggestionJobHandle {
 
 func (c *client) MainStorySuggestionDraft() MainStorySuggestionDraftHandle {
 	return c.mainStorySuggestionDraftHandle
+}
+
+func (c *client) MainStoryDistrictRun() MainStoryDistrictRunHandle {
+	return c.mainStoryDistrictRunHandle
 }
 
 func (c *client) QuestArchetypeNode() QuestArchetypeNodeHandle {
