@@ -4,6 +4,7 @@ import { QuestDifficultyMode } from './questDifficulty';
 import { CharacterRelationshipState, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 import { Character } from './character';
+import type { DialogueMessage } from './characterAction';
 
 export interface QuestArchetypeChallenge {
   id: string;
@@ -71,7 +72,7 @@ export interface QuestArchetype {
   category?: 'side' | 'main_story';
   questGiverCharacterId?: string | null;
   questGiverCharacter?: Character | null;
-  acceptanceDialogue?: string[];
+  acceptanceDialogue?: DialogueMessage[];
   imageUrl?: string;
   difficultyMode?: QuestDifficultyMode;
   difficulty?: number;

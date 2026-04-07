@@ -12,6 +12,7 @@ import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
 import '../models/user.dart';
 import '../models/base_progression.dart';
+import '../models/character_action.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../services/base_service.dart';
@@ -89,7 +90,7 @@ class InventoryPanel extends StatefulWidget {
 
   final VoidCallback onClose;
   final bool closeLocked;
-  final List<String> tutorialDialogue;
+  final List<DialogueMessage> tutorialDialogue;
   final List<int> requiredEquipItemIds;
   final List<int> completedEquipItemIds;
   final List<int> requiredUseItemIds;
@@ -117,6 +118,40 @@ class _InventoryPanelState extends State<InventoryPanel>
   String? _error;
   OwnedInventoryItem? _selected;
   OutfitGeneration? _outfitGeneration;
+
+  String _dialogueEffectName(String? value) =>
+      (value ?? '').trim().toLowerCase();
+
+  Color _tutorialDialogueColor(String effect) {
+    switch (effect) {
+      case 'angry':
+        return const Color(0xFF8B1E1E);
+      case 'whisper':
+        return const Color(0xFF546E7A);
+      case 'shout':
+        return const Color(0xFFB34700);
+      case 'mysterious':
+        return const Color(0xFF3949AB);
+      case 'determined':
+        return const Color(0xFF8C6A00);
+      default:
+        return const Color(0xFF4C3824);
+    }
+  }
+
+  FontWeight _tutorialDialogueWeight(String effect) {
+    switch (effect) {
+      case 'angry':
+      case 'shout':
+      case 'determined':
+        return FontWeight.w700;
+      case 'surprised':
+        return FontWeight.w600;
+      default:
+        return FontWeight.w500;
+    }
+  }
+
   bool _loadingOutfitStatus = false;
   String? _outfitError;
   Timer? _outfitPoller;
@@ -1200,18 +1235,24 @@ class _InventoryPanelState extends State<InventoryPanel>
             ),
           ),
           const SizedBox(height: 8),
-          ...widget.tutorialDialogue.map(
-            (line) => Padding(
+          ...widget.tutorialDialogue.map((line) {
+            final effect = _dialogueEffectName(line.effect);
+            return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                line,
+                line.text,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF4C3824),
+                  color: _tutorialDialogueColor(effect),
                   height: 1.35,
+                  fontWeight: _tutorialDialogueWeight(effect),
+                  fontStyle: effect == 'whisper'
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                  letterSpacing: effect == 'mysterious' ? 0.2 : 0,
                 ),
               ),
-            ),
-          ),
+            );
+          }),
           if (equipNames.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(

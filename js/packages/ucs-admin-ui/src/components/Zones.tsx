@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone, ZoneAdminSummary, ZoneImport } from '@poltergeist/types';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
@@ -770,6 +770,7 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
 };
 
 export const Zones = () => {
+  const [searchParams] = useSearchParams();
   const { zones, refreshZones } = useZoneContext();
   const { apiClient } = useAPI();
   const [name, setName] = useState('');
@@ -803,12 +804,20 @@ export const Zones = () => {
   >('richest');
   const [, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
+  const deepLinkedZoneId = searchParams.get('id')?.trim() ?? '';
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const handlersAttachedRef = useRef(false);
   const fitBoundsRef = useRef(false);
+
+  useEffect(() => {
+    if (!deepLinkedZoneId) {
+      return;
+    }
+    navigate(`/zones/${deepLinkedZoneId}`, { replace: true });
+  }, [deepLinkedZoneId, navigate]);
 
   const fetchZoneSummaries = useCallback(async () => {
     setZoneSummariesLoading(true);

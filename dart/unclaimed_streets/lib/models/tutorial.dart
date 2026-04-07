@@ -1,12 +1,13 @@
 import 'character.dart';
+import 'character_action.dart';
 
 class TutorialStatus {
   final bool showWelcomeDialogue;
   final bool isCompleted;
   final String stage;
   final Character? character;
-  final List<String> dialogue;
-  final List<String> loadoutDialogue;
+  final List<DialogueMessage> dialogue;
+  final List<DialogueMessage> loadoutDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
   final List<int> requiredEquipItemIds;
@@ -54,24 +55,46 @@ class TutorialStatus {
       character = Character.fromJson(Map<String, dynamic>.from(rawCharacter));
     }
 
-    final dialogue = <String>[];
+    final dialogue = <DialogueMessage>[];
     final rawDialogue = json['dialogue'];
     if (rawDialogue is List) {
-      for (final line in rawDialogue) {
-        final value = line?.toString().trim() ?? '';
-        if (value.isNotEmpty) {
-          dialogue.add(value);
+      for (var index = 0; index < rawDialogue.length; index++) {
+        final line = rawDialogue[index];
+        if (line is Map<String, dynamic>) {
+          dialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          dialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            dialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
         }
       }
     }
 
-    final loadoutDialogue = <String>[];
+    final loadoutDialogue = <DialogueMessage>[];
     final rawLoadoutDialogue = json['loadoutDialogue'];
     if (rawLoadoutDialogue is List) {
-      for (final line in rawLoadoutDialogue) {
-        final value = line?.toString().trim() ?? '';
-        if (value.isNotEmpty) {
-          loadoutDialogue.add(value);
+      for (var index = 0; index < rawLoadoutDialogue.length; index++) {
+        final line = rawLoadoutDialogue[index];
+        if (line is Map<String, dynamic>) {
+          loadoutDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          loadoutDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            loadoutDialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
         }
       }
     }
@@ -97,8 +120,8 @@ class TutorialStatus {
     bool? isCompleted,
     String? stage,
     Character? character,
-    List<String>? dialogue,
-    List<String>? loadoutDialogue,
+    List<DialogueMessage>? dialogue,
+    List<DialogueMessage>? loadoutDialogue,
     String? scenarioId,
     String? monsterEncounterId,
     List<int>? requiredEquipItemIds,

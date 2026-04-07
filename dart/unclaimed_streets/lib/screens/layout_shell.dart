@@ -29,6 +29,7 @@ import '../widgets/quest_log_panel.dart';
 import '../widgets/reputation_tab_content.dart';
 import '../widgets/settings_tab_content.dart';
 import 'user_character_screen.dart';
+import '../models/character_action.dart';
 
 class InventoryTutorialSession {
   const InventoryTutorialSession({
@@ -40,7 +41,7 @@ class InventoryTutorialSession {
     this.onProgressChanged,
   });
 
-  final List<String> dialogue;
+  final List<DialogueMessage> dialogue;
   final List<int> requiredEquipItemIds;
   final List<int> completedEquipItemIds;
   final List<int> requiredUseItemIds;
@@ -149,8 +150,7 @@ class _LayoutShellState extends State<LayoutShell> {
         return;
       }
       if (_lastFeedbackShakeAt != null &&
-          now.difference(_lastFeedbackShakeAt!) <
-              const Duration(seconds: 4)) {
+          now.difference(_lastFeedbackShakeAt!) < const Duration(seconds: 4)) {
         return;
       }
       _lastFeedbackShakeAt = now;
@@ -194,9 +194,7 @@ class _LayoutShellState extends State<LayoutShell> {
                   Navigator.of(dialogContext).pop();
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Feedback submitted.'),
-                    ),
+                    const SnackBar(content: Text('Feedback submitted.')),
                   );
                 } catch (_) {
                   setDialogState(() {
@@ -214,9 +212,7 @@ class _LayoutShellState extends State<LayoutShell> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'You shook the device. What should we know?',
-                      ),
+                      const Text('You shook the device. What should we know?'),
                       const SizedBox(height: 12),
                       TextField(
                         controller: controller,
@@ -224,7 +220,8 @@ class _LayoutShellState extends State<LayoutShell> {
                         minLines: 4,
                         autofocus: true,
                         decoration: const InputDecoration(
-                          hintText: 'Describe the bug, rough steps, or what felt off.',
+                          hintText:
+                              'Describe the bug, rough steps, or what felt off.',
                           border: OutlineInputBorder(),
                         ),
                       ),

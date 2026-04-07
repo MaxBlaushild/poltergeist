@@ -88,6 +88,58 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const formatRelationshipEffects = (effects?: {
+  trust?: number;
+  respect?: number;
+  fear?: number;
+  debt?: number;
+} | null) =>
+  effects
+    ? [
+        effects.trust
+          ? `Trust ${effects.trust > 0 ? '+' : ''}${effects.trust}`
+          : null,
+        effects.respect
+          ? `Respect ${effects.respect > 0 ? '+' : ''}${effects.respect}`
+          : null,
+        effects.fear
+          ? `Fear ${effects.fear > 0 ? '+' : ''}${effects.fear}`
+          : null,
+        effects.debt
+          ? `Debt ${effects.debt > 0 ? '+' : ''}${effects.debt}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : '';
+
+const summarizeWorldChanges = (
+  changes: MainStorySuggestionDraft['beats'][number]['worldChanges'] = []
+) =>
+  (changes ?? []).map((change) => {
+    if (change.type === 'move_character') {
+      return `Move ${change.targetKey || 'character'} to ${change.destinationHint || 'a new location'}`;
+    }
+    if (change.type === 'show_poi_text') {
+      return `Update ${change.targetKey || 'poi'} text`;
+    }
+    return change.type;
+  });
+
+const summarizeUnlockedContent = (
+  beat: MainStorySuggestionDraft['beats'][number]
+) => [
+  ...(beat.unlockedScenarios ?? []).map(
+    (scenario) => `Scenario: ${scenario.name || scenario.prompt}`
+  ),
+  ...(beat.unlockedChallenges ?? []).map(
+    (challenge) => `Challenge: ${challenge.question}`
+  ),
+  ...(beat.unlockedMonsterEncounters ?? []).map(
+    (encounter) => `Encounter: ${encounter.name}`
+  ),
+];
+
 export const MainStoryGenerator = () => {
   const { apiClient } = useAPI();
   const { locationArchetypes } = useQuestArchetypes();
@@ -582,7 +634,7 @@ export const MainStoryGenerator = () => {
             </div>
             <div className="qa-actions" style={{ marginTop: 18 }}>
               <button
-                className="qa-button qa-button--primary"
+                className="qa-btn qa-btn-primary"
                 disabled={queueing}
                 onClick={() => void handleQueueJob()}
               >
@@ -662,235 +714,419 @@ export const MainStoryGenerator = () => {
             <div className="qa-empty">No campaign drafts for this job yet.</div>
           ) : (
             <div className="qa-stack" style={{ marginTop: 18 }}>
-              {drafts.map((draft) => (
-                <article key={draft.id} className="qa-draft-card">
-                  <div className="qa-draft-card__header">
-                    <div>
-                      <div className="qa-draft-card__title">{draft.name}</div>
-                      <div className="qa-draft-card__meta">
-                        {draft.beats.length} beats · tone {draft.tone || 'n/a'}
+              {drafts.map((draft) => {
+                const actCount = new Set(
+                  draft.beats.map((beat) => beat.act).filter(Boolean)
+                ).size;
+                return (
+                  <article
+                    key={draft.id}
+                    className="qa-card"
+                    style={{
+                      background:
+                        'linear-gradient(180deg, rgba(21, 33, 40, 0.98), rgba(13, 21, 27, 0.98))',
+                      padding: 24,
+                    }}
+                  >
+                    <div
+                      className="qa-card-header"
+                      style={{ alignItems: 'flex-start' }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="qa-kicker">Campaign Draft</div>
+                        <div
+                          className="qa-title"
+                          style={{
+                            fontSize: 'clamp(26px, 2.8vw, 34px)',
+                            marginBottom: 4,
+                          }}
+                        >
+                          {draft.name}
+                        </div>
+                        <div className="qa-meta">
+                          {draft.beats.length} beats · {actCount || 1} acts ·
+                          tone {draft.tone || 'n/a'}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-end',
+                          gap: 10,
+                        }}
+                      >
+                        <span className={statusChipClass(draft.status)}>
+                          {formatStatus(draft.status)}
+                        </span>
+                        <div className="qa-actions" style={{ justifyContent: 'flex-end' }}>
+                          {draft.mainStoryTemplateId ? (
+                            <Link
+                              className="qa-btn qa-btn-outline"
+                              to="/main-story-templates"
+                            >
+                              View Templates
+                            </Link>
+                          ) : (
+                            <button
+                              className="qa-btn qa-btn-primary"
+                              disabled={convertingDraftId === draft.id}
+                              onClick={() => void handleConvertDraft(draft.id)}
+                            >
+                              {convertingDraftId === draft.id
+                                ? 'Converting...'
+                                : 'Convert to Template'}
+                            </button>
+                          )}
+                          {!draft.mainStoryTemplateId && (
+                            <button
+                              className="qa-btn qa-btn-danger"
+                              disabled={deletingDraftId === draft.id}
+                              onClick={() => void handleDeleteDraft(draft.id)}
+                            >
+                              {deletingDraftId === draft.id
+                                ? 'Deleting...'
+                                : 'Delete Draft'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <span className={statusChipClass(draft.status)}>
-                      {formatStatus(draft.status)}
-                    </span>
-                  </div>
-                  <div className="qa-draft-card__body">
-                    <p className="qa-copy">{draft.premise}</p>
-                    {draft.districtFit && (
-                      <p className="qa-copy">
-                        <strong>District Fit:</strong> {draft.districtFit}
-                      </p>
-                    )}
-                    <p className="qa-copy">
-                      <strong>Climax:</strong> {draft.climaxSummary || 'n/a'}
-                    </p>
-                    <p className="qa-copy">
-                      <strong>Resolution:</strong>{' '}
-                      {draft.resolutionSummary || 'n/a'}
-                    </p>
 
-                    <div className="qa-tag-row">
-                      {draft.themeTags.map((tag) => (
-                        <span
-                          key={`${draft.id}-theme-${tag}`}
-                          className="qa-chip"
+                    <div className="qa-stat-grid" style={{ marginTop: 20 }}>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Premise</div>
+                        <div
+                          className="qa-stat-value"
+                          style={{ fontSize: 15, lineHeight: 1.6 }}
                         >
+                          {draft.premise || 'No premise generated.'}
+                        </div>
+                      </div>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">District Fit</div>
+                        <div
+                          className="qa-stat-value"
+                          style={{ fontSize: 15, lineHeight: 1.6 }}
+                        >
+                          {draft.districtFit || 'No district fit guidance.'}
+                        </div>
+                      </div>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Climax</div>
+                        <div
+                          className="qa-stat-value"
+                          style={{ fontSize: 15, lineHeight: 1.6 }}
+                        >
+                          {draft.climaxSummary || 'Not provided.'}
+                        </div>
+                      </div>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Resolution</div>
+                        <div
+                          className="qa-stat-value"
+                          style={{ fontSize: 15, lineHeight: 1.6 }}
+                        >
+                          {draft.resolutionSummary || 'Not provided.'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginTop: 16,
+                      }}
+                    >
+                      {draft.themeTags.map((tag) => (
+                        <span key={`${draft.id}-theme-${tag}`} className="qa-chip">
                           {tag}
                         </span>
                       ))}
+                      {draft.mainStoryTemplateId && (
+                        <span className="qa-chip success">Converted</span>
+                      )}
                     </div>
 
                     {draft.warnings.length > 0 && (
-                      <div className="qa-alert qa-alert--warning">
+                      <div
+                        className="qa-alert qa-alert--warning"
+                        style={{ marginTop: 16 }}
+                      >
                         {draft.warnings.join(' | ')}
                       </div>
                     )}
 
-                    <div className="qa-stack" style={{ marginTop: 16 }}>
-                      {draft.beats.map((beat) => (
-                        <div
-                          key={`${draft.id}-beat-${beat.orderIndex}`}
-                          className="qa-step-card"
-                        >
-                          <div className="qa-step-card__header">
-                            <div>
-                              <div className="qa-step-card__title">
-                                {beat.orderIndex}.{' '}
-                                {beat.chapterTitle || beat.name}
-                              </div>
-                              <div className="qa-step-card__meta">
-                                Act {beat.act} ·{' '}
-                                {beat.storyRole || 'story_beat'} ·{' '}
-                                {beat.questArchetypeName || beat.name}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="qa-copy">{beat.chapterSummary}</div>
-                          <div className="qa-copy">
-                            <strong>Purpose:</strong> {beat.purpose || 'n/a'}
-                          </div>
-                          <div className="qa-copy">
-                            <strong>What Changes:</strong>{' '}
-                            {beat.whatChanges || 'n/a'}
-                          </div>
-                          {(beat.questGiverCharacterKey ||
-                            beat.questGiverCharacterName) && (
-                            <div className="qa-copy">
-                              <strong>Quest Giver:</strong>{' '}
-                              {beat.questGiverCharacterName ||
-                                beat.questGiverCharacterKey}
-                              {beat.questGiverCharacterName &&
-                              beat.questGiverCharacterKey
-                                ? ` (${beat.questGiverCharacterKey})`
-                                : ''}
-                            </div>
-                          )}
-                          {beat.requiredStoryFlags.length > 0 && (
-                            <div className="qa-copy">
-                              <strong>Requires:</strong>{' '}
-                              {beat.requiredStoryFlags.join(', ')}
-                            </div>
-                          )}
-                          {beat.setStoryFlags.length > 0 && (
-                            <div className="qa-copy">
-                              <strong>Sets:</strong>{' '}
-                              {beat.setStoryFlags.join(', ')}
-                            </div>
-                          )}
-                          {beat.clearStoryFlags.length > 0 && (
-                            <div className="qa-copy">
-                              <strong>Clears:</strong>{' '}
-                              {beat.clearStoryFlags.join(', ')}
-                            </div>
-                          )}
-                          {beat.questGiverRelationshipEffects &&
-                            Object.values(
-                              beat.questGiverRelationshipEffects
-                            ).some((value) => (value ?? 0) !== 0) && (
-                              <div className="qa-copy">
-                                <strong>Quest Giver Relationship:</strong>{' '}
-                                {[
-                                  beat.questGiverRelationshipEffects.trust
-                                    ? `Trust ${beat.questGiverRelationshipEffects.trust > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.trust}`
-                                    : null,
-                                  beat.questGiverRelationshipEffects.respect
-                                    ? `Respect ${beat.questGiverRelationshipEffects.respect > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.respect}`
-                                    : null,
-                                  beat.questGiverRelationshipEffects.fear
-                                    ? `Fear ${beat.questGiverRelationshipEffects.fear > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.fear}`
-                                    : null,
-                                  beat.questGiverRelationshipEffects.debt
-                                    ? `Debt ${beat.questGiverRelationshipEffects.debt > 0 ? '+' : ''}${beat.questGiverRelationshipEffects.debt}`
-                                    : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(', ')}
-                              </div>
-                            )}
-                          {(beat.questGiverAfterDescription ||
-                            beat.questGiverAfterDialogue.length > 0) && (
-                            <div className="qa-copy">
-                              <strong>Quest Giver Aftermath:</strong>{' '}
-                              {beat.questGiverAfterDescription || 'n/a'}
-                              {beat.questGiverAfterDialogue.length > 0
-                                ? ` ${beat.questGiverAfterDialogue.join(' / ')}`
-                                : ''}
-                            </div>
-                          )}
-                          {(beat.worldChanges?.length ?? 0) > 0 && (
-                            <div className="qa-copy">
-                              <strong>World Changes:</strong>{' '}
-                              {(beat.worldChanges ?? [])
-                                .map((change) => {
-                                  if (change.type === 'move_character') {
-                                    return `Move ${change.targetKey || 'character'} to ${change.destinationHint || 'a new location'}`;
-                                  }
-                                  if (change.type === 'show_poi_text') {
-                                    return `Update ${change.targetKey || 'poi'} text`;
-                                  }
-                                  return change.type;
-                                })
-                                .join(' / ')}
-                            </div>
-                          )}
-                          {((beat.unlockedScenarios?.length ?? 0) > 0 ||
-                            (beat.unlockedChallenges?.length ?? 0) > 0 ||
-                            (beat.unlockedMonsterEncounters?.length ?? 0) >
-                              0) && (
-                            <div className="qa-copy">
-                              <strong>Unlocked Content:</strong>{' '}
-                              {[
-                                ...(beat.unlockedScenarios ?? []).map(
-                                  (scenario) =>
-                                    `Scenario: ${scenario.name || scenario.prompt}`
-                                ),
-                                ...(beat.unlockedChallenges ?? []).map(
-                                  (challenge) =>
-                                    `Challenge: ${challenge.question}`
-                                ),
-                                ...(beat.unlockedMonsterEncounters ?? []).map(
-                                  (encounter) => `Encounter: ${encounter.name}`
-                                ),
-                              ].join(' / ')}
-                            </div>
-                          )}
-                          <div className="qa-tag-row">
-                            {beat.requiredZoneTags.map((tag) => (
-                              <span
-                                key={`${draft.id}-beat-${beat.orderIndex}-tag-${tag}`}
-                                className="qa-chip muted"
-                              >
-                                zone:{tag}
-                              </span>
-                            ))}
-                            {beat.preferredContentMix.map((tag) => (
-                              <span
-                                key={`${draft.id}-beat-${beat.orderIndex}-mix-${tag}`}
-                                className="qa-chip accent"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
+                    <div className="qa-divider" />
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 16,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        marginBottom: 14,
+                      }}
+                    >
+                      <div>
+                        <div className="qa-card-title" style={{ fontSize: 20 }}>
+                          Beat Outline
                         </div>
-                      ))}
+                        <div className="qa-muted" style={{ marginTop: 4 }}>
+                          Each beat shows the narrative job it does, who carries
+                          it, and what it changes in the district.
+                        </div>
+                      </div>
+                      <span className="qa-chip muted">
+                        {draft.beats.length} total beats
+                      </span>
                     </div>
-                  </div>
-                  <div className="qa-draft-card__footer">
-                    {draft.mainStoryTemplateId ? (
-                      <Link
-                        className="qa-button qa-button--ghost"
-                        to="#"
-                        onClick={(event) => event.preventDefault()}
-                      >
-                        Converted
-                      </Link>
-                    ) : (
-                      <button
-                        className="qa-button qa-button--primary"
-                        disabled={convertingDraftId === draft.id}
-                        onClick={() => void handleConvertDraft(draft.id)}
-                      >
-                        {convertingDraftId === draft.id
-                          ? 'Converting...'
-                          : 'Convert to Main Story'}
-                      </button>
-                    )}
-                    {!draft.mainStoryTemplateId && (
-                      <button
-                        className="qa-button qa-button--ghost"
-                        disabled={deletingDraftId === draft.id}
-                        onClick={() => void handleDeleteDraft(draft.id)}
-                      >
-                        {deletingDraftId === draft.id
-                          ? 'Deleting...'
-                          : 'Delete'}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+
+                    <div className="qa-stack" style={{ marginTop: 12 }}>
+                      {draft.beats.map((beat) => {
+                        const relationshipSummary = formatRelationshipEffects(
+                          beat.questGiverRelationshipEffects
+                        );
+                        const worldChangeSummary = summarizeWorldChanges(
+                          beat.worldChanges
+                        );
+                        const unlockedContentSummary =
+                          summarizeUnlockedContent(beat);
+
+                        return (
+                          <div
+                            key={`${draft.id}-beat-${beat.orderIndex}`}
+                            className="qa-panel"
+                            style={{
+                              background:
+                                'linear-gradient(180deg, rgba(9, 14, 18, 0.72), rgba(15, 24, 30, 0.9))',
+                              padding: 18,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'auto minmax(0, 1fr)',
+                                gap: 14,
+                                alignItems: 'flex-start',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  minWidth: 48,
+                                  height: 48,
+                                  borderRadius: 16,
+                                  background: 'rgba(255, 107, 74, 0.16)',
+                                  border: '1px solid rgba(255, 107, 74, 0.36)',
+                                  color: 'var(--qa-accent-2)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {beat.orderIndex}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    gap: 12,
+                                    flexWrap: 'wrap',
+                                    alignItems: 'flex-start',
+                                  }}
+                                >
+                                  <div>
+                                    <div
+                                      style={{
+                                        fontSize: 18,
+                                        fontWeight: 700,
+                                        lineHeight: 1.4,
+                                      }}
+                                    >
+                                      {beat.chapterTitle || beat.name}
+                                    </div>
+                                    <div className="qa-meta">
+                                      Act {beat.act} ·{' '}
+                                      {beat.storyRole || 'story_beat'} ·{' '}
+                                      {beat.questArchetypeName || beat.name}
+                                    </div>
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: 8,
+                                      flexWrap: 'wrap',
+                                      justifyContent: 'flex-end',
+                                    }}
+                                  >
+                                    {beat.requiredZoneTags.map((tag) => (
+                                      <span
+                                        key={`${draft.id}-beat-${beat.orderIndex}-tag-${tag}`}
+                                        className="qa-chip muted"
+                                      >
+                                        zone:{tag}
+                                      </span>
+                                    ))}
+                                    {beat.preferredContentMix.map((tag) => (
+                                      <span
+                                        key={`${draft.id}-beat-${beat.orderIndex}-mix-${tag}`}
+                                        className="qa-chip accent"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    marginTop: 12,
+                                    fontSize: 15,
+                                    lineHeight: 1.7,
+                                    color: 'var(--qa-ink)',
+                                  }}
+                                >
+                                  {beat.chapterSummary}
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns:
+                                      'repeat(auto-fit, minmax(220px, 1fr))',
+                                    gap: 12,
+                                    marginTop: 14,
+                                  }}
+                                >
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">Purpose</div>
+                                    <div
+                                      className="qa-stat-value"
+                                      style={{ fontSize: 14, lineHeight: 1.6 }}
+                                    >
+                                      {beat.purpose || 'n/a'}
+                                    </div>
+                                  </div>
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">
+                                      What Changes
+                                    </div>
+                                    <div
+                                      className="qa-stat-value"
+                                      style={{ fontSize: 14, lineHeight: 1.6 }}
+                                    >
+                                      {beat.whatChanges || 'n/a'}
+                                    </div>
+                                  </div>
+                                  {(beat.questGiverCharacterKey ||
+                                    beat.questGiverCharacterName) && (
+                                    <div className="qa-stat">
+                                      <div className="qa-stat-label">
+                                        Quest Giver
+                                      </div>
+                                      <div
+                                        className="qa-stat-value"
+                                        style={{
+                                          fontSize: 14,
+                                          lineHeight: 1.6,
+                                        }}
+                                      >
+                                        {beat.questGiverCharacterName ||
+                                          beat.questGiverCharacterKey}
+                                        {beat.questGiverCharacterName &&
+                                        beat.questGiverCharacterKey
+                                          ? ` (${beat.questGiverCharacterKey})`
+                                          : ''}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(beat.questGiverAfterDescription ||
+                                    beat.questGiverAfterDialogue.length > 0) && (
+                                    <div className="qa-stat">
+                                      <div className="qa-stat-label">
+                                        Aftermath
+                                      </div>
+                                      <div
+                                        className="qa-stat-value"
+                                        style={{
+                                          fontSize: 14,
+                                          lineHeight: 1.6,
+                                        }}
+                                      >
+                                        {beat.questGiverAfterDescription || 'n/a'}
+                                        {beat.questGiverAfterDialogue.length > 0
+                                          ? ` ${beat.questGiverAfterDialogue.join(' / ')}`
+                                          : ''}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {(beat.requiredStoryFlags.length > 0 ||
+                                  beat.setStoryFlags.length > 0 ||
+                                  beat.clearStoryFlags.length > 0 ||
+                                  relationshipSummary ||
+                                  worldChangeSummary.length > 0 ||
+                                  unlockedContentSummary.length > 0) && (
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gap: 10,
+                                      marginTop: 14,
+                                    }}
+                                  >
+                                    {beat.requiredStoryFlags.length > 0 && (
+                                      <div className="qa-copy">
+                                        <strong>Requires:</strong>{' '}
+                                        {beat.requiredStoryFlags.join(', ')}
+                                      </div>
+                                    )}
+                                    {beat.setStoryFlags.length > 0 && (
+                                      <div className="qa-copy">
+                                        <strong>Sets:</strong>{' '}
+                                        {beat.setStoryFlags.join(', ')}
+                                      </div>
+                                    )}
+                                    {beat.clearStoryFlags.length > 0 && (
+                                      <div className="qa-copy">
+                                        <strong>Clears:</strong>{' '}
+                                        {beat.clearStoryFlags.join(', ')}
+                                      </div>
+                                    )}
+                                    {relationshipSummary && (
+                                      <div className="qa-copy">
+                                        <strong>Relationship Shift:</strong>{' '}
+                                        {relationshipSummary}
+                                      </div>
+                                    )}
+                                    {worldChangeSummary.length > 0 && (
+                                      <div className="qa-copy">
+                                        <strong>World Changes:</strong>{' '}
+                                        {worldChangeSummary.join(' / ')}
+                                      </div>
+                                    )}
+                                    {unlockedContentSummary.length > 0 && (
+                                      <div className="qa-copy">
+                                        <strong>Unlocked Content:</strong>{' '}
+                                        {unlockedContentSummary.join(' / ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

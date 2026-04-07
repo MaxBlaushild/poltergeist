@@ -184,8 +184,15 @@ Rules:
 - Reuse recurring characters and reveals consistently with the introduced/required keys.
 - Each beat must include questGiverCharacterKey, chosen from that beat's introducedCharacterKeys or requiredCharacterKeys whenever possible.
 - Each beat must be a valid quest archetype package that can stand on its own while still serving the larger story.
+- Each beat should feel like a chapter with its own beginning, middle, and turn, not a single paragraph wrapped in one open-ended prompt.
+- Every beat should usually break into 2-3 quest steps/subbeats. A single-step beat is only acceptable if the beat is intentionally very short and still feels complete.
+- The beat-level chapterSummary, purpose, whatChanges, hook, and description should clearly establish who is involved, what is happening, where it happens, and why this beat matters now.
+- Each step must represent a distinct subbeat with a clear purpose, not just a restatement of the overall beat summary.
+- Vary step content inside a beat when it makes sense. A good beat often mixes discovery, action, and consequence instead of repeating the same interaction type.
 - Challenge steps must be concrete, enjoyable real-world tasks the player can actually complete at the location right now.
 - Investigation, negotiation, helping someone, or “what do you do?” situations should become scenarios, not challenges.
+- Scenario steps must be specific dramatic situations with a concrete local context, not generic prompts that simply restate the beat summary.
+- Monster steps should represent an actual escalation, ambush, guardian, or consequence tied to the beat, not filler combat.
 - Every campaign must feel district-specific and grounded in urban fantasy.
 - Use lowercase snake_case tags/keys for themeTags, internalTags, factionKeys, characterKeys, revealKeys, requiredZoneTags, characterTags, and preferredContentMix.
 - Use lowercase snake_case for requiredStoryFlags, setStoryFlags, and clearStoryFlags when you include them.
@@ -203,6 +210,89 @@ Rules:
 - Across the full campaign, include each required location archetype at least once when a required list is provided.
 - Vary the content mix across beats. Do not make every beat combat-heavy.
 - questGiverAfterDialogue should feel like reactive NPC follow-up dialogue that acknowledges what changed after this beat.
+`
+
+const mainStoryBeatExpansionPromptTemplate = `
+You are upgrading one main story beat for Unclaimed Streets so it becomes a richer, more varied quest.
+
+Campaign context:
+- campaign premise: %s
+- district fit: %s
+- tone: %s
+- theme tags: %s
+- character keys in play: %s
+- reveal keys in play: %s
+
+Beat context:
+- order index: %d
+- act: %d
+- story role: %s
+- chapter title: %s
+- chapter summary: %s
+- purpose: %s
+- what changes: %s
+- hook: %s
+- description: %s
+- preferred content mix: %s
+- character tags: %s
+- required zone tags: %s
+- required location archetype names: %s
+- challenge template seeds: %s
+- scenario template seeds: %s
+- monster template seeds: %s
+- current steps json: %s
+
+Allowed location archetypes:
+%s
+
+Allowed monster templates:
+%s
+
+Return JSON only:
+{
+  "chapterSummary": "optional improved beat summary with stronger who/what/where/why",
+  "hook": "optional improved hook",
+  "description": "optional improved quest archetype description",
+  "challengeTemplateSeeds": ["seed one", "seed two"],
+  "scenarioTemplateSeeds": ["seed one", "seed two"],
+  "monsterTemplateSeeds": ["seed one", "seed two"],
+  "steps": [
+    {
+      "source": "location|proximity",
+      "content": "challenge|scenario|monster",
+      "locationConcept": "specific subbeat location vibe",
+      "locationArchetypeName": "existing or new reusable location archetype name, or empty string for proximity steps",
+      "locationMetadataTags": ["market", "nightlife"],
+      "distanceMeters": 120,
+      "templateConcept": "what the player is doing in this subbeat",
+      "potentialContent": ["idea one", "idea two"],
+      "challengeQuestion": "required for challenge steps",
+      "challengeDescription": "required for challenge steps",
+      "challengeSubmissionType": "photo|text|video",
+      "challengeProficiency": "optional short proficiency",
+      "challengeStatTags": ["strength", "wisdom"],
+      "scenarioPrompt": "required for scenario steps",
+      "scenarioOpenEnded": true,
+      "scenarioBeats": ["beat one", "beat two"],
+      "monsterTemplateNames": ["names chosen from allowed monster templates when possible"],
+      "encounterTone": ["urban", "predatory"]
+    }
+  ]
+}
+
+Rules:
+- Output 2-3 steps unless there is a very strong reason for only 1.
+- The first step must not use proximity.
+- Each step must feel like a distinct subbeat with its own local purpose.
+- Do not restate the same scene three times. Escalate or pivot across the steps.
+- Use challenges only for concrete enjoyable real-world tasks that can be completed right now at the location.
+- Use scenarios for negotiations, discoveries, moral choices, roleplay, or response-driven situations.
+- Use monster encounters when the beat genuinely calls for danger, pursuit, a guardian, or a violent consequence.
+- If the beat involves a specific monster concept and no perfect template exists, use monsterTemplateSeeds and/or monsterTemplateNames to point toward the needed monster type.
+- If the beat needs a more specific place than the provided list, you may propose a new reusable location archetype name.
+- Keep everything grounded in the same chapter title, purpose, and what-changes arc.
+- Make the step prompts specific and flavorful, not generic.
+- Output JSON only.
 `
 
 const mainStoryMissingLocationArchetypePromptTemplate = `
@@ -346,6 +436,16 @@ type mainStorySuggestionEncounterPayload struct {
 	TargetLevel          int      `json:"targetLevel"`
 }
 
+type mainStoryBeatExpansionResponse struct {
+	ChapterSummary         string                                `json:"chapterSummary"`
+	Hook                   string                                `json:"hook"`
+	Description            string                                `json:"description"`
+	ChallengeTemplateSeeds []string                              `json:"challengeTemplateSeeds"`
+	ScenarioTemplateSeeds  []string                              `json:"scenarioTemplateSeeds"`
+	MonsterTemplateSeeds   []string                              `json:"monsterTemplateSeeds"`
+	Steps                  []questArchetypeSuggestionStepPayload `json:"steps"`
+}
+
 type GenerateMainStorySuggestionsProcessor struct {
 	dbClient         db.DbClient
 	deepPriestClient deep_priest.DeepPriest
@@ -407,42 +507,53 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 	if err != nil {
 		return fmt.Errorf("failed to load main story templates: %w", err)
 	}
-	prompt := fmt.Sprintf(
-		mainStorySuggestionPromptTemplate,
-		maxInt(1, job.Count),
-		maxInt(3, job.QuestCount),
-		quotedOrNone(job.ThemePrompt),
-		quotedOrNone(job.DistrictFit),
-		quotedOrNone(job.Tone),
-		renderTagList(job.FamilyTags),
-		renderTagList(job.CharacterTags),
-		renderTagList(job.InternalTags),
-		buildRequiredLocationArchetypesPrompt(job.RequiredLocationArchetypeIDs, locationArchetypes),
-		renderTagList(job.RequiredLocationMetadataTags),
-		buildMainStorySuggestionAvoidance(recentTemplates, 12),
-		buildAllowedLocationArchetypesPrompt(locationArchetypes),
-		buildAllowedMonsterTemplatesPrompt(monsterTemplates),
-		maxInt(1, job.Count),
-		maxInt(3, job.QuestCount),
-	)
 
-	generated, err := p.requestMainStorySuggestionResponse(prompt)
-	if err != nil {
-		return err
-	}
-	if len(generated.Drafts) == 0 {
-		return fmt.Errorf("main story suggestion payload did not include any drafts")
+	targetDraftCount := maxInt(1, job.Count)
+	targetQuestCount := maxInt(3, job.QuestCount)
+	generatedDrafts := make([]mainStorySuggestionDraftPayload, 0, targetDraftCount)
+	for len(generatedDrafts) < targetDraftCount {
+		prompt := buildMainStorySuggestionPrompt(
+			job,
+			locationArchetypes,
+			monsterTemplates,
+			recentTemplates,
+			generatedDrafts,
+			1,
+			targetQuestCount,
+		)
+
+		generated, err := p.requestMainStorySuggestionResponse(prompt)
+		if err != nil {
+			return err
+		}
+		if len(generated.Drafts) == 0 {
+			return fmt.Errorf("main story suggestion payload did not include any drafts")
+		}
+
+		for _, draft := range generated.Drafts {
+			if len(generatedDrafts) >= targetDraftCount {
+				break
+			}
+			generatedDrafts = append(generatedDrafts, draft)
+		}
 	}
 
 	locationArchetypes, err = p.ensureGeneratedMainStoryLocationArchetypes(
 		ctx,
 		job,
 		locationArchetypes,
-		generated.Drafts,
+		generatedDrafts,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create missing location archetypes: %w", err)
 	}
+
+	generatedDrafts = p.enrichMainStoryDraftBeats(
+		job,
+		generatedDrafts,
+		locationArchetypes,
+		monsterTemplates,
+	)
 
 	locationIndex := buildLocationArchetypeIndex(locationArchetypes)
 	monsterIndex := buildMonsterTemplateIndex(monsterTemplates)
@@ -452,7 +563,7 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 	)
 
 	createdCount := 0
-	for _, spec := range generated.Drafts {
+	for _, spec := range generatedDrafts {
 		draft := sanitizeMainStorySuggestionDraft(spec, locationIndex, monsterIndex, requiredLocationArchetypes, job)
 		draft.JobID = job.ID
 		draft.Status = models.MainStorySuggestionDraftStatusSuggested
@@ -471,6 +582,40 @@ func (p *GenerateMainStorySuggestionsProcessor) generateDrafts(
 		return fmt.Errorf("failed to update main story suggestion job: %w", err)
 	}
 	return nil
+}
+
+func buildMainStorySuggestionPrompt(
+	job *models.MainStorySuggestionJob,
+	locationArchetypes []*models.LocationArchetype,
+	monsterTemplates []models.MonsterTemplate,
+	recentTemplates []models.MainStoryTemplate,
+	generatedDrafts []mainStorySuggestionDraftPayload,
+	draftCount int,
+	questCount int,
+) string {
+	avoidance := buildMainStorySuggestionAvoidance(recentTemplates, 12)
+	inBatchAvoidance := buildGeneratedMainStoryDraftAvoidance(generatedDrafts, 8)
+	if inBatchAvoidance != "" {
+		avoidance = strings.TrimSpace(avoidance) + "\nDrafts already generated in this batch to avoid echoing:\n" + inBatchAvoidance
+	}
+	return fmt.Sprintf(
+		mainStorySuggestionPromptTemplate,
+		maxInt(1, draftCount),
+		maxInt(3, questCount),
+		quotedOrNone(job.ThemePrompt),
+		quotedOrNone(job.DistrictFit),
+		quotedOrNone(job.Tone),
+		renderTagList(job.FamilyTags),
+		renderTagList(job.CharacterTags),
+		renderTagList(job.InternalTags),
+		buildRequiredLocationArchetypesPrompt(job.RequiredLocationArchetypeIDs, locationArchetypes),
+		renderTagList(job.RequiredLocationMetadataTags),
+		avoidance,
+		buildAllowedLocationArchetypesPrompt(locationArchetypes),
+		buildAllowedMonsterTemplatesPrompt(monsterTemplates),
+		maxInt(1, draftCount),
+		maxInt(3, questCount),
+	)
 }
 
 func (p *GenerateMainStorySuggestionsProcessor) requestMainStorySuggestionResponse(
@@ -661,6 +806,366 @@ func (p *GenerateMainStorySuggestionsProcessor) ensureGeneratedMainStoryLocation
 	return existing, nil
 }
 
+func (p *GenerateMainStorySuggestionsProcessor) enrichMainStoryDraftBeats(
+	job *models.MainStorySuggestionJob,
+	drafts []mainStorySuggestionDraftPayload,
+	locationArchetypes []*models.LocationArchetype,
+	monsterTemplates []models.MonsterTemplate,
+) []mainStorySuggestionDraftPayload {
+	if len(drafts) == 0 {
+		return drafts
+	}
+
+	allowedLocationPrompt := buildAllowedLocationArchetypesPrompt(locationArchetypes)
+	allowedMonsterPrompt := buildAllowedMonsterTemplatesPrompt(monsterTemplates)
+
+	enriched := make([]mainStorySuggestionDraftPayload, 0, len(drafts))
+	for _, draft := range drafts {
+		nextDraft := draft
+		nextDraft.Beats = make([]mainStorySuggestionBeatPayload, 0, len(draft.Beats))
+		for _, beat := range draft.Beats {
+			expanded := beat
+			if mainStoryBeatNeedsExpansion(beat) {
+				if response, err := p.requestMainStoryBeatExpansion(job, draft, beat, allowedLocationPrompt, allowedMonsterPrompt); err == nil && response != nil {
+					expanded = mergeMainStoryBeatExpansion(expanded, *response)
+				} else if err != nil {
+					log.Printf(
+						"main story beat expansion fallback for draft=%q beat=%q: %v",
+						strings.TrimSpace(draft.Name),
+						strings.TrimSpace(beat.ChapterTitle),
+						err,
+					)
+				}
+			}
+			expanded = applyMainStoryBeatFallbackArc(expanded)
+			nextDraft.Beats = append(nextDraft.Beats, expanded)
+		}
+		enriched = append(enriched, nextDraft)
+	}
+	return enriched
+}
+
+func mainStoryBeatNeedsExpansion(beat mainStorySuggestionBeatPayload) bool {
+	if len(beat.Steps) < 2 {
+		return true
+	}
+	contentCounts := map[string]int{}
+	openEndedScenarioCount := 0
+	for _, step := range beat.Steps {
+		content := normalizeSuggestionContent(step.Content)
+		contentCounts[content]++
+		if content == "scenario" && step.ScenarioOpenEnded && len(normalizeSuggestionLines(step.ScenarioBeats)) <= 1 {
+			openEndedScenarioCount++
+		}
+	}
+	if len(contentCounts) == 1 && openEndedScenarioCount == len(beat.Steps) {
+		return true
+	}
+	return false
+}
+
+func (p *GenerateMainStorySuggestionsProcessor) requestMainStoryBeatExpansion(
+	job *models.MainStorySuggestionJob,
+	draft mainStorySuggestionDraftPayload,
+	beat mainStorySuggestionBeatPayload,
+	allowedLocationPrompt string,
+	allowedMonsterPrompt string,
+) (*mainStoryBeatExpansionResponse, error) {
+	if p.deepPriestClient == nil {
+		return nil, fmt.Errorf("deep priest client unavailable")
+	}
+	currentStepsJSON, err := json.Marshal(beat.Steps)
+	if err != nil {
+		return nil, err
+	}
+	prompt := fmt.Sprintf(
+		mainStoryBeatExpansionPromptTemplate,
+		quotedOrNone(draft.Premise),
+		quotedOrNone(draft.DistrictFit),
+		quotedOrNone(draft.Tone),
+		renderTagList(draft.ThemeTags),
+		renderTagList(draft.CharacterKeys),
+		renderTagList(draft.RevealKeys),
+		maxInt(1, beat.OrderIndex),
+		maxInt(1, beat.Act),
+		quotedOrNone(beat.StoryRole),
+		quotedOrNone(beat.ChapterTitle),
+		quotedOrNone(beat.ChapterSummary),
+		quotedOrNone(beat.Purpose),
+		quotedOrNone(beat.WhatChanges),
+		quotedOrNone(beat.Hook),
+		quotedOrNone(beat.Description),
+		renderTagList(beat.PreferredContentMix),
+		renderTagList(beat.CharacterTags),
+		renderTagList(beat.RequiredZoneTags),
+		renderTagList(beat.RequiredLocationArchetypeNames),
+		renderTagList(beat.ChallengeTemplateSeeds),
+		renderTagList(beat.ScenarioTemplateSeeds),
+		renderTagList(beat.MonsterTemplateSeeds),
+		string(currentStepsJSON),
+		allowedLocationPrompt,
+		allowedMonsterPrompt,
+	)
+
+	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return nil, err
+	}
+
+	var response mainStoryBeatExpansionResponse
+	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func mergeMainStoryBeatExpansion(
+	beat mainStorySuggestionBeatPayload,
+	expansion mainStoryBeatExpansionResponse,
+) mainStorySuggestionBeatPayload {
+	if summary := strings.TrimSpace(expansion.ChapterSummary); summary != "" {
+		beat.ChapterSummary = summary
+	}
+	if hook := strings.TrimSpace(expansion.Hook); hook != "" {
+		beat.Hook = hook
+	}
+	if description := strings.TrimSpace(expansion.Description); description != "" {
+		beat.Description = description
+	}
+	if len(expansion.ChallengeTemplateSeeds) > 0 {
+		beat.ChallengeTemplateSeeds = expansion.ChallengeTemplateSeeds
+	}
+	if len(expansion.ScenarioTemplateSeeds) > 0 {
+		beat.ScenarioTemplateSeeds = expansion.ScenarioTemplateSeeds
+	}
+	if len(expansion.MonsterTemplateSeeds) > 0 {
+		beat.MonsterTemplateSeeds = expansion.MonsterTemplateSeeds
+	}
+	if len(expansion.Steps) > 0 {
+		beat.Steps = expansion.Steps
+	}
+	return beat
+}
+
+func applyMainStoryBeatFallbackArc(
+	beat mainStorySuggestionBeatPayload,
+) mainStorySuggestionBeatPayload {
+	if len(beat.Steps) >= 2 {
+		return beat
+	}
+
+	requiredLocations := normalizeSuggestionLines(beat.RequiredLocationArchetypeNames)
+	primaryLocation := "street-level site"
+	if len(requiredLocations) > 0 {
+		primaryLocation = strings.TrimSpace(requiredLocations[0])
+	}
+	secondaryLocation := primaryLocation
+	if len(requiredLocations) > 1 {
+		secondaryLocation = strings.TrimSpace(requiredLocations[1])
+	}
+
+	preferredMix := normalizeSuggestionTags(beat.PreferredContentMix)
+	firstContent := pickFallbackBeatContent(preferredMix, []string{"challenge", "scenario", "monster"}, "")
+	secondContent := pickFallbackBeatContent(preferredMix, []string{"scenario", "challenge", "monster"}, firstContent)
+	if secondContent == "" {
+		secondContent = "scenario"
+	}
+	thirdContent := ""
+	if shouldAddThirdFallbackBeatStep(beat, preferredMix, firstContent, secondContent) {
+		thirdContent = pickFallbackBeatContent(preferredMix, []string{"monster", "scenario", "challenge"}, secondContent, firstContent)
+	}
+
+	steps := make([]questArchetypeSuggestionStepPayload, 0, 3)
+	steps = append(steps, buildFallbackBeatStep(beat, firstContent, primaryLocation, false, 0))
+	steps = append(steps, buildFallbackBeatStep(beat, secondContent, secondaryLocation, false, 0))
+	if thirdContent != "" {
+		steps = append(steps, buildFallbackBeatStep(beat, thirdContent, secondaryLocation, thirdContent == "monster", 120))
+	}
+
+	beat.Steps = steps
+	if strings.TrimSpace(beat.Description) == "" {
+		beat.Description = strings.TrimSpace(strings.Join([]string{
+			beat.ChapterSummary,
+			beat.Purpose,
+			beat.WhatChanges,
+		}, " "))
+	}
+	if len(beat.ChallengeTemplateSeeds) == 0 {
+		beat.ChallengeTemplateSeeds = normalizeSuggestionLines([]string{
+			strings.TrimSpace(beat.ChapterTitle),
+			strings.TrimSpace(beat.WhatChanges),
+		})
+	}
+	if len(beat.ScenarioTemplateSeeds) == 0 {
+		beat.ScenarioTemplateSeeds = normalizeSuggestionLines([]string{
+			strings.TrimSpace(beat.Hook),
+			strings.TrimSpace(beat.ChapterSummary),
+		})
+	}
+	if len(beat.MonsterTemplateSeeds) == 0 {
+		beat.MonsterTemplateSeeds = normalizeSuggestionLines([]string{
+			strings.TrimSpace(beat.ChapterTitle),
+			strings.TrimSpace(beat.WhatChanges),
+			strings.TrimSpace(beat.Description),
+		})
+	}
+	return beat
+}
+
+func pickFallbackBeatContent(preferred []string, defaults []string, excluded ...string) string {
+	excludedSet := map[string]struct{}{}
+	for _, item := range excluded {
+		normalized := normalizeSuggestionContent(item)
+		if normalized != "" {
+			excludedSet[normalized] = struct{}{}
+		}
+	}
+	for _, item := range preferred {
+		normalized := normalizeSuggestionContent(item)
+		if normalized == "" {
+			continue
+		}
+		if _, blocked := excludedSet[normalized]; blocked {
+			continue
+		}
+		return normalized
+	}
+	for _, item := range defaults {
+		normalized := normalizeSuggestionContent(item)
+		if normalized == "" {
+			continue
+		}
+		if _, blocked := excludedSet[normalized]; blocked {
+			continue
+		}
+		return normalized
+	}
+	return ""
+}
+
+func shouldAddThirdFallbackBeatStep(
+	beat mainStorySuggestionBeatPayload,
+	preferred []string,
+	firstContent string,
+	secondContent string,
+) bool {
+	role := strings.ToLower(strings.TrimSpace(beat.StoryRole))
+	if strings.Contains(role, "climax") || strings.Contains(role, "reveal") || strings.Contains(role, "betrayal") {
+		return true
+	}
+	for _, item := range preferred {
+		if normalizeSuggestionContent(item) == "monster" && firstContent != "monster" && secondContent != "monster" {
+			return true
+		}
+	}
+	return false
+}
+
+func buildFallbackBeatStep(
+	beat mainStorySuggestionBeatPayload,
+	content string,
+	locationArchetypeName string,
+	useProximity bool,
+	distanceMeters int,
+) questArchetypeSuggestionStepPayload {
+	locationConcept := collapseWhitespace(strings.TrimSpace(beat.ChapterTitle))
+	if locationConcept == "" {
+		locationConcept = "district site"
+	}
+	templateConcept := collapseWhitespace(strings.TrimSpace(beat.WhatChanges))
+	if templateConcept == "" {
+		templateConcept = collapseWhitespace(strings.TrimSpace(beat.ChapterSummary))
+	}
+	if templateConcept == "" {
+		templateConcept = "follow the next lead in the story"
+	}
+	locationMetadata := normalizeSuggestionTags(append([]string{}, beat.RequiredZoneTags...))
+	if len(locationMetadata) == 0 {
+		locationMetadata = models.StringArray{"street_level"}
+	}
+	step := questArchetypeSuggestionStepPayload{
+		Source:                "location",
+		Content:               content,
+		LocationConcept:       locationConcept,
+		LocationArchetypeName: locationArchetypeName,
+		LocationMetadataTags:  []string(locationMetadata),
+		TemplateConcept:       templateConcept,
+		PotentialContent: []string{
+			strings.TrimSpace(beat.ChapterSummary),
+			strings.TrimSpace(beat.WhatChanges),
+		},
+		ScenarioOpenEnded: true,
+		EncounterTone:     []string(normalizeSuggestionTags(append([]string{}, beat.InternalTags...))),
+	}
+	if useProximity {
+		step.Source = "proximity"
+		if distanceMeters > 0 {
+			distance := distanceMeters
+			step.DistanceMeters = &distance
+		}
+		step.LocationArchetypeName = ""
+	}
+
+	switch content {
+	case "challenge":
+		step.ChallengeQuestion = fmt.Sprintf(
+			"Capture or describe a concrete detail at the %s that advances %s.",
+			locationConcept,
+			lowercaseFirst(strings.TrimSpace(beat.ChapterTitle)),
+		)
+		step.ChallengeDescription = fmt.Sprintf(
+			"Use the place itself to gather proof, spot a telling detail, or complete a small real-world task that pushes this lead forward.",
+		)
+		step.ChallengeSubmissionType = "text"
+		step.ChallengeStatTags = []string{"wisdom", "intelligence"}
+	case "monster":
+		step.MonsterTemplateNames = normalizeSuggestionLines(append([]string{}, beat.MonsterTemplateSeeds...))
+		if len(step.MonsterTemplateNames) == 0 {
+			step.MonsterTemplateNames = []string{strings.TrimSpace(beat.ChapterTitle)}
+		}
+		if len(step.EncounterTone) == 0 {
+			step.EncounterTone = []string{"urban", "escalating"}
+		}
+	default:
+		step.Content = "scenario"
+		step.ScenarioPrompt = fmt.Sprintf(
+			"%s At the %s, the situation sharpens around %s. What do you do?",
+			ensureSentenceWithTerminal(strings.TrimSpace(beat.ChapterSummary)),
+			locationConcept,
+			lowercaseFirst(strings.TrimSpace(beat.WhatChanges)),
+		)
+		step.ScenarioBeats = normalizeSuggestionLines([]string{
+			strings.TrimSpace(beat.Purpose),
+			strings.TrimSpace(beat.WhatChanges),
+		})
+	}
+
+	return step
+}
+
+func ensureSentenceWithTerminal(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	last := trimmed[len(trimmed)-1]
+	if last == '.' || last == '!' || last == '?' {
+		return trimmed
+	}
+	return trimmed + "."
+}
+
+func lowercaseFirst(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "the situation"
+	}
+	if len(trimmed) == 1 {
+		return strings.ToLower(trimmed)
+	}
+	return strings.ToLower(trimmed[:1]) + trimmed[1:]
+}
+
 func (p *GenerateMainStorySuggestionsProcessor) failJob(
 	ctx context.Context,
 	job *models.MainStorySuggestionJob,
@@ -701,6 +1206,35 @@ func buildMainStorySuggestionAvoidance(recent []models.MainStoryTemplate, limit 
 	}
 	if len(lines) == 0 {
 		return "- none"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func buildGeneratedMainStoryDraftAvoidance(
+	drafts []mainStorySuggestionDraftPayload,
+	limit int,
+) string {
+	if len(drafts) == 0 || limit <= 0 {
+		return ""
+	}
+	lines := make([]string, 0, minInt(len(drafts), limit))
+	for index, draft := range drafts {
+		if index >= limit {
+			break
+		}
+		name := collapseWhitespace(draft.Name)
+		if name == "" {
+			name = "Unnamed generated draft"
+		}
+		premise := collapseWhitespace(draft.Premise)
+		if len(premise) > 120 {
+			premise = strings.TrimSpace(premise[:120]) + "..."
+		}
+		if premise != "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s", name, premise))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s", name))
 	}
 	return strings.Join(lines, "\n")
 }

@@ -19,6 +19,7 @@ const (
 	MainStorySuggestionDraftStatusSuggested = "suggested"
 	MainStorySuggestionDraftStatusConverted = "converted"
 
+	MainStoryDistrictRunStatusQueued     = "queued"
 	MainStoryDistrictRunStatusInProgress = "in_progress"
 	MainStoryDistrictRunStatusCompleted  = "completed"
 	MainStoryDistrictRunStatusFailed     = "failed"
@@ -286,6 +287,8 @@ func NormalizeMainStorySuggestionDraftStatus(raw string) string {
 
 func NormalizeMainStoryDistrictRunStatus(raw string) string {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case MainStoryDistrictRunStatusQueued:
+		return MainStoryDistrictRunStatusQueued
 	case MainStoryDistrictRunStatusCompleted:
 		return MainStoryDistrictRunStatusCompleted
 	case MainStoryDistrictRunStatusFailed:

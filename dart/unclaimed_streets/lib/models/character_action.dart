@@ -2,11 +2,13 @@ class DialogueMessage {
   final String speaker;
   final String text;
   final int order;
+  final String? effect;
 
   const DialogueMessage({
     required this.speaker,
     required this.text,
     required this.order,
+    this.effect,
   });
 
   factory DialogueMessage.fromJson(Map<String, dynamic> json) {
@@ -14,6 +16,9 @@ class DialogueMessage {
       speaker: json['speaker'] as String? ?? 'character',
       text: json['text'] as String? ?? '',
       order: (json['order'] as num?)?.toInt() ?? 0,
+      effect: (json['effect'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (json['effect'] as String).trim(),
     );
   }
 }
@@ -96,9 +101,27 @@ class CharacterAction {
     return raw.map((e) => e.toString()).toList();
   }
 
-  List<String> get questAcceptanceDialogue {
+  List<DialogueMessage> get questAcceptanceDialogue {
     final raw = metadata?['acceptanceDialogue'] as List<dynamic>?;
     if (raw == null) return const [];
-    return raw.map((e) => e.toString()).toList();
+    final messages = <DialogueMessage>[];
+    for (var index = 0; index < raw.length; index++) {
+      final entry = raw[index];
+      if (entry is Map<String, dynamic>) {
+        messages.add(DialogueMessage.fromJson(entry));
+      } else if (entry is Map) {
+        messages.add(
+          DialogueMessage.fromJson(Map<String, dynamic>.from(entry)),
+        );
+      } else {
+        final text = entry.toString().trim();
+        if (text.isNotEmpty) {
+          messages.add(
+            DialogueMessage(speaker: 'character', text: text, order: index),
+          );
+        }
+      }
+    }
+    return messages;
   }
 }

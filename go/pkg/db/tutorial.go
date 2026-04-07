@@ -414,8 +414,14 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 
 	created := models.TutorialConfig{
 		ID:                    1,
-		Dialogue:              []string{},
-		LoadoutDialogue:       []string{"Equip your new gear and use the spellbook before you head back out."},
+		Dialogue:              models.DialogueSequence{},
+		LoadoutDialogue: models.DialogueSequence{
+			{
+				Speaker: "character",
+				Text:    "Equip your new gear and use the spellbook before you head back out.",
+				Order:   0,
+			},
+		},
 		ScenarioPrompt:        "You hear a commotion outside of your door.",
 		ScenarioImageURL:      "",
 		ImageGenerationStatus: models.TutorialImageGenerationStatusNone,

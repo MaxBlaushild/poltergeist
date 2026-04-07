@@ -1,11 +1,19 @@
 import { Character } from './character';
 
 export type ActionType = 'talk' | 'shop' | 'giveQuest';
+export type DialogueEffect =
+  | 'angry'
+  | 'surprised'
+  | 'whisper'
+  | 'shout'
+  | 'mysterious'
+  | 'determined';
 
 export interface DialogueMessage {
   speaker: 'character' | 'user';
   text: string;
   order: number;
+  effect?: DialogueEffect;
 }
 
 export interface ShopInventoryItem {

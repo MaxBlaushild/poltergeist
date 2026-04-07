@@ -34,9 +34,9 @@ type TutorialConfig struct {
 	CharacterID             *uuid.UUID               `json:"characterId"`
 	Character               *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
 	DialogueJSON            datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	Dialogue                []string                 `gorm:"-" json:"dialogue"`
+	Dialogue                DialogueSequence         `gorm:"-" json:"dialogue"`
 	LoadoutDialogueJSON     datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	LoadoutDialogue         []string                 `gorm:"-" json:"loadoutDialogue"`
+	LoadoutDialogue         DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
 	ScenarioPrompt          string                   `json:"scenarioPrompt"`
 	ScenarioImageURL        string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
 	ImageGenerationStatus   string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
@@ -81,10 +81,10 @@ func (TutorialConfig) TableName() string {
 
 func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.Dialogue == nil {
-		c.Dialogue = []string{}
+		c.Dialogue = DialogueSequence{}
 	}
 	if c.LoadoutDialogue == nil {
-		c.LoadoutDialogue = []string{}
+		c.LoadoutDialogue = DialogueSequence{}
 	}
 	if c.Options == nil {
 		c.Options = []TutorialScenarioOption{}
@@ -99,25 +99,8 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 		c.SpellRewards = []TutorialSpellReward{}
 	}
 
-	dialogue := make([]string, 0, len(c.Dialogue))
-	for _, line := range c.Dialogue {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		dialogue = append(dialogue, trimmed)
-	}
-	c.Dialogue = dialogue
-
-	loadoutDialogue := make([]string, 0, len(c.LoadoutDialogue))
-	for _, line := range c.LoadoutDialogue {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		loadoutDialogue = append(loadoutDialogue, trimmed)
-	}
-	c.LoadoutDialogue = loadoutDialogue
+	c.Dialogue = normalizeDialogueSequence(c.Dialogue)
+	c.LoadoutDialogue = normalizeDialogueSequence(c.LoadoutDialogue)
 
 	options := make([]TutorialScenarioOption, 0, len(c.Options))
 	for _, option := range c.Options {
@@ -201,10 +184,10 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 }
 
 func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
-	if err := parseTutorialJSON(c.DialogueJSON, &c.Dialogue); err != nil {
+	if err := parseTutorialDialogueSequenceJSON(c.DialogueJSON, &c.Dialogue); err != nil {
 		return err
 	}
-	if err := parseTutorialJSON(c.LoadoutDialogueJSON, &c.LoadoutDialogue); err != nil {
+	if err := parseTutorialDialogueSequenceJSON(c.LoadoutDialogueJSON, &c.LoadoutDialogue); err != nil {
 		return err
 	}
 	if err := parseTutorialJSON(c.OptionsJSON, &c.Options); err != nil {
@@ -220,10 +203,10 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 		return err
 	}
 	if c.Dialogue == nil {
-		c.Dialogue = []string{}
+		c.Dialogue = DialogueSequence{}
 	}
 	if c.LoadoutDialogue == nil {
-		c.LoadoutDialogue = []string{}
+		c.LoadoutDialogue = DialogueSequence{}
 	}
 	if c.Options == nil {
 		c.Options = []TutorialScenarioOption{}
@@ -348,6 +331,26 @@ func parseTutorialJSON[T any](raw datatypes.JSON, target *[]T) error {
 		return nil
 	}
 	return json.Unmarshal(raw, target)
+}
+
+func parseTutorialDialogueSequenceJSON(raw datatypes.JSON, target *DialogueSequence) error {
+	if len(raw) == 0 {
+		*target = DialogueSequence{}
+		return nil
+	}
+
+	var messages []DialogueMessage
+	if err := json.Unmarshal(raw, &messages); err == nil {
+		*target = normalizeDialogueSequence(messages)
+		return nil
+	}
+
+	var legacy []string
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return err
+	}
+	*target = DialogueSequenceFromStringLines(legacy)
+	return nil
 }
 
 func normalizeTutorialItemRewards(input []TutorialItemReward) []TutorialItemReward {

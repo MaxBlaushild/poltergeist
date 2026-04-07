@@ -56,3 +56,7 @@ func (h *mainStoryDistrictRunHandle) FindByMainStoryTemplateID(ctx context.Conte
 	}
 	return runs, nil
 }
+
+func (h *mainStoryDistrictRunHandle) Delete(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.MainStoryDistrictRun{}, "id = ?", id).Error
+}

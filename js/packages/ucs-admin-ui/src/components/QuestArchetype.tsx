@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import {
   QuestArchetypeDraft,
@@ -6,6 +6,7 @@ import {
   useQuestArchetypes,
 } from '../contexts/questArchetypes.tsx';
 import {
+  DialogueMessage,
   LocationArchetype,
   QuestArchetype,
   QuestArchetypeNode,
@@ -25,6 +26,8 @@ import {
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
 import './questArchetypeTheme.css';
+import { useSearchParams } from 'react-router-dom';
+import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 
 interface FlowNodeProps {
   node: QuestArchetypeNode;
@@ -625,10 +628,7 @@ const formatQuestGenerationStatus = (status?: string | null) =>
 const questArchetypeFormHasExplicitCopy = (form: QuestArchetypeFormState) =>
   form.name.trim().length > 0 &&
   form.description.trim().length > 0 &&
-  form.acceptanceDialogueText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0).length > 0;
+  form.acceptanceDialogue.some((line) => (line.text ?? '').trim().length > 0);
 
 type QuestArchetypeNodeEditorState = {
   nodeType: QuestArchetypeNodeType;
@@ -1925,7 +1925,7 @@ type QuestArchetypeFormState = {
   description: string;
   category: 'side' | 'main_story';
   questGiverCharacterId: string;
-  acceptanceDialogueText: string;
+  acceptanceDialogue: DialogueMessage[];
   imageUrl: string;
   locationArchetypeId: string;
   locationArchetypeQuery: string;
@@ -1956,7 +1956,7 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   description: '',
   category: 'side',
   questGiverCharacterId: '',
-  acceptanceDialogueText: '',
+  acceptanceDialogue: [],
   imageUrl: '',
   locationArchetypeId: '',
   locationArchetypeQuery: '',
@@ -1990,7 +1990,7 @@ const buildQuestArchetypeFormFromRecord = (
   description: archetype.description ?? '',
   category: archetype.category === 'main_story' ? 'main_story' : 'side',
   questGiverCharacterId: archetype.questGiverCharacterId ?? '',
-  acceptanceDialogueText: (archetype.acceptanceDialogue ?? []).join('\n'),
+  acceptanceDialogue: archetype.acceptanceDialogue ?? [],
   imageUrl: archetype.imageUrl ?? '',
   locationArchetypeId: archetype.root?.locationArchetypeId ?? '',
   locationArchetypeQuery:
@@ -2033,14 +2033,32 @@ const buildQuestArchetypeFormFromRecord = (
   internalTagsText: (archetype.internalTags ?? []).join(', '),
 });
 
+const normalizeDialogueEffect = (effect?: DialogueMessage['effect']) => {
+  switch (effect) {
+    case 'angry':
+    case 'surprised':
+    case 'whisper':
+    case 'shout':
+    case 'mysterious':
+    case 'determined':
+      return effect;
+    default:
+      return undefined;
+  }
+};
+
 const normalizeQuestArchetypeDraft = (
   form: QuestArchetypeFormState
 ): QuestArchetypeDraft => {
   const rewardMode = form.rewardMode;
-  const acceptanceDialogue = form.acceptanceDialogueText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const acceptanceDialogue = form.acceptanceDialogue
+    .map((line, index) => ({
+      speaker: line.speaker === 'user' ? 'user' : 'character',
+      text: (line.text ?? '').trim(),
+      order: index,
+      effect: normalizeDialogueEffect(line.effect),
+    }))
+    .filter((line) => line.text.length > 0);
   const characterTags = form.characterTagsText
     .split(',')
     .map((tag) => tag.trim())
@@ -2223,11 +2241,13 @@ const validateQuestTemplateGeneratorForm = (
 };
 
 export const QuestArchetypeComponent = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const {
     questArchetypes,
     locationArchetypes,
+    refreshQuestArchetypes,
     createQuestArchetype,
     generateQuestArchetypeTemplate,
     updateQuestArchetype,
@@ -2291,6 +2311,9 @@ export const QuestArchetypeComponent = () => {
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [archetypeSearch, setArchetypeSearch] = useState<string>('');
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<string>('');
+  const [selectedArchetypeIds, setSelectedArchetypeIds] = useState<string[]>([]);
+  const attemptedDeepLinkRefreshIdRef = useRef<string>('');
+  const appliedDeepLinkedArchetypeIdRef = useRef<string>('');
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [generateQuestZoneSearch, setGenerateQuestZoneSearch] =
     useState<string>('');
@@ -2311,6 +2334,38 @@ export const QuestArchetypeComponent = () => {
 
   const generatorValidationError =
     validateQuestTemplateGeneratorForm(generatorForm);
+
+  const toggleArchetypeSelection = useCallback((archetypeId: string) => {
+    setSelectedArchetypeIds((current) =>
+      current.includes(archetypeId)
+        ? current.filter((id) => id !== archetypeId)
+        : [...current, archetypeId]
+    );
+  }, []);
+
+  const clearSelectedArchetypes = useCallback(() => {
+    setSelectedArchetypeIds([]);
+  }, []);
+
+  const deleteSelectedArchetypes = useCallback(async () => {
+    if (selectedArchetypeIds.length === 0) {
+      return;
+    }
+    const archetypeLabel =
+      selectedArchetypeIds.length === 1 ? 'quest archetype' : 'quest archetypes';
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedArchetypeIds.length} ${archetypeLabel}?`
+      )
+    ) {
+      return;
+    }
+    const idsToDelete = [...selectedArchetypeIds];
+    for (const archetypeId of idsToDelete) {
+      await deleteQuestArchetype(archetypeId);
+    }
+    setSelectedArchetypeIds([]);
+  }, [deleteQuestArchetype, selectedArchetypeIds]);
 
   const monsterProgressionOptions = useMemo(() => {
     const groups = new Map<string, MonsterAbilityProgressionOption>();
@@ -2369,6 +2424,12 @@ export const QuestArchetypeComponent = () => {
       ),
     [questArchetypes, archetypeSearch]
   );
+
+  const selectAllFilteredArchetypes = useCallback(() => {
+    setSelectedArchetypeIds(
+      Array.from(new Set(filteredArchetypes.map((archetype) => archetype.id)))
+    );
+  }, [filteredArchetypes]);
 
   const selectedArchetype = useMemo(
     () =>
@@ -2482,11 +2543,64 @@ export const QuestArchetypeComponent = () => {
         : null,
     [inlineEditor, monsterTemplates]
   );
+  const deepLinkedArchetypeId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedArchetypeId = useCallback((
+    archetypeId?: string | null
+  ) => {
+    const normalizedArchetypeId = (archetypeId ?? '').trim();
+    const currentArchetypeId = searchParams.get('id')?.trim() ?? '';
+    if (normalizedArchetypeId === currentArchetypeId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (normalizedArchetypeId) {
+      next.set('id', normalizedArchetypeId);
+    } else {
+      next.delete('id');
+    }
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!deepLinkedArchetypeId) {
+      attemptedDeepLinkRefreshIdRef.current = '';
+      appliedDeepLinkedArchetypeIdRef.current = '';
+      return;
+    }
+    const hasDeepLinkedArchetype = questArchetypes.some(
+      (archetype) => archetype.id === deepLinkedArchetypeId
+    );
+    if (hasDeepLinkedArchetype) {
+      return;
+    }
+    if (attemptedDeepLinkRefreshIdRef.current === deepLinkedArchetypeId) {
+      return;
+    }
+    attemptedDeepLinkRefreshIdRef.current = deepLinkedArchetypeId;
+    void refreshQuestArchetypes();
+  }, [deepLinkedArchetypeId, questArchetypes, refreshQuestArchetypes]);
 
   useEffect(() => {
     if (questArchetypes.length === 0) {
       setSelectedArchetypeId('');
       return;
+    }
+    if (deepLinkedArchetypeId) {
+      const matchingArchetype = questArchetypes.find(
+        (archetype) => archetype.id === deepLinkedArchetypeId
+      );
+      if (matchingArchetype) {
+        if (
+          appliedDeepLinkedArchetypeIdRef.current !== deepLinkedArchetypeId
+        ) {
+          appliedDeepLinkedArchetypeIdRef.current = deepLinkedArchetypeId;
+          setSelectedArchetypeId(matchingArchetype.id);
+          return;
+        }
+      }
+      if (attemptedDeepLinkRefreshIdRef.current !== deepLinkedArchetypeId) {
+        return;
+      }
     }
     const stillExists = questArchetypes.some(
       (archetype) => archetype.id === selectedArchetypeId
@@ -2494,7 +2608,36 @@ export const QuestArchetypeComponent = () => {
     if (!stillExists) {
       setSelectedArchetypeId(questArchetypes[0].id);
     }
-  }, [questArchetypes, selectedArchetypeId]);
+  }, [deepLinkedArchetypeId, questArchetypes, selectedArchetypeId]);
+
+  useEffect(() => {
+    if (questArchetypes.length === 0) {
+      return;
+    }
+    if (!selectedArchetypeId && deepLinkedArchetypeId) {
+      return;
+    }
+    if (
+      deepLinkedArchetypeId &&
+      !questArchetypes.some((archetype) => archetype.id === deepLinkedArchetypeId)
+    ) {
+      return;
+    }
+    replaceDeepLinkedArchetypeId(selectedArchetypeId || null);
+  }, [
+    deepLinkedArchetypeId,
+    questArchetypes,
+    replaceDeepLinkedArchetypeId,
+    selectedArchetypeId,
+  ]);
+
+  useEffect(() => {
+    setSelectedArchetypeIds((current) =>
+      current.filter((id) =>
+        questArchetypes.some((archetype) => archetype.id === id)
+      )
+    );
+  }, [questArchetypes]);
 
   useEffect(() => {
     if (flowRoutes.length === 0) {
@@ -2964,6 +3107,43 @@ export const QuestArchetypeComponent = () => {
                 value={archetypeSearch}
                 onChange={(e) => setArchetypeSearch(e.target.value)}
               />
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  marginTop: 10,
+                }}
+              >
+                <button
+                  className="qa-btn qa-btn-ghost"
+                  type="button"
+                  onClick={selectAllFilteredArchetypes}
+                  disabled={filteredArchetypes.length === 0}
+                >
+                  Select All
+                </button>
+                <button
+                  className="qa-btn qa-btn-ghost"
+                  type="button"
+                  onClick={clearSelectedArchetypes}
+                  disabled={selectedArchetypeIds.length === 0}
+                >
+                  Clear
+                </button>
+                <button
+                  className="qa-btn qa-btn-danger"
+                  type="button"
+                  onClick={() => void deleteSelectedArchetypes()}
+                  disabled={selectedArchetypeIds.length === 0}
+                >
+                  Delete Selected
+                </button>
+                <span className="qa-chip muted">
+                  {selectedArchetypeIds.length} selected
+                </span>
+              </div>
               <div className="qa-sidebar-list">
                 {filteredArchetypes.length === 0 ? (
                   <div className="qa-empty">
@@ -2980,11 +3160,31 @@ export const QuestArchetypeComponent = () => {
                     return (
                       <button
                         key={questArchetype.id}
+                        type="button"
                         className={`qa-sidebar-item ${selectedArchetypeId === questArchetype.id ? 'is-active' : ''}`}
                         onClick={() =>
                           setSelectedArchetypeId(questArchetype.id)
                         }
                       >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            width: '100%',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedArchetypeIds.includes(
+                              questArchetype.id
+                            )}
+                            onChange={() =>
+                              toggleArchetypeSelection(questArchetype.id)
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                          <div style={{ minWidth: 0, flex: 1 }}>
                         <div className="qa-sidebar-item-title">
                           {questArchetype.name}
                         </div>
@@ -2992,6 +3192,8 @@ export const QuestArchetypeComponent = () => {
                           Root: {rootLocation} ·{' '}
                           {questArchetype.root?.challenges?.length ?? 0}{' '}
                           challenges
+                        </div>
+                          </div>
                         </div>
                       </button>
                     );
@@ -3174,7 +3376,8 @@ export const QuestArchetypeComponent = () => {
                                 key={`${selectedArchetype.id}-dialogue-${index}`}
                                 className="qa-chip"
                               >
-                                {line}
+                                {line.text}
+                                {line.effect ? ` (${line.effect})` : ''}
                               </span>
                             )
                           )}
@@ -5522,18 +5725,16 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Acceptance Dialogue</div>
-                <textarea
-                  className="qa-input"
-                  rows={4}
-                  value={createForm.acceptanceDialogueText}
-                  onChange={(e) =>
+                <DialogueMessageListEditor
+                  label="Acceptance Dialogue"
+                  helperText="These lines appear before the quest is accepted."
+                  value={createForm.acceptanceDialogue}
+                  onChange={(acceptanceDialogue) =>
                     setCreateForm((prev) => ({
                       ...prev,
-                      acceptanceDialogueText: e.target.value,
+                      acceptanceDialogue,
                     }))
                   }
-                  placeholder="One line per dialogue bubble"
                 />
               </div>
               <div className="qa-field">
@@ -6158,18 +6359,16 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Acceptance Dialogue</div>
-                <textarea
-                  className="qa-input"
-                  rows={4}
-                  value={editForm.acceptanceDialogueText}
-                  onChange={(e) =>
+                <DialogueMessageListEditor
+                  label="Acceptance Dialogue"
+                  helperText="These lines appear before the quest is accepted."
+                  value={editForm.acceptanceDialogue}
+                  onChange={(acceptanceDialogue) =>
                     setEditForm((prev) => ({
                       ...prev,
-                      acceptanceDialogueText: e.target.value,
+                      acceptanceDialogue,
                     }))
                   }
-                  placeholder="One line per dialogue bubble"
                 />
               </div>
               <div className="qa-field">

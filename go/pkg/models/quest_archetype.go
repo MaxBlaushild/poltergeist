@@ -18,7 +18,7 @@ type QuestArchetype struct {
 	SetStoryFlags                 StringArray                 `json:"setStoryFlags" gorm:"column:set_story_flags;type:jsonb;default:'[]'"`
 	ClearStoryFlags               StringArray                 `json:"clearStoryFlags" gorm:"column:clear_story_flags;type:jsonb;default:'[]'"`
 	QuestGiverRelationshipEffects CharacterRelationshipState  `json:"questGiverRelationshipEffects" gorm:"column:quest_giver_relationship_effects;type:jsonb;default:'{}'"`
-	AcceptanceDialogue            StringArray                 `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
+	AcceptanceDialogue            DialogueSequence            `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
 	ImageURL                      string                      `json:"imageUrl"`
 	DifficultyMode                QuestDifficultyMode         `json:"difficultyMode" gorm:"column:difficulty_mode"`
 	Difficulty                    int                         `json:"difficulty" gorm:"default:1"`

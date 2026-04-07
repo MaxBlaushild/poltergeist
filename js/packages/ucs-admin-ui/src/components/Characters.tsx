@@ -6,15 +6,17 @@ import {
   DialogueMessage,
   Quest,
 } from '@poltergeist/types';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
+import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 import {
   ShopActionEditor,
   ShopActionSavePayload,
 } from './ShopActionEditor.tsx';
+import { useSearchParams } from 'react-router-dom';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -32,6 +34,20 @@ type SearchableComboBoxProps = {
   allowClear?: boolean;
   clearLabel?: string;
   onChange: (value: string) => void;
+};
+
+const normalizeDialogueEffect = (effect?: DialogueMessage['effect']) => {
+  switch (effect) {
+    case 'angry':
+    case 'surprised':
+    case 'whisper':
+    case 'shout':
+    case 'mysterious':
+    case 'determined':
+      return effect;
+    default:
+      return undefined;
+  }
 };
 
 const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
@@ -204,19 +220,8 @@ type CharacterStoryVariantForm = {
   priority: number;
   requiredStoryFlagsText: string;
   description: string;
-  dialogueText: string;
+  dialogue: DialogueMessage[];
 };
-
-const buildStoryVariantDialogue = (input: string): DialogueMessage[] =>
-  input
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((text, index) => ({
-      speaker: 'character',
-      text,
-      order: index,
-    }));
 
 const buildCharacterStoryVariantForm = (
   variant?: NonNullable<Character['storyVariants']>[number]
@@ -225,7 +230,7 @@ const buildCharacterStoryVariantForm = (
   priority: variant?.priority ?? 0,
   requiredStoryFlagsText: (variant?.requiredStoryFlags ?? []).join(', '),
   description: variant?.description ?? '',
-  dialogueText: (variant?.dialogue ?? []).map((entry) => entry.text).join('\n'),
+  dialogue: variant?.dialogue ?? [],
 });
 
 const defaultCharacterUndiscoveredIconPrompt =
@@ -252,6 +257,13 @@ const formatDate = (value?: string | null) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return fallback;
 };
 
 const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
@@ -421,6 +433,7 @@ const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
 };
 
 export const Characters = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zoneQuestArchetypes, updateZoneQuestArchetype } =
     useQuestArchetypes();
@@ -466,6 +479,8 @@ export const Characters = () => {
     name: '',
     description: '',
   });
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generatingCharacter, setGeneratingCharacter] = useState(false);
   const [characterUndiscoveredBusy, setCharacterUndiscoveredBusy] =
     useState(false);
   const [
@@ -498,6 +513,22 @@ export const Characters = () => {
   ] = useState<number>(Date.now());
   const [characterUndiscoveredPrompt, setCharacterUndiscoveredPrompt] =
     useState(defaultCharacterUndiscoveredIconPrompt);
+  const didHydrateDeepLinkedCharacterRef = React.useRef(false);
+  const deepLinkedCharacterId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedCharacterId = useCallback((characterId?: string | null) => {
+    const normalizedCharacterId = (characterId ?? '').trim();
+    const currentCharacterId = searchParams.get('id')?.trim() ?? '';
+    if (normalizedCharacterId === currentCharacterId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (normalizedCharacterId) {
+      next.set('id', normalizedCharacterId);
+    } else {
+      next.delete('id');
+    }
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const pointOfInterestOptions = React.useMemo<ComboOption[]>(() => {
     return [...availablePointsOfInterest]
@@ -939,6 +970,7 @@ export const Characters = () => {
       name: '',
       description: '',
     });
+    setGenerationError(null);
   };
 
   const buildCharacterPayload = () => {
@@ -957,7 +989,14 @@ export const Characters = () => {
             variant.requiredStoryFlagsText
           ),
           description: variant.description.trim(),
-          dialogue: buildStoryVariantDialogue(variant.dialogueText),
+          dialogue: variant.dialogue
+            .map((entry, index) => ({
+              speaker: entry.speaker === 'user' ? 'user' : 'character',
+              text: (entry.text ?? '').trim(),
+              order: index,
+              effect: normalizeDialogueEffect(entry.effect),
+            }))
+            .filter((entry) => entry.text.length > 0),
         }))
         .filter(
           (variant) =>
@@ -1064,12 +1103,21 @@ export const Characters = () => {
   };
 
   const handleGenerateCharacter = async () => {
+    const name = generationData.name.trim();
+    const description = generationData.description.trim();
+    if (!name) {
+      setGenerationError('Name is required.');
+      return;
+    }
+
     try {
+      setGeneratingCharacter(true);
+      setGenerationError(null);
       const newCharacter = await apiClient.post<Character>(
         '/sonar/characters/generate',
         {
-          name: generationData.name,
-          description: generationData.description,
+          name,
+          description,
         }
       );
       setCharacters([...characters, newCharacter]);
@@ -1077,7 +1125,11 @@ export const Characters = () => {
       resetGenerationForm();
     } catch (error) {
       console.error('Error generating character:', error);
-      alert('Error generating character. Please check all required fields.');
+      setGenerationError(
+        getErrorMessage(error, 'Failed to generate character.')
+      );
+    } finally {
+      setGeneratingCharacter(false);
     }
   };
 
@@ -1192,7 +1244,7 @@ export const Characters = () => {
     }
   };
 
-  const handleEditCharacter = (character: Character) => {
+  const handleEditCharacter = useCallback((character: Character) => {
     setEditingCharacter(character);
     setFormData({
       name: character.name,
@@ -1220,7 +1272,57 @@ export const Characters = () => {
         )
         .map((zoneQuestArchetype) => zoneQuestArchetype.id)
     );
-  };
+  }, [zoneQuestArchetypes]);
+
+  useEffect(() => {
+    if (didHydrateDeepLinkedCharacterRef.current) {
+      return;
+    }
+    if (!deepLinkedCharacterId) {
+      didHydrateDeepLinkedCharacterRef.current = true;
+      return;
+    }
+    if (editingCharacter?.id === deepLinkedCharacterId) {
+      didHydrateDeepLinkedCharacterRef.current = true;
+      return;
+    }
+    const matchingCharacter = characters.find(
+      (character) => character.id === deepLinkedCharacterId
+    );
+    if (matchingCharacter) {
+      handleEditCharacter(matchingCharacter);
+      return;
+    }
+    if (!characters.length) {
+      return;
+    }
+    void apiClient
+      .get<Character>(`/sonar/characters/${deepLinkedCharacterId}`)
+      .then((character) => {
+        if (!character) {
+          didHydrateDeepLinkedCharacterRef.current = true;
+          return;
+        }
+        setCharacters((prev) => {
+          if (prev.some((entry) => entry.id === character.id)) {
+            return prev;
+          }
+          return [character, ...prev];
+        });
+        handleEditCharacter(character);
+      })
+      .catch((error) => {
+        console.error('Failed to deep link character', error);
+        didHydrateDeepLinkedCharacterRef.current = true;
+      });
+  }, [apiClient, characters, deepLinkedCharacterId, editingCharacter, handleEditCharacter]);
+
+  useEffect(() => {
+    if (!didHydrateDeepLinkedCharacterRef.current) {
+      return;
+    }
+    replaceDeepLinkedCharacterId(editingCharacter?.id ?? null);
+  }, [editingCharacter, replaceDeepLinkedCharacterId]);
 
   const addCharacterLocation = (lng: number, lat: number) => {
     setCharacterLocations((prev) => [...prev, [lng, lat]]);
@@ -1253,7 +1355,40 @@ export const Characters = () => {
 
   return (
     <div className="m-10">
-      <h1 className="text-2xl font-bold mb-4">Characters</h1>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+          marginBottom: '16px',
+        }}
+      >
+        <h1 className="text-2xl font-bold" style={{ margin: 0 }}>
+          Characters
+        </h1>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            className="bg-blue-500 text-white px-4 py-2 rounded-md"
+            onClick={() => {
+              resetForm();
+              setShowCreateCharacter(true);
+            }}
+          >
+            Create Character
+          </button>
+          <button
+            className="bg-green-600 text-white px-4 py-2 rounded-md"
+            onClick={() => {
+              resetGenerationForm();
+              setShowGenerateCharacter(true);
+            }}
+          >
+            Generate Character
+          </button>
+        </div>
+      </div>
 
       <div
         style={{
@@ -1547,28 +1682,6 @@ export const Characters = () => {
         ))}
       </div>
 
-      {/* Create Character Buttons */}
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          onClick={() => {
-            resetForm();
-            setShowCreateCharacter(true);
-          }}
-        >
-          Create Character
-        </button>
-        <button
-          className="bg-green-600 text-white px-4 py-2 rounded-md"
-          onClick={() => {
-            resetGenerationForm();
-            setShowGenerateCharacter(true);
-          }}
-        >
-          Generate Character
-        </button>
-      </div>
-
       {/* Create/Edit Character Modal */}
       {(showCreateCharacter || editingCharacter) && (
         <div
@@ -1794,12 +1907,11 @@ export const Characters = () => {
                       />
                     </div>
                     <div style={{ marginBottom: '10px' }}>
-                      <label style={{ display: 'block', marginBottom: '5px' }}>
-                        Dialogue Override
-                      </label>
-                      <textarea
-                        value={variant.dialogueText}
-                        onChange={(e) =>
+                      <DialogueMessageListEditor
+                        label="Dialogue Override"
+                        helperText="Story variants can also use line effects like Angry."
+                        value={variant.dialogue}
+                        onChange={(dialogue) =>
                           setFormData((prev) => ({
                             ...prev,
                             storyVariants: prev.storyVariants.map(
@@ -1807,20 +1919,12 @@ export const Characters = () => {
                                 storyIndex === index
                                   ? {
                                       ...entry,
-                                      dialogueText: e.target.value,
+                                      dialogue,
                                     }
                                   : entry
                             ),
                           }))
                         }
-                        placeholder="One line per dialogue bubble"
-                        style={{
-                          width: '100%',
-                          padding: '8px',
-                          border: '1px solid #ccc',
-                          borderRadius: '4px',
-                          minHeight: '90px',
-                        }}
                       />
                     </div>
                     <button
@@ -2193,6 +2297,9 @@ export const Characters = () => {
             }}
           >
             <h2>Generate Character</h2>
+            <p style={{ marginTop: '8px', marginBottom: '16px', color: '#4b5563' }}>
+              Queue a new character and their image generation job.
+            </p>
 
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>
@@ -2236,12 +2343,30 @@ export const Characters = () => {
               />
             </div>
 
+            {generationError ? (
+              <div
+                style={{
+                  marginBottom: '15px',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#b91c1c',
+                  fontSize: '14px',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {generationError}
+              </div>
+            ) : null}
+
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <button
                 onClick={handleGenerateCharacter}
-                className="bg-green-600 text-white px-4 py-2 rounded-md"
+                className="bg-green-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
+                disabled={generatingCharacter}
               >
-                Generate
+                {generatingCharacter ? 'Generating…' : 'Generate'}
               </button>
               <button
                 onClick={() => {
@@ -2249,6 +2374,7 @@ export const Characters = () => {
                   resetGenerationForm();
                 }}
                 className="bg-gray-500 text-white px-4 py-2 rounded-md"
+                disabled={generatingCharacter}
               >
                 Cancel
               </button>

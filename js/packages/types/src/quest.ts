@@ -2,6 +2,7 @@ import { InventoryItem } from './inventoryItem';
 import { QuestDifficultyMode } from './questDifficulty';
 import { QuestNode } from './questNode';
 import { Spell } from './spell';
+import type { DialogueMessage } from './characterAction';
 
 export interface QuestItemReward {
   id?: string;
@@ -39,7 +40,7 @@ export interface Quest {
   name: string;
   description: string;
   category?: 'side' | 'main_story';
-  acceptanceDialogue?: string[];
+  acceptanceDialogue?: DialogueMessage[];
   imageUrl?: string;
   zoneId?: string | null;
   questArchetypeId?: string | null;

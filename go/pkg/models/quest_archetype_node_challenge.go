@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type QuestArchetypeNodeChallenge struct {
@@ -14,4 +15,16 @@ type QuestArchetypeNodeChallenge struct {
 	QuestArchetypeChallenge   QuestArchetypeChallenge `json:"questArchtypeChallenge"`
 	QuestArchetypeNodeID      uuid.UUID               `json:"questArchtypeNodeId"`
 	QuestArchetypeNode        QuestArchetypeNode      `json:"questArchtypeNode"`
+}
+
+func (q *QuestArchetypeNodeChallenge) BeforeCreate(tx *gorm.DB) error {
+	now := time.Now()
+	if q.ID == uuid.Nil {
+		q.ID = uuid.New()
+	}
+	if q.CreatedAt.IsZero() {
+		q.CreatedAt = now
+	}
+	q.UpdatedAt = now
+	return nil
 }

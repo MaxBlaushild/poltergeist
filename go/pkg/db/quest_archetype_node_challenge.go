@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -13,6 +14,16 @@ type questArchetypeNodeChallengeHandle struct {
 }
 
 func (h *questArchetypeNodeChallengeHandle) Create(ctx context.Context, questArchetypeNodeChallenge *models.QuestArchetypeNodeChallenge) error {
+	if questArchetypeNodeChallenge != nil {
+		now := time.Now()
+		if questArchetypeNodeChallenge.ID == uuid.Nil {
+			questArchetypeNodeChallenge.ID = uuid.New()
+		}
+		if questArchetypeNodeChallenge.CreatedAt.IsZero() {
+			questArchetypeNodeChallenge.CreatedAt = now
+		}
+		questArchetypeNodeChallenge.UpdatedAt = now
+	}
 	return h.db.WithContext(ctx).Create(questArchetypeNodeChallenge).Error
 }
 

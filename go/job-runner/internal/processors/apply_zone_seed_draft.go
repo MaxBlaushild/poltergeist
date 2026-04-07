@@ -1066,10 +1066,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	character *models.Character,
 	draft models.ZoneSeedQuestDraft,
 ) error {
-	acceptanceDialogue := models.StringArray(draft.AcceptanceDialogue)
-	if acceptanceDialogue == nil {
-		acceptanceDialogue = models.StringArray{}
-	}
+	acceptanceDialogue := models.DialogueSequenceFromStringLines(draft.AcceptanceDialogue)
 
 	challengeQuestion := strings.TrimSpace(draft.ChallengeQuestion)
 	challengeDifficulty := draft.ChallengeDifficulty
@@ -1173,10 +1170,7 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 	character *models.Character,
 	draft models.ZoneSeedMainQuestDraft,
 ) error {
-	acceptanceDialogue := models.StringArray(draft.AcceptanceDialogue)
-	if acceptanceDialogue == nil {
-		acceptanceDialogue = models.StringArray{}
-	}
+	acceptanceDialogue := models.DialogueSequenceFromStringLines(draft.AcceptanceDialogue)
 
 	gold := draft.Gold
 	if gold <= 0 {

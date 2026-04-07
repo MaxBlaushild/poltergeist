@@ -20,26 +20,21 @@ type questArchetypeSpellRewardPayload struct {
 	SpellID string `json:"spellId"`
 }
 
-func normalizeQuestTemplateAcceptanceDialogue(input []string) models.StringArray {
-	lines := make(models.StringArray, 0, len(input))
-	for _, line := range input {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		lines = append(lines, trimmed)
-	}
-	if lines == nil {
-		return models.StringArray{}
-	}
-	return lines
+func normalizeQuestTemplateAcceptanceDialogue(
+	input []models.DialogueMessage,
+) models.DialogueSequence {
+	return models.DialogueSequence(input)
+}
+
+func dialogueSequenceFromLines(input []string) models.DialogueSequence {
+	return models.DialogueSequenceFromStringLines(input)
 }
 
 func normalizeExplicitQuestTemplateContent(
 	name string,
 	description string,
-	acceptanceDialogue []string,
-) (string, string, models.StringArray, error) {
+	acceptanceDialogue []models.DialogueMessage,
+) (string, string, models.DialogueSequence, error) {
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
 		return "", "", nil, fmt.Errorf("name is required")

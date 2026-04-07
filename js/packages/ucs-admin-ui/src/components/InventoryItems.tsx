@@ -14,6 +14,7 @@ import React, {
   useRef,
 } from 'react';
 import { useUsers } from '../hooks/useUsers.ts';
+import { useSearchParams } from 'react-router-dom';
 
 type SelectOption = {
   value: string;
@@ -834,6 +835,7 @@ const canGenerateConsumableQualities = (item: InventoryItemRecord) => {
 };
 
 export const InventoryItems = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
@@ -863,6 +865,7 @@ export const InventoryItems = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const didHydrateDeepLinkedItemRef = useRef(false);
   const [useOutfitItem, setUseOutfitItem] =
     useState<InventoryItemRecord | null>(null);
   const [useOutfitUser, setUseOutfitUser] = useState('');
@@ -945,6 +948,21 @@ export const InventoryItems = () => {
   const [deletingSuggestionDraftId, setDeletingSuggestionDraftId] = useState<
     string | null
   >(null);
+  const deepLinkedItemId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedItemId = useCallback((itemId?: number | string | null) => {
+    const normalizedItemId = String(itemId ?? '').trim();
+    const currentItemId = searchParams.get('id')?.trim() ?? '';
+    if (normalizedItemId === currentItemId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (normalizedItemId) {
+      next.set('id', normalizedItemId);
+    } else {
+      next.delete('id');
+    }
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [filters, setFilters] = useState({
     rarity: '',
     equipSlot: '',
@@ -2716,6 +2734,56 @@ export const InventoryItems = () => {
       fileInputRef.current.value = '';
     }
   };
+
+  useEffect(() => {
+    if (didHydrateDeepLinkedItemRef.current) {
+      return;
+    }
+    if (!deepLinkedItemId) {
+      didHydrateDeepLinkedItemRef.current = true;
+      return;
+    }
+    if (editingItem && String(editingItem.id) === deepLinkedItemId) {
+      didHydrateDeepLinkedItemRef.current = true;
+      return;
+    }
+    const matchingItem = items.find(
+      (item) => String(item.id) === deepLinkedItemId
+    );
+    if (matchingItem) {
+      handleEditItem(matchingItem);
+      return;
+    }
+    if (!items.length) {
+      return;
+    }
+    void apiClient
+      .get<InventoryItemRecord>(`/sonar/inventory-items/${deepLinkedItemId}`)
+      .then((item) => {
+        if (!item) {
+          didHydrateDeepLinkedItemRef.current = true;
+          return;
+        }
+        setItems((prev) => {
+          if (prev.some((entry) => entry.id === item.id)) {
+            return prev;
+          }
+          return [item, ...prev];
+        });
+        handleEditItem(item);
+      })
+      .catch((error) => {
+        console.error('Failed to deep link inventory item', error);
+        didHydrateDeepLinkedItemRef.current = true;
+      });
+  }, [apiClient, deepLinkedItemId, editingItem, items]);
+
+  useEffect(() => {
+    if (!didHydrateDeepLinkedItemRef.current) {
+      return;
+    }
+    replaceDeepLinkedItemId(editingItem?.id ?? null);
+  }, [editingItem, replaceDeepLinkedItemId]);
 
   const renderRecipeEditor = (
     label: string,

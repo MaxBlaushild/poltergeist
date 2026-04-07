@@ -233,6 +233,219 @@ func (s *server) getMainStoryTemplate(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, template)
 }
 
+func (s *server) deleteMainStoryTemplate(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story template ID"})
+		return
+	}
+	template, err := s.dbClient.MainStoryTemplate().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if template == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story template not found"})
+		return
+	}
+
+	runs, err := s.dbClient.MainStoryDistrictRun().FindByMainStoryTemplateID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(runs) > 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"clean up the %d district run(s) for this template before deleting it",
+				len(runs),
+			),
+		})
+		return
+	}
+
+	if err := s.removeMainStoryTemplateArtifacts(ctx, template); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "main story template deleted"})
+}
+
+func collectMainStoryTemplateCompletionFlags(
+	beats models.MainStoryBeatDrafts,
+) map[string]struct{} {
+	flags := map[string]struct{}{}
+	for _, beat := range beats {
+		flag := strings.TrimSpace(mainStoryBeatCompletionFlag(beat))
+		if flag == "" {
+			continue
+		}
+		flags[flag] = struct{}{}
+	}
+	return flags
+}
+
+func hasAnyMainStoryTemplateCompletionFlag(
+	requiredFlags []string,
+	completionFlags map[string]struct{},
+) bool {
+	for _, raw := range requiredFlags {
+		flag := strings.TrimSpace(strings.ToLower(raw))
+		if flag == "" {
+			continue
+		}
+		if _, exists := completionFlags[flag]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *server) removeMainStoryTemplateArtifacts(
+	ctx context.Context,
+	template *models.MainStoryTemplate,
+) error {
+	if template == nil {
+		return errRequired("template")
+	}
+
+	completionFlags := collectMainStoryTemplateCompletionFlags(template.Beats)
+	questArchetypeIDs := map[uuid.UUID]struct{}{}
+	questGiverCharacterIDs := map[uuid.UUID]struct{}{}
+	for _, beat := range template.Beats {
+		if beat.QuestArchetypeID != nil && *beat.QuestArchetypeID != uuid.Nil {
+			questArchetypeIDs[*beat.QuestArchetypeID] = struct{}{}
+		}
+		if beat.QuestGiverCharacterID != nil && *beat.QuestGiverCharacterID != uuid.Nil {
+			questGiverCharacterIDs[*beat.QuestGiverCharacterID] = struct{}{}
+		}
+	}
+
+	drafts, err := s.dbClient.MainStorySuggestionDraft().FindByMainStoryTemplateID(ctx, template.ID)
+	if err != nil {
+		return fmt.Errorf("failed to load linked main story drafts: %w", err)
+	}
+	shouldDeleteGeneratedArtifacts := len(drafts) > 0
+	now := time.Now()
+	for _, draft := range drafts {
+		draft.MainStoryTemplateID = nil
+		draft.MainStoryTemplate = nil
+		draft.Status = models.MainStorySuggestionDraftStatusSuggested
+		draft.ConvertedAt = nil
+		draft.UpdatedAt = now
+		if err := s.dbClient.MainStorySuggestionDraft().Update(ctx, &draft); err != nil {
+			return fmt.Errorf("failed to detach linked main story draft %s: %w", draft.ID.String(), err)
+		}
+	}
+
+	if err := s.deleteMainStoryTemplateUnlockContent(ctx, completionFlags); err != nil {
+		return err
+	}
+
+	if err := s.dbClient.StoryWorldChange().DeleteByMainStoryTemplateID(ctx, template.ID); err != nil {
+		return fmt.Errorf("failed to delete story world changes for template %s: %w", template.ID.String(), err)
+	}
+
+	if !shouldDeleteGeneratedArtifacts {
+		if err := s.dbClient.MainStoryTemplate().Delete(ctx, template.ID); err != nil {
+			return fmt.Errorf("failed to delete main story template %s: %w", template.ID.String(), err)
+		}
+		return nil
+	}
+
+	for characterID := range questGiverCharacterIDs {
+		if err := s.dbClient.QuestArchetype().ClearQuestGiverCharacterIDByCharacterID(ctx, characterID); err != nil {
+			return fmt.Errorf("failed to clear quest giver references for generated story character %s: %w", characterID.String(), err)
+		}
+	}
+
+	for questArchetypeID := range questArchetypeIDs {
+		if err := s.dbClient.QuestArchetype().DeletePermanent(ctx, questArchetypeID); err != nil {
+			return fmt.Errorf("failed to delete quest archetype %s: %w", questArchetypeID.String(), err)
+		}
+	}
+
+	for characterID := range questGiverCharacterIDs {
+		if err := s.dbClient.Character().Delete(ctx, characterID); err != nil {
+			return fmt.Errorf("failed to delete generated story character %s: %w", characterID.String(), err)
+		}
+	}
+
+	if err := s.dbClient.MainStoryTemplate().Delete(ctx, template.ID); err != nil {
+		return fmt.Errorf("failed to delete main story template %s: %w", template.ID.String(), err)
+	}
+
+	return nil
+}
+
+func (s *server) deleteMainStoryTemplateUnlockContent(
+	ctx context.Context,
+	completionFlags map[string]struct{},
+) error {
+	if len(completionFlags) == 0 {
+		return nil
+	}
+
+	scenarios, err := s.dbClient.Scenario().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load scenarios for template cleanup: %w", err)
+	}
+	for _, scenario := range scenarios {
+		if !hasAnyMainStoryTemplateCompletionFlag([]string(scenario.RequiredStoryFlags), completionFlags) {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(strings.Join([]string(scenario.InternalTags), ",")), "main_story_unlock") {
+			continue
+		}
+		if err := s.dbClient.Scenario().Delete(ctx, scenario.ID); err != nil {
+			return fmt.Errorf("failed to delete unlocked scenario %s: %w", scenario.ID.String(), err)
+		}
+	}
+
+	challenges, err := s.dbClient.Challenge().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load challenges for template cleanup: %w", err)
+	}
+	for _, challenge := range challenges {
+		if !hasAnyMainStoryTemplateCompletionFlag([]string(challenge.RequiredStoryFlags), completionFlags) {
+			continue
+		}
+		if err := s.dbClient.Challenge().Delete(ctx, challenge.ID); err != nil {
+			return fmt.Errorf("failed to delete unlocked challenge %s: %w", challenge.ID.String(), err)
+		}
+	}
+
+	encounters, err := s.dbClient.MonsterEncounter().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load monster encounters for template cleanup: %w", err)
+	}
+	for _, encounter := range encounters {
+		if !hasAnyMainStoryTemplateCompletionFlag([]string(encounter.RequiredStoryFlags), completionFlags) {
+			continue
+		}
+		loadedEncounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounter.ID)
+		if err != nil {
+			return fmt.Errorf("failed to load unlocked encounter %s: %w", encounter.ID.String(), err)
+		}
+		if loadedEncounter != nil {
+			for _, member := range loadedEncounter.Members {
+				if member.MonsterID == uuid.Nil {
+					continue
+				}
+				if err := s.dbClient.Monster().Delete(ctx, member.MonsterID); err != nil {
+					return fmt.Errorf("failed to delete encounter monster %s: %w", member.MonsterID.String(), err)
+				}
+			}
+		}
+		if err := s.dbClient.MonsterEncounter().Delete(ctx, encounter.ID); err != nil {
+			return fmt.Errorf("failed to delete unlocked monster encounter %s: %w", encounter.ID.String(), err)
+		}
+	}
+
+	return nil
+}
+
 func (s *server) materializeMainStorySuggestionDraft(
 	ctx context.Context,
 	draft *models.MainStorySuggestionDraft,
@@ -351,7 +564,7 @@ func (s *server) materializeMainStoryBeat(
 		Name:                        beat.Name,
 		Hook:                        beat.Hook,
 		Description:                 beat.Description,
-		AcceptanceDialogue:          normalizeQuestTemplateAcceptanceDialogue(beat.AcceptanceDialogue),
+		AcceptanceDialogue:          models.StringArray(beat.AcceptanceDialogue),
 		CharacterTags:               models.StringArray{},
 		InternalTags:                normalizeQuestTemplateInternalTags(append(append([]string{}, beat.InternalTags...), append([]string(draft.InternalTags), "main_story", "story_role_"+strings.TrimSpace(beat.StoryRole))...)),
 		DifficultyMode:              beat.DifficultyMode,

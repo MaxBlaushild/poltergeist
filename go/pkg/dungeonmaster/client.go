@@ -136,7 +136,7 @@ func (c *client) GenerateQuest(
 	monsterEncounterTargetLevel := models.NormalizeMonsterEncounterTargetLevel(questArchType.MonsterEncounterTargetLevel)
 	acceptanceDialogue := questArchType.AcceptanceDialogue
 	if acceptanceDialogue == nil {
-		acceptanceDialogue = models.StringArray{}
+		acceptanceDialogue = models.DialogueSequence{}
 	}
 	var recurringQuestID *uuid.UUID
 	var nextRecurrenceAt *time.Time

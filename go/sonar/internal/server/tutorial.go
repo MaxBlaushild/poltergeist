@@ -29,8 +29,8 @@ type tutorialOptionPayload struct {
 
 type tutorialConfigRequest struct {
 	CharacterID             *string                      `json:"characterId"`
-	Dialogue                []string                     `json:"dialogue"`
-	LoadoutDialogue         []string                     `json:"loadoutDialogue"`
+	Dialogue                []models.DialogueMessage     `json:"dialogue"`
+	LoadoutDialogue         []models.DialogueMessage     `json:"loadoutDialogue"`
 	ScenarioPrompt          string                       `json:"scenarioPrompt"`
 	ScenarioImageURL        string                       `json:"scenarioImageUrl"`
 	Options                 []tutorialOptionPayload      `json:"options"`
@@ -52,8 +52,8 @@ type tutorialStatusResponse struct {
 	ScenarioID            *uuid.UUID        `json:"scenarioId,omitempty"`
 	MonsterEncounterID    *uuid.UUID        `json:"monsterEncounterId,omitempty"`
 	Character             *models.Character `json:"character,omitempty"`
-	Dialogue              []string          `json:"dialogue"`
-	LoadoutDialogue       []string          `json:"loadoutDialogue"`
+	Dialogue              []models.DialogueMessage `json:"dialogue"`
+	LoadoutDialogue       []models.DialogueMessage `json:"loadoutDialogue"`
 	RequiredEquipItemIDs  []int             `json:"requiredEquipItemIds"`
 	CompletedEquipItemIDs []int             `json:"completedEquipItemIds"`
 	RequiredUseItemIDs    []int             `json:"requiredUseItemIds"`
@@ -196,8 +196,8 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 			ShowWelcomeDialogue:   false,
 			Stage:                 models.TutorialStageCompleted,
 			Character:             config.Character,
-			Dialogue:              append([]string{}, config.Dialogue...),
-			LoadoutDialogue:       append([]string{}, config.LoadoutDialogue...),
+			Dialogue:              append([]models.DialogueMessage{}, config.Dialogue...),
+			LoadoutDialogue:       append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 			RequiredEquipItemIDs:  []int{},
 			CompletedEquipItemIDs: []int{},
 			RequiredUseItemIDs:    []int{},
@@ -226,8 +226,8 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 		ScenarioID:            activeTutorialScenarioID(state),
 		MonsterEncounterID:    activeTutorialMonsterEncounterID(state),
 		Character:             config.Character,
-		Dialogue:              append([]string{}, config.Dialogue...),
-		LoadoutDialogue:       append([]string{}, config.LoadoutDialogue...),
+		Dialogue:              append([]models.DialogueMessage{}, config.Dialogue...),
+		LoadoutDialogue:       append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 		RequiredEquipItemIDs:  append([]int{}, state.RequiredEquipItemIDs...),
 		CompletedEquipItemIDs: append([]int{}, state.CompletedEquipItemIDs...),
 		RequiredUseItemIDs:    append([]int{}, state.RequiredUseItemIDs...),
@@ -355,8 +355,8 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 
 func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialConfig, error) {
 	config := &models.TutorialConfig{
-		Dialogue:                []string{},
-		LoadoutDialogue:         []string{},
+		Dialogue:                models.DialogueSequence{},
+		LoadoutDialogue:         models.DialogueSequence{},
 		ScenarioPrompt:          strings.TrimSpace(body.ScenarioPrompt),
 		ScenarioImageURL:        strings.TrimSpace(body.ScenarioImageURL),
 		Options:                 []models.TutorialScenarioOption{},
@@ -380,18 +380,8 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 		}
 	}
 
-	for _, line := range body.Dialogue {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			config.Dialogue = append(config.Dialogue, trimmed)
-		}
-	}
-	for _, line := range body.LoadoutDialogue {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			config.LoadoutDialogue = append(config.LoadoutDialogue, trimmed)
-		}
-	}
+	config.Dialogue = models.DialogueSequence(body.Dialogue)
+	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
 
 	if body.MonsterEncounterID != nil {
 		trimmed := strings.TrimSpace(*body.MonsterEncounterID)

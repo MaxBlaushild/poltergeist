@@ -1,271 +1,132 @@
-package server
+package processors
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
 
-type createMainStoryDistrictRunRequest struct {
-	DistrictID string `json:"districtId"`
+type ProcessMainStoryDistrictRunProcessor struct {
+	dbClient      db.DbClient
+	dungeonmaster dungeonmaster.Client
 }
 
-type mainStoryDistrictZoneCandidate struct {
-	zone       *models.Zone
-	matchCount int
+func NewProcessMainStoryDistrictRunProcessor(
+	dbClient db.DbClient,
+	dungeonmaster dungeonmaster.Client,
+) ProcessMainStoryDistrictRunProcessor {
+	return ProcessMainStoryDistrictRunProcessor{
+		dbClient:      dbClient,
+		dungeonmaster: dungeonmaster,
+	}
 }
 
-func (s *server) getMainStoryDistrictRuns(ctx *gin.Context) {
-	templateIDRaw := strings.TrimSpace(ctx.Query("templateId"))
-	if templateIDRaw != "" {
-		templateID, err := uuid.Parse(templateIDRaw)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story template ID"})
-			return
-		}
-		runs, err := s.dbClient.MainStoryDistrictRun().FindByMainStoryTemplateID(ctx, templateID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		ctx.JSON(http.StatusOK, runs)
-		return
+func (p *ProcessMainStoryDistrictRunProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	var payload jobs.ProcessMainStoryDistrictRunTaskPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	runs, err := s.dbClient.MainStoryDistrictRun().FindAll(ctx)
+	run, err := p.dbClient.MainStoryDistrictRun().FindByID(ctx, payload.RunID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, runs)
-}
-
-func (s *server) getMainStoryDistrictRun(ctx *gin.Context) {
-	runID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story district run ID"})
-		return
-	}
-	run, err := s.dbClient.MainStoryDistrictRun().FindByID(ctx, runID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 	if run == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story district run not found"})
-		return
+		return nil
 	}
-	ctx.JSON(http.StatusOK, run)
-}
-
-func (s *server) createMainStoryDistrictRun(ctx *gin.Context) {
-	templateID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story template ID"})
-		return
+	if run.Status == models.MainStoryDistrictRunStatusCompleted {
+		return nil
 	}
 
-	var body createMainStoryDistrictRunRequest
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	districtID, err := uuid.Parse(strings.TrimSpace(body.DistrictID))
+	template, err := p.dbClient.MainStoryTemplate().FindByID(ctx, run.MainStoryTemplateID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid district ID"})
-		return
-	}
-
-	template, err := s.dbClient.MainStoryTemplate().FindByID(ctx, templateID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return p.failRun(ctx, run, err)
 	}
 	if template == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story template not found"})
-		return
+		return p.failRun(ctx, run, fmt.Errorf("main story template not found"))
 	}
 
-	district, err := s.dbClient.District().FindByID(ctx, districtID)
+	district, err := p.dbClient.District().FindByID(ctx, run.DistrictID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return p.failRun(ctx, run, err)
 	}
 	if district == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "district not found"})
-		return
+		return p.failRun(ctx, run, fmt.Errorf("district not found"))
 	}
 	if len(district.Zones) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "district has no child zones"})
-		return
+		return p.failRun(ctx, run, fmt.Errorf("district has no child zones"))
 	}
 
-	run := &models.MainStoryDistrictRun{
-		ID:                    uuid.New(),
-		CreatedAt:             time.Now(),
-		UpdatedAt:             time.Now(),
-		MainStoryTemplateID:   template.ID,
-		DistrictID:            district.ID,
-		Status:                models.MainStoryDistrictRunStatusQueued,
-		BeatRuns:              models.MainStoryDistrictBeatRuns{},
-		GeneratedCharacterIDs: models.StringArray{},
-	}
-	if err := s.dbClient.MainStoryDistrictRun().Create(ctx, run); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	payload, err := json.Marshal(jobs.ProcessMainStoryDistrictRunTaskPayload{RunID: run.ID})
-	if err != nil {
-		errMsg := err.Error()
-		run.Status = models.MainStoryDistrictRunStatusFailed
-		run.ErrorMessage = &errMsg
-		run.UpdatedAt = time.Now()
-		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		return
-	}
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ProcessMainStoryDistrictRunTaskType, payload)); err != nil {
-		errMsg := err.Error()
-		run.Status = models.MainStoryDistrictRunStatusFailed
-		run.ErrorMessage = &errMsg
-		run.UpdatedAt = time.Now()
-		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusAccepted, run)
-}
-
-func (s *server) deleteMainStoryDistrictRun(ctx *gin.Context) {
-	runID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story district run ID"})
-		return
-	}
-
-	run, err := s.dbClient.MainStoryDistrictRun().FindByID(ctx, runID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if run == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story district run not found"})
-		return
-	}
-
-	if err := s.rollbackMainStoryDistrictRun(ctx, run); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{"message": "main story district run deleted"})
-}
-
-func (s *server) retryMainStoryDistrictRun(ctx *gin.Context) {
-	runID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story district run ID"})
-		return
-	}
-
-	run, err := s.dbClient.MainStoryDistrictRun().FindByID(ctx, runID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if run == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story district run not found"})
-		return
-	}
-	if run.Status == models.MainStoryDistrictRunStatusInProgress || run.Status == models.MainStoryDistrictRunStatusQueued {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "main story district run is already pending"})
-		return
-	}
-
-	template, err := s.dbClient.MainStoryTemplate().FindByID(ctx, run.MainStoryTemplateID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if template == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story template not found"})
-		return
-	}
-
-	district, err := s.dbClient.District().FindByID(ctx, run.DistrictID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if district == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "district not found"})
-		return
-	}
-
-	run.Status = models.MainStoryDistrictRunStatusQueued
+	run.Status = models.MainStoryDistrictRunStatusInProgress
 	run.ErrorMessage = nil
 	run.UpdatedAt = time.Now()
-	if err := s.dbClient.MainStoryDistrictRun().Update(ctx, run); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	if err := p.dbClient.MainStoryDistrictRun().Update(ctx, run); err != nil {
+		return err
 	}
 
-	payload, err := json.Marshal(jobs.ProcessMainStoryDistrictRunTaskPayload{RunID: run.ID})
-	if err != nil {
-		errMsg := err.Error()
-		run.Status = models.MainStoryDistrictRunStatusFailed
-		run.ErrorMessage = &errMsg
-		run.UpdatedAt = time.Now()
-		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	if len(run.BeatRuns) == 0 && len(run.GeneratedCharacterIDs) == 0 {
+		if err := p.materializeRun(ctx, template, district, run); err != nil {
+			return p.failRun(ctx, run, err)
+		}
+	} else {
+		if err := p.resumeRun(ctx, template, district, run); err != nil {
+			return p.failRun(ctx, run, err)
+		}
 	}
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ProcessMainStoryDistrictRunTaskType, payload)); err != nil {
-		errMsg := err.Error()
-		run.Status = models.MainStoryDistrictRunStatusFailed
-		run.ErrorMessage = &errMsg
-		run.UpdatedAt = time.Now()
-		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusAccepted, run)
+
+	run.Status = models.MainStoryDistrictRunStatusCompleted
+	run.ErrorMessage = nil
+	run.UpdatedAt = time.Now()
+	return p.dbClient.MainStoryDistrictRun().Update(ctx, run)
 }
 
-func (s *server) materializeMainStoryDistrictRun(
+func (p *ProcessMainStoryDistrictRunProcessor) failRun(
+	ctx context.Context,
+	run *models.MainStoryDistrictRun,
+	err error,
+) error {
+	if run != nil {
+		msg := err.Error()
+		run.Status = models.MainStoryDistrictRunStatusFailed
+		run.ErrorMessage = &msg
+		run.UpdatedAt = time.Now()
+		if updateErr := p.dbClient.MainStoryDistrictRun().Update(ctx, run); updateErr != nil {
+			return fmt.Errorf("main story district run failed: %v (also failed to persist state: %w)", err, updateErr)
+		}
+	}
+	return err
+}
+
+func (p *ProcessMainStoryDistrictRunProcessor) materializeRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
 	run *models.MainStoryDistrictRun,
 ) error {
 	if template == nil {
-		return errRequired("template")
+		return fmt.Errorf("template is required")
 	}
 	if district == nil {
-		return errRequired("district")
+		return fmt.Errorf("district is required")
 	}
 	if run == nil {
-		return errRequired("run")
+		return fmt.Errorf("run is required")
 	}
 	if len(template.Beats) == 0 {
-		return errInvalid("main story template has no beats")
+		return fmt.Errorf("main story template has no beats")
 	}
 
-	clonedCharactersByKey, generatedCharacterIDs, err := s.cloneMainStoryDistrictRunCharacters(
-		ctx,
-		template,
-		district,
-	)
+	clonedCharactersByKey, generatedCharacterIDs, err := p.cloneRunCharacters(ctx, template, district)
 	if err != nil {
 		return err
 	}
@@ -274,22 +135,15 @@ func (s *server) materializeMainStoryDistrictRun(
 	beatRuns := make(models.MainStoryDistrictBeatRuns, 0, len(template.Beats))
 	createdQuests := make([]*models.Quest, 0, len(template.Beats))
 	for _, beat := range template.Beats {
-		beatRun, quest, err := s.materializeMainStoryDistrictBeatRun(
-			ctx,
-			template,
-			district,
-			beat,
-			clonedCharactersByKey,
-			nil,
-		)
+		beatRun, quest, err := p.materializeBeatRun(ctx, template, district, beat, clonedCharactersByKey, nil)
 		beatRuns = append(beatRuns, beatRun)
 		run.BeatRuns = beatRuns
 		run.UpdatedAt = time.Now()
-		if updateErr := s.dbClient.MainStoryDistrictRun().Update(ctx, run); updateErr != nil {
+		if updateErr := p.dbClient.MainStoryDistrictRun().Update(ctx, run); updateErr != nil {
 			return updateErr
 		}
 		if err != nil {
-			if linkErr := s.linkMainStoryDistrictRunQuests(ctx, createdQuests); linkErr != nil {
+			if linkErr := p.linkRunQuests(ctx, createdQuests); linkErr != nil {
 				return linkErr
 			}
 			return err
@@ -299,14 +153,14 @@ func (s *server) materializeMainStoryDistrictRun(
 		}
 	}
 
-	if err := s.linkMainStoryDistrictRunQuests(ctx, createdQuests); err != nil {
+	if err := p.linkRunQuests(ctx, createdQuests); err != nil {
 		return err
 	}
 	run.BeatRuns = beatRuns
 	return nil
 }
 
-func (s *server) cloneMainStoryDistrictRunCharacters(
+func (p *ProcessMainStoryDistrictRunProcessor) cloneRunCharacters(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
@@ -316,7 +170,7 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 	sourceCharactersByID := make(map[uuid.UUID]*models.Character)
 
 	for _, beat := range template.Beats {
-		key := normalizeMainStoryCharacterKey(beat.QuestGiverCharacterKey)
+		key := normalizeProcessMainStoryCharacterKey(beat.QuestGiverCharacterKey)
 		if key == "" {
 			continue
 		}
@@ -329,7 +183,7 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 			if cached, exists := sourceCharactersByID[*beat.QuestGiverCharacterID]; exists {
 				sourceCharacter = cached
 			} else {
-				sourceCharacter, _ = s.dbClient.Character().FindByID(ctx, *beat.QuestGiverCharacterID)
+				sourceCharacter, _ = p.dbClient.Character().FindByID(ctx, *beat.QuestGiverCharacterID)
 				if sourceCharacter != nil {
 					sourceCharactersByID[sourceCharacter.ID] = sourceCharacter
 				}
@@ -357,7 +211,7 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 			UpdatedAt:             time.Now(),
 			Name:                  name,
 			Description:           description,
-			InternalTags:          buildMainStoryDistrictRunCharacterTags(template, district, key, sourceCharacter),
+			InternalTags:          buildProcessMainStoryCharacterTags(template, district, key, sourceCharacter),
 			ImageGenerationStatus: models.CharacterImageGenerationStatusNone,
 		}
 		if sourceCharacter != nil {
@@ -371,7 +225,7 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 				character.ImageGenerationStatus = models.CharacterImageGenerationStatusComplete
 			}
 		}
-		if err := s.dbClient.Character().Create(ctx, character); err != nil {
+		if err := p.dbClient.Character().Create(ctx, character); err != nil {
 			return nil, nil, err
 		}
 		clonedByKey[key] = character
@@ -381,13 +235,13 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 	return clonedByKey, generatedIDs, nil
 }
 
-func (s *server) loadMainStoryDistrictRunCharacters(
+func (p *ProcessMainStoryDistrictRunProcessor) loadRunCharacters(
 	ctx context.Context,
 	run *models.MainStoryDistrictRun,
 ) (map[string]*models.Character, error) {
 	clonedByKey := make(map[string]*models.Character)
 	if run == nil {
-		return clonedByKey, errRequired("run")
+		return clonedByKey, fmt.Errorf("run is required")
 	}
 
 	for _, rawCharacterID := range run.GeneratedCharacterIDs {
@@ -395,7 +249,7 @@ func (s *server) loadMainStoryDistrictRunCharacters(
 		if err != nil || characterID == uuid.Nil {
 			continue
 		}
-		character, err := s.dbClient.Character().FindByID(ctx, characterID)
+		character, err := p.dbClient.Character().FindByID(ctx, characterID)
 		if err != nil {
 			return nil, err
 		}
@@ -407,7 +261,7 @@ func (s *server) loadMainStoryDistrictRunCharacters(
 			if !strings.HasPrefix(tag, "story_character_") {
 				continue
 			}
-			key := normalizeMainStoryCharacterKey(strings.TrimPrefix(tag, "story_character_"))
+			key := normalizeProcessMainStoryCharacterKey(strings.TrimPrefix(tag, "story_character_"))
 			if key == "" {
 				continue
 			}
@@ -418,7 +272,7 @@ func (s *server) loadMainStoryDistrictRunCharacters(
 	return clonedByKey, nil
 }
 
-func findFirstIncompleteMainStoryDistrictBeatIndex(
+func findFirstIncompleteProcessMainStoryBeatIndex(
 	run *models.MainStoryDistrictRun,
 	template *models.MainStoryTemplate,
 ) int {
@@ -444,7 +298,7 @@ func findFirstIncompleteMainStoryDistrictBeatIndex(
 	return -1
 }
 
-func (s *server) loadMainStoryDistrictRunQuests(
+func (p *ProcessMainStoryDistrictRunProcessor) loadRunQuests(
 	ctx context.Context,
 	beatRuns models.MainStoryDistrictBeatRuns,
 ) ([]*models.Quest, error) {
@@ -453,7 +307,7 @@ func (s *server) loadMainStoryDistrictRunQuests(
 		if beatRun.QuestID == nil || *beatRun.QuestID == uuid.Nil {
 			continue
 		}
-		quest, err := s.dbClient.Quest().FindByID(ctx, *beatRun.QuestID)
+		quest, err := p.dbClient.Quest().FindByID(ctx, *beatRun.QuestID)
 		if err != nil {
 			return nil, err
 		}
@@ -464,28 +318,28 @@ func (s *server) loadMainStoryDistrictRunQuests(
 	return quests, nil
 }
 
-func (s *server) resumeMainStoryDistrictRun(
+func (p *ProcessMainStoryDistrictRunProcessor) resumeRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
 	run *models.MainStoryDistrictRun,
 ) error {
 	if template == nil {
-		return errRequired("template")
+		return fmt.Errorf("template is required")
 	}
 	if district == nil {
-		return errRequired("district")
+		return fmt.Errorf("district is required")
 	}
 	if run == nil {
-		return errRequired("run")
+		return fmt.Errorf("run is required")
 	}
 
-	retryStartIndex := findFirstIncompleteMainStoryDistrictBeatIndex(run, template)
+	retryStartIndex := findFirstIncompleteProcessMainStoryBeatIndex(run, template)
 	if retryStartIndex < 0 {
 		return fmt.Errorf("main story district run has no failed or incomplete beats to retry")
 	}
 
-	clonedCharactersByKey, err := s.loadMainStoryDistrictRunCharacters(ctx, run)
+	clonedCharactersByKey, err := p.loadRunCharacters(ctx, run)
 	if err != nil {
 		return err
 	}
@@ -500,25 +354,24 @@ func (s *server) resumeMainStoryDistrictRun(
 		if questID == nil || *questID == uuid.Nil {
 			continue
 		}
-		if err := s.dbClient.Quest().Delete(ctx, *questID); err != nil {
+		if err := p.dbClient.Quest().Delete(ctx, *questID); err != nil {
 			return fmt.Errorf("failed to delete partially created quest %s: %w", questID.String(), err)
 		}
 	}
 
 	completedBeatRuns := append(models.MainStoryDistrictBeatRuns{}, run.BeatRuns[:retryStartIndex]...)
 	run.BeatRuns = completedBeatRuns
-	run.Status = models.MainStoryDistrictRunStatusInProgress
 	run.ErrorMessage = nil
 	run.UpdatedAt = time.Now()
 
-	completedQuests, err := s.loadMainStoryDistrictRunQuests(ctx, completedBeatRuns)
+	completedQuests, err := p.loadRunQuests(ctx, completedBeatRuns)
 	if err != nil {
 		return err
 	}
-	if err := s.linkMainStoryDistrictRunQuests(ctx, completedQuests); err != nil {
+	if err := p.linkRunQuests(ctx, completedQuests); err != nil {
 		return err
 	}
-	if err := s.dbClient.MainStoryDistrictRun().Update(ctx, run); err != nil {
+	if err := p.dbClient.MainStoryDistrictRun().Update(ctx, run); err != nil {
 		return err
 	}
 
@@ -528,8 +381,7 @@ func (s *server) resumeMainStoryDistrictRun(
 		if beatIndex > retryStartIndex {
 			deprioritizedZoneID = nil
 		}
-
-		beatRun, quest, err := s.materializeMainStoryDistrictBeatRun(
+		beatRun, quest, err := p.materializeBeatRun(
 			ctx,
 			template,
 			district,
@@ -539,11 +391,11 @@ func (s *server) resumeMainStoryDistrictRun(
 		)
 		run.BeatRuns = append(run.BeatRuns, beatRun)
 		run.UpdatedAt = time.Now()
-		if updateErr := s.dbClient.MainStoryDistrictRun().Update(ctx, run); updateErr != nil {
+		if updateErr := p.dbClient.MainStoryDistrictRun().Update(ctx, run); updateErr != nil {
 			return updateErr
 		}
 		if err != nil {
-			if linkErr := s.linkMainStoryDistrictRunQuests(ctx, createdQuests); linkErr != nil {
+			if linkErr := p.linkRunQuests(ctx, createdQuests); linkErr != nil {
 				return linkErr
 			}
 			return err
@@ -553,10 +405,10 @@ func (s *server) resumeMainStoryDistrictRun(
 		}
 	}
 
-	return s.linkMainStoryDistrictRunQuests(ctx, createdQuests)
+	return p.linkRunQuests(ctx, createdQuests)
 }
 
-func buildMainStoryDistrictRunCharacterTags(
+func buildProcessMainStoryCharacterTags(
 	template *models.MainStoryTemplate,
 	district *models.District,
 	characterKey string,
@@ -578,14 +430,14 @@ func buildMainStoryDistrictRunCharacterTags(
 	if sourceCharacter != nil {
 		tags = append(tags, []string(sourceCharacter.InternalTags)...)
 	}
-	return normalizeQuestTemplateInternalTags(tags)
+	return normalizeProcessMainStoryTags(tags)
 }
 
-func normalizeMainStoryCharacterKey(raw string) string {
+func normalizeProcessMainStoryCharacterKey(raw string) string {
 	return strings.TrimSpace(strings.ToLower(raw))
 }
 
-func (s *server) materializeMainStoryDistrictBeatRun(
+func (p *ProcessMainStoryDistrictRunProcessor) materializeBeatRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
@@ -609,7 +461,7 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 		beatRun.ErrorMessage = "beat is missing a quest archetype"
 		return beatRun, nil, fmt.Errorf("%s", beatRun.ErrorMessage)
 	}
-	questArchetype, err := s.dbClient.QuestArchetype().FindByID(ctx, *beat.QuestArchetypeID)
+	questArchetype, err := p.dbClient.QuestArchetype().FindByID(ctx, *beat.QuestArchetypeID)
 	if err != nil {
 		beatRun.Status = models.MainStoryDistrictRunStatusFailed
 		beatRun.ErrorMessage = fmt.Sprintf("failed to load quest archetype: %v", err)
@@ -621,7 +473,7 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 		return beatRun, nil, fmt.Errorf("%s", beatRun.ErrorMessage)
 	}
 
-	character := clonedCharactersByKey[normalizeMainStoryCharacterKey(beat.QuestGiverCharacterKey)]
+	character := clonedCharactersByKey[normalizeProcessMainStoryCharacterKey(beat.QuestGiverCharacterKey)]
 	if character == nil {
 		beatRun.Status = models.MainStoryDistrictRunStatusFailed
 		beatRun.ErrorMessage = "beat quest giver could not be resolved"
@@ -632,7 +484,7 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 		beatRun.QuestGiverCharacterName = strings.TrimSpace(character.Name)
 	}
 
-	rankedZones, err := rankMainStoryDistrictRunZones(district.Zones, beat, questArchetype, template, deprioritizedZoneID)
+	rankedZones, err := rankProcessMainStoryZones(district.Zones, beat, questArchetype, template, deprioritizedZoneID)
 	if err != nil {
 		beatRun.Status = models.MainStoryDistrictRunStatusFailed
 		beatRun.ErrorMessage = err.Error()
@@ -648,15 +500,10 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 		beatRun.ZoneID = &candidate.zone.ID
 		beatRun.ZoneName = strings.TrimSpace(candidate.zone.Name)
 
-		pointOfInterest, err := s.ensureDistrictRunCharacterPointOfInterest(
-			ctx,
-			character,
-			candidate.zone,
-			beat,
-		)
+		pointOfInterest, err := p.ensureCharacterPointOfInterest(ctx, character, candidate.zone, beat)
 		if err != nil {
 			lastErr = err
-			if shouldRetryMainStoryDistrictBeatInAnotherZone(err) && zoneIndex+1 < len(rankedZones) {
+			if shouldRetryProcessMainStoryBeatInAnotherZone(err) && zoneIndex+1 < len(rankedZones) {
 				continue
 			}
 			break
@@ -666,7 +513,7 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 			beatRun.PointOfInterestName = strings.TrimSpace(pointOfInterest.Name)
 		}
 
-		quest, err := s.dungeonmaster.GenerateQuest(ctx, candidate.zone, questArchetype.ID, &character.ID)
+		quest, err := p.dungeonmaster.GenerateQuest(ctx, candidate.zone, questArchetype.ID, &character.ID)
 		if err == nil {
 			if quest == nil {
 				lastErr = fmt.Errorf("quest generation returned no quest")
@@ -680,7 +527,7 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 		}
 
 		lastErr = err
-		if shouldRetryMainStoryDistrictBeatInAnotherZone(err) && zoneIndex+1 < len(rankedZones) {
+		if shouldRetryProcessMainStoryBeatInAnotherZone(err) && zoneIndex+1 < len(rankedZones) {
 			continue
 		}
 		break
@@ -694,23 +541,23 @@ func (s *server) materializeMainStoryDistrictBeatRun(
 	return beatRun, nil, lastErr
 }
 
-func (s *server) ensureDistrictRunCharacterPointOfInterest(
+func (p *ProcessMainStoryDistrictRunProcessor) ensureCharacterPointOfInterest(
 	ctx context.Context,
 	character *models.Character,
 	zone *models.Zone,
 	beat models.MainStoryBeatDraft,
 ) (*models.PointOfInterest, error) {
 	if character == nil {
-		return nil, errRequired("character")
+		return nil, fmt.Errorf("character is required")
 	}
 	if zone == nil {
-		return nil, errRequired("zone")
+		return nil, fmt.Errorf("zone is required")
 	}
 
 	if character.PointOfInterestID != nil && *character.PointOfInterestID != uuid.Nil {
-		pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(ctx, *character.PointOfInterestID)
+		pointOfInterest, err := p.dbClient.PointOfInterest().FindByID(ctx, *character.PointOfInterestID)
 		if err == nil && pointOfInterest != nil {
-			if pointOfInterestZone, zoneErr := s.dbClient.Zone().FindByPointOfInterestID(ctx, pointOfInterest.ID); zoneErr == nil &&
+			if pointOfInterestZone, zoneErr := p.dbClient.Zone().FindByPointOfInterestID(ctx, pointOfInterest.ID); zoneErr == nil &&
 				pointOfInterestZone != nil &&
 				pointOfInterestZone.ID == zone.ID {
 				return pointOfInterest, nil
@@ -718,7 +565,7 @@ func (s *server) ensureDistrictRunCharacterPointOfInterest(
 		}
 	}
 
-	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zone.ID)
+	pointsOfInterest, err := p.dbClient.PointOfInterest().FindAllForZone(ctx, zone.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -731,12 +578,12 @@ func (s *server) ensureDistrictRunCharacterPointOfInterest(
 		strings.TrimSpace(beat.Hook),
 		strings.TrimSpace(beat.Description),
 	}, " ")
-	best := pickBestPointOfInterestForHint(pointsOfInterest, hint, nil)
+	best := pickBestPointOfInterestForHintForProcess(pointsOfInterest, hint, nil)
 	if best == nil {
 		return nil, fmt.Errorf("no point of interest could be resolved for quest giver placement")
 	}
 
-	if err := s.dbClient.Character().UpdateFields(ctx, character.ID, map[string]interface{}{
+	if err := p.dbClient.Character().UpdateFields(ctx, character.ID, map[string]interface{}{
 		"point_of_interest_id": best.ID,
 		"updated_at":           time.Now(),
 	}); err != nil {
@@ -747,13 +594,18 @@ func (s *server) ensureDistrictRunCharacterPointOfInterest(
 	return best, nil
 }
 
-func rankMainStoryDistrictRunZones(
+type processMainStoryZoneCandidate struct {
+	zone       *models.Zone
+	matchCount int
+}
+
+func rankProcessMainStoryZones(
 	zones []models.Zone,
 	beat models.MainStoryBeatDraft,
 	questArchetype *models.QuestArchetype,
 	template *models.MainStoryTemplate,
 	deprioritizedZoneID *uuid.UUID,
-) ([]mainStoryDistrictZoneCandidate, error) {
+) ([]processMainStoryZoneCandidate, error) {
 	if len(zones) == 0 {
 		return nil, fmt.Errorf("district has no zones")
 	}
@@ -765,12 +617,12 @@ func rankMainStoryDistrictRunZones(
 	if len(desiredTags) == 0 && template != nil {
 		desiredTags = append(desiredTags, template.ThemeTags...)
 	}
-	normalized := normalizeMainStoryDistrictSeedTags(desiredTags)
-	ranked := make([]mainStoryDistrictZoneCandidate, 0, len(zones))
+	normalized := normalizeProcessMainStoryTagSet(desiredTags)
+	ranked := make([]processMainStoryZoneCandidate, 0, len(zones))
 	for index := range zones {
-		ranked = append(ranked, mainStoryDistrictZoneCandidate{
+		ranked = append(ranked, processMainStoryZoneCandidate{
 			zone:       &zones[index],
-			matchCount: mainStoryDistrictSeedMatchCount(zones[index].InternalTags, normalized),
+			matchCount: processMainStoryTagMatchCount(zones[index].InternalTags, normalized),
 		})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
@@ -789,7 +641,7 @@ func rankMainStoryDistrictRunZones(
 	return ranked, nil
 }
 
-func mainStoryDistrictSeedMatchCount(tags models.StringArray, desired map[string]struct{}) int {
+func processMainStoryTagMatchCount(tags models.StringArray, desired map[string]struct{}) int {
 	if len(desired) == 0 {
 		return 0
 	}
@@ -812,7 +664,7 @@ func mainStoryDistrictSeedMatchCount(tags models.StringArray, desired map[string
 	return count
 }
 
-func normalizeMainStoryDistrictSeedTags(tags models.StringArray) map[string]struct{} {
+func normalizeProcessMainStoryTagSet(tags models.StringArray) map[string]struct{} {
 	normalized := make(map[string]struct{}, len(tags))
 	for _, rawTag := range []string(tags) {
 		tag := strings.ToLower(strings.TrimSpace(rawTag))
@@ -824,7 +676,7 @@ func normalizeMainStoryDistrictSeedTags(tags models.StringArray) map[string]stru
 	return normalized
 }
 
-func shouldRetryMainStoryDistrictBeatInAnotherZone(err error) bool {
+func shouldRetryProcessMainStoryBeatInAnotherZone(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -836,7 +688,7 @@ func shouldRetryMainStoryDistrictBeatInAnotherZone(err error) bool {
 		strings.Contains(message, "no recently used places available as fallback")
 }
 
-func (s *server) linkMainStoryDistrictRunQuests(
+func (p *ProcessMainStoryDistrictRunProcessor) linkRunQuests(
 	ctx context.Context,
 	quests []*models.Quest,
 ) error {
@@ -847,7 +699,7 @@ func (s *server) linkMainStoryDistrictRunQuests(
 		if quest == nil {
 			continue
 		}
-		existing, err := s.dbClient.Quest().FindByID(ctx, quest.ID)
+		existing, err := p.dbClient.Quest().FindByID(ctx, quest.ID)
 		if err != nil {
 			return err
 		}
@@ -865,96 +717,86 @@ func (s *server) linkMainStoryDistrictRunQuests(
 			existing.MainStoryNextQuestID = nil
 		}
 		existing.UpdatedAt = time.Now()
-		if err := s.dbClient.Quest().Update(ctx, existing.ID, existing); err != nil {
+		if err := p.dbClient.Quest().Update(ctx, existing.ID, existing); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *server) rollbackMainStoryDistrictRun(
-	ctx context.Context,
-	run *models.MainStoryDistrictRun,
-) error {
-	if run == nil {
-		return errRequired("run")
-	}
-
-	questIDsToDelete := map[uuid.UUID]struct{}{}
-	for index := len(run.BeatRuns) - 1; index >= 0; index-- {
-		questID := run.BeatRuns[index].QuestID
-		if questID == nil || *questID == uuid.Nil {
+func normalizeProcessMainStoryTags(input []string) models.StringArray {
+	tags := make(models.StringArray, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, rawTag := range input {
+		normalized := strings.ToLower(strings.TrimSpace(rawTag))
+		if normalized == "" {
 			continue
 		}
-		questIDsToDelete[*questID] = struct{}{}
-	}
-
-	for _, rawCharacterID := range run.GeneratedCharacterIDs {
-		characterID, err := uuid.Parse(strings.TrimSpace(rawCharacterID))
-		if err != nil || characterID == uuid.Nil {
+		if _, exists := seen[normalized]; exists {
 			continue
 		}
-		quests, err := s.dbClient.Quest().FindByQuestGiverCharacterID(ctx, characterID)
-		if err != nil {
-			return fmt.Errorf("failed to load quests for generated character %s: %w", characterID.String(), err)
+		seen[normalized] = struct{}{}
+		tags = append(tags, normalized)
+	}
+	return tags
+}
+
+func scorePointOfInterestForHintForProcess(
+	pointOfInterest models.PointOfInterest,
+	hint string,
+) int {
+	if strings.TrimSpace(hint) == "" {
+		return 0
+	}
+	haystacks := []string{
+		pointOfInterest.Name,
+		pointOfInterest.OriginalName,
+		pointOfInterest.Description,
+		pointOfInterest.Clue,
+	}
+	for _, tag := range pointOfInterest.Tags {
+		haystacks = append(haystacks, tag.Value)
+	}
+	score := 0
+	for _, token := range strings.Fields(strings.ToLower(strings.TrimSpace(hint))) {
+		if len(token) < 3 {
+			continue
 		}
-		for _, quest := range quests {
-			if quest.ID == uuid.Nil {
+		for _, haystack := range haystacks {
+			if strings.Contains(strings.ToLower(haystack), token) {
+				score++
+				break
+			}
+		}
+	}
+	return score
+}
+
+func pickBestPointOfInterestForHintForProcess(
+	pointsOfInterest []models.PointOfInterest,
+	hint string,
+	excludeID *uuid.UUID,
+) *models.PointOfInterest {
+	var best *models.PointOfInterest
+	bestScore := -1
+	for index := range pointsOfInterest {
+		pointOfInterest := pointsOfInterest[index]
+		if excludeID != nil && pointOfInterest.ID == *excludeID {
+			continue
+		}
+		score := scorePointOfInterestForHintForProcess(pointOfInterest, hint)
+		if score > bestScore {
+			best = &pointsOfInterest[index]
+			bestScore = score
+		}
+	}
+	if bestScore <= 0 && len(pointsOfInterest) > 0 {
+		for index := range pointsOfInterest {
+			if excludeID != nil && pointsOfInterest[index].ID == *excludeID {
 				continue
 			}
-			questIDsToDelete[quest.ID] = struct{}{}
+			return &pointsOfInterest[index]
 		}
 	}
-
-	for questID := range questIDsToDelete {
-		quest, err := s.dbClient.Quest().FindByID(ctx, questID)
-		if err != nil {
-			return fmt.Errorf("failed to load generated quest %s for unlinking: %w", questID.String(), err)
-		}
-		if quest == nil {
-			continue
-		}
-		quest.MainStoryPreviousQuestID = nil
-		quest.MainStoryNextQuestID = nil
-		quest.UpdatedAt = time.Now()
-		if err := s.dbClient.Quest().Update(ctx, quest.ID, quest); err != nil {
-			return fmt.Errorf("failed to unlink generated quest %s: %w", quest.ID.String(), err)
-		}
-	}
-
-	for index := len(run.BeatRuns) - 1; index >= 0; index-- {
-		questID := run.BeatRuns[index].QuestID
-		if questID == nil || *questID == uuid.Nil {
-			continue
-		}
-		if _, exists := questIDsToDelete[*questID]; !exists {
-			continue
-		}
-		if err := s.dbClient.Quest().Delete(ctx, *questID); err != nil {
-			return fmt.Errorf("failed to delete quest %s: %w", questID.String(), err)
-		}
-		delete(questIDsToDelete, *questID)
-	}
-
-	for questID := range questIDsToDelete {
-		if err := s.dbClient.Quest().Delete(ctx, questID); err != nil {
-			return fmt.Errorf("failed to delete generated quest %s: %w", questID.String(), err)
-		}
-	}
-
-	for _, rawCharacterID := range run.GeneratedCharacterIDs {
-		characterID, err := uuid.Parse(strings.TrimSpace(rawCharacterID))
-		if err != nil || characterID == uuid.Nil {
-			continue
-		}
-		if err := s.dbClient.Character().Delete(ctx, characterID); err != nil {
-			return fmt.Errorf("failed to delete generated character %s: %w", characterID.String(), err)
-		}
-	}
-
-	if err := s.dbClient.MainStoryDistrictRun().Delete(ctx, run.ID); err != nil {
-		return fmt.Errorf("failed to delete main story district run: %w", err)
-	}
-
-	return nil
+	return best
 }

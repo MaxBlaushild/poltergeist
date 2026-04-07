@@ -38,3 +38,7 @@ func (h *mainStoryTemplateHandle) FindAll(ctx context.Context) ([]models.MainSto
 	}
 	return templates, nil
 }
+
+func (h *mainStoryTemplateHandle) Delete(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.MainStoryTemplate{}, "id = ?", id).Error
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -270,7 +271,7 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 		ID:                          uuid.New(),
 		Name:                        strings.TrimSpace(draft.Name),
 		Description:                 strings.TrimSpace(draft.Description),
-		AcceptanceDialogue:          normalizeQuestTemplateAcceptanceDialogue(draft.AcceptanceDialogue),
+		AcceptanceDialogue:          dialogueSequenceFromLines(draft.AcceptanceDialogue),
 		ImageURL:                    "",
 		DifficultyMode:              models.NormalizeQuestDifficultyMode(string(draft.DifficultyMode)),
 		Difficulty:                  models.NormalizeQuestDifficulty(draft.Difficulty),
@@ -305,8 +306,13 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	draft.QuestArchetypeID = &questArchetype.ID
 	draft.ConvertedAt = &now
 	draft.UpdatedAt = now
-	if err := s.dbClient.QuestArchetypeSuggestionDraft().Update(ctx, draft); err != nil {
-		return nil, fmt.Errorf("failed to update suggestion draft: %w", err)
+	// Main story beat conversion reuses this helper with an in-memory draft that
+	// is never persisted to quest_archetype_suggestion_drafts, so only write back
+	// when there is a real suggestion-job parent.
+	if draft.JobID != uuid.Nil {
+		if err := s.dbClient.QuestArchetypeSuggestionDraft().Update(ctx, draft); err != nil {
+			return nil, fmt.Errorf("failed to update suggestion draft: %w", err)
+		}
 	}
 
 	return s.dbClient.QuestArchetype().FindByID(ctx, questArchetype.ID)
@@ -479,6 +485,12 @@ func (s *server) linkQuestArchetypeSuggestionStep(
 	if err := s.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
 		return fmt.Errorf("failed to create quest archetype link: %w", err)
 	}
+	log.Printf(
+		"[main-story-convert][quest-archetype-suggestion][link] node=%s challenge=%s nextNode=%v creating explicit node-challenge join",
+		node.ID.String(),
+		challenge.ID.String(),
+		nextNodeID,
+	)
 	return s.dbClient.QuestArchetypeNodeChallenge().Create(ctx, &models.QuestArchetypeNodeChallenge{
 		ID:                        uuid.New(),
 		QuestArchetypeChallengeID: challenge.ID,

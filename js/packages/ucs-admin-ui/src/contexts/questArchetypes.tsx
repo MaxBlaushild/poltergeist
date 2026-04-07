@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
+  DialogueMessage,
   QuestArchetype,
   QuestDifficultyMode,
   LocationArchetype,
@@ -24,7 +25,7 @@ export type QuestArchetypeDraft = {
   description: string;
   category?: 'side' | 'main_story';
   questGiverCharacterId?: string | null;
-  acceptanceDialogue?: string[];
+  acceptanceDialogue?: DialogueMessage[];
   imageUrl?: string;
   rootNode: QuestArchetypeNodeDraft;
   difficultyMode?: QuestDifficultyMode;
@@ -71,6 +72,7 @@ type QuestArchetypesContextType = {
   locationArchetypes: LocationArchetype[];
   questArchetypes: QuestArchetype[];
   zoneQuestArchetypes: ZoneQuestArchetype[];
+  refreshQuestArchetypes: () => Promise<void>;
   refreshLocationArchetypes: () => Promise<void>;
   createQuestArchetype: (
     draft: QuestArchetypeDraft
@@ -99,7 +101,7 @@ type QuestArchetypesContextType = {
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
-  deleteQuestArchetype: (questArchetypeId: string) => void;
+  deleteQuestArchetype: (questArchetypeId: string) => Promise<void>;
   deleteLocationArchetype: (locationArchetypeId: string) => void;
   createZoneQuestArchetype: (
     zoneId: string,
@@ -118,6 +120,7 @@ export const QuestArchetypesContext =
   React.createContext<QuestArchetypesContextType>({
     questArchetypes: [],
     zoneQuestArchetypes: [],
+    refreshQuestArchetypes: async () => {},
     refreshLocationArchetypes: async () => {},
     createQuestArchetype: async () => null,
     generateQuestArchetypeTemplate: async () => null,
@@ -130,7 +133,7 @@ export const QuestArchetypesContext =
     updateLocationArchetype: () => {},
     placeTypes: [],
     updateQuestArchetype: () => {},
-    deleteQuestArchetype: () => {},
+    deleteQuestArchetype: async () => {},
     deleteLocationArchetype: () => {},
     createZoneQuestArchetype: () => {},
     updateZoneQuestArchetype: () => {},
@@ -152,21 +155,26 @@ export const QuestArchetypesProvider = ({
   const [zoneQuestArchetypes, setZoneQuestArchetypes] = useState<
     ZoneQuestArchetype[]
   >([]);
-  const populateChallengesForNode = async (node: QuestArchetypeNode) => {
-    const challenges = await apiClient.get<QuestArchetypeChallenge[]>(
-      `/sonar/questArchetypes/${node.id}/challenges`
-    );
-    node.challenges = challenges;
-    node.challenges?.forEach(async (challenge) => {
-      if (challenge.unlockedNode) {
-        await populateChallengesForNode(challenge.unlockedNode);
-      }
-    });
+  const populateChallengesForNode = useCallback(
+    async function populateQuestArchetypeNode(node: QuestArchetypeNode) {
+      const challenges = await apiClient.get<QuestArchetypeChallenge[]>(
+        `/sonar/questArchetypes/${node.id}/challenges`
+      );
+      node.challenges = challenges;
+      await Promise.all(
+        (node.challenges ?? []).map(async (challenge) => {
+          if (challenge.unlockedNode) {
+            await populateQuestArchetypeNode(challenge.unlockedNode);
+          }
+        })
+      );
 
-    return node;
-  };
+      return node;
+    },
+    [apiClient]
+  );
 
-  const fetchQuestArchetypes = async () => {
+  const fetchQuestArchetypes = useCallback(async () => {
     const questArchetypes = await apiClient.get<QuestArchetype[]>(
       '/sonar/questArchetypes'
     );
@@ -179,7 +187,7 @@ export const QuestArchetypesProvider = ({
       })
     );
     setQuestArchetypes(populatedQuestArchetypes);
-  };
+  }, [apiClient, populateChallengesForNode]);
 
   const fetchLocationArchetypes = async () => {
     const locationArchetypes = await apiClient.get<LocationArchetype[]>(
@@ -496,6 +504,7 @@ export const QuestArchetypesProvider = ({
         locationArchetypes,
         placeTypes,
         zoneQuestArchetypes,
+        refreshQuestArchetypes: fetchQuestArchetypes,
         refreshLocationArchetypes: fetchLocationArchetypes,
         createQuestArchetype,
         generateQuestArchetypeTemplate,

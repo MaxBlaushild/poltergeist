@@ -9,6 +9,7 @@ import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
 import {
   Candidate,
   Character,
+  DialogueMessage,
   InventoryItem,
   LocationArchetype,
   PointOfInterest,
@@ -27,12 +28,13 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useCandidates } from '@poltergeist/hooks';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   MaterialRewardsEditor,
   emptyMaterialReward,
   normalizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 import './questArchetypeTheme.css';
 import './questsTheme.css';
 
@@ -176,7 +178,7 @@ const emptyQuestForm = {
   name: '',
   description: '',
   category: 'side' as 'side' | 'main_story',
-  acceptanceDialogue: [] as string[],
+  acceptanceDialogue: [] as DialogueMessage[],
   imageUrl: '',
   zoneId: '',
   questGiverCharacterId: '',
@@ -711,8 +713,29 @@ const resolveLinkedQuestNodePoi = (
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
-const normalizeAcceptanceDialogue = (lines: string[]) =>
-  lines.map((line) => line.trim()).filter((line) => line.length > 0);
+const normalizeDialogueEffect = (effect?: DialogueMessage['effect']) => {
+  switch (effect) {
+    case 'angry':
+    case 'surprised':
+    case 'whisper':
+    case 'shout':
+    case 'mysterious':
+    case 'determined':
+      return effect;
+    default:
+      return undefined;
+  }
+};
+
+const normalizeAcceptanceDialogue = (lines: DialogueMessage[]) =>
+  lines
+    .map((line, index) => ({
+      speaker: line.speaker === 'user' ? 'user' : 'character',
+      text: (line.text ?? '').trim(),
+      order: index,
+      effect: normalizeDialogueEffect(line.effect),
+    }))
+    .filter((line) => line.text.length > 0);
 
 const resolveChallengeSubmissionType = (
   challenge: LegacyQuestNodePrompt,
@@ -794,6 +817,7 @@ const matchLocationArchetypeForPoi = (
 };
 
 export const Quests = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { tagGroups } = useTagContext();
@@ -907,11 +931,30 @@ export const Quests = () => {
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
   const questNodeMarkers = useRef<mapboxgl.Marker[]>([]);
   const selectedQuestIdRef = useRef('');
+  const didHydrateDeepLinkedQuestRef = useRef(false);
 
   const setActiveQuestId = (questId: string) => {
     selectedQuestIdRef.current = questId;
     setSelectedQuestId(questId);
   };
+  const deepLinkedQuestId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedQuestId = useCallback(
+    (questId?: string | null) => {
+      const normalizedQuestId = (questId ?? '').trim();
+      const currentQuestId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedQuestId === currentQuestId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedQuestId) {
+        next.set('id', normalizedQuestId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const selectedQuest = useMemo(
     () => quests.find((quest) => quest.id === selectedQuestId) ?? null,
@@ -958,6 +1001,36 @@ export const Quests = () => {
     });
     return counts;
   }, [orderedQuestNodes]);
+
+  useEffect(() => {
+    if (didHydrateDeepLinkedQuestRef.current) {
+      return;
+    }
+    if (!deepLinkedQuestId) {
+      didHydrateDeepLinkedQuestRef.current = true;
+      return;
+    }
+    if (selectedQuestId === deepLinkedQuestId) {
+      didHydrateDeepLinkedQuestRef.current = true;
+      return;
+    }
+    if (!quests.length) {
+      return;
+    }
+    const matchingQuest = quests.find((quest) => quest.id === deepLinkedQuestId);
+    if (matchingQuest) {
+      setActiveQuestId(matchingQuest.id);
+      return;
+    }
+    didHydrateDeepLinkedQuestRef.current = true;
+  }, [deepLinkedQuestId, quests, selectedQuestId]);
+
+  useEffect(() => {
+    if (!didHydrateDeepLinkedQuestRef.current) {
+      return;
+    }
+    replaceDeepLinkedQuestId(selectedQuestId || null);
+  }, [replaceDeepLinkedQuestId, selectedQuestId]);
   const selectedQuestNodePreview = useMemo(
     () =>
       orderedQuestNodes.map((node) => {
@@ -1714,7 +1787,7 @@ export const Quests = () => {
         : type === 'challenge'
           ? '/challenges'
           : '/monsters';
-    return `${basePath}?focus=${encodeURIComponent(id)}`;
+    return `${basePath}?id=${encodeURIComponent(id)}`;
   };
 
   const availableMonstersForQuickCreate = useMemo(() => {
@@ -3421,25 +3494,17 @@ export const Quests = () => {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Quest Acceptance Dialogue
-                </label>
-                <textarea
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                  rows={4}
-                  placeholder="One line per dialogue message shown before accepting the quest."
-                  value={questForm.acceptanceDialogue.join('\n')}
-                  onChange={(e) =>
+                <DialogueMessageListEditor
+                  label="Quest Acceptance Dialogue"
+                  helperText="These lines appear before the quest is accepted. Effects like Angry will be animated in the client."
+                  value={questForm.acceptanceDialogue}
+                  onChange={(acceptanceDialogue) =>
                     setQuestForm((prev) => ({
                       ...prev,
-                      acceptanceDialogue: e.target.value.split('\n'),
+                      acceptanceDialogue,
                     }))
                   }
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Each line becomes a separate dialogue line in the quest
-                  acceptance prompt.
-                </p>
               </div>
               <div className="md:col-span-2 qa-form-section">
                 <div className="qa-card-kicker">Assignment</div>
@@ -4344,25 +4409,17 @@ export const Quests = () => {
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Quest Acceptance Dialogue
-                      </label>
-                      <textarea
-                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                        rows={4}
-                        placeholder="One line per dialogue message shown before accepting the quest."
-                        value={questForm.acceptanceDialogue.join('\n')}
-                        onChange={(e) =>
+                      <DialogueMessageListEditor
+                        label="Quest Acceptance Dialogue"
+                        helperText="These lines appear before the quest is accepted. Effects like Angry will be animated in the client."
+                        value={questForm.acceptanceDialogue}
+                        onChange={(acceptanceDialogue) =>
                           setQuestForm((prev) => ({
                             ...prev,
-                            acceptanceDialogue: e.target.value.split('\n'),
+                            acceptanceDialogue,
                           }))
                         }
                       />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Each line becomes a separate dialogue line in the quest
-                        acceptance prompt.
-                      </p>
                     </div>
                     <div className="md:col-span-2 qa-form-section">
                       <div className="qa-card-kicker">Assignment</div>

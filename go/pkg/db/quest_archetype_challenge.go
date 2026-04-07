@@ -2,10 +2,12 @@ package db
 
 import (
 	"context"
+	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type questArchetypeChallengeHandle struct {
@@ -13,7 +15,16 @@ type questArchetypeChallengeHandle struct {
 }
 
 func (h *questArchetypeChallengeHandle) Create(ctx context.Context, questArchetypeChallenge *models.QuestArchetypeChallenge) error {
-	return h.db.WithContext(ctx).Create(questArchetypeChallenge).Error
+	if questArchetypeChallenge != nil && questArchetypeChallenge.UnlockedNode != nil {
+		log.Printf(
+			"[main-story-convert][quest-archetype-challenge][create] challenge=%s has unlockedNode=%s in-memory; omitting associations on save",
+			questArchetypeChallenge.ID.String(),
+			questArchetypeChallenge.UnlockedNode.ID.String(),
+		)
+	}
+	return h.db.WithContext(ctx).
+		Omit(clause.Associations).
+		Create(questArchetypeChallenge).Error
 }
 
 func (h *questArchetypeChallengeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeChallenge, error) {
@@ -40,7 +51,9 @@ func (h *questArchetypeChallengeHandle) FindAll(ctx context.Context) ([]*models.
 }
 
 func (h *questArchetypeChallengeHandle) Update(ctx context.Context, questArchetypeChallenge *models.QuestArchetypeChallenge) error {
-	return h.db.WithContext(ctx).Save(questArchetypeChallenge).Error
+	return h.db.WithContext(ctx).
+		Omit(clause.Associations).
+		Save(questArchetypeChallenge).Error
 }
 
 func (h *questArchetypeChallengeHandle) Delete(ctx context.Context, id uuid.UUID) error {

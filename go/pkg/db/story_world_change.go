@@ -50,3 +50,12 @@ func (h *storyWorldChangeHandle) FindByMainStoryTemplateID(
 	}
 	return changes, nil
 }
+
+func (h *storyWorldChangeHandle) DeleteByMainStoryTemplateID(
+	ctx context.Context,
+	templateID uuid.UUID,
+) error {
+	return h.db.WithContext(ctx).
+		Delete(&models.StoryWorldChange{}, "main_story_template_id = ?", templateID).
+		Error
+}

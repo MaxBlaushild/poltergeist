@@ -132,7 +132,7 @@ func (s *server) generateQuestArchetypeFromSteps(
 		ID:                          uuid.New(),
 		Name:                        name,
 		Description:                 description,
-		AcceptanceDialogue:          buildGeneratedQuestTemplateAcceptanceDialogue(requestBody.ThemePrompt, steps),
+		AcceptanceDialogue:          dialogueSequenceFromLines(buildGeneratedQuestTemplateAcceptanceDialogue(requestBody.ThemePrompt, steps)),
 		ImageURL:                    "",
 		DifficultyMode:              models.QuestDifficultyModeScale,
 		Difficulty:                  1,

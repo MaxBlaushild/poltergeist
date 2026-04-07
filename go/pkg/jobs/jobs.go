@@ -36,6 +36,7 @@ const (
 	GenerateLocationArchetypesTaskType             = "generate_location_archetypes"
 	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
 	GenerateMainStorySuggestionsTaskType           = "generate_main_story_suggestions"
+	ProcessMainStoryDistrictRunTaskType            = "process_main_story_district_run"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateZoneTagsTaskType                       = "generate_zone_tags"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
@@ -135,6 +136,10 @@ type GenerateQuestArchetypeSuggestionsTaskPayload struct {
 
 type GenerateMainStorySuggestionsTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type ProcessMainStoryDistrictRunTaskPayload struct {
+	RunID uuid.UUID `json:"runId"`
 }
 
 type GenerateInventoryItemSuggestionsTaskPayload struct {

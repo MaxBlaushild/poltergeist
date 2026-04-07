@@ -37,6 +37,7 @@ import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
 import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import QuestArchetypeGenerator from './components/QuestArchetypeGenerator.tsx';
 import MainStoryGenerator from './components/MainStoryGenerator.tsx';
+import MainStoryDistrictRunView from './components/MainStoryDistrictRun.tsx';
 import MainStoryTemplates from './components/MainStoryTemplates.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
@@ -371,6 +372,11 @@ const router = createBrowserRouter([
       {
         path: '/main-story-templates',
         element: <MainStoryTemplates />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/main-story-district-runs/:id',
+        element: <MainStoryDistrictRunView />,
         loader: onlyAuthenticated,
       },
       {

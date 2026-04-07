@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
-import { Character, Spell } from '@poltergeist/types';
+import { Character, DialogueMessage, Spell } from '@poltergeist/types';
+import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 
 type SelectOption = {
   value: string;
@@ -41,8 +42,8 @@ type TutorialOptionResponse = {
 
 type TutorialConfigResponse = {
   characterId?: string | null;
-  dialogue?: string[];
-  loadoutDialogue?: string[];
+  dialogue?: DialogueMessage[];
+  loadoutDialogue?: DialogueMessage[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
   imageGenerationStatus?: string;
@@ -56,6 +57,15 @@ type TutorialConfigResponse = {
   options?: TutorialOptionResponse[];
   itemRewards?: Array<{ inventoryItemId?: number; quantity?: number }>;
   spellRewards?: Array<{ spellId?: string }>;
+};
+
+type MonsterEncounterOptionResponse = {
+  id: string;
+  name: string;
+};
+
+type AdminMonsterEncounterListResponse = {
+  items?: MonsterEncounterOptionResponse[];
 };
 
 const statTagOptions: SelectOption[] = [
@@ -196,14 +206,15 @@ export const Tutorial = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [referenceDataLoading, setReferenceDataLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<Array<{ id: string; name: string }>>([]);
   const [characterId, setCharacterId] = useState('');
-  const [dialogue, setDialogue] = useState<string[]>([]);
-  const [loadoutDialogue, setLoadoutDialogue] = useState<string[]>([]);
+  const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
+  const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
   const [scenarioPrompt, setScenarioPrompt] = useState('');
   const [scenarioImageUrl, setScenarioImageUrl] = useState('');
   const [imageGenerationStatus, setImageGenerationStatus] = useState('none');
@@ -217,15 +228,10 @@ export const Tutorial = () => {
     imageGenerationStatus === 'queued' || imageGenerationStatus === 'in_progress';
 
   useEffect(() => {
-    const load = async () => {
+    const loadConfig = async () => {
       try {
         setLoading(true);
-        const [config, loadedCharacters, loadedSpells, loadedMonsterEncounters] = await Promise.all([
-          apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial'),
-          apiClient.get<Character[]>('/sonar/characters'),
-          apiClient.get<Spell[]>('/sonar/spells'),
-          apiClient.get<Array<{ id: string; name: string }>>('/sonar/monster-encounters'),
-        ]);
+        const config = await apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial');
 
         const sharedItemRewards = toItemRewardRows(config.itemRewards);
         const sharedSpellRewards = toSpellRewardRows(config.spellRewards);
@@ -233,9 +239,6 @@ export const Tutorial = () => {
           typeof config.rewardExperience === 'number' ? config.rewardExperience : 0;
         const sharedRewardGold = typeof config.rewardGold === 'number' ? config.rewardGold : 0;
 
-        setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
-        setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
-        setMonsterEncounters(Array.isArray(loadedMonsterEncounters) ? loadedMonsterEncounters : []);
         setCharacterId(config.characterId ?? '');
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
         setLoadoutDialogue(Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []);
@@ -294,7 +297,43 @@ export const Tutorial = () => {
       }
     };
 
-    load();
+    void loadConfig();
+  }, [apiClient]);
+
+  useEffect(() => {
+    const loadReferenceData = async () => {
+      try {
+        setReferenceDataLoading(true);
+        const [loadedCharacters, loadedSpells, loadedMonsterEncounters] = await Promise.all([
+          apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<Spell[]>('/sonar/spells'),
+          apiClient.get<AdminMonsterEncounterListResponse>(
+            '/sonar/admin/monster-encounters?page=1&pageSize=250',
+          ),
+        ]);
+
+        setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
+        setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
+        setMonsterEncounters(
+          Array.isArray(loadedMonsterEncounters?.items)
+            ? loadedMonsterEncounters.items
+                .filter((encounter) => encounter?.id && encounter?.name)
+                .map((encounter) => ({
+                  id: encounter.id,
+                  name: encounter.name,
+                }))
+            : [],
+        );
+      } catch (error) {
+        console.error('Failed to load tutorial reference data', error);
+        setStatusMessage('Tutorial loaded, but some selector data failed to load.');
+        setStatusKind('error');
+      } finally {
+        setReferenceDataLoading(false);
+      }
+    };
+
+    void loadReferenceData();
   }, [apiClient]);
 
   useEffect(() => {
@@ -351,24 +390,6 @@ export const Tutorial = () => {
       })),
     [monsterEncounters],
   );
-
-  const updateDialogueLine = (index: number, value: string) => {
-    setDialogue((prev) => prev.map((line, lineIndex) => (lineIndex === index ? value : line)));
-  };
-
-  const removeDialogueLine = (index: number) => {
-    setDialogue((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
-  };
-
-  const updateLoadoutDialogueLine = (index: number, value: string) => {
-    setLoadoutDialogue((prev) =>
-      prev.map((line, lineIndex) => (lineIndex === index ? value : line)),
-    );
-  };
-
-  const removeLoadoutDialogueLine = (index: number) => {
-    setLoadoutDialogue((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
-  };
 
   const updateOption = (id: string, updates: Partial<TutorialOptionRow>) => {
     setOptions((prev) => prev.map((option) => (option.id === id ? { ...option, ...updates } : option)));
@@ -484,8 +505,8 @@ export const Tutorial = () => {
 
       await apiClient.put('/sonar/admin/tutorial', {
         characterId: characterId || null,
-        dialogue: dialogue.map((line) => line.trim()).filter(Boolean),
-        loadoutDialogue: loadoutDialogue.map((line) => line.trim()).filter(Boolean),
+        dialogue,
+        loadoutDialogue,
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
         monsterEncounterId: monsterEncounterId || null,
@@ -602,47 +623,19 @@ export const Tutorial = () => {
                       </option>
                     ))}
                   </select>
+                  {referenceDataLoading ? (
+                    <p className="mt-1 text-xs text-gray-500">Loading character options…</p>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-800">Dialogue Lines</h3>
-                    <p className="text-xs text-gray-500">Each line becomes one character message.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDialogue((prev) => [...prev, ''])}
-                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Add Line
-                  </button>
-                </div>
-
-                {dialogue.length === 0 && (
-                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-                    No dialogue lines configured.
-                  </div>
-                )}
-
-                {dialogue.map((line, index) => (
-                  <div key={`dialogue-${index}`} className="flex gap-3">
-                    <textarea
-                      value={line}
-                      onChange={(event) => updateDialogueLine(index, event.target.value)}
-                      rows={2}
-                      className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeDialogueLine(index)}
-                      className="self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+              <div className="mt-4">
+                <DialogueMessageListEditor
+                  label="Dialogue Lines"
+                  helperText="Each line becomes one character message. Effects are played by the client."
+                  value={dialogue}
+                  onChange={setDialogue}
+                />
               </div>
             </section>
 
@@ -928,46 +921,13 @@ export const Tutorial = () => {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-800">Dialogue Lines</h3>
-                    <p className="text-xs text-gray-500">
-                      Shown while the inventory drawer is forced open.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setLoadoutDialogue((prev) => [...prev, ''])}
-                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Add Line
-                  </button>
-                </div>
-
-                {loadoutDialogue.length === 0 && (
-                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-                    No loadout dialogue configured.
-                  </div>
-                )}
-
-                {loadoutDialogue.map((line, index) => (
-                  <div key={`loadout-dialogue-${index}`} className="flex gap-3">
-                    <textarea
-                      value={line}
-                      onChange={(event) => updateLoadoutDialogueLine(index, event.target.value)}
-                      rows={2}
-                      className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeLoadoutDialogueLine(index)}
-                      className="self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+              <div className="mt-4">
+                <DialogueMessageListEditor
+                  label="Dialogue Lines"
+                  helperText="Shown while the inventory drawer is forced open."
+                  value={loadoutDialogue}
+                  onChange={setLoadoutDialogue}
+                />
               </div>
             </section>
 
@@ -989,6 +949,9 @@ export const Tutorial = () => {
                     value={monsterEncounterId}
                     onChange={setMonsterEncounterId}
                   />
+                  {referenceDataLoading ? (
+                    <p className="mt-1 text-xs text-gray-500">Loading encounter options…</p>
+                  ) : null}
                 </div>
                 <label className="text-sm">
                   <span className="block font-medium text-gray-700">Reward Experience</span>

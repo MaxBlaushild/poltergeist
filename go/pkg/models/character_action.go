@@ -4,24 +4,35 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type ActionType string
+type DialogueEffect string
 
 const (
 	ActionTypeTalk      ActionType = "talk"
 	ActionTypeShop      ActionType = "shop"
 	ActionTypeGiveQuest ActionType = "giveQuest"
 	// Future: ActionTypeGift, ActionTypeTrade, etc.
+
+	DialogueEffectNone       DialogueEffect = ""
+	DialogueEffectAngry      DialogueEffect = "angry"
+	DialogueEffectSurprised  DialogueEffect = "surprised"
+	DialogueEffectWhisper    DialogueEffect = "whisper"
+	DialogueEffectShout      DialogueEffect = "shout"
+	DialogueEffectMysterious DialogueEffect = "mysterious"
+	DialogueEffectDetermined DialogueEffect = "determined"
 )
 
 type DialogueMessage struct {
-	Speaker string `json:"speaker"` // "character" or "user"
-	Text    string `json:"text"`
-	Order   int    `json:"order"`
+	Speaker string         `json:"speaker"` // "character" or "user"
+	Text    string         `json:"text"`
+	Order   int            `json:"order"`
+	Effect  DialogueEffect `json:"effect,omitempty"`
 }
 
 // DialogueSequence is a custom type for []DialogueMessage that implements sql.Scanner and driver.Valuer
@@ -41,19 +52,80 @@ func (ds *DialogueSequence) Scan(value interface{}) error {
 
 	var messages []DialogueMessage
 	if err := json.Unmarshal(bytes, &messages); err != nil {
-		return err
+		var legacyMessages []string
+		if legacyErr := json.Unmarshal(bytes, &legacyMessages); legacyErr != nil {
+			return err
+		}
+		*ds = DialogueSequenceFromStringLines(legacyMessages)
+		return nil
 	}
 
-	*ds = messages
+	*ds = normalizeDialogueSequence(messages)
 	return nil
 }
 
 // Value implements the driver.Valuer interface for writing to database
 func (ds DialogueSequence) Value() (driver.Value, error) {
-	if ds == nil {
-		return json.Marshal([]DialogueMessage{})
+	return json.Marshal(normalizeDialogueSequence(ds))
+}
+
+func NormalizeDialogueEffect(value string) DialogueEffect {
+	switch DialogueEffect(strings.ToLower(strings.TrimSpace(value))) {
+	case DialogueEffectAngry:
+		return DialogueEffectAngry
+	case DialogueEffectSurprised:
+		return DialogueEffectSurprised
+	case DialogueEffectWhisper:
+		return DialogueEffectWhisper
+	case DialogueEffectShout:
+		return DialogueEffectShout
+	case DialogueEffectMysterious:
+		return DialogueEffectMysterious
+	case DialogueEffectDetermined:
+		return DialogueEffectDetermined
+	default:
+		return DialogueEffectNone
 	}
-	return json.Marshal(ds)
+}
+
+func normalizeDialogueMessage(message DialogueMessage, order int) DialogueMessage {
+	speaker := strings.TrimSpace(message.Speaker)
+	if speaker == "" {
+		speaker = "character"
+	}
+	return DialogueMessage{
+		Speaker: speaker,
+		Text:    strings.TrimSpace(message.Text),
+		Order:   order,
+		Effect:  NormalizeDialogueEffect(string(message.Effect)),
+	}
+}
+
+func normalizeDialogueSequence(messages []DialogueMessage) DialogueSequence {
+	normalized := make(DialogueSequence, 0, len(messages))
+	for _, message := range messages {
+		next := normalizeDialogueMessage(message, len(normalized))
+		if next.Text == "" {
+			continue
+		}
+		normalized = append(normalized, next)
+	}
+	if normalized == nil {
+		return DialogueSequence{}
+	}
+	return normalized
+}
+
+func DialogueSequenceFromStringLines(lines []string) DialogueSequence {
+	messages := make([]DialogueMessage, 0, len(lines))
+	for _, line := range lines {
+		messages = append(messages, DialogueMessage{
+			Speaker: "character",
+			Text:    line,
+			Order:   len(messages),
+		})
+	}
+	return normalizeDialogueSequence(messages)
 }
 
 // MetadataJSONB is a generic type for JSONB metadata fields

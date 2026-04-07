@@ -5,8 +5,24 @@ import {
   District,
   MainStoryDistrictRun,
   MainStoryTemplate,
+  LocationArchetype,
+  QuestArchetype,
+  QuestArchetypeChallenge,
+  QuestArchetypeNode,
 } from '@poltergeist/types';
+import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
+import MainStoryTemplateEditor from './MainStoryTemplateEditor.tsx';
 import './questArchetypeTheme.css';
+
+type MonsterTemplateSummary = {
+  id: string;
+  name: string;
+};
+
+type ScenarioTemplateSummary = {
+  id: string;
+  prompt: string;
+};
 
 const formatDate = (value?: string | null) => {
   if (!value) return 'n/a';
@@ -52,11 +68,132 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
 const isPendingStatus = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
 
+const questArchetypeNodeTypeLabel = (
+  nodeType?: QuestArchetypeNode['nodeType']
+) => {
+  switch (nodeType) {
+    case 'scenario':
+      return 'Scenario';
+    case 'monster_encounter':
+      return 'Monster Encounter';
+    case 'location':
+      return 'Location';
+    default:
+      return 'Node';
+  }
+};
+
+const summarizeQuestArchetypeRoot = (
+  archetype: QuestArchetype | null | undefined
+) => {
+  if (!archetype?.root) {
+    return 'No root node';
+  }
+  const nodeType = archetype.root.nodeType || 'node';
+  if (nodeType === 'scenario') {
+    return 'Starts with a scenario node';
+  }
+  if (nodeType === 'monster') {
+    return 'Starts with a monster encounter node';
+  }
+  if (nodeType === 'challenge') {
+    return 'Starts with a challenge node';
+  }
+  return `Starts with a ${nodeType} node`;
+};
+
+const countQuestArchetypeNodes = (archetype: QuestArchetype | null | undefined) => {
+  const countNode = (node: QuestArchetype['root'] | null | undefined): number => {
+    if (!node) {
+      return 0;
+    }
+    return (
+      1 +
+      (node.challenges ?? []).reduce(
+        (sum, challenge) => sum + countNode(challenge.unlockedNode),
+        0
+      )
+    );
+  };
+  return countNode(archetype?.root);
+};
+
+const countQuestArchetypeChallenges = (
+  archetype: QuestArchetype | null | undefined
+) => {
+  const countNodeChallenges = (
+    node: QuestArchetype['root'] | null | undefined
+  ): number => {
+    if (!node) {
+      return 0;
+    }
+    return (node.challenges ?? []).reduce(
+      (sum, challenge) => sum + 1 + countNodeChallenges(challenge.unlockedNode),
+      0
+    );
+  };
+  return countNodeChallenges(archetype?.root);
+};
+
+const describeQuestArchetypeNode = (
+  node: QuestArchetypeNode | null | undefined,
+  locationArchetypesById: Map<string, LocationArchetype>,
+  monsterTemplatesById: Map<string, MonsterTemplateSummary>,
+  scenarioTemplatesById: Map<string, ScenarioTemplateSummary>
+) => {
+  if (!node) {
+    return 'Unknown';
+  }
+  if (node.nodeType === 'scenario') {
+    const scenarioLabel = node.scenarioTemplateId
+      ? scenarioTemplatesById.get(node.scenarioTemplateId)?.prompt ?? 'Scenario'
+      : 'Scenario';
+    const locationLabel = node.locationArchetypeId
+      ? locationArchetypesById.get(node.locationArchetypeId)?.name
+      : null;
+    return locationLabel ? `${scenarioLabel} @ ${locationLabel}` : scenarioLabel;
+  }
+  if (node.nodeType === 'monster_encounter') {
+    const names = (node.monsterTemplateIds ?? [])
+      .map((templateId) => monsterTemplatesById.get(templateId)?.name)
+      .filter(Boolean) as string[];
+    const encounterLabel =
+      names.length > 0
+        ? `Encounter: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
+        : 'Monster encounter';
+    const locationLabel = node.locationArchetypeId
+      ? locationArchetypesById.get(node.locationArchetypeId)?.name
+      : null;
+    return locationLabel ? `${encounterLabel} @ ${locationLabel}` : encounterLabel;
+  }
+  return node.locationArchetypeId
+    ? locationArchetypesById.get(node.locationArchetypeId)?.name ?? 'Unknown location'
+    : 'Location';
+};
+
+const describeQuestArchetypeChallenge = (
+  challenge: QuestArchetypeChallenge
+) => {
+  const parts = [
+    challenge.challengeTemplate?.question || 'Untitled challenge',
+    challenge.proficiency || challenge.challengeTemplate?.proficiency || null,
+    challenge.challengeTemplate?.submissionType || null,
+  ].filter(Boolean);
+  return parts.join(' · ');
+};
+
 export const MainStoryTemplates = () => {
   const { apiClient } = useAPI();
+  const { questArchetypes, locationArchetypes } = useQuestArchetypes();
   const [templates, setTemplates] = useState<MainStoryTemplate[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [runs, setRuns] = useState<MainStoryDistrictRun[]>([]);
+  const [monsterTemplates, setMonsterTemplates] = useState<
+    MonsterTemplateSummary[]
+  >([]);
+  const [scenarioTemplates, setScenarioTemplates] = useState<
+    ScenarioTemplateSummary[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -66,6 +203,16 @@ export const MainStoryTemplates = () => {
   const [instantiatingTemplateId, setInstantiatingTemplateId] = useState<
     string | null
   >(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(
+    null
+  );
+  const [editingTemplate, setEditingTemplate] = useState<
+    MainStoryTemplate | 'new' | null
+  >(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [expandedBeatKeys, setExpandedBeatKeys] = useState<string[]>([]);
 
   const districtsById = useMemo(() => {
     const map = new Map<string, District>();
@@ -84,6 +231,177 @@ export const MainStoryTemplates = () => {
     });
     return map;
   }, [runs]);
+
+  const questArchetypesById = useMemo(() => {
+    const map = new Map<string, QuestArchetype>();
+    questArchetypes.forEach((archetype) => {
+      map.set(archetype.id, archetype);
+    });
+    return map;
+  }, [questArchetypes]);
+
+  const locationArchetypesById = useMemo(() => {
+    const map = new Map<string, LocationArchetype>();
+    locationArchetypes.forEach((archetype) => {
+      map.set(archetype.id, archetype);
+    });
+    return map;
+  }, [locationArchetypes]);
+
+  const monsterTemplatesById = useMemo(() => {
+    const map = new Map<string, MonsterTemplateSummary>();
+    monsterTemplates.forEach((template) => {
+      map.set(template.id, template);
+    });
+    return map;
+  }, [monsterTemplates]);
+
+  const scenarioTemplatesById = useMemo(() => {
+    const map = new Map<string, ScenarioTemplateSummary>();
+    scenarioTemplates.forEach((template) => {
+      map.set(template.id, template);
+    });
+    return map;
+  }, [scenarioTemplates]);
+
+  const toggleBeatExpanded = useCallback((beatKey: string) => {
+    setExpandedBeatKeys((current) =>
+      current.includes(beatKey)
+        ? current.filter((key) => key !== beatKey)
+        : [...current, beatKey]
+    );
+  }, []);
+
+  const renderQuestArchetypeNode = useCallback(
+    (node: QuestArchetypeNode | null | undefined, depth = 0): React.ReactNode => {
+      if (!node) {
+        return null;
+      }
+
+      const nodeSummary = describeQuestArchetypeNode(
+        node,
+        locationArchetypesById,
+        monsterTemplatesById,
+        scenarioTemplatesById
+      );
+      const scenarioPrompt =
+        node.scenarioTemplateId &&
+        scenarioTemplatesById.get(node.scenarioTemplateId)?.prompt;
+      const monsterNames = (node.monsterTemplateIds ?? [])
+        .map((templateId) => monsterTemplatesById.get(templateId)?.name)
+        .filter(Boolean) as string[];
+      const locationName =
+        node.locationArchetypeId &&
+        locationArchetypesById.get(node.locationArchetypeId)?.name;
+
+      return (
+        <div
+          key={node.id}
+          className="qa-flow-node"
+          style={{
+            borderColor:
+              depth % 2 === 0
+                ? 'rgba(255, 107, 74, 0.32)'
+                : 'rgba(95, 211, 181, 0.28)',
+            marginTop: depth === 0 ? 0 : 12,
+          }}
+        >
+          <div className="qa-flow-node-card">
+            <div className="qa-flow-node-header">
+              <div>
+                <div className="qa-flow-node-title">
+                  {questArchetypeNodeTypeLabel(node.nodeType)} Node
+                </div>
+                <div className="qa-meta" style={{ marginTop: 4 }}>
+                  {nodeSummary}
+                </div>
+              </div>
+              <div className="qa-actions">
+                <span className="qa-chip muted">
+                  {node.challenges?.length ?? 0} branch
+                  {(node.challenges?.length ?? 0) === 1 ? '' : 'es'}
+                </span>
+                {node.targetLevel ? (
+                  <span className="qa-chip muted">Lvl {node.targetLevel}</span>
+                ) : null}
+                {node.encounterProximityMeters ? (
+                  <span className="qa-chip muted">
+                    {node.encounterProximityMeters}m
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {locationName ? (
+                <div className="qa-meta">
+                  <strong>Location:</strong> {locationName}
+                </div>
+              ) : null}
+              {scenarioPrompt ? (
+                <div className="qa-meta">
+                  <strong>Scenario:</strong> {scenarioPrompt}
+                </div>
+              ) : null}
+              {monsterNames.length > 0 ? (
+                <div className="qa-meta">
+                  <strong>Monsters:</strong> {monsterNames.join(', ')}
+                </div>
+              ) : null}
+            </div>
+
+            {(node.challenges?.length ?? 0) > 0 ? (
+              <div className="qa-flow-challenges" style={{ marginTop: 14 }}>
+                {node.challenges.map((challenge) => (
+                  <div key={challenge.id} className="qa-flow-challenge-card">
+                    <div className="qa-flow-challenge-header">
+                      <div>
+                        <div className="qa-flow-challenge-title">
+                          {challenge.challengeTemplate?.question ||
+                            'Challenge branch'}
+                        </div>
+                        <div className="qa-meta" style={{ marginTop: 4 }}>
+                          {describeQuestArchetypeChallenge(challenge)}
+                        </div>
+                      </div>
+                    </div>
+                    {challenge.challengeTemplate?.description ? (
+                      <div className="qa-meta" style={{ marginTop: 10 }}>
+                        {challenge.challengeTemplate.description}
+                      </div>
+                    ) : null}
+                    {challenge.unlockedNode ? (
+                      <div className="qa-flow-branch" style={{ marginTop: 12 }}>
+                        <div className="qa-flow-branch-label">
+                          Unlocks next node
+                        </div>
+                        {renderQuestArchetypeNode(challenge.unlockedNode, depth + 1)}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="qa-meta" style={{ marginTop: 12 }}>
+                No challenge branches on this node.
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    },
+    [
+      locationArchetypesById,
+      monsterTemplatesById,
+      scenarioTemplatesById,
+    ]
+  );
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -124,6 +442,36 @@ export const MainStoryTemplates = () => {
   useEffect(() => {
     void loadPage();
   }, [loadPage]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadReferenceData = async () => {
+      try {
+        const [monsterResponse, scenarioResponse] = await Promise.all([
+          apiClient.get<{ items: MonsterTemplateSummary[] }>(
+            '/sonar/admin/monster-templates?page=1&pageSize=500'
+          ),
+          apiClient.get<{ items: ScenarioTemplateSummary[] }>(
+            '/sonar/admin/scenario-templates?page=1&pageSize=500'
+          ),
+        ]);
+        if (!active) {
+          return;
+        }
+        setMonsterTemplates(monsterResponse.items ?? []);
+        setScenarioTemplates(scenarioResponse.items ?? []);
+      } catch (error) {
+        console.error('Failed to load main story template reference data', error);
+      }
+    };
+
+    void loadReferenceData();
+
+    return () => {
+      active = false;
+    };
+  }, [apiClient]);
 
   useEffect(() => {
     const hasPendingRuns = runs.some((run) => isPendingStatus(run.status));
@@ -170,6 +518,137 @@ export const MainStoryTemplates = () => {
     }
   };
 
+  const handleRetryRun = async (run: MainStoryDistrictRun) => {
+    const confirmed = window.confirm(
+      'Retry this run from its first failed beat onward? Completed earlier beats will be kept, and the failed beat will be re-attempted in a different zone first when possible.'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setRetryingRunId(run.id);
+    setActionError(null);
+    try {
+      const retried = await apiClient.post<MainStoryDistrictRun>(
+        `/sonar/mainStoryDistrictRuns/${run.id}/retry`,
+        {}
+      );
+      setRuns((current) =>
+        current.map((candidate) =>
+          candidate.id === retried.id ? retried : candidate
+        )
+      );
+      if (retried.status === 'failed' && retried.errorMessage) {
+        setActionError(retried.errorMessage);
+      }
+    } catch (error) {
+      console.error('Failed to retry main story district run', error);
+      setActionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to retry that district run.'
+        )
+      );
+    } finally {
+      setRetryingRunId(null);
+    }
+  };
+
+  const handleDeleteRun = async (run: MainStoryDistrictRun) => {
+    const confirmed = window.confirm(
+      'Clean up this run and delete its live quests plus generated questgiver characters?'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingRunId(run.id);
+    setActionError(null);
+    try {
+      await apiClient.delete(`/sonar/mainStoryDistrictRuns/${run.id}`);
+      setRuns((current) => current.filter((candidate) => candidate.id !== run.id));
+    } catch (error) {
+      console.error('Failed to delete main story district run', error);
+      setActionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to clean up that district run.'
+        )
+      );
+    } finally {
+      setDeletingRunId(null);
+    }
+  };
+
+  const handleDeleteTemplate = async (
+    template: MainStoryTemplate,
+    templateRuns: MainStoryDistrictRun[]
+  ) => {
+    if (templateRuns.length > 0) {
+      setActionError(
+        'Clean up this template’s district runs before deleting the template itself.'
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Delete this main story template and its converted artifacts? This will remove the template, its generated quest archetypes, linked story-world changes, generated recurring cast, and reset the source draft so it can be converted again later.'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingTemplateId(template.id);
+    setActionError(null);
+    try {
+      await apiClient.delete(`/sonar/mainStoryTemplates/${template.id}`);
+      setTemplates((current) =>
+        current.filter((candidate) => candidate.id !== template.id)
+      );
+      setRuns((current) =>
+        current.filter((run) => run.mainStoryTemplateId !== template.id)
+      );
+    } catch (error) {
+      console.error('Failed to delete main story template', error);
+      setActionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to delete that main story template.'
+        )
+      );
+    } finally {
+      setDeletingTemplateId(null);
+    }
+  };
+
+  const handleSaveTemplate = async (template: MainStoryTemplate) => {
+    setSavingTemplate(true);
+    setActionError(null);
+    try {
+      const saved = template.id
+        ? await apiClient.patch<MainStoryTemplate>(
+            `/sonar/mainStoryTemplates/${template.id}`,
+            template
+          )
+        : await apiClient.post<MainStoryTemplate>('/sonar/mainStoryTemplates', template);
+      setTemplates((current) => {
+        const remaining = current.filter((entry) => entry.id !== saved.id);
+        return [saved, ...remaining];
+      });
+      setEditingTemplate(null);
+    } catch (error) {
+      console.error('Failed to save main story template', error);
+      setActionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to save that main story template.'
+        )
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   return (
     <div className="qa-theme">
       <div className="qa-shell">
@@ -187,6 +666,13 @@ export const MainStoryTemplates = () => {
             <Link to="/main-story-generator" className="qa-btn qa-btn-outline">
               Back to Generator
             </Link>
+            <button
+              type="button"
+              className="qa-btn qa-btn-outline"
+              onClick={() => setEditingTemplate('new')}
+            >
+              New Template
+            </button>
             <button
               type="button"
               className="qa-btn qa-btn-primary"
@@ -250,6 +736,33 @@ export const MainStoryTemplates = () => {
                       <span className="qa-chip muted">
                         Updated {formatDate(template.updatedAt)}
                       </span>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => setEditingTemplate(template)}
+                      >
+                        Edit Template
+                      </button>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-danger"
+                        onClick={() =>
+                          void handleDeleteTemplate(template, templateRuns)
+                        }
+                        disabled={
+                          deletingTemplateId === template.id ||
+                          templateRuns.length > 0
+                        }
+                        title={
+                          templateRuns.length > 0
+                            ? 'Clean up all district runs for this template before deleting it.'
+                            : undefined
+                        }
+                      >
+                        {deletingTemplateId === template.id
+                          ? 'Deleting...'
+                          : 'Delete Template'}
+                      </button>
                     </div>
                   </div>
 
@@ -352,9 +865,22 @@ export const MainStoryTemplates = () => {
                     </div>
                   </div>
                   <div className="qa-tree">
-                    {template.beats.map((beat) => (
-                      <div className="qa-node" key={`${template.id}-${beat.orderIndex}`}>
-                        <div className="qa-node-card">
+                    {template.beats.map((beat) => {
+                      const beatKey = `${template.id}-${beat.orderIndex}`;
+                      const isExpanded = expandedBeatKeys.includes(beatKey);
+                      const questArchetype = beat.questArchetypeId
+                        ? questArchetypesById.get(beat.questArchetypeId) ?? null
+                        : null;
+                      return (
+                      <div className="qa-node" key={beatKey}>
+                        <div
+                          className="qa-node-card"
+                          style={{
+                            background: isExpanded
+                              ? 'linear-gradient(180deg, rgba(18, 30, 37, 0.92), rgba(10, 18, 23, 0.92))'
+                              : undefined,
+                          }}
+                        >
                           <div className="qa-card-header">
                             <div>
                               <div className="qa-node-title">
@@ -376,11 +902,123 @@ export const MainStoryTemplates = () => {
                                   {beat.questGiverCharacterName}
                                 </span>
                               ) : null}
+                              <button
+                                type="button"
+                                className="qa-btn qa-btn-outline"
+                                onClick={() => toggleBeatExpanded(beatKey)}
+                              >
+                                {isExpanded ? 'Hide Archetype Details' : 'Show Archetype Details'}
+                              </button>
                             </div>
                           </div>
+                          {isExpanded && (
+                            <div style={{ marginTop: 16 }}>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns:
+                                    'repeat(auto-fit, minmax(180px, 1fr))',
+                                  gap: 12,
+                                }}
+                              >
+                                <div className="qa-stat">
+                                  <div className="qa-stat-label">Archetype</div>
+                                  <div className="qa-stat-value">
+                                    {questArchetype?.name ||
+                                      beat.questArchetypeName ||
+                                      'Not resolved'}
+                                  </div>
+                                </div>
+                                <div className="qa-stat">
+                                  <div className="qa-stat-label">Category</div>
+                                  <div className="qa-stat-value">
+                                    {questArchetype?.category || 'n/a'}
+                                  </div>
+                                </div>
+                                <div className="qa-stat">
+                                  <div className="qa-stat-label">Flow</div>
+                                  <div className="qa-stat-value">
+                                    {summarizeQuestArchetypeRoot(questArchetype)}
+                                  </div>
+                                </div>
+                                <div className="qa-stat">
+                                  <div className="qa-stat-label">Scale</div>
+                                  <div className="qa-stat-value">
+                                    {countQuestArchetypeNodes(questArchetype)} nodes ·{' '}
+                                    {countQuestArchetypeChallenges(questArchetype)} challenges
+                                  </div>
+                                </div>
+                              </div>
+
+                              {questArchetype?.description && (
+                                <div className="qa-meta" style={{ marginTop: 14 }}>
+                                  {questArchetype.description}
+                                </div>
+                              )}
+
+                              {questArchetype &&
+                              ((questArchetype.acceptanceDialogue ?? []).length > 0 ||
+                                (questArchetype.characterTags ?? []).length > 0 ||
+                                (questArchetype.internalTags ?? []).length > 0) ? (
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gap: 10,
+                                    marginTop: 14,
+                                  }}
+                                >
+                                  {(questArchetype.acceptanceDialogue ?? []).length > 0 && (
+                                    <div className="qa-meta">
+                                      <strong>Acceptance Dialogue:</strong>{' '}
+                                      {(questArchetype.acceptanceDialogue ?? [])
+                                        .map((line) =>
+                                          line.effect
+                                            ? `${line.text} (${line.effect})`
+                                            : line.text
+                                        )
+                                        .join(' / ')}
+                                    </div>
+                                  )}
+                                  {(questArchetype.characterTags ?? []).length > 0 && (
+                                    <div className="qa-meta">
+                                      <strong>Character Tags:</strong>{' '}
+                                      {(questArchetype.characterTags ?? []).join(', ')}
+                                    </div>
+                                  )}
+                                  {(questArchetype.internalTags ?? []).length > 0 && (
+                                    <div className="qa-meta">
+                                      <strong>Internal Tags:</strong>{' '}
+                                      {(questArchetype.internalTags ?? []).join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {questArchetype?.root ? (
+                                <>
+                                  <div className="qa-divider" style={{ margin: '16px 0' }} />
+                                  <div className="qa-card-header">
+                                    <div>
+                                      <h4
+                                        className="qa-card-title"
+                                        style={{ fontSize: 16 }}
+                                      >
+                                        Quest Flow
+                                      </h4>
+                                      <div className="qa-meta">
+                                        Every node and unlocked branch in this beat’s
+                                        quest archetype.
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {renderQuestArchetypeNode(questArchetype.root)}
+                                </>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
 
                   <div className="qa-divider" />
@@ -434,6 +1072,36 @@ export const MainStoryTemplates = () => {
                                 {run.errorMessage}
                               </div>
                             ) : null}
+                            <div className="qa-actions" style={{ marginTop: 14 }}>
+                              {run.status === 'failed' ? (
+                                <button
+                                  type="button"
+                                  className="qa-btn qa-btn-primary"
+                                  onClick={() => void handleRetryRun(run)}
+                                  disabled={retryingRunId === run.id}
+                                >
+                                  {retryingRunId === run.id
+                                    ? 'Retrying...'
+                                    : 'Retry Run'}
+                                </button>
+                              ) : null}
+                              <Link
+                                to={`/main-story-district-runs/${run.id}`}
+                                className="qa-btn qa-btn-outline"
+                              >
+                                View Run
+                              </Link>
+                              <button
+                                type="button"
+                                className="qa-btn qa-btn-danger"
+                                onClick={() => void handleDeleteRun(run)}
+                                disabled={deletingRunId === run.id}
+                              >
+                                {deletingRunId === run.id
+                                  ? 'Cleaning Up...'
+                                  : 'Clean Up Run'}
+                              </button>
+                            </div>
                             <div className="qa-tree" style={{ marginTop: 14 }}>
                               {(run.beatRuns || []).map((beatRun) => (
                                 <div className="qa-node" key={`${run.id}-${beatRun.orderIndex}`}>
@@ -488,6 +1156,16 @@ export const MainStoryTemplates = () => {
           )}
         </section>
       </div>
+      {editingTemplate !== null && (
+        <MainStoryTemplateEditor
+          initialTemplate={editingTemplate === 'new' ? null : editingTemplate}
+          questArchetypes={questArchetypes}
+          locationArchetypes={locationArchetypes}
+          saving={savingTemplate}
+          onCancel={() => setEditingTemplate(null)}
+          onSave={handleSaveTemplate}
+        />
+      )}
     </div>
   );
 };

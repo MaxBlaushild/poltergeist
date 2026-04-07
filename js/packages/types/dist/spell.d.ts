@@ -16,6 +16,28 @@ export interface SpellStatusTemplate {
     intelligenceMod: number;
     wisdomMod: number;
     charismaMod: number;
+    physicalDamageBonusPercent?: number;
+    piercingDamageBonusPercent?: number;
+    slashingDamageBonusPercent?: number;
+    bludgeoningDamageBonusPercent?: number;
+    fireDamageBonusPercent?: number;
+    iceDamageBonusPercent?: number;
+    lightningDamageBonusPercent?: number;
+    poisonDamageBonusPercent?: number;
+    arcaneDamageBonusPercent?: number;
+    holyDamageBonusPercent?: number;
+    shadowDamageBonusPercent?: number;
+    physicalResistancePercent?: number;
+    piercingResistancePercent?: number;
+    slashingResistancePercent?: number;
+    bludgeoningResistancePercent?: number;
+    fireResistancePercent?: number;
+    iceResistancePercent?: number;
+    lightningResistancePercent?: number;
+    poisonResistancePercent?: number;
+    arcaneResistancePercent?: number;
+    holyResistancePercent?: number;
+    shadowResistancePercent?: number;
 }
 export interface SpellEffect {
     type: SpellEffectType;

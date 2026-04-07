@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Character struct {
@@ -29,6 +30,16 @@ type Character struct {
 
 func (n *Character) TableName() string {
 	return "characters"
+}
+
+func (n *Character) BeforeSave(tx *gorm.DB) error {
+	if n.InternalTags == nil {
+		n.InternalTags = StringArray{}
+	}
+	if n.StoryVariants == nil {
+		n.StoryVariants = CharacterStoryVariants{}
+	}
+	return nil
 }
 
 const (

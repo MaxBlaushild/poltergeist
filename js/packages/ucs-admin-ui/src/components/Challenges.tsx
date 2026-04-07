@@ -14,6 +14,7 @@ import {
   MaterialRewardForm,
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import { useSearchParams } from 'react-router-dom';
 
 type ChallengeRecord = {
   id: string;
@@ -427,6 +428,7 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 export const Challenges = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
@@ -467,6 +469,22 @@ export const Challenges = () => {
     new Set()
   );
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
+  const didHydrateDeepLinkedChallengeRef = React.useRef(false);
+  const deepLinkedChallengeId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedChallengeId = useCallback((challengeId?: string | null) => {
+    const normalizedChallengeId = (challengeId ?? '').trim();
+    const currentChallengeId = searchParams.get('id')?.trim() ?? '';
+    if (normalizedChallengeId === currentChallengeId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (normalizedChallengeId) {
+      next.set('id', normalizedChallengeId);
+    } else {
+      next.delete('id');
+    }
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
@@ -769,6 +787,44 @@ export const Challenges = () => {
     setForm(formFromRecord(record));
     setShowModal(true);
   };
+
+  useEffect(() => {
+    if (didHydrateDeepLinkedChallengeRef.current) {
+      return;
+    }
+    if (!deepLinkedChallengeId) {
+      didHydrateDeepLinkedChallengeRef.current = true;
+      return;
+    }
+    if (editingChallenge?.id === deepLinkedChallengeId && showModal) {
+      didHydrateDeepLinkedChallengeRef.current = true;
+      return;
+    }
+    void apiClient
+      .get<ChallengeRecord>(`/sonar/challenges/${deepLinkedChallengeId}`)
+      .then((record) => {
+        if (!record) {
+          didHydrateDeepLinkedChallengeRef.current = true;
+          return;
+        }
+        setRecords((prev) => {
+          const withoutExisting = prev.filter((entry) => entry.id !== record.id);
+          return [record, ...withoutExisting];
+        });
+        openEdit(record);
+      })
+      .catch((error) => {
+        console.error('Failed to deep link challenge', error);
+        didHydrateDeepLinkedChallengeRef.current = true;
+      });
+  }, [apiClient, deepLinkedChallengeId, editingChallenge, showModal]);
+
+  useEffect(() => {
+    if (!didHydrateDeepLinkedChallengeRef.current) {
+      return;
+    }
+    replaceDeepLinkedChallengeId(showModal ? editingChallenge?.id ?? null : null);
+  }, [editingChallenge, replaceDeepLinkedChallengeId, showModal]);
 
   const closeModal = () => {
     setShowModal(false);

@@ -496,9 +496,15 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/mainStorySuggestionDrafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertMainStorySuggestionDraft))
 	r.DELETE("/sonar/mainStorySuggestionDrafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStorySuggestionDraft))
 	r.GET("/sonar/mainStoryTemplates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplates))
+	r.POST("/sonar/mainStoryTemplates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStoryTemplate))
 	r.GET("/sonar/mainStoryTemplates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryTemplate))
+	r.PATCH("/sonar/mainStoryTemplates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMainStoryTemplate))
+	r.DELETE("/sonar/mainStoryTemplates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStoryTemplate))
 	r.GET("/sonar/mainStoryDistrictRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryDistrictRuns))
+	r.GET("/sonar/mainStoryDistrictRuns/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryDistrictRun))
 	r.POST("/sonar/mainStoryTemplates/:id/districtRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStoryDistrictRun))
+	r.POST("/sonar/mainStoryDistrictRuns/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryMainStoryDistrictRun))
+	r.DELETE("/sonar/mainStoryDistrictRuns/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStoryDistrictRun))
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
@@ -3269,7 +3275,7 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		Description                   string                              `json:"description"`
 		Category                      string                              `json:"category"`
 		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue            []string                            `json:"acceptanceDialogue"`
+		AcceptanceDialogue            []models.DialogueMessage            `json:"acceptanceDialogue"`
 		ImageURL                      string                              `json:"imageUrl"`
 		DefaultGold                   *int                                `json:"defaultGold"`
 		DifficultyMode                string                              `json:"difficultyMode"`
@@ -3822,7 +3828,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		Name                          string                             `json:"name"`
 		Description                   string                             `json:"description"`
 		Category                      string                             `json:"category"`
-		AcceptanceDialogue            []string                           `json:"acceptanceDialogue"`
+		AcceptanceDialogue            []models.DialogueMessage           `json:"acceptanceDialogue"`
 		ImageURL                      string                             `json:"imageUrl"`
 		ZoneID                        *uuid.UUID                         `json:"zoneId"`
 		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
@@ -3892,10 +3898,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		return
 	}
 
-	acceptanceDialogue := models.StringArray(requestBody.AcceptanceDialogue)
-	if acceptanceDialogue == nil {
-		acceptanceDialogue = models.StringArray{}
-	}
+	acceptanceDialogue := models.DialogueSequence(requestBody.AcceptanceDialogue)
 
 	now := time.Now()
 	category := models.NormalizeQuestCategory(requestBody.Category)
@@ -4045,7 +4048,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		Name                          string                             `json:"name"`
 		Description                   string                             `json:"description"`
 		Category                      string                             `json:"category"`
-		AcceptanceDialogue            *[]string                          `json:"acceptanceDialogue"`
+		AcceptanceDialogue            *[]models.DialogueMessage          `json:"acceptanceDialogue"`
 		ImageURL                      string                             `json:"imageUrl"`
 		ZoneID                        *uuid.UUID                         `json:"zoneId"`
 		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
@@ -4127,7 +4130,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		quest.Category = models.NormalizeQuestCategory(requestBody.Category)
 	}
 	if requestBody.AcceptanceDialogue != nil {
-		quest.AcceptanceDialogue = models.StringArray(*requestBody.AcceptanceDialogue)
+		quest.AcceptanceDialogue = models.DialogueSequence(*requestBody.AcceptanceDialogue)
 	}
 	quest.ImageURL = requestBody.ImageURL
 	quest.ZoneID = requestBody.ZoneID
@@ -4483,7 +4486,7 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		Description                   string                              `json:"description"`
 		Category                      string                              `json:"category"`
 		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue            []string                            `json:"acceptanceDialogue"`
+		AcceptanceDialogue            []models.DialogueMessage            `json:"acceptanceDialogue"`
 		ImageURL                      string                              `json:"imageUrl"`
 		RootID                        uuid.UUID                           `json:"rootID"`
 		DefaultGold                   *int                                `json:"defaultGold"`

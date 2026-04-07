@@ -1,6 +1,7 @@
 import 'inventory_item.dart';
 import 'quest_node.dart';
 import 'spell.dart';
+import 'character_action.dart';
 
 class QuestItemReward {
   final int inventoryItemId;
@@ -74,7 +75,7 @@ class Quest {
   final String name;
   final String description;
   final String category;
-  final List<String> acceptanceDialogue;
+  final List<DialogueMessage> acceptanceDialogue;
   final String? imageUrl;
   final String rewardMode;
   final String randomRewardSize;
@@ -133,9 +134,22 @@ class Quest {
       description: json['description'] as String? ?? '',
       category: json['category']?.toString() ?? categorySide,
       acceptanceDialogue:
-          (json['acceptanceDialogue'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
+          (json['acceptanceDialogue'] as List<dynamic>?)?.asMap().entries.map((
+            entry,
+          ) {
+            final value = entry.value;
+            if (value is Map<String, dynamic>) {
+              return DialogueMessage.fromJson(value);
+            }
+            if (value is Map) {
+              return DialogueMessage.fromJson(Map<String, dynamic>.from(value));
+            }
+            return DialogueMessage(
+              speaker: 'character',
+              text: value.toString(),
+              order: entry.key,
+            );
+          }).toList() ??
           const [],
       imageUrl: json['imageUrl'] as String?,
       rewardMode: json['rewardMode']?.toString() ?? rewardModeRandom,

@@ -1941,14 +1941,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
 
-    final dialogue = <DialogueMessage>[
-      for (int index = 0; index < status.dialogue.length; index++)
-        DialogueMessage(
-          speaker: 'character',
-          text: status.dialogue[index],
-          order: index,
-        ),
-    ];
+    final dialogue = List<DialogueMessage>.from(status.dialogue)
+      ..sort((a, b) => a.order.compareTo(b.order));
     final action = CharacterAction(
       id: 'tutorial-welcome',
       createdAt: '',

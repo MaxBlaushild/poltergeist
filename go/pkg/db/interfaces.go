@@ -241,6 +241,7 @@ type StoryWorldChangeHandle interface {
 	CreateBatch(ctx context.Context, changes []models.StoryWorldChange) error
 	FindAll(ctx context.Context) ([]models.StoryWorldChange, error)
 	FindByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.StoryWorldChange, error)
+	DeleteByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) error
 }
 
 type SocialAccountHandle interface {
@@ -710,6 +711,8 @@ type QuestArchetypeHandle interface {
 	FindAll(ctx context.Context) ([]*models.QuestArchetype, error)
 	Update(ctx context.Context, questArchetype *models.QuestArchetype) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	DeletePermanent(ctx context.Context, id uuid.UUID) error
+	ClearQuestGiverCharacterIDByCharacterID(ctx context.Context, characterID uuid.UUID) error
 }
 
 type QuestArchetypeSuggestionJobHandle interface {
@@ -732,6 +735,7 @@ type MainStoryTemplateHandle interface {
 	Update(ctx context.Context, template *models.MainStoryTemplate) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStoryTemplate, error)
 	FindAll(ctx context.Context) ([]models.MainStoryTemplate, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type MainStorySuggestionJobHandle interface {
@@ -746,6 +750,7 @@ type MainStorySuggestionDraftHandle interface {
 	Update(ctx context.Context, draft *models.MainStorySuggestionDraft) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStorySuggestionDraft, error)
 	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.MainStorySuggestionDraft, error)
+	FindByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.MainStorySuggestionDraft, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -755,6 +760,7 @@ type MainStoryDistrictRunHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MainStoryDistrictRun, error)
 	FindAll(ctx context.Context) ([]models.MainStoryDistrictRun, error)
 	FindByMainStoryTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.MainStoryDistrictRun, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type QuestArchetypeNodeHandle interface {

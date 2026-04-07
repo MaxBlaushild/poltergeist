@@ -71,7 +71,7 @@ type Quest struct {
 	Name                     string                  `json:"name"`
 	Description              string                  `json:"description"`
 	Category                 string                  `json:"category"`
-	AcceptanceDialogue       []string                `json:"acceptanceDialogue,omitempty"`
+	AcceptanceDialogue       []models.DialogueMessage `json:"acceptanceDialogue,omitempty"`
 	ImageUrl                 string                  `json:"imageUrl"`
 	RewardMode               models.RewardMode       `json:"rewardMode"`
 	RandomRewardSize         models.RandomRewardSize `json:"randomRewardSize"`
@@ -216,7 +216,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			Name:                     quest.Name,
 			Description:              quest.Description,
 			Category:                 quest.Category,
-			AcceptanceDialogue:       []string(quest.AcceptanceDialogue),
+			AcceptanceDialogue:       []models.DialogueMessage(quest.AcceptanceDialogue),
 			ImageUrl:                 quest.ImageURL,
 			RewardMode:               quest.RewardMode,
 			RandomRewardSize:         quest.RandomRewardSize,

@@ -2,6 +2,7 @@ import { InventoryItem } from './inventoryItem';
 import { QuestDifficultyMode } from './questDifficulty';
 import { QuestNode } from './questNode';
 import { Spell } from './spell';
+import type { DialogueMessage } from './characterAction';
 export interface QuestItemReward {
     id?: string;
     questId?: string;
@@ -19,6 +20,12 @@ export interface QuestMaterialReward {
     resourceKey: string;
     amount: number;
 }
+export interface CharacterRelationshipState {
+    trust?: number;
+    respect?: number;
+    fear?: number;
+    debt?: number;
+}
 export interface Quest {
     id: string;
     createdAt: string;
@@ -27,11 +34,14 @@ export interface Quest {
     detailLoaded?: boolean;
     name: string;
     description: string;
-    acceptanceDialogue?: string[];
+    category?: 'side' | 'main_story';
+    acceptanceDialogue?: DialogueMessage[];
     imageUrl?: string;
     zoneId?: string | null;
     questArchetypeId?: string | null;
     questGiverCharacterId?: string | null;
+    mainStoryPreviousQuestId?: string | null;
+    mainStoryNextQuestId?: string | null;
     recurringQuestId?: string | null;
     recurrenceFrequency?: string | null;
     nextRecurrenceAt?: string | null;
@@ -44,6 +54,10 @@ export interface Quest {
     rewardExperience?: number;
     gold?: number;
     materialRewards?: QuestMaterialReward[];
+    requiredStoryFlags?: string[];
+    setStoryFlags?: string[];
+    clearStoryFlags?: string[];
+    questGiverRelationshipEffects?: CharacterRelationshipState;
     itemRewards?: QuestItemReward[];
     spellRewards?: QuestSpellReward[];
     nodes?: QuestNode[];

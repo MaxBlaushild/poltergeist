@@ -326,14 +326,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
     CharacterAction action,
   ) {
     final questLines = (quest?.acceptanceDialogue ?? const [])
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
+        .where((line) => line.text.trim().isNotEmpty)
         .toList();
     if (questLines.isNotEmpty) {
-      return [
-        for (var i = 0; i < questLines.length; i++)
-          DialogueMessage(speaker: 'character', text: questLines[i], order: i),
-      ];
+      return questLines;
     }
 
     if (action.dialogue.isNotEmpty) {
@@ -341,14 +337,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
 
     final actionLines = action.questAcceptanceDialogue
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
+        .where((line) => line.text.trim().isNotEmpty)
         .toList();
     if (actionLines.isNotEmpty) {
-      return [
-        for (var i = 0; i < actionLines.length; i++)
-          DialogueMessage(speaker: 'character', text: actionLines[i], order: i),
-      ];
+      return actionLines;
     }
 
     final fallback =

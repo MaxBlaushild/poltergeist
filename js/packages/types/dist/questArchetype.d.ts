@@ -1,8 +1,10 @@
 import { InventoryItem } from './inventoryItem';
 import { LocationArchetype } from './locationArchetype';
 import { QuestDifficultyMode } from './questDifficulty';
-import { QuestMaterialReward } from './quest';
+import { CharacterRelationshipState, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
+import { Character } from './character';
+import type { DialogueMessage } from './characterAction';
 export interface QuestArchetypeChallenge {
     id: string;
     createdAt: Date;
@@ -57,7 +59,10 @@ export interface QuestArchetype {
     id: string;
     name: string;
     description: string;
-    acceptanceDialogue?: string[];
+    category?: 'side' | 'main_story';
+    questGiverCharacterId?: string | null;
+    questGiverCharacter?: Character | null;
+    acceptanceDialogue?: DialogueMessage[];
     imageUrl?: string;
     difficultyMode?: QuestDifficultyMode;
     difficulty?: number;
@@ -68,6 +73,10 @@ export interface QuestArchetype {
     rewardExperience?: number;
     recurrenceFrequency?: string | null;
     materialRewards?: QuestMaterialReward[];
+    requiredStoryFlags?: string[];
+    setStoryFlags?: string[];
+    clearStoryFlags?: string[];
+    questGiverRelationshipEffects?: CharacterRelationshipState;
     characterTags?: string[];
     internalTags?: string[];
     createdAt: Date;

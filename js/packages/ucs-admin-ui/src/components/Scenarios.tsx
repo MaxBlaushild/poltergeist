@@ -9,6 +9,7 @@ import React, {
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { PointOfInterest, Spell } from '@poltergeist/types';
+import { useSearchParams } from 'react-router-dom';
 import {
   MaterialRewardsEditor,
   MaterialRewardForm,
@@ -644,6 +645,7 @@ const staticStatusClassName = (status: string): string => {
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 export const Scenarios = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
@@ -735,6 +737,22 @@ export const Scenarios = () => {
   const generationLatitudeRef = React.useRef(generationForm.latitude);
   const generationLongitudeRef = React.useRef(generationForm.longitude);
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
+  const didHydrateDeepLinkedScenarioRef = React.useRef(false);
+  const deepLinkedScenarioId = searchParams.get('id')?.trim() ?? '';
+  const replaceDeepLinkedScenarioId = useCallback((scenarioId?: string | null) => {
+    const normalizedScenarioId = (scenarioId ?? '').trim();
+    const currentScenarioId = searchParams.get('id')?.trim() ?? '';
+    if (normalizedScenarioId === currentScenarioId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (normalizedScenarioId) {
+      next.set('id', normalizedScenarioId);
+    } else {
+      next.delete('id');
+    }
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const loadPointsOfInterestForZone = useCallback(
     async (zoneId: string) => {
@@ -1386,6 +1404,44 @@ export const Scenarios = () => {
     });
     setShowModal(true);
   };
+
+  useEffect(() => {
+    if (didHydrateDeepLinkedScenarioRef.current) {
+      return;
+    }
+    if (!deepLinkedScenarioId) {
+      didHydrateDeepLinkedScenarioRef.current = true;
+      return;
+    }
+    if (editingId === deepLinkedScenarioId && showModal) {
+      didHydrateDeepLinkedScenarioRef.current = true;
+      return;
+    }
+    void apiClient
+      .get<ScenarioRecord>(`/sonar/scenarios/${deepLinkedScenarioId}`)
+      .then((record) => {
+        if (!record) {
+          didHydrateDeepLinkedScenarioRef.current = true;
+          return;
+        }
+        setRecords((prev) => {
+          const withoutExisting = prev.filter((entry) => entry.id !== record.id);
+          return [record, ...withoutExisting];
+        });
+        openEdit(record);
+      })
+      .catch((error) => {
+        console.error('Failed to deep link scenario', error);
+        didHydrateDeepLinkedScenarioRef.current = true;
+      });
+  }, [apiClient, deepLinkedScenarioId, editingId, showModal]);
+
+  useEffect(() => {
+    if (!didHydrateDeepLinkedScenarioRef.current) {
+      return;
+    }
+    replaceDeepLinkedScenarioId(showModal ? editingId : null);
+  }, [editingId, replaceDeepLinkedScenarioId, showModal]);
 
   const closeModal = () => {
     setShowModal(false);

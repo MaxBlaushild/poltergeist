@@ -52,6 +52,20 @@ func (h *mainStorySuggestionDraftHandle) FindByJobID(ctx context.Context, jobID 
 	return drafts, nil
 }
 
+func (h *mainStorySuggestionDraftHandle) FindByMainStoryTemplateID(
+	ctx context.Context,
+	templateID uuid.UUID,
+) ([]models.MainStorySuggestionDraft, error) {
+	var drafts []models.MainStorySuggestionDraft
+	if err := h.preloadBase(ctx).
+		Where("main_story_template_id = ?", templateID).
+		Order("created_at ASC").
+		Find(&drafts).Error; err != nil {
+		return nil, err
+	}
+	return drafts, nil
+}
+
 func (h *mainStorySuggestionDraftHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.MainStorySuggestionDraft{}, "id = ?", id).Error
 }
