@@ -235,22 +235,25 @@ class _ScenarioPanelState extends State<ScenarioPanel>
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 10, 10),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (mysteryState)
-                    Text(
-                      'Mysterious Scenario',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      'SCENARIO',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                    )
-                  else
-                    const SizedBox.shrink(),
+                    ),
+                  ),
                   IconButton(
                     onPressed: widget.onClose,
                     icon: const Icon(Icons.close),
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 20,
                   ),
                 ],
               ),

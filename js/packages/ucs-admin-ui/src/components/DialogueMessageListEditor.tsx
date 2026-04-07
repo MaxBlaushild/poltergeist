@@ -51,6 +51,9 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
   allowSpeakerToggle = false,
 }) => {
   const messages = normalizeDialogueMessages(value ?? []);
+  const resolvedHelperText = helperText
+    ? `${helperText} Use {{username}} to insert the viewer's username.`
+    : "Use {{username}} to insert the viewer's username.";
 
   const commit = (next: DialogueMessage[]) => {
     onChange(normalizeDialogueMessages(next));
@@ -95,9 +98,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
           <label style={{ display: 'block', marginBottom: helperText ? '4px' : '6px', fontWeight: 500 }}>
             {label}
           </label>
-          {helperText ? (
-            <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{helperText}</p>
-          ) : null}
+          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{resolvedHelperText}</p>
         </div>
         <button
           type="button"

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
 import { Character, DialogueMessage, Spell } from '@poltergeist/types';
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
@@ -44,6 +44,9 @@ type TutorialConfigResponse = {
   characterId?: string | null;
   dialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
+  postMonsterDialogue?: DialogueMessage[];
+  baseKitDialogue?: DialogueMessage[];
+  postBaseDialogue?: DialogueMessage[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
   imageGenerationStatus?: string;
@@ -77,9 +80,13 @@ const statTagOptions: SelectOption[] = [
   { value: 'charisma', label: 'Charisma' },
 ];
 
-const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const createId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const makeItemRewardRow = (inventoryItemId = '', quantity = 1): TutorialItemRewardRow => ({
+const makeItemRewardRow = (
+  inventoryItemId = '',
+  quantity = 1
+): TutorialItemRewardRow => ({
   id: createId(),
   inventoryItemId,
   quantity,
@@ -110,12 +117,20 @@ const makeOptionRow = ({
 });
 
 const toItemRewardRows = (
-  input: Array<{ inventoryItemId?: number; quantity?: number }> | undefined,
+  input: Array<{ inventoryItemId?: number; quantity?: number }> | undefined
 ) =>
   Array.isArray(input)
     ? input
-        .filter((reward) => (reward.inventoryItemId ?? 0) > 0 && (reward.quantity ?? 0) > 0)
-        .map((reward) => makeItemRewardRow(String(reward.inventoryItemId), reward.quantity ?? 1))
+        .filter(
+          (reward) =>
+            (reward.inventoryItemId ?? 0) > 0 && (reward.quantity ?? 0) > 0
+        )
+        .map((reward) =>
+          makeItemRewardRow(
+            String(reward.inventoryItemId),
+            reward.quantity ?? 1
+          )
+        )
     : [];
 
 const toSpellRewardRows = (input: Array<{ spellId?: string }> | undefined) =>
@@ -152,7 +167,9 @@ const SearchableSelect = ({
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return options;
-    return options.filter((option) => option.label.toLowerCase().includes(normalized));
+    return options.filter((option) =>
+      option.label.toLowerCase().includes(normalized)
+    );
   }, [options, query]);
 
   return (
@@ -177,7 +194,9 @@ const SearchableSelect = ({
       {open && (
         <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
           {filtered.length === 0 && (
-            <div className="px-3 py-2 text-sm text-gray-500">No matches found</div>
+            <div className="px-3 py-2 text-sm text-gray-500">
+              No matches found
+            </div>
           )}
           {filtered.map((option) => (
             <button
@@ -203,59 +222,109 @@ const SearchableSelect = ({
 export const Tutorial = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
+  const hasLoadedConfigRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
   const [referenceDataLoading, setReferenceDataLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(null);
+  const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(
+    null
+  );
   const [characters, setCharacters] = useState<Character[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
-  const [monsterEncounters, setMonsterEncounters] = useState<Array<{ id: string; name: string }>>([]);
+  const [monsterEncounters, setMonsterEncounters] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [characterId, setCharacterId] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
+  const [postMonsterDialogue, setPostMonsterDialogue] = useState<
+    DialogueMessage[]
+  >([]);
+  const [baseKitDialogue, setBaseKitDialogue] = useState<DialogueMessage[]>([]);
+  const [postBaseDialogue, setPostBaseDialogue] = useState<DialogueMessage[]>(
+    []
+  );
   const [scenarioPrompt, setScenarioPrompt] = useState('');
   const [scenarioImageUrl, setScenarioImageUrl] = useState('');
   const [imageGenerationStatus, setImageGenerationStatus] = useState('none');
-  const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
+  const [imageGenerationError, setImageGenerationError] = useState<
+    string | null
+  >(null);
   const [options, setOptions] = useState<TutorialOptionRow[]>([]);
   const [monsterEncounterId, setMonsterEncounterId] = useState('');
   const [monsterRewardExperience, setMonsterRewardExperience] = useState(0);
   const [monsterRewardGold, setMonsterRewardGold] = useState(0);
-  const [monsterItemRewards, setMonsterItemRewards] = useState<TutorialItemRewardRow[]>([]);
+  const [monsterItemRewards, setMonsterItemRewards] = useState<
+    TutorialItemRewardRow[]
+  >([]);
   const imageGenerationActive =
-    imageGenerationStatus === 'queued' || imageGenerationStatus === 'in_progress';
+    imageGenerationStatus === 'queued' ||
+    imageGenerationStatus === 'in_progress';
 
   useEffect(() => {
+    if (hasLoadedConfigRef.current) {
+      return;
+    }
+
     const loadConfig = async () => {
       try {
         setLoading(true);
-        const config = await apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial');
+        const config = await apiClient.get<TutorialConfigResponse>(
+          '/sonar/admin/tutorial'
+        );
 
         const sharedItemRewards = toItemRewardRows(config.itemRewards);
         const sharedSpellRewards = toSpellRewardRows(config.spellRewards);
         const sharedRewardExperience =
-          typeof config.rewardExperience === 'number' ? config.rewardExperience : 0;
-        const sharedRewardGold = typeof config.rewardGold === 'number' ? config.rewardGold : 0;
+          typeof config.rewardExperience === 'number'
+            ? config.rewardExperience
+            : 0;
+        const sharedRewardGold =
+          typeof config.rewardGold === 'number' ? config.rewardGold : 0;
 
         setCharacterId(config.characterId ?? '');
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
-        setLoadoutDialogue(Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []);
+        setLoadoutDialogue(
+          Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
+        );
+        setPostMonsterDialogue(
+          Array.isArray(config.postMonsterDialogue)
+            ? config.postMonsterDialogue
+            : []
+        );
+        setBaseKitDialogue(
+          Array.isArray(config.baseKitDialogue) ? config.baseKitDialogue : []
+        );
+        setPostBaseDialogue(
+          Array.isArray(config.postBaseDialogue) ? config.postBaseDialogue : []
+        );
         setScenarioPrompt(config.scenarioPrompt ?? '');
         setScenarioImageUrl(config.scenarioImageUrl ?? '');
-        setImageGenerationStatus((config.imageGenerationStatus ?? 'none').trim() || 'none');
-        setImageGenerationError((config.imageGenerationError ?? '').trim() || null);
+        setImageGenerationStatus(
+          (config.imageGenerationStatus ?? 'none').trim() || 'none'
+        );
+        setImageGenerationError(
+          (config.imageGenerationError ?? '').trim() || null
+        );
         setMonsterEncounterId(config.monsterEncounterId ?? '');
         setMonsterRewardExperience(
-          typeof config.monsterRewardExperience === 'number' ? config.monsterRewardExperience : 0,
+          typeof config.monsterRewardExperience === 'number'
+            ? config.monsterRewardExperience
+            : 0
         );
-        setMonsterRewardGold(typeof config.monsterRewardGold === 'number' ? config.monsterRewardGold : 0);
+        setMonsterRewardGold(
+          typeof config.monsterRewardGold === 'number'
+            ? config.monsterRewardGold
+            : 0
+        );
         setMonsterItemRewards(toItemRewardRows(config.monsterItemRewards));
         setOptions(
           Array.isArray(config.options) && config.options.length > 0
             ? config.options.map((option) => {
-                const useLegacySharedRewards = optionNeedsLegacySharedRewards(option);
+                const useLegacySharedRewards =
+                  optionNeedsLegacySharedRewards(option);
                 return makeOptionRow({
                   optionText: option.optionText ?? '',
                   statTag: option.statTag ?? 'strength',
@@ -268,16 +337,24 @@ export const Tutorial = () => {
                     : Math.max(0, option.rewardGold ?? 0),
                   itemRewards: useLegacySharedRewards
                     ? sharedItemRewards.map((reward) =>
-                        makeItemRewardRow(reward.inventoryItemId, reward.quantity),
+                        makeItemRewardRow(
+                          reward.inventoryItemId,
+                          reward.quantity
+                        )
                       )
                     : toItemRewardRows(option.itemRewards),
                   spellRewards: useLegacySharedRewards
-                    ? sharedSpellRewards.map((reward) => makeSpellRewardRow(reward.spellId))
+                    ? sharedSpellRewards.map((reward) =>
+                        makeSpellRewardRow(reward.spellId)
+                      )
                     : toSpellRewardRows(option.spellRewards),
                 });
               })
             : [
-                makeOptionRow({ optionText: 'I reach for my sword and check it out.', statTag: 'strength' }),
+                makeOptionRow({
+                  optionText: 'I reach for my sword and check it out.',
+                  statTag: 'strength',
+                }),
                 makeOptionRow({
                   optionText: 'I reach for my shield and check it out.',
                   statTag: 'constitution',
@@ -286,8 +363,9 @@ export const Tutorial = () => {
                   optionText: 'I reach for my spellbook and check it out.',
                   statTag: 'intelligence',
                 }),
-              ],
+              ]
         );
+        hasLoadedConfigRef.current = true;
       } catch (error) {
         console.error('Failed to load tutorial config', error);
         setStatusMessage('Failed to load tutorial config.');
@@ -304,13 +382,14 @@ export const Tutorial = () => {
     const loadReferenceData = async () => {
       try {
         setReferenceDataLoading(true);
-        const [loadedCharacters, loadedSpells, loadedMonsterEncounters] = await Promise.all([
-          apiClient.get<Character[]>('/sonar/characters'),
-          apiClient.get<Spell[]>('/sonar/spells'),
-          apiClient.get<AdminMonsterEncounterListResponse>(
-            '/sonar/admin/monster-encounters?page=1&pageSize=250',
-          ),
-        ]);
+        const [loadedCharacters, loadedSpells, loadedMonsterEncounters] =
+          await Promise.all([
+            apiClient.get<Character[]>('/sonar/characters'),
+            apiClient.get<Spell[]>('/sonar/spells'),
+            apiClient.get<AdminMonsterEncounterListResponse>(
+              '/sonar/admin/monster-encounters?page=1&pageSize=250'
+            ),
+          ]);
 
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
         setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
@@ -322,11 +401,13 @@ export const Tutorial = () => {
                   id: encounter.id,
                   name: encounter.name,
                 }))
-            : [],
+            : []
         );
       } catch (error) {
         console.error('Failed to load tutorial reference data', error);
-        setStatusMessage('Tutorial loaded, but some selector data failed to load.');
+        setStatusMessage(
+          'Tutorial loaded, but some selector data failed to load.'
+        );
         setStatusKind('error');
       } finally {
         setReferenceDataLoading(false);
@@ -337,18 +418,30 @@ export const Tutorial = () => {
   }, [apiClient]);
 
   useEffect(() => {
-    if (imageGenerationStatus !== 'queued' && imageGenerationStatus !== 'in_progress') {
+    if (
+      imageGenerationStatus !== 'queued' &&
+      imageGenerationStatus !== 'in_progress'
+    ) {
       return undefined;
     }
 
     const intervalId = window.setInterval(async () => {
       try {
-        const config = await apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial');
+        const config = await apiClient.get<TutorialConfigResponse>(
+          '/sonar/admin/tutorial'
+        );
         setScenarioImageUrl(config.scenarioImageUrl ?? '');
-        setImageGenerationStatus((config.imageGenerationStatus ?? 'none').trim() || 'none');
-        setImageGenerationError((config.imageGenerationError ?? '').trim() || null);
+        setImageGenerationStatus(
+          (config.imageGenerationStatus ?? 'none').trim() || 'none'
+        );
+        setImageGenerationError(
+          (config.imageGenerationError ?? '').trim() || null
+        );
       } catch (error) {
-        console.error('Failed to refresh tutorial image generation status', error);
+        console.error(
+          'Failed to refresh tutorial image generation status',
+          error
+        );
       }
     }, 1500);
 
@@ -361,7 +454,7 @@ export const Tutorial = () => {
         value: character.id,
         label: character.name,
       })),
-    [characters],
+    [characters]
   );
 
   const itemOptions = useMemo(
@@ -370,7 +463,7 @@ export const Tutorial = () => {
         value: String(item.id),
         label: item.name,
       })),
-    [inventoryItems],
+    [inventoryItems]
   );
 
   const spellOptions = useMemo(
@@ -379,7 +472,7 @@ export const Tutorial = () => {
         value: spell.id,
         label: spell.name,
       })),
-    [spells],
+    [spells]
   );
 
   const monsterEncounterOptions = useMemo(
@@ -388,11 +481,15 @@ export const Tutorial = () => {
         value: encounter.id,
         label: encounter.name,
       })),
-    [monsterEncounters],
+    [monsterEncounters]
   );
 
   const updateOption = (id: string, updates: Partial<TutorialOptionRow>) => {
-    setOptions((prev) => prev.map((option) => (option.id === id ? { ...option, ...updates } : option)));
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === id ? { ...option, ...updates } : option
+      )
+    );
   };
 
   const removeOption = (id: string) => {
@@ -403,16 +500,19 @@ export const Tutorial = () => {
     setOptions((prev) =>
       prev.map((option) =>
         option.id === optionId
-          ? { ...option, itemRewards: [...option.itemRewards, makeItemRewardRow()] }
-          : option,
-      ),
+          ? {
+              ...option,
+              itemRewards: [...option.itemRewards, makeItemRewardRow()],
+            }
+          : option
+      )
     );
   };
 
   const updateOptionItemReward = (
     optionId: string,
     rewardId: string,
-    updates: Partial<TutorialItemRewardRow>,
+    updates: Partial<TutorialItemRewardRow>
   ) => {
     setOptions((prev) =>
       prev.map((option) =>
@@ -420,11 +520,11 @@ export const Tutorial = () => {
           ? {
               ...option,
               itemRewards: option.itemRewards.map((reward) =>
-                reward.id === rewardId ? { ...reward, ...updates } : reward,
+                reward.id === rewardId ? { ...reward, ...updates } : reward
               ),
             }
-          : option,
-      ),
+          : option
+      )
     );
   };
 
@@ -434,10 +534,12 @@ export const Tutorial = () => {
         option.id === optionId
           ? {
               ...option,
-              itemRewards: option.itemRewards.filter((reward) => reward.id !== rewardId),
+              itemRewards: option.itemRewards.filter(
+                (reward) => reward.id !== rewardId
+              ),
             }
-          : option,
-      ),
+          : option
+      )
     );
   };
 
@@ -445,16 +547,19 @@ export const Tutorial = () => {
     setOptions((prev) =>
       prev.map((option) =>
         option.id === optionId
-          ? { ...option, spellRewards: [...option.spellRewards, makeSpellRewardRow()] }
-          : option,
-      ),
+          ? {
+              ...option,
+              spellRewards: [...option.spellRewards, makeSpellRewardRow()],
+            }
+          : option
+      )
     );
   };
 
   const updateOptionSpellReward = (
     optionId: string,
     rewardId: string,
-    updates: Partial<TutorialSpellRewardRow>,
+    updates: Partial<TutorialSpellRewardRow>
   ) => {
     setOptions((prev) =>
       prev.map((option) =>
@@ -462,11 +567,11 @@ export const Tutorial = () => {
           ? {
               ...option,
               spellRewards: option.spellRewards.map((reward) =>
-                reward.id === rewardId ? { ...reward, ...updates } : reward,
+                reward.id === rewardId ? { ...reward, ...updates } : reward
               ),
             }
-          : option,
-      ),
+          : option
+      )
     );
   };
 
@@ -476,10 +581,12 @@ export const Tutorial = () => {
         option.id === optionId
           ? {
               ...option,
-              spellRewards: option.spellRewards.filter((reward) => reward.id !== rewardId),
+              spellRewards: option.spellRewards.filter(
+                (reward) => reward.id !== rewardId
+              ),
             }
-          : option,
-      ),
+          : option
+      )
     );
   };
 
@@ -487,14 +594,21 @@ export const Tutorial = () => {
     setMonsterItemRewards((prev) => [...prev, makeItemRewardRow()]);
   };
 
-  const updateMonsterItemReward = (rewardId: string, updates: Partial<TutorialItemRewardRow>) => {
+  const updateMonsterItemReward = (
+    rewardId: string,
+    updates: Partial<TutorialItemRewardRow>
+  ) => {
     setMonsterItemRewards((prev) =>
-      prev.map((reward) => (reward.id === rewardId ? { ...reward, ...updates } : reward)),
+      prev.map((reward) =>
+        reward.id === rewardId ? { ...reward, ...updates } : reward
+      )
     );
   };
 
   const removeMonsterItemReward = (rewardId: string) => {
-    setMonsterItemRewards((prev) => prev.filter((reward) => reward.id !== rewardId));
+    setMonsterItemRewards((prev) =>
+      prev.filter((reward) => reward.id !== rewardId)
+    );
   };
 
   const handleSave = async () => {
@@ -507,6 +621,9 @@ export const Tutorial = () => {
         characterId: characterId || null,
         dialogue,
         loadoutDialogue,
+        postMonsterDialogue,
+        baseKitDialogue,
+        postBaseDialogue,
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
         monsterEncounterId: monsterEncounterId || null,
@@ -568,11 +685,15 @@ export const Tutorial = () => {
 
       const response = await apiClient.post<TutorialConfigResponse>(
         '/sonar/admin/tutorial/generate-image',
-        { scenarioPrompt: prompt },
+        { scenarioPrompt: prompt }
       );
       setScenarioImageUrl(response.scenarioImageUrl ?? '');
-      setImageGenerationStatus((response.imageGenerationStatus ?? 'queued').trim() || 'queued');
-      setImageGenerationError((response.imageGenerationError ?? '').trim() || null);
+      setImageGenerationStatus(
+        (response.imageGenerationStatus ?? 'queued').trim() || 'queued'
+      );
+      setImageGenerationError(
+        (response.imageGenerationError ?? '').trim() || null
+      );
       setStatusMessage('Tutorial scenario image generation queued.');
       setStatusKind('success');
     } catch (error) {
@@ -590,8 +711,8 @@ export const Tutorial = () => {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Tutorial</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Configure the first-run welcome dialogue and one-time tutorial scenario for newly
-            registered users.
+            Configure the first-run welcome dialogue and one-time tutorial
+            scenario for newly registered users.
           </p>
         </div>
 
@@ -601,16 +722,20 @@ export const Tutorial = () => {
           <>
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">Welcome Dialogue</h2>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Welcome Dialogue
+                </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  The dialogue appears the first time a newly initialized user lands on single
-                  player.
+                  The dialogue appears the first time a newly initialized user
+                  lands on single player.
                 </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Character</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Character
+                  </label>
                   <select
                     value={characterId}
                     onChange={(event) => setCharacterId(event.target.value)}
@@ -624,7 +749,9 @@ export const Tutorial = () => {
                     ))}
                   </select>
                   {referenceDataLoading ? (
-                    <p className="mt-1 text-xs text-gray-500">Loading character options…</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Loading character options…
+                    </p>
                   ) : null}
                 </div>
               </div>
@@ -641,16 +768,20 @@ export const Tutorial = () => {
 
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">Tutorial Scenario</h2>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Tutorial Scenario
+                </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  This scenario is spawned once at the user&apos;s current location after the welcome
-                  dialogue finishes.
+                  This scenario is spawned once at the user&apos;s current
+                  location after the welcome dialogue finishes.
                 </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">Scenario Prompt</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Scenario Prompt
+                  </label>
                   <textarea
                     value={scenarioPrompt}
                     onChange={(event) => setScenarioPrompt(event.target.value)}
@@ -659,28 +790,38 @@ export const Tutorial = () => {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">Scenario Image URL</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Scenario Image URL
+                  </label>
                   <div className="mt-1 flex flex-col gap-3">
                     <div className="flex flex-col gap-3 md:flex-row">
                       <input
                         type="text"
                         value={scenarioImageUrl}
-                        onChange={(event) => setScenarioImageUrl(event.target.value)}
+                        onChange={(event) =>
+                          setScenarioImageUrl(event.target.value)
+                        }
                         placeholder="https://..."
                         className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                       <button
                         type="button"
                         onClick={handleGenerateScenarioImage}
-                        disabled={generatingImage || imageGenerationActive || saving}
+                        disabled={
+                          generatingImage || imageGenerationActive || saving
+                        }
                         className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {generatingImage || imageGenerationActive ? 'Generating…' : 'Generate Image'}
+                        {generatingImage || imageGenerationActive
+                          ? 'Generating…'
+                          : 'Generate Image'}
                       </button>
                     </div>
                     <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-700">Preview</span>
+                        <span className="text-sm font-medium text-gray-700">
+                          Preview
+                        </span>
                         <span className="text-xs text-gray-500">
                           {imageGenerationStatus === 'queued'
                             ? 'Queued'
@@ -705,7 +846,9 @@ export const Tutorial = () => {
                         </div>
                       )}
                       {imageGenerationError && (
-                        <p className="mt-2 text-xs text-rose-600">{imageGenerationError}</p>
+                        <p className="mt-2 text-xs text-rose-600">
+                          {imageGenerationError}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -715,14 +858,18 @@ export const Tutorial = () => {
               <div className="mt-6 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-800">Scenario Options</h3>
+                    <h3 className="text-sm font-medium text-gray-800">
+                      Scenario Options
+                    </h3>
                     <p className="text-xs text-gray-500">
                       Each option has its own stat check and reward bundle.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setOptions((prev) => [...prev, makeOptionRow()])}
+                    onClick={() =>
+                      setOptions((prev) => [...prev, makeOptionRow()])
+                    }
                     className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Add Option
@@ -730,18 +877,29 @@ export const Tutorial = () => {
                 </div>
 
                 {options.map((option, index) => (
-                  <div key={option.id} className="rounded-md border border-gray-200 bg-gray-50 p-4">
+                  <div
+                    key={option.id}
+                    className="rounded-md border border-gray-200 bg-gray-50 p-4"
+                  >
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
                       <input
                         type="text"
                         value={option.optionText}
-                        onChange={(event) => updateOption(option.id, { optionText: event.target.value })}
+                        onChange={(event) =>
+                          updateOption(option.id, {
+                            optionText: event.target.value,
+                          })
+                        }
                         placeholder={`Option ${index + 1} text`}
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
                       <select
                         value={option.statTag}
-                        onChange={(event) => updateOption(option.id, { statTag: event.target.value })}
+                        onChange={(event) =>
+                          updateOption(option.id, {
+                            statTag: event.target.value,
+                          })
+                        }
                         className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       >
                         {statTagOptions.map((statTag) => (
@@ -761,42 +919,57 @@ export const Tutorial = () => {
 
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <label className="text-sm">
-                        <span className="block font-medium text-gray-700">Difficulty</span>
+                        <span className="block font-medium text-gray-700">
+                          Difficulty
+                        </span>
                         <input
                           type="number"
                           min="0"
                           value={option.difficulty}
                           onChange={(event) =>
                             updateOption(option.id, {
-                              difficulty: Number.parseInt(event.target.value || '0', 10),
+                              difficulty: Number.parseInt(
+                                event.target.value || '0',
+                                10
+                              ),
                             })
                           }
                           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                         />
                       </label>
                       <label className="text-sm">
-                        <span className="block font-medium text-gray-700">Reward Experience</span>
+                        <span className="block font-medium text-gray-700">
+                          Reward Experience
+                        </span>
                         <input
                           type="number"
                           min="0"
                           value={option.rewardExperience}
                           onChange={(event) =>
                             updateOption(option.id, {
-                              rewardExperience: Number.parseInt(event.target.value || '0', 10),
+                              rewardExperience: Number.parseInt(
+                                event.target.value || '0',
+                                10
+                              ),
                             })
                           }
                           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                         />
                       </label>
                       <label className="text-sm">
-                        <span className="block font-medium text-gray-700">Reward Gold</span>
+                        <span className="block font-medium text-gray-700">
+                          Reward Gold
+                        </span>
                         <input
                           type="number"
                           min="0"
                           value={option.rewardGold}
                           onChange={(event) =>
                             updateOption(option.id, {
-                              rewardGold: Number.parseInt(event.target.value || '0', 10),
+                              rewardGold: Number.parseInt(
+                                event.target.value || '0',
+                                10
+                              ),
                             })
                           }
                           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -808,8 +981,12 @@ export const Tutorial = () => {
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="text-sm font-medium text-gray-800">Item Rewards</h4>
-                            <p className="text-xs text-gray-500">Granted when this option succeeds.</p>
+                            <h4 className="text-sm font-medium text-gray-800">
+                              Item Rewards
+                            </h4>
+                            <p className="text-xs text-gray-500">
+                              Granted when this option succeeds.
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -827,34 +1004,50 @@ export const Tutorial = () => {
                         )}
 
                         {option.itemRewards.map((reward) => (
-                          <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                          <div
+                            key={reward.id}
+                            className="rounded-md border border-gray-200 bg-white p-3"
+                          >
                             <SearchableSelect
                               label="Inventory Item"
                               placeholder="Search item name…"
                               options={itemOptions}
                               value={reward.inventoryItemId}
                               onChange={(value) =>
-                                updateOptionItemReward(option.id, reward.id, { inventoryItemId: value })
+                                updateOptionItemReward(option.id, reward.id, {
+                                  inventoryItemId: value,
+                                })
                               }
                             />
                             <div className="mt-3 flex items-end gap-3">
                               <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                                <label className="block text-sm font-medium text-gray-700">
+                                  Quantity
+                                </label>
                                 <input
                                   type="number"
                                   min="1"
                                   value={reward.quantity}
                                   onChange={(event) =>
-                                    updateOptionItemReward(option.id, reward.id, {
-                                      quantity: Number.parseInt(event.target.value || '1', 10),
-                                    })
+                                    updateOptionItemReward(
+                                      option.id,
+                                      reward.id,
+                                      {
+                                        quantity: Number.parseInt(
+                                          event.target.value || '1',
+                                          10
+                                        ),
+                                      }
+                                    )
                                   }
                                   className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 />
                               </div>
                               <button
                                 type="button"
-                                onClick={() => removeOptionItemReward(option.id, reward.id)}
+                                onClick={() =>
+                                  removeOptionItemReward(option.id, reward.id)
+                                }
                                 className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
                               >
                                 Remove
@@ -867,8 +1060,12 @@ export const Tutorial = () => {
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="text-sm font-medium text-gray-800">Spell Rewards</h4>
-                            <p className="text-xs text-gray-500">Granted when this option succeeds.</p>
+                            <h4 className="text-sm font-medium text-gray-800">
+                              Spell Rewards
+                            </h4>
+                            <p className="text-xs text-gray-500">
+                              Granted when this option succeeds.
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -886,19 +1083,26 @@ export const Tutorial = () => {
                         )}
 
                         {option.spellRewards.map((reward) => (
-                          <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                          <div
+                            key={reward.id}
+                            className="rounded-md border border-gray-200 bg-white p-3"
+                          >
                             <SearchableSelect
                               label="Spell"
                               placeholder="Search spell name…"
                               options={spellOptions}
                               value={reward.spellId}
                               onChange={(value) =>
-                                updateOptionSpellReward(option.id, reward.id, { spellId: value })
+                                updateOptionSpellReward(option.id, reward.id, {
+                                  spellId: value,
+                                })
                               }
                             />
                             <button
                               type="button"
-                              onClick={() => removeOptionSpellReward(option.id, reward.id)}
+                              onClick={() =>
+                                removeOptionSpellReward(option.id, reward.id)
+                              }
                               className="mt-3 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
                             >
                               Remove
@@ -914,10 +1118,13 @@ export const Tutorial = () => {
 
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">Loadout Step</h2>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Loadout Step
+                </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  After the scenario rewards are granted, the player is pushed into inventory until
-                  they equip their new gear and use the rewarded spellbook.
+                  After the scenario rewards are granted, the player is pushed
+                  into inventory until they equip their new gear and use the
+                  rewarded spellbook.
                 </p>
               </div>
 
@@ -933,10 +1140,70 @@ export const Tutorial = () => {
 
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">Tutorial Monster</h2>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Post-Monster Dialogue
+                </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  When the loadout step is complete, the selected encounter is cloned at the
-                  player&apos;s location as a private tutorial fight.
+                  Shown after the tutorial monster celebration modal closes and
+                  before the base-kit inventory step begins.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Dialogue Lines"
+                helperText="This uses the same dialogue presentation as the tutorial intro."
+                value={postMonsterDialogue}
+                onChange={setPostMonsterDialogue}
+              />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Home Base Kit Step
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown while the inventory drawer is forced open again and the
+                  player must use the rewarded home base kit.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Drawer Guidance"
+                helperText="Use this to tell the player how to open and place their home base kit."
+                value={baseKitDialogue}
+                onChange={setBaseKitDialogue}
+              />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Post-Base Dialogue
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown immediately after the player establishes their base and
+                  before the Welcome to Unclaimed Streets overlay appears.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Dialogue Lines"
+                helperText="This is the final guided conversation before the player is released into the district."
+                value={postBaseDialogue}
+                onChange={setPostBaseDialogue}
+              />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Tutorial Monster
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  When the loadout step is complete, the selected encounter is
+                  cloned at the player&apos;s location as a private tutorial
+                  fight.
                 </p>
               </div>
 
@@ -950,29 +1217,39 @@ export const Tutorial = () => {
                     onChange={setMonsterEncounterId}
                   />
                   {referenceDataLoading ? (
-                    <p className="mt-1 text-xs text-gray-500">Loading encounter options…</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Loading encounter options…
+                    </p>
                   ) : null}
                 </div>
                 <label className="text-sm">
-                  <span className="block font-medium text-gray-700">Reward Experience</span>
+                  <span className="block font-medium text-gray-700">
+                    Reward Experience
+                  </span>
                   <input
                     type="number"
                     min="0"
                     value={monsterRewardExperience}
                     onChange={(event) =>
-                      setMonsterRewardExperience(Number.parseInt(event.target.value || '0', 10))
+                      setMonsterRewardExperience(
+                        Number.parseInt(event.target.value || '0', 10)
+                      )
                     }
                     className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="block font-medium text-gray-700">Reward Gold</span>
+                  <span className="block font-medium text-gray-700">
+                    Reward Gold
+                  </span>
                   <input
                     type="number"
                     min="0"
                     value={monsterRewardGold}
                     onChange={(event) =>
-                      setMonsterRewardGold(Number.parseInt(event.target.value || '0', 10))
+                      setMonsterRewardGold(
+                        Number.parseInt(event.target.value || '0', 10)
+                      )
                     }
                     className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
@@ -982,9 +1259,12 @@ export const Tutorial = () => {
               <div className="mt-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-800">Item Rewards</h3>
+                    <h3 className="text-sm font-medium text-gray-800">
+                      Item Rewards
+                    </h3>
                     <p className="text-xs text-gray-500">
-                      If set, these override the encounter&apos;s default item rewards.
+                      If set, these override the encounter&apos;s default item
+                      rewards.
                     </p>
                   </div>
                   <button
@@ -1003,24 +1283,36 @@ export const Tutorial = () => {
                 )}
 
                 {monsterItemRewards.map((reward) => (
-                  <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                  <div
+                    key={reward.id}
+                    className="rounded-md border border-gray-200 bg-white p-3"
+                  >
                     <SearchableSelect
                       label="Inventory Item"
                       placeholder="Search item name…"
                       options={itemOptions}
                       value={reward.inventoryItemId}
-                      onChange={(value) => updateMonsterItemReward(reward.id, { inventoryItemId: value })}
+                      onChange={(value) =>
+                        updateMonsterItemReward(reward.id, {
+                          inventoryItemId: value,
+                        })
+                      }
                     />
                     <div className="mt-3 flex items-end gap-3">
                       <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Quantity
+                        </label>
                         <input
                           type="number"
                           min="1"
                           value={reward.quantity}
                           onChange={(event) =>
                             updateMonsterItemReward(reward.id, {
-                              quantity: Number.parseInt(event.target.value || '1', 10),
+                              quantity: Number.parseInt(
+                                event.target.value || '1',
+                                10
+                              ),
                             })
                           }
                           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"

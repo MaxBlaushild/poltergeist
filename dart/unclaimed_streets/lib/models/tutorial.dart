@@ -8,6 +8,9 @@ class TutorialStatus {
   final Character? character;
   final List<DialogueMessage> dialogue;
   final List<DialogueMessage> loadoutDialogue;
+  final List<DialogueMessage> postMonsterDialogue;
+  final List<DialogueMessage> baseKitDialogue;
+  final List<DialogueMessage> postBaseDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
   final List<int> requiredEquipItemIds;
@@ -22,6 +25,9 @@ class TutorialStatus {
     this.character,
     this.dialogue = const [],
     this.loadoutDialogue = const [],
+    this.postMonsterDialogue = const [],
+    this.baseKitDialogue = const [],
+    this.postBaseDialogue = const [],
     this.scenarioId,
     this.monsterEncounterId,
     this.requiredEquipItemIds = const [],
@@ -37,10 +43,26 @@ class TutorialStatus {
 
   bool get isLoadoutStep => stage == 'loadout' && !isCompleted;
 
+  bool get isBaseKitStep => stage == 'base_kit' && !isCompleted;
+
+  bool get isPostMonsterDialogueStep =>
+      stage == 'post_monster_dialogue' && !isCompleted;
+
+  bool get isPostBaseDialogueStep =>
+      stage == 'post_base_dialogue' && !isCompleted;
+
   bool get hasActiveMonsterEncounter =>
       stage == 'monster' &&
       (monsterEncounterId?.trim().isNotEmpty ?? false) &&
       !isCompleted;
+
+  bool get shouldShowPostMonsterDialogue =>
+      isPostMonsterDialogueStep &&
+      postMonsterDialogue.isNotEmpty &&
+      !isCompleted;
+
+  bool get shouldShowPostBaseDialogue =>
+      isPostBaseDialogueStep && postBaseDialogue.isNotEmpty && !isCompleted;
 
   bool get hasOutstandingLoadoutRequirements =>
       _remaining(requiredEquipItemIds, completedEquipItemIds).isNotEmpty ||
@@ -99,6 +121,72 @@ class TutorialStatus {
       }
     }
 
+    final postMonsterDialogue = <DialogueMessage>[];
+    final rawPostMonsterDialogue = json['postMonsterDialogue'];
+    if (rawPostMonsterDialogue is List) {
+      for (var index = 0; index < rawPostMonsterDialogue.length; index++) {
+        final line = rawPostMonsterDialogue[index];
+        if (line is Map<String, dynamic>) {
+          postMonsterDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          postMonsterDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            postMonsterDialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
+    final baseKitDialogue = <DialogueMessage>[];
+    final rawBaseKitDialogue = json['baseKitDialogue'];
+    if (rawBaseKitDialogue is List) {
+      for (var index = 0; index < rawBaseKitDialogue.length; index++) {
+        final line = rawBaseKitDialogue[index];
+        if (line is Map<String, dynamic>) {
+          baseKitDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          baseKitDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            baseKitDialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
+    final postBaseDialogue = <DialogueMessage>[];
+    final rawPostBaseDialogue = json['postBaseDialogue'];
+    if (rawPostBaseDialogue is List) {
+      for (var index = 0; index < rawPostBaseDialogue.length; index++) {
+        final line = rawPostBaseDialogue[index];
+        if (line is Map<String, dynamic>) {
+          postBaseDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          postBaseDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            postBaseDialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
     return TutorialStatus(
       showWelcomeDialogue: json['showWelcomeDialogue'] as bool? ?? false,
       isCompleted: json['completedAt'] != null,
@@ -106,6 +194,9 @@ class TutorialStatus {
       character: character,
       dialogue: dialogue,
       loadoutDialogue: loadoutDialogue,
+      postMonsterDialogue: postMonsterDialogue,
+      baseKitDialogue: baseKitDialogue,
+      postBaseDialogue: postBaseDialogue,
       scenarioId: json['scenarioId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),
       requiredEquipItemIds: _parseIntList(json['requiredEquipItemIds']),
@@ -122,6 +213,9 @@ class TutorialStatus {
     Character? character,
     List<DialogueMessage>? dialogue,
     List<DialogueMessage>? loadoutDialogue,
+    List<DialogueMessage>? postMonsterDialogue,
+    List<DialogueMessage>? baseKitDialogue,
+    List<DialogueMessage>? postBaseDialogue,
     String? scenarioId,
     String? monsterEncounterId,
     List<int>? requiredEquipItemIds,
@@ -136,6 +230,9 @@ class TutorialStatus {
       character: character ?? this.character,
       dialogue: dialogue ?? this.dialogue,
       loadoutDialogue: loadoutDialogue ?? this.loadoutDialogue,
+      postMonsterDialogue: postMonsterDialogue ?? this.postMonsterDialogue,
+      baseKitDialogue: baseKitDialogue ?? this.baseKitDialogue,
+      postBaseDialogue: postBaseDialogue ?? this.postBaseDialogue,
       scenarioId: scenarioId ?? this.scenarioId,
       monsterEncounterId: monsterEncounterId ?? this.monsterEncounterId,
       requiredEquipItemIds: requiredEquipItemIds ?? this.requiredEquipItemIds,

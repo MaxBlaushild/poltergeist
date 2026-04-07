@@ -2,9 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../providers/auth_provider.dart';
+import '../utils/dialogue_template.dart';
 
 class RpgDialogueModal extends StatefulWidget {
   const RpgDialogueModal({
@@ -412,6 +415,8 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
     final imageUrl =
         widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
     final currentEffect = _dialogueEffectName(current.effect);
+    final viewer = context.watch<AuthProvider>().user;
+    final renderedText = interpolateDialogueText(current.text, viewer);
     _triggerEffectFor(current);
 
     return Material(
@@ -591,7 +596,7 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
                                         Expanded(
                                           child: SingleChildScrollView(
                                             child: Text(
-                                              current.text,
+                                              renderedText,
                                               style: _messageTextStyle(
                                                 context,
                                                 currentEffect,
@@ -708,6 +713,16 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
     required double progress,
   }) {
     final theme = Theme.of(context);
+    final portraitTint = _portraitTintFor(effect, progress);
+    final portraitChild = imageUrl != null && imageUrl.isNotEmpty
+        ? Image.network(
+            imageUrl,
+            width: 96,
+            height: 96,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const Icon(Icons.person, size: 48),
+          )
+        : const Icon(Icons.person, size: 48);
     return Container(
       width: 96,
       height: 96,
@@ -721,22 +736,15 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
         borderRadius: BorderRadius.circular(16),
         child: Transform.scale(
           scale: _portraitScaleFor(effect, progress),
-          child: ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              _portraitTintFor(effect, progress),
-              BlendMode.modulate,
-            ),
-            child: imageUrl != null && imageUrl.isNotEmpty
-                ? Image.network(
-                    imageUrl,
-                    width: 96,
-                    height: 96,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Icons.person, size: 48),
-                  )
-                : const Icon(Icons.person, size: 48),
-          ),
+          child: portraitTint.a == 0
+              ? portraitChild
+              : ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    portraitTint,
+                    BlendMode.modulate,
+                  ),
+                  child: portraitChild,
+                ),
         ),
       ),
     );

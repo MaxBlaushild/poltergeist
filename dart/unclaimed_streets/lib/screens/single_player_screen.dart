@@ -257,6 +257,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String? _tutorialFocusedMonsterEncounterId;
   bool _tutorialNormalPinsRevealInProgress = false;
   bool _tutorialLoadoutPendingAfterCompletionModal = false;
+  bool _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
   bool _tutorialRevealPendingAfterCompletionModal = false;
   bool _tutorialWelcomeOverlayVisible = false;
   double _tutorialWelcomeOverlayOpacity = 0.0;
@@ -373,7 +374,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _updateSelectedZoneFromLocation();
     _requestQuestLogIfReady();
     _refreshScenarioVisibilityForLocationChange();
-    _maybeShowTutorialWelcome();
+    _maybeShowTutorialDialogues();
   }
 
   void _refreshScenarioVisibilityForLocationChange() {
@@ -578,13 +579,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (status == null) {
       return;
     }
-    if (!status.isLoadoutStep) {
+    final isInventoryTutorialStep =
+        status.isLoadoutStep || status.isBaseKitStep;
+    if (!isInventoryTutorialStep) {
       drawerController.stopInventoryTutorial();
+      return;
+    }
+    final completionModalOpen = _completedTaskProvider?.currentModal != null;
+    if (completionModalOpen ||
+        _tutorialLoadoutPendingAfterCompletionModal ||
+        _tutorialPostMonsterDialoguePendingAfterCompletionModal ||
+        _tutorialRevealPendingAfterCompletionModal) {
       return;
     }
     drawerController.startInventoryTutorial(
       InventoryTutorialSession(
-        dialogue: status.loadoutDialogue,
+        dialogue: status.isBaseKitStep
+            ? status.baseKitDialogue
+            : status.loadoutDialogue,
         requiredEquipItemIds: status.requiredEquipItemIds,
         completedEquipItemIds: status.completedEquipItemIds,
         requiredUseItemIds: status.requiredUseItemIds,
@@ -613,7 +625,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await _loadTutorialStatus(force: true);
     if (!mounted) return;
     final status = _tutorialStatus;
-    if (status?.isLoadoutStep ?? false) {
+    if ((status?.isLoadoutStep ?? false) || (status?.isBaseKitStep ?? false)) {
       setState(() {
         _tutorialFocusedScenarioId = null;
         _tutorialFocusedMonsterEncounterId = null;
@@ -625,22 +637,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _rebuildMapPins();
       return;
     }
+    if ((status?.isPostMonsterDialogueStep ?? false) ||
+        (status?.isPostBaseDialogueStep ?? false)) {
+      return;
+    }
     if (status?.isCompleted ?? false) {
       await _beginTutorialNormalPinsReveal();
     }
   }
 
+  Future<void> _beginTutorialPostMonsterDialogueStep() async {
+    if (!mounted) return;
+    await _loadTutorialStatus(force: true);
+  }
+
   Future<void> _runTutorialWelcomeOverlaySequence() async {
     if (!mounted) return;
-    const fadeInSteps = 5;
+    const fadeInSteps = 4;
     for (var i = 1; i <= fadeInSteps; i++) {
       if (!mounted) return;
       setState(() => _tutorialWelcomeOverlayOpacity = i / fadeInSteps);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 35));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 1800));
-    if (!mounted) return;
+  }
 
+  Future<void> _dismissTutorialWelcomeOverlay() async {
+    if (!mounted || !_tutorialWelcomeOverlayVisible) return;
     final c = _mapController;
     if (c == null || !_styleLoaded) {
       setState(() {
@@ -656,22 +678,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
     final discoveries = context.read<DiscoveriesProvider>();
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
-    const fadeOutSteps = 16;
-    for (var i = 0; i <= fadeOutSteps; i++) {
-      if (!mounted || !_tutorialNormalPinsRevealInProgress) return;
-      final progress = i / fadeOutSteps;
-      setState(() => _tutorialWelcomeOverlayOpacity = 1.0 - progress);
-      await _updateNormalPinOpacities(
-        c,
-        progress,
-        questPoiIds: questPoiIds,
-        discoveries: discoveries,
-        mapContentPoiIds: mapContentPoiIds,
-      );
-      if (i != fadeOutSteps) {
-        await Future<void>.delayed(const Duration(milliseconds: 90));
-      }
-    }
+    await _updateNormalPinOpacities(
+      c,
+      1,
+      questPoiIds: questPoiIds,
+      discoveries: discoveries,
+      mapContentPoiIds: mapContentPoiIds,
+    );
 
     if (!mounted) return;
     setState(() {
@@ -691,6 +704,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (_tutorialLoadoutPendingAfterCompletionModal) {
         _tutorialLoadoutPendingAfterCompletionModal = false;
         unawaited(_beginTutorialLoadoutStep());
+      }
+      if (_tutorialPostMonsterDialoguePendingAfterCompletionModal) {
+        _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
+        unawaited(_beginTutorialPostMonsterDialogueStep());
       }
       if (_tutorialRevealPendingAfterCompletionModal) {
         _tutorialRevealPendingAfterCompletionModal = false;
@@ -739,7 +756,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         setState(() {
           _tutorialFocusedMonsterEncounterId = null;
         });
-        _tutorialRevealPendingAfterCompletionModal = true;
+        _tutorialPostMonsterDialoguePendingAfterCompletionModal = true;
         return;
       default:
         return;
@@ -1846,7 +1863,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }) async {
     if (!mounted || _tutorialStatusLoading) return;
     if (!force && _tutorialStatusChecked) {
-      _maybeShowTutorialWelcome();
+      _maybeShowTutorialDialogues();
       return;
     }
 
@@ -1878,7 +1895,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _tutorialStatusLoading = false;
     }
 
-    _maybeShowTutorialWelcome();
+    _maybeShowTutorialDialogues();
   }
 
   Future<void> _resetTutorialPresentationForInactiveStatus(
@@ -1889,7 +1906,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         status.showWelcomeDialogue ||
         status.hasActiveScenario ||
         status.isLoadoutStep ||
-        status.hasActiveMonsterEncounter;
+        status.isBaseKitStep ||
+        status.hasActiveMonsterEncounter ||
+        status.isPostMonsterDialogueStep ||
+        status.isPostBaseDialogueStep;
     if (tutorialStillActive) return;
 
     final hasStalePresentation =
@@ -1907,17 +1927,37 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _tutorialWelcomeOverlayVisible = false;
       _tutorialWelcomeOverlayOpacity = 0.0;
       _tutorialLoadoutPendingAfterCompletionModal = false;
+      _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
       _tutorialRevealPendingAfterCompletionModal = false;
     });
     await _rebuildMapPins();
   }
 
-  void _maybeShowTutorialWelcome() {
+  void _maybeShowTutorialDialogues() {
     if (!mounted || _tutorialDialogVisible || _tutorialActivationInFlight) {
       return;
     }
     final status = _tutorialStatus;
-    if (status == null || status.character == null || status.dialogue.isEmpty) {
+    if (status == null || status.character == null) {
+      return;
+    }
+    if (status.shouldShowPostMonsterDialogue) {
+      unawaited(_showTutorialProgressDialogue(status, stage: 'post_monster'));
+      return;
+    }
+    if (status.isPostMonsterDialogueStep) {
+      unawaited(_advanceTutorialAfterDialogue('post_monster_dialogue_closed'));
+      return;
+    }
+    if (status.shouldShowPostBaseDialogue) {
+      unawaited(_showTutorialProgressDialogue(status, stage: 'post_base'));
+      return;
+    }
+    if (status.isPostBaseDialogueStep) {
+      unawaited(_completeTutorialAfterBaseDialogue());
+      return;
+    }
+    if (status.dialogue.isEmpty) {
       return;
     }
     if (!status.showWelcomeDialogue && !_tutorialReplayPending) {
@@ -1928,6 +1968,88 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(
       _showTutorialWelcomeDialog(status, forceReplay: _tutorialReplayPending),
     );
+  }
+
+  Future<void> _showTutorialProgressDialogue(
+    TutorialStatus status, {
+    required String stage,
+  }) async {
+    final character = status.character;
+    if (character == null || _tutorialDialogVisible) {
+      return;
+    }
+
+    final rawDialogue = stage == 'post_base'
+        ? status.postBaseDialogue
+        : status.postMonsterDialogue;
+    if (rawDialogue.isEmpty) {
+      if (stage == 'post_base') {
+        await _completeTutorialAfterBaseDialogue();
+      } else {
+        await _advanceTutorialAfterDialogue('post_monster_dialogue_closed');
+      }
+      return;
+    }
+
+    final dialogue = List<DialogueMessage>.from(rawDialogue)
+      ..sort((a, b) => a.order.compareTo(b.order));
+    final action = CharacterAction(
+      id: 'tutorial-$stage',
+      createdAt: '',
+      updatedAt: '',
+      characterId: character.id,
+      actionType: 'tutorial',
+      dialogue: dialogue,
+    );
+
+    setState(() => _tutorialDialogVisible = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return PopScope(
+            canPop: false,
+            child: RpgDialogueModal(
+              character: character,
+              action: action,
+              dialogueOverride: dialogue,
+              showCloseButton: false,
+              finalStepLabel: 'Continue',
+              onClose: () async {
+                Navigator.of(dialogContext).pop();
+                if (stage == 'post_base') {
+                  await _completeTutorialAfterBaseDialogue();
+                } else {
+                  await _advanceTutorialAfterDialogue(
+                    'post_monster_dialogue_closed',
+                  );
+                }
+              },
+            ),
+          );
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _tutorialDialogVisible = false);
+      }
+    }
+  }
+
+  Future<void> _advanceTutorialAfterDialogue(String action) async {
+    await context.read<PoiService>().advanceTutorial(action);
+    await _loadTutorialStatus(force: true);
+  }
+
+  Future<void> _completeTutorialAfterBaseDialogue() async {
+    await context.read<PoiService>().advanceTutorial(
+      'post_base_dialogue_closed',
+    );
+    await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
+    if (!mounted) return;
+    await _beginTutorialNormalPinsReveal();
   }
 
   Future<void> _showTutorialWelcomeDialog(
@@ -2017,6 +2139,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _tutorialFocusedMonsterEncounterId = null;
         _tutorialNormalPinsRevealInProgress = false;
         _tutorialLoadoutPendingAfterCompletionModal = false;
+        _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
         _tutorialRevealPendingAfterCompletionModal = false;
         _scenarios = [
           scenario,
@@ -2055,6 +2178,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             _tutorialFocusedMonsterEncounterId = null;
             _tutorialNormalPinsRevealInProgress = false;
             _tutorialLoadoutPendingAfterCompletionModal = false;
+            _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
             _tutorialRevealPendingAfterCompletionModal = false;
             _scenarios = [
               recovered,
@@ -8189,6 +8313,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             height: 1.4,
                           ),
                         ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _dismissTutorialWelcomeOverlay,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              backgroundColor: const Color(0xFF8C5A14),
+                              foregroundColor: const Color(0xFFF8EFD8),
+                            ),
+                            child: const Text('Continue'),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -8486,6 +8623,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _loadBases();
       if (!mounted) return;
       _cancelBasePlacement();
+      await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
+      if (!mounted) return;
       final mapController = _mapController;
       if (mapController != null) {
         await mapController.animateCamera(CameraUpdate.newLatLng(selection));
@@ -9579,7 +9718,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _defeatedMonsterIds.add(monster.id);
         if (wasTutorialMonster) {
           _tutorialFocusedMonsterEncounterId = null;
-          _tutorialRevealPendingAfterCompletionModal = true;
+          _tutorialPostMonsterDialoguePendingAfterCompletionModal = true;
         }
       });
       await _persistDefeatedMonsterIds();

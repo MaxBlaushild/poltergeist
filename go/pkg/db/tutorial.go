@@ -342,6 +342,48 @@ func (h *tutorialHandle) MarkCompleted(ctx context.Context, userID uuid.UUID) er
 		}).Error
 }
 
+func (h *tutorialHandle) AdvanceToBaseKit(
+	ctx context.Context,
+	userID uuid.UUID,
+	requiredUseItemIDs []int,
+) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil || state.Stage != models.TutorialStagePostMonsterDialogue {
+			return nil
+		}
+		state.Stage = models.TutorialStageBaseKit
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = requiredUseItemIDs
+		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil || state.Stage != models.TutorialStageBaseKit {
+			return nil
+		}
+		state.Stage = models.TutorialStagePostBaseDialogue
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = []int{}
+		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
 func (h *tutorialHandle) MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
@@ -352,10 +394,14 @@ func (h *tutorialHandle) MarkMonsterCompleted(ctx context.Context, userID uuid.U
 			return nil
 		}
 		now := time.Now()
-		state.Stage = models.TutorialStageCompleted
-		state.CompletedAt = &now
+		state.Stage = models.TutorialStagePostMonsterDialogue
+		state.CompletedAt = nil
 		state.TutorialScenarioID = nil
 		state.TutorialMonsterEncounterID = nil
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = []int{}
+		state.CompletedUseItemIDs = []int{}
 		state.UpdatedAt = now
 		return tx.Save(state).Error
 	})
@@ -372,7 +418,7 @@ func (h *tutorialHandle) recordProgressItem(
 		if err != nil {
 			return err
 		}
-		if state.Stage != models.TutorialStageLoadout {
+		if state.Stage != models.TutorialStageLoadout && state.Stage != models.TutorialStageBaseKit {
 			return nil
 		}
 
@@ -413,8 +459,8 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	}
 
 	created := models.TutorialConfig{
-		ID:                    1,
-		Dialogue:              models.DialogueSequence{},
+		ID:       1,
+		Dialogue: models.DialogueSequence{},
 		LoadoutDialogue: models.DialogueSequence{
 			{
 				Speaker: "character",
@@ -422,6 +468,15 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 				Order:   0,
 			},
 		},
+		PostMonsterDialogue: models.DialogueSequence{},
+		BaseKitDialogue: models.DialogueSequence{
+			{
+				Speaker: "character",
+				Text:    "Use the home base kit you just earned and claim a safe place for yourself.",
+				Order:   0,
+			},
+		},
+		PostBaseDialogue:      models.DialogueSequence{},
 		ScenarioPrompt:        "You hear a commotion outside of your door.",
 		ScenarioImageURL:      "",
 		ImageGenerationStatus: models.TutorialImageGenerationStatusNone,

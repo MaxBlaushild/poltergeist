@@ -608,6 +608,8 @@ type TutorialHandle interface {
 		members []models.MonsterEncounterMember,
 		monsters []models.Monster,
 	) (*models.UserTutorialState, *models.MonsterEncounter, error)
+	AdvanceToBaseKit(ctx context.Context, userID uuid.UUID, requiredUseItemIDs []int) error
+	AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error
 	MarkCompleted(ctx context.Context, userID uuid.UUID) error
 	MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error
 }

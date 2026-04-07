@@ -270,6 +270,18 @@ class PoiService {
     return Scenario.fromJson(raw);
   }
 
+  Future<TutorialStatus?> advanceTutorial(String action) async {
+    try {
+      final raw = await _api.post<Map<String, dynamic>>(
+        '/sonar/tutorial/advance',
+        data: {'action': action},
+      );
+      return TutorialStatus.fromJson(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static String extractApiErrorMessage(Object error, String fallback) {
     if (error is DioException) {
       final responseData = error.response?.data;

@@ -645,6 +645,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/settings/spawn-nearby-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.spawnNearbyScenarioAndMonster))
 	r.GET("/sonar/tutorial/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialStatus))
 	r.POST("/sonar/tutorial/activate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.activateTutorial))
+	r.POST("/sonar/tutorial/advance", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceTutorial))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))

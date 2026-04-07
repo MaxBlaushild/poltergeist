@@ -22,6 +22,7 @@ import '../services/poi_service.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
 import '../providers/base_placement_provider.dart';
+import '../utils/dialogue_template.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
@@ -1208,6 +1209,7 @@ class _InventoryPanelState extends State<InventoryPanel>
 
   Widget _buildTutorialGuide(BuildContext context) {
     final theme = Theme.of(context);
+    final user = context.watch<AuthProvider>().user;
     final equipNames = _tutorialRequirementNames(widget.requiredEquipItemIds);
     final useNames = _tutorialRequirementNames(widget.requiredUseItemIds);
     final remainingEquip = widget.requiredEquipItemIds
@@ -1237,10 +1239,11 @@ class _InventoryPanelState extends State<InventoryPanel>
           const SizedBox(height: 8),
           ...widget.tutorialDialogue.map((line) {
             final effect = _dialogueEffectName(line.effect);
+            final renderedText = interpolateDialogueText(line.text, user);
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                line.text,
+                renderedText,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: _tutorialDialogueColor(effect),
                   height: 1.35,
