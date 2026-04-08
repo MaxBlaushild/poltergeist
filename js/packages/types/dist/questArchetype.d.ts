@@ -27,7 +27,8 @@ export interface QuestArchetypeChallengeTemplate {
     difficulty?: number | null;
     proficiency?: string | null;
 }
-export type QuestArchetypeNodeType = 'location' | 'monster_encounter' | 'scenario' | 'exposition';
+export type QuestArchetypeNodeType = 'challenge' | 'monster_encounter' | 'scenario' | 'exposition';
+export type QuestArchetypeNodeLocationSelectionMode = 'random' | 'closest';
 export interface QuestArchetypeNodeExpositionItemReward {
     inventoryItemId: number;
     quantity: number;
@@ -56,6 +57,9 @@ export interface QuestArchetypeNode {
     nodeType?: QuestArchetypeNodeType;
     locationArchetype?: LocationArchetype | null;
     locationArchetypeId?: string | null;
+    locationSelectionMode?: QuestArchetypeNodeLocationSelectionMode;
+    challengeTemplateId?: string | null;
+    challengeTemplate?: QuestArchetypeChallengeTemplate | null;
     scenarioTemplateId?: string | null;
     monsterTemplateIds?: string[];
     targetLevel?: number | null;

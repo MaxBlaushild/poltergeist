@@ -32,6 +32,7 @@ func (h *questArchetypeChallengeHandle) FindByID(ctx context.Context, id uuid.UU
 	if err := h.db.WithContext(ctx).
 		Preload("ChallengeTemplate").
 		Preload("UnlockedNode").
+		Preload("UnlockedNode.ChallengeTemplate").
 		Preload("UnlockedNode.LocationArchetype").
 		Preload("UnlockedNode.ScenarioTemplate").
 		First(&questArchetypeChallenge, "id = ?", id).Error; err != nil {
@@ -65,6 +66,7 @@ func (h *questArchetypeChallengeHandle) FindAllByNodeID(ctx context.Context, nod
 	if err := h.db.WithContext(ctx).
 		Preload("QuestArchetypeChallenge.ChallengeTemplate").
 		Preload("QuestArchetypeChallenge.UnlockedNode").
+		Preload("QuestArchetypeChallenge.UnlockedNode.ChallengeTemplate").
 		Preload("QuestArchetypeChallenge.UnlockedNode.LocationArchetype").
 		Preload("QuestArchetypeChallenge.UnlockedNode.ScenarioTemplate").
 		Find(&questArchetypeNodeChallenges, "quest_archetype_node_id = ?", nodeID).Error; err != nil {

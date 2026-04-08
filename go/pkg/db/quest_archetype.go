@@ -61,6 +61,7 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Root").
+		Preload("Root.ChallengeTemplate").
 		Preload("Root.Challenges").
 		Preload("Root.Challenges.ChallengeTemplate").
 		Preload("Root.LocationArchetype").
@@ -121,6 +122,7 @@ func (h *questArchetypeHandle) FindAll(ctx context.Context) ([]*models.QuestArch
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
 		Preload("Root").
+		Preload("Root.ChallengeTemplate").
 		Preload("Root.Challenges").
 		Preload("Root.Challenges.ChallengeTemplate").
 		Preload("Root.LocationArchetype").

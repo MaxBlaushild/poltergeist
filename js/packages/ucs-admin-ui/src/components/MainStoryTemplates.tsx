@@ -73,14 +73,14 @@ const questArchetypeNodeTypeLabel = (
   nodeType?: QuestArchetypeNode['nodeType']
 ) => {
   switch (nodeType) {
+    case 'challenge':
+      return 'Challenge';
     case 'exposition':
       return 'Exposition';
     case 'scenario':
       return 'Scenario';
     case 'monster_encounter':
       return 'Monster Encounter';
-    case 'location':
-      return 'Location';
     default:
       return 'Node';
   }
@@ -101,6 +101,9 @@ const summarizeQuestArchetypeRoot = (
   }
   if (nodeType === 'exposition') {
     return 'Starts with an exposition node';
+  }
+  if (nodeType === 'challenge') {
+    return 'Starts with a challenge node';
   }
   return `Starts with a ${nodeType} node`;
 };
@@ -178,9 +181,14 @@ const describeQuestArchetypeNode = (
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
   }
-  return node.locationArchetypeId
-    ? locationArchetypesById.get(node.locationArchetypeId)?.name ?? 'Unknown location'
-    : 'Location';
+  const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
+  if (node.locationArchetypeId) {
+    const locationLabel =
+      locationArchetypesById.get(node.locationArchetypeId)?.name ??
+      'Unknown location';
+    return `${challengeLabel} @ ${locationLabel}`;
+  }
+  return `${challengeLabel} @ Coordinates`;
 };
 
 const describeQuestArchetypeChallenge = (

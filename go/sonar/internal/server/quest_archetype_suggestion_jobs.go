@@ -262,7 +262,7 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 		if index+1 < len(nodes) {
 			nextNodeID = &nodes[index+1].ID
 		}
-		if err := s.linkQuestArchetypeSuggestionStep(ctx, nodes[index], step, nextNodeID, draft); err != nil {
+		if err := s.linkQuestArchetypeSuggestionStep(ctx, nodes[index], step, nextNodeID); err != nil {
 			return nil, err
 		}
 	}
@@ -376,13 +376,21 @@ func (s *server) createQuestArchetypeSuggestionNode(
 		if step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil {
 			return nil, fmt.Errorf("location challenge step %q is missing a resolved location archetype", step.LocationConcept)
 		}
-		payload.NodeType = string(models.QuestArchetypeNodeTypeLocation)
+		template, err := s.createQuestArchetypeSuggestionChallengeTemplate(ctx, step, draft)
+		if err != nil {
+			return nil, err
+		}
+		payload.NodeType = string(models.QuestArchetypeNodeTypeChallenge)
 		payload.LocationArchetypeID = step.LocationArchetypeID
+		payload.ChallengeTemplateID = &template.ID
+		if step.DistanceMeters != nil {
+			payload.EncounterProximityMeters = step.DistanceMeters
+		}
 	}
 
 	node := &models.QuestArchetypeNode{
 		ID:         uuid.New(),
-		NodeType:   models.QuestArchetypeNodeTypeLocation,
+		NodeType:   models.QuestArchetypeNodeTypeChallenge,
 		Difficulty: 0,
 	}
 	if err := s.applyQuestArchetypeNodePayload(ctx, node, payload, true); err != nil {
@@ -457,7 +465,6 @@ func (s *server) linkQuestArchetypeSuggestionStep(
 	node *models.QuestArchetypeNode,
 	step models.QuestArchetypeSuggestionStep,
 	nextNodeID *uuid.UUID,
-	draft *models.QuestArchetypeSuggestionDraft,
 ) error {
 	if node == nil {
 		return fmt.Errorf("node is required")
@@ -466,21 +473,11 @@ func (s *server) linkQuestArchetypeSuggestionStep(
 		return nil
 	}
 
-	var challengeTemplateID *uuid.UUID
-	if step.Content == "challenge" {
-		template, err := s.createQuestArchetypeSuggestionChallengeTemplate(ctx, step, draft)
-		if err != nil {
-			return err
-		}
-		challengeTemplateID = &template.ID
-	}
-
 	challenge := &models.QuestArchetypeChallenge{
-		ID:                  uuid.New(),
-		ChallengeTemplateID: challengeTemplateID,
-		Reward:              0,
-		Difficulty:          0,
-		UnlockedNodeID:      nextNodeID,
+		ID:             uuid.New(),
+		Reward:         0,
+		Difficulty:     0,
+		UnlockedNodeID: nextNodeID,
 	}
 	if err := s.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
 		return fmt.Errorf("failed to create quest archetype link: %w", err)

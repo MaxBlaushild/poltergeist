@@ -15,6 +15,7 @@ import (
 type QuestArchetypeNodeType string
 
 const (
+	QuestArchetypeNodeTypeChallenge        QuestArchetypeNodeType = "challenge"
 	QuestArchetypeNodeTypeLocation         QuestArchetypeNodeType = "location"
 	QuestArchetypeNodeTypeMonsterEncounter QuestArchetypeNodeType = "monster_encounter"
 	QuestArchetypeNodeTypeScenario         QuestArchetypeNodeType = "scenario"
@@ -23,6 +24,8 @@ const (
 
 func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case string(QuestArchetypeNodeTypeChallenge), string(QuestArchetypeNodeTypeLocation):
+		return QuestArchetypeNodeTypeChallenge
 	case string(QuestArchetypeNodeTypeExposition):
 		return QuestArchetypeNodeTypeExposition
 	case string(QuestArchetypeNodeTypeScenario):
@@ -30,7 +33,25 @@ func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
 	case string(QuestArchetypeNodeTypeMonsterEncounter):
 		return QuestArchetypeNodeTypeMonsterEncounter
 	default:
-		return QuestArchetypeNodeTypeLocation
+		return QuestArchetypeNodeTypeChallenge
+	}
+}
+
+type QuestArchetypeNodeLocationSelectionMode string
+
+const (
+	QuestArchetypeNodeLocationSelectionModeRandom  QuestArchetypeNodeLocationSelectionMode = "random"
+	QuestArchetypeNodeLocationSelectionModeClosest QuestArchetypeNodeLocationSelectionMode = "closest"
+)
+
+func NormalizeQuestArchetypeNodeLocationSelectionMode(
+	raw string,
+) QuestArchetypeNodeLocationSelectionMode {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case string(QuestArchetypeNodeLocationSelectionModeClosest):
+		return QuestArchetypeNodeLocationSelectionModeClosest
+	default:
+		return QuestArchetypeNodeLocationSelectionModeRandom
 	}
 }
 
@@ -96,45 +117,48 @@ func (r *QuestArchetypeExpositionSpellRewards) Scan(value interface{}) error {
 }
 
 type QuestArchetypeNode struct {
-	ID                         uuid.UUID                            `json:"id"`
-	CreatedAt                  time.Time                            `json:"createdAt"`
-	UpdatedAt                  time.Time                            `json:"updatedAt"`
-	DeletedAt                  gorm.DeletedAt                       `json:"deletedAt"`
-	NodeType                   QuestArchetypeNodeType               `json:"nodeType" gorm:"column:node_type"`
-	LocationArchetype          *LocationArchetype                   `json:"locationArchetype,omitempty"`
-	LocationArchetypeID        *uuid.UUID                           `json:"locationArchetypeId,omitempty"`
-	ScenarioTemplate           *ScenarioTemplate                    `json:"scenarioTemplate,omitempty"`
-	ScenarioTemplateID         *uuid.UUID                           `json:"scenarioTemplateId,omitempty"`
-	MonsterTemplateIDs         StringArray                          `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
-	TargetLevel                int                                  `json:"targetLevel" gorm:"column:target_level;default:1"`
-	EncounterRewardMode        RewardMode                           `json:"encounterRewardMode" gorm:"column:encounter_reward_mode"`
-	EncounterRandomRewardSize  RandomRewardSize                     `json:"encounterRandomRewardSize" gorm:"column:encounter_random_reward_size"`
-	EncounterRewardExperience  int                                  `json:"encounterRewardExperience" gorm:"column:encounter_reward_experience"`
-	EncounterRewardGold        int                                  `json:"encounterRewardGold" gorm:"column:encounter_reward_gold"`
-	EncounterMaterialRewards   BaseMaterialRewards                  `json:"encounterMaterialRewards" gorm:"column:encounter_material_rewards_json;type:jsonb;default:'[]'"`
-	EncounterItemRewards       MonsterEncounterRewardItems          `json:"encounterItemRewards" gorm:"column:encounter_item_rewards_json;type:jsonb;default:'[]'"`
-	EncounterProximityMeters   int                                  `json:"encounterProximityMeters" gorm:"column:encounter_proximity_meters;default:100"`
-	ExpositionTitle            string                               `json:"expositionTitle" gorm:"column:exposition_title"`
-	ExpositionDescription      string                               `json:"expositionDescription" gorm:"column:exposition_description"`
-	ExpositionDialogue         DialogueSequence                     `json:"expositionDialogue" gorm:"column:exposition_dialogue;type:jsonb;default:'[]'"`
-	ExpositionRewardMode       RewardMode                           `json:"expositionRewardMode" gorm:"column:exposition_reward_mode"`
-	ExpositionRandomRewardSize RandomRewardSize                     `json:"expositionRandomRewardSize" gorm:"column:exposition_random_reward_size"`
-	ExpositionRewardExperience int                                  `json:"expositionRewardExperience" gorm:"column:exposition_reward_experience"`
-	ExpositionRewardGold       int                                  `json:"expositionRewardGold" gorm:"column:exposition_reward_gold"`
-	ExpositionMaterialRewards  BaseMaterialRewards                  `json:"expositionMaterialRewards" gorm:"column:exposition_material_rewards_json;type:jsonb;default:'[]'"`
-	ExpositionItemRewards      QuestArchetypeExpositionItemRewards  `json:"expositionItemRewards" gorm:"column:exposition_item_rewards_json;type:jsonb;default:'[]'"`
-	ExpositionSpellRewards     QuestArchetypeExpositionSpellRewards `json:"expositionSpellRewards" gorm:"column:exposition_spell_rewards_json;type:jsonb;default:'[]'"`
-	Challenges                 []QuestArchetypeChallenge            `json:"challenges" gorm:"many2many:quest_archetype_node_challenges;"`
-	Difficulty                 int                                  `json:"difficulty" gorm:"default:0"`
+	ID                         uuid.UUID                               `json:"id"`
+	CreatedAt                  time.Time                               `json:"createdAt"`
+	UpdatedAt                  time.Time                               `json:"updatedAt"`
+	DeletedAt                  gorm.DeletedAt                          `json:"deletedAt"`
+	NodeType                   QuestArchetypeNodeType                  `json:"nodeType" gorm:"column:node_type"`
+	LocationArchetype          *LocationArchetype                      `json:"locationArchetype,omitempty"`
+	LocationArchetypeID        *uuid.UUID                              `json:"locationArchetypeId,omitempty"`
+	LocationSelectionMode      QuestArchetypeNodeLocationSelectionMode `json:"locationSelectionMode" gorm:"column:location_selection_mode"`
+	ChallengeTemplate          *ChallengeTemplate                      `json:"challengeTemplate,omitempty"`
+	ChallengeTemplateID        *uuid.UUID                              `json:"challengeTemplateId,omitempty" gorm:"column:challenge_template_id;type:uuid"`
+	ScenarioTemplate           *ScenarioTemplate                       `json:"scenarioTemplate,omitempty"`
+	ScenarioTemplateID         *uuid.UUID                              `json:"scenarioTemplateId,omitempty"`
+	MonsterTemplateIDs         StringArray                             `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
+	TargetLevel                int                                     `json:"targetLevel" gorm:"column:target_level;default:1"`
+	EncounterRewardMode        RewardMode                              `json:"encounterRewardMode" gorm:"column:encounter_reward_mode"`
+	EncounterRandomRewardSize  RandomRewardSize                        `json:"encounterRandomRewardSize" gorm:"column:encounter_random_reward_size"`
+	EncounterRewardExperience  int                                     `json:"encounterRewardExperience" gorm:"column:encounter_reward_experience"`
+	EncounterRewardGold        int                                     `json:"encounterRewardGold" gorm:"column:encounter_reward_gold"`
+	EncounterMaterialRewards   BaseMaterialRewards                     `json:"encounterMaterialRewards" gorm:"column:encounter_material_rewards_json;type:jsonb;default:'[]'"`
+	EncounterItemRewards       MonsterEncounterRewardItems             `json:"encounterItemRewards" gorm:"column:encounter_item_rewards_json;type:jsonb;default:'[]'"`
+	EncounterProximityMeters   int                                     `json:"encounterProximityMeters" gorm:"column:encounter_proximity_meters;default:100"`
+	ExpositionTitle            string                                  `json:"expositionTitle" gorm:"column:exposition_title"`
+	ExpositionDescription      string                                  `json:"expositionDescription" gorm:"column:exposition_description"`
+	ExpositionDialogue         DialogueSequence                        `json:"expositionDialogue" gorm:"column:exposition_dialogue;type:jsonb;default:'[]'"`
+	ExpositionRewardMode       RewardMode                              `json:"expositionRewardMode" gorm:"column:exposition_reward_mode"`
+	ExpositionRandomRewardSize RandomRewardSize                        `json:"expositionRandomRewardSize" gorm:"column:exposition_random_reward_size"`
+	ExpositionRewardExperience int                                     `json:"expositionRewardExperience" gorm:"column:exposition_reward_experience"`
+	ExpositionRewardGold       int                                     `json:"expositionRewardGold" gorm:"column:exposition_reward_gold"`
+	ExpositionMaterialRewards  BaseMaterialRewards                     `json:"expositionMaterialRewards" gorm:"column:exposition_material_rewards_json;type:jsonb;default:'[]'"`
+	ExpositionItemRewards      QuestArchetypeExpositionItemRewards     `json:"expositionItemRewards" gorm:"column:exposition_item_rewards_json;type:jsonb;default:'[]'"`
+	ExpositionSpellRewards     QuestArchetypeExpositionSpellRewards    `json:"expositionSpellRewards" gorm:"column:exposition_spell_rewards_json;type:jsonb;default:'[]'"`
+	Challenges                 []QuestArchetypeChallenge               `json:"challenges" gorm:"many2many:quest_archetype_node_challenges;"`
+	Difficulty                 int                                     `json:"difficulty" gorm:"default:0"`
 }
 
 func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, error) {
 	if q == nil {
 		return LocationArchetypeChallenge{}, fmt.Errorf("quest archetype node is required")
 	}
-	if q.NodeType == QuestArchetypeNodeTypeMonsterEncounter ||
-		q.NodeType == QuestArchetypeNodeTypeScenario ||
-		q.NodeType == QuestArchetypeNodeTypeExposition {
+	if NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeMonsterEncounter ||
+		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeScenario ||
+		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeExposition {
 		return LocationArchetypeChallenge{}, fmt.Errorf("%s nodes do not generate location challenges", q.NodeType)
 	}
 	if q.LocationArchetype == nil {
@@ -145,6 +169,9 @@ func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, e
 
 func (q *QuestArchetypeNode) BeforeSave(tx *gorm.DB) error {
 	q.NodeType = NormalizeQuestArchetypeNodeType(string(q.NodeType))
+	q.LocationSelectionMode = NormalizeQuestArchetypeNodeLocationSelectionMode(
+		string(q.LocationSelectionMode),
+	)
 	q.EncounterRewardMode = NormalizeRewardMode(string(q.EncounterRewardMode))
 	q.EncounterRandomRewardSize = NormalizeRandomRewardSize(string(q.EncounterRandomRewardSize))
 	q.ExpositionRewardMode = NormalizeRewardMode(string(q.ExpositionRewardMode))

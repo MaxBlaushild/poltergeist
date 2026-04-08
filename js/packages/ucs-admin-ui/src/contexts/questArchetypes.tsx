@@ -14,6 +14,8 @@ import { useAPI, useAuth } from '@poltergeist/contexts';
 export type QuestArchetypeNodeDraft = {
   nodeType?: QuestArchetypeNodeType;
   locationArchetypeId?: string | null;
+  locationSelectionMode?: 'random' | 'closest';
+  challengeTemplateId?: string | null;
   scenarioTemplateId?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
@@ -256,6 +258,8 @@ export const QuestArchetypesProvider = ({
       {
         nodeType: draft.rootNode.nodeType,
         locationArchetypeID: draft.rootNode.locationArchetypeId,
+        locationSelectionMode: draft.rootNode.locationSelectionMode,
+        challengeTemplateId: draft.rootNode.challengeTemplateId,
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
@@ -379,6 +383,7 @@ export const QuestArchetypesProvider = ({
       challengeTemplateId?: string;
       nodeType?: QuestArchetypeNodeType;
       locationArchetypeID?: string;
+      locationSelectionMode?: 'random' | 'closest';
       scenarioTemplateId?: string | null;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
@@ -402,6 +407,8 @@ export const QuestArchetypesProvider = ({
       if (unlockedNode.locationArchetypeId) {
         payload.locationArchetypeID = unlockedNode.locationArchetypeId;
       }
+      payload.locationSelectionMode = unlockedNode.locationSelectionMode;
+      payload.challengeTemplateId = unlockedNode.challengeTemplateId ?? undefined;
       payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
       if (
         unlockedNode.monsterTemplateIds &&
@@ -466,6 +473,8 @@ export const QuestArchetypesProvider = ({
     await apiClient.patch(`/sonar/questArchetypeNodes/${nodeId}`, {
       nodeType: updates.nodeType,
       locationArchetypeID: updates.locationArchetypeId,
+      locationSelectionMode: updates.locationSelectionMode,
+      challengeTemplateId: updates.challengeTemplateId,
       scenarioTemplateId: updates.scenarioTemplateId,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,

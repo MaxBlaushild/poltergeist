@@ -3026,7 +3026,7 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		ctx,
 		parentNode,
 		requestBody.ChallengeTemplateID,
-		questArchetypeNodeRequiresChallengeTemplate(parentNode),
+		false,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -3041,7 +3041,7 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 			ID:         *newNodeID,
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),
-			NodeType:   models.QuestArchetypeNodeTypeLocation,
+			NodeType:   models.QuestArchetypeNodeTypeChallenge,
 			Difficulty: 0,
 		}
 		if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, requestBody.questArchetypeNodePayload, true); err != nil {
@@ -3226,7 +3226,7 @@ func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
 		ID:         uuid.New(),
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
-		NodeType:   models.QuestArchetypeNodeTypeLocation,
+		NodeType:   models.QuestArchetypeNodeTypeChallenge,
 		Difficulty: 0,
 	}
 	if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, requestBody, true); err != nil {

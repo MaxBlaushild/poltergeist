@@ -17,6 +17,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/google/uuid"
 )
 
@@ -243,7 +244,8 @@ func (c *client) processQuestNode(
 			fmt.Errorf("quest archetype node is required"),
 		)
 	}
-	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeScenario {
+	switch models.NormalizeQuestArchetypeNodeType(string(questArchTypeNode.NodeType)) {
+	case models.QuestArchetypeNodeTypeScenario:
 		return c.processQuestScenarioNode(
 			ctx,
 			zone,
@@ -255,8 +257,7 @@ func (c *client) processQuestNode(
 			anchorMap,
 			previousAnchor,
 		)
-	}
-	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeExposition {
+	case models.QuestArchetypeNodeTypeExposition:
 		return c.processQuestExpositionNode(
 			ctx,
 			zone,
@@ -268,8 +269,7 @@ func (c *client) processQuestNode(
 			anchorMap,
 			previousAnchor,
 		)
-	}
-	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeMonsterEncounter {
+	case models.QuestArchetypeNodeTypeMonsterEncounter:
 		return c.processQuestMonsterEncounterNode(
 			ctx,
 			zone,
@@ -281,21 +281,22 @@ func (c *client) processQuestNode(
 			anchorMap,
 			previousAnchor,
 		)
+	default:
+		return c.processQuestChallengeNode(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			previousAnchor,
+		)
 	}
-	return c.processQuestLocationNode(
-		ctx,
-		zone,
-		questArchTypeNode,
-		quest,
-		usedPOIs,
-		orderIndex,
-		nodeMap,
-		anchorMap,
-		previousAnchor,
-	)
 }
 
-func (c *client) processQuestLocationNode(
+func (c *client) processQuestChallengeNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
@@ -306,135 +307,107 @@ func (c *client) processQuestLocationNode(
 	anchorMap map[uuid.UUID]*questNodeAnchor,
 	previousAnchor *questNodeAnchor,
 ) (*questNodeAnchor, error) {
-	if questArchTypeNode.LocationArchetypeID == nil || *questArchTypeNode.LocationArchetypeID == uuid.Nil {
-		return previousAnchor, markNonRetriableQuestGenerationError(
-			fmt.Errorf("location node is missing a location archetype"),
-		)
-	}
-	log.Printf("Processing location node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID.String())
-
-	locationArchetype, err := c.dbClient.LocationArchetype().FindByID(ctx, *questArchTypeNode.LocationArchetypeID)
-	if err != nil {
-		log.Printf("Error finding location archetype: %v", err)
-		return previousAnchor, err
-	}
-	if locationArchetype == nil {
-		return previousAnchor, markNonRetriableQuestGenerationError(
-			fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String()),
-		)
-	}
-	pointOfInterest, err := c.resolveQuestNodePointOfInterest(
-		ctx,
-		zone,
-		locationArchetype,
-		usedPOIs,
-	)
-	if err != nil {
-		log.Printf(
-			"Error resolving quest POI for zone=%s node=%s location_archetype=%s: %v",
-			zone.ID,
-			questArchTypeNode.ID,
-			locationArchetype.ID,
-			err,
-		)
-		return previousAnchor, err
-	}
-	if err := c.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, pointOfInterest.ID); err != nil {
-		log.Printf("Warning: failed to update last_used_in_quest_at for POI %s: %v", pointOfInterest.ID, err)
-	}
-
-	latitude, longitude, err := pointOfInterestCoordinates(pointOfInterest)
-	if err != nil {
-		return previousAnchor, err
-	}
-	currentAnchor := &questNodeAnchor{Latitude: latitude, Longitude: longitude}
-
 	existingNodeID, ok := nodeMap[questArchTypeNode.ID]
 	var questNodeID uuid.UUID
 	if ok {
 		questNodeID = existingNodeID
-		if existingAnchor, exists := anchorMap[questArchTypeNode.ID]; exists && existingAnchor != nil {
-			currentAnchor = existingAnchor
+		currentAnchor := anchorMap[questArchTypeNode.ID]
+		if currentAnchor == nil {
+			currentAnchor = previousAnchor
 		}
-	} else {
-		questNodeID = uuid.New()
-		submissionType := models.DefaultQuestNodeSubmissionType()
-		var primaryLocationChallenge *resolvedQuestArchetypeLocationChallenge
-		if len(questArchTypeNode.Challenges) > 0 {
-			resolvedChallenge, err := c.resolveQuestArchetypeLocationChallenge(
-				ctx,
-				questArchTypeNode,
-				&questArchTypeNode.Challenges[0],
-			)
-			if err != nil {
-				return previousAnchor, err
-			}
-			primaryLocationChallenge = resolvedChallenge
-			if resolvedChallenge != nil && resolvedChallenge.SubmissionType.IsValid() {
-				submissionType = resolvedChallenge.SubmissionType
-			}
-		}
-		locationChallenge, err := c.makeQuestLocationChallenge(
-			zone.ID,
-			pointOfInterest,
-			submissionType,
-			questUsesScaledDifficulty(quest),
-			questFixedDifficulty(quest, 1),
+		return currentAnchor, c.attachQuestBranchChildren(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			existingNodeID,
 		)
-		if err != nil {
-			return previousAnchor, err
-		}
-		if primaryLocationChallenge != nil {
-			locationChallenge.Question = primaryLocationChallenge.Question
-			if strings.TrimSpace(primaryLocationChallenge.Description) != "" {
-				locationChallenge.Description = primaryLocationChallenge.Description
-			}
-			locationChallenge.SubmissionType = primaryLocationChallenge.SubmissionType
-			locationChallenge.Difficulty = questFixedDifficulty(quest, primaryLocationChallenge.Difficulty)
-			locationChallenge.StatTags = append(models.StringArray{}, primaryLocationChallenge.StatTags...)
-			locationChallenge.Proficiency = primaryLocationChallenge.Proficiency
-		}
-		if err := c.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
-			return previousAnchor, err
-		}
-		node := &models.QuestNode{
-			ID:             questNodeID,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-			QuestID:        quest.ID,
-			OrderIndex:     *orderIndex,
-			ChallengeID:    &locationChallenge.ID,
-			SubmissionType: submissionType,
-		}
-		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
-			return previousAnchor, err
-		}
-		nodeMap[questArchTypeNode.ID] = questNodeID
-		anchorMap[questArchTypeNode.ID] = currentAnchor
-		(*orderIndex)++
 	}
 
-	for _, allotedChallenge := range questArchTypeNode.Challenges {
-		if allotedChallenge.UnlockedNodeID != nil {
-			unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *allotedChallenge.UnlockedNodeID)
-			if err != nil {
-				return currentAnchor, err
-			}
-			if _, err := c.processQuestNode(ctx, zone, unlockedNode, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
-				return currentAnchor, err
-			}
-			childNodeID := nodeMap[unlockedNode.ID]
-			child := &models.QuestNodeChild{
-				ID:              uuid.New(),
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
-				QuestNodeID:     questNodeID,
-				NextQuestNodeID: childNodeID,
-			}
-			if err := c.dbClient.QuestNodeChild().Create(ctx, child); err != nil {
-				return currentAnchor, err
-			}
+	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		previousAnchor,
+	)
+	if err != nil {
+		return previousAnchor, err
+	}
+	if currentAnchor == nil {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("challenge node anchor is required"),
+		)
+	}
+
+	questNodeID = uuid.New()
+	resolvedChallenge, err := c.resolveQuestNodeChallengeDefinition(ctx, questArchTypeNode)
+	if err != nil {
+		return previousAnchor, err
+	}
+	submissionType := models.DefaultQuestNodeSubmissionType()
+	if resolvedChallenge != nil && resolvedChallenge.SubmissionType.IsValid() {
+		submissionType = resolvedChallenge.SubmissionType
+	}
+	locationChallenge, err := c.makeQuestNodeChallenge(
+		zone.ID,
+		currentAnchor,
+		pointOfInterest,
+		submissionType,
+		questUsesScaledDifficulty(quest),
+		questFixedDifficulty(quest, 1),
+	)
+	if err != nil {
+		return previousAnchor, err
+	}
+	if resolvedChallenge != nil {
+		locationChallenge.Question = resolvedChallenge.Question
+		if strings.TrimSpace(resolvedChallenge.Description) != "" {
+			locationChallenge.Description = resolvedChallenge.Description
 		}
+		locationChallenge.SubmissionType = resolvedChallenge.SubmissionType
+		locationChallenge.Difficulty = questFixedDifficulty(quest, resolvedChallenge.Difficulty)
+		locationChallenge.StatTags = append(models.StringArray{}, resolvedChallenge.StatTags...)
+		locationChallenge.Proficiency = resolvedChallenge.Proficiency
+	}
+	if err := c.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
+		return previousAnchor, err
+	}
+	node := &models.QuestNode{
+		ID:             questNodeID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		QuestID:        quest.ID,
+		OrderIndex:     *orderIndex,
+		ChallengeID:    &locationChallenge.ID,
+		SubmissionType: submissionType,
+	}
+	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
+		return previousAnchor, err
+	}
+	nodeMap[questArchTypeNode.ID] = questNodeID
+	anchorMap[questArchTypeNode.ID] = currentAnchor
+	(*orderIndex)++
+
+	if err := c.attachQuestBranchChildren(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		orderIndex,
+		nodeMap,
+		anchorMap,
+		currentAnchor,
+		questNodeID,
+	); err != nil {
+		return currentAnchor, err
 	}
 
 	return currentAnchor, nil
@@ -490,6 +463,7 @@ func (c *client) processQuestScenarioNode(
 		ctx,
 		zone,
 		questArchTypeNode,
+		quest,
 		usedPOIs,
 		previousAnchor,
 	)
@@ -715,6 +689,7 @@ func (c *client) processQuestExpositionNode(
 		ctx,
 		zone,
 		questArchTypeNode,
+		quest,
 		usedPOIs,
 		previousAnchor,
 	)
@@ -874,6 +849,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		ctx,
 		zone,
 		questArchTypeNode,
+		quest,
 		usedPOIs,
 		previousAnchor,
 	)
@@ -1073,11 +1049,72 @@ func selectUnusedPointOfInterest(
 	return nil
 }
 
+func selectClosestUnusedPointOfInterest(
+	pointsOfInterest []*models.PointOfInterest,
+	usedPOIs map[uuid.UUID]bool,
+	reference *questNodeAnchor,
+) *models.PointOfInterest {
+	if reference == nil {
+		return selectUnusedPointOfInterest(pointsOfInterest, usedPOIs)
+	}
+	var (
+		closest         *models.PointOfInterest
+		closestDistance float64
+	)
+	for _, poi := range pointsOfInterest {
+		if poi == nil || usedPOIs[poi.ID] {
+			continue
+		}
+		latitude, longitude, err := pointOfInterestCoordinates(poi)
+		if err != nil {
+			continue
+		}
+		distance := util.HaversineDistance(
+			reference.Latitude,
+			reference.Longitude,
+			latitude,
+			longitude,
+		)
+		if closest == nil || distance < closestDistance {
+			closest = poi
+			closestDistance = distance
+		}
+	}
+	return closest
+}
+
+func (c *client) loadQuestNodeLocationArchetype(
+	ctx context.Context,
+	questArchTypeNode *models.QuestArchetypeNode,
+) (*models.LocationArchetype, error) {
+	if questArchTypeNode == nil ||
+		questArchTypeNode.LocationArchetypeID == nil ||
+		*questArchTypeNode.LocationArchetypeID == uuid.Nil {
+		return nil, nil
+	}
+	if questArchTypeNode.LocationArchetype != nil &&
+		questArchTypeNode.LocationArchetype.ID == *questArchTypeNode.LocationArchetypeID {
+		return questArchTypeNode.LocationArchetype, nil
+	}
+	locationArchetype, err := c.dbClient.LocationArchetype().FindByID(ctx, *questArchTypeNode.LocationArchetypeID)
+	if err != nil {
+		return nil, err
+	}
+	if locationArchetype == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String()),
+		)
+	}
+	return locationArchetype, nil
+}
+
 func (c *client) resolveQuestNodePointOfInterest(
 	ctx context.Context,
 	zone *models.Zone,
 	locationArchetype *models.LocationArchetype,
 	usedPOIs map[uuid.UUID]bool,
+	selectionMode models.QuestArchetypeNodeLocationSelectionMode,
+	referenceAnchor *questNodeAnchor,
 ) (*models.PointOfInterest, error) {
 	if zone == nil {
 		return nil, markNonRetriableQuestGenerationError(
@@ -1091,6 +1128,9 @@ func (c *client) resolveQuestNodePointOfInterest(
 	}
 
 	searchCount := questNodePOISearchCount(len(usedPOIs))
+	if selectionMode == models.QuestArchetypeNodeLocationSelectionModeClosest && referenceAnchor != nil {
+		searchCount = 20
+	}
 	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(
 		ctx,
 		*zone,
@@ -1118,7 +1158,14 @@ func (c *client) resolveQuestNodePointOfInterest(
 		)
 	}
 
-	pointOfInterest := selectUnusedPointOfInterest(pointsOfInterest, usedPOIs)
+	selectPointOfInterest := func(points []*models.PointOfInterest) *models.PointOfInterest {
+		if selectionMode == models.QuestArchetypeNodeLocationSelectionModeClosest {
+			return selectClosestUnusedPointOfInterest(points, usedPOIs, referenceAnchor)
+		}
+		return selectUnusedPointOfInterest(points, usedPOIs)
+	}
+
+	pointOfInterest := selectPointOfInterest(pointsOfInterest)
 	if pointOfInterest == nil && searchCount < 20 {
 		fallbackCount := int32(20)
 		morePointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(
@@ -1139,7 +1186,7 @@ func (c *client) resolveQuestNodePointOfInterest(
 			return nil, err
 		}
 		pointsOfInterest = morePointsOfInterest
-		pointOfInterest = selectUnusedPointOfInterest(pointsOfInterest, usedPOIs)
+		pointOfInterest = selectPointOfInterest(pointsOfInterest)
 	}
 	if pointOfInterest == nil {
 		return nil, markNonRetriableQuestGenerationError(
@@ -1156,30 +1203,82 @@ func (c *client) resolveQuestNodePointOfInterest(
 	return pointOfInterest, nil
 }
 
+func (c *client) resolveQuestGiverAnchor(
+	ctx context.Context,
+	quest *models.Quest,
+) (*questNodeAnchor, error) {
+	if quest == nil || quest.QuestGiverCharacterID == nil || *quest.QuestGiverCharacterID == uuid.Nil {
+		return nil, nil
+	}
+	character, err := c.dbClient.Character().FindByID(ctx, *quest.QuestGiverCharacterID)
+	if err != nil {
+		return nil, err
+	}
+	if character == nil {
+		return nil, nil
+	}
+	if character.PointOfInterestID != nil && *character.PointOfInterestID != uuid.Nil {
+		poi, err := c.dbClient.PointOfInterest().FindByID(ctx, *character.PointOfInterestID)
+		if err != nil {
+			return nil, err
+		}
+		if poi != nil {
+			latitude, longitude, err := pointOfInterestCoordinates(poi)
+			if err == nil {
+				return &questNodeAnchor{Latitude: latitude, Longitude: longitude}, nil
+			}
+		}
+	}
+	locations, err := c.dbClient.CharacterLocation().FindByCharacterID(ctx, character.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, location := range locations {
+		if location == nil {
+			continue
+		}
+		return &questNodeAnchor{
+			Latitude:  location.Latitude,
+			Longitude: location.Longitude,
+		}, nil
+	}
+	return nil, nil
+}
+
 func (c *client) resolveQuestNodeAnchor(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
+	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	previousAnchor *questNodeAnchor,
 ) (*questNodeAnchor, *models.PointOfInterest, error) {
-	if questArchTypeNode != nil &&
-		questArchTypeNode.LocationArchetypeID != nil &&
-		*questArchTypeNode.LocationArchetypeID != uuid.Nil {
-		locationArchetype, err := c.dbClient.LocationArchetype().FindByID(ctx, *questArchTypeNode.LocationArchetypeID)
-		if err != nil {
-			return previousAnchor, nil, err
-		}
-		if locationArchetype == nil {
-			return previousAnchor, nil, markNonRetriableQuestGenerationError(
-				fmt.Errorf("location archetype %s not found", questArchTypeNode.LocationArchetypeID.String()),
-			)
+	if questArchTypeNode == nil {
+		return previousAnchor, nil, nil
+	}
+	locationArchetype, err := c.loadQuestNodeLocationArchetype(ctx, questArchTypeNode)
+	if err != nil {
+		return previousAnchor, nil, err
+	}
+	if locationArchetype != nil {
+		referenceAnchor := previousAnchor
+		selectionMode := models.NormalizeQuestArchetypeNodeLocationSelectionMode(
+			string(questArchTypeNode.LocationSelectionMode),
+		)
+		if referenceAnchor == nil &&
+			selectionMode == models.QuestArchetypeNodeLocationSelectionModeClosest {
+			referenceAnchor, err = c.resolveQuestGiverAnchor(ctx, quest)
+			if err != nil {
+				return previousAnchor, nil, err
+			}
 		}
 		pointOfInterest, err := c.resolveQuestNodePointOfInterest(
 			ctx,
 			zone,
 			locationArchetype,
 			usedPOIs,
+			selectionMode,
+			referenceAnchor,
 		)
 		if err != nil {
 			return previousAnchor, nil, err
@@ -1272,6 +1371,71 @@ type resolvedQuestArchetypeLocationChallenge struct {
 	Difficulty     int
 	StatTags       models.StringArray
 	Proficiency    *string
+}
+
+func (c *client) resolveQuestNodeChallengeDefinition(
+	ctx context.Context,
+	questArchTypeNode *models.QuestArchetypeNode,
+) (*resolvedQuestArchetypeLocationChallenge, error) {
+	if questArchTypeNode == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("quest archetype node is required"),
+		)
+	}
+	if questArchTypeNode.ChallengeTemplate != nil {
+		return resolvedQuestArchetypeLocationChallengeFromTemplate(
+			questArchTypeNode.ChallengeTemplate,
+		)
+	}
+	if questArchTypeNode.ChallengeTemplateID != nil &&
+		*questArchTypeNode.ChallengeTemplateID != uuid.Nil {
+		template, err := c.dbClient.ChallengeTemplate().FindByID(
+			ctx,
+			*questArchTypeNode.ChallengeTemplateID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if template == nil {
+			return nil, markNonRetriableQuestGenerationError(
+				fmt.Errorf("challenge template %s not found", questArchTypeNode.ChallengeTemplateID.String()),
+			)
+		}
+		return resolvedQuestArchetypeLocationChallengeFromTemplate(template)
+	}
+	if len(questArchTypeNode.Challenges) > 0 {
+		return c.resolveQuestArchetypeLocationChallenge(
+			ctx,
+			questArchTypeNode,
+			&questArchTypeNode.Challenges[0],
+		)
+	}
+	locationArchetype, err := c.loadQuestNodeLocationArchetype(ctx, questArchTypeNode)
+	if err != nil {
+		return nil, err
+	}
+	if locationArchetype == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("challenge nodes without a location archetype require a challenge template"),
+		)
+	}
+	questArchTypeNode.LocationArchetype = locationArchetype
+	randomChallenge, err := questArchTypeNode.GetRandomChallenge()
+	if err != nil {
+		return nil, err
+	}
+	submissionType := randomChallenge.SubmissionType
+	if !submissionType.IsValid() {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	return &resolvedQuestArchetypeLocationChallenge{
+		Question:       randomChallenge.Question,
+		Description:    "",
+		SubmissionType: submissionType,
+		Difficulty:     randomChallenge.Difficulty,
+		StatTags:       models.StringArray{},
+		Proficiency:    normalizeQuestProficiency(randomChallenge.Proficiency),
+	}, nil
 }
 
 func (c *client) resolveQuestArchetypeLocationChallenge(
@@ -1576,35 +1740,45 @@ func optionalPointOfInterestID(poi *models.PointOfInterest) *uuid.UUID {
 	return &poiID
 }
 
-func (c *client) makeQuestLocationChallenge(
+func (c *client) makeQuestNodeChallenge(
 	zoneID uuid.UUID,
+	anchor *questNodeAnchor,
 	poi *models.PointOfInterest,
 	submissionType models.QuestNodeSubmissionType,
 	scaleWithUserLevel bool,
 	difficulty int,
 ) (*models.Challenge, error) {
-	if poi == nil {
+	if anchor == nil && poi == nil {
 		return nil, markNonRetriableQuestGenerationError(
-			fmt.Errorf("point of interest is required"),
+			fmt.Errorf("challenge anchor is required"),
 		)
 	}
-	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
-	if err != nil {
-		return nil, markNonRetriableQuestGenerationError(
-			fmt.Errorf("invalid point of interest latitude: %w", err),
-		)
+	var (
+		lat float64
+		lng float64
+		err error
+	)
+	if anchor != nil {
+		lat = anchor.Latitude
+		lng = anchor.Longitude
+	} else {
+		lat, lng, err = pointOfInterestCoordinates(poi)
+		if err != nil {
+			return nil, err
+		}
 	}
-	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
-	if err != nil {
-		return nil, markNonRetriableQuestGenerationError(
-			fmt.Errorf("invalid point of interest longitude: %w", err),
-		)
+	poiName := ""
+	if poi != nil {
+		poiName = strings.TrimSpace(poi.Name)
 	}
-	question := fmt.Sprintf("Visit %s and share photo proof of your arrival.", strings.TrimSpace(poi.Name))
-	if strings.TrimSpace(poi.Name) == "" {
+	question := fmt.Sprintf("Visit %s and share photo proof of your arrival.", poiName)
+	if poiName == "" {
 		question = "Visit this location and share photo proof of your arrival."
 	}
-	description := strings.TrimSpace(poi.Description)
+	description := ""
+	if poi != nil {
+		description = strings.TrimSpace(poi.Description)
+	}
 	now := time.Now()
 	return &models.Challenge{
 		ID:                 uuid.New(),

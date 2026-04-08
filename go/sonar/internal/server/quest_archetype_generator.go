@@ -99,7 +99,6 @@ func (s *server) generateQuestArchetypeFromSteps(
 
 	var rootNodeID uuid.UUID
 	var previousNode *models.QuestArchetypeNode
-	var previousStep *normalizedQuestTemplateGeneratorStep
 	for idx, step := range steps {
 		node, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, &monsterTemplates)
 		if err != nil {
@@ -108,22 +107,16 @@ func (s *server) generateQuestArchetypeFromSteps(
 		if idx == 0 {
 			rootNodeID = node.ID
 		}
-		if previousNode != nil && previousStep != nil {
+		if previousNode != nil {
 			if err := s.linkGeneratedQuestTemplateNodes(
 				ctx,
-				requestBody.ThemePrompt,
-				idx-1,
-				*previousStep,
 				previousNode,
-				&step,
 				node.ID,
 			); err != nil {
 				return nil, err
 			}
 		}
 		previousNode = node
-		stepCopy := step
-		previousStep = &stepCopy
 	}
 
 	name := buildGeneratedQuestTemplateName(requestBody.Name, requestBody.ThemePrompt, steps)
@@ -248,11 +241,23 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 		payload.TargetLevel = intPtr(maxInt(1, 1+stepIndex))
 		payload.EncounterProximityMeters = intPtr(step.ProximityMeters)
 	default:
-		payload.NodeType = string(models.QuestArchetypeNodeTypeLocation)
+		template, err := s.createGeneratedChallengeTemplate(
+			ctx,
+			themePrompt,
+			stepIndex,
+			step,
+			nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+		payload.NodeType = string(models.QuestArchetypeNodeTypeChallenge)
+		payload.ChallengeTemplateID = &template.ID
+		payload.EncounterProximityMeters = intPtr(step.ProximityMeters)
 	}
 	node := &models.QuestArchetypeNode{
 		ID:         uuid.New(),
-		NodeType:   models.QuestArchetypeNodeTypeLocation,
+		NodeType:   models.QuestArchetypeNodeTypeChallenge,
 		Difficulty: 0,
 	}
 	if err := s.applyQuestArchetypeNodePayload(ctx, node, payload, true); err != nil {
@@ -266,27 +271,14 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 
 func (s *server) linkGeneratedQuestTemplateNodes(
 	ctx *gin.Context,
-	themePrompt string,
-	parentStepIndex int,
-	parentStep normalizedQuestTemplateGeneratorStep,
 	parentNode *models.QuestArchetypeNode,
-	childStep *normalizedQuestTemplateGeneratorStep,
 	childNodeID uuid.UUID,
 ) error {
-	var challengeTemplateID *uuid.UUID
-	if questArchetypeNodeRequiresChallengeTemplate(parentNode) {
-		template, err := s.createGeneratedChallengeTemplate(ctx, themePrompt, parentStepIndex, parentStep, childStep)
-		if err != nil {
-			return err
-		}
-		challengeTemplateID = &template.ID
-	}
 	challenge := &models.QuestArchetypeChallenge{
-		ID:                  uuid.New(),
-		ChallengeTemplateID: challengeTemplateID,
-		Reward:              0,
-		Difficulty:          0,
-		UnlockedNodeID:      &childNodeID,
+		ID:             uuid.New(),
+		Reward:         0,
+		Difficulty:     0,
+		UnlockedNodeID: &childNodeID,
 	}
 	if err := s.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
 		return fmt.Errorf("failed to create quest template link")

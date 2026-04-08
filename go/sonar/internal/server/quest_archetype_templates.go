@@ -54,7 +54,7 @@ func questArchetypeNodeRequiresChallengeTemplate(node *models.QuestArchetypeNode
 	if node == nil {
 		return false
 	}
-	return node.NodeType == models.QuestArchetypeNodeTypeLocation
+	return models.NormalizeQuestArchetypeNodeType(string(node.NodeType)) == models.QuestArchetypeNodeTypeChallenge
 }
 
 func (s *server) validateQuestArchetypeChallengeTemplate(
@@ -65,12 +65,13 @@ func (s *server) validateQuestArchetypeChallengeTemplate(
 ) (*models.ChallengeTemplate, error) {
 	if templateID == nil || *templateID == uuid.Nil {
 		if requireTemplate {
-			return nil, fmt.Errorf("challengeTemplateId is required for location nodes")
+			return nil, fmt.Errorf("challengeTemplateId is required for challenge nodes")
 		}
 		return nil, nil
 	}
-	if node != nil && node.NodeType != models.QuestArchetypeNodeTypeLocation {
-		return nil, fmt.Errorf("challengeTemplateId can only be used on location nodes")
+	if node != nil &&
+		models.NormalizeQuestArchetypeNodeType(string(node.NodeType)) != models.QuestArchetypeNodeTypeChallenge {
+		return nil, fmt.Errorf("challengeTemplateId can only be used on challenge nodes")
 	}
 	template, err := s.dbClient.ChallengeTemplate().FindByID(ctx, *templateID)
 	if err != nil {

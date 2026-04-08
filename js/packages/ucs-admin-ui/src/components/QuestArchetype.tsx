@@ -635,8 +635,11 @@ const questArchetypeFormHasExplicitCopy = (form: QuestArchetypeFormState) =>
 
 type QuestArchetypeNodeEditorState = {
   nodeType: QuestArchetypeNodeType;
+  locationMode: 'point_of_interest' | 'coordinates';
   locationArchetypeId: string;
   locationArchetypeQuery: string;
+  locationSelectionMode: 'random' | 'closest';
+  challengeTemplateId: string;
   scenarioTemplateId: string;
   monsterTemplateIds: string[];
   targetLevel: number;
@@ -654,9 +657,12 @@ type QuestArchetypeNodeEditorState = {
 };
 
 const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
-  nodeType: 'location',
+  nodeType: 'challenge',
+  locationMode: 'point_of_interest',
   locationArchetypeId: '',
   locationArchetypeQuery: '',
+  locationSelectionMode: 'random',
+  challengeTemplateId: '',
   scenarioTemplateId: '',
   monsterTemplateIds: [],
   targetLevel: 1,
@@ -684,12 +690,16 @@ const buildNodeEditorState = (
         ? 'scenario'
         : node.nodeType === 'exposition'
           ? 'exposition'
-        : 'location',
+          : 'challenge',
+  locationMode: node.locationArchetypeId ? 'point_of_interest' : 'coordinates',
   scenarioTemplateId: node.scenarioTemplateId ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
   locationArchetypeQuery:
     locationArchetypes.find((entry) => entry.id === node.locationArchetypeId)
       ?.name ?? '',
+  locationSelectionMode:
+    node.locationSelectionMode === 'closest' ? 'closest' : 'random',
+  challengeTemplateId: node.challengeTemplateId ?? '',
   monsterTemplateIds: [...(node.monsterTemplateIds ?? [])],
   targetLevel: node.targetLevel ?? 1,
   encounterProximityMeters: node.encounterProximityMeters ?? 100,
@@ -726,9 +736,15 @@ const buildNodeDraft = (
 ): QuestArchetypeNodeDraft => ({
   nodeType: state.nodeType,
   locationArchetypeId:
-    state.nodeType === 'location' || state.locationArchetypeId
+    state.locationMode === 'point_of_interest'
       ? state.locationArchetypeId || null
       : null,
+  locationSelectionMode:
+    state.locationMode === 'point_of_interest'
+      ? state.locationSelectionMode
+      : undefined,
+  challengeTemplateId:
+    state.nodeType === 'challenge' ? state.challengeTemplateId || null : null,
   scenarioTemplateId:
     state.nodeType === 'scenario' ? state.scenarioTemplateId || null : null,
   monsterTemplateIds:
@@ -740,6 +756,7 @@ const buildNodeDraft = (
       ? Number(state.targetLevel) || 1
       : undefined,
   encounterProximityMeters:
+    state.nodeType === 'challenge' ||
     state.nodeType === 'monster_encounter' ||
     state.nodeType === 'scenario' ||
     state.nodeType === 'exposition'
@@ -855,10 +872,14 @@ const describeQuestArchetypeNode = (
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
   }
-  return (
-    locationArchetypes.find((la) => la.id === node.locationArchetypeId)?.name ??
-    'Unknown location'
-  );
+  const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
+  const locationLabel = locationArchetypes.find(
+    (entry) => entry.id === node.locationArchetypeId
+  )?.name;
+  if (locationLabel) {
+    return `${challengeLabel} @ ${locationLabel}`;
+  }
+  return node.locationArchetypeId ? challengeLabel : `${challengeLabel} @ Coordinates`;
 };
 
 type QuestArchetypeNodeConfigFieldsProps = {
@@ -868,6 +889,7 @@ type QuestArchetypeNodeConfigFieldsProps = {
   >;
   prefix: string;
   locationArchetypes: LocationArchetype[];
+  challengeTemplates: ChallengeTemplateRecord[];
   monsterTemplates: MonsterTemplateRecord[];
   scenarioTemplates: ScenarioTemplateRecord[];
   characters: Character[];
@@ -882,6 +904,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
   setEditor,
   prefix,
   locationArchetypes,
+  challengeTemplates,
   monsterTemplates,
   scenarioTemplates,
   characters,
@@ -895,81 +918,36 @@ const QuestArchetypeNodeConfigFields: React.FC<
         .includes(editor.locationArchetypeQuery.trim().toLowerCase())
     )
     .slice(0, 8);
+  const availableChallengeTemplates = filterChallengeTemplatesForLocation(
+    challengeTemplates,
+    editor.locationMode === 'point_of_interest'
+      ? editor.locationArchetypeId
+      : null
+  );
   const characterOptions = characters.map((character) => ({
     value: character.id,
     label: character.name || character.id,
   }));
 
-  const renderLocationSelector = (
-    label: string,
-    helperText?: string,
-    required = false
-  ) => (
-    <div className="qa-field">
-      <div className="qa-label">{label}</div>
-      {helperText ? <div className="qa-helper">{helperText}</div> : null}
-      <div className="qa-combobox">
-        <input
-          type="text"
-          className="qa-input"
-          value={editor.locationArchetypeQuery}
-          onChange={(e) => {
-            const value = e.target.value;
-            const matched = locationArchetypes.find(
-              (archetype) =>
-                archetype.name.toLowerCase() === value.trim().toLowerCase()
-            );
-            setEditor((prev) => ({
-              ...prev,
-              locationArchetypeQuery: value,
-              locationArchetypeId: matched ? matched.id : '',
-            }));
-          }}
-          placeholder="Search location archetypes..."
-        />
-        {editor.locationArchetypeQuery.trim().length > 0 && (
-          <div className="qa-combobox-list">
-            {filteredLocationArchetypes.length === 0 ? (
-              <div className="qa-combobox-empty">No matches.</div>
-            ) : (
-              filteredLocationArchetypes.map((archetype) => (
-                <button
-                  key={`${prefix}-${label}-${archetype.id}`}
-                  type="button"
-                  className="qa-combobox-option"
-                  onClick={() =>
-                    setEditor((prev) => ({
-                      ...prev,
-                      locationArchetypeId: archetype.id,
-                      locationArchetypeQuery: archetype.name,
-                    }))
-                  }
-                >
-                  {archetype.name}
-                </button>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-      {!required ? (
-        <button
-          type="button"
-          className="qa-btn qa-btn-ghost"
-          style={{ marginTop: 8, alignSelf: 'flex-start' }}
-          onClick={() =>
-            setEditor((prev) => ({
-              ...prev,
-              locationArchetypeId: '',
-              locationArchetypeQuery: '',
-            }))
-          }
-        >
-          Clear Anchor
-        </button>
-      ) : null}
-    </div>
-  );
+  const setSelectedLocationArchetype = (nextId: string, nextQuery: string) =>
+    setEditor((prev) => {
+      const challengeTemplateStillMatches =
+        !prev.challengeTemplateId ||
+        !nextId ||
+        challengeTemplates.some(
+          (template) =>
+            template.id === prev.challengeTemplateId &&
+            template.locationArchetypeId === nextId
+        );
+      return {
+        ...prev,
+        locationArchetypeId: nextId,
+        locationArchetypeQuery: nextQuery,
+        challengeTemplateId: challengeTemplateStillMatches
+          ? prev.challengeTemplateId
+          : '',
+      };
+    });
 
   return (
     <>
@@ -985,67 +963,192 @@ const QuestArchetypeNodeConfigFields: React.FC<
             }))
           }
         >
-          <option value="location">Location</option>
+          <option value="challenge">Challenge</option>
           <option value="scenario">Scenario</option>
           <option value="monster_encounter">Monster Encounter</option>
           <option value="exposition">Exposition</option>
         </select>
       </div>
-      {editor.nodeType === 'location' ? (
-        renderLocationSelector(`${prefix} Location Archetype`, undefined, true)
-      ) : editor.nodeType === 'scenario' ? (
+
+      <div className="qa-field">
+        <div className="qa-label">{prefix} Location Mode</div>
+        <div className="qa-helper">
+          {editor.locationMode === 'point_of_interest'
+            ? 'Choose a location archetype, then decide whether generation should use the closest matching point of interest to the previous node or quest giver, or a random one in the zone.'
+            : 'Place this node at generated coordinates near the previous node instead of at a point of interest.'}
+        </div>
+        <select
+          className="qa-select"
+          value={editor.locationMode}
+          onChange={(e) =>
+            setEditor((prev) => ({
+              ...prev,
+              locationMode:
+                e.target.value === 'coordinates'
+                  ? 'coordinates'
+                  : 'point_of_interest',
+              locationArchetypeId:
+                e.target.value === 'coordinates' ? '' : prev.locationArchetypeId,
+              locationArchetypeQuery:
+                e.target.value === 'coordinates'
+                  ? ''
+                  : prev.locationArchetypeQuery,
+              locationSelectionMode:
+                e.target.value === 'coordinates'
+                  ? 'random'
+                  : prev.locationSelectionMode,
+            }))
+          }
+        >
+          <option value="point_of_interest">Point Of Interest</option>
+          <option value="coordinates">Coordinates</option>
+        </select>
+      </div>
+
+      {editor.locationMode === 'point_of_interest' ? (
         <>
-          {renderLocationSelector(
-            `${prefix} Anchor Location Archetype`,
-            'Optional. Leave blank to place this scenario at generated coordinates near the previous node.'
-          )}
           <div className="qa-field">
-            <div className="qa-label">{prefix} Scenario Template</div>
+            <div className="qa-label">{prefix} Location Archetype</div>
+            <div className="qa-combobox">
+              <input
+                type="text"
+                className="qa-input"
+                value={editor.locationArchetypeQuery}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const matched = locationArchetypes.find(
+                    (archetype) =>
+                      archetype.name.toLowerCase() ===
+                      value.trim().toLowerCase()
+                  );
+                  setSelectedLocationArchetype(matched ? matched.id : '', value);
+                }}
+                placeholder="Search location archetypes..."
+              />
+              {editor.locationArchetypeQuery.trim().length > 0 && (
+                <div className="qa-combobox-list">
+                  {filteredLocationArchetypes.length === 0 ? (
+                    <div className="qa-combobox-empty">No matches.</div>
+                  ) : (
+                    filteredLocationArchetypes.map((archetype) => (
+                      <button
+                        key={`${prefix}-location-${archetype.id}`}
+                        type="button"
+                        className="qa-combobox-option"
+                        onClick={() =>
+                          setSelectedLocationArchetype(
+                            archetype.id,
+                            archetype.name
+                          )
+                        }
+                      >
+                        {archetype.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} POI Selection</div>
             <select
               className="qa-select"
-              value={editor.scenarioTemplateId}
+              value={editor.locationSelectionMode}
               onChange={(e) =>
                 setEditor((prev) => ({
                   ...prev,
-                  scenarioTemplateId: e.target.value,
+                  locationSelectionMode:
+                    e.target.value === 'closest' ? 'closest' : 'random',
                 }))
               }
             >
-              <option value="">Select a scenario template</option>
-              {scenarioTemplates.map((template) => (
-                <option
-                  key={`${prefix}-scenario-${template.id}`}
-                  value={template.id}
-                >
-                  {template.prompt}
-                </option>
-              ))}
+              <option value="random">Random In Zone</option>
+              <option value="closest">Closest To Previous / Questgiver</option>
             </select>
           </div>
-          <div className="qa-field">
-            <div className="qa-label">
-              {prefix} Proximity To Previous Node (m)
-            </div>
-            <input
-              type="number"
-              min={0}
-              className="qa-input"
-              value={editor.encounterProximityMeters}
-              onChange={(e) =>
-                setEditor((prev) => ({
-                  ...prev,
-                  encounterProximityMeters: parseInt(e.target.value) || 0,
-                }))
-              }
-            />
-          </div>
         </>
-      ) : editor.nodeType === 'monster_encounter' ? (
+      ) : (
+        <div className="qa-field">
+          <div className="qa-label">{prefix} Proximity To Previous Node (m)</div>
+          <input
+            type="number"
+            min={0}
+            className="qa-input"
+            value={editor.encounterProximityMeters}
+            onChange={(e) =>
+              setEditor((prev) => ({
+                ...prev,
+                encounterProximityMeters: parseInt(e.target.value) || 0,
+              }))
+            }
+          />
+        </div>
+      )}
+
+      {editor.nodeType === 'challenge' ? (
+        <div className="qa-field">
+          <div className="qa-label">{prefix} Challenge Template</div>
+          <div className="qa-helper">
+            Optional when using a location archetype. Required for coordinate
+            challenges.
+          </div>
+          <select
+            className="qa-select"
+            value={editor.challengeTemplateId}
+            onChange={(e) =>
+              setEditor((prev) => ({
+                ...prev,
+                challengeTemplateId: e.target.value,
+              }))
+            }
+          >
+            <option value="">Use a random location-archetype challenge</option>
+            {availableChallengeTemplates.map((template) => (
+              <option key={`${prefix}-challenge-${template.id}`} value={template.id}>
+                {describeChallengeTemplate(template, locationArchetypes)}
+              </option>
+            ))}
+          </select>
+          {availableChallengeTemplates.length === 0 ? (
+            <div className="qa-helper">
+              {editor.locationMode === 'point_of_interest' &&
+              editor.locationArchetypeId
+                ? 'No challenge templates match the selected location archetype yet.'
+                : 'All challenge templates are available while this node uses coordinates.'}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {editor.nodeType === 'scenario' ? (
+        <div className="qa-field">
+          <div className="qa-label">{prefix} Scenario Template</div>
+          <select
+            className="qa-select"
+            value={editor.scenarioTemplateId}
+            onChange={(e) =>
+              setEditor((prev) => ({
+                ...prev,
+                scenarioTemplateId: e.target.value,
+              }))
+            }
+          >
+            <option value="">Select a scenario template</option>
+            {scenarioTemplates.map((template) => (
+              <option
+                key={`${prefix}-scenario-${template.id}`}
+                value={template.id}
+              >
+                {template.prompt}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      {editor.nodeType === 'monster_encounter' ? (
         <>
-          {renderLocationSelector(
-            `${prefix} Anchor Location Archetype`,
-            'Optional. Leave blank to place this encounter at generated coordinates near the previous node.'
-          )}
           <div className="qa-field">
             <div className="qa-label">{prefix} Monster Templates</div>
             <select
@@ -1080,47 +1183,11 @@ const QuestArchetypeNodeConfigFields: React.FC<
               template, not per child node.
             </div>
           </div>
-          <div className="qa-field">
-            <div className="qa-label">
-              {prefix} Proximity To Previous Node (m)
-            </div>
-            <input
-              type="number"
-              min={0}
-              className="qa-input"
-              value={editor.encounterProximityMeters}
-              onChange={(e) =>
-                setEditor((prev) => ({
-                  ...prev,
-                  encounterProximityMeters: parseInt(e.target.value) || 0,
-                }))
-              }
-            />
-          </div>
         </>
-      ) : (
+      ) : null}
+
+      {editor.nodeType === 'exposition' ? (
         <>
-          {renderLocationSelector(
-            `${prefix} Anchor Location Archetype`,
-            'Optional. Leave blank to place this exposition at generated coordinates near the previous node.'
-          )}
-          <div className="qa-field">
-            <div className="qa-label">
-              {prefix} Proximity To Previous Node (m)
-            </div>
-            <input
-              type="number"
-              min={0}
-              className="qa-input"
-              value={editor.encounterProximityMeters}
-              onChange={(e) =>
-                setEditor((prev) => ({
-                  ...prev,
-                  encounterProximityMeters: parseInt(e.target.value) || 0,
-                }))
-              }
-            />
-          </div>
           <div className="qa-field">
             <div className="qa-label">{prefix} Exposition Title</div>
             <input
@@ -1441,7 +1508,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
             </>
           ) : null}
         </>
-      )}
+      ) : null}
     </>
   );
 };
@@ -1468,14 +1535,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
     monsterTemplates,
     scenarioTemplates
   );
-  const isEncounterNode = node.nodeType === 'monster_encounter';
-  const isScenarioNode = node.nodeType === 'scenario';
-  const isExpositionNode = node.nodeType === 'exposition';
-  const isBranchOnlyNode =
-    isEncounterNode || isScenarioNode || isExpositionNode;
   const [isAdding, setIsAdding] = useState(false);
-  const [challengeProficiency, setChallengeProficiency] = useState<string>('');
-  const [challengeTemplateId, setChallengeTemplateId] = useState<string>('');
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
     buildNodeEditorState(node, locationArchetypes)
   );
@@ -1487,11 +1547,6 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   useEffect(() => {
     setNodeEditor(buildNodeEditorState(node, locationArchetypes));
   }, [locationArchetypes, node]);
-
-  const availableChallengeTemplates = filterChallengeTemplatesForLocation(
-    challengeTemplates,
-    node.locationArchetypeId
-  );
 
   return (
     <div className="qa-flow-node" style={{ borderColor }}>
@@ -1507,11 +1562,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
             className="qa-btn qa-btn-primary"
             onClick={() => setIsAdding((prev) => !prev)}
           >
-            {isAdding
-              ? 'Close'
-              : isBranchOnlyNode
-                ? 'Add Child Node'
-                : 'Add Challenge'}
+            {isAdding ? 'Close' : 'Add Branch'}
           </button>
         </div>
         <div className="qa-flow-form" style={{ marginTop: 12 }}>
@@ -1520,6 +1571,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
             setEditor={setNodeEditor}
             prefix="Current"
             locationArchetypes={locationArchetypes}
+            challengeTemplates={challengeTemplates}
             monsterTemplates={monsterTemplates}
             scenarioTemplates={scenarioTemplates}
             characters={characters}
@@ -1546,33 +1598,6 @@ const FlowNode: React.FC<FlowNodeProps> = ({
 
         {isAdding && (
           <div className="qa-flow-form">
-            {!isBranchOnlyNode && (
-              <>
-                <div className="qa-field">
-                  <div className="qa-label">Challenge Template</div>
-                  <select
-                    className="qa-select"
-                    value={challengeTemplateId}
-                    onChange={(e) => setChallengeTemplateId(e.target.value)}
-                  >
-                    <option value="">Select a challenge template</option>
-                    {availableChallengeTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {describeChallengeTemplate(
-                          template,
-                          locationArchetypes
-                        )}
-                      </option>
-                    ))}
-                  </select>
-                  {availableChallengeTemplates.length === 0 && (
-                    <div className="qa-helper">
-                      No challenge templates match this location archetype yet.
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
             <div className="qa-field">
               <label className="qa-inline" style={{ alignItems: 'center' }}>
                 <input
@@ -1592,6 +1617,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                   setEditor={setChildEditor}
                   prefix="Child"
                   locationArchetypes={locationArchetypes}
+                  challengeTemplates={challengeTemplates}
                   monsterTemplates={monsterTemplates}
                   scenarioTemplates={scenarioTemplates}
                   characters={characters}
@@ -1611,26 +1637,18 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const trimmed = challengeProficiency.trim();
                   await addChallengeToQuestArchetype(
                     node.id,
-                    isBranchOnlyNode
-                      ? null
-                      : trimmed.length > 0
-                        ? trimmed
-                        : null,
+                    null,
                     childEnabled ? buildNodeDraft(childEditor) : null,
-                    isBranchOnlyNode ? null : challengeTemplateId || null
+                    null
                   );
-                  setChallengeProficiency('');
-                  setChallengeTemplateId('');
                   setChildEnabled(false);
                   setChildEditor(emptyNodeEditorState());
                   setIsAdding(false);
                 }}
-                disabled={!isBranchOnlyNode && !challengeTemplateId}
               >
-                {isBranchOnlyNode ? 'Add Child Node' : 'Add Challenge'}
+                Add Branch
               </button>
             </div>
           </div>
@@ -1652,11 +1670,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                   <div className="qa-flow-challenge-header">
                     <div>
                       <div className="qa-flow-challenge-title">
-                        {isBranchOnlyNode
-                          ? `Branch ${index + 1}`
-                          : `Challenge ${index + 1}`}
+                        {`Branch ${index + 1}`}
                       </div>
-                      {!isBranchOnlyNode && challengeTemplate && (
+                      {challengeTemplate && (
                         <div className="qa-meta" style={{ marginTop: 6 }}>
                           {describeChallengeTemplate(
                             challengeTemplate,
@@ -1665,7 +1681,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                         </div>
                       )}
                       <div className="qa-inline" style={{ marginTop: 6 }}>
-                        {!isBranchOnlyNode && challengeProficiencyValue && (
+                        {challengeProficiencyValue && (
                           <span className="qa-chip muted">
                             Proficiency: {challengeProficiencyValue}
                           </span>
@@ -1675,7 +1691,14 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                     <button
                       className="qa-btn qa-btn-ghost"
                       onClick={() =>
-                        onEditChallenge(challenge, !isBranchOnlyNode)
+                        onEditChallenge(
+                          challenge,
+                          Boolean(
+                            challenge.challengeTemplateId ||
+                              challenge.challengeTemplate ||
+                              challenge.proficiency
+                          )
+                        )
                       }
                     >
                       Edit
@@ -1713,7 +1736,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
           </div>
         ) : (
           <div className="qa-empty" style={{ marginTop: 12 }}>
-            No challenges yet. Add the first challenge to define the flow.
+            No branches yet. Add the first branch to define the flow.
           </div>
         )}
       </div>
@@ -1881,6 +1904,8 @@ const buildQuestFlowRoute = (
 
 const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
   switch (nodeType) {
+    case 'challenge':
+      return 'Challenge';
     case 'monster_encounter':
       return 'Monster';
     case 'scenario':
@@ -1888,7 +1913,7 @@ const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
     case 'exposition':
       return 'Exposition';
     default:
-      return 'Location';
+      return 'Node';
   }
 };
 
@@ -1952,14 +1977,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
     monsterTemplates,
     scenarioTemplates
   );
-  const isEncounterNode = node.nodeType === 'monster_encounter';
-  const isScenarioNode = node.nodeType === 'scenario';
-  const isExpositionNode = node.nodeType === 'exposition';
-  const isBranchOnlyNode =
-    isEncounterNode || isScenarioNode || isExpositionNode;
   const [isAdding, setIsAdding] = useState(false);
-  const [challengeProficiency, setChallengeProficiency] = useState<string>('');
-  const [challengeTemplateId, setChallengeTemplateId] = useState<string>('');
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
     buildNodeEditorState(node, locationArchetypes)
   );
@@ -1970,16 +1988,12 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
 
   useEffect(() => {
     setNodeEditor(buildNodeEditorState(node, locationArchetypes));
-    setChallengeProficiency('');
-    setChallengeTemplateId('');
     setChildEnabled(false);
     setChildEditor(emptyNodeEditorState());
     setIsAdding(false);
   }, [locationArchetypes, node]);
-
-  const availableChallengeTemplates = filterChallengeTemplatesForLocation(
-    challengeTemplates,
-    node.locationArchetypeId
+  const selectedChallengeTemplate = challengeTemplates.find(
+    (template) => template.id === nodeEditor.challengeTemplateId
   );
   const selectedScenarioTemplate = scenarioTemplates.find(
     (template) => template.id === nodeEditor.scenarioTemplateId
@@ -2019,6 +2033,22 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             </div>
           </div>
           <div className="qa-inline">
+            {nodeEditor.nodeType === 'challenge' && selectedChallengeTemplate && (
+              <button
+                className="qa-btn qa-btn-ghost"
+                onClick={() =>
+                  onEditChallengeTemplate(
+                    selectedChallengeTemplate.id,
+                    `Challenge node ${pathLabel}`,
+                    nodeEditor.locationMode === 'point_of_interest'
+                      ? nodeEditor.locationArchetypeId || null
+                      : null
+                  )
+                }
+              >
+                Edit Challenge Template
+              </button>
+            )}
             {nodeEditor.nodeType === 'scenario' && selectedScenarioTemplate && (
               <button
                 className="qa-btn qa-btn-ghost"
@@ -2054,6 +2084,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             setEditor={setNodeEditor}
             prefix="Node"
             locationArchetypes={locationArchetypes}
+            challengeTemplates={challengeTemplates}
             monsterTemplates={monsterTemplates}
             scenarioTemplates={scenarioTemplates}
             characters={characters}
@@ -2091,9 +2122,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
       <div className="qa-card">
         <div className="qa-card-header">
           <div>
-            <div className="qa-card-title">
-              {isBranchOnlyNode ? 'Outgoing Branches' : 'Challenges & Branches'}
-            </div>
+            <div className="qa-card-title">Outgoing Branches</div>
             <div className="qa-meta">
               Each row is a possible next beat unlocked from this node.
             </div>
@@ -2102,43 +2131,12 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             className="qa-btn qa-btn-primary"
             onClick={() => setIsAdding((prev) => !prev)}
           >
-            {isAdding
-              ? 'Close Composer'
-              : isBranchOnlyNode
-                ? 'Add Child Node'
-                : 'Add Challenge'}
+            {isAdding ? 'Close Composer' : 'Add Branch'}
           </button>
         </div>
 
         {isAdding && (
           <div className="qa-flow-form" style={{ marginTop: 18 }}>
-            {!isBranchOnlyNode && (
-              <>
-                <div className="qa-field">
-                  <div className="qa-label">Challenge Template</div>
-                  <select
-                    className="qa-select"
-                    value={challengeTemplateId}
-                    onChange={(e) => setChallengeTemplateId(e.target.value)}
-                  >
-                    <option value="">Select a challenge template</option>
-                    {availableChallengeTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {describeChallengeTemplate(
-                          template,
-                          locationArchetypes
-                        )}
-                      </option>
-                    ))}
-                  </select>
-                  {availableChallengeTemplates.length === 0 && (
-                    <div className="qa-helper">
-                      No challenge templates match this location archetype yet.
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
             <div className="qa-field">
               <label className="qa-inline" style={{ alignItems: 'center' }}>
                 <input
@@ -2157,6 +2155,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                 setEditor={setChildEditor}
                 prefix="Child"
                 locationArchetypes={locationArchetypes}
+                challengeTemplates={challengeTemplates}
                 monsterTemplates={monsterTemplates}
                 scenarioTemplates={scenarioTemplates}
                 characters={characters}
@@ -2174,26 +2173,18 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const trimmed = challengeProficiency.trim();
                   await addChallengeToQuestArchetype(
                     node.id,
-                    isBranchOnlyNode
-                      ? null
-                      : trimmed.length > 0
-                        ? trimmed
-                        : null,
+                    null,
                     childEnabled ? buildNodeDraft(childEditor) : null,
-                    isBranchOnlyNode ? null : challengeTemplateId || null
+                    null
                   );
-                  setChallengeProficiency('');
-                  setChallengeTemplateId('');
                   setChildEnabled(false);
                   setChildEditor(emptyNodeEditorState());
                   setIsAdding(false);
                 }}
-                disabled={!isBranchOnlyNode && !challengeTemplateId}
               >
-                {isBranchOnlyNode ? 'Add Child Node' : 'Add Challenge'}
+                Add Branch
               </button>
             </div>
           </div>
@@ -2223,11 +2214,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                   <div className="qa-flow-challenge-header">
                     <div>
                       <div className="qa-flow-challenge-title">
-                        {isBranchOnlyNode
-                          ? `Branch ${index + 1}`
-                          : `Challenge ${index + 1}`}
+                        {`Branch ${index + 1}`}
                       </div>
-                      {!isBranchOnlyNode && challengeTemplate && (
+                      {challengeTemplate && (
                         <div className="qa-meta" style={{ marginTop: 6 }}>
                           {describeChallengeTemplate(
                             challengeTemplate,
@@ -2236,7 +2225,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                         </div>
                       )}
                       <div className="qa-inline" style={{ marginTop: 8 }}>
-                        {!isBranchOnlyNode && challengeProficiencyValue && (
+                        {challengeProficiencyValue && (
                           <span className="qa-chip muted">
                             {challengeProficiencyValue}
                           </span>
@@ -2255,18 +2244,25 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                       <button
                         className="qa-btn qa-btn-ghost"
                         onClick={() =>
-                          onEditChallenge(challenge, !isBranchOnlyNode)
+                          onEditChallenge(
+                            challenge,
+                            Boolean(
+                              challenge.challengeTemplateId ||
+                                challenge.challengeTemplate ||
+                                challenge.proficiency
+                            )
+                          )
                         }
                       >
                         Edit
                       </button>
-                      {!isBranchOnlyNode && challengeTemplate && (
+                      {challengeTemplate && (
                         <button
                           className="qa-btn qa-btn-outline"
                           onClick={() =>
                             onEditChallengeTemplate(
                               challengeTemplate.id,
-                              `Challenge ${pathLabel}.${index + 1}`,
+                              `Branch ${pathLabel}.${index + 1}`,
                               node.locationArchetypeId
                             )
                           }
@@ -2321,6 +2317,7 @@ type QuestArchetypeFormState = {
   questGiverCharacterId: string;
   acceptanceDialogue: DialogueMessage[];
   imageUrl: string;
+  rootNode: QuestArchetypeNodeEditorState;
   locationArchetypeId: string;
   locationArchetypeQuery: string;
   difficultyMode: QuestDifficultyMode;
@@ -2352,6 +2349,7 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   questGiverCharacterId: '',
   acceptanceDialogue: [],
   imageUrl: '',
+  rootNode: emptyNodeEditorState(),
   locationArchetypeId: '',
   locationArchetypeQuery: '',
   difficultyMode: 'scale',
@@ -2386,6 +2384,7 @@ const buildQuestArchetypeFormFromRecord = (
   questGiverCharacterId: archetype.questGiverCharacterId ?? '',
   acceptanceDialogue: archetype.acceptanceDialogue ?? [],
   imageUrl: archetype.imageUrl ?? '',
+  rootNode: buildNodeEditorState(archetype.root, locationArchetypes),
   locationArchetypeId: archetype.root?.locationArchetypeId ?? '',
   locationArchetypeQuery:
     locationArchetypes.find(
@@ -2490,10 +2489,7 @@ const normalizeQuestArchetypeDraft = (
         : null,
     acceptanceDialogue,
     imageUrl: form.imageUrl.trim(),
-    rootNode: {
-      nodeType: 'location',
-      locationArchetypeId: form.locationArchetypeId,
-    },
+    rootNode: buildNodeDraft(form.rootNode),
     difficultyMode: form.difficultyMode,
     difficulty: Math.max(1, Number(form.difficulty) || 1),
     monsterEncounterTargetLevel: Math.max(
@@ -2717,14 +2713,6 @@ export const QuestArchetypeComponent = () => {
   const [generateQuestError, setGenerateQuestError] = useState<string>('');
   const [questGenerationJob, setQuestGenerationJob] =
     useState<QuestGenerationJob | null>(null);
-
-  const filteredCreateLocationArchetypes = locationArchetypes
-    .filter((archetype) =>
-      archetype.name
-        .toLowerCase()
-        .includes(createForm.locationArchetypeQuery.trim().toLowerCase())
-    )
-    .slice(0, 8);
 
   const generatorValidationError =
     validateQuestTemplateGeneratorForm(generatorForm);
@@ -6344,52 +6332,36 @@ export const QuestArchetypeComponent = () => {
                   the quest is turned in.
                 </div>
               </div>
-              <div className="qa-field">
-                <div className="qa-label">Location Archetype</div>
-                <div className="qa-combobox">
-                  <input
-                    type="text"
-                    className="qa-input"
-                    value={createForm.locationArchetypeQuery}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const matched = locationArchetypes.find(
-                        (archetype) =>
-                          archetype.name.toLowerCase() ===
-                          value.trim().toLowerCase()
-                      );
+              <div
+                className="qa-field"
+                style={{ gridColumn: '1 / -1', marginTop: 8 }}
+              >
+                <div className="qa-label">Root Node</div>
+                <div className="qa-helper" style={{ marginBottom: 12 }}>
+                  Configure the first beat using the same shared node editor
+                  used throughout the quest flow.
+                </div>
+                <div className="qa-form-grid">
+                  <QuestArchetypeNodeConfigFields
+                    editor={createForm.rootNode}
+                    setEditor={(updater) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        locationArchetypeQuery: value,
-                        locationArchetypeId: matched ? matched.id : '',
-                      }));
-                    }}
-                    placeholder="Search location archetypes..."
+                        rootNode:
+                          typeof updater === 'function'
+                            ? updater(prev.rootNode)
+                            : updater,
+                      }))
+                    }
+                    prefix="Root"
+                    locationArchetypes={locationArchetypes}
+                    challengeTemplates={challengeTemplates}
+                    monsterTemplates={monsterTemplates}
+                    scenarioTemplates={scenarioTemplates}
+                    characters={sortedCharacters}
+                    inventoryItems={inventoryItems}
+                    spells={spells}
                   />
-                  {createForm.locationArchetypeQuery.trim().length > 0 && (
-                    <div className="qa-combobox-list">
-                      {filteredCreateLocationArchetypes.length === 0 ? (
-                        <div className="qa-combobox-empty">No matches.</div>
-                      ) : (
-                        filteredCreateLocationArchetypes.map((archetype) => (
-                          <button
-                            key={archetype.id}
-                            type="button"
-                            className="qa-combobox-option"
-                            onClick={() =>
-                              setCreateForm((prev) => ({
-                                ...prev,
-                                locationArchetypeId: archetype.id,
-                                locationArchetypeQuery: archetype.name,
-                              }))
-                            }
-                          >
-                            {archetype.name}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="qa-field">
@@ -6712,7 +6684,6 @@ export const QuestArchetypeComponent = () => {
                   className="qa-btn qa-btn-primary"
                   disabled={
                     !questArchetypeFormHasExplicitCopy(createForm) ||
-                    !createForm.locationArchetypeId ||
                     (createForm.category === 'main_story' &&
                       !createForm.questGiverCharacterId)
                   }
