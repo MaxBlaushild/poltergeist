@@ -15,6 +15,7 @@ type questArchetypeNodePayload struct {
 	LocationSelectionMode      string                       `json:"locationSelectionMode"`
 	ChallengeTemplateID        *uuid.UUID                   `json:"challengeTemplateId"`
 	ScenarioTemplateID         *uuid.UUID                   `json:"scenarioTemplateId"`
+	StoryFlagKey               string                       `json:"storyFlagKey"`
 	MonsterTemplateIDs         []string                     `json:"monsterTemplateIds"`
 	MonsterIDs                 []string                     `json:"monsterIds"`
 	TargetLevel                *int                         `json:"targetLevel"`
@@ -38,11 +39,16 @@ func (p questArchetypeNodePayload) hasExplicitConfig() bool {
 		strings.TrimSpace(p.LocationSelectionMode) != "" ||
 		p.ChallengeTemplateID != nil ||
 		p.ScenarioTemplateID != nil ||
+		p.hasStoryFlagConfig() ||
 		len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
 		p.TargetLevel != nil ||
 		p.EncounterProximityMeters != nil ||
 		p.hasExpositionConfig()
+}
+
+func (p questArchetypeNodePayload) hasStoryFlagConfig() bool {
+	return strings.TrimSpace(p.StoryFlagKey) != ""
 }
 
 func (p questArchetypeNodePayload) hasExpositionConfig() bool {
@@ -64,6 +70,9 @@ func (p questArchetypeNodePayload) inferredNodeType() models.QuestArchetypeNodeT
 	}
 	if p.ScenarioTemplateID != nil {
 		return models.QuestArchetypeNodeTypeScenario
+	}
+	if p.hasStoryFlagConfig() {
+		return models.QuestArchetypeNodeTypeStoryFlag
 	}
 	if p.hasExpositionConfig() {
 		return models.QuestArchetypeNodeTypeExposition
@@ -106,6 +115,13 @@ func clearQuestArchetypeNodeChallenge(node *models.QuestArchetypeNode) {
 	node.ChallengeTemplate = nil
 }
 
+func clearQuestArchetypeNodeStoryFlag(node *models.QuestArchetypeNode) {
+	if node == nil {
+		return
+	}
+	node.StoryFlagKey = ""
+}
+
 func questArchetypeNodeExpositionItemRewards(
 	input []models.ExpositionItemReward,
 ) models.QuestArchetypeExpositionItemRewards {
@@ -135,6 +151,25 @@ func questArchetypeNodeExpositionSpellRewards(
 		})
 	}
 	return rewards
+}
+
+func (s *server) applyQuestArchetypeNodeStoryFlagPayload(
+	node *models.QuestArchetypeNode,
+	payload questArchetypeNodePayload,
+	requireConfig bool,
+) error {
+	if node == nil {
+		return fmt.Errorf("quest archetype node is required")
+	}
+	storyFlagKey := models.NormalizeStoryFlagKey(payload.StoryFlagKey)
+	if storyFlagKey == "" {
+		if requireConfig {
+			return fmt.Errorf("storyFlagKey is required for story flag nodes")
+		}
+		return nil
+	}
+	node.StoryFlagKey = storyFlagKey
+	return nil
 }
 
 func (s *server) applyQuestArchetypeNodeExpositionPayload(
@@ -328,6 +363,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
 		node.EncounterProximityMeters = proximityMeters
 		clearQuestArchetypeNodeExposition(node)
+		clearQuestArchetypeNodeStoryFlag(node)
 	case models.QuestArchetypeNodeTypeExposition:
 		if err := s.applyQuestArchetypeNodeExpositionPayload(
 			ctx,
@@ -354,6 +390,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.EncounterMaterialRewards = models.BaseMaterialRewards{}
 		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
 		node.EncounterProximityMeters = proximityMeters
+		clearQuestArchetypeNodeStoryFlag(node)
 	case models.QuestArchetypeNodeTypeScenario:
 		if payload.ScenarioTemplateID == nil || *payload.ScenarioTemplateID == uuid.Nil {
 			return fmt.Errorf("scenarioTemplateId is required for scenario nodes")
@@ -382,6 +419,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
 		node.EncounterProximityMeters = proximityMeters
 		clearQuestArchetypeNodeExposition(node)
+		clearQuestArchetypeNodeStoryFlag(node)
 	case models.QuestArchetypeNodeTypeMonsterEncounter:
 		monsterTemplateIDs, err := s.parseQuestArchetypeNodeMonsterTemplateIDs(
 			ctx,
@@ -418,6 +456,32 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.EncounterMaterialRewards = models.BaseMaterialRewards{}
 		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
 		node.EncounterProximityMeters = proximityMeters
+		clearQuestArchetypeNodeExposition(node)
+		clearQuestArchetypeNodeStoryFlag(node)
+	case models.QuestArchetypeNodeTypeStoryFlag:
+		if err := s.applyQuestArchetypeNodeStoryFlagPayload(
+			node,
+			payload,
+			requireConfig || node.NodeType != models.QuestArchetypeNodeTypeStoryFlag,
+		); err != nil {
+			return err
+		}
+		node.NodeType = models.QuestArchetypeNodeTypeStoryFlag
+		node.LocationArchetypeID = nil
+		node.LocationArchetype = nil
+		node.LocationSelectionMode = models.QuestArchetypeNodeLocationSelectionModeRandom
+		clearQuestArchetypeNodeChallenge(node)
+		node.ScenarioTemplateID = nil
+		node.ScenarioTemplate = nil
+		node.MonsterTemplateIDs = models.StringArray{}
+		node.TargetLevel = 1
+		node.EncounterRewardMode = models.RewardModeExplicit
+		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
+		node.EncounterRewardExperience = 0
+		node.EncounterRewardGold = 0
+		node.EncounterMaterialRewards = models.BaseMaterialRewards{}
+		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
+		node.EncounterProximityMeters = 100
 		clearQuestArchetypeNodeExposition(node)
 	default:
 		return fmt.Errorf("unsupported quest archetype node type")

@@ -17,6 +17,7 @@ export type QuestArchetypeNodeDraft = {
   locationSelectionMode?: 'random' | 'closest';
   challengeTemplateId?: string | null;
   scenarioTemplateId?: string | null;
+  storyFlagKey?: string;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
@@ -261,6 +262,7 @@ export const QuestArchetypesProvider = ({
         locationSelectionMode: draft.rootNode.locationSelectionMode,
         challengeTemplateId: draft.rootNode.challengeTemplateId,
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
+        storyFlagKey: draft.rootNode.storyFlagKey,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
         encounterProximityMeters: draft.rootNode.encounterProximityMeters,
@@ -385,6 +387,7 @@ export const QuestArchetypesProvider = ({
       locationArchetypeID?: string;
       locationSelectionMode?: 'random' | 'closest';
       scenarioTemplateId?: string | null;
+      storyFlagKey?: string;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
       encounterProximityMeters?: number | null;
@@ -410,6 +413,7 @@ export const QuestArchetypesProvider = ({
       payload.locationSelectionMode = unlockedNode.locationSelectionMode;
       payload.challengeTemplateId = unlockedNode.challengeTemplateId ?? undefined;
       payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
+      payload.storyFlagKey = unlockedNode.storyFlagKey;
       if (
         unlockedNode.monsterTemplateIds &&
         unlockedNode.monsterTemplateIds.length > 0
@@ -476,6 +480,7 @@ export const QuestArchetypesProvider = ({
       locationSelectionMode: updates.locationSelectionMode,
       challengeTemplateId: updates.challengeTemplateId,
       scenarioTemplateId: updates.scenarioTemplateId,
+      storyFlagKey: updates.storyFlagKey,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,
       encounterProximityMeters: updates.encounterProximityMeters,

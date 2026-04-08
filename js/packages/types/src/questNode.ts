@@ -9,6 +9,7 @@ export type QuestNodeSubmissionType =
 
 export type QuestNodeObjectiveType =
   | 'challenge'
+  | 'story_flag'
   | 'scenario'
   | 'exposition'
   | 'monster_encounter'
@@ -24,6 +25,7 @@ export interface QuestNodeObjective {
   thumbnailUrl?: string;
   reward?: number;
   inventoryItemId?: number | null;
+  storyFlagKey?: string | null;
   submissionType?: QuestNodeSubmissionType;
   difficulty?: number;
   statTags?: string[];
@@ -124,6 +126,7 @@ export interface QuestNode {
   objectiveText?: string;
   objective?: QuestNodeObjective | null;
   pointOfInterestId?: string | null;
+  storyFlagKey?: string | null;
   scenarioId?: string | null;
   expositionId?: string | null;
   monsterId?: string | null;

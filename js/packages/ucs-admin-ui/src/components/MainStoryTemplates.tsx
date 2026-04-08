@@ -77,6 +77,8 @@ const questArchetypeNodeTypeLabel = (
       return 'Challenge';
     case 'exposition':
       return 'Exposition';
+    case 'story_flag':
+      return 'Story Flag';
     case 'scenario':
       return 'Scenario';
     case 'monster_encounter':
@@ -101,6 +103,9 @@ const summarizeQuestArchetypeRoot = (
   }
   if (nodeType === 'exposition') {
     return 'Starts with an exposition node';
+  }
+  if (nodeType === 'story_flag') {
+    return 'Starts with a story flag node';
   }
   if (nodeType === 'challenge') {
     return 'Starts with a challenge node';
@@ -180,6 +185,9 @@ const describeQuestArchetypeNode = (
     return locationLabel
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
+  }
+  if (node.nodeType === 'story_flag') {
+    return `Story flag: ${node.storyFlagKey?.trim() || 'story flag'}`;
   }
   const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
   if (node.locationArchetypeId) {

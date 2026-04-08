@@ -43,7 +43,7 @@ func (s *server) findMatchingCurrentQuestNodeTargets(
 			continue
 		}
 
-		currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+		currentNode, err := s.currentQuestNode(ctx, quest, &acceptance)
 		if err != nil {
 			return nil, err
 		}
@@ -176,7 +176,7 @@ func (s *server) shareQuestNodeCompletionWithEligiblePartyMembers(
 			continue
 		}
 
-		currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+		currentNode, err := s.currentQuestNode(ctx, quest, acceptance)
 		if err != nil {
 			log.Printf(
 				"[quest-share][progress] current node lookup failed source=%s member=%s quest=%s node=%s err=%v",

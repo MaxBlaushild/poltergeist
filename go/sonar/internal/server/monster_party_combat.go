@@ -1790,7 +1790,7 @@ func (s *server) completeQuestMonsterObjectives(
 			if quest == nil {
 				continue
 			}
-			currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+			currentNode, err := s.currentQuestNode(ctx, quest, &acceptance)
 			if err != nil {
 				return err
 			}

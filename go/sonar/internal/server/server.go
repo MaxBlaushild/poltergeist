@@ -2018,15 +2018,19 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 	return hasAvailable, nil
 }
 
-func (s *server) currentQuestNode(ctx context.Context, quest *models.Quest, acceptanceID uuid.UUID) (*models.QuestNode, error) {
-	if quest == nil {
+func (s *server) currentQuestNode(
+	ctx context.Context,
+	quest *models.Quest,
+	acceptance *models.QuestAcceptanceV2,
+) (*models.QuestNode, error) {
+	if quest == nil || acceptance == nil {
 		return nil, nil
 	}
 	nodes, err := s.dbClient.QuestNode().FindByQuestID(ctx, quest.ID)
 	if err != nil {
 		return nil, err
 	}
-	progressEntries, err := s.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptanceID)
+	progressEntries, err := s.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -2036,12 +2040,29 @@ func (s *server) currentQuestNode(ctx context.Context, quest *models.Quest, acce
 			completed[p.QuestNodeID] = true
 		}
 	}
-	for _, node := range nodes {
-		if !completed[node.ID] {
-			return &node, nil
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, acceptance.UserID)
+	if err != nil {
+		return nil, err
+	}
+	currentNode, autoCompleted := models.ResolveCurrentQuestNode(
+		nodes,
+		completed,
+		activeStoryFlags,
+	)
+	if len(autoCompleted) > 0 {
+		completedAt := time.Now()
+		for _, nodeID := range autoCompleted {
+			if _, err := s.markQuestNodeCompleteForAcceptance(
+				ctx,
+				acceptance,
+				nodeID,
+				completedAt,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return nil, nil
+	return currentNode, nil
 }
 
 func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, float64, error) {
@@ -11139,7 +11160,7 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		return
 	}
 
-	currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+	currentNode, err := s.currentQuestNode(ctx, quest, acceptance)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

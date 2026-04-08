@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ type QuestNode struct {
 	Challenge          *Challenge              `json:"challenge,omitempty" gorm:"foreignKey:ChallengeID"`
 	ExpositionID       *uuid.UUID              `json:"expositionId" gorm:"type:uuid"`
 	Exposition         *Exposition             `json:"exposition,omitempty" gorm:"foreignKey:ExpositionID"`
+	StoryFlagKey       string                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	SubmissionType     QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Children           []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
 }
@@ -56,5 +58,17 @@ func (q *QuestNode) BeforeCreate(tx *gorm.DB) (err error) {
 	if q.SubmissionType == "" {
 		q.SubmissionType = DefaultQuestNodeSubmissionType()
 	}
+	q.StoryFlagKey = NormalizeStoryFlagKey(q.StoryFlagKey)
 	return nil
+}
+
+func (q *QuestNode) StoryFlagKeyNormalized() string {
+	if q == nil {
+		return ""
+	}
+	return NormalizeStoryFlagKey(q.StoryFlagKey)
+}
+
+func (q *QuestNode) IsStoryFlagNode() bool {
+	return q != nil && strings.TrimSpace(q.StoryFlagKeyNormalized()) != ""
 }

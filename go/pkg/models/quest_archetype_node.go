@@ -20,6 +20,7 @@ const (
 	QuestArchetypeNodeTypeMonsterEncounter QuestArchetypeNodeType = "monster_encounter"
 	QuestArchetypeNodeTypeScenario         QuestArchetypeNodeType = "scenario"
 	QuestArchetypeNodeTypeExposition       QuestArchetypeNodeType = "exposition"
+	QuestArchetypeNodeTypeStoryFlag        QuestArchetypeNodeType = "story_flag"
 )
 
 func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
@@ -28,6 +29,8 @@ func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
 		return QuestArchetypeNodeTypeChallenge
 	case string(QuestArchetypeNodeTypeExposition):
 		return QuestArchetypeNodeTypeExposition
+	case string(QuestArchetypeNodeTypeStoryFlag):
+		return QuestArchetypeNodeTypeStoryFlag
 	case string(QuestArchetypeNodeTypeScenario):
 		return QuestArchetypeNodeTypeScenario
 	case string(QuestArchetypeNodeTypeMonsterEncounter):
@@ -129,6 +132,7 @@ type QuestArchetypeNode struct {
 	ChallengeTemplateID        *uuid.UUID                              `json:"challengeTemplateId,omitempty" gorm:"column:challenge_template_id;type:uuid"`
 	ScenarioTemplate           *ScenarioTemplate                       `json:"scenarioTemplate,omitempty"`
 	ScenarioTemplateID         *uuid.UUID                              `json:"scenarioTemplateId,omitempty"`
+	StoryFlagKey               string                                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	MonsterTemplateIDs         StringArray                             `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
 	TargetLevel                int                                     `json:"targetLevel" gorm:"column:target_level;default:1"`
 	EncounterRewardMode        RewardMode                              `json:"encounterRewardMode" gorm:"column:encounter_reward_mode"`
@@ -158,7 +162,8 @@ func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, e
 	}
 	if NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeMonsterEncounter ||
 		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeScenario ||
-		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeExposition {
+		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeExposition ||
+		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeStoryFlag {
 		return LocationArchetypeChallenge{}, fmt.Errorf("%s nodes do not generate location challenges", q.NodeType)
 	}
 	if q.LocationArchetype == nil {
@@ -169,6 +174,7 @@ func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, e
 
 func (q *QuestArchetypeNode) BeforeSave(tx *gorm.DB) error {
 	q.NodeType = NormalizeQuestArchetypeNodeType(string(q.NodeType))
+	q.StoryFlagKey = NormalizeStoryFlagKey(q.StoryFlagKey)
 	q.LocationSelectionMode = NormalizeQuestArchetypeNodeLocationSelectionMode(
 		string(q.LocationSelectionMode),
 	)

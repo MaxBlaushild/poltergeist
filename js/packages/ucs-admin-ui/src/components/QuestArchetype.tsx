@@ -641,6 +641,7 @@ type QuestArchetypeNodeEditorState = {
   locationSelectionMode: 'random' | 'closest';
   challengeTemplateId: string;
   scenarioTemplateId: string;
+  storyFlagKey: string;
   monsterTemplateIds: string[];
   targetLevel: number;
   encounterProximityMeters: number;
@@ -664,6 +665,7 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   locationSelectionMode: 'random',
   challengeTemplateId: '',
   scenarioTemplateId: '',
+  storyFlagKey: '',
   monsterTemplateIds: [],
   targetLevel: 1,
   encounterProximityMeters: 100,
@@ -690,9 +692,12 @@ const buildNodeEditorState = (
         ? 'scenario'
         : node.nodeType === 'exposition'
           ? 'exposition'
-          : 'challenge',
+          : node.nodeType === 'story_flag'
+            ? 'story_flag'
+            : 'challenge',
   locationMode: node.locationArchetypeId ? 'point_of_interest' : 'coordinates',
   scenarioTemplateId: node.scenarioTemplateId ?? '',
+  storyFlagKey: node.storyFlagKey ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
   locationArchetypeQuery:
     locationArchetypes.find((entry) => entry.id === node.locationArchetypeId)
@@ -736,10 +741,12 @@ const buildNodeDraft = (
 ): QuestArchetypeNodeDraft => ({
   nodeType: state.nodeType,
   locationArchetypeId:
+    state.nodeType !== 'story_flag' &&
     state.locationMode === 'point_of_interest'
       ? state.locationArchetypeId || null
       : null,
   locationSelectionMode:
+    state.nodeType !== 'story_flag' &&
     state.locationMode === 'point_of_interest'
       ? state.locationSelectionMode
       : undefined,
@@ -747,6 +754,8 @@ const buildNodeDraft = (
     state.nodeType === 'challenge' ? state.challengeTemplateId || null : null,
   scenarioTemplateId:
     state.nodeType === 'scenario' ? state.scenarioTemplateId || null : null,
+  storyFlagKey:
+    state.nodeType === 'story_flag' ? state.storyFlagKey.trim() : undefined,
   monsterTemplateIds:
     state.nodeType === 'monster_encounter'
       ? state.monsterTemplateIds
@@ -872,6 +881,10 @@ const describeQuestArchetypeNode = (
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
   }
+  if (node.nodeType === 'story_flag') {
+    const storyFlagKey = node.storyFlagKey?.trim() || 'story flag';
+    return `Story flag: ${storyFlagKey}`;
+  }
   const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
   const locationLabel = locationArchetypes.find(
     (entry) => entry.id === node.locationArchetypeId
@@ -911,6 +924,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
   inventoryItems,
   spells,
 }) => {
+  const showsLocationConfig = editor.nodeType !== 'story_flag';
   const filteredLocationArchetypes = locationArchetypes
     .filter((archetype) =>
       archetype.name
@@ -967,124 +981,135 @@ const QuestArchetypeNodeConfigFields: React.FC<
           <option value="scenario">Scenario</option>
           <option value="monster_encounter">Monster Encounter</option>
           <option value="exposition">Exposition</option>
+          <option value="story_flag">Story Flag</option>
         </select>
       </div>
 
-      <div className="qa-field">
-        <div className="qa-label">{prefix} Location Mode</div>
-        <div className="qa-helper">
-          {editor.locationMode === 'point_of_interest'
-            ? 'Choose a location archetype, then decide whether generation should use the closest matching point of interest to the previous node or quest giver, or a random one in the zone.'
-            : 'Place this node at generated coordinates near the previous node instead of at a point of interest.'}
-        </div>
-        <select
-          className="qa-select"
-          value={editor.locationMode}
-          onChange={(e) =>
-            setEditor((prev) => ({
-              ...prev,
-              locationMode:
-                e.target.value === 'coordinates'
-                  ? 'coordinates'
-                  : 'point_of_interest',
-              locationArchetypeId:
-                e.target.value === 'coordinates' ? '' : prev.locationArchetypeId,
-              locationArchetypeQuery:
-                e.target.value === 'coordinates'
-                  ? ''
-                  : prev.locationArchetypeQuery,
-              locationSelectionMode:
-                e.target.value === 'coordinates'
-                  ? 'random'
-                  : prev.locationSelectionMode,
-            }))
-          }
-        >
-          <option value="point_of_interest">Point Of Interest</option>
-          <option value="coordinates">Coordinates</option>
-        </select>
-      </div>
-
-      {editor.locationMode === 'point_of_interest' ? (
+      {showsLocationConfig ? (
         <>
           <div className="qa-field">
-            <div className="qa-label">{prefix} Location Archetype</div>
-            <div className="qa-combobox">
-              <input
-                type="text"
-                className="qa-input"
-                value={editor.locationArchetypeQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  const matched = locationArchetypes.find(
-                    (archetype) =>
-                      archetype.name.toLowerCase() ===
-                      value.trim().toLowerCase()
-                  );
-                  setSelectedLocationArchetype(matched ? matched.id : '', value);
-                }}
-                placeholder="Search location archetypes..."
-              />
-              {editor.locationArchetypeQuery.trim().length > 0 && (
-                <div className="qa-combobox-list">
-                  {filteredLocationArchetypes.length === 0 ? (
-                    <div className="qa-combobox-empty">No matches.</div>
-                  ) : (
-                    filteredLocationArchetypes.map((archetype) => (
-                      <button
-                        key={`${prefix}-location-${archetype.id}`}
-                        type="button"
-                        className="qa-combobox-option"
-                        onClick={() =>
-                          setSelectedLocationArchetype(
-                            archetype.id,
-                            archetype.name
-                          )
-                        }
-                      >
-                        {archetype.name}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+            <div className="qa-label">{prefix} Location Mode</div>
+            <div className="qa-helper">
+              {editor.locationMode === 'point_of_interest'
+                ? 'Choose a location archetype, then decide whether generation should use the closest matching point of interest to the previous node or quest giver, or a random one in the zone.'
+                : 'Place this node at generated coordinates near the previous node instead of at a point of interest.'}
             </div>
-          </div>
-          <div className="qa-field">
-            <div className="qa-label">{prefix} POI Selection</div>
             <select
               className="qa-select"
-              value={editor.locationSelectionMode}
+              value={editor.locationMode}
               onChange={(e) =>
                 setEditor((prev) => ({
                   ...prev,
+                  locationMode:
+                    e.target.value === 'coordinates'
+                      ? 'coordinates'
+                      : 'point_of_interest',
+                  locationArchetypeId:
+                    e.target.value === 'coordinates'
+                      ? ''
+                      : prev.locationArchetypeId,
+                  locationArchetypeQuery:
+                    e.target.value === 'coordinates'
+                      ? ''
+                      : prev.locationArchetypeQuery,
                   locationSelectionMode:
-                    e.target.value === 'closest' ? 'closest' : 'random',
+                    e.target.value === 'coordinates'
+                      ? 'random'
+                      : prev.locationSelectionMode,
                 }))
               }
             >
-              <option value="random">Random In Zone</option>
-              <option value="closest">Closest To Previous / Questgiver</option>
+              <option value="point_of_interest">Point Of Interest</option>
+              <option value="coordinates">Coordinates</option>
             </select>
           </div>
+          {editor.locationMode === 'point_of_interest' ? (
+            <>
+              <div className="qa-field">
+                <div className="qa-label">{prefix} Location Archetype</div>
+                <div className="qa-combobox">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={editor.locationArchetypeQuery}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const matched = locationArchetypes.find(
+                        (archetype) =>
+                          archetype.name.toLowerCase() ===
+                          value.trim().toLowerCase()
+                      );
+                      setSelectedLocationArchetype(
+                        matched ? matched.id : '',
+                        value
+                      );
+                    }}
+                    placeholder="Search location archetypes..."
+                  />
+                  {editor.locationArchetypeQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {filteredLocationArchetypes.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        filteredLocationArchetypes.map((archetype) => (
+                          <button
+                            key={`${prefix}-location-${archetype.id}`}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() =>
+                              setSelectedLocationArchetype(
+                                archetype.id,
+                                archetype.name
+                              )
+                            }
+                          >
+                            {archetype.name}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">{prefix} POI Selection</div>
+                <select
+                  className="qa-select"
+                  value={editor.locationSelectionMode}
+                  onChange={(e) =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      locationSelectionMode:
+                        e.target.value === 'closest' ? 'closest' : 'random',
+                    }))
+                  }
+                >
+                  <option value="random">Random In Zone</option>
+                  <option value="closest">Closest To Previous / Questgiver</option>
+                </select>
+              </div>
+            </>
+          ) : (
+            <div className="qa-field">
+              <div className="qa-label">
+                {prefix} Proximity To Previous Node (m)
+              </div>
+              <input
+                type="number"
+                min={0}
+                className="qa-input"
+                value={editor.encounterProximityMeters}
+                onChange={(e) =>
+                  setEditor((prev) => ({
+                    ...prev,
+                    encounterProximityMeters: parseInt(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+          )}
         </>
-      ) : (
-        <div className="qa-field">
-          <div className="qa-label">{prefix} Proximity To Previous Node (m)</div>
-          <input
-            type="number"
-            min={0}
-            className="qa-input"
-            value={editor.encounterProximityMeters}
-            onChange={(e) =>
-              setEditor((prev) => ({
-                ...prev,
-                encounterProximityMeters: parseInt(e.target.value) || 0,
-              }))
-            }
-          />
-        </div>
-      )}
+      ) : null}
 
       {editor.nodeType === 'challenge' ? (
         <div className="qa-field">
@@ -1509,6 +1534,28 @@ const QuestArchetypeNodeConfigFields: React.FC<
           ) : null}
         </>
       ) : null}
+
+      {editor.nodeType === 'story_flag' ? (
+        <div className="qa-field">
+          <div className="qa-label">{prefix} Story Flag Key</div>
+          <div className="qa-helper">
+            This node completes automatically once the user has this story flag
+            set to true.
+          </div>
+          <input
+            type="text"
+            className="qa-input"
+            value={editor.storyFlagKey}
+            onChange={(e) =>
+              setEditor((prev) => ({
+                ...prev,
+                storyFlagKey: e.target.value,
+              }))
+            }
+            placeholder="harbor_gate_open"
+          />
+        </div>
+      ) : null}
     </>
   );
 };
@@ -1912,6 +1959,8 @@ const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
       return 'Scenario';
     case 'exposition':
       return 'Exposition';
+    case 'story_flag':
+      return 'Story Flag';
     default:
       return 'Node';
   }

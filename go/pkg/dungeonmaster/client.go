@@ -281,6 +281,18 @@ func (c *client) processQuestNode(
 			anchorMap,
 			previousAnchor,
 		)
+	case models.QuestArchetypeNodeTypeStoryFlag:
+		return c.processQuestStoryFlagNode(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			previousAnchor,
+		)
 	default:
 		return c.processQuestChallengeNode(
 			ctx,
@@ -773,6 +785,79 @@ func (c *client) processQuestExpositionNode(
 	}
 
 	return currentAnchor, nil
+}
+
+func (c *client) processQuestStoryFlagNode(
+	ctx context.Context,
+	zone *models.Zone,
+	questArchTypeNode *models.QuestArchetypeNode,
+	quest *models.Quest,
+	usedPOIs map[uuid.UUID]bool,
+	orderIndex *int,
+	nodeMap map[uuid.UUID]uuid.UUID,
+	anchorMap map[uuid.UUID]*questNodeAnchor,
+	previousAnchor *questNodeAnchor,
+) (*questNodeAnchor, error) {
+	existingNodeID, ok := nodeMap[questArchTypeNode.ID]
+	if ok {
+		currentAnchor := anchorMap[questArchTypeNode.ID]
+		if currentAnchor == nil {
+			currentAnchor = previousAnchor
+		}
+		return currentAnchor, c.attachQuestBranchChildren(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			existingNodeID,
+		)
+	}
+
+	storyFlagKey := models.NormalizeStoryFlagKey(questArchTypeNode.StoryFlagKey)
+	if storyFlagKey == "" {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("story flag node requires a story flag key"),
+		)
+	}
+
+	questNodeID := uuid.New()
+	node := &models.QuestNode{
+		ID:             questNodeID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		QuestID:        quest.ID,
+		OrderIndex:     *orderIndex,
+		StoryFlagKey:   storyFlagKey,
+		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+	}
+	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
+		return previousAnchor, err
+	}
+	nodeMap[questArchTypeNode.ID] = questNodeID
+	anchorMap[questArchTypeNode.ID] = previousAnchor
+	(*orderIndex)++
+
+	if err := c.attachQuestBranchChildren(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		orderIndex,
+		nodeMap,
+		anchorMap,
+		previousAnchor,
+		questNodeID,
+	); err != nil {
+		return previousAnchor, err
+	}
+
+	return previousAnchor, nil
 }
 
 func (c *client) processQuestMonsterEncounterNode(

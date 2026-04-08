@@ -16,6 +16,7 @@ type QuestNodeObjectiveType string
 
 const (
 	QuestNodeObjectiveTypeChallenge        QuestNodeObjectiveType = "challenge"
+	QuestNodeObjectiveTypeStoryFlag        QuestNodeObjectiveType = "story_flag"
 	QuestNodeObjectiveTypeScenario         QuestNodeObjectiveType = "scenario"
 	QuestNodeObjectiveTypeMonsterEncounter QuestNodeObjectiveType = "monster_encounter"
 	QuestNodeObjectiveTypeMonster          QuestNodeObjectiveType = "monster"
@@ -30,6 +31,7 @@ type QuestNodeObjective struct {
 	ThumbnailURL    string                         `json:"thumbnailUrl,omitempty"`
 	Reward          int                            `json:"reward"`
 	InventoryItemID *int                           `json:"inventoryItemId"`
+	StoryFlagKey    string                         `json:"storyFlagKey,omitempty"`
 	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
 	Difficulty      int                            `json:"difficulty"`
 	StatTags        []string                       `json:"statTags,omitempty"`
@@ -44,6 +46,7 @@ type QuestNode struct {
 	PointOfInterest    *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
 	Polygon            []QuestNodePolygonPoint        `json:"polygon,omitempty"`
 	ScenarioID         *uuid.UUID                     `json:"scenarioId,omitempty"`
+	StoryFlagKey       string                         `json:"storyFlagKey,omitempty"`
 	MonsterID          *uuid.UUID                     `json:"monsterId,omitempty"`
 	MonsterEncounterID *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
 	ChallengeID        *uuid.UUID                     `json:"challengeId,omitempty"`
@@ -67,26 +70,26 @@ type QuestSpellReward struct {
 }
 
 type Quest struct {
-	ID                       uuid.UUID               `json:"id"`
-	Name                     string                  `json:"name"`
-	Description              string                  `json:"description"`
-	Category                 string                  `json:"category"`
+	ID                       uuid.UUID                `json:"id"`
+	Name                     string                   `json:"name"`
+	Description              string                   `json:"description"`
+	Category                 string                   `json:"category"`
 	AcceptanceDialogue       []models.DialogueMessage `json:"acceptanceDialogue,omitempty"`
-	ImageUrl                 string                  `json:"imageUrl"`
-	RewardMode               models.RewardMode       `json:"rewardMode"`
-	RandomRewardSize         models.RandomRewardSize `json:"randomRewardSize"`
-	Gold                     int                     `json:"gold"`
-	ItemRewards              []QuestItemReward       `json:"itemRewards"`
-	SpellRewards             []QuestSpellReward      `json:"spellRewards"`
-	QuestGiverCharacterID    *uuid.UUID              `json:"questGiverCharacterId,omitempty"`
-	MainStoryPreviousQuestID *uuid.UUID              `json:"mainStoryPreviousQuestId,omitempty"`
-	MainStoryNextQuestID     *uuid.UUID              `json:"mainStoryNextQuestId,omitempty"`
-	RecurringQuestID         *uuid.UUID              `json:"recurringQuestId,omitempty"`
-	IsAccepted               bool                    `json:"isAccepted"`
-	TurnedInAt               *time.Time              `json:"turnedInAt,omitempty"`
-	CompletionCount          int                     `json:"completionCount,omitempty"`
-	ReadyToTurnIn            bool                    `json:"readyToTurnIn"`
-	CurrentNode              *QuestNode              `json:"currentNode,omitempty"`
+	ImageUrl                 string                   `json:"imageUrl"`
+	RewardMode               models.RewardMode        `json:"rewardMode"`
+	RandomRewardSize         models.RandomRewardSize  `json:"randomRewardSize"`
+	Gold                     int                      `json:"gold"`
+	ItemRewards              []QuestItemReward        `json:"itemRewards"`
+	SpellRewards             []QuestSpellReward       `json:"spellRewards"`
+	QuestGiverCharacterID    *uuid.UUID               `json:"questGiverCharacterId,omitempty"`
+	MainStoryPreviousQuestID *uuid.UUID               `json:"mainStoryPreviousQuestId,omitempty"`
+	MainStoryNextQuestID     *uuid.UUID               `json:"mainStoryNextQuestId,omitempty"`
+	RecurringQuestID         *uuid.UUID               `json:"recurringQuestId,omitempty"`
+	IsAccepted               bool                     `json:"isAccepted"`
+	TurnedInAt               *time.Time               `json:"turnedInAt,omitempty"`
+	CompletionCount          int                      `json:"completionCount,omitempty"`
+	ReadyToTurnIn            bool                     `json:"readyToTurnIn"`
+	CurrentNode              *QuestNode               `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -107,6 +110,102 @@ type questlogClient struct {
 func NewClient(dbClient db.DbClient) QuestlogClient {
 	log.Printf("Creating new QuestlogClient")
 	return &questlogClient{dbClient: dbClient}
+}
+
+func userStoryFlagMap(flags []models.UserStoryFlag) map[string]bool {
+	result := map[string]bool{}
+	for _, flag := range flags {
+		key := models.NormalizeStoryFlagKey(flag.FlagKey)
+		if key == "" {
+			continue
+		}
+		result[key] = flag.Value
+	}
+	return result
+}
+
+func (c *questlogClient) loadUserStoryFlagMap(
+	ctx context.Context,
+	userID uuid.UUID,
+) (map[string]bool, error) {
+	flags, err := c.dbClient.UserStoryFlag().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return userStoryFlagMap(flags), nil
+}
+
+func (c *questlogClient) markQuestNodeCompleteForAcceptance(
+	ctx context.Context,
+	acceptance *models.QuestAcceptanceV2,
+	nodeID uuid.UUID,
+	completedAt time.Time,
+) error {
+	if acceptance == nil {
+		return nil
+	}
+	progress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(
+		ctx,
+		acceptance.ID,
+		nodeID,
+	)
+	if err != nil {
+		return err
+	}
+	if progress == nil {
+		progress = &models.QuestNodeProgress{
+			ID:                uuid.New(),
+			CreatedAt:         completedAt,
+			UpdatedAt:         completedAt,
+			QuestAcceptanceID: acceptance.ID,
+			QuestNodeID:       nodeID,
+			CompletedAt:       &completedAt,
+		}
+		return c.dbClient.QuestNodeProgress().Create(ctx, progress)
+	}
+	if progress.CompletedAt != nil {
+		return nil
+	}
+	return c.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID)
+}
+
+func (c *questlogClient) autoCompleteStoryFlagNodes(
+	ctx context.Context,
+	quest *models.Quest,
+	acceptance *models.QuestAcceptanceV2,
+	completed map[uuid.UUID]bool,
+	activeStoryFlags map[string]bool,
+) (map[uuid.UUID]bool, error) {
+	if quest == nil || acceptance == nil {
+		return completed, nil
+	}
+	_, autoCompleted := models.ResolveCurrentQuestNode(
+		quest.Nodes,
+		completed,
+		activeStoryFlags,
+	)
+	if len(autoCompleted) == 0 {
+		return completed, nil
+	}
+
+	nextCompleted := make(map[uuid.UUID]bool, len(completed)+len(autoCompleted))
+	for nodeID, isCompleted := range completed {
+		nextCompleted[nodeID] = isCompleted
+	}
+	completedAt := time.Now()
+	for _, nodeID := range autoCompleted {
+		if err := c.markQuestNodeCompleteForAcceptance(
+			ctx,
+			acceptance,
+			nodeID,
+			completedAt,
+		); err != nil {
+			return completed, err
+		}
+		nextCompleted[nodeID] = true
+	}
+
+	return nextCompleted, nil
 }
 
 func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
@@ -132,6 +231,10 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		for _, t := range tracked {
 			trackedQuestIDs = append(trackedQuestIDs, t.QuestID)
 		}
+	}
+	activeStoryFlags, err := c.loadUserStoryFlagMap(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	trackedAccepted := make([]uuid.UUID, 0, len(trackedQuestIDs))
@@ -175,6 +278,16 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			if p.CompletedAt != nil {
 				progress[p.QuestNodeID] = true
 			}
+		}
+		progress, err = c.autoCompleteStoryFlagNodes(
+			ctx,
+			&quest,
+			&acceptance,
+			progress,
+			activeStoryFlags,
+		)
+		if err != nil {
+			return nil, err
 		}
 
 		currentNode, err := buildCurrentNode(ctx, c.dbClient, &quest, progress)
@@ -333,6 +446,20 @@ func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID 
 			completed[p.QuestNodeID] = true
 		}
 	}
+	activeStoryFlags, err := c.loadUserStoryFlagMap(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	completed, err = c.autoCompleteStoryFlagNodes(
+		ctx,
+		quest,
+		acceptance,
+		completed,
+		activeStoryFlags,
+	)
+	if err != nil {
+		return false, err
+	}
 	return allNodesCompleted(quest, completed), nil
 }
 
@@ -406,6 +533,7 @@ func buildQuestNodeView(
 		PointOfInterest:    pointOfInterest,
 		Polygon:            polygon,
 		ScenarioID:         node.ScenarioID,
+		StoryFlagKey:       node.StoryFlagKeyNormalized(),
 		MonsterID:          node.MonsterID,
 		MonsterEncounterID: node.MonsterEncounterID,
 		ChallengeID:        node.ChallengeID,
@@ -418,6 +546,17 @@ func buildQuestNodeObjective(
 	dbClient db.DbClient,
 	node models.QuestNode,
 ) (*QuestNodeObjective, *models.PointOfInterest, []QuestNodePolygonPoint, error) {
+	if node.IsStoryFlagNode() {
+		storyFlagKey := node.StoryFlagKeyNormalized()
+		return &QuestNodeObjective{
+			ID:             node.ID,
+			Type:           QuestNodeObjectiveTypeStoryFlag,
+			Prompt:         "Wait for story progress: " + storyFlagKey,
+			Description:    "This objective completes automatically once the required story flag becomes active.",
+			StoryFlagKey:   storyFlagKey,
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}, nil, nil, nil
+	}
 	if node.ChallengeID != nil {
 		challenge, err := dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
 		if err != nil {

@@ -38,7 +38,8 @@ export type QuestArchetypeNodeType =
   | 'challenge'
   | 'monster_encounter'
   | 'scenario'
-  | 'exposition';
+  | 'exposition'
+  | 'story_flag';
 
 export type QuestArchetypeNodeLocationSelectionMode = 'random' | 'closest';
 
@@ -78,6 +79,7 @@ export interface QuestArchetypeNode {
   challengeTemplateId?: string | null;
   challengeTemplate?: QuestArchetypeChallengeTemplate | null;
   scenarioTemplateId?: string | null;
+  storyFlagKey?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
