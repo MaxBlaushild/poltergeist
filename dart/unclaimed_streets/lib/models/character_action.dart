@@ -89,6 +89,7 @@ class CharacterAction {
       metadata?['pointOfInterestGroupId'] as String?;
   String? get questId =>
       (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
+  String? get questNodeId => metadata?['questNodeId'] as String?;
   String? get questName => metadata?['questName'] as String?;
   String? get questDescription => metadata?['questDescription'] as String?;
   String? get questCategory => metadata?['questCategory'] as String?;

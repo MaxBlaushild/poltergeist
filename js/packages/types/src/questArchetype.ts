@@ -39,7 +39,13 @@ export type QuestArchetypeNodeType =
   | 'monster_encounter'
   | 'scenario'
   | 'exposition'
+  | 'fetch_quest'
   | 'story_flag';
+
+export interface QuestArchetypeNodeFetchRequirement {
+  inventoryItemId: number;
+  quantity: number;
+}
 
 export type QuestArchetypeNodeLocationSelectionMode = 'random' | 'closest';
 
@@ -79,6 +85,9 @@ export interface QuestArchetypeNode {
   challengeTemplateId?: string | null;
   challengeTemplate?: QuestArchetypeChallengeTemplate | null;
   scenarioTemplateId?: string | null;
+  fetchCharacter?: Character | null;
+  fetchCharacterId?: string | null;
+  fetchRequirements?: QuestArchetypeNodeFetchRequirement[];
   storyFlagKey?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;

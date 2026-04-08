@@ -48,6 +48,26 @@ const normalizeDialogueMessages = (messages: DialogueMessage[]) =>
         : message.characterId?.trim() || undefined,
   }));
 
+const dialogueControlStyle: React.CSSProperties = {
+  padding: '6px 8px',
+  border: '1px solid #d1d5db',
+  borderRadius: '6px',
+  fontSize: '12px',
+  color: '#111827',
+  backgroundColor: '#ffffff',
+};
+
+const dialogueTextareaStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px',
+  border: '1px solid #d1d5db',
+  borderRadius: '6px',
+  minHeight: '72px',
+  color: '#111827',
+  backgroundColor: '#ffffff',
+  caretColor: '#111827',
+};
+
 export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps> = ({
   label = 'Dialogue',
   helperText,
@@ -176,12 +196,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                           : undefined,
                     });
                   }}
-                  style={{
-                    padding: '6px 8px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                  }}
+                  style={dialogueControlStyle}
                 >
                   <option value="character">Character</option>
                   <option value="user">User</option>
@@ -208,10 +223,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                     })
                   }
                   style={{
-                    padding: '6px 8px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '12px',
+                    ...dialogueControlStyle,
                     minWidth: '160px',
                   }}
                 >
@@ -234,12 +246,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                     ),
                   })
                 }
-                style={{
-                  padding: '6px 8px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                }}
+                style={dialogueControlStyle}
               >
                 {dialogueEffectOptions.map((option) => (
                   <option key={option.value || 'none'} value={option.value}>
@@ -280,13 +287,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
               value={message.text}
               onChange={(event) => updateMessage(index, { text: event.target.value })}
               placeholder="Dialogue line"
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                minHeight: '72px',
-              }}
+              style={dialogueTextareaStyle}
             />
           </div>
         ))}

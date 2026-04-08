@@ -2,6 +2,7 @@ package questlog
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"strings"
@@ -16,26 +17,36 @@ type QuestNodeObjectiveType string
 
 const (
 	QuestNodeObjectiveTypeChallenge        QuestNodeObjectiveType = "challenge"
+	QuestNodeObjectiveTypeFetchQuest       QuestNodeObjectiveType = "fetch_quest"
 	QuestNodeObjectiveTypeStoryFlag        QuestNodeObjectiveType = "story_flag"
 	QuestNodeObjectiveTypeScenario         QuestNodeObjectiveType = "scenario"
 	QuestNodeObjectiveTypeMonsterEncounter QuestNodeObjectiveType = "monster_encounter"
 	QuestNodeObjectiveTypeMonster          QuestNodeObjectiveType = "monster"
 )
 
+type QuestNodeFetchRequirement struct {
+	InventoryItemID int                   `json:"inventoryItemId"`
+	Quantity        int                   `json:"quantity"`
+	InventoryItem   *models.InventoryItem `json:"inventoryItem,omitempty"`
+}
+
 type QuestNodeObjective struct {
-	ID              uuid.UUID                      `json:"id"`
-	Type            QuestNodeObjectiveType         `json:"type"`
-	Prompt          string                         `json:"prompt"`
-	Description     string                         `json:"description,omitempty"`
-	ImageURL        string                         `json:"imageUrl,omitempty"`
-	ThumbnailURL    string                         `json:"thumbnailUrl,omitempty"`
-	Reward          int                            `json:"reward"`
-	InventoryItemID *int                           `json:"inventoryItemId"`
-	StoryFlagKey    string                         `json:"storyFlagKey,omitempty"`
-	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
-	Difficulty      int                            `json:"difficulty"`
-	StatTags        []string                       `json:"statTags,omitempty"`
-	Proficiency     *string                        `json:"proficiency,omitempty"`
+	ID                uuid.UUID                      `json:"id"`
+	Type              QuestNodeObjectiveType         `json:"type"`
+	Prompt            string                         `json:"prompt"`
+	Description       string                         `json:"description,omitempty"`
+	ImageURL          string                         `json:"imageUrl,omitempty"`
+	ThumbnailURL      string                         `json:"thumbnailUrl,omitempty"`
+	Reward            int                            `json:"reward"`
+	InventoryItemID   *int                           `json:"inventoryItemId"`
+	StoryFlagKey      string                         `json:"storyFlagKey,omitempty"`
+	SubmissionType    models.QuestNodeSubmissionType `json:"submissionType"`
+	Difficulty        int                            `json:"difficulty"`
+	StatTags          []string                       `json:"statTags,omitempty"`
+	Proficiency       *string                        `json:"proficiency,omitempty"`
+	CharacterID       *uuid.UUID                     `json:"characterId,omitempty"`
+	CharacterName     string                         `json:"characterName,omitempty"`
+	FetchRequirements []QuestNodeFetchRequirement    `json:"fetchRequirements,omitempty"`
 }
 
 type QuestNode struct {
@@ -46,6 +57,8 @@ type QuestNode struct {
 	PointOfInterest    *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
 	Polygon            []QuestNodePolygonPoint        `json:"polygon,omitempty"`
 	ScenarioID         *uuid.UUID                     `json:"scenarioId,omitempty"`
+	FetchCharacterID   *uuid.UUID                     `json:"fetchCharacterId,omitempty"`
+	FetchCharacter     *models.Character              `json:"fetchCharacter,omitempty"`
 	StoryFlagKey       string                         `json:"storyFlagKey,omitempty"`
 	MonsterID          *uuid.UUID                     `json:"monsterId,omitempty"`
 	MonsterEncounterID *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
@@ -533,6 +546,8 @@ func buildQuestNodeView(
 		PointOfInterest:    pointOfInterest,
 		Polygon:            polygon,
 		ScenarioID:         node.ScenarioID,
+		FetchCharacterID:   node.FetchCharacterID,
+		FetchCharacter:     node.FetchCharacter,
 		StoryFlagKey:       node.StoryFlagKeyNormalized(),
 		MonsterID:          node.MonsterID,
 		MonsterEncounterID: node.MonsterEncounterID,
@@ -556,6 +571,85 @@ func buildQuestNodeObjective(
 			StoryFlagKey:   storyFlagKey,
 			SubmissionType: models.DefaultQuestNodeSubmissionType(),
 		}, nil, nil, nil
+	}
+	if node.IsFetchQuestNode() {
+		character := node.FetchCharacter
+		if character == nil && node.FetchCharacterID != nil && *node.FetchCharacterID != uuid.Nil {
+			loadedCharacter, err := dbClient.Character().FindByID(ctx, *node.FetchCharacterID)
+			if err != nil {
+				log.Printf(
+					"resolveObjectiveText: fetch character lookup failed for %s: %v",
+					node.FetchCharacterID.String(),
+					err,
+				)
+				return nil, nil, nil, nil
+			}
+			character = loadedCharacter
+		}
+
+		requirements := make([]QuestNodeFetchRequirement, 0, len(node.FetchRequirements))
+		requirementLabels := make([]string, 0, len(node.FetchRequirements))
+		for _, requirement := range node.FetchRequirements {
+			if requirement.InventoryItemID <= 0 || requirement.Quantity <= 0 {
+				continue
+			}
+			var inventoryItem *models.InventoryItem
+			item, err := dbClient.InventoryItem().FindInventoryItemByID(
+				ctx,
+				requirement.InventoryItemID,
+			)
+			if err != nil {
+				log.Printf(
+					"resolveObjectiveText: fetch item lookup failed for %d: %v",
+					requirement.InventoryItemID,
+					err,
+				)
+			} else {
+				inventoryItem = item
+			}
+			requirements = append(requirements, QuestNodeFetchRequirement{
+				InventoryItemID: requirement.InventoryItemID,
+				Quantity:        requirement.Quantity,
+				InventoryItem:   inventoryItem,
+			})
+			itemName := "item"
+			if inventoryItem != nil && strings.TrimSpace(inventoryItem.Name) != "" {
+				itemName = strings.TrimSpace(inventoryItem.Name)
+			}
+			requirementLabels = append(
+				requirementLabels,
+				fmt.Sprintf("%d %s", requirement.Quantity, itemName),
+			)
+		}
+
+		characterName := ""
+		var pointOfInterest *models.PointOfInterest
+		if character != nil {
+			characterName = strings.TrimSpace(character.Name)
+			pointOfInterest = character.PointOfInterest
+		}
+
+		prompt := "Deliver the required items"
+		if len(requirementLabels) > 0 && characterName != "" {
+			prompt = fmt.Sprintf(
+				"Bring %s to %s",
+				strings.Join(requirementLabels, ", "),
+				characterName,
+			)
+		} else if characterName != "" {
+			prompt = fmt.Sprintf("Deliver the required items to %s", characterName)
+		}
+		description := "Hand over the requested items to continue the quest."
+		return &QuestNodeObjective{
+			ID:                node.ID,
+			Type:              QuestNodeObjectiveTypeFetchQuest,
+			Prompt:            prompt,
+			Description:       description,
+			SubmissionType:    models.DefaultQuestNodeSubmissionType(),
+			CharacterID:       node.FetchCharacterID,
+			CharacterName:     characterName,
+			FetchRequirements: requirements,
+		}, pointOfInterest, nil, nil
 	}
 	if node.ChallengeID != nil {
 		challenge, err := dbClient.Challenge().FindByID(ctx, *node.ChallengeID)

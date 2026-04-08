@@ -19,6 +19,13 @@ List<String> questObjectiveLines(QuestNode? node) {
     return [objectivePrompt];
   }
 
+  if (_hasValue(node.fetchCharacterId)) {
+    final characterName = node.fetchCharacter?.name.trim() ?? '';
+    if (characterName.isNotEmpty) {
+      return ['Deliver the required items to $characterName.'];
+    }
+    return const ['Deliver the required items to continue the quest.'];
+  }
   if (_hasValue(node.scenarioId)) {
     return const ['Complete the current scenario objective.'];
   }
@@ -142,6 +149,19 @@ class _ObjectiveIconFallback extends StatelessWidget {
 }
 
 String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
+  final fetchCharacterThumb = node?.fetchCharacter?.thumbnailUrl?.trim() ?? '';
+  if (fetchCharacterThumb.isNotEmpty) {
+    return fetchCharacterThumb;
+  }
+  final fetchCharacterDialogueImage =
+      node?.fetchCharacter?.dialogueImageUrl?.trim() ?? '';
+  if (fetchCharacterDialogueImage.isNotEmpty) {
+    return fetchCharacterDialogueImage;
+  }
+  final fetchCharacterMapIcon = node?.fetchCharacter?.mapIconUrl?.trim() ?? '';
+  if (fetchCharacterMapIcon.isNotEmpty) {
+    return fetchCharacterMapIcon;
+  }
   final expositionThumb = node?.exposition?.thumbnailUrl.trim() ?? '';
   if (expositionThumb.isNotEmpty) {
     return expositionThumb;
@@ -169,6 +189,9 @@ String? _pointOfInterestImageUrl(PointOfInterest poi) {
 bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;
 
 IconData _objectiveIconData(QuestNode? node) {
+  if (_hasValue(node?.fetchCharacterId)) {
+    return Icons.inventory_2_outlined;
+  }
   if (_hasValue(node?.scenarioId)) {
     return Icons.auto_awesome_outlined;
   }

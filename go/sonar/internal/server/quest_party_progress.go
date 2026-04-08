@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -268,6 +271,11 @@ func (s *server) userIsInRangeForQuestNode(
 	}
 
 	switch {
+	case node.IsFetchQuestNode():
+		if node.FetchCharacterID == nil {
+			return false, nil
+		}
+		return s.userIsInRangeForCharacter(ctx, userID, *node.FetchCharacterID)
 	case node.ScenarioID != nil:
 		scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
 		if err != nil {
@@ -344,4 +352,105 @@ func (s *server) userIsInRangeForQuestNode(
 	default:
 		return false, nil
 	}
+}
+
+func characterInteractionPoints(
+	character *models.Character,
+) []questNodePolygonPointLike {
+	points := make([]questNodePolygonPointLike, 0)
+	if character == nil {
+		return points
+	}
+	if character.PointOfInterest != nil {
+		latitude, errLat := strconv.ParseFloat(
+			strings.TrimSpace(character.PointOfInterest.Lat),
+			64,
+		)
+		longitude, errLng := strconv.ParseFloat(
+			strings.TrimSpace(character.PointOfInterest.Lng),
+			64,
+		)
+		if errLat == nil && errLng == nil {
+			points = append(points, questNodePolygonPointLike{
+				Latitude:  latitude,
+				Longitude: longitude,
+			})
+		}
+	}
+	for _, location := range character.Locations {
+		if math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) {
+			continue
+		}
+		if math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) {
+			continue
+		}
+		points = append(points, questNodePolygonPointLike{
+			Latitude:  location.Latitude,
+			Longitude: location.Longitude,
+		})
+	}
+	return points
+}
+
+type questNodePolygonPointLike struct {
+	Latitude  float64
+	Longitude float64
+}
+
+func nearestCharacterDistanceMeters(
+	character *models.Character,
+	userLat float64,
+	userLng float64,
+) (float64, bool) {
+	points := characterInteractionPoints(character)
+	if len(points) == 0 {
+		return 0, false
+	}
+	nearest := 0.0
+	found := false
+	for _, point := range points {
+		if point.Latitude < -90 || point.Latitude > 90 {
+			continue
+		}
+		if point.Longitude < -180 || point.Longitude > 180 {
+			continue
+		}
+		if point.Latitude == 0 && point.Longitude == 0 {
+			continue
+		}
+		distance := util.HaversineDistance(
+			userLat,
+			userLng,
+			point.Latitude,
+			point.Longitude,
+		)
+		if !found || distance < nearest {
+			nearest = distance
+			found = true
+		}
+	}
+	return nearest, found
+}
+
+func (s *server) userIsInRangeForCharacter(
+	ctx context.Context,
+	userID uuid.UUID,
+	characterID uuid.UUID,
+) (bool, error) {
+	userLat, userLng, err := s.getUserLatLng(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	character, err := s.dbClient.Character().FindByID(ctx, characterID)
+	if err != nil {
+		return false, err
+	}
+	if character == nil {
+		return false, nil
+	}
+	distance, ok := nearestCharacterDistanceMeters(character, userLat, userLng)
+	if !ok {
+		return false, nil
+	}
+	return distance <= scenarioInteractRadiusMeters, nil
 }

@@ -1,5 +1,5 @@
 import { Character } from './character';
-export type ActionType = 'talk' | 'shop' | 'giveQuest' | 'tutorial' | 'exposition';
+export type ActionType = 'talk' | 'shop' | 'giveQuest' | 'receiveQuestItems' | 'tutorial' | 'exposition';
 export type DialogueEffect = 'angry' | 'surprised' | 'whisper' | 'shout' | 'mysterious' | 'determined';
 export interface DialogueMessage {
     speaker: 'character' | 'user';

@@ -1,4 +1,5 @@
 import '../models/quest_log.dart';
+import '../models/fetch_quest_turn_in.dart';
 import 'api_client.dart';
 
 class QuestLogService {
@@ -82,5 +83,20 @@ class QuestLogService {
         ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     return map;
+  }
+
+  Future<FetchQuestTurnInDetails> getFetchQuestTurnIn(String questId) async {
+    final raw = await _api.get<dynamic>('/sonar/quests/$questId/fetch-turn-in');
+    final map = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    return FetchQuestTurnInDetails.fromJson(map);
+  }
+
+  Future<Map<String, dynamic>> submitFetchQuestTurnIn(String questId) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/quests/$questId/fetch-turn-in',
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 }

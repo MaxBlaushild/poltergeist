@@ -77,6 +77,8 @@ const questArchetypeNodeTypeLabel = (
       return 'Challenge';
     case 'exposition':
       return 'Exposition';
+    case 'fetch_quest':
+      return 'Fetch Quest';
     case 'story_flag':
       return 'Story Flag';
     case 'scenario':
@@ -103,6 +105,9 @@ const summarizeQuestArchetypeRoot = (
   }
   if (nodeType === 'exposition') {
     return 'Starts with an exposition node';
+  }
+  if (nodeType === 'fetch_quest') {
+    return 'Starts with a fetch quest node';
   }
   if (nodeType === 'story_flag') {
     return 'Starts with a story flag node';
@@ -185,6 +190,13 @@ const describeQuestArchetypeNode = (
     return locationLabel
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
+  }
+  if (node.nodeType === 'fetch_quest') {
+    const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
+    const requirementCount = node.fetchRequirements?.length ?? 0;
+    return requirementCount > 0
+      ? `Deliver ${requirementCount} item${requirementCount === 1 ? '' : 's'} to ${characterLabel}`
+      : `Fetch quest for ${characterLabel}`;
   }
   if (node.nodeType === 'story_flag') {
     return `Story flag: ${node.storyFlagKey?.trim() || 'story flag'}`;

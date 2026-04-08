@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
 import '../models/point_of_interest.dart';
+import '../models/fetch_quest_turn_in.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../providers/quest_filter_provider.dart';
@@ -195,6 +196,16 @@ class QuestLogProvider with ChangeNotifier {
       videoSubmissionUrl: videoSubmissionUrl,
     );
     unawaited(_refreshAfterMutation('submitQuestNode'));
+    return resp;
+  }
+
+  Future<FetchQuestTurnInDetails> getFetchQuestTurnIn(String questId) {
+    return _service.getFetchQuestTurnIn(questId);
+  }
+
+  Future<Map<String, dynamic>> submitFetchQuestTurnIn(String questId) async {
+    final resp = await _service.submitFetchQuestTurnIn(questId);
+    unawaited(_refreshAfterMutation('submitFetchQuestTurnIn'));
     return resp;
   }
 

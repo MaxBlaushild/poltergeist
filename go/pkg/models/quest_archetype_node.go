@@ -20,6 +20,7 @@ const (
 	QuestArchetypeNodeTypeMonsterEncounter QuestArchetypeNodeType = "monster_encounter"
 	QuestArchetypeNodeTypeScenario         QuestArchetypeNodeType = "scenario"
 	QuestArchetypeNodeTypeExposition       QuestArchetypeNodeType = "exposition"
+	QuestArchetypeNodeTypeFetchQuest       QuestArchetypeNodeType = "fetch_quest"
 	QuestArchetypeNodeTypeStoryFlag        QuestArchetypeNodeType = "story_flag"
 )
 
@@ -29,6 +30,8 @@ func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
 		return QuestArchetypeNodeTypeChallenge
 	case string(QuestArchetypeNodeTypeExposition):
 		return QuestArchetypeNodeTypeExposition
+	case string(QuestArchetypeNodeTypeFetchQuest):
+		return QuestArchetypeNodeTypeFetchQuest
 	case string(QuestArchetypeNodeTypeStoryFlag):
 		return QuestArchetypeNodeTypeStoryFlag
 	case string(QuestArchetypeNodeTypeScenario):
@@ -132,6 +135,9 @@ type QuestArchetypeNode struct {
 	ChallengeTemplateID        *uuid.UUID                              `json:"challengeTemplateId,omitempty" gorm:"column:challenge_template_id;type:uuid"`
 	ScenarioTemplate           *ScenarioTemplate                       `json:"scenarioTemplate,omitempty"`
 	ScenarioTemplateID         *uuid.UUID                              `json:"scenarioTemplateId,omitempty"`
+	FetchCharacter             *Character                              `json:"fetchCharacter,omitempty" gorm:"foreignKey:FetchCharacterID"`
+	FetchCharacterID           *uuid.UUID                              `json:"fetchCharacterId,omitempty" gorm:"column:fetch_character_id;type:uuid"`
+	FetchRequirements          FetchQuestRequirements                  `json:"fetchRequirements" gorm:"column:fetch_requirements_json;type:jsonb;default:'[]'"`
 	StoryFlagKey               string                                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	MonsterTemplateIDs         StringArray                             `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
 	TargetLevel                int                                     `json:"targetLevel" gorm:"column:target_level;default:1"`
@@ -163,6 +169,7 @@ func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, e
 	if NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeMonsterEncounter ||
 		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeScenario ||
 		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeExposition ||
+		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeFetchQuest ||
 		NormalizeQuestArchetypeNodeType(string(q.NodeType)) == QuestArchetypeNodeTypeStoryFlag {
 		return LocationArchetypeChallenge{}, fmt.Errorf("%s nodes do not generate location challenges", q.NodeType)
 	}
@@ -191,6 +198,7 @@ func (q *QuestArchetypeNode) BeforeSave(tx *gorm.DB) error {
 	if q.ExpositionDialogue == nil {
 		q.ExpositionDialogue = DialogueSequence{}
 	}
+	q.FetchRequirements = NormalizeFetchQuestRequirements(q.FetchRequirements)
 	if q.ExpositionMaterialRewards == nil {
 		q.ExpositionMaterialRewards = BaseMaterialRewards{}
 	}

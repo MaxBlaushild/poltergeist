@@ -9,6 +9,7 @@ import '../models/base_progression.dart';
 import '../providers/character_stats_provider.dart';
 import '../services/base_service.dart';
 import '../widgets/paper_texture.dart';
+import '../widgets/inventory_requirement_chip.dart';
 
 const int _baseGridSize = 5;
 const Color _roomBorderColor = Color(0xFF7B5A3B);
@@ -1932,25 +1933,10 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     BuildContext context,
     BaseCraftingIngredientData ingredient,
   ) {
-    final theme = Theme.of(context);
-    final hasEnough = ingredient.ownedQuantity >= ingredient.quantity;
-    final color = hasEnough
-        ? theme.colorScheme.primary
-        : theme.colorScheme.error;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.7)),
-      ),
-      child: Text(
-        '${ingredient.item.name}: ${ingredient.ownedQuantity}/${ingredient.quantity}',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+    return InventoryRequirementChip(
+      item: ingredient.item,
+      quantity: ingredient.quantity,
+      ownedQuantity: ingredient.ownedQuantity,
     );
   }
 

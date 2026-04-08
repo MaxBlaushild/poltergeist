@@ -1,7 +1,14 @@
 import { PointOfInterest } from './pointOfInterest';
 import { Exposition } from './exposition';
+import { Character } from './character';
+import { InventoryItem } from './inventoryItem';
 export type QuestNodeSubmissionType = 'text' | 'photo' | 'video' | (string & {});
-export type QuestNodeObjectiveType = 'challenge' | 'story_flag' | 'scenario' | 'exposition' | 'monster_encounter' | 'monster' | (string & {});
+export type QuestNodeObjectiveType = 'challenge' | 'fetch_quest' | 'story_flag' | 'scenario' | 'exposition' | 'monster_encounter' | 'monster' | (string & {});
+export interface QuestNodeFetchRequirement {
+    inventoryItemId: number;
+    quantity: number;
+    inventoryItem?: InventoryItem | null;
+}
 export interface QuestNodeObjective {
     id: string;
     type: QuestNodeObjectiveType;
@@ -16,6 +23,9 @@ export interface QuestNodeObjective {
     difficulty?: number;
     statTags?: string[];
     proficiency?: string | null;
+    characterId?: string | null;
+    characterName?: string;
+    fetchRequirements?: QuestNodeFetchRequirement[];
 }
 export interface QuestNodeChallengeDetails {
     id: string;
@@ -87,6 +97,8 @@ export interface QuestNode {
     objectiveText?: string;
     objective?: QuestNodeObjective | null;
     pointOfInterestId?: string | null;
+    fetchCharacterId?: string | null;
+    fetchCharacter?: Character | null;
     storyFlagKey?: string | null;
     scenarioId?: string | null;
     expositionId?: string | null;

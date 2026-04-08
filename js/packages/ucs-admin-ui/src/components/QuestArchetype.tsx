@@ -641,6 +641,8 @@ type QuestArchetypeNodeEditorState = {
   locationSelectionMode: 'random' | 'closest';
   challengeTemplateId: string;
   scenarioTemplateId: string;
+  fetchCharacterId: string;
+  fetchRequirements: Array<{ inventoryItemId: string; quantity: number }>;
   storyFlagKey: string;
   monsterTemplateIds: string[];
   targetLevel: number;
@@ -665,6 +667,8 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   locationSelectionMode: 'random',
   challengeTemplateId: '',
   scenarioTemplateId: '',
+  fetchCharacterId: '',
+  fetchRequirements: [],
   storyFlagKey: '',
   monsterTemplateIds: [],
   targetLevel: 1,
@@ -692,11 +696,21 @@ const buildNodeEditorState = (
         ? 'scenario'
         : node.nodeType === 'exposition'
           ? 'exposition'
+          : node.nodeType === 'fetch_quest'
+            ? 'fetch_quest'
           : node.nodeType === 'story_flag'
             ? 'story_flag'
             : 'challenge',
   locationMode: node.locationArchetypeId ? 'point_of_interest' : 'coordinates',
   scenarioTemplateId: node.scenarioTemplateId ?? '',
+  fetchCharacterId: node.fetchCharacterId ?? '',
+  fetchRequirements: (node.fetchRequirements ?? []).map((requirement) => ({
+    inventoryItemId:
+      requirement.inventoryItemId != null
+        ? String(requirement.inventoryItemId)
+        : '',
+    quantity: requirement.quantity ?? 1,
+  })),
   storyFlagKey: node.storyFlagKey ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
   locationArchetypeQuery:
@@ -742,11 +756,13 @@ const buildNodeDraft = (
   nodeType: state.nodeType,
   locationArchetypeId:
     state.nodeType !== 'story_flag' &&
+    state.nodeType !== 'fetch_quest' &&
     state.locationMode === 'point_of_interest'
       ? state.locationArchetypeId || null
       : null,
   locationSelectionMode:
     state.nodeType !== 'story_flag' &&
+    state.nodeType !== 'fetch_quest' &&
     state.locationMode === 'point_of_interest'
       ? state.locationSelectionMode
       : undefined,
@@ -754,6 +770,20 @@ const buildNodeDraft = (
     state.nodeType === 'challenge' ? state.challengeTemplateId || null : null,
   scenarioTemplateId:
     state.nodeType === 'scenario' ? state.scenarioTemplateId || null : null,
+  fetchCharacterId:
+    state.nodeType === 'fetch_quest' ? state.fetchCharacterId || null : null,
+  fetchRequirements:
+    state.nodeType === 'fetch_quest'
+      ? state.fetchRequirements
+          .map((requirement) => ({
+            inventoryItemId: Number(requirement.inventoryItemId) || 0,
+            quantity: Number(requirement.quantity) || 0,
+          }))
+          .filter(
+            (requirement) =>
+              requirement.inventoryItemId > 0 && requirement.quantity > 0
+          )
+      : undefined,
   storyFlagKey:
     state.nodeType === 'story_flag' ? state.storyFlagKey.trim() : undefined,
   monsterTemplateIds:
@@ -881,6 +911,18 @@ const describeQuestArchetypeNode = (
       ? `${expositionLabel} @ ${locationLabel}`
       : expositionLabel;
   }
+  if (node.nodeType === 'fetch_quest') {
+    const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
+    const requirements = (node.fetchRequirements ?? [])
+      .map((requirement) => {
+        return `${requirement.quantity}x item ${requirement.inventoryItemId}`;
+      })
+      .slice(0, 2)
+      .join(', ');
+    return requirements
+      ? `Deliver ${requirements}${(node.fetchRequirements?.length ?? 0) > 2 ? '…' : ''} to ${characterLabel}`
+      : `Fetch quest for ${characterLabel}`;
+  }
   if (node.nodeType === 'story_flag') {
     const storyFlagKey = node.storyFlagKey?.trim() || 'story flag';
     return `Story flag: ${storyFlagKey}`;
@@ -924,7 +966,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
   inventoryItems,
   spells,
 }) => {
-  const showsLocationConfig = editor.nodeType !== 'story_flag';
+  const showsLocationConfig =
+    editor.nodeType !== 'story_flag' && editor.nodeType !== 'fetch_quest';
   const filteredLocationArchetypes = locationArchetypes
     .filter((archetype) =>
       archetype.name
@@ -981,6 +1024,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
           <option value="scenario">Scenario</option>
           <option value="monster_encounter">Monster Encounter</option>
           <option value="exposition">Exposition</option>
+          <option value="fetch_quest">Fetch Quest</option>
           <option value="story_flag">Story Flag</option>
         </select>
       </div>
@@ -1556,6 +1600,137 @@ const QuestArchetypeNodeConfigFields: React.FC<
           />
         </div>
       ) : null}
+      {editor.nodeType === 'fetch_quest' ? (
+        <>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Target Character</div>
+            <div className="qa-helper">
+              The user must deliver the required items to this character to
+              continue.
+            </div>
+            <select
+              className="qa-select"
+              value={editor.fetchCharacterId}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  fetchCharacterId: e.target.value,
+                }))
+              }
+            >
+              <option value="">Select a character</option>
+              {characters.map((character) => (
+                <option
+                  key={`${prefix}-fetch-character-${character.id}`}
+                  value={character.id}
+                >
+                  {character.name || character.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Required Items</div>
+            {editor.fetchRequirements.length === 0 ? (
+              <div className="qa-empty">
+                No delivery requirements configured yet.
+              </div>
+            ) : (
+              <div className="qa-stack">
+                {editor.fetchRequirements.map((requirement, index) => (
+                  <div
+                    key={`${prefix}-fetch-requirement-${index}`}
+                    className="qa-inline"
+                    style={{ alignItems: 'flex-end' }}
+                  >
+                    <label className="qa-field" style={{ flex: 1 }}>
+                      <div className="qa-label">Inventory Item</div>
+                      <select
+                        className="qa-select"
+                        value={requirement.inventoryItemId}
+                        onChange={(e) =>
+                          setEditor((prev) => ({
+                            ...prev,
+                            fetchRequirements: prev.fetchRequirements.map(
+                              (entry, entryIndex) =>
+                                entryIndex === index
+                                  ? {
+                                      ...entry,
+                                      inventoryItemId: e.target.value,
+                                    }
+                                  : entry
+                            ),
+                          }))
+                        }
+                      >
+                        <option value="">Select an item</option>
+                        {inventoryItems.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name || item.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="qa-field" style={{ width: 120 }}>
+                      <div className="qa-label">Quantity</div>
+                      <input
+                        type="number"
+                        min={1}
+                        className="qa-input"
+                        value={requirement.quantity}
+                        onChange={(e) =>
+                          setEditor((prev) => ({
+                            ...prev,
+                            fetchRequirements: prev.fetchRequirements.map(
+                              (entry, entryIndex) =>
+                                entryIndex === index
+                                  ? {
+                                      ...entry,
+                                      quantity: parseInt(e.target.value) || 1,
+                                    }
+                                  : entry
+                            ),
+                          }))
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="qa-btn qa-btn-ghost"
+                      onClick={() =>
+                        setEditor((prev) => ({
+                          ...prev,
+                          fetchRequirements: prev.fetchRequirements.filter(
+                            (_, entryIndex) => entryIndex !== index
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className="qa-btn qa-btn-outline"
+              style={{ marginTop: 12 }}
+              onClick={() =>
+                setEditor((prev) => ({
+                  ...prev,
+                  fetchRequirements: [
+                    ...prev.fetchRequirements,
+                    { inventoryItemId: '', quantity: 1 },
+                  ],
+                }))
+              }
+            >
+              Add Required Item
+            </button>
+          </div>
+        </>
+      ) : null}
     </>
   );
 };
@@ -1959,6 +2134,8 @@ const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
       return 'Scenario';
     case 'exposition':
       return 'Exposition';
+    case 'fetch_quest':
+      return 'Fetch Quest';
     case 'story_flag':
       return 'Story Flag';
     default:

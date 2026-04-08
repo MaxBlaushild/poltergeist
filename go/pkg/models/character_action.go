@@ -14,9 +14,10 @@ type ActionType string
 type DialogueEffect string
 
 const (
-	ActionTypeTalk      ActionType = "talk"
-	ActionTypeShop      ActionType = "shop"
-	ActionTypeGiveQuest ActionType = "giveQuest"
+	ActionTypeTalk              ActionType = "talk"
+	ActionTypeShop              ActionType = "shop"
+	ActionTypeGiveQuest         ActionType = "giveQuest"
+	ActionTypeReceiveQuestItems ActionType = "receiveQuestItems"
 	// Future: ActionTypeGift, ActionTypeTrade, etc.
 
 	DialogueEffectNone       DialogueEffect = ""

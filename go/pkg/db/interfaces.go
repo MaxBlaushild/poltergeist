@@ -540,9 +540,11 @@ type InventoryItemHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
+	GetUsersItems(ctx context.Context, userID uuid.UUID) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 	DecrementUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, quantity int) error
+	ConsumeUserInventoryItems(ctx context.Context, userID uuid.UUID, requirements []models.FetchQuestRequirement) error
 	// CRUD methods for inventory items
 	CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error
 	FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error)

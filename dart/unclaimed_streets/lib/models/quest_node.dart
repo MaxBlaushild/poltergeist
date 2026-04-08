@@ -1,5 +1,6 @@
 import 'point_of_interest.dart';
 import 'exposition.dart';
+import 'character.dart';
 import 'quest_node_objective.dart';
 
 class QuestNodePolygonPoint {
@@ -28,6 +29,7 @@ class QuestNode {
   final int orderIndex;
   final PointOfInterest? pointOfInterest;
   final String objectiveText;
+  final String? fetchCharacterId;
   final String? scenarioId;
   final String? expositionId;
   final String? monsterId;
@@ -36,6 +38,7 @@ class QuestNode {
   final List<QuestNodePolygonPoint> polygon;
   final QuestNodeObjective? objective;
   final Exposition? exposition;
+  final Character? fetchCharacter;
   final String submissionType;
 
   const QuestNode({
@@ -44,6 +47,7 @@ class QuestNode {
     this.submissionType = submissionTypePhoto,
     this.pointOfInterest,
     this.objectiveText = '',
+    this.fetchCharacterId,
     this.scenarioId,
     this.expositionId,
     this.monsterId,
@@ -52,6 +56,7 @@ class QuestNode {
     this.polygon = const [],
     this.objective,
     this.exposition,
+    this.fetchCharacter,
   });
 
   factory QuestNode.fromJson(Map<String, dynamic> json) {
@@ -74,6 +79,7 @@ class QuestNode {
             )
           : null,
       objectiveText: json['objectiveText']?.toString() ?? '',
+      fetchCharacterId: json['fetchCharacterId']?.toString(),
       scenarioId: json['scenarioId']?.toString(),
       expositionId: json['expositionId']?.toString(),
       monsterId: json['monsterId']?.toString(),
@@ -97,6 +103,13 @@ class QuestNode {
           : json['exposition'] is Map
           ? Exposition.fromJson(
               Map<String, dynamic>.from(json['exposition'] as Map),
+            )
+          : null,
+      fetchCharacter: json['fetchCharacter'] is Map<String, dynamic>
+          ? Character.fromJson(json['fetchCharacter'] as Map<String, dynamic>)
+          : json['fetchCharacter'] is Map
+          ? Character.fromJson(
+              Map<String, dynamic>.from(json['fetchCharacter'] as Map),
             )
           : null,
     );

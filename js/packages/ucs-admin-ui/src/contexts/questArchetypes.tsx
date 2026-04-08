@@ -17,6 +17,8 @@ export type QuestArchetypeNodeDraft = {
   locationSelectionMode?: 'random' | 'closest';
   challengeTemplateId?: string | null;
   scenarioTemplateId?: string | null;
+  fetchCharacterId?: string | null;
+  fetchRequirements?: { inventoryItemId: number; quantity: number }[];
   storyFlagKey?: string;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
@@ -262,6 +264,8 @@ export const QuestArchetypesProvider = ({
         locationSelectionMode: draft.rootNode.locationSelectionMode,
         challengeTemplateId: draft.rootNode.challengeTemplateId,
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
+        fetchCharacterId: draft.rootNode.fetchCharacterId,
+        fetchRequirements: draft.rootNode.fetchRequirements,
         storyFlagKey: draft.rootNode.storyFlagKey,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
@@ -387,6 +391,8 @@ export const QuestArchetypesProvider = ({
       locationArchetypeID?: string;
       locationSelectionMode?: 'random' | 'closest';
       scenarioTemplateId?: string | null;
+      fetchCharacterId?: string | null;
+      fetchRequirements?: { inventoryItemId: number; quantity: number }[];
       storyFlagKey?: string;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
@@ -413,6 +419,8 @@ export const QuestArchetypesProvider = ({
       payload.locationSelectionMode = unlockedNode.locationSelectionMode;
       payload.challengeTemplateId = unlockedNode.challengeTemplateId ?? undefined;
       payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
+      payload.fetchCharacterId = unlockedNode.fetchCharacterId;
+      payload.fetchRequirements = unlockedNode.fetchRequirements;
       payload.storyFlagKey = unlockedNode.storyFlagKey;
       if (
         unlockedNode.monsterTemplateIds &&
@@ -480,6 +488,8 @@ export const QuestArchetypesProvider = ({
       locationSelectionMode: updates.locationSelectionMode,
       challengeTemplateId: updates.challengeTemplateId,
       scenarioTemplateId: updates.scenarioTemplateId,
+      fetchCharacterId: updates.fetchCharacterId,
+      fetchRequirements: updates.fetchRequirements,
       storyFlagKey: updates.storyFlagKey,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,

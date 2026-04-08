@@ -269,6 +269,18 @@ func (c *client) processQuestNode(
 			anchorMap,
 			previousAnchor,
 		)
+	case models.QuestArchetypeNodeTypeFetchQuest:
+		return c.processQuestFetchNode(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			previousAnchor,
+		)
 	case models.QuestArchetypeNodeTypeMonsterEncounter:
 		return c.processQuestMonsterEncounterNode(
 			ctx,
@@ -423,6 +435,43 @@ func (c *client) processQuestChallengeNode(
 	}
 
 	return currentAnchor, nil
+}
+
+func questNodeAnchorForCharacter(
+	character *models.Character,
+) (*questNodeAnchor, error) {
+	if character == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest character is required"),
+		)
+	}
+
+	if character.PointOfInterest != nil {
+		latitude, longitude, err := pointOfInterestCoordinates(character.PointOfInterest)
+		if err == nil {
+			return &questNodeAnchor{
+				Latitude:  latitude,
+				Longitude: longitude,
+			}, nil
+		}
+	}
+
+	for _, location := range character.Locations {
+		if math.Abs(location.Latitude) > 90 || math.Abs(location.Longitude) > 180 {
+			continue
+		}
+		if location.Latitude == 0 && location.Longitude == 0 {
+			continue
+		}
+		return &questNodeAnchor{
+			Latitude:  location.Latitude,
+			Longitude: location.Longitude,
+		}, nil
+	}
+
+	return nil, markNonRetriableQuestGenerationError(
+		fmt.Errorf("fetch quest character %s has no usable location", character.ID.String()),
+	)
 }
 
 func (c *client) processQuestScenarioNode(
@@ -858,6 +907,111 @@ func (c *client) processQuestStoryFlagNode(
 	}
 
 	return previousAnchor, nil
+}
+
+func (c *client) processQuestFetchNode(
+	ctx context.Context,
+	zone *models.Zone,
+	questArchTypeNode *models.QuestArchetypeNode,
+	quest *models.Quest,
+	usedPOIs map[uuid.UUID]bool,
+	orderIndex *int,
+	nodeMap map[uuid.UUID]uuid.UUID,
+	anchorMap map[uuid.UUID]*questNodeAnchor,
+	previousAnchor *questNodeAnchor,
+) (*questNodeAnchor, error) {
+	existingNodeID, ok := nodeMap[questArchTypeNode.ID]
+	if ok {
+		currentAnchor := anchorMap[questArchTypeNode.ID]
+		if currentAnchor == nil {
+			currentAnchor = previousAnchor
+		}
+		return currentAnchor, c.attachQuestBranchChildren(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			existingNodeID,
+		)
+	}
+
+	if questArchTypeNode.FetchCharacterID == nil || *questArchTypeNode.FetchCharacterID == uuid.Nil {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest node requires a fetch character"),
+		)
+	}
+	if len(questArchTypeNode.FetchRequirements) == 0 {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest node requires at least one item requirement"),
+		)
+	}
+
+	fetchCharacter := questArchTypeNode.FetchCharacter
+	if fetchCharacter == nil || fetchCharacter.ID != *questArchTypeNode.FetchCharacterID {
+		loadedCharacter, err := c.dbClient.Character().FindByID(
+			ctx,
+			*questArchTypeNode.FetchCharacterID,
+		)
+		if err != nil {
+			return previousAnchor, err
+		}
+		if loadedCharacter == nil {
+			return previousAnchor, markNonRetriableQuestGenerationError(
+				fmt.Errorf(
+					"fetch quest character %s not found",
+					questArchTypeNode.FetchCharacterID.String(),
+				),
+			)
+		}
+		fetchCharacter = loadedCharacter
+	}
+
+	currentAnchor, err := questNodeAnchorForCharacter(fetchCharacter)
+	if err != nil {
+		return previousAnchor, err
+	}
+
+	questNodeID := uuid.New()
+	node := &models.QuestNode{
+		ID:               questNodeID,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		QuestID:          quest.ID,
+		OrderIndex:       *orderIndex,
+		FetchCharacterID: questArchTypeNode.FetchCharacterID,
+		FetchRequirements: models.NormalizeFetchQuestRequirements(
+			questArchTypeNode.FetchRequirements,
+		),
+		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+	}
+	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
+		return previousAnchor, err
+	}
+	nodeMap[questArchTypeNode.ID] = questNodeID
+	anchorMap[questArchTypeNode.ID] = currentAnchor
+	(*orderIndex)++
+
+	if err := c.attachQuestBranchChildren(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		orderIndex,
+		nodeMap,
+		anchorMap,
+		currentAnchor,
+		questNodeID,
+	); err != nil {
+		return currentAnchor, err
+	}
+
+	return currentAnchor, nil
 }
 
 func (c *client) processQuestMonsterEncounterNode(

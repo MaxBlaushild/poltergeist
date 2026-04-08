@@ -4,6 +4,7 @@ export type ActionType =
   | 'talk'
   | 'shop'
   | 'giveQuest'
+  | 'receiveQuestItems'
   | 'tutorial'
   | 'exposition';
 export type DialogueEffect =

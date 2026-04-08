@@ -24,6 +24,9 @@ type QuestNode struct {
 	Challenge          *Challenge              `json:"challenge,omitempty" gorm:"foreignKey:ChallengeID"`
 	ExpositionID       *uuid.UUID              `json:"expositionId" gorm:"type:uuid"`
 	Exposition         *Exposition             `json:"exposition,omitempty" gorm:"foreignKey:ExpositionID"`
+	FetchCharacterID   *uuid.UUID              `json:"fetchCharacterId,omitempty" gorm:"column:fetch_character_id;type:uuid"`
+	FetchCharacter     *Character              `json:"fetchCharacter,omitempty" gorm:"foreignKey:FetchCharacterID"`
+	FetchRequirements  FetchQuestRequirements  `json:"fetchRequirements" gorm:"column:fetch_requirements_json;type:jsonb;default:'[]'"`
 	StoryFlagKey       string                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	SubmissionType     QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Children           []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
@@ -59,6 +62,7 @@ func (q *QuestNode) BeforeCreate(tx *gorm.DB) (err error) {
 		q.SubmissionType = DefaultQuestNodeSubmissionType()
 	}
 	q.StoryFlagKey = NormalizeStoryFlagKey(q.StoryFlagKey)
+	q.FetchRequirements = NormalizeFetchQuestRequirements(q.FetchRequirements)
 	return nil
 }
 
@@ -71,4 +75,11 @@ func (q *QuestNode) StoryFlagKeyNormalized() string {
 
 func (q *QuestNode) IsStoryFlagNode() bool {
 	return q != nil && strings.TrimSpace(q.StoryFlagKeyNormalized()) != ""
+}
+
+func (q *QuestNode) IsFetchQuestNode() bool {
+	return q != nil &&
+		q.FetchCharacterID != nil &&
+		*q.FetchCharacterID != uuid.Nil &&
+		len(q.FetchRequirements) > 0
 }

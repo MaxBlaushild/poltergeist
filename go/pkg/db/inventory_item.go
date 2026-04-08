@@ -346,6 +346,53 @@ func (h *inventoryItemHandler) DecrementUserInventoryItem(ctx context.Context, u
 	return h.db.WithContext(ctx).Save(&item).Error
 }
 
+func (h *inventoryItemHandler) ConsumeUserInventoryItems(
+	ctx context.Context,
+	userID uuid.UUID,
+	requirements []models.FetchQuestRequirement,
+) error {
+	normalized := models.NormalizeFetchQuestRequirements(requirements)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, requirement := range normalized {
+			var item models.OwnedInventoryItem
+			result := tx.
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where(
+					"user_id = ? AND inventory_item_id = ?",
+					userID,
+					requirement.InventoryItemID,
+				).
+				First(&item)
+			if result.Error != nil {
+				if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+					return errors.New("user does not own this item")
+				}
+				return result.Error
+			}
+
+			if item.Quantity < requirement.Quantity {
+				return errors.New("insufficient quantity")
+			}
+
+			item.Quantity -= requirement.Quantity
+			if item.Quantity <= 0 {
+				if err := tx.Delete(&models.OwnedInventoryItem{}, "id = ?", item.ID).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Save(&item).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, inventoryItemID int) error {
 	rewardAndJoinTables := []string{
 		"monster_item_rewards",

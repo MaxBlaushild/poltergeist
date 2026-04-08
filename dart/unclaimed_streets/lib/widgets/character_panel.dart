@@ -17,6 +17,7 @@ import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/user_level_provider.dart';
+import '../screens/fetch_quest_turn_in_screen.dart';
 import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
@@ -58,6 +59,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   String? _unlockError;
   bool _acceptingQuest = false;
   bool _turningInQuest = false;
+  bool _openingFetchTurnIn = false;
 
   @override
   void initState() {
@@ -96,13 +98,6 @@ class _CharacterPanelState extends State<CharacterPanel> {
   CharacterAction? _firstActionOfType(String type) {
     for (final action in _actions) {
       if (action.actionType == type) return action;
-    }
-    return null;
-  }
-
-  CharacterAction? _firstActionOfTypes(List<String> types) {
-    for (final action in _actions) {
-      if (types.contains(action.actionType)) return action;
     }
     return null;
   }
@@ -476,6 +471,24 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
   }
 
+  Future<void> _openFetchTurnIn(CharacterAction action) async {
+    final questId = action.questId;
+    if (questId == null || questId.isEmpty || _openingFetchTurnIn) return;
+
+    setState(() => _openingFetchTurnIn = true);
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => FetchQuestTurnInScreen(questId: questId),
+      ),
+    );
+    if (!mounted) return;
+    await _loadActions();
+    setState(() => _openingFetchTurnIn = false);
+    if (completed == true) {
+      widget.onClose();
+    }
+  }
+
   Quest? _questReadyToTurnIn(CharacterAction action) {
     final questId = action.questId;
     if (questId == null || questId.isEmpty) return null;
@@ -550,13 +563,14 @@ class _CharacterPanelState extends State<CharacterPanel> {
     return nearestMeters.isFinite ? nearestMeters : null;
   }
 
-  String? _questAcceptDisabledReason(
+  String? _characterInteractionDisabledReason(
     AppLocation? location,
     double? distanceMeters,
+    String actionLabel,
   ) {
     if (!_hasCharacterLocation) return null;
     if (location == null) {
-      return 'Enable location to accept this quest.';
+      return 'Enable location to $actionLabel.';
     }
     if (distanceMeters == null) {
       return 'Character location unavailable.';
@@ -566,6 +580,15 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
     return null;
   }
+
+  String? _questAcceptDisabledReason(
+    AppLocation? location,
+    double? distanceMeters,
+  ) => _characterInteractionDisabledReason(
+    location,
+    distanceMeters,
+    'accept this quest',
+  );
 
   bool get _isDiscoveryManaged {
     return _hasCharacterLocation;
@@ -788,6 +811,15 @@ class _CharacterPanelState extends State<CharacterPanel> {
       userLocation,
       questDistance,
     );
+    final fetchTurnInDisabledReason = _characterInteractionDisabledReason(
+      userLocation,
+      questDistance,
+      'deliver these items',
+    );
+    final fetchTurnInActions = _actions
+        .where((action) => action.actionType == 'receiveQuestItems')
+        .where((action) => action.questId != null && action.questId!.isNotEmpty)
+        .toList();
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -971,6 +1003,29 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                       ? null
                                       : () =>
                                             _showQuestAcceptanceDialog(action),
+                                );
+                              }),
+                              ...fetchTurnInActions.map((action) {
+                                final quest = _questForAction(action);
+                                final labelQuestName =
+                                    quest?.name ??
+                                    action.questName?.trim() ??
+                                    'Quest';
+                                return _DialogueChoiceButton(
+                                  label: _openingFetchTurnIn
+                                      ? 'Opening delivery...'
+                                      : 'Deliver Items: $labelQuestName',
+                                  icon: Icons.inventory_2_outlined,
+                                  subtitle:
+                                      !_openingFetchTurnIn &&
+                                          fetchTurnInDisabledReason != null
+                                      ? fetchTurnInDisabledReason
+                                      : null,
+                                  onTap:
+                                      _openingFetchTurnIn ||
+                                          fetchTurnInDisabledReason != null
+                                      ? null
+                                      : () => _openFetchTurnIn(action),
                                 );
                               }),
                               if (shopAction != null)

@@ -544,6 +544,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
+	r.GET("/sonar/quests/:questId/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestFetchTurnIn))
+	r.POST("/sonar/quests/:questId/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestFetchTurnIn))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
@@ -11185,6 +11187,10 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster-backed quest nodes are resolved through combat against their linked monster directly"})
 		return
 	}
+	if node.IsFetchQuestNode() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "fetch-quest-backed quest nodes are resolved through their linked character directly"})
+		return
+	}
 	if node.ChallengeID == nil || *node.ChallengeID == uuid.Nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no linked objective"})
 		return
@@ -14341,6 +14347,19 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 				len(quest.AcceptanceDialogue),
 			)
 		}
+	}
+
+	fetchTurnInActions, err := s.buildFetchQuestTurnInActionsForCharacter(
+		ctx,
+		user,
+		id,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(fetchTurnInActions) > 0 {
+		actions = append(actions, fetchTurnInActions...)
 	}
 
 	ctx.JSON(http.StatusOK, actions)

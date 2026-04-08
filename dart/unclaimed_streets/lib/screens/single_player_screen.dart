@@ -74,6 +74,7 @@ import '../widgets/used_item_modal.dart';
 import '../widgets/zone_widget.dart';
 import '../widgets/paper_texture.dart';
 import '../widgets/party_member_map_strip.dart';
+import 'fetch_quest_turn_in_screen.dart';
 import 'layout_shell.dart';
 
 const _chestImageUrl =
@@ -1263,10 +1264,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Set<String> _currentQuestTurnInCharacterIds(QuestLogProvider questLog) {
-    return questLog.quests
-        .where((q) => q.readyToTurnIn && q.questGiverCharacterId != null)
-        .map((q) => q.questGiverCharacterId!)
-        .toSet();
+    final ids = <String>{};
+    for (final quest in questLog.quests) {
+      if (quest.readyToTurnIn && quest.questGiverCharacterId != null) {
+        ids.add(quest.questGiverCharacterId!);
+      }
+      final currentNode = quest.currentNode;
+      final fetchCharacterId = currentNode?.fetchCharacterId?.trim() ?? '';
+      if (quest.isAccepted && fetchCharacterId.isNotEmpty) {
+        ids.add(fetchCharacterId);
+      }
+    }
+    return ids;
   }
 
   Set<String> _currentMainStoryQuestPoiIds(QuestLogProvider questLog) {
@@ -9233,6 +9242,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _showQuestObjectiveSubmissionPanel(Quest quest, QuestNode node) {
+    final fetchCharacterId = node.fetchCharacterId?.trim() ?? '';
+    if (fetchCharacterId.isNotEmpty) {
+      unawaited(_openFetchQuestTurnInScreen(quest));
+      return;
+    }
     final expositionId = node.expositionId?.trim() ?? '';
     if (expositionId.isNotEmpty) {
       final exposition = node.exposition ?? _expositionById(expositionId);
@@ -9252,6 +9266,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     _showQuestNodeSubmissionModal(quest.name, node);
+  }
+
+  Future<void> _openFetchQuestTurnInScreen(Quest quest) async {
+    final delivered = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => FetchQuestTurnInScreen(questId: quest.id),
+      ),
+    );
+    if (delivered != true || !mounted) return;
+    await context.read<QuestLogProvider>().refresh();
   }
 
   Character? _defaultExpositionSpeaker(Exposition exposition) {
