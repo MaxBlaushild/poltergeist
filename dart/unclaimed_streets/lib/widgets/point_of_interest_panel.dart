@@ -738,183 +738,203 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             widget.onQuestSubmissionState?.call(
                               QuestSubmissionOverlayPhase.loading,
                             );
-                            String? imageSubmissionUrl;
-                            String? videoSubmissionUrl;
-                            if (isPhotoSubmission && capturedImage != null) {
-                              final ext =
-                                  _extensionFromMime(
-                                    capturedImage!.mimeType,
-                                    capturedImage!.name,
-                                  ) ??
-                                  'jpg';
-                              final key =
-                                  'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService
-                                  .getPresignedUploadUrl(
-                                    ApiConstants.crewPointsOfInterestBucket,
-                                    key,
+                            try {
+                              String? imageSubmissionUrl;
+                              String? videoSubmissionUrl;
+                              if (isPhotoSubmission && capturedImage != null) {
+                                final ext =
+                                    _extensionFromMime(
+                                      capturedImage!.mimeType,
+                                      capturedImage!.name,
+                                    ) ??
+                                    'jpg';
+                                final key =
+                                    'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                final url = await mediaService
+                                    .getPresignedUploadUrl(
+                                      ApiConstants.crewPointsOfInterestBucket,
+                                      key,
+                                    );
+                                if (url == null) {
+                                  final elapsed = DateTime.now().difference(
+                                    startedAt,
                                   );
-                              if (url == null) {
-                                final elapsed = DateTime.now().difference(
-                                  startedAt,
-                                );
-                                if (elapsed <
-                                    const Duration(milliseconds: 700)) {
-                                  await Future<void>.delayed(
-                                    const Duration(milliseconds: 700),
+                                  if (elapsed <
+                                      const Duration(milliseconds: 700)) {
+                                    await Future<void>.delayed(
+                                      const Duration(milliseconds: 700),
+                                    );
+                                  }
+                                  widget.onQuestSubmissionState?.call(
+                                    QuestSubmissionOverlayPhase.failure,
+                                    message: 'Failed to prepare image upload.',
                                   );
+                                  return;
                                 }
-                                widget.onQuestSubmissionState?.call(
-                                  QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to prepare image upload.',
+                                final ok = await mediaService.uploadToPresigned(
+                                  url,
+                                  Uint8List.fromList(capturedImage!.bytes),
+                                  capturedImage!.mimeType ?? 'image/jpeg',
                                 );
-                                return;
+                                if (!ok) {
+                                  final elapsed = DateTime.now().difference(
+                                    startedAt,
+                                  );
+                                  if (elapsed <
+                                      const Duration(milliseconds: 700)) {
+                                    await Future<void>.delayed(
+                                      const Duration(milliseconds: 700),
+                                    );
+                                  }
+                                  widget.onQuestSubmissionState?.call(
+                                    QuestSubmissionOverlayPhase.failure,
+                                    message: 'Failed to upload photo.',
+                                  );
+                                  return;
+                                }
+                                imageSubmissionUrl = url.split('?').first;
                               }
-                              final ok = await mediaService.uploadToPresigned(
-                                url,
-                                Uint8List.fromList(capturedImage!.bytes),
-                                capturedImage!.mimeType ?? 'image/jpeg',
+                              if (isVideoSubmission && capturedVideo != null) {
+                                final ext =
+                                    _extensionFromMime(
+                                      _mimeTypeFromFile(capturedVideo!),
+                                      capturedVideo!.name,
+                                    ) ??
+                                    'mp4';
+                                final key =
+                                    'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                final url = await mediaService
+                                    .getPresignedUploadUrl(
+                                      ApiConstants.crewPointsOfInterestBucket,
+                                      key,
+                                    );
+                                if (url == null) {
+                                  final elapsed = DateTime.now().difference(
+                                    startedAt,
+                                  );
+                                  if (elapsed <
+                                      const Duration(milliseconds: 700)) {
+                                    await Future<void>.delayed(
+                                      const Duration(milliseconds: 700),
+                                    );
+                                  }
+                                  widget.onQuestSubmissionState?.call(
+                                    QuestSubmissionOverlayPhase.failure,
+                                    message: 'Failed to prepare video upload.',
+                                  );
+                                  return;
+                                }
+                                final bytes = capturedVideo!.bytes;
+                                if (bytes == null || bytes.isEmpty) {
+                                  final elapsed = DateTime.now().difference(
+                                    startedAt,
+                                  );
+                                  if (elapsed <
+                                      const Duration(milliseconds: 700)) {
+                                    await Future<void>.delayed(
+                                      const Duration(milliseconds: 700),
+                                    );
+                                  }
+                                  widget.onQuestSubmissionState?.call(
+                                    QuestSubmissionOverlayPhase.failure,
+                                    message: 'Failed to read video data.',
+                                  );
+                                  return;
+                                }
+                                final ok = await mediaService.uploadToPresigned(
+                                  url,
+                                  Uint8List.fromList(bytes),
+                                  _mimeTypeFromFile(capturedVideo!) ??
+                                      'video/mp4',
+                                );
+                                if (!ok) {
+                                  final elapsed = DateTime.now().difference(
+                                    startedAt,
+                                  );
+                                  if (elapsed <
+                                      const Duration(milliseconds: 700)) {
+                                    await Future<void>.delayed(
+                                      const Duration(milliseconds: 700),
+                                    );
+                                  }
+                                  widget.onQuestSubmissionState?.call(
+                                    QuestSubmissionOverlayPhase.failure,
+                                    message: 'Failed to upload video.',
+                                  );
+                                  return;
+                                }
+                                videoSubmissionUrl = url.split('?').first;
+                              }
+                              final resp = await questLogProvider
+                                  .submitQuestNode(
+                                    node.id,
+                                    textSubmission: isTextSubmission
+                                        ? trimmedText
+                                        : null,
+                                    imageSubmissionUrl: imageSubmissionUrl,
+                                    videoSubmissionUrl: videoSubmissionUrl,
+                                  );
+                              final elapsed = DateTime.now().difference(
+                                startedAt,
                               );
-                              if (!ok) {
-                                final elapsed = DateTime.now().difference(
-                                  startedAt,
+                              if (elapsed < const Duration(milliseconds: 700)) {
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 700),
                                 );
-                                if (elapsed <
-                                    const Duration(milliseconds: 700)) {
-                                  await Future<void>.delayed(
-                                    const Duration(milliseconds: 700),
-                                  );
-                                }
-                                widget.onQuestSubmissionState?.call(
-                                  QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to upload photo.',
-                                );
-                                return;
                               }
-                              imageSubmissionUrl = url.split('?').first;
-                            }
-                            if (isVideoSubmission && capturedVideo != null) {
-                              final ext =
-                                  _extensionFromMime(
-                                    _mimeTypeFromFile(capturedVideo!),
-                                    capturedVideo!.name,
-                                  ) ??
-                                  'mp4';
-                              final key =
-                                  'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService
-                                  .getPresignedUploadUrl(
-                                    ApiConstants.crewPointsOfInterestBucket,
-                                    key,
+                              final success = resp['successful'] == true;
+                              final reason = resp['reason']?.toString() ?? '';
+                              final score = (resp['score'] as num?)?.toInt();
+                              final difficulty = (resp['difficulty'] as num?)
+                                  ?.toInt();
+                              final combined = (resp['combinedScore'] as num?)
+                                  ?.toInt();
+                              final statTags = (resp['statTags'] as List?)
+                                  ?.map((tag) => tag.toString())
+                                  .toList();
+                              final statValues = (resp['statValues'] as Map?)
+                                  ?.map(
+                                    (key, value) => MapEntry(
+                                      key.toString(),
+                                      (value as num?)?.toInt() ?? 0,
+                                    ),
                                   );
-                              if (url == null) {
-                                final elapsed = DateTime.now().difference(
-                                  startedAt,
-                                );
-                                if (elapsed <
-                                    const Duration(milliseconds: 700)) {
-                                  await Future<void>.delayed(
-                                    const Duration(milliseconds: 700),
-                                  );
-                                }
-                                widget.onQuestSubmissionState?.call(
-                                  QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to prepare video upload.',
-                                );
-                                return;
-                              }
-                              final bytes = capturedVideo!.bytes;
-                              if (bytes == null || bytes.isEmpty) {
-                                final elapsed = DateTime.now().difference(
-                                  startedAt,
-                                );
-                                if (elapsed <
-                                    const Duration(milliseconds: 700)) {
-                                  await Future<void>.delayed(
-                                    const Duration(milliseconds: 700),
-                                  );
-                                }
-                                widget.onQuestSubmissionState?.call(
-                                  QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to read video data.',
-                                );
-                                return;
-                              }
-                              final ok = await mediaService.uploadToPresigned(
-                                url,
-                                Uint8List.fromList(bytes),
-                                _mimeTypeFromFile(capturedVideo!) ??
-                                    'video/mp4',
+                              final baseMessage = success
+                                  ? (reason.isNotEmpty
+                                        ? reason
+                                        : 'Challenge completed!')
+                                  : (reason.isNotEmpty
+                                        ? reason
+                                        : 'Submission failed');
+                              widget.onQuestSubmissionState?.call(
+                                success
+                                    ? QuestSubmissionOverlayPhase.success
+                                    : QuestSubmissionOverlayPhase.failure,
+                                message: baseMessage,
+                                score: score,
+                                difficulty: difficulty,
+                                combinedScore: combined,
+                                statTags: statTags,
+                                statValues: statValues,
                               );
-                              if (!ok) {
-                                final elapsed = DateTime.now().difference(
-                                  startedAt,
+                            } catch (error) {
+                              final elapsed = DateTime.now().difference(
+                                startedAt,
+                              );
+                              if (elapsed < const Duration(milliseconds: 700)) {
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 700),
                                 );
-                                if (elapsed <
-                                    const Duration(milliseconds: 700)) {
-                                  await Future<void>.delayed(
-                                    const Duration(milliseconds: 700),
-                                  );
-                                }
-                                widget.onQuestSubmissionState?.call(
-                                  QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to upload video.',
-                                );
-                                return;
                               }
-                              videoSubmissionUrl = url.split('?').first;
-                            }
-                            final resp = await questLogProvider.submitQuestNode(
-                              node.id,
-                              textSubmission: isTextSubmission
-                                  ? trimmedText
-                                  : null,
-                              imageSubmissionUrl: imageSubmissionUrl,
-                              videoSubmissionUrl: videoSubmissionUrl,
-                            );
-                            final elapsed = DateTime.now().difference(
-                              startedAt,
-                            );
-                            if (elapsed < const Duration(milliseconds: 700)) {
-                              await Future<void>.delayed(
-                                const Duration(milliseconds: 700),
+                              final errorMessage = _errorMessage(error).trim();
+                              final message = errorMessage.isNotEmpty
+                                  ? errorMessage
+                                  : 'Submission failed.';
+                              widget.onQuestSubmissionState?.call(
+                                QuestSubmissionOverlayPhase.failure,
+                                message: message,
                               );
                             }
-                            final success = resp['successful'] == true;
-                            final reason = resp['reason']?.toString() ?? '';
-                            final score = (resp['score'] as num?)?.toInt();
-                            final difficulty = (resp['difficulty'] as num?)
-                                ?.toInt();
-                            final combined = (resp['combinedScore'] as num?)
-                                ?.toInt();
-                            final statTags = (resp['statTags'] as List?)
-                                ?.map((tag) => tag.toString())
-                                .toList();
-                            final statValues = (resp['statValues'] as Map?)
-                                ?.map(
-                                  (key, value) => MapEntry(
-                                    key.toString(),
-                                    (value as num?)?.toInt() ?? 0,
-                                  ),
-                                );
-                            final baseMessage = success
-                                ? (reason.isNotEmpty
-                                      ? reason
-                                      : 'Challenge completed!')
-                                : (reason.isNotEmpty
-                                      ? reason
-                                      : 'Submission failed');
-                            widget.onQuestSubmissionState?.call(
-                              success
-                                  ? QuestSubmissionOverlayPhase.success
-                                  : QuestSubmissionOverlayPhase.failure,
-                              message: baseMessage,
-                              score: score,
-                              difficulty: difficulty,
-                              combinedScore: combined,
-                              statTags: statTags,
-                              statValues: statValues,
-                            );
                           },
                     child: const Text('Submit'),
                   ),

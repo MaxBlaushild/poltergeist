@@ -23,6 +23,7 @@ class RpgDialogueModal extends StatefulWidget {
     this.onSecondaryAction,
     this.showCloseButton = true,
     this.finalStepLabel,
+    this.speakerCharacters,
   });
 
   final Character character;
@@ -36,6 +37,7 @@ class RpgDialogueModal extends StatefulWidget {
   final VoidCallback? onSecondaryAction;
   final bool showCloseButton;
   final String? finalStepLabel;
+  final Map<String, Character>? speakerCharacters;
 
   @override
   State<RpgDialogueModal> createState() => _RpgDialogueModalState();
@@ -258,6 +260,19 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
     }
   }
 
+  Character _characterForDialogueMessage(DialogueMessage message) {
+    final characterId = message.characterId?.trim() ?? '';
+    if (message.speaker == 'character' &&
+        characterId.isNotEmpty &&
+        widget.speakerCharacters != null) {
+      final resolved = widget.speakerCharacters![characterId];
+      if (resolved != null) {
+        return resolved;
+      }
+    }
+    return widget.character;
+  }
+
   List<BoxShadow> _portraitShadowFor(String effect, double progress) {
     final glow = _portraitGlowOpacityFor(effect, progress);
     if (glow <= 0) {
@@ -408,12 +423,13 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
       ..sort((a, b) => a.order.compareTo(b.order));
     final safeIndex = _currentIndex < sorted.length ? _currentIndex : 0;
     final current = sorted[safeIndex];
+    final activeCharacter = _characterForDialogueMessage(current);
     final hasNext = safeIndex < sorted.length - 1;
     final hasDecisionActions =
         !hasNext &&
         (widget.onPrimaryAction != null || widget.onSecondaryAction != null);
     final imageUrl =
-        widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
+        activeCharacter.dialogueImageUrl ?? activeCharacter.mapIconUrl;
     final currentEffect = _dialogueEffectName(current.effect);
     final viewer = context.watch<AuthProvider>().user;
     final renderedText = interpolateDialogueText(current.text, viewer);
@@ -430,7 +446,7 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
               final maxWidth = math.min(720.0, constraints.maxWidth - 32);
               final maxHeight = math.min(560.0, constraints.maxHeight - 32);
               final speakerName = current.speaker == 'character'
-                  ? widget.character.name
+                  ? activeCharacter.name
                   : 'You';
 
               return AnimatedBuilder(

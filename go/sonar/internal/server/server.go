@@ -27,6 +27,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
+	requestlogger "github.com/MaxBlaushild/poltergeist/pkg/logger"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -356,6 +357,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterEncounters))
 	r.GET("/sonar/admin/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminChallenges))
 	r.GET("/sonar/admin/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarios))
+	r.GET("/sonar/admin/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminExpositions))
 	r.GET("/sonar/admin/scenario-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarioTemplates))
 	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
@@ -671,6 +673,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/scenario-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioTemplate))
 	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
 	r.POST("/sonar/scenarios/:id/rewards/choose-item", middleware.WithAuthenticationWithoutLocation(s.authClient, s.chooseScenarioItemChoiceReward))
+	r.GET("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExposition))
+	r.GET("/sonar/zones/:id/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionsForZone))
+	r.POST("/sonar/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createExposition))
+	r.PUT("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateExposition))
+	r.POST("/sonar/expositions/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateExpositionImage))
+	r.POST("/sonar/expositions/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performExposition))
+	r.DELETE("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteExposition))
 	r.GET("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallenges))
 	r.GET("/sonar/challenge-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplates))
 	r.GET("/sonar/challenge-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplate))
@@ -2545,7 +2554,7 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
-	log.Printf("turnInQuest: userId=%s questId=%s", user.ID, questID.String())
+	requestlogger.Printf(ctx, "turnInQuest: questId=%s", questID.String())
 
 	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
@@ -2553,12 +2562,12 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	if acceptance == nil {
-		log.Printf("turnInQuest: no acceptance found userId=%s questId=%s", user.ID, questID.String())
+		requestlogger.Printf(ctx, "turnInQuest: no acceptance found questId=%s", questID.String())
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not accepted"})
 		return
 	}
 	if acceptance.TurnedInAt != nil {
-		log.Printf("turnInQuest: already turned in userId=%s questId=%s", user.ID, questID.String())
+		requestlogger.Printf(ctx, "turnInQuest: already turned in questId=%s", questID.String())
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already turned in"})
 		return
 	}
@@ -2569,20 +2578,27 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	if !objectivesComplete {
-		log.Printf("turnInQuest: objectives incomplete userId=%s questId=%s", user.ID, questID.String())
+		requestlogger.Printf(ctx, "turnInQuest: objectives incomplete questId=%s", questID.String())
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest objectives not complete"})
 		return
 	}
 
 	// Award gold and items (teamID nil for single-player / user inventory)
-	log.Printf("turnInQuest: awarding rewards userId=%s questId=%s", user.ID, questID.String())
+	requestlogger.Printf(ctx, "turnInQuest: awarding rewards questId=%s", questID.String())
 	goldAwarded, itemsAwarded, spellsAwarded, err := s.gameEngineClient.AwardQuestTurnInRewards(ctx, user.ID, questID, nil)
 	if err != nil {
-		log.Printf("turnInQuest: reward error userId=%s questId=%s err=%v", user.ID, questID.String(), err)
+		requestlogger.Printf(ctx, "turnInQuest: reward error questId=%s err=%v", questID.String(), err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("turnInQuest: rewards awarded userId=%s questId=%s gold=%d items=%d spells=%d", user.ID, questID.String(), goldAwarded, len(itemsAwarded), len(spellsAwarded))
+	requestlogger.Printf(
+		ctx,
+		"turnInQuest: rewards awarded questId=%s gold=%d items=%d spells=%d",
+		questID.String(),
+		goldAwarded,
+		len(itemsAwarded),
+		len(spellsAwarded),
+	)
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		user.ID,
@@ -4391,6 +4407,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		OrderIndex         int          `json:"orderIndex"`
 		PointOfInterestID  *uuid.UUID   `json:"pointOfInterestId"`
 		ScenarioID         *uuid.UUID   `json:"scenarioId"`
+		ExpositionID       *uuid.UUID   `json:"expositionId"`
 		MonsterID          *uuid.UUID   `json:"monsterId"`
 		MonsterEncounterID *uuid.UUID   `json:"monsterEncounterId"`
 		ChallengeID        *uuid.UUID   `json:"challengeId"`
@@ -4416,6 +4433,9 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 	if requestBody.ScenarioID != nil {
 		targetCount++
 	}
+	if requestBody.ExpositionID != nil {
+		targetCount++
+	}
 	if requestBody.MonsterID != nil {
 		targetCount++
 	}
@@ -4426,15 +4446,15 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		targetCount++
 	}
 	if hasLegacyLocation {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest nodes now derive location from scenarioId, monsterEncounterId, monsterId, or challengeId; pointOfInterestId and polygon are not supported"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest nodes now derive location from scenarioId, expositionId, monsterEncounterId, monsterId, or challengeId; pointOfInterestId and polygon are not supported"})
 		return
 	}
 	if targetCount == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterEncounterId, monsterId, or challengeId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, expositionId, monsterEncounterId, monsterId, or challengeId"})
 		return
 	}
 	if targetCount > 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterEncounterId, monsterId, or challengeId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, expositionId, monsterEncounterId, monsterId, or challengeId"})
 		return
 	}
 	if requestBody.MonsterEncounterID == nil && requestBody.MonsterID != nil {
@@ -4456,6 +4476,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		QuestID:            requestBody.QuestID,
 		OrderIndex:         requestBody.OrderIndex,
 		ScenarioID:         requestBody.ScenarioID,
+		ExpositionID:       requestBody.ExpositionID,
 		MonsterID:          requestBody.MonsterID,
 		MonsterEncounterID: requestBody.MonsterEncounterID,
 		ChallengeID:        requestBody.ChallengeID,
@@ -10773,15 +10794,48 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		)
 	}
 
-	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
+	judgeCtx := ctx.Request.Context()
+	cancelJudge := func() {}
+	if strings.TrimSpace(requestBody.ImageSubmissionUrl) != "" {
+		judgeCtx, cancelJudge = context.WithTimeout(judgeCtx, 20*time.Second)
+	}
+	defer cancelJudge()
+
+	judgeStartedAt := time.Now()
+	requestlogger.Printf(
+		ctx,
+		"submitStandaloneChallenge: judging submission challengeId=%s hasImage=%t hasText=%t",
+		challenge.ID.String(),
+		strings.TrimSpace(requestBody.ImageSubmissionUrl) != "",
+		strings.TrimSpace(textSubmission) != "",
+	)
+	judgement, err := s.judgeClient.JudgeFreeform(judgeCtx, judge.FreeformJudgeSubmissionRequest{
 		Question:           challenge.Question,
 		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
 		TextSubmission:     textSubmission,
 	})
 	if err != nil {
+		requestlogger.Printf(
+			ctx,
+			"submitStandaloneChallenge: judgement failed challengeId=%s duration=%s err=%v",
+			challenge.ID.String(),
+			time.Since(judgeStartedAt),
+			err,
+		)
+		if stdErrors.Is(err, context.DeadlineExceeded) {
+			ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": "image judging timed out"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	requestlogger.Printf(
+		ctx,
+		"submitStandaloneChallenge: judgement complete challengeId=%s duration=%s score=%.2f",
+		challenge.ID.String(),
+		time.Since(judgeStartedAt),
+		judgement.Judgement.Score,
+	)
 
 	score := int(math.Round(judgement.Judgement.Score))
 	if score < 0 {
@@ -11079,6 +11133,10 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario-backed quest nodes are resolved through their linked scenario directly"})
 		return
 	}
+	if node.ExpositionID != nil && *node.ExpositionID != uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "exposition-backed quest nodes are resolved through their linked exposition directly"})
+		return
+	}
 	if node.MonsterEncounterID != nil && *node.MonsterEncounterID != uuid.Nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "monster-encounter-backed quest nodes are resolved through combat against their linked encounter directly"})
 		return
@@ -11205,15 +11263,51 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		textSubmission = fmt.Sprintf("Video submission URL: %s", requestBody.VideoSubmissionUrl)
 	}
 
-	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
+	judgeCtx := ctx.Request.Context()
+	cancelJudge := func() {}
+	if strings.TrimSpace(requestBody.ImageSubmissionUrl) != "" {
+		judgeCtx, cancelJudge = context.WithTimeout(judgeCtx, 20*time.Second)
+	}
+	defer cancelJudge()
+
+	judgeStartedAt := time.Now()
+	requestlogger.Printf(
+		ctx,
+		"submitQuestNode: judging submission nodeId=%s challengeId=%s hasImage=%t hasText=%t",
+		node.ID.String(),
+		standaloneChallenge.ID.String(),
+		strings.TrimSpace(requestBody.ImageSubmissionUrl) != "",
+		strings.TrimSpace(textSubmission) != "",
+	)
+	judgement, err := s.judgeClient.JudgeFreeform(judgeCtx, judge.FreeformJudgeSubmissionRequest{
 		Question:           standaloneChallenge.Question,
 		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
 		TextSubmission:     textSubmission,
 	})
 	if err != nil {
+		requestlogger.Printf(
+			ctx,
+			"submitQuestNode: judgement failed nodeId=%s challengeId=%s duration=%s err=%v",
+			node.ID.String(),
+			standaloneChallenge.ID.String(),
+			time.Since(judgeStartedAt),
+			err,
+		)
+		if stdErrors.Is(err, context.DeadlineExceeded) {
+			ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": "image judging timed out"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	requestlogger.Printf(
+		ctx,
+		"submitQuestNode: judgement complete nodeId=%s challengeId=%s duration=%s score=%.2f",
+		node.ID.String(),
+		standaloneChallenge.ID.String(),
+		time.Since(judgeStartedAt),
+		judgement.Judgement.Score,
+	)
 
 	score := int(math.Round(judgement.Judgement.Score))
 	if score < 0 {

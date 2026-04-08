@@ -73,6 +73,16 @@ func challengeAvailableForStoryFlags(
 	return hasRequiredStoryFlags(challenge.RequiredStoryFlags, active)
 }
 
+func expositionAvailableForStoryFlags(
+	exposition *models.Exposition,
+	active map[string]bool,
+) bool {
+	if exposition == nil {
+		return false
+	}
+	return hasRequiredStoryFlags(exposition.RequiredStoryFlags, active)
+}
+
 func monsterEncounterAvailableForStoryFlags(
 	encounter *models.MonsterEncounter,
 	active map[string]bool,

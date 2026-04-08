@@ -32,6 +32,8 @@ type DialogueMessageListEditorProps = {
   onChange: (value: DialogueMessage[]) => void;
   defaultSpeaker?: 'character' | 'user';
   allowSpeakerToggle?: boolean;
+  characterOptions?: Array<{ value: string; label: string }>;
+  requireCharacterSelection?: boolean;
 };
 
 const normalizeDialogueMessages = (messages: DialogueMessage[]) =>
@@ -40,6 +42,10 @@ const normalizeDialogueMessages = (messages: DialogueMessage[]) =>
     text: message.text ?? '',
     order: index,
     effect: normalizeDialogueEffect(message.effect),
+    characterId:
+      message.speaker === 'user'
+        ? undefined
+        : message.characterId?.trim() || undefined,
   }));
 
 export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps> = ({
@@ -49,6 +55,8 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
   onChange,
   defaultSpeaker = 'character',
   allowSpeakerToggle = false,
+  characterOptions = [],
+  requireCharacterSelection = false,
 }) => {
   const messages = normalizeDialogueMessages(value ?? []);
   const resolvedHelperText = helperText
@@ -66,6 +74,10 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
         speaker: defaultSpeaker,
         text: '',
         order: messages.length,
+        characterId:
+          defaultSpeaker === 'character' && characterOptions.length > 0
+            ? characterOptions[0].value
+            : undefined,
       },
     ]);
   };
@@ -152,11 +164,18 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
               {allowSpeakerToggle ? (
                 <select
                   value={message.speaker}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const nextSpeaker =
+                      event.target.value === 'user' ? 'user' : 'character';
                     updateMessage(index, {
-                      speaker: event.target.value === 'user' ? 'user' : 'character',
-                    })
-                  }
+                      speaker: nextSpeaker,
+                      characterId:
+                        nextSpeaker === 'character'
+                          ? message.characterId ??
+                            (characterOptions[0]?.value || undefined)
+                          : undefined,
+                    });
+                  }}
                   style={{
                     padding: '6px 8px',
                     border: '1px solid #d1d5db',
@@ -180,13 +199,41 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                   {message.speaker === 'user' ? 'User' : 'Character'}
                 </div>
               )}
+              {message.speaker === 'character' && characterOptions.length > 0 ? (
                 <select
-                  value={message.effect ?? ''}
+                  value={message.characterId ?? ''}
                   onChange={(event) =>
                     updateMessage(index, {
-                      effect: normalizeDialogueEffect(event.target.value as DialogueEffect | ''),
+                      characterId: event.target.value || undefined,
                     })
                   }
+                  style={{
+                    padding: '6px 8px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    minWidth: '160px',
+                  }}
+                >
+                  {!requireCharacterSelection ? (
+                    <option value="">Any character</option>
+                  ) : null}
+                  {characterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <select
+                value={message.effect ?? ''}
+                onChange={(event) =>
+                  updateMessage(index, {
+                    effect: normalizeDialogueEffect(
+                      event.target.value as DialogueEffect | '',
+                    ),
+                  })
+                }
                 style={{
                   padding: '6px 8px',
                   border: '1px solid #d1d5db',

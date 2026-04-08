@@ -61,6 +61,7 @@ import Feedback from './components/Feedback.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 import ZoneTagJobs from './components/ZoneTagJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
+import Expositions from './components/Expositions.tsx';
 import { Challenges } from './components/Challenges.tsx';
 import ScenarioTemplates from './components/ScenarioTemplates.tsx';
 import ChallengeTemplates from './components/ChallengeTemplates.tsx';
@@ -497,6 +498,11 @@ const router = createBrowserRouter([
       {
         path: '/scenarios',
         element: <Scenarios />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/expositions',
+        element: <Expositions />,
         loader: onlyAuthenticated,
       },
       {

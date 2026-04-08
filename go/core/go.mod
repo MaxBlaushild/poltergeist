@@ -30,6 +30,8 @@ replace github.com/MaxBlaushild/poltergeist/pkg/util => ../pkg/util
 
 replace github.com/MaxBlaushild/poltergeist/pkg/liveness => ../pkg/liveness
 
+replace github.com/MaxBlaushild/poltergeist/pkg/logger => ../pkg/logger
+
 replace github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 
 replace github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
@@ -96,6 +98,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/logger v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/mapbox v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000 // indirect

@@ -327,6 +327,20 @@ func (s *server) userIsInRangeForQuestNode(
 			challenge.Latitude,
 			challenge.Longitude,
 		) <= sharedQuestObjectiveRangeMeters, nil
+	case node.ExpositionID != nil:
+		exposition, err := s.dbClient.Exposition().FindByID(ctx, *node.ExpositionID)
+		if err != nil {
+			return false, err
+		}
+		if exposition == nil {
+			return false, nil
+		}
+		return util.HaversineDistance(
+			userLat,
+			userLng,
+			exposition.Latitude,
+			exposition.Longitude,
+		) <= sharedQuestObjectiveRangeMeters, nil
 	default:
 		return false, nil
 	}

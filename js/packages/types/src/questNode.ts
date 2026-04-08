@@ -1,4 +1,5 @@
 import { PointOfInterest } from './pointOfInterest';
+import { Exposition } from './exposition';
 
 export type QuestNodeSubmissionType =
   | 'text'
@@ -9,6 +10,7 @@ export type QuestNodeSubmissionType =
 export type QuestNodeObjectiveType =
   | 'challenge'
   | 'scenario'
+  | 'exposition'
   | 'monster_encounter'
   | 'monster'
   | (string & {});
@@ -61,6 +63,29 @@ export interface QuestNodeScenarioDetails {
   options?: QuestNodeScenarioOptionDetails[];
 }
 
+export interface QuestNodeExpositionDetails
+  extends Pick<
+    Exposition,
+    | 'id'
+    | 'zoneId'
+    | 'pointOfInterestId'
+    | 'pointOfInterest'
+    | 'latitude'
+    | 'longitude'
+    | 'title'
+    | 'description'
+    | 'dialogue'
+    | 'imageUrl'
+    | 'thumbnailUrl'
+    | 'rewardMode'
+    | 'randomRewardSize'
+    | 'rewardExperience'
+    | 'rewardGold'
+    | 'materialRewards'
+    | 'itemRewards'
+    | 'spellRewards'
+  > {}
+
 export interface QuestNodeMonsterMemberDetails {
   slot: number;
   monster: { id: string; name: string };
@@ -100,12 +125,14 @@ export interface QuestNode {
   objective?: QuestNodeObjective | null;
   pointOfInterestId?: string | null;
   scenarioId?: string | null;
+  expositionId?: string | null;
   monsterId?: string | null;
   monsterEncounterId?: string | null;
   challengeId?: string | null;
   polygon?: string | null;
   polygonPoints?: [number, number][];
   scenario?: QuestNodeScenarioDetails | null;
+  exposition?: QuestNodeExpositionDetails | null;
   monsterEncounter?: QuestNodeMonsterEncounterDetails | null;
   monster?: QuestNodeMonsterDetails | null;
   challenge?: QuestNodeChallengeDetails | null;

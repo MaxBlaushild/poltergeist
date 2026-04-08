@@ -1,11 +1,12 @@
 import { Character } from './character';
-export type ActionType = 'talk' | 'shop' | 'giveQuest';
+export type ActionType = 'talk' | 'shop' | 'giveQuest' | 'tutorial' | 'exposition';
 export type DialogueEffect = 'angry' | 'surprised' | 'whisper' | 'shout' | 'mysterious' | 'determined';
 export interface DialogueMessage {
     speaker: 'character' | 'user';
     text: string;
     order: number;
     effect?: DialogueEffect;
+    characterId?: string;
 }
 export interface ShopInventoryItem {
     itemId: number;

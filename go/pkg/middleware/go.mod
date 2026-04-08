@@ -14,6 +14,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../http
 	github.com/MaxBlaushild/poltergeist/pkg/liveness => ../liveness
+	github.com/MaxBlaushild/poltergeist/pkg/logger => ../logger
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder => ../locationseeder
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../models
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../slack
@@ -26,6 +27,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/logger v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
 )
 

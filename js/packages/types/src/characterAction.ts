@@ -1,6 +1,11 @@
 import { Character } from './character';
 
-export type ActionType = 'talk' | 'shop' | 'giveQuest';
+export type ActionType =
+  | 'talk'
+  | 'shop'
+  | 'giveQuest'
+  | 'tutorial'
+  | 'exposition';
 export type DialogueEffect =
   | 'angry'
   | 'surprised'
@@ -14,6 +19,7 @@ export interface DialogueMessage {
   text: string;
   order: number;
   effect?: DialogueEffect;
+  characterId?: string;
 }
 
 export interface ShopInventoryItem {

@@ -22,6 +22,7 @@ use (
 	./go/pkg/hue
 	./go/pkg/jobs
 	./go/pkg/liveness
+	./go/pkg/logger
 	./go/pkg/middleware
 	./go/pkg/models
 	./go/pkg/polymarket

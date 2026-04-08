@@ -10,6 +10,7 @@ import {
   Candidate,
   Character,
   DialogueMessage,
+  Exposition,
   InventoryItem,
   LocationArchetype,
   PointOfInterest,
@@ -49,7 +50,13 @@ type PointOfInterestImport = {
   updatedAt: string;
 };
 
-type QuestNodeType = 'poi' | 'polygon' | 'scenario' | 'monster' | 'challenge';
+type QuestNodeType =
+  | 'poi'
+  | 'polygon'
+  | 'scenario'
+  | 'exposition'
+  | 'monster'
+  | 'challenge';
 
 type LegacyQuestNodePrompt = {
   id: string;
@@ -110,6 +117,28 @@ type ChallengeNodeOption = {
   rewardExperience?: number;
 };
 
+type ExpositionNodeOption = Pick<
+  Exposition,
+  | 'id'
+  | 'zoneId'
+  | 'pointOfInterestId'
+  | 'pointOfInterest'
+  | 'latitude'
+  | 'longitude'
+  | 'title'
+  | 'description'
+  | 'dialogue'
+  | 'imageUrl'
+  | 'thumbnailUrl'
+  | 'rewardMode'
+  | 'randomRewardSize'
+  | 'rewardExperience'
+  | 'rewardGold'
+  | 'materialRewards'
+  | 'itemRewards'
+  | 'spellRewards'
+>;
+
 type SelectOption = {
   value: string;
   label: string;
@@ -124,6 +153,7 @@ type MonsterRecord = {
 };
 
 type ResolvedQuestNodeScenario = ScenarioNodeOption;
+type ResolvedQuestNodeExposition = ExpositionNodeOption;
 type ResolvedQuestNodeMonsterEncounter = MonsterNodeOption;
 type ResolvedQuestNodeChallenge = ChallengeNodeOption;
 
@@ -264,6 +294,7 @@ const emptyNodeForm = {
   submissionType: 'photo' as QuestNodeSubmissionType,
   pointOfInterestId: '',
   scenarioId: '',
+  expositionId: '',
   monsterEncounterId: '',
   challengeId: '',
   polygonPoints: '',
@@ -463,6 +494,7 @@ const getQuestRecurrenceLabel = (value?: string | null) => {
 const getQuestNodeKind = (node: QuestNode): QuestNodeType => {
   if (node.pointOfInterestId) return 'poi';
   if (node.scenarioId) return 'scenario';
+  if (node.expositionId) return 'exposition';
   if (node.monsterEncounterId || node.monsterId) return 'monster';
   if (node.challengeId) return 'challenge';
   return 'polygon';
@@ -474,6 +506,8 @@ const getQuestNodeKindLabel = (nodeType: QuestNodeType) => {
       return 'Location';
     case 'scenario':
       return 'Scenario';
+    case 'exposition':
+      return 'Exposition';
     case 'monster':
       return 'Monster';
     case 'challenge':
@@ -603,6 +637,16 @@ const resolveLinkedQuestScenario = (
     ? scenarios.find((scenario) => scenario.id === node.scenarioId) ?? null
     : null);
 
+const resolveLinkedQuestExposition = (
+  node: QuestNode,
+  expositions: ExpositionNodeOption[]
+): ResolvedQuestNodeExposition | null =>
+  (node.exposition as ResolvedQuestNodeExposition | null | undefined) ??
+  (node.expositionId
+    ? expositions.find((exposition) => exposition.id === node.expositionId) ??
+      null
+    : null);
+
 const resolveLinkedQuestMonsterEncounter = (
   node: QuestNode,
   monsterEncounters: MonsterNodeOption[]
@@ -675,12 +719,15 @@ const resolveLinkedQuestChallenge = (
 const getLinkedQuestNodePoiId = (
   node: QuestNode,
   linkedScenario?: ResolvedQuestNodeScenario | null,
+  linkedExposition?: ResolvedQuestNodeExposition | null,
   linkedMonsterEncounter?: ResolvedQuestNodeMonsterEncounter | null,
   linkedChallenge?: ResolvedQuestNodeChallenge | null
 ) =>
   node.pointOfInterestId ??
   linkedChallenge?.pointOfInterestId ??
   linkedChallenge?.pointOfInterest?.id ??
+  linkedExposition?.pointOfInterestId ??
+  linkedExposition?.pointOfInterest?.id ??
   linkedScenario?.pointOfInterestId ??
   linkedScenario?.pointOfInterest?.id ??
   linkedMonsterEncounter?.pointOfInterestId ??
@@ -691,12 +738,14 @@ const resolveLinkedQuestNodePoi = (
   node: QuestNode,
   pointsOfInterest: PointOfInterest[],
   linkedScenario?: ResolvedQuestNodeScenario | null,
+  linkedExposition?: ResolvedQuestNodeExposition | null,
   linkedMonsterEncounter?: ResolvedQuestNodeMonsterEncounter | null,
   linkedChallenge?: ResolvedQuestNodeChallenge | null
 ) => {
   const linkedPoiId = getLinkedQuestNodePoiId(
     node,
     linkedScenario,
+    linkedExposition,
     linkedMonsterEncounter,
     linkedChallenge
   );
@@ -705,6 +754,7 @@ const resolveLinkedQuestNodePoi = (
       ? pointsOfInterest.find((poi) => poi.id === linkedPoiId) ?? null
       : null) ??
     linkedChallenge?.pointOfInterest ??
+    linkedExposition?.pointOfInterest ??
     linkedScenario?.pointOfInterest ??
     linkedMonsterEncounter?.pointOfInterest ??
     null;
@@ -758,6 +808,7 @@ const questNodeUsesLinkedObjective = (node?: QuestNode | null) =>
   Boolean(
     node?.challengeId ||
       node?.scenarioId ||
+      node?.expositionId ||
       node?.monsterEncounterId ||
       node?.monsterId
   );
@@ -830,6 +881,7 @@ export const Quests = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioNodeOption[]>([]);
+  const [expositions, setExpositions] = useState<ExpositionNodeOption[]>([]);
   const [monsterRecords, setMonsterRecords] = useState<MonsterRecord[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<
     MonsterNodeOption[]
@@ -993,6 +1045,7 @@ export const Quests = () => {
       poi: 0,
       polygon: 0,
       scenario: 0,
+      exposition: 0,
       monster: 0,
       challenge: 0,
     };
@@ -1129,6 +1182,7 @@ export const Quests = () => {
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
+        apiClient.get<{ items: ExpositionNodeOption[] }>('/sonar/admin/expositions'),
         apiClient.get<MonsterRecord[]>('/sonar/monsters'),
         apiClient.get<MonsterNodeOption[]>('/sonar/monster-encounters'),
         apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
@@ -1142,6 +1196,7 @@ export const Quests = () => {
         inventoryResult,
         spellsResult,
         scenariosResult,
+        expositionsResult,
         monsterRecordsResult,
         monstersResult,
         challengesResult,
@@ -1177,6 +1232,16 @@ export const Quests = () => {
         );
       } else {
         console.error('Failed to load scenarios', scenariosResult.reason);
+      }
+
+      if (expositionsResult.status === 'fulfilled') {
+        setExpositions(
+          Array.isArray(expositionsResult.value?.items)
+            ? expositionsResult.value.items
+            : []
+        );
+      } else {
+        console.error('Failed to load expositions', expositionsResult.reason);
       }
 
       if (monsterRecordsResult.status === 'fulfilled') {
@@ -1757,6 +1822,16 @@ export const Quests = () => {
     return filtered;
   }, [questForm.zoneId, scenarios]);
 
+  const filteredExpositions = useMemo(() => {
+    let filtered = expositions;
+    if (questForm.zoneId) {
+      filtered = filtered.filter(
+        (exposition) => exposition.zoneId === questForm.zoneId
+      );
+    }
+    return filtered;
+  }, [expositions, questForm.zoneId]);
+
   const filteredMonsters = useMemo(() => {
     let filtered = monsterEncounters;
     if (questForm.zoneId) {
@@ -1778,12 +1853,14 @@ export const Quests = () => {
   }, [challenges, questForm.zoneId]);
 
   const adminEntityHref = (
-    type: 'scenario' | 'monster' | 'challenge',
+    type: 'scenario' | 'exposition' | 'monster' | 'challenge',
     id: string
   ) => {
     const basePath =
       type === 'scenario'
         ? '/scenarios'
+        : type === 'exposition'
+          ? '/expositions'
         : type === 'challenge'
           ? '/challenges'
           : '/monsters';
@@ -1814,6 +1891,10 @@ export const Quests = () => {
       orderedQuestNodes
         .map((node) => {
           const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+          const linkedExposition = resolveLinkedQuestExposition(
+            node,
+            expositions
+          );
           const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
             node,
             monsterEncounters
@@ -1823,6 +1904,7 @@ export const Quests = () => {
             node,
             pointsOfInterest,
             linkedScenario,
+            linkedExposition,
             linkedMonsterEncounter,
             linkedChallenge
           );
@@ -1864,6 +1946,7 @@ export const Quests = () => {
     [
       archetypeByPoiId,
       challenges,
+      expositions,
       monsterEncounters,
       orderedQuestNodes,
       pointsOfInterest,
@@ -1880,6 +1963,10 @@ export const Quests = () => {
       const next = { ...prev };
       selectedQuest.nodes?.forEach((node) => {
         const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+        const linkedExposition = resolveLinkedQuestExposition(
+          node,
+          expositions
+        );
         const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
           node,
           monsterEncounters
@@ -1888,6 +1975,7 @@ export const Quests = () => {
         const linkedPoiId = getLinkedQuestNodePoiId(
           node,
           linkedScenario,
+          linkedExposition,
           linkedMonsterEncounter,
           linkedChallenge
         );
@@ -1908,6 +1996,7 @@ export const Quests = () => {
   }, [
     archetypeByPoiId,
     challenges,
+    expositions,
     locationArchetypes.length,
     monsterEncounters,
     scenarios,
@@ -1919,6 +2008,10 @@ export const Quests = () => {
     return selectedQuest.nodes
       .map((node) => {
         const linkedScenario = resolveLinkedQuestScenario(node, scenarios);
+        const linkedExposition = resolveLinkedQuestExposition(
+          node,
+          expositions
+        );
         const linkedMonsterEncounter = resolveLinkedQuestMonsterEncounter(
           node,
           monsterEncounters
@@ -1928,6 +2021,7 @@ export const Quests = () => {
           node,
           pointsOfInterest,
           linkedScenario,
+          linkedExposition,
           linkedMonsterEncounter,
           linkedChallenge
         );
@@ -1942,6 +2036,9 @@ export const Quests = () => {
           if (node.scenarioId) {
             name = summarizeScenarioPrompt(linkedScenario?.prompt ?? '');
             nodeType = 'scenario';
+          } else if (node.expositionId) {
+            name = linkedExposition?.title || node.expositionId || poi.name;
+            nodeType = 'exposition';
           } else if (node.monsterEncounterId || node.monsterId) {
             name =
               linkedMonsterEncounter?.name ??
@@ -1975,6 +2072,21 @@ export const Quests = () => {
             lng,
             lat,
             nodeType: 'scenario' as QuestNodeType,
+          };
+        }
+        if (node.expositionId) {
+          const exposition = linkedExposition;
+          if (!exposition) return null;
+          const lng = Number(exposition.longitude);
+          const lat = Number(exposition.latitude);
+          if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          return {
+            id: node.id,
+            name: exposition.title || exposition.id,
+            orderIndex: node.orderIndex,
+            lng,
+            lat,
+            nodeType: 'exposition' as QuestNodeType,
           };
         }
         if (node.monsterEncounterId || node.monsterId) {
@@ -2023,6 +2135,7 @@ export const Quests = () => {
       );
   }, [
     challenges,
+    expositions,
     monsterEncounters,
     pointsOfInterest,
     scenarios,
@@ -2852,6 +2965,10 @@ export const Quests = () => {
             : null,
         scenarioId:
           nodeForm.nodeType === 'scenario' ? nodeForm.scenarioId || null : null,
+        expositionId:
+          nodeForm.nodeType === 'exposition'
+            ? nodeForm.expositionId || null
+            : null,
         monsterId: null,
         monsterEncounterId:
           nodeForm.nodeType === 'monster'
@@ -4892,6 +5009,9 @@ export const Quests = () => {
                         {selectedQuestNodeCounts.scenario} scenarios
                       </div>
                       <div className="qa-chip muted">
+                        {selectedQuestNodeCounts.exposition} expositions
+                      </div>
+                      <div className="qa-chip muted">
                         {selectedQuestNodeCounts.monster} monsters
                       </div>
                       <div className="qa-chip muted">
@@ -4944,6 +5064,10 @@ export const Quests = () => {
                                   nextNodeType === 'scenario'
                                     ? prev.scenarioId
                                     : '',
+                                expositionId:
+                                  nextNodeType === 'exposition'
+                                    ? prev.expositionId
+                                    : '',
                                 monsterEncounterId:
                                   nextNodeType === 'monster'
                                     ? prev.monsterEncounterId
@@ -4960,6 +5084,7 @@ export const Quests = () => {
                             }}
                           >
                             <option value="scenario">Scenario</option>
+                            <option value="exposition">Exposition</option>
                             <option value="monster">Monster</option>
                             <option value="challenge">
                               Challenge Objective
@@ -5416,6 +5541,42 @@ export const Quests = () => {
                                 </button>
                               </div>
                             )}
+                          </div>
+                        ) : nodeForm.nodeType === 'exposition' ? (
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Exposition
+                            </label>
+                            <select
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              value={nodeForm.expositionId}
+                              onChange={(e) =>
+                                setNodeForm((prev) => ({
+                                  ...prev,
+                                  expositionId: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Select an exposition</option>
+                              {filteredExpositions.map((exposition) => (
+                                <option key={exposition.id} value={exposition.id}>
+                                  {exposition.title || exposition.id}
+                                </option>
+                              ))}
+                            </select>
+                            {nodeForm.expositionId ? (
+                              <div className="mt-2">
+                                <Link
+                                  to={adminEntityHref(
+                                    'exposition',
+                                    nodeForm.expositionId
+                                  )}
+                                  className={adminEntityLinkClass}
+                                >
+                                  Open Exposition Page
+                                </Link>
+                              </div>
+                            ) : null}
                           </div>
                         ) : nodeForm.nodeType === 'monster' ? (
                           <div className="md:col-span-2">
@@ -6059,6 +6220,8 @@ export const Quests = () => {
                             !nodeForm.pointOfInterestId) ||
                           (nodeForm.nodeType === 'scenario' &&
                             !nodeForm.scenarioId) ||
+                          (nodeForm.nodeType === 'exposition' &&
+                            !nodeForm.expositionId) ||
                           (nodeForm.nodeType === 'monster' &&
                             !nodeForm.monsterEncounterId) ||
                           (nodeForm.nodeType === 'challenge' &&
@@ -6394,6 +6557,10 @@ export const Quests = () => {
                           node,
                           scenarios
                         );
+                        const linkedExposition = resolveLinkedQuestExposition(
+                          node,
+                          expositions
+                        );
                         const linkedMonsterEncounter =
                           resolveLinkedQuestMonsterEncounter(
                             node,
@@ -6420,6 +6587,7 @@ export const Quests = () => {
                           node,
                           pointsOfInterest,
                           linkedScenario,
+                          linkedExposition,
                           linkedMonsterEncounter,
                           linkedChallenge
                         );
@@ -6450,6 +6618,11 @@ export const Quests = () => {
                                 linkedScenario.latitude,
                                 linkedScenario.longitude
                               )
+                            : linkedExposition
+                              ? formatNodeCoordinatePair(
+                                  linkedExposition.latitude,
+                                  linkedExposition.longitude
+                                )
                             : linkedMonsterEncounter
                               ? formatNodeCoordinatePair(
                                   linkedMonsterEncounter.latitude,
@@ -6481,6 +6654,8 @@ export const Quests = () => {
                                       ? `POI: ${pointsOfInterest.find((poi) => poi.id === node.pointOfInterestId)?.name ?? node.pointOfInterestId}`
                                       : node.scenarioId
                                         ? `Scenario: ${summarizeScenarioPrompt(linkedScenario?.prompt ?? '')}`
+                                        : node.expositionId
+                                          ? `Exposition: ${linkedExposition?.title ?? node.expositionId}`
                                         : node.monsterEncounterId ||
                                             node.monsterId
                                           ? `Monster Encounter: ${
@@ -6497,6 +6672,16 @@ export const Quests = () => {
                                       to={adminEntityHref(
                                         'scenario',
                                         node.scenarioId
+                                      )}
+                                      className={adminEntityLinkClass}
+                                    >
+                                      Open
+                                    </Link>
+                                  ) : node.expositionId ? (
+                                    <Link
+                                      to={adminEntityHref(
+                                        'exposition',
+                                        node.expositionId
                                       )}
                                       className={adminEntityLinkClass}
                                     >

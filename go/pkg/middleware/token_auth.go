@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"log"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/http"
 	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
+	"github.com/MaxBlaushild/poltergeist/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -36,12 +36,14 @@ func WithAuthentication(authClient auth.Client, livenessClient liveness.Liveness
 			return
 		}
 
+		logger.AttachAuthenticatedUser(ctx, user.ID.String())
+
 		// Extract and save user location if provided
 		locationHeader := ctx.Request.Header.Get("X-User-Location")
-		log.Printf("[DEBUG] Location header: %s", locationHeader)
+		logger.Printf(ctx, "[auth] location header=%s", locationHeader)
 		if locationHeader != "" {
 			if err = livenessClient.SetUserLocation(ctx, user.ID, locationHeader); err != nil {
-				log.Println("error setting user location", err)
+				logger.Println(ctx, "error setting user location", err)
 			}
 		}
 
@@ -73,6 +75,7 @@ func WithAuthenticationWithoutLocation(authClient auth.Client, next gin.HandlerF
 			return
 		}
 
+		logger.AttachAuthenticatedUser(ctx, user.ID.String())
 		ctx.Set("user", user)
 
 		next(ctx)

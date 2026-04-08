@@ -127,6 +127,7 @@ type DbClient interface {
 	BaseStructureLevelVisual() BaseStructureLevelVisualHandle
 	UserBaseStructure() UserBaseStructureHandle
 	UserBaseDailyState() UserBaseDailyStateHandle
+	Exposition() ExpositionHandle
 	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
@@ -1320,6 +1321,22 @@ type ChallengeHandle interface {
 	UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error
 	FindItemChoicePendingByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeItemChoicePending, error)
 	DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ExpositionHandle interface {
+	Create(ctx context.Context, exposition *models.Exposition) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Exposition, error)
+	FindAll(ctx context.Context) ([]models.Exposition, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Exposition, error)
+	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Exposition, error)
+	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Exposition) error
+	ReplaceItemRewards(ctx context.Context, expositionID uuid.UUID, rewards []models.ExpositionItemReward) error
+	ReplaceSpellRewards(ctx context.Context, expositionID uuid.UUID, rewards []models.ExpositionSpellReward) error
+	UpsertCompletion(ctx context.Context, userID uuid.UUID, expositionID uuid.UUID) error
+	FindCompletionByUserAndExposition(ctx context.Context, userID uuid.UUID, expositionID uuid.UUID) (*models.UserExpositionCompletion, error)
+	FindCompletedExpositionIDsByUser(ctx context.Context, userID uuid.UUID, expositionIDs []uuid.UUID) ([]uuid.UUID, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

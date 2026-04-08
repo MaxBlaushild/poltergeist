@@ -22,6 +22,13 @@ List<String> questObjectiveLines(QuestNode? node) {
   if (_hasValue(node.scenarioId)) {
     return const ['Complete the current scenario objective.'];
   }
+  if (_hasValue(node.expositionId)) {
+    final title = node.exposition?.title.trim() ?? '';
+    if (title.isNotEmpty) {
+      return ['Complete the exposition: $title'];
+    }
+    return const ['Complete the current exposition objective.'];
+  }
   if (_hasValue(node.monsterEncounterId) || _hasValue(node.monsterId)) {
     return const ['Defeat the current monster objective.'];
   }
@@ -135,6 +142,14 @@ class _ObjectiveIconFallback extends StatelessWidget {
 }
 
 String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
+  final expositionThumb = node?.exposition?.thumbnailUrl.trim() ?? '';
+  if (expositionThumb.isNotEmpty) {
+    return expositionThumb;
+  }
+  final expositionImage = node?.exposition?.imageUrl.trim() ?? '';
+  if (expositionImage.isNotEmpty) {
+    return expositionImage;
+  }
   final poi = node?.pointOfInterest;
   if (poi == null) return null;
   if (!discoveredPoiIds.contains(poi.id)) {
@@ -156,6 +171,9 @@ bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;
 IconData _objectiveIconData(QuestNode? node) {
   if (_hasValue(node?.scenarioId)) {
     return Icons.auto_awesome_outlined;
+  }
+  if (_hasValue(node?.expositionId)) {
+    return Icons.forum_outlined;
   }
   if (_hasValue(node?.monsterEncounterId) || _hasValue(node?.monsterId)) {
     return Icons.pets_outlined;

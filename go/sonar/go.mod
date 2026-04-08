@@ -17,6 +17,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/imagine => ../pkg/imagine
 	github.com/MaxBlaushild/poltergeist/pkg/jobs => ../pkg/jobs
 	github.com/MaxBlaushild/poltergeist/pkg/liveness => ../pkg/liveness
+	github.com/MaxBlaushild/poltergeist/pkg/logger => ../pkg/logger
 	github.com/MaxBlaushild/poltergeist/pkg/location => ../pkg/location
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder => ../pkg/locationseeder
 	github.com/MaxBlaushild/poltergeist/pkg/mapbox => ../pkg/mapbox
@@ -39,6 +40,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/logger v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/mapbox v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000

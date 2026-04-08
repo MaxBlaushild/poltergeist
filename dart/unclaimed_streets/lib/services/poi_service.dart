@@ -4,6 +4,7 @@ import '../constants/api_constants.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
+import '../models/exposition.dart';
 import '../models/monster.dart';
 import '../models/base.dart';
 import '../models/point_of_interest.dart';
@@ -88,6 +89,15 @@ class PoiService {
         .toList();
   }
 
+  Future<List<Exposition>> getExpositionsForZone(String zoneId) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/expositions',
+    );
+    return list
+        .map((e) => Exposition.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<HealingFountain>> getHealingFountainsForZone(
     String zoneId,
   ) async {
@@ -105,6 +115,17 @@ class PoiService {
         '/sonar/scenarios/$scenarioId',
       );
       return Scenario.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Exposition?> getExpositionById(String expositionId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/expositions/$expositionId',
+      );
+      return Exposition.fromJson(data);
     } catch (_) {
       return null;
     }
@@ -496,6 +517,13 @@ class PoiService {
       },
     );
     return ScenarioPerformResult.fromJson(data);
+  }
+
+  Future<ExpositionPerformResult> performExposition(String expositionId) async {
+    final data = await _api.post<Map<String, dynamic>>(
+      '/sonar/expositions/$expositionId/perform',
+    );
+    return ExpositionPerformResult.fromJson(data);
   }
 
   Future<Map<String, dynamic>> chooseScenarioRewardItem(

@@ -18,6 +18,7 @@ import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
 import '../models/base.dart';
+import '../models/exposition.dart';
 import '../models/healing_fountain.dart';
 import '../models/inventory_item.dart';
 import '../models/monster.dart';
@@ -88,6 +89,7 @@ const _raidMysteryImageUrl =
 const _characterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
+const _expositionMysteryImageUrl = _scenarioMysteryImageUrl;
 const _healingFountainFallbackImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _healingFountainDiscoveredImageUrl =
@@ -131,6 +133,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<HealingFountain> _healingFountains = [];
   List<BasePin> _bases = [];
   List<Scenario> _scenarios = [];
+  List<Exposition> _expositions = [];
   List<MonsterEncounter> _monsters = [];
   List<Challenge> _challenges = [];
   List<Line> _zoneLines = [];
@@ -165,6 +168,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Circle> _scenarioCircleById = {};
   final Map<String, bool> _scenarioCircleMystery = {};
   final Map<String, bool> _scenarioQuestObjective = {};
+  List<Symbol> _expositionSymbols = [];
+  List<Circle> _expositionCircles = [];
+  final Map<String, Symbol> _expositionSymbolById = {};
+  final Map<String, Circle> _expositionCircleById = {};
+  final Map<String, bool> _expositionCircleMystery = {};
+  final Map<String, bool> _expositionQuestObjective = {};
   List<Symbol> _monsterSymbols = [];
   List<Circle> _monsterCircles = [];
   final Map<String, Symbol> _monsterSymbolById = {};
@@ -189,6 +198,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _chestThumbnailAdded = false;
   Uint8List? _scenarioMysteryThumbnailBytes;
   bool _scenarioMysteryThumbnailAdded = false;
+  Uint8List? _expositionMysteryThumbnailBytes;
+  bool _expositionMysteryThumbnailAdded = false;
   final Map<String, Uint8List?> _monsterMysteryThumbnailBytesByType = {};
   final Set<String> _monsterMysteryThumbnailTypesAdded = {};
   Uint8List? _challengeMysteryThumbnailBytes;
@@ -217,6 +228,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _questLogNeedsOverlayApply = false;
   bool _scenarioVisibilityRefreshPending = false;
   Future<void> _scenarioRefreshSequence = Future<void>.value();
+  Future<void> _expositionRefreshSequence = Future<void>.value();
   Future<void> _monsterRefreshSequence = Future<void>.value();
   Future<void> _challengeRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
@@ -384,6 +396,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         unawaited(
           (() async {
             await _refreshScenarioSymbols();
+            await _refreshExpositionSymbols();
             await _refreshMonsterSymbols();
             await _refreshChallengeSymbols();
           })(),
@@ -393,6 +406,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       unawaited(
         (() async {
           await _refreshScenarioSymbols();
+          await _refreshExpositionSymbols();
           await _refreshMonsterSymbols();
           await _refreshChallengeSymbols();
         })(),
@@ -1129,6 +1143,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       node?.objectiveText ?? '',
       node?.pointOfInterest?.id ?? '',
       node?.scenarioId ?? '',
+      node?.expositionId ?? '',
       node?.monsterEncounterId ?? '',
       node?.monsterId ?? '',
       node?.challengeId ?? '',
@@ -1379,6 +1394,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         .toSet();
   }
 
+  Set<String> _currentQuestExpositionIds() {
+    final questLog = context.read<QuestLogProvider>();
+    return questLog.quests
+        .where((q) => q.isAccepted)
+        .map((q) => q.currentNode?.expositionId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Set<String> _currentQuestMonsterIds() {
     final questLog = context.read<QuestLogProvider>();
     return questLog.quests
@@ -1487,6 +1511,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (_scenarioVisibilityRefreshPending) {
           _scenarioVisibilityRefreshPending = false;
           await _refreshScenarioSymbols();
+          await _refreshExpositionSymbols();
           await _refreshMonsterSymbols();
           await _refreshChallengeSymbols();
         }
@@ -1651,6 +1676,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (scenario != null) {
         _flyToLocation(scenario.latitude, scenario.longitude);
         _pulsePoi(scenario.latitude, scenario.longitude);
+        return;
+      }
+    }
+    final expositionId = node.expositionId?.trim() ?? '';
+    if (expositionId.isNotEmpty) {
+      final exposition = _expositionById(expositionId);
+      if (exposition != null) {
+        _flyToLocation(exposition.latitude, exposition.longitude);
+        _pulsePoi(exposition.latitude, exposition.longitude);
         return;
       }
     }
@@ -2242,6 +2276,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _treasureChests = [];
           _healingFountains = [];
           _scenarios = [];
+          _expositions = [];
           _monsters = [];
           _challenges = [];
         });
@@ -2267,15 +2302,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final chests = baseContent.treasureChests;
       final healingFountains = baseContent.healingFountains;
       final baseScenarios = baseContent.scenarios;
+      final baseExpositions = baseContent.expositions;
       final baseMonsters = baseContent.monsters;
       final baseChallenges = baseContent.challenges;
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
       final currentQuestScenarioIds = _currentQuestScenarioIds();
+      final currentQuestExpositionIds = _currentQuestExpositionIds();
       final currentQuestMonsterIds = _currentQuestMonsterIds();
       final currentQuestChallengeIds = _currentQuestChallengeIds();
 
       final scenarioById = <String, Scenario>{
         for (final scenario in baseScenarios) scenario.id: scenario,
+      };
+      final expositionById = <String, Exposition>{
+        for (final exposition in baseExpositions) exposition.id: exposition,
       };
       final monsterById = <String, MonsterEncounter>{
         for (final monster in baseMonsters) monster.id: monster,
@@ -2303,6 +2343,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (scenario == null) continue;
         if (scenario.zoneId != zoneId) continue;
         scenarioById[scenario.id] = scenario;
+      }
+      for (final expositionId in currentQuestExpositionIds) {
+        if (expositionById.containsKey(expositionId)) continue;
+        final exposition = await svc.getExpositionById(expositionId);
+        if (exposition == null) continue;
+        if (exposition.zoneId != zoneId) continue;
+        expositionById[exposition.id] = exposition;
       }
       final activeTutorialScenarioId =
           _tutorialStatus != null && _tutorialStatus!.hasActiveScenario
@@ -2398,6 +2445,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     )),
           )
           .toList();
+      final expositions = expositionById.values.toList();
       final monsters = monsterById.values
           .where(
             (monster) =>
@@ -2414,6 +2462,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             .toList();
         _healingFountains = healingFountains;
         _scenarios = scenarios;
+        _expositions = expositions;
         _monsters = monsters;
         _challenges = challenges;
       });
@@ -2431,6 +2480,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             await _refreshTreasureChestSymbols();
             await _refreshHealingFountainSymbols();
             await _refreshScenarioSymbols();
+            await _refreshExpositionSymbols();
             await _refreshMonsterSymbols();
             await _refreshChallengeSymbols();
             await _refreshCharacterDiscoveryMarkers(undiscoveredOnly: true);
@@ -2447,6 +2497,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _treasureChests = [];
           _healingFountains = [];
           _scenarios = [];
+          _expositions = [];
           _monsters = [];
           _challenges = [];
         });
@@ -2465,6 +2516,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               await _refreshTreasureChestSymbols();
               await _refreshHealingFountainSymbols();
               await _refreshScenarioSymbols();
+              await _refreshExpositionSymbols();
               await _refreshMonsterSymbols();
               await _refreshChallengeSymbols();
               await _refreshCharacterDiscoveryMarkers(undiscoveredOnly: true);
@@ -2497,12 +2549,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           zoneId,
         );
         final scenariosFuture = service.getScenariosForZone(zoneId);
+        final expositionsFuture = service.getExpositionsForZone(zoneId);
         final monstersFuture = service.getMonsterEncountersForZone(zoneId);
         final challengesFuture = service.getChallengesForZone(zoneId);
         final content = _ZoneBaseContent(
           treasureChests: await treasureChestsFuture,
           healingFountains: await healingFountainsFuture,
           scenarios: await scenariosFuture,
+          expositions: await expositionsFuture,
           monsters: await monstersFuture,
           challenges: await challengesFuture,
         );
@@ -2537,6 +2591,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       location.longitude,
       scenario.latitude,
       scenario.longitude,
+    );
+    return distance > kProximityUnlockRadiusMeters;
+  }
+
+  bool _isExpositionMystery(Exposition exposition) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return true;
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      exposition.latitude,
+      exposition.longitude,
     );
     return distance > kProximityUnlockRadiusMeters;
   }
@@ -2733,6 +2799,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Scenario? _scenarioById(String id) {
     for (final scenario in _scenarios) {
       if (scenario.id == id) return scenario;
+    }
+    return null;
+  }
+
+  Exposition? _expositionById(String id) {
+    for (final exposition in _expositions) {
+      if (exposition.id == id) return exposition;
     }
     return null;
   }
@@ -3079,6 +3152,238 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<void> _loadExpositionMysteryThumbnail(MapLibreMapController c) async {
+    if (_expositionMysteryThumbnailBytes == null) {
+      try {
+        _expositionMysteryThumbnailBytes = await loadPoiThumbnail(
+          _expositionMysteryImageUrl,
+        );
+      } catch (_) {}
+      _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
+        _legacyMysteryImageUrl,
+      );
+    }
+    if (_expositionMysteryThumbnailBytes != null &&
+        !_expositionMysteryThumbnailAdded) {
+      try {
+        await c.addImage(
+          'exposition_mystery_thumbnail_$_mapThumbnailVersion',
+          _expositionMysteryThumbnailBytes!,
+        );
+        _expositionMysteryThumbnailAdded = true;
+      } catch (_) {}
+    }
+  }
+
+  Future<String?> _ensureExpositionVisibleThumbnail(
+    MapLibreMapController c,
+    Exposition exposition,
+  ) async {
+    final source = exposition.thumbnailUrl.isNotEmpty
+        ? exposition.thumbnailUrl
+        : exposition.imageUrl;
+    if (source.isEmpty) return null;
+
+    final imageBytes = await loadPoiThumbnail(source);
+    if (imageBytes == null) return null;
+
+    final imageId = 'exposition_${exposition.id}_$_mapThumbnailVersion';
+    try {
+      await c.addImage(imageId, imageBytes);
+    } catch (_) {}
+    return imageId;
+  }
+
+  Future<void> _refreshExpositionSymbols() {
+    _expositionRefreshSequence = _expositionRefreshSequence.then((_) async {
+      try {
+        await _refreshExpositionSymbolsNow();
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshExpositionSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshExpositionSymbols stack: $st');
+      }
+    });
+    return _expositionRefreshSequence;
+  }
+
+  Future<void> _refreshExpositionSymbolsNow() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    await _loadExpositionMysteryThumbnail(c);
+
+    final duplicateOrOrphanSymbols = <Symbol>[];
+    for (final symbol in _expositionSymbols.toList()) {
+      final id = _expositionIdFromData(symbol.data);
+      if (id == null) {
+        duplicateOrOrphanSymbols.add(symbol);
+        continue;
+      }
+      final tracked = _expositionSymbolById[id];
+      if (tracked == null || !identical(tracked, symbol)) {
+        duplicateOrOrphanSymbols.add(symbol);
+      }
+    }
+    if (duplicateOrOrphanSymbols.isNotEmpty) {
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _setQuestPoiHighlight(symbol, false);
+      }
+      try {
+        await c.removeSymbols(duplicateOrOrphanSymbols);
+      } catch (_) {}
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _expositionSymbols.remove(symbol);
+      }
+    }
+
+    final duplicateOrOrphanCircles = <Circle>[];
+    for (final circle in _expositionCircles.toList()) {
+      final id = _expositionIdFromData(circle.data);
+      if (id == null) {
+        duplicateOrOrphanCircles.add(circle);
+        continue;
+      }
+      final tracked = _expositionCircleById[id];
+      if (tracked == null || !identical(tracked, circle)) {
+        duplicateOrOrphanCircles.add(circle);
+      }
+    }
+    if (duplicateOrOrphanCircles.isNotEmpty) {
+      for (final circle in duplicateOrOrphanCircles) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+        _expositionCircles.remove(circle);
+      }
+    }
+
+    final desiredIds = _expositions.map((exposition) => exposition.id).toSet();
+    for (final entry in _expositionSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        _setQuestPoiHighlight(entry.value, false);
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _expositionSymbols.remove(entry.value);
+        _expositionSymbolById.remove(entry.key);
+        _expositionQuestObjective.remove(entry.key);
+      }
+    }
+    for (final entry in _expositionCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _expositionCircles.remove(entry.value);
+        _expositionCircleById.remove(entry.key);
+        _expositionCircleMystery.remove(entry.key);
+        _expositionQuestObjective.remove(entry.key);
+      }
+    }
+
+    final canUseImages =
+        _expositionMysteryThumbnailBytes != null &&
+        _expositionMysteryThumbnailAdded;
+
+    for (final exposition in _expositions) {
+      final mystery = _isExpositionMystery(exposition);
+      final isCurrentQuestExposition = _isCurrentQuestExposition(exposition.id);
+      final existingSymbol = _expositionSymbolById[exposition.id];
+      final existingCircle = _expositionCircleById[exposition.id];
+      final needsRefresh =
+          _expositionCircleMystery[exposition.id] != mystery ||
+          existingSymbol == null ||
+          _expositionQuestObjective[exposition.id] != isCurrentQuestExposition;
+
+      if (canUseImages) {
+        if (needsRefresh) {
+          if (existingSymbol != null) {
+            _setQuestPoiHighlight(existingSymbol, false);
+            try {
+              await c.removeSymbols([existingSymbol]);
+            } catch (_) {}
+            _expositionSymbols.remove(existingSymbol);
+            _expositionSymbolById.remove(exposition.id);
+          }
+          if (existingCircle != null) {
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _expositionCircles.remove(existingCircle);
+            _expositionCircleById.remove(exposition.id);
+          }
+          var imageId = 'exposition_mystery_thumbnail_$_mapThumbnailVersion';
+          if (!mystery) {
+            final visibleImageId = await _ensureExpositionVisibleThumbnail(
+              c,
+              exposition,
+            );
+            if (visibleImageId != null) {
+              imageId = visibleImageId;
+            }
+          }
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(exposition.latitude, exposition.longitude),
+              iconImage: imageId,
+              iconSize: 0.74,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
+              iconHaloColor: isCurrentQuestExposition ? '#e1b12c' : '#000000',
+              iconHaloWidth: isCurrentQuestExposition ? 1.15 : 0.75,
+              iconAnchor: 'center',
+            ),
+            {'type': 'exposition', 'id': exposition.id},
+          );
+          if (!mounted) return;
+          _expositionSymbols.add(symbol);
+          _expositionSymbolById[exposition.id] = symbol;
+          _setQuestPoiHighlight(symbol, isCurrentQuestExposition);
+          _expositionCircleMystery[exposition.id] = mystery;
+          _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
+        }
+        continue;
+      }
+
+      if (existingSymbol != null) {
+        _setQuestPoiHighlight(existingSymbol, false);
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _expositionSymbols.remove(existingSymbol);
+        _expositionSymbolById.remove(exposition.id);
+      }
+      if (existingCircle == null ||
+          _expositionCircleMystery[exposition.id] != mystery ||
+          _expositionQuestObjective[exposition.id] !=
+              isCurrentQuestExposition) {
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _expositionCircles.remove(existingCircle);
+          _expositionCircleById.remove(exposition.id);
+        }
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(exposition.latitude, exposition.longitude),
+            circleRadius: 22,
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
+            circleColor: isCurrentQuestExposition
+                ? '#e1b12c'
+                : (mystery ? '#5a5560' : '#d97706'),
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#ffffff',
+          ),
+          {'type': 'exposition', 'id': exposition.id},
+        );
+        if (!mounted) return;
+        _expositionCircles.add(circle);
+        _expositionCircleById[exposition.id] = circle;
+        _expositionCircleMystery[exposition.id] = mystery;
+        _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
+      }
+    }
+  }
+
   Future<void> _loadMonsterMysteryThumbnail(MapLibreMapController c) async {
     for (final encounterType in const ['monster', 'boss', 'raid']) {
       final imageTypeId = _monsterMysteryImageIdForEncounterType(encounterType);
@@ -3333,6 +3638,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (!quest.isAccepted) continue;
       final node = quest.currentNode;
       if (node?.scenarioId == scenarioId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isCurrentQuestExposition(String expositionId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node?.expositionId == expositionId) {
         return true;
       }
     }
@@ -3637,6 +3954,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (raw == null || raw is! Map) return null;
     final data = Map<String, dynamic>.from(raw);
     if (data['type']?.toString() != 'scenario') return null;
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
+  String? _expositionIdFromData(dynamic raw) {
+    if (raw == null || raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    if (data['type']?.toString() != 'exposition') return null;
     final id = data['id']?.toString();
     if (id == null || id.isEmpty) return null;
     return id;
@@ -3961,6 +4287,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     addSymbolSeeds(_healingFountainSymbols);
     addSymbolSeeds(_baseSymbols);
     addSymbolSeeds(_scenarioSymbols);
+    addSymbolSeeds(_expositionSymbols);
     addSymbolSeeds(_monsterSymbols);
     addSymbolSeeds(_challengeSymbols);
 
@@ -3968,6 +4295,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     addCircleSeeds(_healingFountainCircles);
     addCircleSeeds(_baseCircles);
     addCircleSeeds(_scenarioCircles);
+    addCircleSeeds(_expositionCircles);
     addCircleSeeds(_monsterCircles);
     addCircleSeeds(_challengeCircles);
 
@@ -4089,6 +4417,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           imageUrl: _scenarioSelectionImageUrl(scenario),
           distance: distance,
         );
+      case 'exposition':
+        final exposition = _expositionById(id);
+        if (exposition == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: _compactSelectionLabel(
+            exposition.title,
+            fallback: 'Exposition',
+          ),
+          imageUrl: _expositionSelectionImageUrl(exposition),
+          distance: distance,
+        );
       case 'monster':
         final monster = _monsterById(id);
         if (monster == null) return null;
@@ -4156,6 +4497,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (scenario.imageUrl.trim().isNotEmpty) return scenario.imageUrl.trim();
     return _scenarioMysteryImageUrl;
+  }
+
+  String _expositionSelectionImageUrl(Exposition exposition) {
+    if (exposition.thumbnailUrl.trim().isNotEmpty) {
+      return exposition.thumbnailUrl.trim();
+    }
+    if (exposition.imageUrl.trim().isNotEmpty) {
+      return exposition.imageUrl.trim();
+    }
+    return _expositionMysteryImageUrl;
   }
 
   String _monsterSelectionImageUrl(MonsterEncounter monster) {
@@ -4315,6 +4666,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final scenario = _scenarioById(idStr);
       if (scenario != null) {
         _showScenarioPanel(scenario);
+      }
+      return;
+    }
+    if (type == 'exposition') {
+      final exposition = _expositionById(idStr);
+      if (exposition != null) {
+        final activeQuestEntry = _activeQuestNodeForExposition(exposition.id);
+        unawaited(
+          _showExpositionDialogue(
+            exposition,
+            quest: activeQuestEntry?.key,
+            node: activeQuestEntry?.value,
+          ),
+        );
       }
       return;
     }
@@ -4790,6 +5155,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _pinBatchRevealInProgress = false;
         await _refreshBaseSymbols();
         await _refreshScenarioSymbols();
+        await _refreshExpositionSymbols();
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
         _ensureQuestPoiPulseTimer();
@@ -5086,11 +5452,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _refreshHealingFountainSymbols();
       await _refreshBaseSymbols();
       await _refreshScenarioSymbols();
+      await _refreshExpositionSymbols();
       await _refreshMonsterSymbols();
       await _refreshChallengeSymbols();
       if (_scenarioVisibilityRefreshPending) {
         _scenarioVisibilityRefreshPending = false;
         await _refreshScenarioSymbols();
+        await _refreshExpositionSymbols();
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
       }
@@ -6095,6 +6463,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await hideCircles(_healingFountainCircleById.values);
     await hideSymbols(_scenarioSymbolById.values);
     await hideCircles(_scenarioCircleById.values);
+    await hideSymbols(_expositionSymbolById.values);
+    await hideCircles(_expositionCircleById.values);
     await hideSymbols(_monsterSymbolById.values);
     await hideCircles(_monsterCircleById.values);
     await hideSymbols(_challengeSymbolById.values);
@@ -6666,6 +7036,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await updateCircleOpacity(_baseCircleById);
     await updateSymbolOpacity(_scenarioSymbolById.values);
     await updateCircleOpacity(_scenarioCircleById);
+    await updateSymbolOpacity(_expositionSymbolById.values);
+    await updateCircleOpacity(_expositionCircleById);
     await updateSymbolOpacity(_monsterSymbolById.values);
     await updateCircleOpacity(_monsterCircleById);
     await updateSymbolOpacity(_challengeSymbolById.values);
@@ -8470,6 +8842,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await removeSymbols(_scenarioSymbols);
     _scenarioSymbolById.clear();
     await removeCircleMap(_scenarioCircleById, _scenarioCircles);
+    await removeSymbols(_expositionSymbols);
+    _expositionSymbolById.clear();
+    await removeCircleMap(_expositionCircleById, _expositionCircles);
     await removeSymbols(_monsterSymbols);
     _monsterSymbolById.clear();
     await removeCircleMap(_monsterCircleById, _monsterCircles);
@@ -8887,7 +9262,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
+  MapEntry<Quest, QuestNode>? _activeQuestNodeForExposition(
+    String expositionId,
+  ) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node == null) continue;
+      if (node.expositionId == expositionId) {
+        return MapEntry(quest, node);
+      }
+    }
+    return null;
+  }
+
   void _showQuestObjectiveSubmissionPanel(Quest quest, QuestNode node) {
+    final expositionId = node.expositionId?.trim() ?? '';
+    if (expositionId.isNotEmpty) {
+      final exposition = node.exposition ?? _expositionById(expositionId);
+      if (exposition != null) {
+        unawaited(
+          _showExpositionDialogue(exposition, quest: quest, node: node),
+        );
+        return;
+      }
+    }
     final challengeId = node.challengeId?.trim() ?? '';
     if (challengeId.isNotEmpty) {
       final challenge = _challengeById(challengeId);
@@ -8897,6 +9297,150 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     _showQuestNodeSubmissionModal(quest.name, node);
+  }
+
+  Character? _defaultExpositionSpeaker(Exposition exposition) {
+    for (final message in exposition.dialogue) {
+      final characterId = message.characterId?.trim() ?? '';
+      if (characterId.isEmpty) continue;
+      final character = _characterById(characterId);
+      if (character != null) {
+        return character;
+      }
+    }
+    return null;
+  }
+
+  Map<String, Character> _speakerCharacterMapForExposition(
+    Exposition exposition,
+  ) {
+    final speakers = <String, Character>{};
+    for (final message in exposition.dialogue) {
+      final characterId = message.characterId?.trim() ?? '';
+      if (characterId.isEmpty || speakers.containsKey(characterId)) continue;
+      final character = _characterById(characterId);
+      if (character != null) {
+        speakers[characterId] = character;
+      }
+    }
+    return speakers;
+  }
+
+  Future<void> _removeExpositionLocally(String expositionId) async {
+    final trimmedId = expositionId.trim();
+    if (trimmedId.isEmpty) return;
+
+    if (mounted) {
+      setState(() {
+        _expositions.removeWhere((item) => item.id == trimmedId);
+      });
+    } else {
+      _expositions.removeWhere((item) => item.id == trimmedId);
+    }
+
+    await _refreshExpositionSymbols();
+  }
+
+  Future<void> _showExpositionDialogue(
+    Exposition exposition, {
+    Quest? quest,
+    QuestNode? node,
+  }) async {
+    final defaultSpeaker = _defaultExpositionSpeaker(exposition);
+    if (defaultSpeaker == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dialogue participants are still loading.'),
+        ),
+      );
+      return;
+    }
+
+    final action = CharacterAction(
+      id: 'exposition-${exposition.id}',
+      createdAt: '',
+      updatedAt: '',
+      characterId: defaultSpeaker.id,
+      actionType: 'exposition',
+      dialogue: List<DialogueMessage>.from(exposition.dialogue)
+        ..sort((a, b) => a.order.compareTo(b.order)),
+    );
+    final speakerCharacters = _speakerCharacterMapForExposition(exposition);
+    final parentContext = context;
+
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: RpgDialogueModal(
+            character: defaultSpeaker,
+            action: action,
+            dialogueOverride: action.dialogue,
+            showCloseButton: false,
+            finalStepLabel: 'Complete',
+            speakerCharacters: speakerCharacters,
+            onClose: () async {
+              Navigator.of(dialogContext).pop();
+              final previousLevel = parentContext
+                  .read<CharacterStatsProvider>()
+                  .level;
+              try {
+                final result = await parentContext
+                    .read<PoiService>()
+                    .performExposition(exposition.id);
+                await _removeExpositionLocally(exposition.id);
+                _invalidateZoneBaseContent(exposition.zoneId);
+                await parentContext.read<QuestLogProvider>().refresh();
+                final currentLevel = await _refreshRewardDrivenPlayerState();
+                if (!mounted || !parentContext.mounted) return;
+                parentContext.read<CompletedTaskProvider>().showModal(
+                  'expositionOutcome',
+                  data: {
+                    'expositionId': result.expositionId,
+                    'title': result.title.isNotEmpty
+                        ? result.title
+                        : exposition.title,
+                    'questName': quest?.name,
+                    'questNodeId': node?.id,
+                    'successful': result.successful,
+                    'rewardExperience': result.rewardExperience,
+                    'rewardGold': result.rewardGold,
+                    'baseResourcesAwarded': result.baseResourcesAwarded,
+                    'itemsAwarded': result.itemsAwarded,
+                    'spellsAwarded': result.spellsAwarded
+                        .map((spell) => spell.toJson())
+                        .toList(),
+                    'awardedRewards': result.awardedRewards,
+                  },
+                );
+                parentContext
+                    .read<CompletedTaskProvider>()
+                    .queueLevelUpFollowUpIfNeeded(
+                      previousLevel: previousLevel,
+                      currentLevel: currentLevel,
+                    );
+              } catch (error) {
+                if (!mounted || !parentContext.mounted) return;
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      PoiService.extractApiErrorMessage(
+                        error,
+                        'Failed to complete exposition.',
+                      ),
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+        );
+      },
+    );
   }
 
   void _showChallengePanel(Challenge challenge) {
@@ -10445,6 +10989,7 @@ class _ZoneBaseContent {
     required this.treasureChests,
     required this.healingFountains,
     required this.scenarios,
+    required this.expositions,
     required this.monsters,
     required this.challenges,
   });
@@ -10452,6 +10997,7 @@ class _ZoneBaseContent {
   final List<TreasureChest> treasureChests;
   final List<HealingFountain> healingFountains;
   final List<Scenario> scenarios;
+  final List<Exposition> expositions;
   final List<MonsterEncounter> monsters;
   final List<Challenge> challenges;
 }

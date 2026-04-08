@@ -29,10 +29,11 @@ const (
 )
 
 type DialogueMessage struct {
-	Speaker string         `json:"speaker"` // "character" or "user"
-	Text    string         `json:"text"`
-	Order   int            `json:"order"`
-	Effect  DialogueEffect `json:"effect,omitempty"`
+	Speaker     string         `json:"speaker"` // "character" or "user"
+	Text        string         `json:"text"`
+	Order       int            `json:"order"`
+	Effect      DialogueEffect `json:"effect,omitempty"`
+	CharacterID *uuid.UUID     `json:"characterId,omitempty"`
 }
 
 // DialogueSequence is a custom type for []DialogueMessage that implements sql.Scanner and driver.Valuer
@@ -93,11 +94,17 @@ func normalizeDialogueMessage(message DialogueMessage, order int) DialogueMessag
 	if speaker == "" {
 		speaker = "character"
 	}
+	var characterID *uuid.UUID
+	if speaker == "character" && message.CharacterID != nil && *message.CharacterID != uuid.Nil {
+		resolved := *message.CharacterID
+		characterID = &resolved
+	}
 	return DialogueMessage{
-		Speaker: speaker,
-		Text:    strings.TrimSpace(message.Text),
-		Order:   order,
-		Effect:  NormalizeDialogueEffect(string(message.Effect)),
+		Speaker:     speaker,
+		Text:        strings.TrimSpace(message.Text),
+		Order:       order,
+		Effect:      NormalizeDialogueEffect(string(message.Effect)),
+		CharacterID: characterID,
 	}
 }
 

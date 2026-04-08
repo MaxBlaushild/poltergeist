@@ -21,6 +21,8 @@ type QuestNode struct {
 	MonsterEncounter   *MonsterEncounter       `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
 	ChallengeID        *uuid.UUID              `json:"challengeId" gorm:"type:uuid"`
 	Challenge          *Challenge              `json:"challenge,omitempty" gorm:"foreignKey:ChallengeID"`
+	ExpositionID       *uuid.UUID              `json:"expositionId" gorm:"type:uuid"`
+	Exposition         *Exposition             `json:"exposition,omitempty" gorm:"foreignKey:ExpositionID"`
 	SubmissionType     QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Children           []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
 }

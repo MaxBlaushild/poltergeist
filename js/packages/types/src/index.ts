@@ -54,6 +54,7 @@ export * from './activityFeed';
 export * from './character';
 export * from './characterAction';
 export * from './characterLocation';
+export * from './exposition';
 export * from './treasureChest';
 export * from './feteRoom';
 export * from './feteTeam';

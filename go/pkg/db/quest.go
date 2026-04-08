@@ -42,6 +42,13 @@ func (h *questHandle) preloadDetail(ctx context.Context) *gorm.DB {
 		Preload("Nodes.Challenge").
 		Preload("Nodes.Challenge.PointOfInterest").
 		Preload("Nodes.Challenge.PointOfInterest.Tags").
+		Preload("Nodes.Exposition").
+		Preload("Nodes.Exposition.PointOfInterest").
+		Preload("Nodes.Exposition.PointOfInterest.Tags").
+		Preload("Nodes.Exposition.ItemRewards").
+		Preload("Nodes.Exposition.ItemRewards.InventoryItem").
+		Preload("Nodes.Exposition.SpellRewards").
+		Preload("Nodes.Exposition.SpellRewards.Spell").
 		Preload("Nodes.Scenario").
 		Preload("Nodes.Scenario.PointOfInterest").
 		Preload("Nodes.Scenario.PointOfInterest.Tags").

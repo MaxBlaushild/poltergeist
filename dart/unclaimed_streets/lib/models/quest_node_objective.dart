@@ -1,6 +1,7 @@
 class QuestNodeObjective {
   static const typeChallenge = 'challenge';
   static const typeScenario = 'scenario';
+  static const typeExposition = 'exposition';
   static const typeMonsterEncounter = 'monster_encounter';
   static const typeMonster = 'monster';
 

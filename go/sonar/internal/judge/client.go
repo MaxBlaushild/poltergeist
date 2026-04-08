@@ -101,11 +101,41 @@ type FreeformJudgeSubmissionResponse struct {
 	Judgement ScoreJudgement `json:"judgement"`
 }
 
+type deepPriestAnswerResult struct {
+	answer *deep_priest.Answer
+	err    error
+}
+
 func NewClient(aws aws.AWSClient, db db.DbClient, deepPriest deep_priest.DeepPriest) Client {
 	return &client{
 		aws:        aws,
 		db:         db,
 		deepPriest: deepPriest,
+	}
+}
+
+func (c *client) petitionWithContext(
+	ctx context.Context,
+	call func() (*deep_priest.Answer, error),
+) (*deep_priest.Answer, error) {
+	if ctx == nil {
+		return call()
+	}
+
+	resultCh := make(chan deepPriestAnswerResult, 1)
+	go func() {
+		answer, err := call()
+		resultCh <- deepPriestAnswerResult{
+			answer: answer,
+			err:    err,
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		return result.answer, result.err
 	}
 }
 
@@ -135,13 +165,17 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 	var answer *deep_priest.Answer
 	var err error
 	if request.ImageSubmissionUrl != "" {
-		answer, err = c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
-			Question: prompt,
-			Image:    request.ImageSubmissionUrl,
+		answer, err = c.petitionWithContext(ctx, func() (*deep_priest.Answer, error) {
+			return c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
+				Question: prompt,
+				Image:    request.ImageSubmissionUrl,
+			})
 		})
 	} else {
-		answer, err = c.deepPriest.PetitionTheFount(&deep_priest.Question{
-			Question: prompt,
+		answer, err = c.petitionWithContext(ctx, func() (*deep_priest.Answer, error) {
+			return c.deepPriest.PetitionTheFount(&deep_priest.Question{
+				Question: prompt,
+			})
 		})
 	}
 	if err != nil {
@@ -194,13 +228,17 @@ func (c *client) JudgeFreeform(ctx context.Context, request FreeformJudgeSubmiss
 	var answer *deep_priest.Answer
 	var err error
 	if request.ImageSubmissionUrl != "" {
-		answer, err = c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
-			Question: prompt,
-			Image:    request.ImageSubmissionUrl,
+		answer, err = c.petitionWithContext(ctx, func() (*deep_priest.Answer, error) {
+			return c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
+				Question: prompt,
+				Image:    request.ImageSubmissionUrl,
+			})
 		})
 	} else {
-		answer, err = c.deepPriest.PetitionTheFount(&deep_priest.Question{
-			Question: prompt,
+		answer, err = c.petitionWithContext(ctx, func() (*deep_priest.Answer, error) {
+			return c.deepPriest.PetitionTheFount(&deep_priest.Question{
+				Question: prompt,
+			})
 		})
 	}
 	if err != nil {

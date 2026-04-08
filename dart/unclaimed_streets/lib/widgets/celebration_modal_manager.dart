@@ -24,9 +24,13 @@ class CelebrationModalManager extends StatelessWidget {
         final challengeSuccess = type == 'challengeOutcome'
             ? data['successful'] == true
             : true;
+        final expositionSuccess = type == 'expositionOutcome'
+            ? data['successful'] == true
+            : true;
         final showFailureColor =
             (type == 'scenarioOutcome' && !scenarioSuccess) ||
             (type == 'challengeOutcome' && !challengeSuccess) ||
+            (type == 'expositionOutcome' && !expositionSuccess) ||
             type == 'monsterBattleDefeat';
         final titleColor = showFailureColor
             ? Colors.red.shade400
@@ -103,6 +107,8 @@ class CelebrationModalManager extends StatelessWidget {
       case 'challengeOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Challenge Success!' : 'Challenge Failed';
+      case 'expositionOutcome':
+        return 'Conversation Complete';
       case 'monsterBattleVictory':
         return 'Victory!';
       case 'monsterBattleDefeat':
@@ -283,6 +289,8 @@ class CelebrationModalManager extends StatelessWidget {
         );
       case 'challengeOutcome':
         return _buildChallengeOutcomeContent(context, data);
+      case 'expositionOutcome':
+        return _buildExpositionOutcomeContent(context, data);
       case 'scenarioOutcome':
         return _buildScenarioOutcomeContent(context, data);
       case 'monsterBattleVictory':
@@ -705,6 +713,57 @@ class CelebrationModalManager extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildExpositionOutcomeContent(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
+    final title = (data['title'] as String?)?.trim() ?? 'Exposition';
+    final questName = (data['questName'] as String?)?.trim() ?? '';
+    final rewardExperience = (data['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+    final baseResourcesAwarded = _baseResourcesFromData(data);
+    final itemsAwarded =
+        (data['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const [];
+    final spellsAwarded =
+        (data['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((spell) => Map<String, dynamic>.from(spell))
+            .toList() ??
+        const [];
+    final awardedRewards = data['awardedRewards'] == true;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        if (questName.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Quest objective advanced for $questName.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+        const SizedBox(height: 12),
+        _buildRewardSection(
+          context,
+          experience: rewardExperience,
+          gold: rewardGold,
+          materials: baseResourcesAwarded,
+          items: itemsAwarded,
+          spells: spellsAwarded,
+          emptyMessage: awardedRewards
+              ? 'No additional rewards.'
+              : 'Rewards were already claimed.',
+        ),
+      ],
     );
   }
 

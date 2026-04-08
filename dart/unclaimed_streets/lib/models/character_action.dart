@@ -3,12 +3,14 @@ class DialogueMessage {
   final String text;
   final int order;
   final String? effect;
+  final String? characterId;
 
   const DialogueMessage({
     required this.speaker,
     required this.text,
     required this.order,
     this.effect,
+    this.characterId,
   });
 
   factory DialogueMessage.fromJson(Map<String, dynamic> json) {
@@ -19,6 +21,9 @@ class DialogueMessage {
       effect: (json['effect'] as String?)?.trim().isEmpty ?? true
           ? null
           : (json['effect'] as String).trim(),
+      characterId: (json['characterId'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (json['characterId'] as String).trim(),
     );
   }
 }

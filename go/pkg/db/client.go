@@ -122,6 +122,7 @@ type client struct {
 	baseStructureLevelVisualHandle       *baseStructureLevelVisualHandle
 	userBaseStructureHandle              *userBaseStructureHandle
 	userBaseDailyStateHandle             *userBaseDailyStateHandle
+	expositionHandle                     *expositionHandle
 	challengeHandle                      *challengeHandle
 	monsterTemplateHandle                *monsterTemplateHandle
 	monsterHandle                        *monsterHandle
@@ -305,6 +306,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		baseStructureLevelVisualHandle:       &baseStructureLevelVisualHandle{db: db},
 		userBaseStructureHandle:              &userBaseStructureHandle{db: db},
 		userBaseDailyStateHandle:             &userBaseDailyStateHandle{db: db},
+		expositionHandle:                     &expositionHandle{db: db},
 		challengeHandle:                      &challengeHandle{db: db},
 		monsterTemplateHandle:                &monsterTemplateHandle{db: db},
 		monsterHandle:                        &monsterHandle{db: db},
@@ -810,6 +812,10 @@ func (c *client) UserBaseStructure() UserBaseStructureHandle {
 
 func (c *client) UserBaseDailyState() UserBaseDailyStateHandle {
 	return c.userBaseDailyStateHandle
+}
+
+func (c *client) Exposition() ExpositionHandle {
+	return c.expositionHandle
 }
 
 func (c *client) Challenge() ChallengeHandle {

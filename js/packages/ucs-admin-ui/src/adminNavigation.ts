@@ -114,6 +114,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Manage generated and standalone scenario content.',
       },
       {
+        id: 'expositions',
+        label: 'Expositions',
+        path: '/expositions',
+        description:
+          'Author dialogue-first map encounters and quest objectives.',
+      },
+      {
         id: 'scenario-templates',
         label: 'Scenario Templates',
         path: '/scenario-templates',
