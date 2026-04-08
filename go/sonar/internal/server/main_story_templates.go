@@ -20,6 +20,11 @@ type createMainStoryDistrictRunRequest struct {
 	DistrictID string `json:"districtId"`
 }
 
+type createMainStoryZoneRunRequest struct {
+	DistrictID string `json:"districtId"`
+	ZoneID     string `json:"zoneId"`
+}
+
 type mainStoryDistrictZoneCandidate struct {
 	zone       *models.Zone
 	matchCount int
@@ -110,6 +115,87 @@ func (s *server) createMainStoryDistrictRun(ctx *gin.Context) {
 		return
 	}
 
+	run, err := s.createAndEnqueueMainStoryRun(ctx, template, district, nil)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusAccepted, run)
+}
+
+func (s *server) createMainStoryZoneRun(ctx *gin.Context) {
+	templateID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid main story template ID"})
+		return
+	}
+
+	var body createMainStoryZoneRunRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	districtID, err := uuid.Parse(strings.TrimSpace(body.DistrictID))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid district ID"})
+		return
+	}
+	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	template, err := s.dbClient.MainStoryTemplate().FindByID(ctx, templateID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if template == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "main story template not found"})
+		return
+	}
+
+	district, err := s.dbClient.District().FindByID(ctx, districtID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if district == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "district not found"})
+		return
+	}
+	if len(district.Zones) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "district has no child zones"})
+		return
+	}
+
+	var targetZone *models.Zone
+	for index := range district.Zones {
+		if district.Zones[index].ID == zoneID {
+			targetZone = &district.Zones[index]
+			break
+		}
+	}
+	if targetZone == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zone does not belong to district"})
+		return
+	}
+
+	run, err := s.createAndEnqueueMainStoryRun(ctx, template, district, targetZone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusAccepted, run)
+}
+
+func (s *server) createAndEnqueueMainStoryRun(
+	ctx context.Context,
+	template *models.MainStoryTemplate,
+	district *models.District,
+	targetZone *models.Zone,
+) (*models.MainStoryDistrictRun, error) {
 	run := &models.MainStoryDistrictRun{
 		ID:                    uuid.New(),
 		CreatedAt:             time.Now(),
@@ -120,9 +206,11 @@ func (s *server) createMainStoryDistrictRun(ctx *gin.Context) {
 		BeatRuns:              models.MainStoryDistrictBeatRuns{},
 		GeneratedCharacterIDs: models.StringArray{},
 	}
+	if targetZone != nil {
+		run.ZoneID = &targetZone.ID
+	}
 	if err := s.dbClient.MainStoryDistrictRun().Create(ctx, run); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
 
 	payload, err := json.Marshal(jobs.ProcessMainStoryDistrictRunTaskPayload{RunID: run.ID})
@@ -132,7 +220,7 @@ func (s *server) createMainStoryDistrictRun(ctx *gin.Context) {
 		run.ErrorMessage = &errMsg
 		run.UpdatedAt = time.Now()
 		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		return
+		return run, err
 	}
 	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ProcessMainStoryDistrictRunTaskType, payload)); err != nil {
 		errMsg := err.Error()
@@ -140,10 +228,9 @@ func (s *server) createMainStoryDistrictRun(ctx *gin.Context) {
 		run.ErrorMessage = &errMsg
 		run.UpdatedAt = time.Now()
 		_ = s.dbClient.MainStoryDistrictRun().Update(ctx, run)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return run, err
 	}
-	ctx.JSON(http.StatusAccepted, run)
+	return run, nil
 }
 
 func (s *server) deleteMainStoryDistrictRun(ctx *gin.Context) {

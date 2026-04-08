@@ -201,6 +201,7 @@ type MainStoryDistrictRun struct {
 	UpdatedAt             time.Time                 `json:"updatedAt"`
 	MainStoryTemplateID   uuid.UUID                 `json:"mainStoryTemplateId" gorm:"column:main_story_template_id;type:uuid"`
 	DistrictID            uuid.UUID                 `json:"districtId" gorm:"column:district_id;type:uuid"`
+	ZoneID                *uuid.UUID                `json:"zoneId,omitempty" gorm:"column:zone_id;type:uuid"`
 	Status                string                    `json:"status"`
 	BeatRuns              MainStoryDistrictBeatRuns `json:"beatRuns" gorm:"column:beat_runs;type:jsonb"`
 	GeneratedCharacterIDs StringArray               `json:"generatedCharacterIds" gorm:"column:generated_character_ids;type:jsonb"`

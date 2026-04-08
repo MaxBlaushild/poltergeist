@@ -69,6 +69,8 @@ type Quest struct {
 	QuestGiverRelationshipEffects CharacterRelationshipState `json:"questGiverRelationshipEffects" gorm:"column:quest_giver_relationship_effects;type:jsonb;default:'{}'"`
 	AcceptanceDialogue            DialogueSequence           `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
 	ImageURL                      string                     `json:"imageUrl"`
+	OwnerUserID                   *uuid.UUID                 `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
+	Ephemeral                     bool                       `json:"ephemeral" gorm:"column:ephemeral"`
 	ZoneID                        *uuid.UUID                 `json:"zoneId" gorm:"type:uuid"`
 	QuestArchetypeID              *uuid.UUID                 `json:"questArchetypeId" gorm:"type:uuid"`
 	QuestGiverCharacterID         *uuid.UUID                 `json:"questGiverCharacterId" gorm:"type:uuid"`

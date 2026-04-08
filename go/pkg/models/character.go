@@ -17,6 +17,8 @@ type Character struct {
 	MapIconURL                 string                      `json:"mapIconUrl"`
 	DialogueImageURL           string                      `json:"dialogueImageUrl"`
 	ThumbnailURL               string                      `json:"thumbnailUrl"`
+	OwnerUserID                *uuid.UUID                  `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
+	Ephemeral                  bool                        `json:"ephemeral" gorm:"column:ephemeral"`
 	StoryVariants              CharacterStoryVariants      `json:"storyVariants" gorm:"column:story_variants;type:jsonb;default:'[]'"`
 	Relationship               *CharacterRelationshipState `json:"relationship,omitempty" gorm:"-"`
 	ImageGenerationStatus      string                      `json:"imageGenerationStatus" gorm:"column:image_generation_status"`

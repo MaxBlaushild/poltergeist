@@ -67,6 +67,11 @@ func (p *ProcessMainStoryDistrictRunProcessor) ProcessTask(ctx context.Context, 
 		return p.failRun(ctx, run, fmt.Errorf("district has no child zones"))
 	}
 
+	targetZone, err := resolveProcessMainStoryTargetZone(district, run.ZoneID)
+	if err != nil {
+		return p.failRun(ctx, run, err)
+	}
+
 	run.Status = models.MainStoryDistrictRunStatusInProgress
 	run.ErrorMessage = nil
 	run.UpdatedAt = time.Now()
@@ -75,11 +80,11 @@ func (p *ProcessMainStoryDistrictRunProcessor) ProcessTask(ctx context.Context, 
 	}
 
 	if len(run.BeatRuns) == 0 && len(run.GeneratedCharacterIDs) == 0 {
-		if err := p.materializeRun(ctx, template, district, run); err != nil {
+		if err := p.materializeRun(ctx, template, district, targetZone, run); err != nil {
 			return p.failRun(ctx, run, err)
 		}
 	} else {
-		if err := p.resumeRun(ctx, template, district, run); err != nil {
+		if err := p.resumeRun(ctx, template, district, targetZone, run); err != nil {
 			return p.failRun(ctx, run, err)
 		}
 	}
@@ -111,6 +116,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) materializeRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
+	targetZone *models.Zone,
 	run *models.MainStoryDistrictRun,
 ) error {
 	if template == nil {
@@ -126,7 +132,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) materializeRun(
 		return fmt.Errorf("main story template has no beats")
 	}
 
-	clonedCharactersByKey, generatedCharacterIDs, err := p.cloneRunCharacters(ctx, template, district)
+	clonedCharactersByKey, generatedCharacterIDs, err := p.cloneRunCharacters(ctx, template, district, targetZone)
 	if err != nil {
 		return err
 	}
@@ -135,7 +141,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) materializeRun(
 	beatRuns := make(models.MainStoryDistrictBeatRuns, 0, len(template.Beats))
 	createdQuests := make([]*models.Quest, 0, len(template.Beats))
 	for _, beat := range template.Beats {
-		beatRun, quest, err := p.materializeBeatRun(ctx, template, district, beat, clonedCharactersByKey, nil)
+		beatRun, quest, err := p.materializeBeatRun(ctx, template, district, targetZone, beat, clonedCharactersByKey, nil)
 		beatRuns = append(beatRuns, beatRun)
 		run.BeatRuns = beatRuns
 		run.UpdatedAt = time.Now()
@@ -164,6 +170,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) cloneRunCharacters(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
+	targetZone *models.Zone,
 ) (map[string]*models.Character, models.StringArray, error) {
 	clonedByKey := make(map[string]*models.Character)
 	generatedIDs := make(models.StringArray, 0)
@@ -211,7 +218,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) cloneRunCharacters(
 			UpdatedAt:             time.Now(),
 			Name:                  name,
 			Description:           description,
-			InternalTags:          buildProcessMainStoryCharacterTags(template, district, key, sourceCharacter),
+			InternalTags:          buildProcessMainStoryCharacterTags(template, district, targetZone, key, sourceCharacter),
 			ImageGenerationStatus: models.CharacterImageGenerationStatusNone,
 		}
 		if sourceCharacter != nil {
@@ -322,6 +329,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) resumeRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
+	targetZone *models.Zone,
 	run *models.MainStoryDistrictRun,
 ) error {
 	if template == nil {
@@ -345,7 +353,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) resumeRun(
 	}
 
 	var failedZoneID *uuid.UUID
-	if retryStartIndex < len(run.BeatRuns) {
+	if targetZone == nil && retryStartIndex < len(run.BeatRuns) {
 		failedZoneID = run.BeatRuns[retryStartIndex].ZoneID
 	}
 
@@ -385,6 +393,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) resumeRun(
 			ctx,
 			template,
 			district,
+			targetZone,
 			template.Beats[beatIndex],
 			clonedCharactersByKey,
 			deprioritizedZoneID,
@@ -411,14 +420,20 @@ func (p *ProcessMainStoryDistrictRunProcessor) resumeRun(
 func buildProcessMainStoryCharacterTags(
 	template *models.MainStoryTemplate,
 	district *models.District,
+	targetZone *models.Zone,
 	characterKey string,
 	sourceCharacter *models.Character,
 ) models.StringArray {
 	tags := []string{
 		"main_story",
+		"main_story_run",
 		"story_character",
-		"district_main_story_run",
 		"story_character_" + characterKey,
+	}
+	if targetZone != nil {
+		tags = append(tags, "zone_main_story_run", "zone_"+targetZone.ID.String())
+	} else {
+		tags = append(tags, "district_main_story_run")
 	}
 	if template != nil {
 		tags = append(tags, "main_story_template_"+template.ID.String())
@@ -426,6 +441,9 @@ func buildProcessMainStoryCharacterTags(
 	}
 	if district != nil {
 		tags = append(tags, "district_"+district.ID.String())
+	}
+	if targetZone != nil {
+		tags = append(tags, []string(targetZone.InternalTags)...)
 	}
 	if sourceCharacter != nil {
 		tags = append(tags, []string(sourceCharacter.InternalTags)...)
@@ -441,6 +459,7 @@ func (p *ProcessMainStoryDistrictRunProcessor) materializeBeatRun(
 	ctx context.Context,
 	template *models.MainStoryTemplate,
 	district *models.District,
+	targetZone *models.Zone,
 	beat models.MainStoryBeatDraft,
 	clonedCharactersByKey map[string]*models.Character,
 	deprioritizedZoneID *uuid.UUID,
@@ -484,11 +503,16 @@ func (p *ProcessMainStoryDistrictRunProcessor) materializeBeatRun(
 		beatRun.QuestGiverCharacterName = strings.TrimSpace(character.Name)
 	}
 
-	rankedZones, err := rankProcessMainStoryZones(district.Zones, beat, questArchetype, template, deprioritizedZoneID)
-	if err != nil {
-		beatRun.Status = models.MainStoryDistrictRunStatusFailed
-		beatRun.ErrorMessage = err.Error()
-		return beatRun, nil, err
+	rankedZones := []processMainStoryZoneCandidate{}
+	if targetZone != nil {
+		rankedZones = append(rankedZones, processMainStoryZoneCandidate{zone: targetZone})
+	} else {
+		rankedZones, err = rankProcessMainStoryZones(district.Zones, beat, questArchetype, template, deprioritizedZoneID)
+		if err != nil {
+			beatRun.Status = models.MainStoryDistrictRunStatusFailed
+			beatRun.ErrorMessage = err.Error()
+			return beatRun, nil, err
+		}
 	}
 
 	var lastErr error
@@ -597,6 +621,24 @@ func (p *ProcessMainStoryDistrictRunProcessor) ensureCharacterPointOfInterest(
 type processMainStoryZoneCandidate struct {
 	zone       *models.Zone
 	matchCount int
+}
+
+func resolveProcessMainStoryTargetZone(
+	district *models.District,
+	targetZoneID *uuid.UUID,
+) (*models.Zone, error) {
+	if targetZoneID == nil || *targetZoneID == uuid.Nil {
+		return nil, nil
+	}
+	if district == nil {
+		return nil, fmt.Errorf("district is required")
+	}
+	for index := range district.Zones {
+		if district.Zones[index].ID == *targetZoneID {
+			return &district.Zones[index], nil
+		}
+	}
+	return nil, fmt.Errorf("zone %s is not part of district %s", targetZoneID.String(), district.ID.String())
 }
 
 func rankProcessMainStoryZones(

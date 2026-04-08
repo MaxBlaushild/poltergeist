@@ -117,6 +117,8 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"quest_giver_relationship_effects": updates.QuestGiverRelationshipEffects,
 		"acceptance_dialogue":              updates.AcceptanceDialogue,
 		"image_url":                        updates.ImageURL,
+		"owner_user_id":                    updates.OwnerUserID,
+		"ephemeral":                        updates.Ephemeral,
 		"zone_id":                          updates.ZoneID,
 		"quest_archetype_id":               updates.QuestArchetypeID,
 		"quest_giver_character_id":         updates.QuestGiverCharacterID,

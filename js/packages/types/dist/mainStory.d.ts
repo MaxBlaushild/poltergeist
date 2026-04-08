@@ -165,6 +165,7 @@ export interface MainStoryDistrictRun {
     updatedAt: string;
     mainStoryTemplateId: string;
     districtId: string;
+    zoneId?: string | null;
     status: string;
     beatRuns: MainStoryDistrictBeatRun[];
     generatedCharacterIds: string[];

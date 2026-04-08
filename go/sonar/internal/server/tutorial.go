@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -28,23 +30,25 @@ type tutorialOptionPayload struct {
 }
 
 type tutorialConfigRequest struct {
-	CharacterID             *string                      `json:"characterId"`
-	Dialogue                []models.DialogueMessage     `json:"dialogue"`
-	LoadoutDialogue         []models.DialogueMessage     `json:"loadoutDialogue"`
-	PostMonsterDialogue     []models.DialogueMessage     `json:"postMonsterDialogue"`
-	BaseKitDialogue         []models.DialogueMessage     `json:"baseKitDialogue"`
-	PostBaseDialogue        []models.DialogueMessage     `json:"postBaseDialogue"`
-	ScenarioPrompt          string                       `json:"scenarioPrompt"`
-	ScenarioImageURL        string                       `json:"scenarioImageUrl"`
-	Options                 []tutorialOptionPayload      `json:"options"`
-	MonsterEncounterID      *string                      `json:"monsterEncounterId"`
-	MonsterRewardExperience int                          `json:"monsterRewardExperience"`
-	MonsterRewardGold       int                          `json:"monsterRewardGold"`
-	MonsterItemRewards      []scenarioRewardItemPayload  `json:"monsterItemRewards"`
-	RewardExperience        int                          `json:"rewardExperience"`
-	RewardGold              int                          `json:"rewardGold"`
-	ItemRewards             []scenarioRewardItemPayload  `json:"itemRewards"`
-	SpellRewards            []scenarioRewardSpellPayload `json:"spellRewards"`
+	CharacterID               *string                      `json:"characterId"`
+	BaseQuestArchetypeID      *string                      `json:"baseQuestArchetypeId"`
+	BaseQuestGiverCharacterID *string                      `json:"baseQuestGiverCharacterId"`
+	Dialogue                  []models.DialogueMessage     `json:"dialogue"`
+	LoadoutDialogue           []models.DialogueMessage     `json:"loadoutDialogue"`
+	PostMonsterDialogue       []models.DialogueMessage     `json:"postMonsterDialogue"`
+	BaseKitDialogue           []models.DialogueMessage     `json:"baseKitDialogue"`
+	PostBaseDialogue          []models.DialogueMessage     `json:"postBaseDialogue"`
+	ScenarioPrompt            string                       `json:"scenarioPrompt"`
+	ScenarioImageURL          string                       `json:"scenarioImageUrl"`
+	Options                   []tutorialOptionPayload      `json:"options"`
+	MonsterEncounterID        *string                      `json:"monsterEncounterId"`
+	MonsterRewardExperience   int                          `json:"monsterRewardExperience"`
+	MonsterRewardGold         int                          `json:"monsterRewardGold"`
+	MonsterItemRewards        []scenarioRewardItemPayload  `json:"monsterItemRewards"`
+	RewardExperience          int                          `json:"rewardExperience"`
+	RewardGold                int                          `json:"rewardGold"`
+	ItemRewards               []scenarioRewardItemPayload  `json:"itemRewards"`
+	SpellRewards              []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
 type tutorialStatusResponse struct {
@@ -478,6 +482,28 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 		}
 	}
 
+	if body.BaseQuestArchetypeID != nil {
+		trimmed := strings.TrimSpace(*body.BaseQuestArchetypeID)
+		if trimmed != "" {
+			questArchetypeID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("baseQuestArchetypeId must be a valid UUID")
+			}
+			config.BaseQuestArchetypeID = &questArchetypeID
+		}
+	}
+
+	if body.BaseQuestGiverCharacterID != nil {
+		trimmed := strings.TrimSpace(*body.BaseQuestGiverCharacterID)
+		if trimmed != "" {
+			characterID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("baseQuestGiverCharacterId must be a valid UUID")
+			}
+			config.BaseQuestGiverCharacterID = &characterID
+		}
+	}
+
 	config.Dialogue = models.DialogueSequence(body.Dialogue)
 	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
 	config.PostMonsterDialogue = models.DialogueSequence(body.PostMonsterDialogue)
@@ -600,6 +626,9 @@ func (s *server) maybeAdvanceTutorialProgress(
 		}
 		if base == nil {
 			return state, nil
+		}
+		if err := s.instantiateTutorialBaseQuest(ctx, userID, base, config); err != nil {
+			return nil, err
 		}
 		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, userID); err != nil {
 			return nil, err
@@ -957,6 +986,130 @@ func (s *server) tutorialBaseKitRequirementItemIDs(
 	return requiredUseItemIDs, nil
 }
 
+func (s *server) instantiateTutorialBaseQuest(
+	ctx *gin.Context,
+	userID uuid.UUID,
+	base *models.Base,
+	config *models.TutorialConfig,
+) error {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+		return nil
+	}
+
+	existingQuest, err := s.findTutorialBaseQuestForUser(ctx, userID, *config.BaseQuestArchetypeID)
+	if err != nil {
+		return err
+	}
+	if existingQuest != nil {
+		return nil
+	}
+
+	sourceCharacter, err := s.dbClient.Character().FindByID(ctx, *config.BaseQuestGiverCharacterID)
+	if err != nil {
+		return err
+	}
+	if sourceCharacter == nil {
+		return fmt.Errorf("tutorial base quest giver character not found")
+	}
+
+	zones, err := s.dbClient.Zone().FindAll(ctx)
+	if err != nil {
+		return err
+	}
+	zone, err := selectZoneForCoordinates(zones, base.Latitude, base.Longitude)
+	if err != nil {
+		return err
+	}
+
+	cloneLatitude, cloneLongitude := offsetTutorialCharacterNearBase(base.Latitude, base.Longitude, 60)
+	clonedCharacterID := uuid.New()
+	now := time.Now()
+	clonedCharacter := &models.Character{
+		ID:                    clonedCharacterID,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		Name:                  sourceCharacter.Name,
+		Description:           sourceCharacter.Description,
+		InternalTags:          append(models.StringArray{}, sourceCharacter.InternalTags...),
+		MapIconURL:            sourceCharacter.MapIconURL,
+		DialogueImageURL:      sourceCharacter.DialogueImageURL,
+		ThumbnailURL:          sourceCharacter.ThumbnailURL,
+		OwnerUserID:           &userID,
+		Ephemeral:             true,
+		StoryVariants:         append(models.CharacterStoryVariants{}, sourceCharacter.StoryVariants...),
+		PointOfInterestID:     nil,
+		ImageGenerationStatus: sourceCharacter.ImageGenerationStatus,
+		ImageGenerationError:  sourceCharacter.ImageGenerationError,
+	}
+	if err := s.dbClient.Character().Create(ctx, clonedCharacter); err != nil {
+		return err
+	}
+	if err := s.dbClient.CharacterLocation().ReplaceForCharacter(ctx, clonedCharacterID, []models.CharacterLocation{
+		{
+			ID:          uuid.New(),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			CharacterID: clonedCharacterID,
+			Latitude:    cloneLatitude,
+			Longitude:   cloneLongitude,
+		},
+	}); err != nil {
+		return err
+	}
+
+	quest, err := s.dungeonmaster.GenerateQuest(ctx, zone, *config.BaseQuestArchetypeID, &clonedCharacterID)
+	if err != nil {
+		return err
+	}
+	if quest == nil {
+		return fmt.Errorf("failed to generate tutorial base quest")
+	}
+	quest.OwnerUserID = &userID
+	quest.Ephemeral = true
+	quest.QuestGiverCharacterID = &clonedCharacterID
+	quest.UpdatedAt = time.Now()
+	if err := s.dbClient.Quest().Update(ctx, quest.ID, quest); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *server) findTutorialBaseQuestForUser(
+	ctx *gin.Context,
+	userID uuid.UUID,
+	questArchetypeID uuid.UUID,
+) (*models.Quest, error) {
+	quests, err := s.dbClient.Quest().FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range quests {
+		quest := &quests[i]
+		if quest.OwnerUserID == nil || *quest.OwnerUserID != userID {
+			continue
+		}
+		if quest.QuestArchetypeID == nil || *quest.QuestArchetypeID != questArchetypeID {
+			continue
+		}
+		return quest, nil
+	}
+	return nil, nil
+}
+
+func offsetTutorialCharacterNearBase(latitude float64, longitude float64, distanceMeters float64) (float64, float64) {
+	if distanceMeters <= 0 {
+		return latitude, longitude
+	}
+	latOffset := distanceMeters / 111111.0
+	cosLat := math.Cos(latitude * math.Pi / 180.0)
+	if math.Abs(cosLat) < 0.00001 {
+		cosLat = 0.00001
+	}
+	lngOffset := (distanceMeters * 0.35) / (111111.0 * cosLat)
+	return latitude + latOffset, longitude + lngOffset
+}
+
 func cloneMonsterItemRewards(input []models.MonsterItemReward) []models.MonsterItemReward {
 	rewards := make([]models.MonsterItemReward, 0, len(input))
 	for _, reward := range input {
@@ -1035,11 +1188,25 @@ func scenarioVisibleToUser(userID uuid.UUID, scenario *models.Scenario) bool {
 	return *scenario.OwnerUserID == userID
 }
 
+func characterVisibleToUser(userID uuid.UUID, character *models.Character) bool {
+	if character == nil || character.OwnerUserID == nil {
+		return true
+	}
+	return *character.OwnerUserID == userID
+}
+
 func monsterVisibleToUser(userID uuid.UUID, monster *models.Monster) bool {
 	if monster == nil || monster.OwnerUserID == nil {
 		return true
 	}
 	return *monster.OwnerUserID == userID
+}
+
+func questVisibleToUser(userID uuid.UUID, quest *models.Quest) bool {
+	if quest == nil || quest.OwnerUserID == nil {
+		return true
+	}
+	return *quest.OwnerUserID == userID
 }
 
 func monsterEncounterVisibleToUser(userID uuid.UUID, encounter *models.MonsterEncounter) bool {

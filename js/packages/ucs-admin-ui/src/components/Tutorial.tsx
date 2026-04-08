@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
-import { Character, DialogueMessage, Spell } from '@poltergeist/types';
+import {
+  Character,
+  DialogueMessage,
+  QuestArchetype,
+  Spell,
+} from '@poltergeist/types';
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 
 type SelectOption = {
@@ -42,6 +47,8 @@ type TutorialOptionResponse = {
 
 type TutorialConfigResponse = {
   characterId?: string | null;
+  baseQuestArchetypeId?: string | null;
+  baseQuestGiverCharacterId?: string | null;
   dialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
   postMonsterDialogue?: DialogueMessage[];
@@ -232,11 +239,15 @@ export const Tutorial = () => {
     null
   );
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [questArchetypes, setQuestArchetypes] = useState<QuestArchetype[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<
     Array<{ id: string; name: string }>
   >([]);
   const [characterId, setCharacterId] = useState('');
+  const [baseQuestArchetypeId, setBaseQuestArchetypeId] = useState('');
+  const [baseQuestGiverCharacterId, setBaseQuestGiverCharacterId] =
+    useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
   const [postMonsterDialogue, setPostMonsterDialogue] = useState<
@@ -285,6 +296,8 @@ export const Tutorial = () => {
           typeof config.rewardGold === 'number' ? config.rewardGold : 0;
 
         setCharacterId(config.characterId ?? '');
+        setBaseQuestArchetypeId(config.baseQuestArchetypeId ?? '');
+        setBaseQuestGiverCharacterId(config.baseQuestGiverCharacterId ?? '');
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
         setLoadoutDialogue(
           Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
@@ -382,16 +395,24 @@ export const Tutorial = () => {
     const loadReferenceData = async () => {
       try {
         setReferenceDataLoading(true);
-        const [loadedCharacters, loadedSpells, loadedMonsterEncounters] =
-          await Promise.all([
-            apiClient.get<Character[]>('/sonar/characters'),
-            apiClient.get<Spell[]>('/sonar/spells'),
-            apiClient.get<AdminMonsterEncounterListResponse>(
-              '/sonar/admin/monster-encounters?page=1&pageSize=250'
-            ),
-          ]);
+        const [
+          loadedCharacters,
+          loadedQuestArchetypes,
+          loadedSpells,
+          loadedMonsterEncounters,
+        ] = await Promise.all([
+          apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<QuestArchetype[]>('/sonar/questArchetypes'),
+          apiClient.get<Spell[]>('/sonar/spells'),
+          apiClient.get<AdminMonsterEncounterListResponse>(
+            '/sonar/admin/monster-encounters?page=1&pageSize=250'
+          ),
+        ]);
 
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
+        setQuestArchetypes(
+          Array.isArray(loadedQuestArchetypes) ? loadedQuestArchetypes : []
+        );
         setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
         setMonsterEncounters(
           Array.isArray(loadedMonsterEncounters?.items)
@@ -482,6 +503,15 @@ export const Tutorial = () => {
         label: encounter.name,
       })),
     [monsterEncounters]
+  );
+
+  const questArchetypeOptions = useMemo(
+    () =>
+      questArchetypes.map((questArchetype) => ({
+        value: questArchetype.id,
+        label: questArchetype.name,
+      })),
+    [questArchetypes]
   );
 
   const updateOption = (id: string, updates: Partial<TutorialOptionRow>) => {
@@ -619,6 +649,8 @@ export const Tutorial = () => {
 
       await apiClient.put('/sonar/admin/tutorial', {
         characterId: characterId || null,
+        baseQuestArchetypeId: baseQuestArchetypeId || null,
+        baseQuestGiverCharacterId: baseQuestGiverCharacterId || null,
         dialogue,
         loadoutDialogue,
         postMonsterDialogue,
@@ -1174,6 +1206,36 @@ export const Tutorial = () => {
                 value={baseKitDialogue}
                 onChange={setBaseKitDialogue}
               />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Home Base Quest
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  After the player places their base, the tutorial can clone a
+                  questgiver and generate a private live quest from the selected
+                  archetype near that base.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <SearchableSelect
+                  label="Quest Archetype"
+                  placeholder="Search quest archetype name…"
+                  options={questArchetypeOptions}
+                  value={baseQuestArchetypeId}
+                  onChange={setBaseQuestArchetypeId}
+                />
+                <SearchableSelect
+                  label="Source Questgiver Character"
+                  placeholder="Search character name…"
+                  options={characterOptions}
+                  value={baseQuestGiverCharacterId}
+                  onChange={setBaseQuestGiverCharacterId}
+                />
+              </div>
             </section>
 
             <section className="rounded-lg border border-gray-200 p-4">

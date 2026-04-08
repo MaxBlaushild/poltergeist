@@ -765,13 +765,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<int> _refreshRewardDrivenPlayerState() async {
     final statsProvider = context.read<CharacterStatsProvider>();
-    await Future.wait([
+    final authProvider = context.read<AuthProvider>();
+    final activityFeedProvider = context.read<ActivityFeedProvider>();
+    final userLevelProvider = context.read<UserLevelProvider>();
+    await _runBestEffortRefresh(
+      'character stats',
       statsProvider.refresh(silent: true),
-      context.read<AuthProvider>().refresh(),
-      context.read<ActivityFeedProvider>().refresh(),
-      context.read<UserLevelProvider>().refresh(),
-    ]);
+      timeout: const Duration(seconds: 5),
+    );
+    unawaited(_runBestEffortRefresh('auth', authProvider.refresh()));
+    unawaited(
+      _runBestEffortRefresh('activity feed', activityFeedProvider.refresh()),
+    );
+    unawaited(_runBestEffortRefresh('user level', userLevelProvider.refresh()));
     return statsProvider.level;
+  }
+
+  Future<void> _runBestEffortRefresh(
+    String label,
+    Future<void> refresh, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    try {
+      await refresh.timeout(timeout);
+    } catch (error) {
+      debugPrint('[SinglePlayerScreen] $label refresh skipped: $error');
+    }
   }
 
   void _queueRewardLevelUpFromData(Map<String, dynamic> data) {

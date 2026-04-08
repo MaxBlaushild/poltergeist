@@ -63,7 +63,7 @@ export const MainStoryDistrictRunView = () => {
 
   const loadRun = useCallback(async () => {
     if (!id) {
-      setError('Missing district run ID.');
+      setError('Missing run ID.');
       setLoading(false);
       return;
     }
@@ -94,7 +94,7 @@ export const MainStoryDistrictRunView = () => {
       setError(
         extractApiErrorMessage(
           loadError,
-          'Failed to load that main story district run.'
+          'Failed to load that main story run.'
         )
       );
     } finally {
@@ -122,12 +122,23 @@ export const MainStoryDistrictRunView = () => {
     [run]
   );
 
+  const zone = useMemo(
+    () =>
+      run?.zoneId
+        ? district?.zones.find((candidate) => candidate.id === run.zoneId) ?? null
+        : null,
+    [district, run]
+  );
+  const isZoneRun = Boolean(run?.zoneId);
+
   const handleDeleteRun = async () => {
     if (!run) {
       return;
     }
     const confirmed = window.confirm(
-      'Delete this live district chain and all quests plus generated questgiver characters from this run?'
+      isZoneRun
+        ? 'Delete this live zone chain and all quests plus generated questgiver characters from this run?'
+        : 'Delete this live district chain and all quests plus generated questgiver characters from this run?'
     );
     if (!confirmed) {
       return;
@@ -142,7 +153,7 @@ export const MainStoryDistrictRunView = () => {
       setError(
         extractApiErrorMessage(
           deleteError,
-          'Failed to delete this main story district run.'
+          'Failed to delete this main story run.'
         )
       );
     } finally {
@@ -155,7 +166,9 @@ export const MainStoryDistrictRunView = () => {
       return;
     }
     const confirmed = window.confirm(
-      'Retry this run from its first failed beat onward? Completed earlier beats will be kept, and the failed beat will be re-attempted in a different zone first when possible.'
+      isZoneRun
+        ? 'Retry this run from its first failed beat onward? Completed earlier beats will be kept, and failed beats will be re-attempted in the same zone.'
+        : 'Retry this run from its first failed beat onward? Completed earlier beats will be kept, and the failed beat will be re-attempted in a different zone first when possible.'
     );
     if (!confirmed) {
       return;
@@ -176,7 +189,7 @@ export const MainStoryDistrictRunView = () => {
       setError(
         extractApiErrorMessage(
           retryError,
-          'Failed to retry this main story district run.'
+          'Failed to retry this main story run.'
         )
       );
     } finally {
@@ -189,15 +202,16 @@ export const MainStoryDistrictRunView = () => {
       <div className="qa-shell">
         <section className="qa-hero">
           <div>
-            <div className="qa-kicker">District Run</div>
+            <div className="qa-kicker">{isZoneRun ? 'Zone Run' : 'District Run'}</div>
             <h1 className="qa-title">
-              {template?.name || 'Main Story District Chain'}
+              {template?.name || (isZoneRun ? 'Main Story Zone Chain' : 'Main Story District Chain')}
             </h1>
             <p className="qa-subtitle">
-              Inspect the full live district chain generated from this template,
-              including beat placement, questgiver assignments, and created
-              quests. If something looks off, you can delete the entire run from
-              here and try again.
+              {isZoneRun
+                ? 'Inspect the full live zone chain generated from this template, with every beat pinned to one zone.'
+                : 'Inspect the full live district chain generated from this template, including beat placement, questgiver assignments, and created quests.'}{' '}
+              If something looks off, you can delete the entire run from here
+              and try again.
             </p>
           </div>
           <div className="qa-hero-actions">
@@ -228,9 +242,9 @@ export const MainStoryDistrictRunView = () => {
         {error && <div className="qa-card">{error}</div>}
 
         {loading ? (
-          <div className="qa-card">Loading district run...</div>
+          <div className="qa-card">Loading run...</div>
         ) : !run ? (
-          <div className="qa-card">District run not found.</div>
+          <div className="qa-card">Run not found.</div>
         ) : (
           <>
             <section className="qa-card">
@@ -238,12 +252,20 @@ export const MainStoryDistrictRunView = () => {
                 <div>
                   <h2 className="qa-card-title">Run Summary</h2>
                   <div className="qa-meta">
-                    {district?.name ?? 'Unknown district'} • Started{' '}
-                    {formatDate(run.createdAt)} • Updated{' '}
-                    {formatDate(run.updatedAt)}
+                    {[
+                      zone?.name ?? null,
+                      district?.name ?? 'Unknown district',
+                      `Started ${formatDate(run.createdAt)}`,
+                      `Updated ${formatDate(run.updatedAt)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
                   </div>
                 </div>
                 <div className="qa-actions">
+                  <span className="qa-chip muted">
+                    {isZoneRun ? 'Zone Run' : 'District Run'}
+                  </span>
                   <span className={statusChipClass(run.status)}>
                     {run.status.replace(/_/g, ' ')}
                   </span>
@@ -266,6 +288,12 @@ export const MainStoryDistrictRunView = () => {
                   <div className="qa-stat-label">District</div>
                   <div className="qa-stat-value">
                     {district?.name ?? run.districtId}
+                  </div>
+                </div>
+                <div className="qa-stat">
+                  <div className="qa-stat-label">Zone</div>
+                  <div className="qa-stat-value">
+                    {zone?.name ?? run.zoneId ?? 'Any district zone'}
                   </div>
                 </div>
                 <div className="qa-stat">

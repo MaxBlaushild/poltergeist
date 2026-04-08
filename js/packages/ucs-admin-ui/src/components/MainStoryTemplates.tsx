@@ -9,6 +9,7 @@ import {
   QuestArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
+  Zone,
 } from '@poltergeist/types';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import MainStoryTemplateEditor from './MainStoryTemplateEditor.tsx';
@@ -200,7 +201,10 @@ export const MainStoryTemplates = () => {
   const [selectedDistrictByTemplate, setSelectedDistrictByTemplate] = useState<
     Record<string, string>
   >({});
-  const [instantiatingTemplateId, setInstantiatingTemplateId] = useState<
+  const [selectedZoneByTemplate, setSelectedZoneByTemplate] = useState<
+    Record<string, string>
+  >({});
+  const [instantiatingRunKey, setInstantiatingRunKey] = useState<
     string | null
   >(null);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(
@@ -426,6 +430,16 @@ export const MainStoryTemplates = () => {
         });
         return next;
       });
+      setSelectedZoneByTemplate((current) => {
+        const next = { ...current };
+        const fallbackZoneId = districtsResponse[0]?.zones?.[0]?.id ?? '';
+        templatesResponse.forEach((template) => {
+          if (!next[template.id]) {
+            next[template.id] = fallbackZoneId;
+          }
+        });
+        return next;
+      });
     } catch (error) {
       console.error('Failed to load main story templates page', error);
       setPageError(
@@ -484,6 +498,22 @@ export const MainStoryTemplates = () => {
     return () => window.clearInterval(interval);
   }, [loadPage, runs]);
 
+  const resolveSelectedZone = useCallback(
+    (templateId: string, district: District | null | undefined): Zone | null => {
+      const zones = district?.zones ?? [];
+      if (zones.length === 0) {
+        return null;
+      }
+      const selectedZoneId = selectedZoneByTemplate[templateId];
+      return (
+        zones.find((zone) => zone.id === selectedZoneId) ??
+        zones[0] ??
+        null
+      );
+    },
+    [selectedZoneByTemplate]
+  );
+
   const handleInstantiate = async (templateId: string) => {
     const districtId = selectedDistrictByTemplate[templateId];
     if (!districtId) {
@@ -491,7 +521,7 @@ export const MainStoryTemplates = () => {
       return;
     }
 
-    setInstantiatingTemplateId(templateId);
+    setInstantiatingRunKey(`district:${templateId}`);
     setActionError(null);
     try {
       const created = await apiClient.post<MainStoryDistrictRun>(
@@ -514,7 +544,48 @@ export const MainStoryTemplates = () => {
         )
       );
     } finally {
-      setInstantiatingTemplateId(null);
+      setInstantiatingRunKey(null);
+    }
+  };
+
+  const handleInstantiateZone = async (
+    templateId: string,
+    districtId: string,
+    zoneId: string
+  ) => {
+    if (!districtId) {
+      setActionError('Choose a district before instantiating a zone-focused chain.');
+      return;
+    }
+    if (!zoneId) {
+      setActionError('Choose a zone before instantiating a zone-focused chain.');
+      return;
+    }
+
+    setInstantiatingRunKey(`zone:${templateId}`);
+    setActionError(null);
+    try {
+      const created = await apiClient.post<MainStoryDistrictRun>(
+        `/sonar/mainStoryTemplates/${templateId}/zoneRuns`,
+        { districtId, zoneId }
+      );
+      setRuns((current) => [
+        created,
+        ...current.filter((run) => run.id !== created.id),
+      ]);
+      if (created.status === 'failed' && created.errorMessage) {
+        setActionError(created.errorMessage);
+      }
+    } catch (error) {
+      console.error('Failed to instantiate main story zone run', error);
+      setActionError(
+        extractApiErrorMessage(
+          error,
+          'Failed to instantiate that main story into the selected zone.'
+        )
+      );
+    } finally {
+      setInstantiatingRunKey(null);
     }
   };
 
@@ -586,7 +657,7 @@ export const MainStoryTemplates = () => {
   ) => {
     if (templateRuns.length > 0) {
       setActionError(
-        'Clean up this template’s district runs before deleting the template itself.'
+        'Clean up this template’s live runs before deleting the template itself.'
       );
       return;
     }
@@ -649,6 +720,132 @@ export const MainStoryTemplates = () => {
     }
   };
 
+  const renderRunCards = (
+    template: MainStoryTemplate,
+    templateRuns: MainStoryDistrictRun[]
+  ) => {
+    if (templateRuns.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="qa-grid">
+        {templateRuns.map((run) => {
+          const district = districtsById.get(run.districtId);
+          const zone =
+            run.zoneId && district
+              ? district.zones.find((candidate) => candidate.id === run.zoneId) ??
+                null
+              : null;
+          const isZoneRun = Boolean(run.zoneId);
+          return (
+            <div className="qa-node-card" key={run.id}>
+              <div className="qa-card-header">
+                <div>
+                  <div className="qa-node-title">
+                    {zone?.name ??
+                      district?.name ??
+                      (isZoneRun ? 'Unknown zone' : 'Unknown district')}
+                  </div>
+                  <div className="qa-meta">
+                    {[
+                      isZoneRun ? district?.name ?? 'Unknown district' : 'District-wide',
+                      isZoneRun ? 'Zone-focused' : null,
+                      `Started ${formatDate(run.createdAt)}`,
+                      `Updated ${formatDate(run.updatedAt)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
+                  </div>
+                </div>
+                <div className="qa-actions">
+                  <span className="qa-chip muted">
+                    {isZoneRun ? 'Zone Run' : 'District Run'}
+                  </span>
+                  <span className={statusChipClass(run.status)}>
+                    {run.status.replace(/_/g, ' ')}
+                  </span>
+                  <span className="qa-chip muted">
+                    {run.beatRuns?.filter((beat) => beat.status === 'completed')
+                      .length ?? 0}
+                    /{template.beats.length} beats
+                  </span>
+                </div>
+              </div>
+              {run.errorMessage ? (
+                <div className="qa-meta" style={{ color: 'var(--qa-danger)' }}>
+                  {run.errorMessage}
+                </div>
+              ) : null}
+              <div className="qa-actions" style={{ marginTop: 14 }}>
+                {run.status === 'failed' ? (
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-primary"
+                    onClick={() => void handleRetryRun(run)}
+                    disabled={retryingRunId === run.id}
+                  >
+                    {retryingRunId === run.id ? 'Retrying...' : 'Retry Run'}
+                  </button>
+                ) : null}
+                <Link
+                  to={`/main-story-district-runs/${run.id}`}
+                  className="qa-btn qa-btn-outline"
+                >
+                  View Run
+                </Link>
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-danger"
+                  onClick={() => void handleDeleteRun(run)}
+                  disabled={deletingRunId === run.id}
+                >
+                  {deletingRunId === run.id ? 'Cleaning Up...' : 'Clean Up Run'}
+                </button>
+              </div>
+              <div className="qa-tree" style={{ marginTop: 14 }}>
+                {(run.beatRuns || []).map((beatRun) => (
+                  <div className="qa-node" key={`${run.id}-${beatRun.orderIndex}`}>
+                    <div className="qa-node-card">
+                      <div className="qa-card-header">
+                        <div>
+                          <div className="qa-node-title">
+                            Beat {beatRun.orderIndex}: {beatRun.chapterTitle}
+                          </div>
+                          <div className="qa-meta">
+                            {[beatRun.zoneName, beatRun.pointOfInterestName]
+                              .filter(Boolean)
+                              .join(' • ') || 'Placement pending'}
+                          </div>
+                        </div>
+                        <div className="qa-actions">
+                          <span className={statusChipClass(beatRun.status)}>
+                            {beatRun.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                      </div>
+                      {beatRun.questName ? (
+                        <div className="qa-meta">Quest: {beatRun.questName}</div>
+                      ) : null}
+                      {beatRun.errorMessage ? (
+                        <div
+                          className="qa-meta"
+                          style={{ color: 'var(--qa-danger)' }}
+                        >
+                          {beatRun.errorMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="qa-theme">
       <div className="qa-shell">
@@ -657,8 +854,8 @@ export const MainStoryTemplates = () => {
             <div className="qa-kicker">Main Story Templates</div>
             <h1 className="qa-title">Converted Campaign Templates</h1>
             <p className="qa-subtitle">
-              Review converted campaign templates, inspect recent live district
-              runs, and start building district-specific main-story quest
+              Review converted campaign templates, inspect recent live runs,
+              and start building district-wide or zone-focused main-story quest
               chains from reusable story blueprints.
             </p>
           </div>
@@ -690,11 +887,11 @@ export const MainStoryTemplates = () => {
         <section className="qa-card">
           <div className="qa-card-header">
             <div>
-              <h2 className="qa-card-title">Live District Chains</h2>
+              <h2 className="qa-card-title">Live Main Story Runs</h2>
               <div className="qa-meta">
                 First pass: instantiation clones the recurring cast, places
-                questgivers into district POIs, and creates a linked main-story
-                quest chain for the selected district.
+                questgivers into POIs, and creates a linked main-story quest
+                chain for the selected district or pinned zone.
               </div>
             </div>
             <div className="qa-actions">
@@ -720,6 +917,9 @@ export const MainStoryTemplates = () => {
               const selectedDistrictId =
                 selectedDistrictByTemplate[template.id] ?? '';
               const selectedDistrict = districtsById.get(selectedDistrictId);
+              const selectedZone = resolveSelectedZone(template.id, selectedDistrict);
+              const districtRuns = templateRuns.filter((run) => !run.zoneId);
+              const zoneRuns = templateRuns.filter((run) => Boolean(run.zoneId));
               return (
                 <article className="qa-card" key={template.id}>
                   <div className="qa-card-header">
@@ -755,7 +955,7 @@ export const MainStoryTemplates = () => {
                         }
                         title={
                           templateRuns.length > 0
-                            ? 'Clean up all district runs for this template before deleting it.'
+                            ? 'Clean up all live runs for this template before deleting it.'
                             : undefined
                         }
                       >
@@ -840,13 +1040,81 @@ export const MainStoryTemplates = () => {
                         onClick={() => void handleInstantiate(template.id)}
                         disabled={
                           !selectedDistrictId ||
-                          instantiatingTemplateId === template.id
+                          instantiatingRunKey === `district:${template.id}`
                         }
                       >
-                        {instantiatingTemplateId === template.id
+                        {instantiatingRunKey === `district:${template.id}`
                           ? 'Instantiating...'
                           : selectedDistrict
                             ? `Instantiate in ${selectedDistrict.name}`
+                            : 'Instantiate'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="qa-divider" />
+
+                  <div className="qa-card-header">
+                    <div>
+                      <h3 className="qa-card-title" style={{ fontSize: 18 }}>
+                        Instantiate in Zone
+                      </h3>
+                      <div className="qa-meta">
+                        This pins every beat in the chain to one zone.
+                      </div>
+                    </div>
+                    <div className="qa-actions">
+                      <select
+                        value={selectedZone?.id ?? ''}
+                        onChange={(event) =>
+                          setSelectedZoneByTemplate((current) => ({
+                            ...current,
+                            [template.id]: event.target.value,
+                          }))
+                        }
+                        style={{
+                          minWidth: 240,
+                          borderRadius: 999,
+                          padding: '8px 14px',
+                          background: 'rgba(255,255,255,0.08)',
+                          border: '1px solid rgba(255,255,255,0.16)',
+                          color: 'var(--qa-ink)',
+                        }}
+                        disabled={!selectedDistrict || (selectedDistrict.zones?.length ?? 0) === 0}
+                      >
+                        <option value="">
+                          {selectedDistrict
+                            ? selectedDistrict.zones?.length
+                              ? 'Choose a zone'
+                              : 'No zones in district'
+                            : 'Choose a district first'}
+                        </option>
+                        {(selectedDistrict?.zones ?? []).map((zone) => (
+                          <option key={zone.id} value={zone.id}>
+                            {zone.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-primary"
+                        onClick={() =>
+                          void handleInstantiateZone(
+                            template.id,
+                            selectedDistrictId,
+                            selectedZone?.id ?? ''
+                          )
+                        }
+                        disabled={
+                          !selectedDistrictId ||
+                          !selectedZone ||
+                          instantiatingRunKey === `zone:${template.id}`
+                        }
+                      >
+                        {instantiatingRunKey === `zone:${template.id}`
+                          ? 'Instantiating...'
+                          : selectedZone
+                            ? `Instantiate in ${selectedZone.name}`
                             : 'Instantiate'}
                       </button>
                     </div>
@@ -1035,120 +1303,34 @@ export const MainStoryTemplates = () => {
                     </div>
                   </div>
 
-                  {templateRuns.length === 0 ? (
+                  {districtRuns.length === 0 ? (
                     <div className="qa-meta">
                       No district runs yet for this template.
                     </div>
                   ) : (
-                    <div className="qa-grid">
-                      {templateRuns.map((run) => {
-                        const district = districtsById.get(run.districtId);
-                        return (
-                          <div className="qa-node-card" key={run.id}>
-                            <div className="qa-card-header">
-                              <div>
-                                <div className="qa-node-title">
-                                  {district?.name ?? 'Unknown district'}
-                                </div>
-                                <div className="qa-meta">
-                                  Started {formatDate(run.createdAt)} • Updated{' '}
-                                  {formatDate(run.updatedAt)}
-                                </div>
-                              </div>
-                              <div className="qa-actions">
-                                <span className={statusChipClass(run.status)}>
-                                  {run.status.replace(/_/g, ' ')}
-                                </span>
-                                <span className="qa-chip muted">
-                                  {run.beatRuns?.filter(
-                                    (beat) => beat.status === 'completed'
-                                  ).length ?? 0}
-                                  /{template.beats.length} beats
-                                </span>
-                              </div>
-                            </div>
-                            {run.errorMessage ? (
-                              <div className="qa-meta" style={{ color: 'var(--qa-danger)' }}>
-                                {run.errorMessage}
-                              </div>
-                            ) : null}
-                            <div className="qa-actions" style={{ marginTop: 14 }}>
-                              {run.status === 'failed' ? (
-                                <button
-                                  type="button"
-                                  className="qa-btn qa-btn-primary"
-                                  onClick={() => void handleRetryRun(run)}
-                                  disabled={retryingRunId === run.id}
-                                >
-                                  {retryingRunId === run.id
-                                    ? 'Retrying...'
-                                    : 'Retry Run'}
-                                </button>
-                              ) : null}
-                              <Link
-                                to={`/main-story-district-runs/${run.id}`}
-                                className="qa-btn qa-btn-outline"
-                              >
-                                View Run
-                              </Link>
-                              <button
-                                type="button"
-                                className="qa-btn qa-btn-danger"
-                                onClick={() => void handleDeleteRun(run)}
-                                disabled={deletingRunId === run.id}
-                              >
-                                {deletingRunId === run.id
-                                  ? 'Cleaning Up...'
-                                  : 'Clean Up Run'}
-                              </button>
-                            </div>
-                            <div className="qa-tree" style={{ marginTop: 14 }}>
-                              {(run.beatRuns || []).map((beatRun) => (
-                                <div className="qa-node" key={`${run.id}-${beatRun.orderIndex}`}>
-                                  <div className="qa-node-card">
-                                    <div className="qa-card-header">
-                                      <div>
-                                        <div className="qa-node-title">
-                                          Beat {beatRun.orderIndex}:{' '}
-                                          {beatRun.chapterTitle}
-                                        </div>
-                                        <div className="qa-meta">
-                                          {[beatRun.zoneName, beatRun.pointOfInterestName]
-                                            .filter(Boolean)
-                                            .join(' • ') || 'Placement pending'}
-                                        </div>
-                                      </div>
-                                      <div className="qa-actions">
-                                        <span
-                                          className={statusChipClass(
-                                            beatRun.status
-                                          )}
-                                        >
-                                          {beatRun.status.replace(/_/g, ' ')}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    {beatRun.questName ? (
-                                      <div className="qa-meta">
-                                        Quest: {beatRun.questName}
-                                      </div>
-                                    ) : null}
-                                    {beatRun.errorMessage ? (
-                                      <div
-                                        className="qa-meta"
-                                        style={{ color: 'var(--qa-danger)' }}
-                                      >
-                                        {beatRun.errorMessage}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    renderRunCards(template, districtRuns)
+                  )}
+
+                  <div className="qa-divider" />
+
+                  <div className="qa-card-header">
+                    <div>
+                      <h3 className="qa-card-title" style={{ fontSize: 18 }}>
+                        Zone Runs
+                      </h3>
+                      <div className="qa-meta">
+                        Recent attempts to pin every beat from this template to
+                        a single zone.
+                      </div>
                     </div>
+                  </div>
+
+                  {zoneRuns.length === 0 ? (
+                    <div className="qa-meta">
+                      No zone runs yet for this template.
+                    </div>
+                  ) : (
+                    renderRunCards(template, zoneRuns)
                   )}
                 </article>
               );

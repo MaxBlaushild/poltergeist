@@ -503,6 +503,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/mainStoryDistrictRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryDistrictRuns))
 	r.GET("/sonar/mainStoryDistrictRuns/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMainStoryDistrictRun))
 	r.POST("/sonar/mainStoryTemplates/:id/districtRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStoryDistrictRun))
+	r.POST("/sonar/mainStoryTemplates/:id/zoneRuns", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMainStoryZoneRun))
 	r.POST("/sonar/mainStoryDistrictRuns/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryMainStoryDistrictRun))
 	r.DELETE("/sonar/mainStoryDistrictRuns/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMainStoryDistrictRun))
 	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
@@ -2289,6 +2290,10 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
+	if !questVisibleToUser(user.ID, quest) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
 
 	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputationForQuest(ctx, user.ID, quest)
 	if err != nil {
@@ -2415,6 +2420,14 @@ func (s *server) shareQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
+	if !questVisibleToUser(user.ID, quest) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+	if quest.OwnerUserID != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "private quests cannot be shared"})
+		return
+	}
 
 	sharerAcceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
@@ -2525,6 +2538,10 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+	if !questVisibleToUser(user.ID, quest) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
@@ -3788,12 +3805,24 @@ func (s *server) getQuestArchetypes(ctx *gin.Context) {
 }
 
 func (s *server) getQuests(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	quests, err := s.dbClient.Quest().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, quests)
+	visibleQuests := make([]models.Quest, 0, len(quests))
+	for _, quest := range quests {
+		if !questVisibleToUser(user.ID, &quest) {
+			continue
+		}
+		visibleQuests = append(visibleQuests, quest)
+	}
+	ctx.JSON(http.StatusOK, visibleQuests)
 }
 
 func (s *server) getAdminQuests(ctx *gin.Context) {
@@ -3806,6 +3835,11 @@ func (s *server) getAdminQuests(ctx *gin.Context) {
 }
 
 func (s *server) getQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	id := ctx.Param("id")
 	questID, err := uuid.Parse(id)
 	if err != nil {
@@ -3818,6 +3852,10 @@ func (s *server) getQuest(ctx *gin.Context) {
 		return
 	}
 	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+	if !questVisibleToUser(user.ID, quest) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
@@ -13294,6 +13332,9 @@ func (s *server) getCharacters(ctx *gin.Context) {
 	for i := range characters {
 		ch := characters[i]
 		if ch != nil {
+			if !characterVisibleToUser(user.ID, ch) {
+				continue
+			}
 			if err := s.applyStoryWorldChangesToCharacter(ctx, ch, activeStoryFlags); err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -13304,8 +13345,15 @@ func (s *server) getCharacters(ctx *gin.Context) {
 			applyCharacterRelationship(ch, relationshipMap)
 		}
 	}
+	visibleCharacters := make([]*models.Character, 0, len(characters))
+	for _, character := range characters {
+		if character == nil || !characterVisibleToUser(user.ID, character) {
+			continue
+		}
+		visibleCharacters = append(visibleCharacters, character)
+	}
 
-	ctx.JSON(http.StatusOK, characters)
+	ctx.JSON(http.StatusOK, visibleCharacters)
 }
 
 func (s *server) getCharacter(ctx *gin.Context) {
@@ -13329,6 +13377,10 @@ func (s *server) getCharacter(ctx *gin.Context) {
 	}
 
 	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+	if !characterVisibleToUser(user.ID, character) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
@@ -13361,10 +13413,26 @@ func (s *server) getCharacter(ctx *gin.Context) {
 }
 
 func (s *server) getCharacterLocations(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	idStr := ctx.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
+		return
+	}
+
+	character, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if character == nil || !characterVisibleToUser(user.ID, character) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
 

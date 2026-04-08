@@ -257,7 +257,7 @@ func (s *server) deleteMainStoryTemplate(ctx *gin.Context) {
 	if len(runs) > 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf(
-				"clean up the %d district run(s) for this template before deleting it",
+				"clean up the %d live run(s) for this template before deleting it",
 				len(runs),
 			),
 		})

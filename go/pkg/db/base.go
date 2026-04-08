@@ -15,11 +15,36 @@ type baseHandle struct {
 	db *gorm.DB
 }
 
+func (h *baseHandle) hasThumbnailColumn(ctx context.Context) bool {
+	return h.db.WithContext(ctx).Migrator().HasColumn(&models.Base{}, "thumbnail_url")
+}
+
+func (h *baseHandle) queryBase(ctx context.Context) *gorm.DB {
+	query := h.db.WithContext(ctx).Preload("User")
+	if h.hasThumbnailColumn(ctx) {
+		return query
+	}
+	// Some environments missed the thumbnail migration; fall back to the older schema.
+	return query.Select(
+		"id",
+		"created_at",
+		"updated_at",
+		"user_id",
+		"name",
+		"latitude",
+		"longitude",
+		"geometry",
+		"description",
+		"image_url",
+	)
+}
+
 func (h *baseHandle) UpsertForUser(ctx context.Context, userID uuid.UUID, latitude float64, longitude float64) (*models.Base, error) {
+	now := time.Now()
 	base := &models.Base{
 		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: now,
+		UpdatedAt: now,
 		UserID:    userID,
 		Latitude:  latitude,
 		Longitude: longitude,
@@ -28,18 +53,44 @@ func (h *baseHandle) UpsertForUser(ctx context.Context, userID uuid.UUID, latitu
 		return nil, err
 	}
 
-	if err := h.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "user_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"latitude":   latitude,
-				"longitude":  longitude,
-				"geometry":   base.Geometry,
-				"updated_at": time.Now(),
-			}),
-		}).
-		Create(base).Error; err != nil {
-		return nil, err
+	if h.hasThumbnailColumn(ctx) {
+		if err := h.db.WithContext(ctx).
+			Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "user_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"latitude":   latitude,
+					"longitude":  longitude,
+					"geometry":   base.Geometry,
+					"updated_at": now,
+				}),
+			}).
+			Create(base).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		row := map[string]interface{}{
+			"id":         base.ID,
+			"created_at": now,
+			"updated_at": now,
+			"user_id":    userID,
+			"latitude":   latitude,
+			"longitude":  longitude,
+			"geometry":   base.Geometry,
+		}
+		if err := h.db.WithContext(ctx).
+			Table("bases").
+			Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "user_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"latitude":   latitude,
+					"longitude":  longitude,
+					"geometry":   base.Geometry,
+					"updated_at": now,
+				}),
+			}).
+			Create(row).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	base, err := h.FindByUserID(ctx, userID)
@@ -56,8 +107,7 @@ func (h *baseHandle) UpsertForUser(ctx context.Context, userID uuid.UUID, latitu
 
 func (h *baseHandle) FindByUserID(ctx context.Context, userID uuid.UUID) (*models.Base, error) {
 	var base models.Base
-	err := h.db.WithContext(ctx).
-		Preload("User").
+	err := h.queryBase(ctx).
 		Where("user_id = ?", userID).
 		First(&base).Error
 	if err != nil {
@@ -71,8 +121,7 @@ func (h *baseHandle) FindByUserID(ctx context.Context, userID uuid.UUID) (*model
 
 func (h *baseHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Base, error) {
 	var base models.Base
-	err := h.db.WithContext(ctx).
-		Preload("User").
+	err := h.queryBase(ctx).
 		Where("id = ?", id).
 		First(&base).Error
 	if err != nil {
@@ -89,8 +138,7 @@ func (h *baseHandle) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]
 		return []models.Base{}, nil
 	}
 	var bases []models.Base
-	if err := h.db.WithContext(ctx).
-		Preload("User").
+	if err := h.queryBase(ctx).
 		Where("user_id IN ?", userIDs).
 		Order("updated_at DESC").
 		Find(&bases).Error; err != nil {
@@ -101,8 +149,7 @@ func (h *baseHandle) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]
 
 func (h *baseHandle) FindAll(ctx context.Context) ([]models.Base, error) {
 	var bases []models.Base
-	if err := h.db.WithContext(ctx).
-		Preload("User").
+	if err := h.queryBase(ctx).
 		Order("updated_at DESC").
 		Find(&bases).Error; err != nil {
 		return nil, err
@@ -133,6 +180,9 @@ func (h *baseHandle) UpdateFlavor(ctx context.Context, id uuid.UUID, description
 }
 
 func (h *baseHandle) UpdateThumbnailURL(ctx context.Context, id uuid.UUID, thumbnailURL string) error {
+	if !h.hasThumbnailColumn(ctx) {
+		return nil
+	}
 	return h.db.WithContext(ctx).
 		Model(&models.Base{}).
 		Where("id = ?", id).

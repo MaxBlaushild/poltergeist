@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
@@ -29,6 +31,8 @@ List<String> getAllPointsOfInterestIdsForQuest(Quest quest) {
 }
 
 class QuestLogProvider with ChangeNotifier {
+  static const Duration _mutationRefreshTimeout = Duration(seconds: 8);
+
   final QuestLogService _service;
   final ZoneProvider _zone;
   final TagsProvider _tags;
@@ -174,7 +178,7 @@ class QuestLogProvider with ChangeNotifier {
   /// Turn in a completed quest. Returns the response (goldAwarded, itemAwarded).
   Future<Map<String, dynamic>> turnInQuest(String questId) async {
     final resp = await _service.turnInQuest(questId);
-    await refresh();
+    unawaited(_refreshAfterMutation('turnInQuest'));
     return resp;
   }
 
@@ -190,8 +194,16 @@ class QuestLogProvider with ChangeNotifier {
       imageSubmissionUrl: imageSubmissionUrl,
       videoSubmissionUrl: videoSubmissionUrl,
     );
-    await refresh();
+    unawaited(_refreshAfterMutation('submitQuestNode'));
     return resp;
+  }
+
+  Future<void> _refreshAfterMutation(String source) async {
+    try {
+      await refresh().timeout(_mutationRefreshTimeout);
+    } catch (error) {
+      debugPrint('[QuestLogProvider] $source refresh skipped: $error');
+    }
   }
 
   Future<String?> shareQuest(String questId, String targetUserId) async {

@@ -30,39 +30,43 @@ type TutorialSpellReward struct {
 }
 
 type TutorialConfig struct {
-	ID                      int                      `gorm:"primaryKey" json:"id"`
-	CharacterID             *uuid.UUID               `json:"characterId"`
-	Character               *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
-	DialogueJSON            datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	Dialogue                DialogueSequence         `gorm:"-" json:"dialogue"`
-	LoadoutDialogueJSON     datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	LoadoutDialogue         DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
-	PostMonsterDialogueJSON datatypes.JSON           `gorm:"column:post_monster_dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	PostMonsterDialogue     DialogueSequence         `gorm:"-" json:"postMonsterDialogue"`
-	BaseKitDialogueJSON     datatypes.JSON           `gorm:"column:base_kit_dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	BaseKitDialogue         DialogueSequence         `gorm:"-" json:"baseKitDialogue"`
-	PostBaseDialogueJSON    datatypes.JSON           `gorm:"column:post_base_dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	PostBaseDialogue        DialogueSequence         `gorm:"-" json:"postBaseDialogue"`
-	ScenarioPrompt          string                   `json:"scenarioPrompt"`
-	ScenarioImageURL        string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
-	ImageGenerationStatus   string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
-	ImageGenerationError    *string                  `gorm:"column:image_generation_error" json:"imageGenerationError,omitempty"`
-	OptionsJSON             datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
-	Options                 []TutorialScenarioOption `gorm:"-" json:"options"`
-	MonsterEncounterID      *uuid.UUID               `gorm:"column:monster_encounter_id;type:uuid" json:"monsterEncounterId"`
-	MonsterEncounter        *MonsterEncounter        `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
-	MonsterRewardExperience int                      `gorm:"column:monster_reward_experience" json:"monsterRewardExperience"`
-	MonsterRewardGold       int                      `gorm:"column:monster_reward_gold" json:"monsterRewardGold"`
-	MonsterItemRewardsJSON  datatypes.JSON           `gorm:"column:monster_item_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	MonsterItemRewards      []TutorialItemReward     `gorm:"-" json:"monsterItemRewards"`
-	RewardExperience        int                      `gorm:"column:reward_experience" json:"rewardExperience"`
-	RewardGold              int                      `gorm:"column:reward_gold" json:"rewardGold"`
-	ItemRewardsJSON         datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	ItemRewards             []TutorialItemReward     `gorm:"-" json:"itemRewards"`
-	SpellRewardsJSON        datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	SpellRewards            []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
-	CreatedAt               time.Time                `json:"createdAt"`
-	UpdatedAt               time.Time                `json:"updatedAt"`
+	ID                        int                      `gorm:"primaryKey" json:"id"`
+	CharacterID               *uuid.UUID               `json:"characterId"`
+	Character                 *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
+	DialogueJSON              datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	Dialogue                  DialogueSequence         `gorm:"-" json:"dialogue"`
+	LoadoutDialogueJSON       datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	LoadoutDialogue           DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
+	BaseQuestArchetypeID      *uuid.UUID               `json:"baseQuestArchetypeId" gorm:"column:base_quest_archetype_id;type:uuid"`
+	BaseQuestArchetype        *QuestArchetype          `json:"baseQuestArchetype,omitempty" gorm:"foreignKey:BaseQuestArchetypeID"`
+	BaseQuestGiverCharacterID *uuid.UUID               `json:"baseQuestGiverCharacterId" gorm:"column:base_quest_giver_character_id;type:uuid"`
+	BaseQuestGiverCharacter   *Character               `json:"baseQuestGiverCharacter,omitempty" gorm:"foreignKey:BaseQuestGiverCharacterID"`
+	PostMonsterDialogueJSON   datatypes.JSON           `gorm:"column:post_monster_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	PostMonsterDialogue       DialogueSequence         `gorm:"-" json:"postMonsterDialogue"`
+	BaseKitDialogueJSON       datatypes.JSON           `gorm:"column:base_kit_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	BaseKitDialogue           DialogueSequence         `gorm:"-" json:"baseKitDialogue"`
+	PostBaseDialogueJSON      datatypes.JSON           `gorm:"column:post_base_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	PostBaseDialogue          DialogueSequence         `gorm:"-" json:"postBaseDialogue"`
+	ScenarioPrompt            string                   `json:"scenarioPrompt"`
+	ScenarioImageURL          string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
+	ImageGenerationStatus     string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
+	ImageGenerationError      *string                  `gorm:"column:image_generation_error" json:"imageGenerationError,omitempty"`
+	OptionsJSON               datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
+	Options                   []TutorialScenarioOption `gorm:"-" json:"options"`
+	MonsterEncounterID        *uuid.UUID               `gorm:"column:monster_encounter_id;type:uuid" json:"monsterEncounterId"`
+	MonsterEncounter          *MonsterEncounter        `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
+	MonsterRewardExperience   int                      `gorm:"column:monster_reward_experience" json:"monsterRewardExperience"`
+	MonsterRewardGold         int                      `gorm:"column:monster_reward_gold" json:"monsterRewardGold"`
+	MonsterItemRewardsJSON    datatypes.JSON           `gorm:"column:monster_item_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	MonsterItemRewards        []TutorialItemReward     `gorm:"-" json:"monsterItemRewards"`
+	RewardExperience          int                      `gorm:"column:reward_experience" json:"rewardExperience"`
+	RewardGold                int                      `gorm:"column:reward_gold" json:"rewardGold"`
+	ItemRewardsJSON           datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	ItemRewards               []TutorialItemReward     `gorm:"-" json:"itemRewards"`
+	SpellRewardsJSON          datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	SpellRewards              []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
+	CreatedAt                 time.Time                `json:"createdAt"`
+	UpdatedAt                 time.Time                `json:"updatedAt"`
 }
 
 const (

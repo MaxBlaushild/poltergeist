@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/location.dart';
@@ -8,6 +7,9 @@ import '../models/location.dart';
 class ApiClient {
   final Dio _client;
   static const String _tokenKey = 'token';
+  static const Duration _connectTimeout = Duration(seconds: 15);
+  static const Duration _receiveTimeout = Duration(seconds: 45);
+  static const Duration _sendTimeout = Duration(minutes: 2);
   VoidCallback? _onAuthError;
   AppLocation? Function()? _getLocation;
 
@@ -15,9 +17,16 @@ class ApiClient {
     String baseUrl, {
     VoidCallback? onAuthError,
     AppLocation? Function()? getLocation,
-  })  : _client = Dio(BaseOptions(baseUrl: baseUrl)),
-        _onAuthError = onAuthError,
-        _getLocation = getLocation {
+  }) : _client = Dio(
+         BaseOptions(
+           baseUrl: baseUrl,
+           connectTimeout: _connectTimeout,
+           receiveTimeout: _receiveTimeout,
+           sendTimeout: _sendTimeout,
+         ),
+       ),
+       _onAuthError = onAuthError,
+       _getLocation = getLocation {
     _setupInterceptors();
   }
 
@@ -30,46 +39,48 @@ class ApiClient {
   }
 
   void _setupInterceptors() {
-    _client.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString(_tokenKey);
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        final loc = _getLocation?.call();
-        if (loc != null) {
-          options.headers['X-User-Location'] = loc.headerValue;
-        }
-        return handler.next(options);
-      },
-      onResponse: (response, handler) => handler.next(response),
-      onError: (error, handler) async {
-        if (error.response?.statusCode == 401 ||
-            error.response?.statusCode == 403) {
-          final skipAuthError =
-              error.requestOptions.extra['skipAuthError'] == true;
-          if (kDebugMode) {
-            final status = error.response?.statusCode;
-            final method = error.requestOptions.method;
-            final uri = error.requestOptions.uri;
-            final hadAuthHeader =
-                error.requestOptions.headers['Authorization'] != null;
-            debugPrint(
-              'ApiClient auth error: $status $method $uri '
-              '(skipAuthError=$skipAuthError, hadAuthHeader=$hadAuthHeader)',
-            );
-            debugPrint('ApiClient auth error body: ${error.response?.data}');
+    _client.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString(_tokenKey);
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
           }
-          if (!skipAuthError) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove(_tokenKey);
-            _onAuthError?.call();
+          final loc = _getLocation?.call();
+          if (loc != null) {
+            options.headers['X-User-Location'] = loc.headerValue;
           }
-        }
-        return handler.next(error);
-      },
-    ));
+          return handler.next(options);
+        },
+        onResponse: (response, handler) => handler.next(response),
+        onError: (error, handler) async {
+          if (error.response?.statusCode == 401 ||
+              error.response?.statusCode == 403) {
+            final skipAuthError =
+                error.requestOptions.extra['skipAuthError'] == true;
+            if (kDebugMode) {
+              final status = error.response?.statusCode;
+              final method = error.requestOptions.method;
+              final uri = error.requestOptions.uri;
+              final hadAuthHeader =
+                  error.requestOptions.headers['Authorization'] != null;
+              debugPrint(
+                'ApiClient auth error: $status $method $uri '
+                '(skipAuthError=$skipAuthError, hadAuthHeader=$hadAuthHeader)',
+              );
+              debugPrint('ApiClient auth error body: ${error.response?.data}');
+            }
+            if (!skipAuthError) {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove(_tokenKey);
+              _onAuthError?.call();
+            }
+          }
+          return handler.next(error);
+        },
+      ),
+    );
   }
 
   Future<T> get<T>(
@@ -154,7 +165,13 @@ class ApiClient {
 
   /// PUT raw bytes to a URL (e.g. presigned S3). No baseUrl.
   Future<void> putRaw(String url, List<int> body, String contentType) async {
-    await Dio().put<String>(
+    await Dio(
+      BaseOptions(
+        connectTimeout: _connectTimeout,
+        receiveTimeout: _receiveTimeout,
+        sendTimeout: _sendTimeout,
+      ),
+    ).put<String>(
       url,
       data: body,
       options: Options(
