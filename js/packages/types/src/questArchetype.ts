@@ -5,6 +5,11 @@ import { CharacterRelationshipState, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 import { Character } from './character';
 import type { DialogueMessage } from './characterAction';
+import type {
+  ExpositionMaterialReward,
+  ExpositionRewardMode,
+  ExpositionRandomRewardSize,
+} from './exposition';
 
 export interface QuestArchetypeChallenge {
   id: string;
@@ -32,7 +37,17 @@ export interface QuestArchetypeChallengeTemplate {
 export type QuestArchetypeNodeType =
   | 'location'
   | 'monster_encounter'
-  | 'scenario';
+  | 'scenario'
+  | 'exposition';
+
+export interface QuestArchetypeNodeExpositionItemReward {
+  inventoryItemId: number;
+  quantity: number;
+}
+
+export interface QuestArchetypeNodeExpositionSpellReward {
+  spellId: string;
+}
 
 export interface QuestArchetypeItemReward {
   id?: string;
@@ -61,6 +76,16 @@ export interface QuestArchetypeNode {
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
+  expositionTitle?: string | null;
+  expositionDescription?: string | null;
+  expositionDialogue?: DialogueMessage[];
+  expositionRewardMode?: ExpositionRewardMode;
+  expositionRandomRewardSize?: ExpositionRandomRewardSize;
+  expositionRewardExperience?: number | null;
+  expositionRewardGold?: number | null;
+  expositionMaterialRewards?: ExpositionMaterialReward[];
+  expositionItemRewards?: QuestArchetypeNodeExpositionItemReward[];
+  expositionSpellRewards?: QuestArchetypeNodeExpositionSpellReward[];
   challenges: QuestArchetypeChallenge[];
   difficulty?: number | null;
 }

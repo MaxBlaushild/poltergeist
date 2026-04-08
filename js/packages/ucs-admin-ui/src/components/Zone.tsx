@@ -95,12 +95,23 @@ type ChallengeRecord = {
   polygonPoints?: [number, number][] | null;
 };
 
+type ExpositionRecord = {
+  id: string;
+  pointOfInterestId?: string | null;
+  title: string;
+  latitude: number;
+  longitude: number;
+  imageUrl: string;
+  thumbnailUrl: string;
+};
+
 type AdminMapPinKind =
   | 'pointOfInterest'
   | 'character'
   | 'treasureChest'
   | 'healingFountain'
   | 'scenario'
+  | 'exposition'
   | 'monster'
   | 'challenge';
 
@@ -122,6 +133,7 @@ const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
   treasureChest: 'treasure chest',
   healingFountain: 'healing fountain',
   scenario: 'scenario',
+  exposition: 'exposition',
   monster: 'monster encounter',
   challenge: 'challenge',
 };
@@ -134,6 +146,8 @@ const characterMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const scenarioMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
+const expositionMysteryImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/exposition-undiscovered.png';
 const monsterMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
 const healingFountainDiscoveredImageUrl =
@@ -183,6 +197,13 @@ const markerStyleByKind: Record<
     shortLabel: 'SC',
     fullLabel: 'Scenario',
     fallbackImage: scenarioMysteryImageUrl,
+  },
+  exposition: {
+    ring: '#f59e0b',
+    badge: '#b45309',
+    shortLabel: 'EX',
+    fullLabel: 'Exposition',
+    fallbackImage: expositionMysteryImageUrl,
   },
   monster: {
     ring: '#ef4444',
@@ -754,6 +775,7 @@ export const Zone = () => {
     HealingFountainRecord[]
   >([]);
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
+  const [expositions, setExpositions] = useState<ExpositionRecord[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<
     MonsterEncounterRecord[]
   >([]);
@@ -886,6 +908,7 @@ export const Zone = () => {
           fetchedTreasureChests,
           fetchedHealingFountains,
           fetchedScenarios,
+          fetchedExpositions,
           fetchedMonsterEncounters,
           fetchedChallenges,
         ] = await Promise.all([
@@ -899,6 +922,9 @@ export const Zone = () => {
           apiClient.get<ScenarioRecord[]>(
             `/sonar/zones/${resolvedZoneId}/scenarios`
           ),
+          apiClient.get<ExpositionRecord[]>(
+            `/sonar/zones/${resolvedZoneId}/expositions`
+          ),
           apiClient.get<MonsterEncounterRecord[]>(
             `/sonar/zones/${resolvedZoneId}/monster-encounters`
           ),
@@ -911,6 +937,7 @@ export const Zone = () => {
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
         setScenarios(fetchedScenarios);
+        setExpositions(fetchedExpositions);
         setMonsterEncounters(fetchedMonsterEncounters);
         setChallenges(fetchedChallenges);
         setZoneMapPinsError(null);
@@ -921,6 +948,7 @@ export const Zone = () => {
         setTreasureChests([]);
         setHealingFountains([]);
         setScenarios([]);
+        setExpositions([]);
         setMonsterEncounters([]);
         setChallenges([]);
         setZoneMapPinsError(
@@ -1077,6 +1105,12 @@ export const Zone = () => {
             longitude,
           });
           break;
+        case 'exposition':
+          await apiClient.patch(`/sonar/expositions/${pin.entityId}/location`, {
+            latitude,
+            longitude,
+          });
+          break;
         case 'monster':
           await apiClient.patch(
             `/sonar/monster-encounters/${pin.entityId}/location`,
@@ -1188,6 +1222,12 @@ export const Zone = () => {
         case 'scenario':
           await apiClient.delete(`/sonar/scenarios/${pin.entityId}`);
           setScenarios((prev) =>
+            prev.filter((entry) => entry.id !== pin.entityId)
+          );
+          break;
+        case 'exposition':
+          await apiClient.delete(`/sonar/expositions/${pin.entityId}`);
+          setExpositions((prev) =>
             prev.filter((entry) => entry.id !== pin.entityId)
           );
           break;
@@ -1438,6 +1478,27 @@ export const Zone = () => {
         draggable: true,
       }));
 
+    const expositionPins = expositions
+      .filter((exposition) =>
+        isValidCoordinate(exposition.latitude, exposition.longitude)
+      )
+      .map((exposition) => ({
+        id: `exposition:${exposition.id}`,
+        entityId: exposition.id,
+        kind: 'exposition' as const,
+        name: exposition.title || 'Exposition',
+        coordinates: resolveCoordinates(
+          `exposition:${exposition.id}`,
+          exposition.longitude,
+          exposition.latitude
+        ),
+        imageUrl:
+          exposition.thumbnailUrl?.trim() ||
+          exposition.imageUrl?.trim() ||
+          markerStyleByKind.exposition.fallbackImage,
+        draggable: true,
+      }));
+
     const monsterPins = monsterEncounters
       .filter((monster) =>
         isValidCoordinate(monster.latitude, monster.longitude)
@@ -1558,6 +1619,7 @@ export const Zone = () => {
       ...treasureChestPins,
       ...healingFountainPins,
       ...scenarioPins,
+      ...expositionPins,
       ...monsterPins,
       ...challengePins,
     ];
@@ -1567,6 +1629,7 @@ export const Zone = () => {
     treasureChests,
     healingFountains,
     scenarios,
+    expositions,
     monsterEncounters,
     challenges,
     boundaryPoints,
@@ -1882,6 +1945,7 @@ export const Zone = () => {
               ['treasureChest', 'Treasure Chest'],
               ['healingFountain', 'Healing Fountain'],
               ['scenario', 'Scenario'],
+              ['exposition', 'Exposition'],
               ['monster', 'Monster'],
               ['challenge', 'Challenge'],
             ] as Array<[AdminMapPinKind, string]>

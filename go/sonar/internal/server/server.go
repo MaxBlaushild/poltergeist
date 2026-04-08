@@ -55,6 +55,7 @@ const (
 	poiPlaceholderThumbnailKey         = "thumbnails/placeholders/poi-undiscovered.png"
 	poiUndiscoveredIconKey             = "thumbnails/placeholders/poi-undiscovered.png"
 	scenarioUndiscoveredIconKey        = "thumbnails/placeholders/scenario-undiscovered.png"
+	expositionUndiscoveredIconKey      = "thumbnails/placeholders/exposition-undiscovered.png"
 	monsterUndiscoveredIconKey         = "thumbnails/placeholders/monster-undiscovered.png"
 	bossUndiscoveredIconKey            = "thumbnails/placeholders/boss-undiscovered.png"
 	raidUndiscoveredIconKey            = "thumbnails/placeholders/raid-undiscovered.png"
@@ -65,6 +66,7 @@ const (
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
+	expositionUndiscoveredStatusKey    = "admin:thumbnails:exposition-undiscovered:requested-at"
 	monsterUndiscoveredStatusKey       = "admin:thumbnails:monster-undiscovered:requested-at"
 	bossUndiscoveredStatusKey          = "admin:thumbnails:boss-undiscovered:requested-at"
 	raidUndiscoveredStatusKey          = "admin:thumbnails:raid-undiscovered:requested-at"
@@ -75,6 +77,7 @@ const (
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	expositionUndiscoveredIconText     = "A retro 16-bit RPG map marker icon for an exposition encounter. Dialogue scroll sigil with multiple speaking silhouettes, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	monsterUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	bossUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered boss encounter. Hidden crown-horned beast silhouette with elite warning sigil motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	raidUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
@@ -425,6 +428,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/exposition-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateExpositionUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
@@ -435,6 +439,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/exposition-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/:encounterType/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
@@ -444,6 +449,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/exposition-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteExpositionUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
@@ -677,6 +683,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionsForZone))
 	r.POST("/sonar/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createExposition))
 	r.PUT("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateExposition))
+	r.PATCH("/sonar/expositions/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateExpositionLocation))
 	r.POST("/sonar/expositions/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateExpositionImage))
 	r.POST("/sonar/expositions/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performExposition))
 	r.DELETE("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteExposition))
@@ -7459,6 +7466,10 @@ func (s *server) generateScenarioUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, scenarioUndiscoveredIconText, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
 }
 
+func (s *server) generateExpositionUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, expositionUndiscoveredIconText, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+}
+
 func (s *server) generatePoiUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, poiUndiscoveredIconText, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
 }
@@ -7515,6 +7526,10 @@ func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey strin
 
 func (s *server) getScenarioUndiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+}
+
+func (s *server) getExpositionUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
 }
 
 func (s *server) getPoiUndiscoveredIconStatus(ctx *gin.Context) {
@@ -7646,6 +7661,10 @@ func (s *server) deleteStaticThumbnail(ctx *gin.Context, destinationKey string, 
 
 func (s *server) deleteScenarioUndiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+}
+
+func (s *server) deleteExpositionUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
 }
 
 func (s *server) deletePoiUndiscoveredIcon(ctx *gin.Context) {

@@ -243,6 +243,47 @@ func (s *server) updateScenarioLocation(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, updated)
 }
 
+func (s *server) updateExpositionLocation(ctx *gin.Context) {
+	expositionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid exposition ID"})
+		return
+	}
+
+	existing, err := s.dbClient.Exposition().FindByID(ctx, expositionID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "exposition not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "exposition not found"})
+		return
+	}
+
+	latitude, longitude, ok := bindLocationUpdate(ctx)
+	if !ok {
+		return
+	}
+
+	existing.Latitude = latitude
+	existing.Longitude = longitude
+	if err := s.dbClient.Exposition().Update(ctx, expositionID, existing); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update exposition location: " + err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.Exposition().FindByID(ctx, expositionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, updated)
+}
+
 func (s *server) updateChallengeLocation(ctx *gin.Context) {
 	challengeID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {

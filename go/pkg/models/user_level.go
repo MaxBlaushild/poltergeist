@@ -1,7 +1,6 @@
 package models
 
 import (
-	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,8 +8,9 @@ import (
 )
 
 const (
-	BaseExperiencePoints = 100
-	GrowthFactor         = 10
+	BaseExperiencePoints      = 100
+	LinearExperienceGrowth    = 60
+	QuadraticExperienceGrowth = 20
 )
 
 type UserLevel struct {
@@ -35,25 +35,34 @@ func (u *UserLevel) AfterFind(tx *gorm.DB) (err error) {
 }
 
 func (u *UserLevel) AddExperiencePoints(points int) {
+	if points <= 0 {
+		u.ExperienceToNextLevel = u.XPToNextLevel()
+		return
+	}
+
+	u.LevelsGained = 0
 	u.TotalExperiencePoints += points
 	u.ExperiencePointsOnLevel += points
-	extraExperiencePoints := u.ExperiencePointsOnLevel - u.XPToNextLevel()
 
-	if extraExperiencePoints >= 0 {
+	for u.ExperiencePointsOnLevel >= u.XPToNextLevel() {
+		u.ExperiencePointsOnLevel -= u.XPToNextLevel()
 		u.Level++
 		u.LevelsGained++
-		if u.Level != 1 {
-			u.ExperiencePointsOnLevel = extraExperiencePoints
-		} else {
-			u.ExperiencePointsOnLevel = 0
-		}
 	}
+
+	u.ExperienceToNextLevel = u.XPToNextLevel()
 }
 
 func (u *UserLevel) XPToNextLevel() int {
-	if u.Level == 1 {
+	if u.Level <= 1 {
 		return BaseExperiencePoints
 	}
 
-	return BaseExperiencePoints * int(math.Round(math.Log(float64(u.Level+1)))) * GrowthFactor
+	levelOffset := u.Level - 1
+
+	// Quadratic growth keeps early levels brisk while making later levels
+	// meaningfully harder instead of flattening into long plateaus.
+	return BaseExperiencePoints +
+		(levelOffset * LinearExperienceGrowth) +
+		(levelOffset * levelOffset * QuadraticExperienceGrowth)
 }

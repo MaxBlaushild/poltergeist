@@ -35,6 +35,9 @@ interface FlowNodeProps {
   monsterTemplates: MonsterTemplateRecord[];
   scenarioTemplates: ScenarioTemplateRecord[];
   challengeTemplates: ChallengeTemplateRecord[];
+  characters: Character[];
+  inventoryItems: InventoryItem[];
+  spells: Spell[];
   depth: number;
   addChallengeToQuestArchetype: (
     questArchetypeId: string,
@@ -638,6 +641,16 @@ type QuestArchetypeNodeEditorState = {
   monsterTemplateIds: string[];
   targetLevel: number;
   encounterProximityMeters: number;
+  expositionTitle: string;
+  expositionDescription: string;
+  expositionDialogue: DialogueMessage[];
+  expositionRewardMode: RewardMode;
+  expositionRandomRewardSize: RandomRewardSize;
+  expositionRewardExperience: number;
+  expositionRewardGold: number;
+  expositionMaterialRewards: ReturnType<typeof emptyMaterialReward>[];
+  expositionItemRewards: Array<{ inventoryItemId: string; quantity: number }>;
+  expositionSpellRewards: Array<{ spellId: string }>;
 };
 
 const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
@@ -648,6 +661,16 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   monsterTemplateIds: [],
   targetLevel: 1,
   encounterProximityMeters: 100,
+  expositionTitle: '',
+  expositionDescription: '',
+  expositionDialogue: [],
+  expositionRewardMode: 'random',
+  expositionRandomRewardSize: 'small',
+  expositionRewardExperience: 0,
+  expositionRewardGold: 0,
+  expositionMaterialRewards: [],
+  expositionItemRewards: [],
+  expositionSpellRewards: [],
 });
 
 const buildNodeEditorState = (
@@ -659,6 +682,8 @@ const buildNodeEditorState = (
       ? 'monster_encounter'
       : node.nodeType === 'scenario'
         ? 'scenario'
+        : node.nodeType === 'exposition'
+          ? 'exposition'
         : 'location',
   scenarioTemplateId: node.scenarioTemplateId ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
@@ -668,6 +693,32 @@ const buildNodeEditorState = (
   monsterTemplateIds: [...(node.monsterTemplateIds ?? [])],
   targetLevel: node.targetLevel ?? 1,
   encounterProximityMeters: node.encounterProximityMeters ?? 100,
+  expositionTitle: node.expositionTitle ?? '',
+  expositionDescription: node.expositionDescription ?? '',
+  expositionDialogue: node.expositionDialogue ?? [],
+  expositionRewardMode:
+    node.expositionRewardMode === 'explicit' ? 'explicit' : 'random',
+  expositionRandomRewardSize:
+    node.expositionRandomRewardSize === 'medium' ||
+    node.expositionRandomRewardSize === 'large'
+      ? node.expositionRandomRewardSize
+      : 'small',
+  expositionRewardExperience: node.expositionRewardExperience ?? 0,
+  expositionRewardGold: node.expositionRewardGold ?? 0,
+  expositionMaterialRewards: (node.expositionMaterialRewards ?? []).map(
+    (reward) => ({
+      resourceKey: reward.resourceKey,
+      amount: reward.amount,
+    })
+  ),
+  expositionItemRewards: (node.expositionItemRewards ?? []).map((reward) => ({
+    inventoryItemId:
+      reward.inventoryItemId != null ? String(reward.inventoryItemId) : '',
+    quantity: reward.quantity ?? 1,
+  })),
+  expositionSpellRewards: (node.expositionSpellRewards ?? []).map((reward) => ({
+    spellId: reward.spellId ?? '',
+  })),
 });
 
 const buildNodeDraft = (
@@ -689,8 +740,66 @@ const buildNodeDraft = (
       ? Number(state.targetLevel) || 1
       : undefined,
   encounterProximityMeters:
-    state.nodeType === 'monster_encounter' || state.nodeType === 'scenario'
+    state.nodeType === 'monster_encounter' ||
+    state.nodeType === 'scenario' ||
+    state.nodeType === 'exposition'
       ? Number(state.encounterProximityMeters) || 0
+      : undefined,
+  expositionTitle:
+    state.nodeType === 'exposition' ? state.expositionTitle.trim() : undefined,
+  expositionDescription:
+    state.nodeType === 'exposition'
+      ? state.expositionDescription.trim()
+      : undefined,
+  expositionDialogue:
+    state.nodeType === 'exposition'
+      ? state.expositionDialogue.map((message, index) => ({
+          speaker: message.speaker === 'user' ? 'user' : 'character',
+          text: (message.text ?? '').trim(),
+          order: index,
+          effect: normalizeDialogueEffect(message.effect),
+          characterId:
+            message.speaker === 'user'
+              ? undefined
+              : message.characterId?.trim() || undefined,
+        }))
+      : undefined,
+  expositionRewardMode:
+    state.nodeType === 'exposition' ? state.expositionRewardMode : undefined,
+  expositionRandomRewardSize:
+    state.nodeType === 'exposition'
+      ? state.expositionRandomRewardSize
+      : undefined,
+  expositionRewardExperience:
+    state.nodeType === 'exposition'
+      ? Number(state.expositionRewardExperience) || 0
+      : undefined,
+  expositionRewardGold:
+    state.nodeType === 'exposition'
+      ? Number(state.expositionRewardGold) || 0
+      : undefined,
+  expositionMaterialRewards:
+    state.nodeType === 'exposition'
+      ? normalizeMaterialRewards(state.expositionMaterialRewards)
+      : undefined,
+  expositionItemRewards:
+    state.nodeType === 'exposition'
+      ? state.expositionItemRewards
+          .map((reward) => ({
+            inventoryItemId: Number(reward.inventoryItemId) || 0,
+            quantity: Number(reward.quantity) || 0,
+          }))
+          .filter(
+            (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
+          )
+      : undefined,
+  expositionSpellRewards:
+    state.nodeType === 'exposition'
+      ? state.expositionSpellRewards
+          .map((reward) => ({
+            spellId: reward.spellId.trim(),
+          }))
+          .filter((reward) => reward.spellId.length > 0)
       : undefined,
 });
 
@@ -737,9 +846,603 @@ const describeQuestArchetypeNode = (
       ? `${encounterLabel} @ ${locationLabel}`
       : encounterLabel;
   }
+  if (node.nodeType === 'exposition') {
+    const expositionLabel = node.expositionTitle?.trim() || 'Exposition';
+    const locationLabel = locationArchetypes.find(
+      (entry) => entry.id === node.locationArchetypeId
+    )?.name;
+    return locationLabel
+      ? `${expositionLabel} @ ${locationLabel}`
+      : expositionLabel;
+  }
   return (
     locationArchetypes.find((la) => la.id === node.locationArchetypeId)?.name ??
     'Unknown location'
+  );
+};
+
+type QuestArchetypeNodeConfigFieldsProps = {
+  editor: QuestArchetypeNodeEditorState;
+  setEditor: React.Dispatch<
+    React.SetStateAction<QuestArchetypeNodeEditorState>
+  >;
+  prefix: string;
+  locationArchetypes: LocationArchetype[];
+  monsterTemplates: MonsterTemplateRecord[];
+  scenarioTemplates: ScenarioTemplateRecord[];
+  characters: Character[];
+  inventoryItems: InventoryItem[];
+  spells: Spell[];
+};
+
+const QuestArchetypeNodeConfigFields: React.FC<
+  QuestArchetypeNodeConfigFieldsProps
+> = ({
+  editor,
+  setEditor,
+  prefix,
+  locationArchetypes,
+  monsterTemplates,
+  scenarioTemplates,
+  characters,
+  inventoryItems,
+  spells,
+}) => {
+  const filteredLocationArchetypes = locationArchetypes
+    .filter((archetype) =>
+      archetype.name
+        .toLowerCase()
+        .includes(editor.locationArchetypeQuery.trim().toLowerCase())
+    )
+    .slice(0, 8);
+  const characterOptions = characters.map((character) => ({
+    value: character.id,
+    label: character.name || character.id,
+  }));
+
+  const renderLocationSelector = (
+    label: string,
+    helperText?: string,
+    required = false
+  ) => (
+    <div className="qa-field">
+      <div className="qa-label">{label}</div>
+      {helperText ? <div className="qa-helper">{helperText}</div> : null}
+      <div className="qa-combobox">
+        <input
+          type="text"
+          className="qa-input"
+          value={editor.locationArchetypeQuery}
+          onChange={(e) => {
+            const value = e.target.value;
+            const matched = locationArchetypes.find(
+              (archetype) =>
+                archetype.name.toLowerCase() === value.trim().toLowerCase()
+            );
+            setEditor((prev) => ({
+              ...prev,
+              locationArchetypeQuery: value,
+              locationArchetypeId: matched ? matched.id : '',
+            }));
+          }}
+          placeholder="Search location archetypes..."
+        />
+        {editor.locationArchetypeQuery.trim().length > 0 && (
+          <div className="qa-combobox-list">
+            {filteredLocationArchetypes.length === 0 ? (
+              <div className="qa-combobox-empty">No matches.</div>
+            ) : (
+              filteredLocationArchetypes.map((archetype) => (
+                <button
+                  key={`${prefix}-${label}-${archetype.id}`}
+                  type="button"
+                  className="qa-combobox-option"
+                  onClick={() =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      locationArchetypeId: archetype.id,
+                      locationArchetypeQuery: archetype.name,
+                    }))
+                  }
+                >
+                  {archetype.name}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      {!required ? (
+        <button
+          type="button"
+          className="qa-btn qa-btn-ghost"
+          style={{ marginTop: 8, alignSelf: 'flex-start' }}
+          onClick={() =>
+            setEditor((prev) => ({
+              ...prev,
+              locationArchetypeId: '',
+              locationArchetypeQuery: '',
+            }))
+          }
+        >
+          Clear Anchor
+        </button>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="qa-field">
+        <div className="qa-label">{prefix} Node Type</div>
+        <select
+          className="qa-select"
+          value={editor.nodeType}
+          onChange={(e) =>
+            setEditor((prev) => ({
+              ...prev,
+              nodeType: e.target.value as QuestArchetypeNodeType,
+            }))
+          }
+        >
+          <option value="location">Location</option>
+          <option value="scenario">Scenario</option>
+          <option value="monster_encounter">Monster Encounter</option>
+          <option value="exposition">Exposition</option>
+        </select>
+      </div>
+      {editor.nodeType === 'location' ? (
+        renderLocationSelector(`${prefix} Location Archetype`, undefined, true)
+      ) : editor.nodeType === 'scenario' ? (
+        <>
+          {renderLocationSelector(
+            `${prefix} Anchor Location Archetype`,
+            'Optional. Leave blank to place this scenario at generated coordinates near the previous node.'
+          )}
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Scenario Template</div>
+            <select
+              className="qa-select"
+              value={editor.scenarioTemplateId}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  scenarioTemplateId: e.target.value,
+                }))
+              }
+            >
+              <option value="">Select a scenario template</option>
+              {scenarioTemplates.map((template) => (
+                <option
+                  key={`${prefix}-scenario-${template.id}`}
+                  value={template.id}
+                >
+                  {template.prompt}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">
+              {prefix} Proximity To Previous Node (m)
+            </div>
+            <input
+              type="number"
+              min={0}
+              className="qa-input"
+              value={editor.encounterProximityMeters}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  encounterProximityMeters: parseInt(e.target.value) || 0,
+                }))
+              }
+            />
+          </div>
+        </>
+      ) : editor.nodeType === 'monster_encounter' ? (
+        <>
+          {renderLocationSelector(
+            `${prefix} Anchor Location Archetype`,
+            'Optional. Leave blank to place this encounter at generated coordinates near the previous node.'
+          )}
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Monster Templates</div>
+            <select
+              className="qa-select"
+              multiple
+              size={6}
+              value={editor.monsterTemplateIds}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  monsterTemplateIds: Array.from(e.target.selectedOptions).map(
+                    (option) => option.value
+                  ),
+                }))
+              }
+            >
+              {monsterTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                  {template.monsterType ? ` (${template.monsterType})` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="qa-helper">
+              Hold Command or Ctrl to select multiple monster templates.
+            </div>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Monster Level</div>
+            <div className="qa-helper">
+              Monster encounter target level is configured on the quest
+              template, not per child node.
+            </div>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">
+              {prefix} Proximity To Previous Node (m)
+            </div>
+            <input
+              type="number"
+              min={0}
+              className="qa-input"
+              value={editor.encounterProximityMeters}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  encounterProximityMeters: parseInt(e.target.value) || 0,
+                }))
+              }
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          {renderLocationSelector(
+            `${prefix} Anchor Location Archetype`,
+            'Optional. Leave blank to place this exposition at generated coordinates near the previous node.'
+          )}
+          <div className="qa-field">
+            <div className="qa-label">
+              {prefix} Proximity To Previous Node (m)
+            </div>
+            <input
+              type="number"
+              min={0}
+              className="qa-input"
+              value={editor.encounterProximityMeters}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  encounterProximityMeters: parseInt(e.target.value) || 0,
+                }))
+              }
+            />
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Exposition Title</div>
+            <input
+              type="text"
+              className="qa-input"
+              value={editor.expositionTitle}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  expositionTitle: e.target.value,
+                }))
+              }
+              placeholder="Whispers Beneath the Overpass"
+            />
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">{prefix} Exposition Description</div>
+            <textarea
+              className="qa-textarea"
+              rows={3}
+              value={editor.expositionDescription}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  expositionDescription: e.target.value,
+                }))
+              }
+              placeholder="Optional internal summary for the scene."
+            />
+          </div>
+          <div className="qa-field">
+            <DialogueMessageListEditor
+              label={`${prefix} Dialogue`}
+              helperText="Every line in an exposition needs a speaking character."
+              value={editor.expositionDialogue}
+              onChange={(value) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  expositionDialogue: value,
+                }))
+              }
+              characterOptions={characterOptions}
+              requireCharacterSelection
+            />
+          </div>
+          <div className="qa-grid qa-grid-2">
+            <div className="qa-field">
+              <div className="qa-label">{prefix} Reward Mode</div>
+              <select
+                className="qa-select"
+                value={editor.expositionRewardMode}
+                onChange={(e) =>
+                  setEditor((prev) => ({
+                    ...prev,
+                    expositionRewardMode:
+                      e.target.value === 'explicit' ? 'explicit' : 'random',
+                  }))
+                }
+              >
+                <option value="random">Random Reward</option>
+                <option value="explicit">Explicit Reward</option>
+              </select>
+            </div>
+            {editor.expositionRewardMode === 'random' ? (
+              <div className="qa-field">
+                <div className="qa-label">{prefix} Random Reward Size</div>
+                <select
+                  className="qa-select"
+                  value={editor.expositionRandomRewardSize}
+                  onChange={(e) =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      expositionRandomRewardSize:
+                        e.target.value === 'large'
+                          ? 'large'
+                          : e.target.value === 'medium'
+                            ? 'medium'
+                            : 'small',
+                    }))
+                  }
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+            ) : null}
+          </div>
+          {editor.expositionRewardMode === 'explicit' ? (
+            <>
+              <div className="qa-grid qa-grid-2">
+                <div className="qa-field">
+                  <div className="qa-label">{prefix} Reward Experience</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className="qa-input"
+                    value={editor.expositionRewardExperience}
+                    onChange={(e) =>
+                      setEditor((prev) => ({
+                        ...prev,
+                        expositionRewardExperience:
+                          parseInt(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="qa-field">
+                  <div className="qa-label">{prefix} Reward Gold</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className="qa-input"
+                    value={editor.expositionRewardGold}
+                    onChange={(e) =>
+                      setEditor((prev) => ({
+                        ...prev,
+                        expositionRewardGold: parseInt(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">{prefix} Material Rewards</div>
+                <MaterialRewardsEditor
+                  value={editor.expositionMaterialRewards}
+                  onChange={(rewards) =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      expositionMaterialRewards: rewards,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">{prefix} Item Rewards</div>
+                {editor.expositionItemRewards.length === 0 ? (
+                  <div className="qa-empty">
+                    No item rewards configured for this exposition.
+                  </div>
+                ) : (
+                  <div className="qa-stack">
+                    {editor.expositionItemRewards.map((reward, index) => (
+                      <div
+                        key={`${prefix}-exposition-item-${index}`}
+                        className="qa-inline"
+                        style={{ alignItems: 'flex-end' }}
+                      >
+                        <label className="qa-field" style={{ flex: 1 }}>
+                          <div className="qa-label">Inventory Item</div>
+                          <select
+                            className="qa-select"
+                            value={reward.inventoryItemId}
+                            onChange={(e) =>
+                              setEditor((prev) => ({
+                                ...prev,
+                                expositionItemRewards:
+                                  prev.expositionItemRewards.map(
+                                    (entry, entryIndex) =>
+                                      entryIndex === index
+                                        ? {
+                                            ...entry,
+                                            inventoryItemId: e.target.value,
+                                          }
+                                        : entry
+                                  ),
+                              }))
+                            }
+                          >
+                            <option value="">Select an item</option>
+                            {inventoryItems.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name || item.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="qa-field" style={{ width: 120 }}>
+                          <div className="qa-label">Quantity</div>
+                          <input
+                            type="number"
+                            min={1}
+                            className="qa-input"
+                            value={reward.quantity}
+                            onChange={(e) =>
+                              setEditor((prev) => ({
+                                ...prev,
+                                expositionItemRewards:
+                                  prev.expositionItemRewards.map(
+                                    (entry, entryIndex) =>
+                                      entryIndex === index
+                                        ? {
+                                            ...entry,
+                                            quantity: parseInt(e.target.value) || 1,
+                                          }
+                                        : entry
+                                  ),
+                              }))
+                            }
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-ghost"
+                          onClick={() =>
+                            setEditor((prev) => ({
+                              ...prev,
+                              expositionItemRewards:
+                                prev.expositionItemRewards.filter(
+                                  (_, entryIndex) => entryIndex !== index
+                                ),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-outline"
+                  style={{ marginTop: 12 }}
+                  onClick={() =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      expositionItemRewards: [
+                        ...prev.expositionItemRewards,
+                        { inventoryItemId: '', quantity: 1 },
+                      ],
+                    }))
+                  }
+                >
+                  Add Item Reward
+                </button>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">{prefix} Spell Rewards</div>
+                {editor.expositionSpellRewards.length === 0 ? (
+                  <div className="qa-empty">
+                    No spell rewards configured for this exposition.
+                  </div>
+                ) : (
+                  <div className="qa-stack">
+                    {editor.expositionSpellRewards.map((reward, index) => (
+                      <div
+                        key={`${prefix}-exposition-spell-${index}`}
+                        className="qa-inline"
+                        style={{ alignItems: 'flex-end' }}
+                      >
+                        <label className="qa-field" style={{ flex: 1 }}>
+                          <div className="qa-label">Spell</div>
+                          <select
+                            className="qa-select"
+                            value={reward.spellId}
+                            onChange={(e) =>
+                              setEditor((prev) => ({
+                                ...prev,
+                                expositionSpellRewards:
+                                  prev.expositionSpellRewards.map(
+                                    (entry, entryIndex) =>
+                                      entryIndex === index
+                                        ? {
+                                            ...entry,
+                                            spellId: e.target.value,
+                                          }
+                                        : entry
+                                  ),
+                              }))
+                            }
+                          >
+                            <option value="">Select a spell</option>
+                            {spells.map((spell) => (
+                              <option key={spell.id} value={spell.id}>
+                                {spell.name || spell.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-ghost"
+                          onClick={() =>
+                            setEditor((prev) => ({
+                              ...prev,
+                              expositionSpellRewards:
+                                prev.expositionSpellRewards.filter(
+                                  (_, entryIndex) => entryIndex !== index
+                                ),
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-outline"
+                  style={{ marginTop: 12 }}
+                  onClick={() =>
+                    setEditor((prev) => ({
+                      ...prev,
+                      expositionSpellRewards: [
+                        ...prev.expositionSpellRewards,
+                        { spellId: '' },
+                      ],
+                    }))
+                  }
+                >
+                  Add Spell Reward
+                </button>
+              </div>
+            </>
+          ) : null}
+        </>
+      )}
+    </>
   );
 };
 
@@ -749,6 +1452,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   monsterTemplates,
   scenarioTemplates,
   challengeTemplates,
+  characters,
+  inventoryItems,
+  spells,
   depth,
   addChallengeToQuestArchetype,
   onSaveNode,
@@ -764,7 +1470,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   );
   const isEncounterNode = node.nodeType === 'monster_encounter';
   const isScenarioNode = node.nodeType === 'scenario';
-  const isBranchOnlyNode = isEncounterNode || isScenarioNode;
+  const isExpositionNode = node.nodeType === 'exposition';
+  const isBranchOnlyNode =
+    isEncounterNode || isScenarioNode || isExpositionNode;
   const [isAdding, setIsAdding] = useState(false);
   const [challengeProficiency, setChallengeProficiency] = useState<string>('');
   const [challengeTemplateId, setChallengeTemplateId] = useState<string>('');
@@ -784,191 +1492,6 @@ const FlowNode: React.FC<FlowNodeProps> = ({
     challengeTemplates,
     node.locationArchetypeId
   );
-
-  const renderNodeConfigFields = (
-    editor: QuestArchetypeNodeEditorState,
-    setEditor: React.Dispatch<
-      React.SetStateAction<QuestArchetypeNodeEditorState>
-    >,
-    prefix: string
-  ) => {
-    const filteredLocationArchetypes = locationArchetypes
-      .filter((archetype) =>
-        archetype.name
-          .toLowerCase()
-          .includes(editor.locationArchetypeQuery.trim().toLowerCase())
-      )
-      .slice(0, 8);
-
-    return (
-      <>
-        <div className="qa-field">
-          <div className="qa-label">{prefix} Node Type</div>
-          <select
-            className="qa-select"
-            value={editor.nodeType}
-            onChange={(e) =>
-              setEditor((prev) => ({
-                ...prev,
-                nodeType: e.target.value as QuestArchetypeNodeType,
-              }))
-            }
-          >
-            <option value="location">Location</option>
-            <option value="scenario">Scenario</option>
-            <option value="monster_encounter">Monster Encounter</option>
-          </select>
-        </div>
-        {editor.nodeType === 'location' ? (
-          <div className="qa-field">
-            <div className="qa-label">{prefix} Location Archetype</div>
-            <div className="qa-combobox">
-              <input
-                type="text"
-                className="qa-input"
-                value={editor.locationArchetypeQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  const matched = locationArchetypes.find(
-                    (archetype) =>
-                      archetype.name.toLowerCase() ===
-                      value.trim().toLowerCase()
-                  );
-                  setEditor((prev) => ({
-                    ...prev,
-                    locationArchetypeQuery: value,
-                    locationArchetypeId: matched ? matched.id : '',
-                  }));
-                }}
-                placeholder="Search location archetypes..."
-              />
-              {editor.locationArchetypeQuery.trim().length > 0 && (
-                <div className="qa-combobox-list">
-                  {filteredLocationArchetypes.length === 0 ? (
-                    <div className="qa-combobox-empty">No matches.</div>
-                  ) : (
-                    filteredLocationArchetypes.map((archetype) => (
-                      <button
-                        key={`${prefix}-${archetype.id}`}
-                        type="button"
-                        className="qa-combobox-option"
-                        onClick={() =>
-                          setEditor((prev) => ({
-                            ...prev,
-                            locationArchetypeId: archetype.id,
-                            locationArchetypeQuery: archetype.name,
-                          }))
-                        }
-                      >
-                        {archetype.name}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : editor.nodeType === 'scenario' ? (
-          <>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Scenario Template</div>
-              <select
-                className="qa-select"
-                value={editor.scenarioTemplateId}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    scenarioTemplateId: e.target.value,
-                  }))
-                }
-              >
-                <option value="">Select a scenario template</option>
-                {scenarioTemplates.map((template) => (
-                  <option
-                    key={`${prefix}-scenario-${template.id}`}
-                    value={template.id}
-                  >
-                    {template.prompt}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">
-                {prefix} Proximity To Previous Node (m)
-              </div>
-              <input
-                type="number"
-                min={0}
-                className="qa-input"
-                value={editor.encounterProximityMeters}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    encounterProximityMeters: parseInt(e.target.value) || 0,
-                  }))
-                }
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Monster Templates</div>
-              <select
-                className="qa-select"
-                multiple
-                size={6}
-                value={editor.monsterTemplateIds}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    monsterTemplateIds: Array.from(
-                      e.target.selectedOptions
-                    ).map((option) => option.value),
-                  }))
-                }
-              >
-                {monsterTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                    {template.monsterType ? ` (${template.monsterType})` : ''}
-                  </option>
-                ))}
-              </select>
-              <div className="qa-helper">
-                Hold Command or Ctrl to select multiple monster templates.
-              </div>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Monster Level</div>
-              <div className="qa-helper">
-                Monster encounter target level is configured on the quest
-                template, not per child node.
-              </div>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">
-                {prefix} Proximity To Previous Node (m)
-              </div>
-              <input
-                type="number"
-                min={0}
-                className="qa-input"
-                value={editor.encounterProximityMeters}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    encounterProximityMeters: parseInt(e.target.value) || 0,
-                  }))
-                }
-              />
-            </div>
-          </>
-        )}
-      </>
-    );
-  };
 
   return (
     <div className="qa-flow-node" style={{ borderColor }}>
@@ -992,7 +1515,17 @@ const FlowNode: React.FC<FlowNodeProps> = ({
           </button>
         </div>
         <div className="qa-flow-form" style={{ marginTop: 12 }}>
-          {renderNodeConfigFields(nodeEditor, setNodeEditor, 'Current')}
+          <QuestArchetypeNodeConfigFields
+            editor={nodeEditor}
+            setEditor={setNodeEditor}
+            prefix="Current"
+            locationArchetypes={locationArchetypes}
+            monsterTemplates={monsterTemplates}
+            scenarioTemplates={scenarioTemplates}
+            characters={characters}
+            inventoryItems={inventoryItems}
+            spells={spells}
+          />
           <div className="qa-flow-form-actions">
             <button
               className="qa-btn qa-btn-outline"
@@ -1053,7 +1586,19 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               </label>
             </div>
             {childEnabled &&
-              renderNodeConfigFields(childEditor, setChildEditor, 'Child')}
+              (
+                <QuestArchetypeNodeConfigFields
+                  editor={childEditor}
+                  setEditor={setChildEditor}
+                  prefix="Child"
+                  locationArchetypes={locationArchetypes}
+                  monsterTemplates={monsterTemplates}
+                  scenarioTemplates={scenarioTemplates}
+                  characters={characters}
+                  inventoryItems={inventoryItems}
+                  spells={spells}
+                />
+              )}
             <div className="qa-flow-form-actions">
               <button
                 className="qa-btn qa-btn-outline"
@@ -1146,6 +1691,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                         monsterTemplates={monsterTemplates}
                         scenarioTemplates={scenarioTemplates}
                         challengeTemplates={challengeTemplates}
+                        characters={characters}
+                        inventoryItems={inventoryItems}
+                        spells={spells}
                         depth={depth + 1}
                         addChallengeToQuestArchetype={
                           addChallengeToQuestArchetype
@@ -1337,6 +1885,8 @@ const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
       return 'Monster';
     case 'scenario':
       return 'Scenario';
+    case 'exposition':
+      return 'Exposition';
     default:
       return 'Location';
   }
@@ -1353,6 +1903,9 @@ interface QuestNodeInspectorProps {
   monsterTemplates: MonsterTemplateRecord[];
   scenarioTemplates: ScenarioTemplateRecord[];
   challengeTemplates: ChallengeTemplateRecord[];
+  characters: Character[];
+  inventoryItems: InventoryItem[];
+  spells: Spell[];
   addChallengeToQuestArchetype: (
     questArchetypeId: string,
     proficiency?: string | null,
@@ -1382,6 +1935,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   monsterTemplates,
   scenarioTemplates,
   challengeTemplates,
+  characters,
+  inventoryItems,
+  spells,
   addChallengeToQuestArchetype,
   onSaveNode,
   onEditChallenge,
@@ -1398,7 +1954,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   );
   const isEncounterNode = node.nodeType === 'monster_encounter';
   const isScenarioNode = node.nodeType === 'scenario';
-  const isBranchOnlyNode = isEncounterNode || isScenarioNode;
+  const isExpositionNode = node.nodeType === 'exposition';
+  const isBranchOnlyNode =
+    isEncounterNode || isScenarioNode || isExpositionNode;
   const [isAdding, setIsAdding] = useState(false);
   const [challengeProficiency, setChallengeProficiency] = useState<string>('');
   const [challengeTemplateId, setChallengeTemplateId] = useState<string>('');
@@ -1429,191 +1987,6 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   const selectedMonsterTemplates = monsterTemplates.filter((template) =>
     nodeEditor.monsterTemplateIds.includes(template.id)
   );
-
-  const renderNodeConfigFields = (
-    editor: QuestArchetypeNodeEditorState,
-    setEditor: React.Dispatch<
-      React.SetStateAction<QuestArchetypeNodeEditorState>
-    >,
-    prefix: string
-  ) => {
-    const filteredLocationArchetypes = locationArchetypes
-      .filter((archetype) =>
-        archetype.name
-          .toLowerCase()
-          .includes(editor.locationArchetypeQuery.trim().toLowerCase())
-      )
-      .slice(0, 8);
-
-    return (
-      <>
-        <div className="qa-field">
-          <div className="qa-label">{prefix} Node Type</div>
-          <select
-            className="qa-select"
-            value={editor.nodeType}
-            onChange={(e) =>
-              setEditor((prev) => ({
-                ...prev,
-                nodeType: e.target.value as QuestArchetypeNodeType,
-              }))
-            }
-          >
-            <option value="location">Location</option>
-            <option value="scenario">Scenario</option>
-            <option value="monster_encounter">Monster Encounter</option>
-          </select>
-        </div>
-        {editor.nodeType === 'location' ? (
-          <div className="qa-field">
-            <div className="qa-label">{prefix} Location Archetype</div>
-            <div className="qa-combobox">
-              <input
-                type="text"
-                className="qa-input"
-                value={editor.locationArchetypeQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  const matched = locationArchetypes.find(
-                    (archetype) =>
-                      archetype.name.toLowerCase() ===
-                      value.trim().toLowerCase()
-                  );
-                  setEditor((prev) => ({
-                    ...prev,
-                    locationArchetypeQuery: value,
-                    locationArchetypeId: matched ? matched.id : '',
-                  }));
-                }}
-                placeholder="Search location archetypes..."
-              />
-              {editor.locationArchetypeQuery.trim().length > 0 && (
-                <div className="qa-combobox-list">
-                  {filteredLocationArchetypes.length === 0 ? (
-                    <div className="qa-combobox-empty">No matches.</div>
-                  ) : (
-                    filteredLocationArchetypes.map((archetype) => (
-                      <button
-                        key={`${prefix}-${archetype.id}`}
-                        type="button"
-                        className="qa-combobox-option"
-                        onClick={() =>
-                          setEditor((prev) => ({
-                            ...prev,
-                            locationArchetypeId: archetype.id,
-                            locationArchetypeQuery: archetype.name,
-                          }))
-                        }
-                      >
-                        {archetype.name}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : editor.nodeType === 'scenario' ? (
-          <>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Scenario Template</div>
-              <select
-                className="qa-select"
-                value={editor.scenarioTemplateId}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    scenarioTemplateId: e.target.value,
-                  }))
-                }
-              >
-                <option value="">Select a scenario template</option>
-                {scenarioTemplates.map((template) => (
-                  <option
-                    key={`${prefix}-scenario-${template.id}`}
-                    value={template.id}
-                  >
-                    {template.prompt}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">
-                {prefix} Proximity To Previous Node (m)
-              </div>
-              <input
-                type="number"
-                min={0}
-                className="qa-input"
-                value={editor.encounterProximityMeters}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    encounterProximityMeters: parseInt(e.target.value) || 0,
-                  }))
-                }
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Monster Templates</div>
-              <select
-                className="qa-select"
-                multiple
-                size={6}
-                value={editor.monsterTemplateIds}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    monsterTemplateIds: Array.from(
-                      e.target.selectedOptions
-                    ).map((option) => option.value),
-                  }))
-                }
-              >
-                {monsterTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                    {template.monsterType ? ` (${template.monsterType})` : ''}
-                  </option>
-                ))}
-              </select>
-              <div className="qa-helper">
-                Hold Command or Ctrl to select multiple monster templates.
-              </div>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">{prefix} Monster Level</div>
-              <div className="qa-helper">
-                Monster encounter target level is configured on the quest
-                template, not per child node.
-              </div>
-            </div>
-            <div className="qa-field">
-              <div className="qa-label">
-                {prefix} Proximity To Previous Node (m)
-              </div>
-              <input
-                type="number"
-                min={0}
-                className="qa-input"
-                value={editor.encounterProximityMeters}
-                onChange={(e) =>
-                  setEditor((prev) => ({
-                    ...prev,
-                    encounterProximityMeters: parseInt(e.target.value) || 0,
-                  }))
-                }
-              />
-            </div>
-          </>
-        )}
-      </>
-    );
-  };
 
   return (
     <div className="qa-inspector-stack">
@@ -1676,7 +2049,17 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
           </div>
         </div>
         <div className="qa-form-grid" style={{ marginTop: 18 }}>
-          {renderNodeConfigFields(nodeEditor, setNodeEditor, 'Node')}
+          <QuestArchetypeNodeConfigFields
+            editor={nodeEditor}
+            setEditor={setNodeEditor}
+            prefix="Node"
+            locationArchetypes={locationArchetypes}
+            monsterTemplates={monsterTemplates}
+            scenarioTemplates={scenarioTemplates}
+            characters={characters}
+            inventoryItems={inventoryItems}
+            spells={spells}
+          />
         </div>
         {nodeEditor.nodeType === 'monster_encounter' &&
           selectedMonsterTemplates.length > 0 && (
@@ -1768,8 +2151,19 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                 </span>
               </label>
             </div>
-            {childEnabled &&
-              renderNodeConfigFields(childEditor, setChildEditor, 'Child')}
+            {childEnabled && (
+              <QuestArchetypeNodeConfigFields
+                editor={childEditor}
+                setEditor={setChildEditor}
+                prefix="Child"
+                locationArchetypes={locationArchetypes}
+                monsterTemplates={monsterTemplates}
+                scenarioTemplates={scenarioTemplates}
+                characters={characters}
+                inventoryItems={inventoryItems}
+                spells={spells}
+              />
+            )}
             <div className="qa-flow-form-actions">
               <button
                 className="qa-btn qa-btn-outline"
@@ -3208,7 +3602,7 @@ export const QuestArchetypeComponent = () => {
               <div className="qa-panel">
                 <div className="qa-card-title">Select a quest archetype</div>
                 <p className="qa-muted" style={{ marginTop: 8 }}>
-                  Choose an archetype on the left to build its challenge flow.
+                  Choose an archetype on the left to build its quest flow.
                 </p>
               </div>
             ) : (
@@ -3223,9 +3617,9 @@ export const QuestArchetypeComponent = () => {
                       {selectedArchetype.name}
                     </h2>
                     <p className="qa-subtitle">
-                      Craft the journey by stacking challenges and branching
-                      nodes. Each challenge can unlock a new node to extend the
-                      quest.
+                      Craft the journey by stacking challenges, expositions,
+                      and branching nodes. Each beat can unlock a new node to
+                      extend the quest.
                     </p>
                   </div>
                   <div className="qa-actions">
@@ -3594,6 +3988,9 @@ export const QuestArchetypeComponent = () => {
                               monsterTemplates={monsterTemplates}
                               scenarioTemplates={scenarioTemplates}
                               challengeTemplates={challengeTemplates}
+                              characters={characters}
+                              inventoryItems={inventoryItems}
+                              spells={spells}
                               addChallengeToQuestArchetype={
                                 addChallengeToQuestArchetype
                               }

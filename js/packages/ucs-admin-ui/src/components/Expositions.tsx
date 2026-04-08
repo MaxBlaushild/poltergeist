@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -36,6 +36,14 @@ type ExpositionFormState = {
   materialRewards: MaterialRewardForm[];
   itemRewards: Array<{ inventoryItemId: string; quantity: number }>;
   spellRewards: Array<{ spellId: string }>;
+};
+
+type StaticThumbnailResponse = {
+  status?: string;
+  exists?: boolean;
+  thumbnailUrl?: string;
+  requestedAt?: string | null;
+  lastModified?: string | null;
 };
 
 const emptyExpositionForm = (): ExpositionFormState => ({
@@ -96,8 +104,38 @@ const parsePositiveInt = (value: string, fallback = 0) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const defaultExpositionMapIconPrompt =
+  'A retro 16-bit RPG map marker icon for an exposition encounter. Dialogue scroll sigil with multiple speaking silhouettes, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
+const defaultExpositionMapIconUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/exposition-undiscovered.png';
+
+const formatDate = (value?: string | null): string => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
+const staticStatusClassName = (status: string): string => {
+  switch ((status || '').trim()) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'missing':
+      return 'bg-gray-500';
+    default:
+      return 'bg-gray-400';
+  }
+};
+
 export const Expositions: React.FC = () => {
-  const apiClient = useAPI();
+  const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -106,11 +144,38 @@ export const Expositions: React.FC = () => {
   const [form, setForm] = useState<ExpositionFormState>(emptyExpositionForm());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [locationBusy, setLocationBusy] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [expositionIconPrompt, setExpositionIconPrompt] = useState(
+    defaultExpositionMapIconPrompt
+  );
+  const [expositionIconUrl, setExpositionIconUrl] = useState(
+    defaultExpositionMapIconUrl
+  );
+  const [expositionIconStatus, setExpositionIconStatus] = useState('unknown');
+  const [expositionIconExists, setExpositionIconExists] = useState(false);
+  const [expositionIconRequestedAt, setExpositionIconRequestedAt] = useState<
+    string | null
+  >(null);
+  const [expositionIconLastModified, setExpositionIconLastModified] = useState<
+    string | null
+  >(null);
+  const [expositionIconStatusLoading, setExpositionIconStatusLoading] =
+    useState(false);
+  const [expositionIconBusy, setExpositionIconBusy] = useState(false);
+  const [expositionIconMessage, setExpositionIconMessage] = useState<
+    string | null
+  >(null);
+  const [expositionIconError, setExpositionIconError] = useState<string | null>(
+    null
+  );
+  const [expositionIconPreviewNonce, setExpositionIconPreviewNonce] = useState(
+    Date.now()
+  );
   const deepLinkedId = searchParams.get('id')?.trim() ?? '';
 
   const selectedRecord = useMemo(
@@ -137,6 +202,46 @@ export const Expositions: React.FC = () => {
         })
       ),
     [records]
+  );
+
+  const refreshExpositionIconStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setExpositionIconStatusLoading(true);
+        setExpositionIconError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/exposition-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setExpositionIconUrl(url);
+        }
+        setExpositionIconStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setExpositionIconExists(Boolean(response?.exists));
+        setExpositionIconRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setExpositionIconLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setExpositionIconPreviewNonce(Date.now());
+        if (showMessage) {
+          setExpositionIconMessage('Exposition map icon status refreshed.');
+        }
+      } catch (err) {
+        console.error('Failed to load exposition map icon status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load exposition map icon status.';
+        setExpositionIconError(message);
+      } finally {
+        setExpositionIconStatusLoading(false);
+      }
+    },
+    [apiClient]
   );
 
   const loadRecords = async () => {
@@ -177,6 +282,7 @@ export const Expositions: React.FC = () => {
 
   useEffect(() => {
     void loadRecords();
+    void refreshExpositionIconStatus();
     void (async () => {
       try {
         const [spellResponse, characterResponse] = await Promise.all([
@@ -191,6 +297,19 @@ export const Expositions: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (
+      expositionIconStatus !== 'queued' &&
+      expositionIconStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshExpositionIconStatus();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [expositionIconStatus, refreshExpositionIconStatus]);
 
   useEffect(() => {
     if (selectedRecord) {
@@ -398,6 +517,83 @@ export const Expositions: React.FC = () => {
     }
   };
 
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser.');
+      return;
+    }
+    setLocationBusy(true);
+    setError('');
+    setStatusMessage('');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocationBusy(false);
+        setForm((prev) => ({
+          ...prev,
+          locationMode: 'coordinates',
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }));
+        setStatusMessage('Filled coordinates from your current location.');
+      },
+      (geoError) => {
+        setLocationBusy(false);
+        setError(`Unable to get current location: ${geoError.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, []);
+
+  const handleGenerateExpositionIcon = useCallback(async () => {
+    const prompt = expositionIconPrompt.trim();
+    if (!prompt) {
+      setExpositionIconError('Prompt is required.');
+      return;
+    }
+    try {
+      setExpositionIconBusy(true);
+      setExpositionIconError(null);
+      setExpositionIconMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/exposition-undiscovered',
+        { prompt }
+      );
+      setExpositionIconMessage('Exposition map icon queued for generation.');
+      await refreshExpositionIconStatus();
+    } catch (err) {
+      console.error('Failed to generate exposition map icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate exposition map icon.';
+      setExpositionIconError(message);
+    } finally {
+      setExpositionIconBusy(false);
+    }
+  }, [apiClient, expositionIconPrompt, refreshExpositionIconStatus]);
+
+  const handleDeleteExpositionIcon = useCallback(async () => {
+    try {
+      setExpositionIconBusy(true);
+      setExpositionIconError(null);
+      setExpositionIconMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/exposition-undiscovered'
+      );
+      setExpositionIconMessage('Exposition map icon deleted.');
+      await refreshExpositionIconStatus();
+    } catch (err) {
+      console.error('Failed to delete exposition map icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete exposition map icon.';
+      setExpositionIconError(message);
+    } finally {
+      setExpositionIconBusy(false);
+    }
+  }, [apiClient, refreshExpositionIconStatus]);
+
   const selectedPointOfInterest = useMemo(
     () =>
       pointsOfInterest.find((point) => point.id === form.pointOfInterestId) ??
@@ -431,6 +627,95 @@ export const Expositions: React.FC = () => {
             {saving ? 'Saving...' : selectedId ? 'Save Changes' : 'Create Exposition'}
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Exposition Map Icon
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              This shared static icon is used for expositions both outside the
+              interaction radius and when players are close enough to engage.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-md bg-slate-700 px-3 py-1 text-white disabled:opacity-60"
+              onClick={() => void refreshExpositionIconStatus(true)}
+              disabled={expositionIconStatusLoading}
+            >
+              {expositionIconStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-indigo-600 px-3 py-1 text-white disabled:opacity-60"
+              onClick={handleGenerateExpositionIcon}
+              disabled={expositionIconBusy || expositionIconStatusLoading}
+            >
+              {expositionIconBusy ? 'Working…' : 'Generate Icon'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-red-600 px-3 py-1 text-white disabled:opacity-60"
+              onClick={handleDeleteExpositionIcon}
+              disabled={expositionIconBusy || expositionIconStatusLoading}
+            >
+              {expositionIconBusy ? 'Working…' : 'Delete Icon'}
+            </button>
+          </div>
+        </div>
+        <div className="mb-2">
+          <span
+            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
+              expositionIconStatus
+            )}`}
+          >
+            {expositionIconStatus || 'unknown'}
+          </span>
+        </div>
+        <div className="break-all text-xs text-slate-600">
+          URL: {expositionIconUrl}
+        </div>
+        <div className="mt-1 text-xs text-slate-600">
+          Requested: {formatDate(expositionIconRequestedAt)}
+          {' · '}
+          Last updated: {formatDate(expositionIconLastModified)}
+        </div>
+        <label className="mt-3 block text-sm">
+          Generation Prompt
+          <textarea
+            className="mt-1 min-h-[88px] w-full rounded-md border border-slate-300 p-2"
+            value={expositionIconPrompt}
+            onChange={(event) => setExpositionIconPrompt(event.target.value)}
+            placeholder="Prompt used to generate the exposition map icon."
+          />
+        </label>
+        {expositionIconExists ? (
+          <div className="mt-3">
+            <img
+              src={`${expositionIconUrl}?v=${expositionIconPreviewNonce}`}
+              alt="Exposition map icon preview"
+              className="h-24 w-24 rounded-md border bg-slate-50 object-cover"
+            />
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-slate-500">
+            No icon currently found at this URL.
+          </div>
+        )}
+        {expositionIconMessage ? (
+          <div className="mt-2 text-sm text-emerald-700">
+            {expositionIconMessage}
+          </div>
+        ) : null}
+        {expositionIconError ? (
+          <div className="mt-2 text-sm text-red-600">
+            {expositionIconError}
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -578,7 +863,17 @@ export const Expositions: React.FC = () => {
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="block text-sm">
-                Latitude
+                <div className="flex items-center justify-between gap-3">
+                  <span>Latitude</span>
+                  <button
+                    type="button"
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 disabled:opacity-50"
+                    onClick={handleUseCurrentLocation}
+                    disabled={locationBusy}
+                  >
+                    {locationBusy ? 'Locating…' : 'Use Current Location'}
+                  </button>
+                </div>
                 <input
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={form.latitude}

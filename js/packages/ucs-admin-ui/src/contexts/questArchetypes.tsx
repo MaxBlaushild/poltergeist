@@ -18,6 +18,16 @@ export type QuestArchetypeNodeDraft = {
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
+  expositionTitle?: string;
+  expositionDescription?: string;
+  expositionDialogue?: DialogueMessage[];
+  expositionRewardMode?: 'explicit' | 'random';
+  expositionRandomRewardSize?: 'small' | 'medium' | 'large';
+  expositionRewardExperience?: number | null;
+  expositionRewardGold?: number | null;
+  expositionMaterialRewards?: { resourceKey: string; amount: number }[];
+  expositionItemRewards?: { inventoryItemId: number; quantity: number }[];
+  expositionSpellRewards?: { spellId: string }[];
 };
 
 export type QuestArchetypeDraft = {
@@ -250,6 +260,16 @@ export const QuestArchetypesProvider = ({
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
         encounterProximityMeters: draft.rootNode.encounterProximityMeters,
+        expositionTitle: draft.rootNode.expositionTitle,
+        expositionDescription: draft.rootNode.expositionDescription,
+        expositionDialogue: draft.rootNode.expositionDialogue,
+        expositionRewardMode: draft.rootNode.expositionRewardMode,
+        expositionRandomRewardSize: draft.rootNode.expositionRandomRewardSize,
+        expositionRewardExperience: draft.rootNode.expositionRewardExperience,
+        expositionRewardGold: draft.rootNode.expositionRewardGold,
+        expositionMaterialRewards: draft.rootNode.expositionMaterialRewards,
+        expositionItemRewards: draft.rootNode.expositionItemRewards,
+        expositionSpellRewards: draft.rootNode.expositionSpellRewards,
       }
     );
     const questArchetype = await apiClient.post<QuestArchetype>(
@@ -363,6 +383,16 @@ export const QuestArchetypesProvider = ({
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
       encounterProximityMeters?: number | null;
+      expositionTitle?: string;
+      expositionDescription?: string;
+      expositionDialogue?: DialogueMessage[];
+      expositionRewardMode?: 'explicit' | 'random';
+      expositionRandomRewardSize?: 'small' | 'medium' | 'large';
+      expositionRewardExperience?: number | null;
+      expositionRewardGold?: number | null;
+      expositionMaterialRewards?: { resourceKey: string; amount: number }[];
+      expositionItemRewards?: { inventoryItemId: number; quantity: number }[];
+      expositionSpellRewards?: { spellId: string }[];
     } = {};
 
     if (unlockedNode) {
@@ -381,6 +411,19 @@ export const QuestArchetypesProvider = ({
       }
       payload.targetLevel = unlockedNode.targetLevel;
       payload.encounterProximityMeters = unlockedNode.encounterProximityMeters;
+      payload.expositionTitle = unlockedNode.expositionTitle;
+      payload.expositionDescription = unlockedNode.expositionDescription;
+      payload.expositionDialogue = unlockedNode.expositionDialogue;
+      payload.expositionRewardMode = unlockedNode.expositionRewardMode;
+      payload.expositionRandomRewardSize =
+        unlockedNode.expositionRandomRewardSize;
+      payload.expositionRewardExperience =
+        unlockedNode.expositionRewardExperience;
+      payload.expositionRewardGold = unlockedNode.expositionRewardGold;
+      payload.expositionMaterialRewards =
+        unlockedNode.expositionMaterialRewards;
+      payload.expositionItemRewards = unlockedNode.expositionItemRewards;
+      payload.expositionSpellRewards = unlockedNode.expositionSpellRewards;
     }
     if (proficiency && proficiency.trim().length > 0) {
       payload.proficiency = proficiency.trim();
@@ -427,6 +470,16 @@ export const QuestArchetypesProvider = ({
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,
       encounterProximityMeters: updates.encounterProximityMeters,
+      expositionTitle: updates.expositionTitle,
+      expositionDescription: updates.expositionDescription,
+      expositionDialogue: updates.expositionDialogue,
+      expositionRewardMode: updates.expositionRewardMode,
+      expositionRandomRewardSize: updates.expositionRandomRewardSize,
+      expositionRewardExperience: updates.expositionRewardExperience,
+      expositionRewardGold: updates.expositionRewardGold,
+      expositionMaterialRewards: updates.expositionMaterialRewards,
+      expositionItemRewards: updates.expositionItemRewards,
+      expositionSpellRewards: updates.expositionSpellRewards,
     });
     fetchQuestArchetypes();
   };

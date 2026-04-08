@@ -256,6 +256,19 @@ func (c *client) processQuestNode(
 			previousAnchor,
 		)
 	}
+	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeExposition {
+		return c.processQuestExpositionNode(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			previousAnchor,
+		)
+	}
 	if questArchTypeNode.NodeType == models.QuestArchetypeNodeTypeMonsterEncounter {
 		return c.processQuestMonsterEncounterNode(
 			ctx,
@@ -444,7 +457,7 @@ func (c *client) processQuestScenarioNode(
 		if currentAnchor == nil {
 			currentAnchor = previousAnchor
 		}
-		return currentAnchor, c.attachQuestMonsterEncounterChildren(
+		return currentAnchor, c.attachQuestBranchChildren(
 			ctx,
 			zone,
 			questArchTypeNode,
@@ -563,7 +576,213 @@ func (c *client) processQuestScenarioNode(
 	anchorMap[questArchTypeNode.ID] = currentAnchor
 	(*orderIndex)++
 
-	if err := c.attachQuestMonsterEncounterChildren(
+	if err := c.attachQuestBranchChildren(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		orderIndex,
+		nodeMap,
+		anchorMap,
+		currentAnchor,
+		questNodeID,
+	); err != nil {
+		return currentAnchor, err
+	}
+
+	return currentAnchor, nil
+}
+
+func cloneQuestArchetypeNodeExpositionDialogue(
+	input models.DialogueSequence,
+) models.DialogueSequence {
+	out := make(models.DialogueSequence, 0, len(input))
+	for index, message := range input {
+		next := models.DialogueMessage{
+			Speaker: message.Speaker,
+			Text:    strings.TrimSpace(message.Text),
+			Order:   index,
+			Effect:  models.NormalizeDialogueEffect(string(message.Effect)),
+		}
+		if message.CharacterID != nil && *message.CharacterID != uuid.Nil {
+			characterID := *message.CharacterID
+			next.CharacterID = &characterID
+		}
+		if next.Text == "" {
+			continue
+		}
+		next.Order = len(out)
+		out = append(out, next)
+	}
+	return out
+}
+
+func cloneQuestArchetypeNodeExpositionMaterials(
+	input models.BaseMaterialRewards,
+) models.BaseMaterialRewards {
+	out := make(models.BaseMaterialRewards, 0, len(input))
+	for _, reward := range input {
+		if reward.ResourceKey == "" || reward.Amount == 0 {
+			continue
+		}
+		out = append(out, models.BaseResourceDelta{
+			ResourceKey: reward.ResourceKey,
+			Amount:      reward.Amount,
+		})
+	}
+	return out
+}
+
+func expositionItemRewardsFromQuestArchetypeNode(
+	input models.QuestArchetypeExpositionItemRewards,
+) []models.ExpositionItemReward {
+	rewards := make([]models.ExpositionItemReward, 0, len(input))
+	for _, reward := range input {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		rewards = append(rewards, models.ExpositionItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func expositionSpellRewardsFromQuestArchetypeNode(
+	input models.QuestArchetypeExpositionSpellRewards,
+) []models.ExpositionSpellReward {
+	rewards := make([]models.ExpositionSpellReward, 0, len(input))
+	for _, reward := range input {
+		if reward.SpellID == uuid.Nil {
+			continue
+		}
+		rewards = append(rewards, models.ExpositionSpellReward{
+			SpellID: reward.SpellID,
+		})
+	}
+	return rewards
+}
+
+func (c *client) processQuestExpositionNode(
+	ctx context.Context,
+	zone *models.Zone,
+	questArchTypeNode *models.QuestArchetypeNode,
+	quest *models.Quest,
+	usedPOIs map[uuid.UUID]bool,
+	orderIndex *int,
+	nodeMap map[uuid.UUID]uuid.UUID,
+	anchorMap map[uuid.UUID]*questNodeAnchor,
+	previousAnchor *questNodeAnchor,
+) (*questNodeAnchor, error) {
+	existingNodeID, ok := nodeMap[questArchTypeNode.ID]
+	if ok {
+		currentAnchor := anchorMap[questArchTypeNode.ID]
+		if currentAnchor == nil {
+			currentAnchor = previousAnchor
+		}
+		return currentAnchor, c.attachQuestBranchChildren(
+			ctx,
+			zone,
+			questArchTypeNode,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			existingNodeID,
+		)
+	}
+
+	title := strings.TrimSpace(questArchTypeNode.ExpositionTitle)
+	if title == "" {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("exposition node requires a title"),
+		)
+	}
+	dialogue := cloneQuestArchetypeNodeExpositionDialogue(
+		questArchTypeNode.ExpositionDialogue,
+	)
+	if len(dialogue) == 0 {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("exposition node requires dialogue"),
+		)
+	}
+
+	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
+		ctx,
+		zone,
+		questArchTypeNode,
+		usedPOIs,
+		previousAnchor,
+	)
+	if err != nil {
+		return previousAnchor, err
+	}
+
+	exposition := &models.Exposition{
+		ID:                uuid.New(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+		ZoneID:            zone.ID,
+		PointOfInterestID: optionalPointOfInterestID(pointOfInterest),
+		Latitude:          currentAnchor.Latitude,
+		Longitude:         currentAnchor.Longitude,
+		Title:             title,
+		Description:       strings.TrimSpace(questArchTypeNode.ExpositionDescription),
+		Dialogue:          dialogue,
+		ImageURL:          "",
+		ThumbnailURL:      "",
+		RewardMode:        questArchTypeNode.ExpositionRewardMode,
+		RandomRewardSize:  questArchTypeNode.ExpositionRandomRewardSize,
+		RewardExperience:  questArchTypeNode.ExpositionRewardExperience,
+		RewardGold:        questArchTypeNode.ExpositionRewardGold,
+		MaterialRewards: cloneQuestArchetypeNodeExpositionMaterials(
+			questArchTypeNode.ExpositionMaterialRewards,
+		),
+	}
+	if err := c.dbClient.Exposition().Create(ctx, exposition); err != nil {
+		return previousAnchor, err
+	}
+	if err := c.dbClient.Exposition().ReplaceItemRewards(
+		ctx,
+		exposition.ID,
+		expositionItemRewardsFromQuestArchetypeNode(
+			questArchTypeNode.ExpositionItemRewards,
+		),
+	); err != nil {
+		return previousAnchor, err
+	}
+	if err := c.dbClient.Exposition().ReplaceSpellRewards(
+		ctx,
+		exposition.ID,
+		expositionSpellRewardsFromQuestArchetypeNode(
+			questArchTypeNode.ExpositionSpellRewards,
+		),
+	); err != nil {
+		return previousAnchor, err
+	}
+
+	questNodeID := uuid.New()
+	node := &models.QuestNode{
+		ID:             questNodeID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		QuestID:        quest.ID,
+		OrderIndex:     *orderIndex,
+		ExpositionID:   &exposition.ID,
+		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+	}
+	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
+		return previousAnchor, err
+	}
+	nodeMap[questArchTypeNode.ID] = questNodeID
+	anchorMap[questArchTypeNode.ID] = currentAnchor
+	(*orderIndex)++
+
+	if err := c.attachQuestBranchChildren(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -598,7 +817,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		if currentAnchor == nil {
 			currentAnchor = previousAnchor
 		}
-		return currentAnchor, c.attachQuestMonsterEncounterChildren(
+		return currentAnchor, c.attachQuestBranchChildren(
 			ctx,
 			zone,
 			questArchTypeNode,
@@ -756,7 +975,7 @@ func (c *client) processQuestMonsterEncounterNode(
 	anchorMap[questArchTypeNode.ID] = currentAnchor
 	(*orderIndex)++
 
-	if err := c.attachQuestMonsterEncounterChildren(
+	if err := c.attachQuestBranchChildren(
 		ctx,
 		zone,
 		questArchTypeNode,
@@ -774,7 +993,7 @@ func (c *client) processQuestMonsterEncounterNode(
 	return currentAnchor, nil
 }
 
-func (c *client) attachQuestMonsterEncounterChildren(
+func (c *client) attachQuestBranchChildren(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,

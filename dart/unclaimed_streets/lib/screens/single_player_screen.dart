@@ -89,7 +89,8 @@ const _raidMysteryImageUrl =
 const _characterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
-const _expositionMysteryImageUrl = _scenarioMysteryImageUrl;
+const _expositionMapIconImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/exposition-undiscovered.png';
 const _healingFountainFallbackImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _healingFountainDiscoveredImageUrl =
@@ -172,7 +173,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Circle> _expositionCircles = [];
   final Map<String, Symbol> _expositionSymbolById = {};
   final Map<String, Circle> _expositionCircleById = {};
-  final Map<String, bool> _expositionCircleMystery = {};
   final Map<String, bool> _expositionQuestObjective = {};
   List<Symbol> _monsterSymbols = [];
   List<Circle> _monsterCircles = [];
@@ -2595,18 +2595,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return distance > kProximityUnlockRadiusMeters;
   }
 
-  bool _isExpositionMystery(Exposition exposition) {
-    final location = context.read<LocationProvider>().location;
-    if (location == null) return true;
-    final distance = _distanceMeters(
-      location.latitude,
-      location.longitude,
-      exposition.latitude,
-      exposition.longitude,
-    );
-    return distance > kProximityUnlockRadiusMeters;
-  }
-
   bool _isMonsterMystery(MonsterEncounter monster) {
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
@@ -3156,9 +3144,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (_expositionMysteryThumbnailBytes == null) {
       try {
         _expositionMysteryThumbnailBytes = await loadPoiThumbnail(
-          _expositionMysteryImageUrl,
+          _expositionMapIconImageUrl,
         );
       } catch (_) {}
+      _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
+        _scenarioMysteryImageUrl,
+      );
       _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
         _legacyMysteryImageUrl,
       );
@@ -3173,25 +3164,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _expositionMysteryThumbnailAdded = true;
       } catch (_) {}
     }
-  }
-
-  Future<String?> _ensureExpositionVisibleThumbnail(
-    MapLibreMapController c,
-    Exposition exposition,
-  ) async {
-    final source = exposition.thumbnailUrl.isNotEmpty
-        ? exposition.thumbnailUrl
-        : exposition.imageUrl;
-    if (source.isEmpty) return null;
-
-    final imageBytes = await loadPoiThumbnail(source);
-    if (imageBytes == null) return null;
-
-    final imageId = 'exposition_${exposition.id}_$_mapThumbnailVersion';
-    try {
-      await c.addImage(imageId, imageBytes);
-    } catch (_) {}
-    return imageId;
   }
 
   Future<void> _refreshExpositionSymbols() {
@@ -3275,7 +3247,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         } catch (_) {}
         _expositionCircles.remove(entry.value);
         _expositionCircleById.remove(entry.key);
-        _expositionCircleMystery.remove(entry.key);
         _expositionQuestObjective.remove(entry.key);
       }
     }
@@ -3285,12 +3256,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _expositionMysteryThumbnailAdded;
 
     for (final exposition in _expositions) {
-      final mystery = _isExpositionMystery(exposition);
       final isCurrentQuestExposition = _isCurrentQuestExposition(exposition.id);
       final existingSymbol = _expositionSymbolById[exposition.id];
       final existingCircle = _expositionCircleById[exposition.id];
       final needsRefresh =
-          _expositionCircleMystery[exposition.id] != mystery ||
           existingSymbol == null ||
           _expositionQuestObjective[exposition.id] != isCurrentQuestExposition;
 
@@ -3311,16 +3280,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             _expositionCircles.remove(existingCircle);
             _expositionCircleById.remove(exposition.id);
           }
-          var imageId = 'exposition_mystery_thumbnail_$_mapThumbnailVersion';
-          if (!mystery) {
-            final visibleImageId = await _ensureExpositionVisibleThumbnail(
-              c,
-              exposition,
-            );
-            if (visibleImageId != null) {
-              imageId = visibleImageId;
-            }
-          }
+          const imageId = 'exposition_mystery_thumbnail_$_mapThumbnailVersion';
           final symbol = await c.addSymbol(
             SymbolOptions(
               geometry: LatLng(exposition.latitude, exposition.longitude),
@@ -3337,7 +3297,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _expositionSymbols.add(symbol);
           _expositionSymbolById[exposition.id] = symbol;
           _setQuestPoiHighlight(symbol, isCurrentQuestExposition);
-          _expositionCircleMystery[exposition.id] = mystery;
           _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
         }
         continue;
@@ -3352,7 +3311,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _expositionSymbolById.remove(exposition.id);
       }
       if (existingCircle == null ||
-          _expositionCircleMystery[exposition.id] != mystery ||
           _expositionQuestObjective[exposition.id] !=
               isCurrentQuestExposition) {
         if (existingCircle != null) {
@@ -3367,9 +3325,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             geometry: LatLng(exposition.latitude, exposition.longitude),
             circleRadius: 22,
             circleOpacity: _mapMarkerStartingOpacity(1.0),
-            circleColor: isCurrentQuestExposition
-                ? '#e1b12c'
-                : (mystery ? '#5a5560' : '#d97706'),
+            circleColor: isCurrentQuestExposition ? '#e1b12c' : '#d97706',
             circleStrokeWidth: 2,
             circleStrokeColor: '#ffffff',
           ),
@@ -3378,7 +3334,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _expositionCircles.add(circle);
         _expositionCircleById[exposition.id] = circle;
-        _expositionCircleMystery[exposition.id] = mystery;
         _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
       }
     }
@@ -4506,7 +4461,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (exposition.imageUrl.trim().isNotEmpty) {
       return exposition.imageUrl.trim();
     }
-    return _expositionMysteryImageUrl;
+    return _expositionMapIconImageUrl;
   }
 
   String _monsterSelectionImageUrl(MonsterEncounter monster) {
@@ -9326,6 +9281,119 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return speakers;
   }
 
+  double? _expositionDistanceMeters(Exposition exposition) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return null;
+    return _distanceMeters(
+      location.latitude,
+      location.longitude,
+      exposition.latitude,
+      exposition.longitude,
+    );
+  }
+
+  String _expositionDisplayTitle(Exposition exposition) {
+    final title = exposition.title.trim();
+    if (title.isNotEmpty) return title;
+    return 'Nearby Dialogue';
+  }
+
+  Future<void> _showExpositionTooFarDialog(
+    Exposition exposition,
+    double distanceMeters,
+  ) {
+    final title = _expositionDisplayTitle(exposition);
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final colorScheme = theme.colorScheme;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: PaperTexture(
+              borderRadius: BorderRadius.circular(28),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.8),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x26000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          IconButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'You are too far away to hear this conversation.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _MiniInfoChip(
+                            icon: Icons.place_outlined,
+                            label: '${distanceMeters.round()} m away',
+                          ),
+                          _MiniInfoChip(
+                            icon: Icons.hearing_outlined,
+                            label:
+                                'Need ${kProximityUnlockRadiusMeters.round()} m',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _removeExpositionLocally(String expositionId) async {
     final trimmedId = expositionId.trim();
     if (trimmedId.isEmpty) return;
@@ -9346,6 +9414,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     Quest? quest,
     QuestNode? node,
   }) async {
+    final distanceMeters = _expositionDistanceMeters(exposition);
+    if (distanceMeters != null &&
+        distanceMeters > kProximityUnlockRadiusMeters) {
+      await _showExpositionTooFarDialog(exposition, distanceMeters);
+      return;
+    }
+
     final defaultSpeaker = _defaultExpositionSpeaker(exposition);
     if (defaultSpeaker == null) {
       if (!mounted) return;

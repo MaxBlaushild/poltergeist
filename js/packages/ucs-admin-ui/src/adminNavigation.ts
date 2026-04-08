@@ -108,6 +108,26 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Inspect concrete quests, routes, objectives, and rewards.',
       },
       {
+        id: 'zone-seeding',
+        label: 'Zone Seeding',
+        path: '/zone-seeding',
+        description: 'Queue seeding jobs and review generated world content.',
+      },
+    ],
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    description:
+      'Author concrete encounters, discoveries, and other player-facing map content.',
+    items: [
+      {
+        id: 'monsters',
+        label: 'Monsters',
+        path: '/monsters',
+        description: 'Create monsters, encounter templates, and combat groups.',
+      },
+      {
         id: 'scenarios',
         label: 'Scenarios',
         path: '/scenarios',
@@ -121,17 +141,17 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Author dialogue-first map encounters and quest objectives.',
       },
       {
-        id: 'scenario-templates',
-        label: 'Scenario Templates',
-        path: '/scenario-templates',
-        description: 'Author reusable scenario templates for quest generation.',
-      },
-      {
         id: 'challenges',
         label: 'Challenges',
         path: '/challenges',
         description:
           'Manage explicit challenge objectives and location prompts.',
+      },
+      {
+        id: 'scenario-templates',
+        label: 'Scenario Templates',
+        path: '/scenario-templates',
+        description: 'Author reusable scenario templates for quest generation.',
       },
       {
         id: 'challenge-templates',
@@ -140,10 +160,16 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Create reusable challenge templates and artwork.',
       },
       {
-        id: 'zone-seeding',
-        label: 'Zone Seeding',
-        path: '/zone-seeding',
-        description: 'Queue seeding jobs and review generated world content.',
+        id: 'treasure-chests',
+        label: 'Treasure Chests',
+        path: '/treasure-chests',
+        description: 'Place and tune chest rewards across the map.',
+      },
+      {
+        id: 'healing-fountains',
+        label: 'Healing Fountains',
+        path: '/healing-fountains',
+        description: 'Manage healing fountain placements and behavior.',
       },
     ],
   },
@@ -195,24 +221,6 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         label: 'Spells',
         path: '/spells',
         description: 'Manage spells, progressions, and ability data.',
-      },
-      {
-        id: 'monsters',
-        label: 'Monsters',
-        path: '/monsters',
-        description: 'Create monsters, encounter templates, and combat groups.',
-      },
-      {
-        id: 'treasure-chests',
-        label: 'Treasure Chests',
-        path: '/treasure-chests',
-        description: 'Place and tune chest rewards across the map.',
-      },
-      {
-        id: 'healing-fountains',
-        label: 'Healing Fountains',
-        path: '/healing-fountains',
-        description: 'Manage healing fountain placements and behavior.',
       },
       {
         id: 'starter-config',

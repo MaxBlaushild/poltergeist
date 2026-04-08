@@ -19,10 +19,16 @@ const workflowHighlights = [
     links: ['quest-archetypes', 'zone-quest-archetypes', 'quests', 'zone-seeding'],
   },
   {
+    title: 'Build Encounter Content',
+    description:
+      'Author the player-facing encounters and discoveries that show up directly on the map.',
+    links: ['monsters', 'scenarios', 'expositions', 'challenges'],
+  },
+  {
     title: 'Run Systems and Live Ops',
     description:
       'Monitor players, progression, and moderation surfaces without hunting through the whole admin.',
-    links: ['users', 'characters', 'monsters', 'feedback'],
+    links: ['users', 'characters', 'parties', 'feedback'],
   },
 ];
 
