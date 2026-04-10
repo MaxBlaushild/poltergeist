@@ -38,6 +38,15 @@ type questNodeAnchor struct {
 	Longitude float64
 }
 
+func questNodeObjectiveDescription(
+	node *models.QuestArchetypeNode,
+) string {
+	if node == nil {
+		return ""
+	}
+	return strings.TrimSpace(node.ObjectiveDescription)
+}
+
 func normalizeQuestProficiency(proficiency *string) *string {
 	if proficiency == nil {
 		return nil
@@ -404,13 +413,14 @@ func (c *client) processQuestChallengeNode(
 		return previousAnchor, err
 	}
 	node := &models.QuestNode{
-		ID:             questNodeID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		QuestID:        quest.ID,
-		OrderIndex:     *orderIndex,
-		ChallengeID:    &locationChallenge.ID,
-		SubmissionType: submissionType,
+		ID:                   questNodeID,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		QuestID:              quest.ID,
+		OrderIndex:           *orderIndex,
+		ChallengeID:          &locationChallenge.ID,
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		SubmissionType:       submissionType,
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err
@@ -667,13 +677,14 @@ func (c *client) processQuestScenarioNode(
 
 	questNodeID := uuid.New()
 	node := &models.QuestNode{
-		ID:             questNodeID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		QuestID:        quest.ID,
-		OrderIndex:     *orderIndex,
-		ScenarioID:     &scenario.ID,
-		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		ID:                   questNodeID,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		QuestID:              quest.ID,
+		OrderIndex:           *orderIndex,
+		ScenarioID:           &scenario.ID,
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err
@@ -874,13 +885,14 @@ func (c *client) processQuestExpositionNode(
 
 	questNodeID := uuid.New()
 	node := &models.QuestNode{
-		ID:             questNodeID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		QuestID:        quest.ID,
-		OrderIndex:     *orderIndex,
-		ExpositionID:   &exposition.ID,
-		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		ID:                   questNodeID,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		QuestID:              quest.ID,
+		OrderIndex:           *orderIndex,
+		ExpositionID:         &exposition.ID,
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err
@@ -947,13 +959,14 @@ func (c *client) processQuestStoryFlagNode(
 
 	questNodeID := uuid.New()
 	node := &models.QuestNode{
-		ID:             questNodeID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		QuestID:        quest.ID,
-		OrderIndex:     *orderIndex,
-		StoryFlagKey:   storyFlagKey,
-		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		ID:                   questNodeID,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		QuestID:              quest.ID,
+		OrderIndex:           *orderIndex,
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		StoryFlagKey:         storyFlagKey,
+		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err
@@ -1079,7 +1092,8 @@ func (c *client) processQuestFetchNode(
 		FetchRequirements: models.NormalizeFetchQuestRequirements(
 			questArchTypeNode.FetchRequirements,
 		),
-		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err
@@ -1267,13 +1281,14 @@ func (c *client) processQuestMonsterEncounterNode(
 
 	questNodeID := uuid.New()
 	node := &models.QuestNode{
-		ID:                 questNodeID,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
-		QuestID:            quest.ID,
-		OrderIndex:         *orderIndex,
-		MonsterEncounterID: &encounter.ID,
-		SubmissionType:     models.DefaultQuestNodeSubmissionType(),
+		ID:                   questNodeID,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		QuestID:              quest.ID,
+		OrderIndex:           *orderIndex,
+		MonsterEncounterID:   &encounter.ID,
+		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return previousAnchor, err

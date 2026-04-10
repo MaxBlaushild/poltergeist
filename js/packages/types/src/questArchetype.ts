@@ -91,6 +91,7 @@ export interface QuestArchetypeNode {
   fetchCharacter?: Character | null;
   fetchCharacterId?: string | null;
   fetchRequirements?: QuestArchetypeNodeFetchRequirement[];
+  objectiveDescription?: string | null;
   storyFlagKey?: string | null;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;

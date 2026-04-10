@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest_node.dart';
+import '../models/quest_node_objective.dart';
 
 const hiddenPoiPlaceholderImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
@@ -19,28 +20,40 @@ List<String> questObjectiveLines(QuestNode? node) {
     return [objectivePrompt];
   }
 
-  if (_hasValue(node.fetchCharacterId)) {
+  final objectiveType = node.objective?.type.trim() ?? '';
+
+  if (_hasValue(node.fetchCharacterId) ||
+      objectiveType == QuestNodeObjective.typeFetchQuest) {
     final characterName = node.fetchCharacter?.name.trim() ?? '';
     if (characterName.isNotEmpty) {
       return ['Deliver the required items to $characterName.'];
     }
     return const ['Deliver the required items to continue the quest.'];
   }
-  if (_hasValue(node.scenarioId)) {
+  if (_hasValue(node.scenarioId) ||
+      objectiveType == QuestNodeObjective.typeScenario) {
     return const ['Complete the current scenario objective.'];
   }
-  if (_hasValue(node.expositionId)) {
+  if (_hasValue(node.expositionId) ||
+      objectiveType == QuestNodeObjective.typeExposition) {
     final title = node.exposition?.title.trim() ?? '';
     if (title.isNotEmpty) {
       return ['Complete the exposition: $title'];
     }
     return const ['Complete the current exposition objective.'];
   }
-  if (_hasValue(node.monsterEncounterId) || _hasValue(node.monsterId)) {
+  if (_hasValue(node.monsterEncounterId) ||
+      _hasValue(node.monsterId) ||
+      objectiveType == QuestNodeObjective.typeMonsterEncounter ||
+      objectiveType == QuestNodeObjective.typeMonster) {
     return const ['Defeat the current monster objective.'];
   }
-  if (_hasValue(node.challengeId)) {
+  if (_hasValue(node.challengeId) ||
+      objectiveType == QuestNodeObjective.typeChallenge) {
     return const ['Complete the current challenge objective.'];
+  }
+  if (objectiveType == QuestNodeObjective.typeStoryFlag) {
+    return const ['Continue the story until this objective completes.'];
   }
 
   final poiName = node.pointOfInterest?.name.trim() ?? '';
@@ -149,6 +162,18 @@ class _ObjectiveIconFallback extends StatelessWidget {
 }
 
 String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
+  final poi = node?.pointOfInterest;
+  final isPoiBackedExposition = _hasValue(node?.expositionId) && poi != null;
+  if (isPoiBackedExposition) {
+    if (!discoveredPoiIds.contains(poi.id)) {
+      return hiddenPoiPlaceholderImageUrl;
+    }
+    final poiImageUrl = _pointOfInterestImageUrl(poi);
+    if (poiImageUrl != null) {
+      return poiImageUrl;
+    }
+  }
+
   final fetchCharacterThumb = node?.fetchCharacter?.thumbnailUrl?.trim() ?? '';
   if (fetchCharacterThumb.isNotEmpty) {
     return fetchCharacterThumb;
@@ -170,7 +195,6 @@ String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
   if (expositionImage.isNotEmpty) {
     return expositionImage;
   }
-  final poi = node?.pointOfInterest;
   if (poi == null) return null;
   if (!discoveredPoiIds.contains(poi.id)) {
     return hiddenPoiPlaceholderImageUrl;

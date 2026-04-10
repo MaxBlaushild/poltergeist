@@ -17,6 +17,7 @@ type questArchetypeNodePayload struct {
 	ScenarioTemplateID         *uuid.UUID                   `json:"scenarioTemplateId"`
 	FetchCharacterID           *uuid.UUID                   `json:"fetchCharacterId"`
 	FetchRequirements          []scenarioRewardItemPayload  `json:"fetchRequirements"`
+	ObjectiveDescription       string                       `json:"objectiveDescription"`
 	StoryFlagKey               string                       `json:"storyFlagKey"`
 	MonsterTemplateIDs         []string                     `json:"monsterTemplateIds"`
 	MonsterIDs                 []string                     `json:"monsterIds"`
@@ -373,6 +374,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		}
 		node.Difficulty = *payload.Difficulty
 	}
+	node.ObjectiveDescription = strings.TrimSpace(payload.ObjectiveDescription)
 	if !payload.hasExplicitConfig() {
 		if requireConfig {
 			return fmt.Errorf("quest archetype node configuration is required")

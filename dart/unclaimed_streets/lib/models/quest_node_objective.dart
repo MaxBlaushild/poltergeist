@@ -32,6 +32,7 @@ class QuestNodeFetchRequirement {
 class QuestNodeObjective {
   static const typeChallenge = 'challenge';
   static const typeFetchQuest = 'fetch_quest';
+  static const typeStoryFlag = 'story_flag';
   static const typeScenario = 'scenario';
   static const typeExposition = 'exposition';
   static const typeMonsterEncounter = 'monster_encounter';

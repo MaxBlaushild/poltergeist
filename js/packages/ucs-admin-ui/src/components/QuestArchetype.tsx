@@ -650,6 +650,7 @@ type QuestArchetypeNodeEditorState = {
   scenarioTemplateId: string;
   fetchCharacterId: string;
   fetchRequirements: Array<{ inventoryItemId: string; quantity: number }>;
+  objectiveDescription: string;
   storyFlagKey: string;
   monsterTemplateIds: string[];
   targetLevel: number;
@@ -676,6 +677,7 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   scenarioTemplateId: '',
   fetchCharacterId: '',
   fetchRequirements: [],
+  objectiveDescription: '',
   storyFlagKey: '',
   monsterTemplateIds: [],
   targetLevel: 1,
@@ -723,6 +725,7 @@ const buildNodeEditorState = (
         : '',
     quantity: requirement.quantity ?? 1,
   })),
+  objectiveDescription: node.objectiveDescription ?? '',
   storyFlagKey: node.storyFlagKey ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
   locationArchetypeQuery:
@@ -813,6 +816,7 @@ const buildNodeDraft = (
               requirement.inventoryItemId > 0 && requirement.quantity > 0
           )
       : undefined,
+  objectiveDescription: state.objectiveDescription.trim() || undefined,
   storyFlagKey:
     state.nodeType === 'story_flag' ? state.storyFlagKey.trim() : undefined,
   monsterTemplateIds:
@@ -1032,6 +1036,25 @@ const QuestArchetypeNodeConfigFields: React.FC<
           <option value="fetch_quest">Fetch Quest</option>
           <option value="story_flag">Story Flag</option>
         </select>
+      </div>
+
+      <div className="qa-field">
+        <div className="qa-label">{prefix} Objective Description</div>
+        <div className="qa-helper">
+          Optional. Overrides the auto-generated objective text shown in the quest log and tracked quest widget for this node.
+        </div>
+        <textarea
+          className="qa-textarea"
+          rows={2}
+          value={editor.objectiveDescription}
+          onChange={(e) =>
+            setEditor((prev) => ({
+              ...prev,
+              objectiveDescription: e.target.value,
+            }))
+          }
+          placeholder="Listen to the argument beneath the bridge."
+        />
       </div>
 
       {showsLocationConfig ? (

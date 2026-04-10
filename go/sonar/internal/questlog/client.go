@@ -20,6 +20,7 @@ const (
 	QuestNodeObjectiveTypeFetchQuest       QuestNodeObjectiveType = "fetch_quest"
 	QuestNodeObjectiveTypeStoryFlag        QuestNodeObjectiveType = "story_flag"
 	QuestNodeObjectiveTypeScenario         QuestNodeObjectiveType = "scenario"
+	QuestNodeObjectiveTypeExposition       QuestNodeObjectiveType = "exposition"
 	QuestNodeObjectiveTypeMonsterEncounter QuestNodeObjectiveType = "monster_encounter"
 	QuestNodeObjectiveTypeMonster          QuestNodeObjectiveType = "monster"
 )
@@ -50,20 +51,22 @@ type QuestNodeObjective struct {
 }
 
 type QuestNode struct {
-	ID                 uuid.UUID                      `json:"id"`
-	OrderIndex         int                            `json:"orderIndex"`
-	ObjectiveText      string                         `json:"objectiveText,omitempty"`
-	Objective          *QuestNodeObjective            `json:"objective,omitempty"`
-	PointOfInterest    *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
-	Polygon            []QuestNodePolygonPoint        `json:"polygon,omitempty"`
-	ScenarioID         *uuid.UUID                     `json:"scenarioId,omitempty"`
-	FetchCharacterID   *uuid.UUID                     `json:"fetchCharacterId,omitempty"`
-	FetchCharacter     *models.Character              `json:"fetchCharacter,omitempty"`
-	StoryFlagKey       string                         `json:"storyFlagKey,omitempty"`
-	MonsterID          *uuid.UUID                     `json:"monsterId,omitempty"`
-	MonsterEncounterID *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
-	ChallengeID        *uuid.UUID                     `json:"challengeId,omitempty"`
-	SubmissionType     models.QuestNodeSubmissionType `json:"submissionType"`
+	ID                   uuid.UUID                      `json:"id"`
+	OrderIndex           int                            `json:"orderIndex"`
+	ObjectiveText        string                         `json:"objectiveText,omitempty"`
+	ObjectiveDescription string                         `json:"objectiveDescription,omitempty"`
+	Objective            *QuestNodeObjective            `json:"objective,omitempty"`
+	PointOfInterest      *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
+	Polygon              []QuestNodePolygonPoint        `json:"polygon,omitempty"`
+	ScenarioID           *uuid.UUID                     `json:"scenarioId,omitempty"`
+	ExpositionID         *uuid.UUID                     `json:"expositionId,omitempty"`
+	FetchCharacterID     *uuid.UUID                     `json:"fetchCharacterId,omitempty"`
+	FetchCharacter       *models.Character              `json:"fetchCharacter,omitempty"`
+	StoryFlagKey         string                         `json:"storyFlagKey,omitempty"`
+	MonsterID            *uuid.UUID                     `json:"monsterId,omitempty"`
+	MonsterEncounterID   *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
+	ChallengeID          *uuid.UUID                     `json:"challengeId,omitempty"`
+	SubmissionType       models.QuestNodeSubmissionType `json:"submissionType"`
 }
 
 type QuestNodePolygonPoint struct {
@@ -808,26 +811,28 @@ func buildQuestNodeView(
 	if strings.TrimSpace(string(submissionType)) == "" {
 		submissionType = models.DefaultQuestNodeSubmissionType()
 	}
-	objectiveText := ""
-	if objective != nil {
+	objectiveText := strings.TrimSpace(node.ObjectiveDescription)
+	if objectiveText == "" && objective != nil {
 		objectiveText = strings.TrimSpace(objective.Prompt)
 	}
 
 	return &QuestNode{
-		ID:                 node.ID,
-		OrderIndex:         node.OrderIndex,
-		ObjectiveText:      objectiveText,
-		Objective:          objective,
-		PointOfInterest:    pointOfInterest,
-		Polygon:            polygon,
-		ScenarioID:         node.ScenarioID,
-		FetchCharacterID:   node.FetchCharacterID,
-		FetchCharacter:     node.FetchCharacter,
-		StoryFlagKey:       node.StoryFlagKeyNormalized(),
-		MonsterID:          node.MonsterID,
-		MonsterEncounterID: node.MonsterEncounterID,
-		ChallengeID:        node.ChallengeID,
-		SubmissionType:     submissionType,
+		ID:                   node.ID,
+		OrderIndex:           node.OrderIndex,
+		ObjectiveText:        objectiveText,
+		ObjectiveDescription: strings.TrimSpace(node.ObjectiveDescription),
+		Objective:            objective,
+		PointOfInterest:      pointOfInterest,
+		Polygon:              polygon,
+		ScenarioID:           node.ScenarioID,
+		ExpositionID:         node.ExpositionID,
+		FetchCharacterID:     node.FetchCharacterID,
+		FetchCharacter:       node.FetchCharacter,
+		StoryFlagKey:         node.StoryFlagKeyNormalized(),
+		MonsterID:            node.MonsterID,
+		MonsterEncounterID:   node.MonsterEncounterID,
+		ChallengeID:          node.ChallengeID,
+		SubmissionType:       submissionType,
 	}, nil
 }
 
@@ -1017,6 +1022,46 @@ func buildQuestNodeObjective(
 					Proficiency:    proficiency,
 				},
 				scenario.PointOfInterest,
+				nil,
+				nil
+		}
+		return nil, nil, nil, nil
+	}
+
+	if node.ExpositionID != nil {
+		exposition, err := dbClient.Exposition().FindByID(ctx, *node.ExpositionID)
+		if err != nil {
+			log.Printf(
+				"resolveObjectiveText: exposition lookup failed for %s: %v",
+				node.ExpositionID.String(),
+				err,
+			)
+			return nil, nil, nil, nil
+		}
+		if exposition != nil {
+			submissionType := node.SubmissionType
+			if strings.TrimSpace(string(submissionType)) == "" {
+				submissionType = models.DefaultQuestNodeSubmissionType()
+			}
+			title := strings.TrimSpace(exposition.Title)
+			prompt := "Complete the exposition dialogue"
+			if title != "" {
+				prompt = "Complete the dialogue: " + title
+			}
+			description := strings.TrimSpace(exposition.Description)
+			if description == "" {
+				description = "Listen through the full dialogue to continue the quest."
+			}
+			return &QuestNodeObjective{
+					ID:             exposition.ID,
+					Type:           QuestNodeObjectiveTypeExposition,
+					Prompt:         prompt,
+					Description:    description,
+					ImageURL:       strings.TrimSpace(exposition.ImageURL),
+					ThumbnailURL:   strings.TrimSpace(exposition.ThumbnailURL),
+					SubmissionType: submissionType,
+				},
+				exposition.PointOfInterest,
 				nil,
 				nil
 		}

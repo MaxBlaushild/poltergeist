@@ -136,6 +136,7 @@ export interface QuestNode {
   orderIndex: number;
   submissionType?: QuestNodeSubmissionType;
   objectiveText?: string;
+  objectiveDescription?: string;
   objective?: QuestNodeObjective | null;
   pointOfInterestId?: string | null;
   fetchCharacterId?: string | null;

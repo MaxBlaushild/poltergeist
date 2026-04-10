@@ -20,6 +20,7 @@ export type QuestArchetypeNodeDraft = {
   scenarioTemplateId?: string | null;
   fetchCharacterId?: string | null;
   fetchRequirements?: { inventoryItemId: number; quantity: number }[];
+  objectiveDescription?: string;
   storyFlagKey?: string;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
@@ -267,6 +268,7 @@ export const QuestArchetypesProvider = ({
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
         fetchCharacterId: draft.rootNode.fetchCharacterId,
         fetchRequirements: draft.rootNode.fetchRequirements,
+        objectiveDescription: draft.rootNode.objectiveDescription,
         storyFlagKey: draft.rootNode.storyFlagKey,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
@@ -394,6 +396,7 @@ export const QuestArchetypesProvider = ({
       scenarioTemplateId?: string | null;
       fetchCharacterId?: string | null;
       fetchRequirements?: { inventoryItemId: number; quantity: number }[];
+      objectiveDescription?: string;
       storyFlagKey?: string;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
@@ -422,6 +425,7 @@ export const QuestArchetypesProvider = ({
       payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
       payload.fetchCharacterId = unlockedNode.fetchCharacterId;
       payload.fetchRequirements = unlockedNode.fetchRequirements;
+      payload.objectiveDescription = unlockedNode.objectiveDescription;
       payload.storyFlagKey = unlockedNode.storyFlagKey;
       if (
         unlockedNode.monsterTemplateIds &&
@@ -491,6 +495,7 @@ export const QuestArchetypesProvider = ({
       scenarioTemplateId: updates.scenarioTemplateId,
       fetchCharacterId: updates.fetchCharacterId,
       fetchRequirements: updates.fetchRequirements,
+      objectiveDescription: updates.objectiveDescription,
       storyFlagKey: updates.storyFlagKey,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,

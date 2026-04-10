@@ -265,13 +265,8 @@ class _TrackedQuestCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: quest.isMainStory
-            ? const Color(0xFF5C1520).withValues(alpha: 0.88)
-            : Colors.black26,
+        color: Colors.black26,
         borderRadius: BorderRadius.circular(8),
-        border: quest.isMainStory
-            ? Border.all(color: const Color(0xFFE7C36A))
-            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,24 +282,6 @@ class _TrackedQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (quest.isMainStory)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE7C36A),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Story',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFF5C1520),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
             ],
           ),
           const SizedBox(height: 8),

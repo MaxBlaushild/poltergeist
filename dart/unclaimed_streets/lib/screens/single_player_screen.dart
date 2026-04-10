@@ -269,6 +269,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialReplayResetInFlight = false;
   bool _tutorialReplayPending = false;
   int _lastTutorialReplayRequestCount = 0;
+  bool _loadAllInFlight = false;
   String? _tutorialFocusedScenarioId;
   String? _tutorialFocusedMonsterEncounterId;
   bool _tutorialNormalPinsRevealInProgress = false;
@@ -291,7 +292,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     super.initState();
     debugPrint('SinglePlayer: initState');
     _startMapLoadTimeout();
-    _loadAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<ZoneProvider>().addListener(_onZoneChanged);
@@ -319,6 +319,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       unawaited(_loadTutorialStatus(force: true));
       _onTutorialReplayRequested();
       _onBasePlacementRequested();
+      _queueLoadAllIfAuthenticated();
     });
   }
 
@@ -427,12 +428,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (auth.loading || !auth.isAuthenticated) {
       return;
     }
+    _queueLoadAllIfAuthenticated();
     _requestQuestLogIfReady(force: true);
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
     unawaited(_loadBases());
     unawaited(context.read<PartyProvider>().fetchParty());
     unawaited(_loadTutorialStatus(force: true));
+  }
+
+  void _queueLoadAllIfAuthenticated() {
+    if (!mounted || _loadAllInFlight) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading || !auth.isAuthenticated) {
+      return;
+    }
+    unawaited(_loadAll());
   }
 
   void _onTutorialReplayRequested() {
@@ -1906,6 +1917,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _loadAll() async {
+    if (_loadAllInFlight) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading || !auth.isAuthenticated) {
+      return;
+    }
+    _loadAllInFlight = true;
     debugPrint('SinglePlayer: _loadAll start');
     final svc = context.read<PoiService>();
     final discoveriesProvider = context.read<DiscoveriesProvider>();
@@ -1947,6 +1964,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       debugPrint('SinglePlayer: _loadAll error: $e');
       debugPrint('SinglePlayer: _loadAll stack: $stackTrace');
       if (mounted) setState(() {});
+    } finally {
+      _loadAllInFlight = false;
     }
   }
 
@@ -2686,21 +2705,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final service = svc ?? context.read<PoiService>();
     final request = () async {
       try {
-        final treasureChestsFuture = service.getTreasureChestsForZone(zoneId);
-        final healingFountainsFuture = service.getHealingFountainsForZone(
-          zoneId,
-        );
-        final scenariosFuture = service.getScenariosForZone(zoneId);
-        final expositionsFuture = service.getExpositionsForZone(zoneId);
-        final monstersFuture = service.getMonsterEncountersForZone(zoneId);
-        final challengesFuture = service.getChallengesForZone(zoneId);
+        final results = await Future.wait<dynamic>([
+          service.getTreasureChestsForZone(zoneId),
+          service.getHealingFountainsForZone(zoneId),
+          service.getScenariosForZone(zoneId),
+          service.getExpositionsForZone(zoneId),
+          service.getMonsterEncountersForZone(zoneId),
+          service.getChallengesForZone(zoneId),
+        ]);
         final content = _ZoneBaseContent(
-          treasureChests: await treasureChestsFuture,
-          healingFountains: await healingFountainsFuture,
-          scenarios: await scenariosFuture,
-          expositions: await expositionsFuture,
-          monsters: await monstersFuture,
-          challenges: await challengesFuture,
+          treasureChests: results[0] as List<TreasureChest>,
+          healingFountains: results[1] as List<HealingFountain>,
+          scenarios: results[2] as List<Scenario>,
+          expositions: results[3] as List<Exposition>,
+          monsters: results[4] as List<MonsterEncounter>,
+          challenges: results[5] as List<Challenge>,
         );
         _zoneBaseContentCache[zoneId] = content;
         return content;
