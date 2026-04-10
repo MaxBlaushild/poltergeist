@@ -5,6 +5,7 @@ import {
   DialogueMessage,
   QuestArchetype,
   Spell,
+  User,
 } from '@poltergeist/types';
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 
@@ -226,6 +227,26 @@ const SearchableSelect = ({
   );
 };
 
+const formatUserOptionLabel = (user: User) => {
+  const username = (user.username ?? '').trim();
+  const name = (user.name ?? '').trim();
+  const phoneNumber = (user.phoneNumber ?? '').trim();
+
+  if (username && name && name.toLowerCase() !== username.toLowerCase()) {
+    return `@${username} - ${name}`;
+  }
+  if (username) {
+    return `@${username}`;
+  }
+  if (name && phoneNumber) {
+    return `${name} - ${phoneNumber}`;
+  }
+  if (name) {
+    return name;
+  }
+  return phoneNumber || user.id;
+};
+
 export const Tutorial = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
@@ -238,6 +259,7 @@ export const Tutorial = () => {
   const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(
     null
   );
+  const [users, setUsers] = useState<User[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [questArchetypes, setQuestArchetypes] = useState<QuestArchetype[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
@@ -270,6 +292,8 @@ export const Tutorial = () => {
   const [monsterItemRewards, setMonsterItemRewards] = useState<
     TutorialItemRewardRow[]
   >([]);
+  const [baseQuestPreviewUserId, setBaseQuestPreviewUserId] = useState('');
+  const [queueingBaseQuest, setQueueingBaseQuest] = useState(false);
   const imageGenerationActive =
     imageGenerationStatus === 'queued' ||
     imageGenerationStatus === 'in_progress';
@@ -396,11 +420,13 @@ export const Tutorial = () => {
       try {
         setReferenceDataLoading(true);
         const [
+          loadedUsers,
           loadedCharacters,
           loadedQuestArchetypes,
           loadedSpells,
           loadedMonsterEncounters,
         ] = await Promise.all([
+          apiClient.get<User[]>('/sonar/users'),
           apiClient.get<Character[]>('/sonar/characters'),
           apiClient.get<QuestArchetype[]>('/sonar/questArchetypes'),
           apiClient.get<Spell[]>('/sonar/spells'),
@@ -409,6 +435,7 @@ export const Tutorial = () => {
           ),
         ]);
 
+        setUsers(Array.isArray(loadedUsers) ? loadedUsers : []);
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
         setQuestArchetypes(
           Array.isArray(loadedQuestArchetypes) ? loadedQuestArchetypes : []
@@ -476,6 +503,15 @@ export const Tutorial = () => {
         label: character.name,
       })),
     [characters]
+  );
+
+  const userOptions = useMemo(
+    () =>
+      users.map((user) => ({
+        value: user.id,
+        label: formatUserOptionLabel(user),
+      })),
+    [users]
   );
 
   const itemOptions = useMemo(
@@ -641,7 +677,11 @@ export const Tutorial = () => {
     );
   };
 
-  const handleSave = async () => {
+  const saveTutorialConfig = async ({
+    showSuccessMessage = true,
+  }: {
+    showSuccessMessage?: boolean;
+  } = {}) => {
     try {
       setSaving(true);
       setStatusMessage(null);
@@ -691,14 +731,66 @@ export const Tutorial = () => {
           .filter((option) => option.optionText),
       });
 
-      setStatusMessage('Tutorial config saved.');
-      setStatusKind('success');
+      if (showSuccessMessage) {
+        setStatusMessage('Tutorial config saved.');
+        setStatusKind('success');
+      }
+      return true;
     } catch (error) {
       console.error('Failed to save tutorial config', error);
       setStatusMessage('Failed to save tutorial config.');
       setStatusKind('error');
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    await saveTutorialConfig();
+  };
+
+  const handleQueueBaseQuestForUser = async () => {
+    if (!baseQuestPreviewUserId) {
+      setStatusMessage('Select a user first.');
+      setStatusKind('error');
+      return;
+    }
+    if (!baseQuestArchetypeId || !baseQuestGiverCharacterId) {
+      setStatusMessage(
+        'Configure the Home Base Quest archetype and source questgiver first.'
+      );
+      setStatusKind('error');
+      return;
+    }
+
+    const saved = await saveTutorialConfig({ showSuccessMessage: false });
+    if (!saved) {
+      return;
+    }
+
+    try {
+      setQueueingBaseQuest(true);
+      setStatusMessage(null);
+      setStatusKind(null);
+
+      await apiClient.post('/sonar/admin/tutorial/instantiate-base-quest', {
+        userId: baseQuestPreviewUserId,
+      });
+
+      const selectedUser = users.find((user) => user.id === baseQuestPreviewUserId);
+      setStatusMessage(
+        `Queued the tutorial follow-up quest for ${
+          selectedUser ? formatUserOptionLabel(selectedUser) : 'the selected user'
+        }.`
+      );
+      setStatusKind('success');
+    } catch (error) {
+      console.error('Failed to queue tutorial follow-up quest', error);
+      setStatusMessage('Failed to queue the tutorial follow-up quest.');
+      setStatusKind('error');
+    } finally {
+      setQueueingBaseQuest(false);
     }
   };
 
@@ -1235,6 +1327,47 @@ export const Tutorial = () => {
                   value={baseQuestGiverCharacterId}
                   onChange={setBaseQuestGiverCharacterId}
                 />
+              </div>
+
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-medium text-gray-900">
+                    Run For User
+                  </h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Saves this tutorial config, then queues the follow-up home
+                    base quest for a user who already has a base.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                  <SearchableSelect
+                    label="User"
+                    placeholder="Search username, name, or phone…"
+                    options={userOptions}
+                    value={baseQuestPreviewUserId}
+                    onChange={setBaseQuestPreviewUserId}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleQueueBaseQuestForUser}
+                    disabled={
+                      saving ||
+                      generatingImage ||
+                      queueingBaseQuest ||
+                      referenceDataLoading
+                    }
+                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {queueingBaseQuest ? 'Queueing…' : 'Queue Follow-Up Quest'}
+                  </button>
+                </div>
+
+                {referenceDataLoading ? (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Loading user options…
+                  </p>
+                ) : null}
               </div>
             </section>
 

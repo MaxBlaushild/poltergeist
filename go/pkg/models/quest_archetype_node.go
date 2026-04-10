@@ -46,8 +46,9 @@ func NormalizeQuestArchetypeNodeType(raw string) QuestArchetypeNodeType {
 type QuestArchetypeNodeLocationSelectionMode string
 
 const (
-	QuestArchetypeNodeLocationSelectionModeRandom  QuestArchetypeNodeLocationSelectionMode = "random"
-	QuestArchetypeNodeLocationSelectionModeClosest QuestArchetypeNodeLocationSelectionMode = "closest"
+	QuestArchetypeNodeLocationSelectionModeRandom         QuestArchetypeNodeLocationSelectionMode = "random"
+	QuestArchetypeNodeLocationSelectionModeClosest        QuestArchetypeNodeLocationSelectionMode = "closest"
+	QuestArchetypeNodeLocationSelectionModeSameAsPrevious QuestArchetypeNodeLocationSelectionMode = "same_as_previous"
 )
 
 func NormalizeQuestArchetypeNodeLocationSelectionMode(
@@ -56,6 +57,8 @@ func NormalizeQuestArchetypeNodeLocationSelectionMode(
 	switch strings.TrimSpace(strings.ToLower(raw)) {
 	case string(QuestArchetypeNodeLocationSelectionModeClosest):
 		return QuestArchetypeNodeLocationSelectionModeClosest
+	case string(QuestArchetypeNodeLocationSelectionModeSameAsPrevious):
+		return QuestArchetypeNodeLocationSelectionModeSameAsPrevious
 	default:
 		return QuestArchetypeNodeLocationSelectionModeRandom
 	}

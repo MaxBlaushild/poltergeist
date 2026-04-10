@@ -533,6 +533,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         ];
         final canShareQuest =
             quest.isAccepted &&
+            !quest.isTutorial &&
             quest.turnedInAt == null &&
             partyMembers.isNotEmpty;
         final discoveredIds = <String>{
@@ -557,7 +558,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (quest.isMainStory) ...[
+              if (quest.isMainStory || quest.isTutorial) ...[
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -572,7 +573,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                       border: Border.all(color: const Color(0xFFE7C36A)),
                     ),
                     child: Text(
-                      'Main Story',
+                      quest.isTutorial ? 'Tutorial' : 'Main Story',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -616,18 +617,19 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   : 'Share Quest',
                             ),
                           ),
-                        FilledButton(
-                          onPressed: () async {
-                            if (isTracked) {
-                              await ql.untrackQuest(quest.id);
-                            } else {
-                              await ql.trackQuest(quest.id);
-                            }
-                          },
-                          child: Text(
-                            isTracked ? 'Untrack Quest' : 'Track Quest',
+                        if (!quest.isTutorial)
+                          FilledButton(
+                            onPressed: () async {
+                              if (isTracked) {
+                                await ql.untrackQuest(quest.id);
+                              } else {
+                                await ql.trackQuest(quest.id);
+                              }
+                            },
+                            child: Text(
+                              isTracked ? 'Untrack Quest' : 'Track Quest',
+                            ),
                           ),
-                        ),
                       ],
                     ),
                 ],

@@ -261,9 +261,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _handlingMonsterBattleIntent = false;
   TutorialStatus? _tutorialStatus;
   bool _tutorialStatusLoading = false;
+  bool _tutorialStatusReloadQueued = false;
+  bool _tutorialStatusReloadQueuedPreserveCompletedReveal = false;
   bool _tutorialStatusChecked = false;
   bool _tutorialDialogVisible = false;
   bool _tutorialActivationInFlight = false;
+  bool _tutorialReplayResetInFlight = false;
   bool _tutorialReplayPending = false;
   int _lastTutorialReplayRequestCount = 0;
   String? _tutorialFocusedScenarioId;
@@ -274,6 +277,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialRevealPendingAfterCompletionModal = false;
   bool _tutorialWelcomeOverlayVisible = false;
   double _tutorialWelcomeOverlayOpacity = 0.0;
+  String _lastTutorialQuestSyncSignature = '';
   String? _pendingBaseOwnedInventoryItemId;
   InventoryItem? _pendingBaseInventoryItem;
   LatLng? _pendingBaseSelection;
@@ -438,7 +442,53 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (requestCount == _lastTutorialReplayRequestCount) return;
     _lastTutorialReplayRequestCount = requestCount;
     _tutorialReplayPending = true;
-    unawaited(_loadTutorialStatus(force: true));
+    unawaited(_resetTutorialForReplay());
+  }
+
+  Future<void> _resetTutorialForReplay() async {
+    if (!mounted || _tutorialReplayResetInFlight) return;
+    setState(() {
+      _tutorialReplayResetInFlight = true;
+      _tutorialFocusedScenarioId = null;
+      _tutorialFocusedMonsterEncounterId = null;
+      _tutorialNormalPinsRevealInProgress = false;
+      _tutorialWelcomeOverlayVisible = false;
+      _tutorialWelcomeOverlayOpacity = 0.0;
+      _tutorialLoadoutPendingAfterCompletionModal = false;
+      _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
+      _tutorialRevealPendingAfterCompletionModal = false;
+    });
+
+    try {
+      final status = await context.read<PoiService>().resetTutorial();
+      if (!mounted) return;
+      setState(() {
+        _tutorialStatus = status;
+        _tutorialStatusChecked = true;
+      });
+      _syncQuestLogToTutorialStatus(status);
+      await _ensureTutorialScenarioLoaded(status);
+      await _ensureTutorialMonsterLoaded(status);
+      await _syncTutorialMapModeFromStatus(status);
+      _syncTutorialInventorySession(status);
+      await _rebuildMapPins();
+    } catch (error) {
+      if (!mounted) return;
+      final message = PoiService.extractApiErrorMessage(
+        error,
+        'Failed to reset the tutorial.',
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
+    } finally {
+      if (mounted) {
+        setState(() => _tutorialReplayResetInFlight = false);
+      }
+    }
+    if (!mounted) return;
+    _maybeShowTutorialDialogues();
   }
 
   bool get _isTutorialMapFocusActive =>
@@ -1923,7 +1973,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     bool force = false,
     bool preserveCompletedReveal = false,
   }) async {
-    if (!mounted || _tutorialStatusLoading) return;
+    if (!mounted) return;
+    if (_tutorialStatusLoading) {
+      if (force) {
+        _tutorialStatusReloadQueued = true;
+        _tutorialStatusReloadQueuedPreserveCompletedReveal =
+            _tutorialStatusReloadQueuedPreserveCompletedReveal ||
+            preserveCompletedReveal;
+      }
+      return;
+    }
     if (!force && _tutorialStatusChecked) {
       _maybeShowTutorialDialogues();
       return;
@@ -1937,6 +1996,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _tutorialStatus = status;
         _tutorialStatusChecked = true;
       });
+      _syncQuestLogToTutorialStatus(status);
       await _ensureTutorialScenarioLoaded(status);
       await _ensureTutorialMonsterLoaded(status);
       await _syncTutorialMapModeFromStatus(status);
@@ -1958,6 +2018,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     _maybeShowTutorialDialogues();
+    if (_tutorialStatusReloadQueued) {
+      final queuedPreserveCompletedReveal =
+          _tutorialStatusReloadQueuedPreserveCompletedReveal;
+      _tutorialStatusReloadQueued = false;
+      _tutorialStatusReloadQueuedPreserveCompletedReveal = false;
+      unawaited(
+        _loadTutorialStatus(
+          force: true,
+          preserveCompletedReveal: queuedPreserveCompletedReveal,
+        ),
+      );
+    }
+  }
+
+  Future<void> _refreshTutorialAfterBaseInteraction() async {
+    await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
+    if (!mounted) return;
+
+    try {
+      final svc = context.read<PoiService>();
+      final characters = await svc.getCharacters();
+      if (!mounted) return;
+      setState(() {
+        _characters = characters;
+      });
+      await _loadBases();
+      if (!mounted) return;
+      _requestQuestLogIfReady(force: true);
+      await _rebuildMapPins();
+    } catch (error) {
+      debugPrint(
+        'SinglePlayer: failed to refresh tutorial state after base interaction: $error',
+      );
+    }
   }
 
   Future<void> _resetTutorialPresentationForInactiveStatus(
@@ -1995,8 +2089,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     await _rebuildMapPins();
   }
 
+  void _syncQuestLogToTutorialStatus(TutorialStatus? status) {
+    final nextSignature = _tutorialQuestSyncSignature(status);
+    if (nextSignature == _lastTutorialQuestSyncSignature) {
+      return;
+    }
+    _lastTutorialQuestSyncSignature = nextSignature;
+    _requestQuestLogIfReady(force: true);
+  }
+
+  String _tutorialQuestSyncSignature(TutorialStatus? status) {
+    if (status == null) {
+      return 'inactive';
+    }
+    if (status.isCompleted) {
+      return 'completed';
+    }
+    return [
+      status.stage.trim(),
+      status.scenarioId?.trim() ?? '',
+      status.monsterEncounterId?.trim() ?? '',
+      status.requiredEquipItemIds.join(','),
+      status.requiredUseItemIds.join(','),
+    ].join('|');
+  }
+
   void _maybeShowTutorialDialogues() {
-    if (!mounted || _tutorialDialogVisible || _tutorialActivationInFlight) {
+    if (!mounted ||
+        _tutorialDialogVisible ||
+        _tutorialActivationInFlight ||
+        _tutorialReplayResetInFlight) {
+      return;
+    }
+    if (_completedTaskProvider?.currentModal != null) {
       return;
     }
     final status = _tutorialStatus;
@@ -2020,13 +2145,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     if (status.dialogue.isEmpty) {
+      if (status.showWelcomeDialogue || _tutorialReplayPending) {
+        unawaited(
+          _activateTutorialScenario(
+            status,
+            forceReplay: _tutorialReplayPending,
+          ),
+        );
+      }
       return;
     }
     if (!status.showWelcomeDialogue && !_tutorialReplayPending) {
       return;
     }
     final location = context.read<LocationProvider>().location;
-    if (location == null) return;
+    if (location == null && !_tutorialReplayPending) return;
     unawaited(
       _showTutorialWelcomeDialog(status, forceReplay: _tutorialReplayPending),
     );
@@ -6760,6 +6893,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   bool _hasDiscoveredCharacter(Character character) {
+    if (_isCurrentQuestTurnInCharacter(character.id)) {
+      return true;
+    }
     if (!_isCharacterDiscoveryManaged(character)) return true;
     final poiId = _characterDiscoveryPoiId(character);
     if (poiId.isNotEmpty) {
@@ -8756,8 +8892,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) =>
-          BasePanel(base: base, onClose: () => Navigator.of(context).pop()),
+      builder: (context) => BasePanel(
+        base: base,
+        onClose: () => Navigator.of(context).pop(),
+        onTutorialProgressChanged: _refreshTutorialAfterBaseInteraction,
+      ),
     );
   }
 

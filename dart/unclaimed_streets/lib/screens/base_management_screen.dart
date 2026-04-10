@@ -19,9 +19,14 @@ const String _hearthRecoveryStateKey = 'hearth_recovery';
 const Duration _hearthRecoveryCooldownDuration = Duration(days: 1);
 
 class BaseManagementScreen extends StatefulWidget {
-  const BaseManagementScreen({super.key, required this.baseId});
+  const BaseManagementScreen({
+    super.key,
+    required this.baseId,
+    this.onTutorialProgressChanged,
+  });
 
   final String baseId;
+  final Future<void> Function()? onTutorialProgressChanged;
 
   @override
   State<BaseManagementScreen> createState() => _BaseManagementScreenState();
@@ -45,6 +50,7 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
         child: BaseManagementContent(
           key: _contentKey,
           baseId: widget.baseId,
+          onTutorialProgressChanged: widget.onTutorialProgressChanged,
           onHeaderChanged: () {
             if (mounted) {
               setState(() {});
@@ -60,11 +66,13 @@ class BaseManagementContent extends StatefulWidget {
   const BaseManagementContent({
     super.key,
     required this.baseId,
+    this.onTutorialProgressChanged,
     this.onHeaderChanged,
     this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 32),
   });
 
   final String baseId;
+  final Future<void> Function()? onTutorialProgressChanged;
   final VoidCallback? onHeaderChanged;
   final EdgeInsets padding;
 
@@ -119,6 +127,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       });
       _syncBaseEditorsToSnapshot();
       _notifyHeaderChanged();
+      await _notifyTutorialProgressChanged();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -140,6 +149,18 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
 
   void _notifyHeaderChanged() {
     widget.onHeaderChanged?.call();
+  }
+
+  Future<void> _notifyTutorialProgressChanged() async {
+    final onTutorialProgressChanged = widget.onTutorialProgressChanged;
+    if (onTutorialProgressChanged == null) return;
+    try {
+      await onTutorialProgressChanged();
+    } catch (error) {
+      debugPrint(
+        'BaseManagementContent: tutorial progress refresh failed: $error',
+      );
+    }
   }
 
   UserBaseStructureData? get _moveAnchorStructure {
@@ -172,6 +193,8 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         _snapshot = nextSnapshot;
         _busyStructureKey = null;
       });
+      await _notifyTutorialProgressChanged();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -806,6 +829,8 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         _busyStructureKey = null;
       });
       _notifyHeaderChanged();
+      await _notifyTutorialProgressChanged();
+      if (!mounted) return;
       final statusText = statusesApplied > 0
           ? ' and gained $statusesApplied blessing${statusesApplied == 1 ? '' : 's'}'
           : '';

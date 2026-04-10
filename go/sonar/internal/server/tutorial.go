@@ -1,14 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	dungeonmasterruntime "github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -80,6 +82,10 @@ type advanceTutorialRequest struct {
 
 type generateTutorialImageRequest struct {
 	ScenarioPrompt string `json:"scenarioPrompt"`
+}
+
+type adminInstantiateTutorialBaseQuestRequest struct {
+	UserID string `json:"userId"`
 }
 
 func (s *server) getTutorialConfig(ctx *gin.Context) {
@@ -187,6 +193,53 @@ func (s *server) generateTutorialImage(ctx *gin.Context) {
 	ctx.JSON(http.StatusAccepted, updated)
 }
 
+func (s *server) adminInstantiateTutorialBaseQuest(ctx *gin.Context) {
+	var requestBody adminInstantiateTutorialBaseQuestRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(strings.TrimSpace(requestBody.UserID))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "userId must be a valid UUID"})
+		return
+	}
+
+	config, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tutorial home base quest is not fully configured"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	base, err := s.dbClient.Base().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if base == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "selected user does not have a home base"})
+		return
+	}
+
+	s.instantiateTutorialBaseQuestAsync(userID, base, config)
+	ctx.JSON(http.StatusAccepted, gin.H{"queued": true})
+}
+
 func (s *server) getTutorialStatus(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -219,6 +272,31 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, buildTutorialStatusResponse(config, state))
 }
 
+func (s *server) resetTutorial(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	config, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.forceResetTutorialReplayState(ctx, user.ID, config); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	state, err := s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, buildTutorialStatusResponse(config, state))
+}
+
 func (s *server) activateTutorial(ctx *gin.Context) {
 	var requestBody activateTutorialRequest
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -241,17 +319,12 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "tutorial is not configured"})
 		return
 	}
-	if requestBody.Force && config.MonsterEncounterID != nil {
-		if err := s.dbClient.UserMonsterEncounterVictory().Delete(
-			ctx,
-			user.ID,
-			*config.MonsterEncounterID,
-		); err != nil {
+	if requestBody.Force {
+		if err := s.forceResetTutorialReplayState(ctx, user.ID, config); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-	}
-	if err := s.dbClient.Tutorial().InitializeForNewUser(ctx, user.ID); err != nil {
+	} else if err := s.dbClient.Tutorial().InitializeForNewUser(ctx, user.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -312,7 +385,7 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		options,
 		nil,
 		nil,
-		requestBody.Force,
+		false,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -383,6 +456,14 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 		if err := s.dbClient.Tutorial().MarkCompleted(ctx, user.ID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+		base, err := s.dbClient.Base().FindByUserID(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if base != nil {
+			s.instantiateTutorialBaseQuestAsync(user.ID, base, config)
 		}
 	default:
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unsupported tutorial action"})
@@ -627,9 +708,6 @@ func (s *server) maybeAdvanceTutorialProgress(
 		if base == nil {
 			return state, nil
 		}
-		if err := s.instantiateTutorialBaseQuest(ctx, userID, base, config); err != nil {
-			return nil, err
-		}
 		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, userID); err != nil {
 			return nil, err
 		}
@@ -688,6 +766,141 @@ func (s *server) maybeAdvanceTutorialProgress(
 		return nil, err
 	}
 	return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+}
+
+func (s *server) forceResetTutorialReplayState(
+	ctx *gin.Context,
+	userID uuid.UUID,
+	config *models.TutorialConfig,
+) error {
+	if config != nil && config.MonsterEncounterID != nil {
+		if err := s.dbClient.UserMonsterEncounterVictory().Delete(
+			ctx,
+			userID,
+			*config.MonsterEncounterID,
+		); err != nil {
+			return err
+		}
+	}
+	if err := s.dbClient.Tutorial().InitializeForNewUser(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.dbClient.Tutorial().ResetForReplay(ctx, userID); err != nil {
+		return err
+	}
+	return s.purgeTutorialReplayArtifacts(ctx, userID, config)
+}
+
+func (s *server) purgeTutorialReplayArtifacts(
+	ctx context.Context,
+	userID uuid.UUID,
+	config *models.TutorialConfig,
+) error {
+	var baseQuestArchetypeID *uuid.UUID
+	if config != nil {
+		baseQuestArchetypeID = config.BaseQuestArchetypeID
+	}
+	return dungeonmasterruntime.PurgeTutorialReplayArtifacts(
+		ctx,
+		s.dbClient,
+		userID,
+		baseQuestArchetypeID,
+	)
+}
+
+func (s *server) maybeAdvanceTutorialAfterHomeBaseKitUse(
+	ctx *gin.Context,
+	userID uuid.UUID,
+) *tutorialStatusResponse {
+	config, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		log.Printf("[tutorial] failed to load config after home base use user=%s err=%v", userID, err)
+		return nil
+	}
+	state, err := s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("[tutorial] failed to load state after home base use user=%s err=%v", userID, err)
+		return nil
+	}
+	if state == nil {
+		return nil
+	}
+	nextState, err := s.maybeAdvanceTutorialProgress(ctx, userID, config, state)
+	if err != nil {
+		log.Printf("[tutorial] failed to advance after home base use user=%s err=%v", userID, err)
+		nextState = state
+	}
+	response := buildTutorialStatusResponse(config, nextState)
+	return &response
+}
+
+func (s *server) instantiateTutorialBaseQuestAsync(
+	userID uuid.UUID,
+	base *models.Base,
+	config *models.TutorialConfig,
+) {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+		return
+	}
+
+	baseLatitude := base.Latitude
+	baseLongitude := base.Longitude
+	questArchetypeID := *config.BaseQuestArchetypeID
+	questGiverCharacterID := *config.BaseQuestGiverCharacterID
+
+	fallback := func() {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+
+			asyncBase := &models.Base{
+				Latitude:  baseLatitude,
+				Longitude: baseLongitude,
+			}
+			asyncConfig := &models.TutorialConfig{
+				BaseQuestArchetypeID:      &questArchetypeID,
+				BaseQuestGiverCharacterID: &questGiverCharacterID,
+			}
+
+			if err := s.instantiateTutorialBaseQuest(
+				bgCtx,
+				userID,
+				asyncBase,
+				asyncConfig,
+			); err != nil {
+				log.Printf(
+					"[tutorial] failed to instantiate tutorial base quest asynchronously user=%s err=%v",
+					userID,
+					err,
+				)
+			}
+		}()
+	}
+
+	if s.asyncClient == nil {
+		fallback()
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.InstantiateTutorialBaseQuestTaskPayload{
+		UserID:                    userID,
+		BaseLatitude:              baseLatitude,
+		BaseLongitude:             baseLongitude,
+		BaseQuestArchetypeID:      questArchetypeID,
+		BaseQuestGiverCharacterID: questGiverCharacterID,
+	})
+	if err != nil {
+		log.Printf("[tutorial] failed to marshal tutorial base quest task payload user=%s err=%v", userID, err)
+		fallback()
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(
+		asynq.NewTask(jobs.InstantiateTutorialBaseQuestTaskType, payloadBytes),
+	); err != nil {
+		log.Printf("[tutorial] failed to enqueue tutorial base quest task user=%s err=%v", userID, err)
+		fallback()
+	}
 }
 
 func activeTutorialScenarioID(state *models.UserTutorialState) *uuid.UUID {
@@ -857,15 +1070,29 @@ func buildTutorialMonsterEncounter(
 		Description:        strings.TrimSpace(template.Description),
 		ImageURL:           strings.TrimSpace(template.ImageURL),
 		ThumbnailURL:       strings.TrimSpace(template.ThumbnailURL),
+		EncounterType:      template.EncounterType,
 		OwnerUserID:        &ownerUserID,
 		Ephemeral:          true,
 		ScaleWithUserLevel: template.ScaleWithUserLevel,
 		ZoneID:             zoneID,
 		Latitude:           latitude,
 		Longitude:          longitude,
+		RewardMode:         template.RewardMode,
+		RandomRewardSize:   template.RandomRewardSize,
+		RewardExperience:   maxInt(0, template.RewardExperience),
+		RewardGold:         maxInt(0, template.RewardGold),
+		MaterialRewards:    cloneBaseMaterialRewards(template.MaterialRewards),
+		ItemRewards:        cloneMonsterEncounterRewardItems(template.ItemRewards),
 	}
 
 	useConfiguredRewards := tutorialMonsterRewardsConfigured(config)
+	if useConfiguredRewards {
+		encounter.RewardMode = models.RewardModeExplicit
+		encounter.RandomRewardSize = models.RandomRewardSizeSmall
+		encounter.RewardExperience = maxInt(0, config.MonsterRewardExperience)
+		encounter.RewardGold = maxInt(0, config.MonsterRewardGold)
+		encounter.ItemRewards = tutorialMonsterEncounterItemRewards(config.MonsterItemRewards)
+	}
 	members := make([]models.MonsterEncounterMember, 0, len(template.Members))
 	monsters := make([]models.Monster, 0, len(template.Members))
 	for index, member := range template.Members {
@@ -922,6 +1149,17 @@ func tutorialMonsterItemRewards(input []models.TutorialItemReward) []models.Mons
 	rewards := make([]models.MonsterItemReward, 0, len(input))
 	for _, reward := range input {
 		rewards = append(rewards, models.MonsterItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func tutorialMonsterEncounterItemRewards(input []models.TutorialItemReward) models.MonsterEncounterRewardItems {
+	rewards := make(models.MonsterEncounterRewardItems, 0, len(input))
+	for _, reward := range input {
+		rewards = append(rewards, models.MonsterEncounterRewardItem{
 			InventoryItemID: reward.InventoryItemID,
 			Quantity:        reward.Quantity,
 		})
@@ -987,7 +1225,7 @@ func (s *server) tutorialBaseKitRequirementItemIDs(
 }
 
 func (s *server) instantiateTutorialBaseQuest(
-	ctx *gin.Context,
+	ctx context.Context,
 	userID uuid.UUID,
 	base *models.Base,
 	config *models.TutorialConfig,
@@ -995,88 +1233,19 @@ func (s *server) instantiateTutorialBaseQuest(
 	if base == nil || config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
 		return nil
 	}
-
-	existingQuest, err := s.findTutorialBaseQuestForUser(ctx, userID, *config.BaseQuestArchetypeID)
-	if err != nil {
-		return err
-	}
-	if existingQuest != nil {
-		return nil
-	}
-
-	sourceCharacter, err := s.dbClient.Character().FindByID(ctx, *config.BaseQuestGiverCharacterID)
-	if err != nil {
-		return err
-	}
-	if sourceCharacter == nil {
-		return fmt.Errorf("tutorial base quest giver character not found")
-	}
-
-	zones, err := s.dbClient.Zone().FindAll(ctx)
-	if err != nil {
-		return err
-	}
-	zone, err := selectZoneForCoordinates(zones, base.Latitude, base.Longitude)
-	if err != nil {
-		return err
-	}
-
-	cloneLatitude, cloneLongitude := offsetTutorialCharacterNearBase(base.Latitude, base.Longitude, 60)
-	clonedCharacterID := uuid.New()
-	now := time.Now()
-	clonedCharacter := &models.Character{
-		ID:                    clonedCharacterID,
-		CreatedAt:             now,
-		UpdatedAt:             now,
-		Name:                  sourceCharacter.Name,
-		Description:           sourceCharacter.Description,
-		InternalTags:          append(models.StringArray{}, sourceCharacter.InternalTags...),
-		MapIconURL:            sourceCharacter.MapIconURL,
-		DialogueImageURL:      sourceCharacter.DialogueImageURL,
-		ThumbnailURL:          sourceCharacter.ThumbnailURL,
-		OwnerUserID:           &userID,
-		Ephemeral:             true,
-		StoryVariants:         append(models.CharacterStoryVariants{}, sourceCharacter.StoryVariants...),
-		PointOfInterestID:     nil,
-		ImageGenerationStatus: sourceCharacter.ImageGenerationStatus,
-		ImageGenerationError:  sourceCharacter.ImageGenerationError,
-	}
-	if err := s.dbClient.Character().Create(ctx, clonedCharacter); err != nil {
-		return err
-	}
-	if err := s.dbClient.CharacterLocation().ReplaceForCharacter(ctx, clonedCharacterID, []models.CharacterLocation{
-		{
-			ID:          uuid.New(),
-			CreatedAt:   now,
-			UpdatedAt:   now,
-			CharacterID: clonedCharacterID,
-			Latitude:    cloneLatitude,
-			Longitude:   cloneLongitude,
-		},
-	}); err != nil {
-		return err
-	}
-
-	quest, err := s.dungeonmaster.GenerateQuest(ctx, zone, *config.BaseQuestArchetypeID, &clonedCharacterID)
-	if err != nil {
-		return err
-	}
-	if quest == nil {
-		return fmt.Errorf("failed to generate tutorial base quest")
-	}
-	quest.OwnerUserID = &userID
-	quest.Ephemeral = true
-	quest.QuestGiverCharacterID = &clonedCharacterID
-	quest.UpdatedAt = time.Now()
-	if err := s.dbClient.Quest().Update(ctx, quest.ID, quest); err != nil {
-		return err
-	}
-
-	return nil
+	return dungeonmasterruntime.InstantiateTutorialBaseQuest(
+		ctx,
+		s.dbClient,
+		s.dungeonmaster,
+		userID,
+		base,
+		*config.BaseQuestArchetypeID,
+		*config.BaseQuestGiverCharacterID,
+	)
 }
 
 func (s *server) findTutorialBaseQuestForUser(
-	ctx *gin.Context,
+	ctx context.Context,
 	userID uuid.UUID,
 	questArchetypeID uuid.UUID,
 ) (*models.Quest, error) {
@@ -1097,25 +1266,34 @@ func (s *server) findTutorialBaseQuestForUser(
 	return nil, nil
 }
 
-func offsetTutorialCharacterNearBase(latitude float64, longitude float64, distanceMeters float64) (float64, float64) {
-	if distanceMeters <= 0 {
-		return latitude, longitude
-	}
-	latOffset := distanceMeters / 111111.0
-	cosLat := math.Cos(latitude * math.Pi / 180.0)
-	if math.Abs(cosLat) < 0.00001 {
-		cosLat = 0.00001
-	}
-	lngOffset := (distanceMeters * 0.35) / (111111.0 * cosLat)
-	return latitude + latOffset, longitude + lngOffset
-}
-
 func cloneMonsterItemRewards(input []models.MonsterItemReward) []models.MonsterItemReward {
 	rewards := make([]models.MonsterItemReward, 0, len(input))
 	for _, reward := range input {
 		rewards = append(rewards, models.MonsterItemReward{
 			InventoryItemID: reward.InventoryItemID,
 			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func cloneMonsterEncounterRewardItems(input models.MonsterEncounterRewardItems) models.MonsterEncounterRewardItems {
+	rewards := make(models.MonsterEncounterRewardItems, 0, len(input))
+	for _, reward := range input {
+		rewards = append(rewards, models.MonsterEncounterRewardItem{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func cloneBaseMaterialRewards(input models.BaseMaterialRewards) models.BaseMaterialRewards {
+	rewards := make(models.BaseMaterialRewards, 0, len(input))
+	for _, reward := range input {
+		rewards = append(rewards, models.BaseResourceDelta{
+			ResourceKey: reward.ResourceKey,
+			Amount:      reward.Amount,
 		})
 	}
 	return rewards

@@ -87,6 +87,7 @@ type Quest struct {
 	Name                     string                   `json:"name"`
 	Description              string                   `json:"description"`
 	Category                 string                   `json:"category"`
+	IsTutorial               bool                     `json:"isTutorial,omitempty"`
 	AcceptanceDialogue       []models.DialogueMessage `json:"acceptanceDialogue,omitempty"`
 	ImageUrl                 string                   `json:"imageUrl"`
 	RewardMode               models.RewardMode        `json:"rewardMode"`
@@ -119,6 +120,23 @@ type QuestlogClient interface {
 type questlogClient struct {
 	dbClient db.DbClient
 }
+
+var (
+	syntheticTutorialQuestID                = uuid.MustParse("5a4cb6a9-2489-4c83-a5be-b525f4a280e7")
+	syntheticTutorialWelcomeNodeID          = uuid.MustParse("6d59d16d-a5bb-4ed2-bc23-9adfe7173eb7")
+	syntheticTutorialScenarioNodeID         = uuid.MustParse("9b695530-637f-431c-a10f-47df31b2debf")
+	syntheticTutorialLoadoutNodeID          = uuid.MustParse("55b94fe3-d84d-489d-8255-5fd8254b70ce")
+	syntheticTutorialMonsterNodeID          = uuid.MustParse("8ff3d79c-c3d2-4ba0-a52e-2d2138a6b93f")
+	syntheticTutorialPostMonsterNodeID      = uuid.MustParse("f30ca0ab-cdbb-4a0c-b39b-ab4191e90df1")
+	syntheticTutorialBaseKitNodeID          = uuid.MustParse("24289e6e-6c5d-4d7d-9f42-3f3772caa4e5")
+	syntheticTutorialPostBaseDialogueNodeID = uuid.MustParse("43c34c30-8e8d-4627-b9b3-a6a5f7a5cb7d")
+)
+
+const (
+	tutorialQuestName        = "Tutorial"
+	tutorialQuestCategory    = "tutorial"
+	tutorialQuestDescription = "Follow the guided tutorial to learn the basics of Unclaimed Streets."
+)
 
 func NewClient(dbClient db.DbClient) QuestlogClient {
 	log.Printf("Creating new QuestlogClient")
@@ -389,6 +407,18 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		return left.After(*right)
 	})
 
+	tutorialQuest, err := c.loadActiveTutorialQuest(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if tutorialQuest != nil {
+		filtered = append([]Quest{*tutorialQuest}, filtered...)
+		trackedAccepted = prependQuestIDIfMissing(
+			trackedAccepted,
+			tutorialQuest.ID,
+		)
+	}
+
 	return &QuestLog{
 		Quests:          filtered,
 		CompletedQuests: completed,
@@ -429,6 +459,15 @@ func appendTrackedQuests(
 	}
 
 	return merged
+}
+
+func prependQuestIDIfMissing(ids []uuid.UUID, id uuid.UUID) []uuid.UUID {
+	for _, existing := range ids {
+		if existing == id {
+			return ids
+		}
+	}
+	return append([]uuid.UUID{id}, ids...)
 }
 
 func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error) {
@@ -508,6 +547,242 @@ func buildCurrentNode(
 		return buildQuestNodeView(ctx, dbClient, node)
 	}
 	return nil, nil
+}
+
+func (c *questlogClient) loadActiveTutorialQuest(
+	ctx context.Context,
+	userID uuid.UUID,
+) (*Quest, error) {
+	config, err := c.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if config == nil || !config.IsConfigured() {
+		return nil, nil
+	}
+
+	state, err := c.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil || state.CompletedAt != nil {
+		return nil, nil
+	}
+	if state.Stage == models.TutorialStageCompleted {
+		return nil, nil
+	}
+
+	currentNode := c.buildTutorialQuestNode(ctx, config, state)
+	if currentNode == nil {
+		return nil, nil
+	}
+
+	return &Quest{
+		ID:               syntheticTutorialQuestID,
+		Name:             tutorialQuestName,
+		Description:      tutorialQuestDescription,
+		Category:         tutorialQuestCategory,
+		IsTutorial:       true,
+		RewardMode:       models.RewardModeExplicit,
+		RandomRewardSize: models.RandomRewardSizeSmall,
+		IsAccepted:       true,
+		ReadyToTurnIn:    false,
+		CurrentNode:      currentNode,
+	}, nil
+}
+
+func (c *questlogClient) buildTutorialQuestNode(
+	ctx context.Context,
+	config *models.TutorialConfig,
+	state *models.UserTutorialState,
+) *QuestNode {
+	if state == nil {
+		return nil
+	}
+
+	switch state.Stage {
+	case models.TutorialStageWelcome:
+		return &QuestNode{
+			ID:             syntheticTutorialWelcomeNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  "Begin the tutorial.",
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStageScenario:
+		objectiveText := strings.TrimSpace(config.ScenarioPrompt)
+		if objectiveText == "" {
+			objectiveText = "Complete the opening tutorial scenario."
+		}
+		return &QuestNode{
+			ID:             syntheticTutorialScenarioNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  objectiveText,
+			ScenarioID:     state.TutorialScenarioID,
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStageLoadout:
+		return &QuestNode{
+			ID:         syntheticTutorialLoadoutNodeID,
+			OrderIndex: 0,
+			ObjectiveText: c.buildTutorialLoadoutObjectiveText(
+				ctx,
+				state.RequiredEquipItemIDs,
+				state.RequiredUseItemIDs,
+			),
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStageMonster:
+		return &QuestNode{
+			ID:                 syntheticTutorialMonsterNodeID,
+			OrderIndex:         0,
+			ObjectiveText:      c.buildTutorialMonsterObjectiveText(ctx, state.TutorialMonsterEncounterID),
+			MonsterEncounterID: state.TutorialMonsterEncounterID,
+			SubmissionType:     models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStagePostMonsterDialogue:
+		return &QuestNode{
+			ID:             syntheticTutorialPostMonsterNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  "Continue the tutorial conversation.",
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStageBaseKit:
+		return &QuestNode{
+			ID:             syntheticTutorialBaseKitNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  c.buildTutorialBaseKitObjectiveText(ctx, state.RequiredUseItemIDs),
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStagePostBaseDialogue:
+		return &QuestNode{
+			ID:             syntheticTutorialPostBaseDialogueNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  "Finish the tutorial conversation.",
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	default:
+		return &QuestNode{
+			ID:             syntheticTutorialWelcomeNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  "Continue the tutorial.",
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	}
+}
+
+func (c *questlogClient) buildTutorialLoadoutObjectiveText(
+	ctx context.Context,
+	requiredEquipItemIDs []int,
+	requiredUseItemIDs []int,
+) string {
+	clauses := []string{}
+	if summary := c.buildTutorialItemRequirementSummary(
+		ctx,
+		requiredEquipItemIDs,
+		"equip",
+	); summary != "" {
+		clauses = append(clauses, summary)
+	}
+	if summary := c.buildTutorialItemRequirementSummary(
+		ctx,
+		requiredUseItemIDs,
+		"use",
+	); summary != "" {
+		clauses = append(clauses, summary)
+	}
+	if len(clauses) == 0 {
+		return "Prepare your loadout."
+	}
+	return "Prepare your loadout: " + strings.Join(clauses, ". ") + "."
+}
+
+func (c *questlogClient) buildTutorialBaseKitObjectiveText(
+	ctx context.Context,
+	requiredUseItemIDs []int,
+) string {
+	if summary := c.buildTutorialItemRequirementSummary(
+		ctx,
+		requiredUseItemIDs,
+		"use",
+	); summary != "" {
+		return "Set up your home base: " + summary + "."
+	}
+	return "Set up your home base."
+}
+
+func (c *questlogClient) buildTutorialMonsterObjectiveText(
+	ctx context.Context,
+	monsterEncounterID *uuid.UUID,
+) string {
+	if monsterEncounterID == nil || *monsterEncounterID == uuid.Nil {
+		return "Defeat the tutorial monster encounter."
+	}
+	encounter, err := c.dbClient.MonsterEncounter().FindByID(
+		ctx,
+		*monsterEncounterID,
+	)
+	if err != nil {
+		log.Printf(
+			"loadActiveTutorialQuest: monster encounter lookup failed for %s: %v",
+			monsterEncounterID.String(),
+			err,
+		)
+		return "Defeat the tutorial monster encounter."
+	}
+	if encounter == nil {
+		return "Defeat the tutorial monster encounter."
+	}
+	name := strings.TrimSpace(encounter.Name)
+	if name == "" {
+		return "Defeat the tutorial monster encounter."
+	}
+	return "Defeat " + name + "."
+}
+
+func (c *questlogClient) buildTutorialItemRequirementSummary(
+	ctx context.Context,
+	inventoryItemIDs []int,
+	verb string,
+) string {
+	names := c.loadTutorialInventoryItemNames(ctx, inventoryItemIDs)
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(verb) + " " + strings.Join(names, ", ")
+}
+
+func (c *questlogClient) loadTutorialInventoryItemNames(
+	ctx context.Context,
+	inventoryItemIDs []int,
+) []string {
+	if len(inventoryItemIDs) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(inventoryItemIDs))
+	for _, inventoryItemID := range inventoryItemIDs {
+		if inventoryItemID <= 0 {
+			continue
+		}
+		name := fmt.Sprintf("item %d", inventoryItemID)
+		item, err := c.dbClient.InventoryItem().FindInventoryItemByID(
+			ctx,
+			inventoryItemID,
+		)
+		if err != nil {
+			log.Printf(
+				"loadActiveTutorialQuest: inventory item lookup failed for %d: %v",
+				inventoryItemID,
+				err,
+			)
+		} else if item != nil {
+			trimmed := strings.TrimSpace(item.Name)
+			if trimmed != "" {
+				name = trimmed
+			}
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 func buildQuestNodeView(

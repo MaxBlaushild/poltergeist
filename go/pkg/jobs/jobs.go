@@ -27,6 +27,7 @@ const (
 	GenerateScenarioImageTaskType                  = "generate_scenario_image"
 	GenerateExpositionImageTaskType                = "generate_exposition_image"
 	GenerateTutorialImageTaskType                  = "generate_tutorial_image"
+	InstantiateTutorialBaseQuestTaskType           = "instantiate_tutorial_base_quest"
 	GenerateChallengeImageTaskType                 = "generate_challenge_image"
 	GenerateChallengeTemplateImageTaskType         = "generate_challenge_template_image"
 	GenerateInventoryItemSuggestionsTaskType       = "generate_inventory_item_suggestions"
@@ -129,6 +130,14 @@ type GenerateQuestForZoneTaskPayload struct {
 	QuestArchetypeID      uuid.UUID  `json:"quest_archetype_id"`
 	QuestGiverCharacterID *uuid.UUID `json:"quest_giver_character_id,omitempty"`
 	QuestGenerationJobID  *uuid.UUID `json:"quest_generation_job_id,omitempty"`
+}
+
+type InstantiateTutorialBaseQuestTaskPayload struct {
+	UserID                    uuid.UUID `json:"user_id"`
+	BaseLatitude              float64   `json:"base_latitude"`
+	BaseLongitude             float64   `json:"base_longitude"`
+	BaseQuestArchetypeID      uuid.UUID `json:"base_quest_archetype_id"`
+	BaseQuestGiverCharacterID uuid.UUID `json:"base_quest_giver_character_id"`
 }
 
 type GenerateQuestArchetypeSuggestionsTaskPayload struct {

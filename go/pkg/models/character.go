@@ -30,6 +30,20 @@ type Character struct {
 	HasAvailableMainStoryQuest bool                        `json:"hasAvailableMainStoryQuest" gorm:"-"`
 }
 
+const CharacterInternalTagGeneratedFetchQuest = "generated_fetch_quest_character"
+
+func CharacterHasInternalTag(character *Character, tag string) bool {
+	if character == nil || tag == "" {
+		return false
+	}
+	for _, existing := range character.InternalTags {
+		if existing == tag {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *Character) TableName() string {
 	return "characters"
 }

@@ -65,6 +65,7 @@ class QuestMaterialReward {
 class Quest {
   static const categorySide = 'side';
   static const categoryMainStory = 'main_story';
+  static const categoryTutorial = 'tutorial';
   static const rewardModeExplicit = 'explicit';
   static const rewardModeRandom = 'random';
   static const randomRewardSizeSmall = 'small';
@@ -75,6 +76,7 @@ class Quest {
   final String name;
   final String description;
   final String category;
+  final bool isTutorial;
   final List<DialogueMessage> acceptanceDialogue;
   final String? imageUrl;
   final String rewardMode;
@@ -103,6 +105,7 @@ class Quest {
     required this.name,
     required this.description,
     this.category = categorySide,
+    this.isTutorial = false,
     this.acceptanceDialogue = const [],
     this.imageUrl,
     this.rewardMode = rewardModeRandom,
@@ -133,6 +136,7 @@ class Quest {
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       category: json['category']?.toString() ?? categorySide,
+      isTutorial: json['isTutorial'] as bool? ?? false,
       acceptanceDialogue:
           (json['acceptanceDialogue'] as List<dynamic>?)?.asMap().entries.map((
             entry,

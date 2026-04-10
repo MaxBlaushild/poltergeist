@@ -341,7 +341,6 @@ func (s *server) normalizeQuestArchetypeNodeLocationConfig(
 func (s *server) resolveQuestArchetypeNodeChallengeTemplate(
 	ctx context.Context,
 	payload questArchetypeNodePayload,
-	locationArchetypeID *uuid.UUID,
 ) (*models.ChallengeTemplate, error) {
 	if payload.ChallengeTemplateID == nil {
 		return nil, nil
@@ -355,10 +354,6 @@ func (s *server) resolveQuestArchetypeNodeChallengeTemplate(
 	}
 	if challengeTemplate == nil {
 		return nil, fmt.Errorf("challengeTemplateId could not be loaded")
-	}
-	if locationArchetypeID != nil && *locationArchetypeID != uuid.Nil &&
-		challengeTemplate.LocationArchetypeID != *locationArchetypeID {
-		return nil, fmt.Errorf("challengeTemplateId must match the node location archetype")
 	}
 	return challengeTemplate, nil
 }
@@ -395,16 +390,22 @@ func (s *server) applyQuestArchetypeNodePayload(
 	}
 	switch nodeType {
 	case models.QuestArchetypeNodeTypeChallenge:
+		if payload.ChallengeTemplateID == nil &&
+			models.NormalizeQuestArchetypeNodeType(string(node.NodeType)) == models.QuestArchetypeNodeTypeChallenge &&
+			node.ChallengeTemplateID != nil &&
+			*node.ChallengeTemplateID != uuid.Nil {
+			existingTemplateID := *node.ChallengeTemplateID
+			payload.ChallengeTemplateID = &existingTemplateID
+		}
 		challengeTemplate, err := s.resolveQuestArchetypeNodeChallengeTemplate(
 			ctx,
 			payload,
-			locationArchetypeID,
 		)
 		if err != nil {
 			return err
 		}
-		if challengeTemplate == nil && locationArchetypeID == nil {
-			return fmt.Errorf("challenge nodes require either challengeTemplateId or locationArchetypeID")
+		if challengeTemplate == nil {
+			return fmt.Errorf("challengeTemplateId is required for challenge nodes")
 		}
 		node.NodeType = models.QuestArchetypeNodeTypeChallenge
 		node.LocationArchetypeID = locationArchetypeID
@@ -498,9 +499,9 @@ func (s *server) applyQuestArchetypeNodePayload(
 			return err
 		}
 		node.NodeType = models.QuestArchetypeNodeTypeFetchQuest
-		node.LocationArchetypeID = nil
+		node.LocationArchetypeID = locationArchetypeID
 		node.LocationArchetype = nil
-		node.LocationSelectionMode = models.QuestArchetypeNodeLocationSelectionModeRandom
+		node.LocationSelectionMode = locationSelectionMode
 		clearQuestArchetypeNodeChallenge(node)
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
@@ -512,7 +513,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.EncounterRewardGold = 0
 		node.EncounterMaterialRewards = models.BaseMaterialRewards{}
 		node.EncounterItemRewards = models.MonsterEncounterRewardItems{}
-		node.EncounterProximityMeters = 100
+		node.EncounterProximityMeters = proximityMeters
 		clearQuestArchetypeNodeExposition(node)
 		clearQuestArchetypeNodeStoryFlag(node)
 	case models.QuestArchetypeNodeTypeMonsterEncounter:

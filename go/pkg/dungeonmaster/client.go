@@ -474,6 +474,77 @@ func questNodeAnchorForCharacter(
 	)
 }
 
+func cloneFetchQuestCharacterInternalTags(
+	input models.StringArray,
+) models.StringArray {
+	tags := append(models.StringArray{}, input...)
+	if !models.CharacterHasInternalTag(
+		&models.Character{InternalTags: tags},
+		models.CharacterInternalTagGeneratedFetchQuest,
+	) {
+		tags = append(tags, models.CharacterInternalTagGeneratedFetchQuest)
+	}
+	return tags
+}
+
+func (c *client) createQuestFetchCharacter(
+	ctx context.Context,
+	sourceCharacter *models.Character,
+	pointOfInterest *models.PointOfInterest,
+	anchor *questNodeAnchor,
+) (*models.Character, error) {
+	if sourceCharacter == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest character is required"),
+		)
+	}
+	if anchor == nil {
+		return nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest anchor is required"),
+		)
+	}
+
+	now := time.Now()
+	clonedCharacter := &models.Character{
+		ID:                    uuid.New(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		Name:                  strings.TrimSpace(sourceCharacter.Name),
+		Description:           strings.TrimSpace(sourceCharacter.Description),
+		InternalTags:          cloneFetchQuestCharacterInternalTags(sourceCharacter.InternalTags),
+		MapIconURL:            strings.TrimSpace(sourceCharacter.MapIconURL),
+		DialogueImageURL:      strings.TrimSpace(sourceCharacter.DialogueImageURL),
+		ThumbnailURL:          strings.TrimSpace(sourceCharacter.ThumbnailURL),
+		Ephemeral:             true,
+		StoryVariants:         append(models.CharacterStoryVariants{}, sourceCharacter.StoryVariants...),
+		PointOfInterestID:     optionalPointOfInterestID(pointOfInterest),
+		ImageGenerationStatus: sourceCharacter.ImageGenerationStatus,
+		ImageGenerationError:  sourceCharacter.ImageGenerationError,
+	}
+	if clonedCharacter.Name == "" {
+		clonedCharacter.Name = "Character"
+	}
+	if err := c.dbClient.Character().Create(ctx, clonedCharacter); err != nil {
+		return nil, err
+	}
+	if pointOfInterest != nil {
+		return clonedCharacter, nil
+	}
+	if err := c.dbClient.CharacterLocation().ReplaceForCharacter(
+		ctx,
+		clonedCharacter.ID,
+		[]models.CharacterLocation{
+			{
+				Latitude:  anchor.Latitude,
+				Longitude: anchor.Longitude,
+			},
+		},
+	); err != nil {
+		return nil, err
+	}
+	return c.dbClient.Character().FindByID(ctx, clonedCharacter.ID)
+}
+
 func (c *client) processQuestScenarioNode(
 	ctx context.Context,
 	zone *models.Zone,
@@ -971,7 +1042,28 @@ func (c *client) processQuestFetchNode(
 		fetchCharacter = loadedCharacter
 	}
 
-	currentAnchor, err := questNodeAnchorForCharacter(fetchCharacter)
+	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
+		ctx,
+		zone,
+		questArchTypeNode,
+		quest,
+		usedPOIs,
+		previousAnchor,
+	)
+	if err != nil {
+		return previousAnchor, err
+	}
+	if currentAnchor == nil {
+		return previousAnchor, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest node anchor is required"),
+		)
+	}
+	placedCharacter, err := c.createQuestFetchCharacter(
+		ctx,
+		fetchCharacter,
+		pointOfInterest,
+		currentAnchor,
+	)
 	if err != nil {
 		return previousAnchor, err
 	}
@@ -983,7 +1075,7 @@ func (c *client) processQuestFetchNode(
 		UpdatedAt:        time.Now(),
 		QuestID:          quest.ID,
 		OrderIndex:       *orderIndex,
-		FetchCharacterID: questArchTypeNode.FetchCharacterID,
+		FetchCharacterID: &placedCharacter.ID,
 		FetchRequirements: models.NormalizeFetchQuestRequirements(
 			questArchTypeNode.FetchRequirements,
 		),
@@ -1495,15 +1587,36 @@ func (c *client) resolveQuestNodeAnchor(
 	if questArchTypeNode == nil {
 		return previousAnchor, nil, nil
 	}
+	selectionMode := models.NormalizeQuestArchetypeNodeLocationSelectionMode(
+		string(questArchTypeNode.LocationSelectionMode),
+	)
+	if selectionMode == models.QuestArchetypeNodeLocationSelectionModeSameAsPrevious {
+		if previousAnchor != nil {
+			return &questNodeAnchor{
+				Latitude:  previousAnchor.Latitude,
+				Longitude: previousAnchor.Longitude,
+			}, nil, nil
+		}
+		referenceAnchor, err := c.resolveQuestGiverAnchor(ctx, quest)
+		if err != nil {
+			return previousAnchor, nil, err
+		}
+		if referenceAnchor != nil {
+			return &questNodeAnchor{
+				Latitude:  referenceAnchor.Latitude,
+				Longitude: referenceAnchor.Longitude,
+			}, nil, nil
+		}
+		return previousAnchor, nil, markNonRetriableQuestGenerationError(
+			fmt.Errorf("same_as_previous node requires a previous node anchor or quest giver location"),
+		)
+	}
 	locationArchetype, err := c.loadQuestNodeLocationArchetype(ctx, questArchTypeNode)
 	if err != nil {
 		return previousAnchor, nil, err
 	}
 	if locationArchetype != nil {
 		referenceAnchor := previousAnchor
-		selectionMode := models.NormalizeQuestArchetypeNodeLocationSelectionMode(
-			string(questArchTypeNode.LocationSelectionMode),
-		)
 		if referenceAnchor == nil &&
 			selectionMode == models.QuestArchetypeNodeLocationSelectionModeClosest {
 			referenceAnchor, err = c.resolveQuestGiverAnchor(ctx, quest)

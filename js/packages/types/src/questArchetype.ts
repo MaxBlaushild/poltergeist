@@ -47,7 +47,10 @@ export interface QuestArchetypeNodeFetchRequirement {
   quantity: number;
 }
 
-export type QuestArchetypeNodeLocationSelectionMode = 'random' | 'closest';
+export type QuestArchetypeNodeLocationSelectionMode =
+  | 'random'
+  | 'closest'
+  | 'same_as_previous';
 
 export interface QuestArchetypeNodeExpositionItemReward {
   inventoryItemId: number;

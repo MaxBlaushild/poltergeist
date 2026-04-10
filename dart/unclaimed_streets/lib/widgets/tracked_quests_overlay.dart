@@ -108,6 +108,9 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         final tracked =
             ql.quests.where((q) => ql.trackedQuestIds.contains(q.id)).toList()
               ..sort((a, b) {
+                if (a.isTutorial != b.isTutorial) {
+                  return a.isTutorial ? -1 : 1;
+                }
                 if (a.isMainStory != b.isMainStory) {
                   return a.isMainStory ? -1 : 1;
                 }
@@ -244,6 +247,20 @@ class _TrackedQuestCard extends StatelessWidget {
     final node = quest.currentNode;
     final poi = node?.pointOfInterest;
     final objectiveLines = questObjectiveLines(node);
+    final hasDirectFocusTarget =
+        poi != null ||
+        (node?.scenarioId?.trim().isNotEmpty ?? false) ||
+        (node?.expositionId?.trim().isNotEmpty ?? false) ||
+        (node?.monsterEncounterId?.trim().isNotEmpty ?? false) ||
+        (node?.monsterId?.trim().isNotEmpty ?? false) ||
+        (node?.challengeId?.trim().isNotEmpty ?? false) ||
+        (node?.polygon.isNotEmpty ?? false);
+    final detailFallbackTap = onOpenQuestDetails == null
+        ? null
+        : () => onOpenQuestDetails!(quest);
+    final nodeTap = hasDirectFocusTarget || detailFallbackTap == null
+        ? () => onNodeTap(node!)
+        : detailFallbackTap;
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -328,7 +345,7 @@ class _TrackedQuestCard extends StatelessWidget {
                       ...objectiveLines.map(
                         (line) => GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => onNodeTap(node),
+                          onTap: nodeTap,
                           child: Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: Text(

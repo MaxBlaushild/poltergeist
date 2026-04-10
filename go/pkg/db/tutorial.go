@@ -329,6 +329,16 @@ func (h *tutorialHandle) ActivateMonsterForUser(
 	return activatedState, activatedEncounter, nil
 }
 
+func (h *tutorialHandle) ResetForReplay(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		return h.clearTutorialContent(ctx, tx, state)
+	})
+}
+
 func (h *tutorialHandle) MarkCompleted(ctx context.Context, userID uuid.UUID) error {
 	now := time.Now()
 	return h.db.WithContext(ctx).Model(&models.UserTutorialState{}).

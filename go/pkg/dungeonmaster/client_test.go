@@ -118,6 +118,37 @@ func TestSelectClosestUnusedPointOfInterestUsesReferenceAnchor(t *testing.T) {
 	}
 }
 
+func TestResolveQuestNodeAnchorSameAsPreviousReusesPreviousAnchor(t *testing.T) {
+	c := &client{}
+	previousAnchor := &questNodeAnchor{Latitude: 40.1234, Longitude: -73.9876}
+
+	anchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
+		t.Context(),
+		nil,
+		&models.QuestArchetypeNode{
+			LocationSelectionMode: models.QuestArchetypeNodeLocationSelectionModeSameAsPrevious,
+		},
+		nil,
+		map[uuid.UUID]bool{},
+		previousAnchor,
+	)
+	if err != nil {
+		t.Fatalf("resolveQuestNodeAnchor returned error: %v", err)
+	}
+	if pointOfInterest != nil {
+		t.Fatalf("expected same_as_previous to avoid selecting a point of interest")
+	}
+	if anchor == nil {
+		t.Fatalf("expected same_as_previous to return an anchor")
+	}
+	if anchor == previousAnchor {
+		t.Fatalf("expected same_as_previous to copy the previous anchor instead of reusing the pointer")
+	}
+	if anchor.Latitude != previousAnchor.Latitude || anchor.Longitude != previousAnchor.Longitude {
+		t.Fatalf("expected anchor %f,%f, got %f,%f", previousAnchor.Latitude, previousAnchor.Longitude, anchor.Latitude, anchor.Longitude)
+	}
+}
+
 func TestIsNonRetriableQuestGenerationError(t *testing.T) {
 	baseErr := errors.New("deterministic failure")
 	if IsNonRetriableQuestGenerationError(baseErr) {

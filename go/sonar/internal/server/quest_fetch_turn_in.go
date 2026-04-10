@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,6 +28,64 @@ type fetchQuestTurnInResponse struct {
 	CharacterName    string                        `json:"characterName"`
 	Requirements     []fetchQuestTurnInRequirement `json:"requirements"`
 	CanDeliver       bool                          `json:"canDeliver"`
+}
+
+func isGeneratedFetchQuestCharacter(character *models.Character) bool {
+	return models.CharacterHasInternalTag(
+		character,
+		models.CharacterInternalTagGeneratedFetchQuest,
+	)
+}
+
+func fetchQuestCharacterVisibleToUser(
+	character *models.Character,
+	activeFetchCharacterIDs map[uuid.UUID]struct{},
+) bool {
+	if !isGeneratedFetchQuestCharacter(character) {
+		return true
+	}
+	if character == nil {
+		return false
+	}
+	_, ok := activeFetchCharacterIDs[character.ID]
+	return ok
+}
+
+func (s *server) activeFetchQuestCharacterIDsForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+) (map[uuid.UUID]struct{}, error) {
+	acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make(map[uuid.UUID]struct{})
+	for _, acceptance := range acceptances {
+		if acceptance.TurnedInAt != nil {
+			continue
+		}
+		quest, err := s.dbClient.Quest().FindByID(ctx, acceptance.QuestID)
+		if err != nil {
+			return nil, err
+		}
+		if quest == nil || !questVisibleToUser(userID, quest) {
+			continue
+		}
+		currentNode, err := s.currentQuestNode(ctx, quest, &acceptance)
+		if err != nil {
+			return nil, err
+		}
+		if currentNode == nil || !currentNode.IsFetchQuestNode() {
+			continue
+		}
+		if currentNode.FetchCharacterID == nil || *currentNode.FetchCharacterID == uuid.Nil {
+			continue
+		}
+		ids[*currentNode.FetchCharacterID] = struct{}{}
+	}
+
+	return ids, nil
 }
 
 func (s *server) currentFetchQuestNodeForUser(
@@ -216,9 +275,9 @@ func (s *server) getQuestFetchTurnIn(ctx *gin.Context) {
 		return
 	}
 
-	questID, err := uuid.Parse(ctx.Param("questId"))
+	questID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest id"})
 		return
 	}
 
@@ -251,9 +310,9 @@ func (s *server) submitQuestFetchTurnIn(ctx *gin.Context) {
 		return
 	}
 
-	questID, err := uuid.Parse(ctx.Param("questId"))
+	questID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest id"})
 		return
 	}
 

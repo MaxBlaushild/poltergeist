@@ -1088,7 +1088,6 @@ class _InventoryPanelState extends State<InventoryPanel>
         if (inv != null) {
           if (mounted) {
             setState(() {
-              _using = false;
               _error = null;
             });
           }
@@ -1098,9 +1097,12 @@ class _InventoryPanelState extends State<InventoryPanel>
       }
       if (mounted) {
         setState(() {
-          _using = false;
           _error = message;
         });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _using = false);
       }
     }
   }

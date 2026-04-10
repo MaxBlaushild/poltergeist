@@ -351,6 +351,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialConfig))
 	r.PUT("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTutorialConfig))
 	r.POST("/sonar/admin/tutorial/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTutorialImage))
+	r.POST("/sonar/admin/tutorial/instantiate-base-quest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminInstantiateTutorialBaseQuest))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
 	r.GET("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminUserResources))
@@ -544,8 +545,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
-	r.GET("/sonar/quests/:questId/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestFetchTurnIn))
-	r.POST("/sonar/quests/:questId/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestFetchTurnIn))
+	r.GET("/sonar/quests/:id/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestFetchTurnIn))
+	r.POST("/sonar/quests/:id/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestFetchTurnIn))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
@@ -655,6 +656,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/partySubmissionResults/pending", middleware.WithAuthenticationWithoutLocation(s.authClient, s.getPendingPartySubmissionResults))
 	r.POST("/sonar/settings/spawn-nearby-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.spawnNearbyScenarioAndMonster))
 	r.GET("/sonar/tutorial/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialStatus))
+	r.POST("/sonar/tutorial/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.resetTutorial))
 	r.POST("/sonar/tutorial/activate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.activateTutorial))
 	r.POST("/sonar/tutorial/advance", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceTutorial))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
@@ -4381,7 +4383,7 @@ func (s *server) deleteQuest(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest deleted successfully"})
 }
 
-func (s *server) ensureQuestActionForCharacter(ctx *gin.Context, questID uuid.UUID, characterID uuid.UUID) error {
+func (s *server) ensureQuestActionForCharacter(ctx context.Context, questID uuid.UUID, characterID uuid.UUID) error {
 	actions, err := s.dbClient.CharacterAction().FindByCharacterID(ctx, characterID)
 	if err != nil {
 		return err
@@ -8121,11 +8123,16 @@ func (s *server) useItem(ctx *gin.Context) {
 		if base != nil {
 			s.queueBaseDescriptionGenerationFromItemUse(ctx, base.ID)
 		}
-		ctx.JSON(http.StatusOK, gin.H{
+		tutorialStatus := s.maybeAdvanceTutorialAfterHomeBaseKitUse(ctx, *ownedInventoryItem.UserID)
+		response := gin.H{
 			"message":        "base created successfully",
 			"base":           serializeBase(base),
 			"learnedRecipes": learnedRecipes,
-		})
+		}
+		if tutorialStatus != nil {
+			response["tutorialStatus"] = tutorialStatus
+		}
+		ctx.JSON(http.StatusOK, response)
 		return
 	}
 
@@ -13468,11 +13475,17 @@ func (s *server) getCharacters(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	for i := range characters {
 		ch := characters[i]
 		if ch != nil {
-			if !characterVisibleToUser(user.ID, ch) {
+			if !characterVisibleToUser(user.ID, ch) ||
+				!fetchQuestCharacterVisibleToUser(ch, activeFetchCharacterIDs) {
 				continue
 			}
 			if err := s.applyStoryWorldChangesToCharacter(ctx, ch, activeStoryFlags); err != nil {
@@ -13487,7 +13500,9 @@ func (s *server) getCharacters(ctx *gin.Context) {
 	}
 	visibleCharacters := make([]*models.Character, 0, len(characters))
 	for _, character := range characters {
-		if character == nil || !characterVisibleToUser(user.ID, character) {
+		if character == nil ||
+			!characterVisibleToUser(user.ID, character) ||
+			!fetchQuestCharacterVisibleToUser(character, activeFetchCharacterIDs) {
 			continue
 		}
 		visibleCharacters = append(visibleCharacters, character)
@@ -13520,7 +13535,13 @@ func (s *server) getCharacter(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
-	if !characterVisibleToUser(user.ID, character) {
+	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !characterVisibleToUser(user.ID, character) ||
+		!fetchQuestCharacterVisibleToUser(character, activeFetchCharacterIDs) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
@@ -13572,6 +13593,15 @@ func (s *server) getCharacterLocations(ctx *gin.Context) {
 		return
 	}
 	if character == nil || !characterVisibleToUser(user.ID, character) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !fetchQuestCharacterVisibleToUser(character, activeFetchCharacterIDs) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}
@@ -14047,6 +14077,15 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		return
 	}
 	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !fetchQuestCharacterVisibleToUser(character, activeFetchCharacterIDs) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
 	}

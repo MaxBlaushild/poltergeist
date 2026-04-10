@@ -80,12 +80,6 @@ func (s *server) validateQuestArchetypeChallengeTemplate(
 	if template == nil {
 		return nil, fmt.Errorf("challengeTemplateId could not be loaded")
 	}
-	if node != nil &&
-		node.LocationArchetypeID != nil &&
-		*node.LocationArchetypeID != uuid.Nil &&
-		template.LocationArchetypeID != *node.LocationArchetypeID {
-		return nil, fmt.Errorf("challengeTemplateId must match the node location archetype")
-	}
 	return template, nil
 }
 

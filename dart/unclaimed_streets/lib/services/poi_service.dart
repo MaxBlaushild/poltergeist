@@ -291,6 +291,11 @@ class PoiService {
     return Scenario.fromJson(raw);
   }
 
+  Future<TutorialStatus> resetTutorial() async {
+    final raw = await _api.post<Map<String, dynamic>>('/sonar/tutorial/reset');
+    return TutorialStatus.fromJson(raw);
+  }
+
   Future<TutorialStatus?> advanceTutorial(String action) async {
     try {
       final raw = await _api.post<Map<String, dynamic>>(

@@ -160,14 +160,18 @@ const describeQuestArchetypeNode = (
   if (!node) {
     return 'Unknown';
   }
+  const locationLabel =
+    node.locationSelectionMode === 'same_as_previous'
+      ? 'Same as previous'
+      : node.locationArchetypeId
+        ? locationArchetypesById.get(node.locationArchetypeId)?.name ??
+          'Point of interest'
+        : 'Coordinates';
   if (node.nodeType === 'scenario') {
     const scenarioLabel = node.scenarioTemplateId
       ? scenarioTemplatesById.get(node.scenarioTemplateId)?.prompt ?? 'Scenario'
       : 'Scenario';
-    const locationLabel = node.locationArchetypeId
-      ? locationArchetypesById.get(node.locationArchetypeId)?.name
-      : null;
-    return locationLabel ? `${scenarioLabel} @ ${locationLabel}` : scenarioLabel;
+    return `${scenarioLabel} @ ${locationLabel}`;
   }
   if (node.nodeType === 'monster_encounter') {
     const names = (node.monsterTemplateIds ?? [])
@@ -177,38 +181,25 @@ const describeQuestArchetypeNode = (
       names.length > 0
         ? `Encounter: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
         : 'Monster encounter';
-    const locationLabel = node.locationArchetypeId
-      ? locationArchetypesById.get(node.locationArchetypeId)?.name
-      : null;
-    return locationLabel ? `${encounterLabel} @ ${locationLabel}` : encounterLabel;
+    return `${encounterLabel} @ ${locationLabel}`;
   }
   if (node.nodeType === 'exposition') {
     const expositionLabel = node.expositionTitle?.trim() || 'Exposition';
-    const locationLabel = node.locationArchetypeId
-      ? locationArchetypesById.get(node.locationArchetypeId)?.name
-      : null;
-    return locationLabel
-      ? `${expositionLabel} @ ${locationLabel}`
-      : expositionLabel;
+    return `${expositionLabel} @ ${locationLabel}`;
   }
   if (node.nodeType === 'fetch_quest') {
     const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
     const requirementCount = node.fetchRequirements?.length ?? 0;
-    return requirementCount > 0
+    const label = requirementCount > 0
       ? `Deliver ${requirementCount} item${requirementCount === 1 ? '' : 's'} to ${characterLabel}`
       : `Fetch quest for ${characterLabel}`;
+    return `${label} @ ${locationLabel}`;
   }
   if (node.nodeType === 'story_flag') {
     return `Story flag: ${node.storyFlagKey?.trim() || 'story flag'}`;
   }
   const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
-  if (node.locationArchetypeId) {
-    const locationLabel =
-      locationArchetypesById.get(node.locationArchetypeId)?.name ??
-      'Unknown location';
-    return `${challengeLabel} @ ${locationLabel}`;
-  }
-  return `${challengeLabel} @ Coordinates`;
+  return `${challengeLabel} @ ${locationLabel}`;
 };
 
 const describeQuestArchetypeChallenge = (

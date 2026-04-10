@@ -13,10 +13,16 @@ const _fallbackBaseImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-discovered.png';
 
 class BasePanel extends StatelessWidget {
-  const BasePanel({super.key, required this.base, required this.onClose});
+  const BasePanel({
+    super.key,
+    required this.base,
+    required this.onClose,
+    this.onTutorialProgressChanged,
+  });
 
   final BasePin base;
   final VoidCallback onClose;
+  final Future<void> Function()? onTutorialProgressChanged;
 
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
     const earthRadiusMeters = 6371e3;
@@ -136,6 +142,7 @@ class BasePanel extends StatelessWidget {
               child: canEnterBase
                   ? BaseManagementContent(
                       baseId: base.id,
+                      onTutorialProgressChanged: onTutorialProgressChanged,
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     )
                   : SingleChildScrollView(

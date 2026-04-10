@@ -6,6 +6,7 @@ import {
   LocationArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
+  QuestArchetypeNodeLocationSelectionMode,
   QuestArchetypeNodeType,
   ZoneQuestArchetype,
 } from '@poltergeist/types';
@@ -14,7 +15,7 @@ import { useAPI, useAuth } from '@poltergeist/contexts';
 export type QuestArchetypeNodeDraft = {
   nodeType?: QuestArchetypeNodeType;
   locationArchetypeId?: string | null;
-  locationSelectionMode?: 'random' | 'closest';
+  locationSelectionMode?: QuestArchetypeNodeLocationSelectionMode;
   challengeTemplateId?: string | null;
   scenarioTemplateId?: string | null;
   fetchCharacterId?: string | null;
@@ -389,7 +390,7 @@ export const QuestArchetypesProvider = ({
       challengeTemplateId?: string;
       nodeType?: QuestArchetypeNodeType;
       locationArchetypeID?: string;
-      locationSelectionMode?: 'random' | 'closest';
+      locationSelectionMode?: QuestArchetypeNodeLocationSelectionMode;
       scenarioTemplateId?: string | null;
       fetchCharacterId?: string | null;
       fetchRequirements?: { inventoryItemId: number; quantity: number }[];

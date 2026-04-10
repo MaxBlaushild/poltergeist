@@ -10,6 +10,7 @@ import {
   LocationArchetype,
   QuestArchetype,
   QuestArchetypeNode,
+  QuestArchetypeNodeLocationSelectionMode,
   QuestArchetypeChallenge,
   QuestArchetypeChallengeTemplate,
   QuestGenerationJob,
@@ -249,18 +250,6 @@ const describeChallengeTemplate = (
   return `${question} @ ${locationLabel}`;
 };
 
-const filterChallengeTemplatesForLocation = (
-  challengeTemplates: ChallengeTemplateRecord[],
-  locationArchetypeId?: string | null
-) => {
-  if (!locationArchetypeId) {
-    return challengeTemplates;
-  }
-  return challengeTemplates.filter(
-    (template) => template.locationArchetypeId === locationArchetypeId
-  );
-};
-
 const resolveChallengeTemplateForChallenge = (
   challenge: QuestArchetypeChallenge,
   challengeTemplates: ChallengeTemplateRecord[]
@@ -285,6 +274,19 @@ const resolveChallengeProficiency = (
     challengeTemplates
   );
   return template?.proficiency ?? challenge.proficiency ?? '';
+};
+
+const validateQuestArchetypeNodeEditor = (
+  editor: QuestArchetypeNodeEditorState,
+  sourceLabel: string
+) => {
+  if (
+    editor.nodeType === 'challenge' &&
+    editor.challengeTemplateId.trim().length === 0
+  ) {
+    return `${sourceLabel} challenge nodes require a challenge template.`;
+  }
+  return '';
 };
 
 const extractApiErrorMessage = (error: unknown, fallback: string) => {
@@ -633,9 +635,14 @@ const questArchetypeFormHasExplicitCopy = (form: QuestArchetypeFormState) =>
   form.description.trim().length > 0 &&
   form.acceptanceDialogue.some((line) => (line.text ?? '').trim().length > 0);
 
+type QuestArchetypeNodeLocationMode =
+  | 'point_of_interest'
+  | 'coordinates'
+  | 'ditto';
+
 type QuestArchetypeNodeEditorState = {
   nodeType: QuestArchetypeNodeType;
-  locationMode: 'point_of_interest' | 'coordinates';
+  locationMode: QuestArchetypeNodeLocationMode;
   locationArchetypeId: string;
   locationArchetypeQuery: string;
   locationSelectionMode: 'random' | 'closest';
@@ -701,7 +708,12 @@ const buildNodeEditorState = (
           : node.nodeType === 'story_flag'
             ? 'story_flag'
             : 'challenge',
-  locationMode: node.locationArchetypeId ? 'point_of_interest' : 'coordinates',
+  locationMode:
+    node.locationSelectionMode === 'same_as_previous'
+      ? 'ditto'
+      : node.locationArchetypeId
+        ? 'point_of_interest'
+        : 'coordinates',
   scenarioTemplateId: node.scenarioTemplateId ?? '',
   fetchCharacterId: node.fetchCharacterId ?? '',
   fetchRequirements: (node.fetchRequirements ?? []).map((requirement) => ({
@@ -750,22 +762,39 @@ const buildNodeEditorState = (
   })),
 });
 
+const resolvedLocationSelectionModeForDraft = (
+  state: QuestArchetypeNodeEditorState
+): QuestArchetypeNodeLocationSelectionMode | undefined => {
+  if (state.nodeType === 'story_flag') {
+    return undefined;
+  }
+  if (state.locationMode === 'ditto') {
+    return 'same_as_previous';
+  }
+  if (state.locationMode === 'point_of_interest') {
+    return state.locationSelectionMode;
+  }
+  return undefined;
+};
+
+const resolvedLocationArchetypeIdForDraft = (
+  state: QuestArchetypeNodeEditorState
+): string | null => {
+  if (state.nodeType === 'story_flag') {
+    return null;
+  }
+  if (state.locationMode === 'point_of_interest') {
+    return state.locationArchetypeId || null;
+  }
+  return null;
+};
+
 const buildNodeDraft = (
   state: QuestArchetypeNodeEditorState
 ): QuestArchetypeNodeDraft => ({
   nodeType: state.nodeType,
-  locationArchetypeId:
-    state.nodeType !== 'story_flag' &&
-    state.nodeType !== 'fetch_quest' &&
-    state.locationMode === 'point_of_interest'
-      ? state.locationArchetypeId || null
-      : null,
-  locationSelectionMode:
-    state.nodeType !== 'story_flag' &&
-    state.nodeType !== 'fetch_quest' &&
-    state.locationMode === 'point_of_interest'
-      ? state.locationSelectionMode
-      : undefined,
+  locationArchetypeId: resolvedLocationArchetypeIdForDraft(state),
+  locationSelectionMode: resolvedLocationSelectionModeForDraft(state),
   challengeTemplateId:
     state.nodeType === 'challenge' ? state.challengeTemplateId || null : null,
   scenarioTemplateId:
@@ -798,7 +827,8 @@ const buildNodeDraft = (
     state.nodeType === 'challenge' ||
     state.nodeType === 'monster_encounter' ||
     state.nodeType === 'scenario' ||
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' ||
+    state.nodeType === 'fetch_quest'
       ? Number(state.encounterProximityMeters) || 0
       : undefined,
   expositionTitle:
@@ -865,6 +895,21 @@ const describeQuestArchetypeNode = (
   monsterTemplates: MonsterTemplateRecord[],
   scenarioTemplates: ScenarioTemplateRecord[]
 ) => {
+  const locationLabelForNode = (() => {
+    if (node?.locationSelectionMode === 'same_as_previous') {
+      return 'Same as previous';
+    }
+    const locationLabel = locationArchetypes.find(
+      (entry) => entry.id === node?.locationArchetypeId
+    )?.name;
+    if (locationLabel) {
+      return locationLabel;
+    }
+    if (node?.locationArchetypeId) {
+      return 'Point of interest';
+    }
+    return 'Coordinates';
+  })();
   if (!node) {
     return 'Unknown';
   }
@@ -872,12 +917,7 @@ const describeQuestArchetypeNode = (
     const scenarioLabel =
       scenarioTemplates.find((entry) => entry.id === node.scenarioTemplateId)
         ?.prompt ?? 'Scenario';
-    const locationLabel = locationArchetypes.find(
-      (entry) => entry.id === node.locationArchetypeId
-    )?.name;
-    return locationLabel
-      ? `${scenarioLabel} @ ${locationLabel}`
-      : scenarioLabel;
+    return `${scenarioLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'monster_encounter') {
     const names = (node.monsterTemplateIds ?? [])
@@ -887,29 +927,14 @@ const describeQuestArchetypeNode = (
       )
       .filter(Boolean) as string[];
     if (names.length === 0) {
-      const locationLabel = locationArchetypes.find(
-        (entry) => entry.id === node.locationArchetypeId
-      )?.name;
-      return locationLabel
-        ? `Monster encounter @ ${locationLabel}`
-        : 'Monster encounter';
+      return `Monster encounter @ ${locationLabelForNode}`;
     }
     const encounterLabel = `Encounter: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`;
-    const locationLabel = locationArchetypes.find(
-      (entry) => entry.id === node.locationArchetypeId
-    )?.name;
-    return locationLabel
-      ? `${encounterLabel} @ ${locationLabel}`
-      : encounterLabel;
+    return `${encounterLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'exposition') {
     const expositionLabel = node.expositionTitle?.trim() || 'Exposition';
-    const locationLabel = locationArchetypes.find(
-      (entry) => entry.id === node.locationArchetypeId
-    )?.name;
-    return locationLabel
-      ? `${expositionLabel} @ ${locationLabel}`
-      : expositionLabel;
+    return `${expositionLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'fetch_quest') {
     const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
@@ -919,22 +944,17 @@ const describeQuestArchetypeNode = (
       })
       .slice(0, 2)
       .join(', ');
-    return requirements
+    const baseLabel = requirements
       ? `Deliver ${requirements}${(node.fetchRequirements?.length ?? 0) > 2 ? '…' : ''} to ${characterLabel}`
       : `Fetch quest for ${characterLabel}`;
+    return `${baseLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'story_flag') {
     const storyFlagKey = node.storyFlagKey?.trim() || 'story flag';
     return `Story flag: ${storyFlagKey}`;
   }
   const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
-  const locationLabel = locationArchetypes.find(
-    (entry) => entry.id === node.locationArchetypeId
-  )?.name;
-  if (locationLabel) {
-    return `${challengeLabel} @ ${locationLabel}`;
-  }
-  return node.locationArchetypeId ? challengeLabel : `${challengeLabel} @ Coordinates`;
+  return `${challengeLabel} @ ${locationLabelForNode}`;
 };
 
 type QuestArchetypeNodeConfigFieldsProps = {
@@ -942,6 +962,7 @@ type QuestArchetypeNodeConfigFieldsProps = {
   setEditor: React.Dispatch<
     React.SetStateAction<QuestArchetypeNodeEditorState>
   >;
+  allowSameAsPreviousLocationMode?: boolean;
   prefix: string;
   locationArchetypes: LocationArchetype[];
   challengeTemplates: ChallengeTemplateRecord[];
@@ -957,6 +978,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
 > = ({
   editor,
   setEditor,
+  allowSameAsPreviousLocationMode = false,
   prefix,
   locationArchetypes,
   challengeTemplates,
@@ -966,8 +988,9 @@ const QuestArchetypeNodeConfigFields: React.FC<
   inventoryItems,
   spells,
 }) => {
-  const showsLocationConfig =
-    editor.nodeType !== 'story_flag' && editor.nodeType !== 'fetch_quest';
+  const showsLocationConfig = editor.nodeType !== 'story_flag';
+  const allowsDittoOption =
+    allowSameAsPreviousLocationMode || editor.locationMode === 'ditto';
   const filteredLocationArchetypes = locationArchetypes
     .filter((archetype) =>
       archetype.name
@@ -975,36 +998,18 @@ const QuestArchetypeNodeConfigFields: React.FC<
         .includes(editor.locationArchetypeQuery.trim().toLowerCase())
     )
     .slice(0, 8);
-  const availableChallengeTemplates = filterChallengeTemplatesForLocation(
-    challengeTemplates,
-    editor.locationMode === 'point_of_interest'
-      ? editor.locationArchetypeId
-      : null
-  );
+  const availableChallengeTemplates = challengeTemplates;
   const characterOptions = characters.map((character) => ({
     value: character.id,
     label: character.name || character.id,
   }));
 
   const setSelectedLocationArchetype = (nextId: string, nextQuery: string) =>
-    setEditor((prev) => {
-      const challengeTemplateStillMatches =
-        !prev.challengeTemplateId ||
-        !nextId ||
-        challengeTemplates.some(
-          (template) =>
-            template.id === prev.challengeTemplateId &&
-            template.locationArchetypeId === nextId
-        );
-      return {
-        ...prev,
-        locationArchetypeId: nextId,
-        locationArchetypeQuery: nextQuery,
-        challengeTemplateId: challengeTemplateStillMatches
-          ? prev.challengeTemplateId
-          : '',
-      };
-    });
+    setEditor((prev) => ({
+      ...prev,
+      locationArchetypeId: nextId,
+      locationArchetypeQuery: nextQuery,
+    }));
 
   return (
     <>
@@ -1036,7 +1041,9 @@ const QuestArchetypeNodeConfigFields: React.FC<
             <div className="qa-helper">
               {editor.locationMode === 'point_of_interest'
                 ? 'Choose a location archetype, then decide whether generation should use the closest matching point of interest to the previous node or quest giver, or a random one in the zone.'
-                : 'Place this node at generated coordinates near the previous node instead of at a point of interest.'}
+                : editor.locationMode === 'ditto'
+                  ? 'Reuse the exact same map position as the previous node.'
+                  : 'Place this node at generated coordinates near the previous node instead of at a point of interest.'}
             </div>
             <select
               className="qa-select"
@@ -1047,6 +1054,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
                   locationMode:
                     e.target.value === 'coordinates'
                       ? 'coordinates'
+                      : e.target.value === 'ditto'
+                        ? 'ditto'
                       : 'point_of_interest',
                   locationArchetypeId:
                     e.target.value === 'coordinates'
@@ -1057,7 +1066,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
                       ? ''
                       : prev.locationArchetypeQuery,
                   locationSelectionMode:
-                    e.target.value === 'coordinates'
+                    e.target.value === 'coordinates' ||
+                    e.target.value === 'ditto'
                       ? 'random'
                       : prev.locationSelectionMode,
                 }))
@@ -1065,6 +1075,9 @@ const QuestArchetypeNodeConfigFields: React.FC<
             >
               <option value="point_of_interest">Point Of Interest</option>
               <option value="coordinates">Coordinates</option>
+              {allowsDittoOption ? (
+                <option value="ditto">Same As Previous Node</option>
+              ) : null}
             </select>
           </div>
           {editor.locationMode === 'point_of_interest' ? (
@@ -1159,8 +1172,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
         <div className="qa-field">
           <div className="qa-label">{prefix} Challenge Template</div>
           <div className="qa-helper">
-            Optional when using a location archetype. Required for coordinate
-            challenges.
+            Required. The template defines the challenge content, and the
+            location settings above only control where the node appears.
           </div>
           <select
             className="qa-select"
@@ -1172,7 +1185,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
               }))
             }
           >
-            <option value="">Use a random location-archetype challenge</option>
+            <option value="">Select a challenge template</option>
             {availableChallengeTemplates.map((template) => (
               <option key={`${prefix}-challenge-${template.id}`} value={template.id}>
                 {describeChallengeTemplate(template, locationArchetypes)}
@@ -1180,12 +1193,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
             ))}
           </select>
           {availableChallengeTemplates.length === 0 ? (
-            <div className="qa-helper">
-              {editor.locationMode === 'point_of_interest' &&
-              editor.locationArchetypeId
-                ? 'No challenge templates match the selected location archetype yet.'
-                : 'All challenge templates are available while this node uses coordinates.'}
-            </div>
+            <div className="qa-helper">No challenge templates are available yet.</div>
           ) : null}
         </div>
       ) : null}
@@ -1791,6 +1799,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
           <QuestArchetypeNodeConfigFields
             editor={nodeEditor}
             setEditor={setNodeEditor}
+            allowSameAsPreviousLocationMode={depth > 0}
             prefix="Current"
             locationArchetypes={locationArchetypes}
             challengeTemplates={challengeTemplates}
@@ -1811,7 +1820,17 @@ const FlowNode: React.FC<FlowNodeProps> = ({
             </button>
             <button
               className="qa-btn qa-btn-primary"
-              onClick={() => onSaveNode(node.id, buildNodeDraft(nodeEditor))}
+              onClick={() => {
+                const validationError = validateQuestArchetypeNodeEditor(
+                  nodeEditor,
+                  'Current'
+                );
+                if (validationError) {
+                  window.alert(validationError);
+                  return;
+                }
+                onSaveNode(node.id, buildNodeDraft(nodeEditor));
+              }}
             >
               Save Node
             </button>
@@ -1837,6 +1856,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                 <QuestArchetypeNodeConfigFields
                   editor={childEditor}
                   setEditor={setChildEditor}
+                  allowSameAsPreviousLocationMode
                   prefix="Child"
                   locationArchetypes={locationArchetypes}
                   challengeTemplates={challengeTemplates}
@@ -1859,6 +1879,14 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
+                  const validationError =
+                    childEnabled
+                      ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                      : '';
+                  if (validationError) {
+                    window.alert(validationError);
+                    return;
+                  }
                   await addChallengeToQuestArchetype(
                     node.id,
                     null,
@@ -2266,9 +2294,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                   onEditChallengeTemplate(
                     selectedChallengeTemplate.id,
                     `Challenge node ${pathLabel}`,
-                    nodeEditor.locationMode === 'point_of_interest'
-                      ? nodeEditor.locationArchetypeId || null
-                      : null
+                    selectedChallengeTemplate.locationArchetypeId || null
                   )
                 }
               >
@@ -2298,7 +2324,17 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             </button>
             <button
               className="qa-btn qa-btn-primary"
-              onClick={() => onSaveNode(node.id, buildNodeDraft(nodeEditor))}
+              onClick={() => {
+                const validationError = validateQuestArchetypeNodeEditor(
+                  nodeEditor,
+                  'Node'
+                );
+                if (validationError) {
+                  window.alert(validationError);
+                  return;
+                }
+                onSaveNode(node.id, buildNodeDraft(nodeEditor));
+              }}
             >
               Save Node
             </button>
@@ -2308,6 +2344,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
           <QuestArchetypeNodeConfigFields
             editor={nodeEditor}
             setEditor={setNodeEditor}
+            allowSameAsPreviousLocationMode={depth > 0}
             prefix="Node"
             locationArchetypes={locationArchetypes}
             challengeTemplates={challengeTemplates}
@@ -2379,6 +2416,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               <QuestArchetypeNodeConfigFields
                 editor={childEditor}
                 setEditor={setChildEditor}
+                allowSameAsPreviousLocationMode
                 prefix="Child"
                 locationArchetypes={locationArchetypes}
                 challengeTemplates={challengeTemplates}
@@ -2399,6 +2437,14 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
+                  const validationError =
+                    childEnabled
+                      ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                      : '';
+                  if (validationError) {
+                    window.alert(validationError);
+                    return;
+                  }
                   await addChallengeToQuestArchetype(
                     node.id,
                     null,
@@ -2489,7 +2535,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                             onEditChallengeTemplate(
                               challengeTemplate.id,
                               `Branch ${pathLabel}.${index + 1}`,
-                              node.locationArchetypeId
+                              challengeTemplate.locationArchetypeId
                             )
                           }
                         >
@@ -6293,6 +6339,14 @@ export const QuestArchetypeComponent = () => {
               className="qa-form-grid"
               onSubmit={async (e) => {
                 e.preventDefault();
+                const validationError = validateQuestArchetypeNodeEditor(
+                  createForm.rootNode,
+                  'Root'
+                );
+                if (validationError) {
+                  window.alert(validationError);
+                  return;
+                }
                 const created = await createQuestArchetype(
                   normalizeQuestArchetypeDraft(createForm)
                 );
