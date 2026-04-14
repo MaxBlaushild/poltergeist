@@ -22,7 +22,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-const characterPromptTemplate = "A retro 16-bit RPG pixel art character portrait of %s. %s. Emphasize fantasy attire, archetype cues, and magical or mythic motifs; avoid modern streetwear and real-world brands. Centered, shoulders-up, crisp outlines, limited colors, no text, no logos, clean background."
+const characterPromptTemplate = "A retro 16-bit RPG pixel art character portrait of %s. %s. Emphasize fantasy attire, archetype cues, and magical or mythic motifs; avoid modern streetwear and real-world brands. Centered, shoulders-up, crisp outlines, limited colors, isolated subject, transparent background with alpha channel, no backdrop scenery, no frame, no text, no logos."
 
 // GenerateCharacterImageProcessor generates a character dialogue/thumbnail image in the background.
 type GenerateCharacterImageProcessor struct {

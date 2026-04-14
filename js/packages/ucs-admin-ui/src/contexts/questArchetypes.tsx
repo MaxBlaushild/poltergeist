@@ -19,12 +19,14 @@ export type QuestArchetypeNodeDraft = {
   challengeTemplateId?: string | null;
   scenarioTemplateId?: string | null;
   fetchCharacterId?: string | null;
+  fetchCharacterTemplateId?: string | null;
   fetchRequirements?: { inventoryItemId: number; quantity: number }[];
   objectiveDescription?: string;
   storyFlagKey?: string;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
+  expositionTemplateId?: string | null;
   expositionTitle?: string;
   expositionDescription?: string;
   expositionDialogue?: DialogueMessage[];
@@ -267,12 +269,14 @@ export const QuestArchetypesProvider = ({
         challengeTemplateId: draft.rootNode.challengeTemplateId,
         scenarioTemplateId: draft.rootNode.scenarioTemplateId,
         fetchCharacterId: draft.rootNode.fetchCharacterId,
+        fetchCharacterTemplateId: draft.rootNode.fetchCharacterTemplateId,
         fetchRequirements: draft.rootNode.fetchRequirements,
         objectiveDescription: draft.rootNode.objectiveDescription,
         storyFlagKey: draft.rootNode.storyFlagKey,
         monsterTemplateIds: draft.rootNode.monsterTemplateIds,
         targetLevel: draft.rootNode.targetLevel,
         encounterProximityMeters: draft.rootNode.encounterProximityMeters,
+        expositionTemplateId: draft.rootNode.expositionTemplateId,
         expositionTitle: draft.rootNode.expositionTitle,
         expositionDescription: draft.rootNode.expositionDescription,
         expositionDialogue: draft.rootNode.expositionDialogue,
@@ -395,12 +399,14 @@ export const QuestArchetypesProvider = ({
       locationSelectionMode?: QuestArchetypeNodeLocationSelectionMode;
       scenarioTemplateId?: string | null;
       fetchCharacterId?: string | null;
+      fetchCharacterTemplateId?: string | null;
       fetchRequirements?: { inventoryItemId: number; quantity: number }[];
       objectiveDescription?: string;
       storyFlagKey?: string;
       monsterTemplateIds?: string[];
       targetLevel?: number | null;
       encounterProximityMeters?: number | null;
+      expositionTemplateId?: string | null;
       expositionTitle?: string;
       expositionDescription?: string;
       expositionDialogue?: DialogueMessage[];
@@ -421,9 +427,11 @@ export const QuestArchetypesProvider = ({
         payload.locationArchetypeID = unlockedNode.locationArchetypeId;
       }
       payload.locationSelectionMode = unlockedNode.locationSelectionMode;
-      payload.challengeTemplateId = unlockedNode.challengeTemplateId ?? undefined;
+      payload.challengeTemplateId =
+        unlockedNode.challengeTemplateId ?? undefined;
       payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
       payload.fetchCharacterId = unlockedNode.fetchCharacterId;
+      payload.fetchCharacterTemplateId = unlockedNode.fetchCharacterTemplateId;
       payload.fetchRequirements = unlockedNode.fetchRequirements;
       payload.objectiveDescription = unlockedNode.objectiveDescription;
       payload.storyFlagKey = unlockedNode.storyFlagKey;
@@ -435,6 +443,7 @@ export const QuestArchetypesProvider = ({
       }
       payload.targetLevel = unlockedNode.targetLevel;
       payload.encounterProximityMeters = unlockedNode.encounterProximityMeters;
+      payload.expositionTemplateId = unlockedNode.expositionTemplateId;
       payload.expositionTitle = unlockedNode.expositionTitle;
       payload.expositionDescription = unlockedNode.expositionDescription;
       payload.expositionDialogue = unlockedNode.expositionDialogue;
@@ -494,12 +503,14 @@ export const QuestArchetypesProvider = ({
       challengeTemplateId: updates.challengeTemplateId,
       scenarioTemplateId: updates.scenarioTemplateId,
       fetchCharacterId: updates.fetchCharacterId,
+      fetchCharacterTemplateId: updates.fetchCharacterTemplateId,
       fetchRequirements: updates.fetchRequirements,
       objectiveDescription: updates.objectiveDescription,
       storyFlagKey: updates.storyFlagKey,
       monsterTemplateIds: updates.monsterTemplateIds,
       targetLevel: updates.targetLevel,
       encounterProximityMeters: updates.encounterProximityMeters,
+      expositionTemplateId: updates.expositionTemplateId,
       expositionTitle: updates.expositionTitle,
       expositionDescription: updates.expositionDescription,
       expositionDialogue: updates.expositionDialogue,

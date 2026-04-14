@@ -1,20 +1,28 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/character.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../models/user.dart';
+import '../models/zone.dart';
 import '../providers/auth_provider.dart';
 import '../providers/discoveries_provider.dart';
+import '../providers/location_provider.dart';
 import '../providers/party_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
+import '../providers/zone_provider.dart';
+import '../services/poi_service.dart';
 import 'quest_objective_display.dart';
 
 /// Bottom-sheet content for Quest Log.
 /// [onFocusPoI] when user taps a POI in a quest: close sheet, fly to POI, open POI panel.
 typedef OnFocusPoI = void Function(PointOfInterest poi);
+typedef OnFocusNode = void Function(QuestNode node);
 typedef OnFocusTurnInQuest = void Function(Quest quest);
 
 class QuestLogPanel extends StatefulWidget {
@@ -22,18 +30,22 @@ class QuestLogPanel extends StatefulWidget {
     super.key,
     required this.onClose,
     required this.onFocusPoI,
+    required this.onFocusNode,
     required this.onFocusTurnInQuest,
     this.initialSelectedQuest,
     this.featuredMainStoryPoi,
     this.featuredMainStoryQuestGiverName,
+    this.onFocusFeaturedMainStoryLead,
   });
 
   final VoidCallback onClose;
   final OnFocusPoI onFocusPoI;
+  final OnFocusNode onFocusNode;
   final OnFocusTurnInQuest onFocusTurnInQuest;
   final Quest? initialSelectedQuest;
   final PointOfInterest? featuredMainStoryPoi;
   final String? featuredMainStoryQuestGiverName;
+  final void Function(PointOfInterest poi)? onFocusFeaturedMainStoryLead;
 
   @override
   State<QuestLogPanel> createState() => _QuestLogPanelState();
@@ -43,11 +55,16 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   Quest? _selectedQuest;
   final Map<String, bool> _expanded = {};
   String? _sharingQuestId;
+  List<PointOfInterest> _leadCandidatePois = const [];
+  List<Character> _leadCandidateCharacters = const [];
+  bool _loadingLeadCandidates = false;
+  bool _hasLoadedLeadCandidates = false;
 
   @override
   void initState() {
     super.initState();
     _selectedQuest = widget.initialSelectedQuest;
+    _ensureFeaturedMainStoryLeadLoaded();
   }
 
   @override
@@ -56,6 +73,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     if (widget.initialSelectedQuest?.id != oldWidget.initialSelectedQuest?.id &&
         widget.initialSelectedQuest != null) {
       _selectedQuest = widget.initialSelectedQuest;
+    }
+    if (oldWidget.featuredMainStoryPoi?.id != widget.featuredMainStoryPoi?.id &&
+        widget.featuredMainStoryPoi == null) {
+      _ensureFeaturedMainStoryLeadLoaded(force: true);
     }
   }
 
@@ -68,6 +89,261 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     widget.onClose();
     widget.onFocusTurnInQuest(quest);
   }
+
+  void _focusNode(QuestNode node) {
+    widget.onClose();
+    widget.onFocusNode(node);
+  }
+
+  void _focusFeaturedMainStoryLead() {
+    final lead = _resolveFeaturedMainStoryLead();
+    if (lead == null) return;
+    widget.onClose();
+    final onFocusLead = widget.onFocusFeaturedMainStoryLead;
+    if (onFocusLead != null) {
+      onFocusLead(lead.poi);
+      return;
+    }
+    widget.onFocusPoI(lead.poi);
+  }
+
+  void _ensureFeaturedMainStoryLeadLoaded({bool force = false}) {
+    if (widget.featuredMainStoryPoi != null) return;
+    if (_loadingLeadCandidates) return;
+    if (_hasLoadedLeadCandidates && !force) return;
+
+    _loadingLeadCandidates = true;
+    _hasLoadedLeadCandidates = true;
+    final poiService = context.read<PoiService>();
+    Future<void>(() async {
+      try {
+        final results = await Future.wait([
+          poiService.getPointsOfInterest(),
+          poiService.getCharacters(),
+        ]);
+        if (!mounted) return;
+        setState(() {
+          _leadCandidatePois = results[0] as List<PointOfInterest>;
+          _leadCandidateCharacters = results[1] as List<Character>;
+        });
+      } catch (_) {
+        if (!mounted) return;
+      } finally {
+        _loadingLeadCandidates = false;
+      }
+    });
+  }
+
+  _ResolvedMainStoryLead? _resolveFeaturedMainStoryLead() {
+    final providedPoi = widget.featuredMainStoryPoi;
+    if (providedPoi != null) {
+      String? questGiverName = widget.featuredMainStoryQuestGiverName;
+      if (questGiverName == null || questGiverName.trim().isEmpty) {
+        for (final character in providedPoi.characters) {
+          if (character.hasAvailableMainStoryQuest) {
+            questGiverName = character.name.trim();
+            break;
+          }
+        }
+      }
+      return _ResolvedMainStoryLead(
+        poi: providedPoi,
+        questGiverName: questGiverName,
+      );
+    }
+    if (_leadCandidatePois.isEmpty && _leadCandidateCharacters.isEmpty) {
+      return null;
+    }
+
+    final selectedZone = context.read<ZoneProvider>().selectedZone;
+    final location = context.read<LocationProvider>().location;
+    final userLat = location?.latitude;
+    final userLng = location?.longitude;
+
+    _ResolvedMainStoryLead? bestLead;
+    double? bestDistance;
+    _ResolvedMainStoryLead? bestGlobalLead;
+    double? bestGlobalDistance;
+
+    for (final poi in _leadCandidatePois) {
+      final poiLat = double.tryParse(poi.lat);
+      final poiLng = double.tryParse(poi.lng);
+      if (poiLat == null || poiLng == null) continue;
+
+      String? questGiverName;
+      for (final character in poi.characters) {
+        if (character.hasAvailableMainStoryQuest) {
+          questGiverName = character.name.trim();
+          break;
+        }
+      }
+      final hasAvailableLead =
+          poi.hasAvailableMainStoryQuest || questGiverName != null;
+      if (!hasAvailableLead) continue;
+
+      final distance = (userLat == null || userLng == null)
+          ? 0.0
+          : _haversineDistanceMeters(userLat, userLng, poiLat, poiLng);
+      final lead = _ResolvedMainStoryLead(
+        poi: poi,
+        questGiverName: questGiverName,
+      );
+      if (bestGlobalLead == null ||
+          bestGlobalDistance == null ||
+          distance < bestGlobalDistance) {
+        bestGlobalLead = lead;
+        bestGlobalDistance = distance;
+      }
+      if (selectedZone == null ||
+          !_isPointInZone(selectedZone, poiLat, poiLng)) {
+        continue;
+      }
+      if (bestLead == null || bestDistance == null || distance < bestDistance) {
+        bestLead = lead;
+        bestDistance = distance;
+      }
+    }
+
+    for (final character in _leadCandidateCharacters) {
+      if (!character.hasAvailableMainStoryQuest) continue;
+      final poi = _syntheticPoiForCharacterLead(character);
+      if (poi == null) continue;
+      final poiLat = double.tryParse(poi.lat);
+      final poiLng = double.tryParse(poi.lng);
+      if (poiLat == null || poiLng == null) continue;
+      final distance = (userLat == null || userLng == null)
+          ? 0.0
+          : _haversineDistanceMeters(userLat, userLng, poiLat, poiLng);
+      final lead = _ResolvedMainStoryLead(
+        poi: poi,
+        questGiverName: character.name.trim(),
+      );
+      if (bestGlobalLead == null ||
+          bestGlobalDistance == null ||
+          distance < bestGlobalDistance) {
+        bestGlobalLead = lead;
+        bestGlobalDistance = distance;
+      }
+      if (selectedZone == null ||
+          !_isPointInZone(selectedZone, poiLat, poiLng)) {
+        continue;
+      }
+      if (bestLead == null || bestDistance == null || distance < bestDistance) {
+        bestLead = lead;
+        bestDistance = distance;
+      }
+    }
+
+    return bestLead ?? bestGlobalLead;
+  }
+
+  PointOfInterest? _poiForCharacter(Character character) {
+    final poiId = character.pointOfInterestId?.trim() ?? '';
+    if (poiId.isNotEmpty) {
+      for (final poi in _leadCandidatePois) {
+        if (poi.id == poiId) return poi;
+      }
+    }
+    for (final poi in _leadCandidatePois) {
+      if (poi.characters.any((candidate) => candidate.id == character.id)) {
+        return poi;
+      }
+    }
+    final poiLat = character.pointOfInterestLat;
+    final poiLng = character.pointOfInterestLng;
+    if (poiLat != null && poiLng != null) {
+      for (final poi in _leadCandidatePois) {
+        final lat = double.tryParse(poi.lat);
+        final lng = double.tryParse(poi.lng);
+        if (lat == null || lng == null) continue;
+        if ((lat - poiLat).abs() < 0.0001 && (lng - poiLng).abs() < 0.0001) {
+          return poi;
+        }
+      }
+    }
+    return null;
+  }
+
+  PointOfInterest? _syntheticPoiForCharacterLead(Character character) {
+    final actualPoi = _poiForCharacter(character);
+    if (actualPoi != null) return actualPoi;
+
+    double? lat;
+    double? lng;
+    if (character.pointOfInterestLat != null &&
+        character.pointOfInterestLng != null &&
+        character.pointOfInterestLat!.isFinite &&
+        character.pointOfInterestLng!.isFinite &&
+        character.pointOfInterestLat!.abs() <= 90 &&
+        character.pointOfInterestLng!.abs() <= 180 &&
+        (character.pointOfInterestLat != 0 ||
+            character.pointOfInterestLng != 0)) {
+      lat = character.pointOfInterestLat;
+      lng = character.pointOfInterestLng;
+    } else {
+      for (final location in character.locations) {
+        if (!location.latitude.isFinite || !location.longitude.isFinite) {
+          continue;
+        }
+        if (location.latitude.abs() > 90 || location.longitude.abs() > 180) {
+          continue;
+        }
+        lat = location.latitude;
+        lng = location.longitude;
+        break;
+      }
+    }
+    if (lat == null || lng == null) return null;
+    return PointOfInterest(
+      id: 'main_story_character_${character.id}',
+      name: 'their current location',
+      lat: lat.toString(),
+      lng: lng.toString(),
+      characters: [character],
+      hasAvailableMainStoryQuest: true,
+    );
+  }
+
+  bool _isPointInZone(Zone zone, double lat, double lng) {
+    final ring = zone.ring;
+    if (ring == null || ring.length < 3) return false;
+
+    var inside = false;
+    var j = ring.length - 1;
+    for (var i = 0; i < ring.length; i++) {
+      final xi = ring[i].longitude;
+      final yi = ring[i].latitude;
+      final xj = ring[j].longitude;
+      final yj = ring[j].latitude;
+      final intersect =
+          ((yi > lat) != (yj > lat)) &&
+          (lng < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
+      if (intersect) inside = !inside;
+      j = i;
+    }
+    return inside;
+  }
+
+  double _haversineDistanceMeters(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    const earthRadiusMeters = 6371000.0;
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLng = _degreesToRadians(lng2 - lng1);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(lat1)) *
+            math.cos(_degreesToRadians(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusMeters * c;
+  }
+
+  double _degreesToRadians(double degrees) => degrees * math.pi / 180.0;
 
   String _displayName(User user) {
     if (user.username.trim().isNotEmpty) return '@${user.username.trim()}';
@@ -184,6 +460,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   Widget _buildQuestList(BuildContext context) {
     return Consumer3<QuestLogProvider, TagsProvider, DiscoveriesProvider>(
       builder: (context, ql, tags, discoveries, _) {
+        final featuredMainStoryLead = _resolveFeaturedMainStoryLead();
         if (ql.loading && ql.quests.isEmpty) {
           return const Center(
             child: Padding(
@@ -249,7 +526,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         };
 
         final hasQuestListItems =
-            widget.featuredMainStoryPoi != null ||
+            featuredMainStoryLead != null ||
             mainStoryActive.isNotEmpty ||
             readyToTurnIn.isNotEmpty ||
             tracked.isNotEmpty ||
@@ -276,14 +553,12 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                if (widget.featuredMainStoryPoi != null &&
-                                    mainStoryActive.isEmpty)
-                                  _MainStoryLeadCard(
-                                    poi: widget.featuredMainStoryPoi!,
+                                if (featuredMainStoryLead != null)
+                                  _ImportantQuestAvailableCard(
+                                    poi: featuredMainStoryLead.poi,
                                     questGiverName:
-                                        widget.featuredMainStoryQuestGiverName,
-                                    onTap: () =>
-                                        _focusPoI(widget.featuredMainStoryPoi!),
+                                        featuredMainStoryLead.questGiverName,
+                                    onTap: _focusFeaturedMainStoryLead,
                                   ),
                                 if (mainStoryActive.isNotEmpty)
                                   _QuestAccordion(
@@ -540,6 +815,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
         final objectiveLines = questObjectiveLines(node);
+        final canFocusNode = questNodeHasDirectFocusTarget(node);
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -745,39 +1021,47 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     onTap: () => _focusPoI(poi),
                   )
                 else
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.shade200),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        QuestObjectiveIcon(
-                          node: node,
-                          discoveredPoiIds: discoveredIds,
-                          size: 40,
-                          borderRadius: 6,
-                          iconColor: Theme.of(context).colorScheme.onSurface,
-                          backgroundColor: Colors.amber.shade100,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: objectiveLines
-                                .map(
-                                  (line) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Text(line),
-                                  ),
-                                )
-                                .toList(),
+                  InkWell(
+                    onTap: canFocusNode ? () => _focusNode(node) : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          QuestObjectiveIcon(
+                            node: node,
+                            discoveredPoiIds: discoveredIds,
+                            size: 40,
+                            borderRadius: 6,
+                            iconColor: Theme.of(context).colorScheme.onSurface,
+                            backgroundColor: Colors.amber.shade100,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: objectiveLines
+                                  .map(
+                                    (line) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(line),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                          if (canFocusNode) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -789,8 +1073,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   }
 }
 
-class _MainStoryLeadCard extends StatelessWidget {
-  const _MainStoryLeadCard({
+class _ImportantQuestAvailableCard extends StatelessWidget {
+  const _ImportantQuestAvailableCard({
     required this.poi,
     required this.onTap,
     this.questGiverName,
@@ -802,9 +1086,10 @@ class _MainStoryLeadCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasQuestGiver = (questGiverName ?? '').trim().isNotEmpty;
     final headline = (questGiverName ?? '').trim().isNotEmpty
         ? '$questGiverName has something important to tell you.'
-        : 'A main story thread is waiting here.';
+        : 'An important quest is waiting here.';
     final locationName = poi.name.trim().isNotEmpty
         ? poi.name.trim()
         : 'this place';
@@ -843,7 +1128,7 @@ class _MainStoryLeadCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  'Main Story Available',
+                  'Important Quest Available',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: const Color(0xFF3A1A11),
                     fontWeight: FontWeight.w800,
@@ -862,7 +1147,7 @@ class _MainStoryLeadCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Start at $locationName.',
+            'Head to $locationName.',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: const Color(0xFFF8EBD0)),
@@ -874,12 +1159,19 @@ class _MainStoryLeadCard extends StatelessWidget {
               backgroundColor: const Color(0xFFF1E2BD),
               foregroundColor: const Color(0xFF4E0F17),
             ),
-            child: const Text('Follow Lead'),
+            child: Text(hasQuestGiver ? 'Go to Questgiver' : 'Follow Lead'),
           ),
         ],
       ),
     );
   }
+}
+
+class _ResolvedMainStoryLead {
+  const _ResolvedMainStoryLead({required this.poi, this.questGiverName});
+
+  final PointOfInterest poi;
+  final String? questGiverName;
 }
 
 class _QuestPoiCard extends StatelessWidget {

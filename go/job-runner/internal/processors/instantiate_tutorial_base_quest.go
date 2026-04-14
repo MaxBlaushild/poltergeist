@@ -50,6 +50,7 @@ func (p *InstantiateTutorialBaseQuestProcessor) ProcessTask(ctx context.Context,
 		base,
 		payload.BaseQuestArchetypeID,
 		payload.BaseQuestGiverCharacterID,
+		payload.BaseQuestGiverCharacterTemplateID,
 	); err != nil {
 		return fmt.Errorf("failed to instantiate tutorial base quest: %w", err)
 	}

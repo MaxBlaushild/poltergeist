@@ -1126,66 +1126,6 @@ class _InventoryPanelState extends State<InventoryPanel>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_showTutorialGuide(context)) ...[
-          _buildTutorialGuide(context),
-          const SizedBox(height: 12),
-        ],
-        if (showDetail)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () async {
-                _outfitPoller?.cancel();
-                final selectedId = _selected?.id;
-                final status = _outfitGeneration;
-                if (selectedId != null &&
-                    status != null &&
-                    (status.isComplete || status.isFailed)) {
-                  _dismissedOutfitStatuses.add('$selectedId::${status.status}');
-                  await _persistDismissedOutfitStatuses();
-                }
-                setState(() {
-                  _selected = null;
-                  _outfitGeneration = null;
-                  _outfitError = null;
-                });
-              },
-            ),
-          ),
-        if (showDetail || user != null)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (showDetail && inv != null)
-                Text(
-                  inv.name,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              if (user != null)
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: showDetail && inv != null ? 12 : 0,
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.start,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: resourceBadges,
-                  ),
-                ),
-            ],
-          ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
-        const SizedBox(height: 16),
         Expanded(
           child: _loading
               ? const Center(
@@ -1194,9 +1134,81 @@ class _InventoryPanelState extends State<InventoryPanel>
                     child: CircularProgressIndicator(),
                   ),
                 )
-              : showDetail && inv != null
-              ? _buildDetail(context, inv, _selected!)
-              : _buildGrid(context),
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_showTutorialGuide(context)) ...[
+                        _buildTutorialGuide(context),
+                        const SizedBox(height: 12),
+                      ],
+                      if (showDetail)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () async {
+                              _outfitPoller?.cancel();
+                              final selectedId = _selected?.id;
+                              final status = _outfitGeneration;
+                              if (selectedId != null &&
+                                  status != null &&
+                                  (status.isComplete || status.isFailed)) {
+                                _dismissedOutfitStatuses.add(
+                                  '$selectedId::${status.status}',
+                                );
+                                await _persistDismissedOutfitStatuses();
+                              }
+                              setState(() {
+                                _selected = null;
+                                _outfitGeneration = null;
+                                _outfitError = null;
+                              });
+                            },
+                          ),
+                        ),
+                      if (showDetail || user != null)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (showDetail && inv != null)
+                              Text(
+                                inv.name,
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            if (user != null)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: showDetail && inv != null ? 12 : 0,
+                                ),
+                                child: Wrap(
+                                  alignment: WrapAlignment.start,
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: resourceBadges,
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      if (showDetail && inv != null)
+                        _buildDetail(context, inv, _selected!)
+                      else
+                        _buildGrid(context),
+                    ],
+                  ),
+                ),
         ),
       ],
     );
@@ -1349,97 +1361,95 @@ class _InventoryPanelState extends State<InventoryPanel>
     final isFirstPage = currentPageIndex <= 0;
     final isLastPage = currentPageIndex >= totalPages - 1;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildEquipmentSection(context, pulseOutfitItems: pulseOutfitItems),
-          const SizedBox(height: 16),
-          Row(
-            children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildEquipmentSection(context, pulseOutfitItems: pulseOutfitItems),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Text(
+              '· $totalItems item${totalItems == 1 ? '' : 's'}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            if (totalItems > 0) ...[
               Text(
-                '· $totalItems item${totalItems == 1 ? '' : 's'}',
+                'Page ${currentPageIndex + 1} of $totalPages',
                 style: theme.textTheme.labelLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              const Spacer(),
-              if (totalItems > 0) ...[
-                Text(
-                  'Page ${currentPageIndex + 1} of $totalPages',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              if (totalPages > 1) ...[
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Previous page',
-                  onPressed: isFirstPage
-                      ? null
-                      : () => setState(() => _pageIndex = currentPageIndex - 1),
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                IconButton(
-                  tooltip: 'Next page',
-                  onPressed: isLastPage
-                      ? null
-                      : () => setState(() => _pageIndex = currentPageIndex + 1),
-                  icon: const Icon(Icons.chevron_right),
-                ),
-              ],
             ],
-          ),
-          const SizedBox(height: 12),
-          if (pageItems.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.4,
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: theme.dividerColor),
+            if (totalPages > 1) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Previous page',
+                onPressed: isFirstPage
+                    ? null
+                    : () => setState(() => _pageIndex = currentPageIndex - 1),
+                icon: const Icon(Icons.chevron_left),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.inventory_2_outlined,
-                    size: 32,
+              IconButton(
+                tooltip: 'Next page',
+                onPressed: isLastPage
+                    ? null
+                    : () => setState(() => _pageIndex = currentPageIndex + 1),
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (pageItems.isEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.4,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  size: 32,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No items yet.',
+                  style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'No items yet.',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            LayoutGrid(
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: 1,
-              children: pageItems.map((o) {
-                final inv = _itemFor(o);
-                if (inv == null) {
-                  return _buildMissingItemCard(context);
-                }
-                return _buildFilledSlot(
-                  context,
-                  inv,
-                  o,
-                  pulseForMissingProfilePicture: pulseOutfitItems,
-                );
-              }).toList(),
+                ),
+              ],
             ),
-          const SizedBox(height: 12),
-        ],
-      ),
+          )
+        else
+          LayoutGrid(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 1,
+            children: pageItems.map((o) {
+              final inv = _itemFor(o);
+              if (inv == null) {
+                return _buildMissingItemCard(context);
+              }
+              return _buildFilledSlot(
+                context,
+                inv,
+                o,
+                pulseForMissingProfilePicture: pulseOutfitItems,
+              );
+            }).toList(),
+          ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
@@ -2010,57 +2020,55 @@ class _InventoryPanelState extends State<InventoryPanel>
       );
     }
 
-    return SingleChildScrollView(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 520;
-          final image = _buildDetailImage(context, inv);
-          final metaRow = Wrap(spacing: 8, runSpacing: 8, children: metaChips);
-          final infoColumn = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              metaRow,
-              if (actionArea is! SizedBox) const SizedBox(height: 16),
-              if (actionArea is! SizedBox) actionArea,
-            ],
-          );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 520;
+        final image = _buildDetailImage(context, inv);
+        final metaRow = Wrap(spacing: 8, runSpacing: 8, children: metaChips);
+        final infoColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            metaRow,
+            if (actionArea is! SizedBox) const SizedBox(height: 16),
+            if (actionArea is! SizedBox) actionArea,
+          ],
+        );
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (isWide)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 5, child: image),
-                    const SizedBox(width: 16),
-                    Expanded(flex: 7, child: infoColumn),
-                  ],
-                )
-              else ...[
-                image,
-                const SizedBox(height: 16),
-                infoColumn,
-              ],
-              if (hasDetails) const SizedBox(height: 16),
-              if (inv.flavorText.isNotEmpty)
-                _buildDetailSection(
-                  context,
-                  title: 'Story',
-                  child: Text(inv.flavorText, style: theme.textTheme.bodyLarge),
-                ),
-              if (inv.flavorText.isNotEmpty && inv.effectText.isNotEmpty)
-                const SizedBox(height: 12),
-              if (inv.effectText.isNotEmpty)
-                _buildDetailSection(
-                  context,
-                  title: 'Effect',
-                  child: Text(inv.effectText, style: theme.textTheme.bodyLarge),
-                ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 5, child: image),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 7, child: infoColumn),
+                ],
+              )
+            else ...[
+              image,
+              const SizedBox(height: 16),
+              infoColumn,
             ],
-          );
-        },
-      ),
+            if (hasDetails) const SizedBox(height: 16),
+            if (inv.flavorText.isNotEmpty)
+              _buildDetailSection(
+                context,
+                title: 'Story',
+                child: Text(inv.flavorText, style: theme.textTheme.bodyLarge),
+              ),
+            if (inv.flavorText.isNotEmpty && inv.effectText.isNotEmpty)
+              const SizedBox(height: 12),
+            if (inv.effectText.isNotEmpty)
+              _buildDetailSection(
+                context,
+                title: 'Effect',
+                child: Text(inv.effectText, style: theme.textTheme.bodyLarge),
+              ),
+          ],
+        );
+      },
     );
   }
 

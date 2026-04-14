@@ -30,7 +30,8 @@ class CharacterTabContent extends StatefulWidget {
   State<CharacterTabContent> createState() => _CharacterTabContentState();
 }
 
-class _CharacterTabContentState extends State<CharacterTabContent> {
+class _CharacterTabContentState extends State<CharacterTabContent>
+    with SingleTickerProviderStateMixin {
   static const double _damageLabelColumnWidth = 120;
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   static const Map<String, String> _labels = {
@@ -76,6 +77,8 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
   final ScrollController _scrollController = ScrollController();
   bool _showTopFade = false;
   bool _showBottomFade = false;
+  late final AnimationController _levelUpPulseController;
+  late final Animation<double> _levelUpPulseScale;
 
   int get _pendingTotal =>
       _pending.values.where((value) => value > 0).fold(0, (a, b) => a + b);
@@ -89,6 +92,13 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
   @override
   void initState() {
     super.initState();
+    _levelUpPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _levelUpPulseScale = Tween<double>(begin: 1.0, end: 1.14).animate(
+      CurvedAnimation(parent: _levelUpPulseController, curve: Curves.easeInOut),
+    );
     _scrollController.addListener(_updateFades);
     WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
   }
@@ -105,6 +115,14 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final unspent =
         widget.statsOverride?.unspentPoints ??
         context.watch<CharacterStatsProvider>().unspentPoints;
+    if (unspent > 0) {
+      if (!_levelUpPulseController.isAnimating) {
+        _levelUpPulseController.repeat(reverse: true);
+      }
+    } else if (_levelUpPulseController.isAnimating) {
+      _levelUpPulseController.stop();
+      _levelUpPulseController.value = 0;
+    }
     if (unspent == 0 && _pending.isNotEmpty) {
       _pending = {};
     }
@@ -119,6 +137,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
   void dispose() {
     _scrollController.removeListener(_updateFades);
     _scrollController.dispose();
+    _levelUpPulseController.dispose();
     super.dispose();
   }
 
@@ -252,6 +271,308 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final hasProficiencies = proficiencies.isNotEmpty;
     final canEdit = !_isReadOnly;
 
+    final levelCard = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: levelLoading
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Level',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  minHeight: 8,
+                  color: theme.colorScheme.primary,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                ),
+              ],
+            )
+          : userLevel == null
+          ? Text(
+              'Level data unavailable right now.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Level ${userLevel.level}',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${userLevel.experiencePointsOnLevel} / ${userLevel.experienceToNextLevel} XP',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: userLevel.experienceToNextLevel > 0
+                        ? (userLevel.experiencePointsOnLevel /
+                                  userLevel.experienceToNextLevel)
+                              .clamp(0.0, 1.0)
+                        : 0.0,
+                    minHeight: 8,
+                    color: theme.colorScheme.primary,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+              ],
+            ),
+    );
+
+    final statsCard = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Character stats',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'Level $displayLevel',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Unspent: $unspentPoints',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: hasUnspentPoints
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (hasUnspentPoints) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFF6DA), Color(0xFFF7E4A7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE0B651), width: 1.2),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF7A1823),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.north_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Level Up Ready',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: const Color(0xFF5A412C),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Spend $unspentPoints stat ${unspentPoints == 1 ? 'point' : 'points'} below to strengthen your character.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF6A513A),
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _pendingTotal > 0
+                              ? 'Assign your points, then tap Confirm.'
+                              : 'Use the + buttons below to allocate your new stats.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF7B6248),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (canEdit && _pendingTotal > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Remaining after pending: ${unspentPoints - _pendingTotal}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Column(
+            children: CharacterStatsProvider.statKeys.map((key) {
+              final label = _labels[key] ?? key;
+              final baseValue =
+                  baseStats[key] ?? CharacterStatsProvider.baseStatValue;
+              final bonusValue = bonusStats[key] ?? 0;
+              final bonusLabel = bonusValue == 0
+                  ? ''
+                  : bonusValue > 0
+                  ? '+$bonusValue'
+                  : '$bonusValue';
+              final bonusColor = bonusValue == 0
+                  ? theme.colorScheme.onSurfaceVariant
+                  : bonusValue > 0
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.error;
+              final pendingValue = _pending[key] ?? 0;
+              final displayValue = baseValue + pendingValue;
+              final remaining = unspentPoints - _pendingTotal;
+              final canAdd = canEdit && remaining > 0;
+              final canRemove = canEdit && pendingValue > 0;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (pendingValue > 0)
+                            Text(
+                              '+$pendingValue pending',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          bonusLabel,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: bonusColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$displayValue',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: canRemove
+                          ? () => _bumpStat(key, -1, remaining)
+                          : null,
+                      icon: const Icon(Icons.remove_circle_outline),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: canAdd
+                          ? () => _bumpStat(key, 1, remaining)
+                          : null,
+                      icon: const Icon(Icons.add_circle_outline),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+          if (canEdit && _pendingTotal > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => setState(() => _pending = {}),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => _confirmAllocations(statsProvider),
+                    child: const Text('Confirm'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+
     void showProfileImage() {
       if (user.profilePictureUrl.isEmpty) return;
       showDialog<void>(
@@ -342,20 +663,23 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                           Positioned(
                             right: -2,
                             top: -2,
-                            child: Container(
-                              padding: const EdgeInsets.all(3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFD54F),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: theme.colorScheme.surface,
-                                  width: 1.2,
+                            child: ScaleTransition(
+                              scale: _levelUpPulseScale,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFD54F),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: theme.colorScheme.surface,
+                                    width: 1.2,
+                                  ),
                                 ),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_upward,
-                                size: 12,
-                                color: Colors.white,
+                                child: const Icon(
+                                  Icons.arrow_upward,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
@@ -389,6 +713,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (hasUnspentPoints) ...[statsCard, const SizedBox(height: 16)],
               _buildResourceCard(
                 context,
                 health: health,
@@ -399,261 +724,9 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
               const SizedBox(height: 16),
               _buildDamageCard(context),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: levelLoading
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Level',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          LinearProgressIndicator(
-                            minHeight: 8,
-                            color: theme.colorScheme.primary,
-                            backgroundColor:
-                                theme.colorScheme.surfaceContainerHighest,
-                          ),
-                        ],
-                      )
-                    : userLevel == null
-                    ? Text(
-                        'Level data unavailable right now.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                'Level ${userLevel.level}',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${userLevel.experiencePointsOnLevel} / ${userLevel.experienceToNextLevel} XP',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: userLevel.experienceToNextLevel > 0
-                                  ? (userLevel.experiencePointsOnLevel /
-                                            userLevel.experienceToNextLevel)
-                                        .clamp(0.0, 1.0)
-                                  : 0.0,
-                              minHeight: 8,
-                              color: theme.colorScheme.primary,
-                              backgroundColor:
-                                  theme.colorScheme.surfaceContainerHighest,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
+              levelCard,
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Character stats',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          'Level $displayLevel',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'Unspent: $unspentPoints',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: hasUnspentPoints
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (hasUnspentPoints) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Level up!',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFFC58A00),
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                    if (canEdit && _pendingTotal > 0) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Remaining after pending: ${unspentPoints - _pendingTotal}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Column(
-                      children: CharacterStatsProvider.statKeys.map((key) {
-                        final label = _labels[key] ?? key;
-                        final baseValue =
-                            baseStats[key] ??
-                            CharacterStatsProvider.baseStatValue;
-                        final bonusValue = bonusStats[key] ?? 0;
-                        final bonusLabel = bonusValue == 0
-                            ? ''
-                            : bonusValue > 0
-                            ? '+$bonusValue'
-                            : '$bonusValue';
-                        final bonusColor = bonusValue == 0
-                            ? theme.colorScheme.onSurfaceVariant
-                            : bonusValue > 0
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.error;
-                        final pendingValue = _pending[key] ?? 0;
-                        final displayValue = baseValue + pendingValue;
-                        final remaining = unspentPoints - _pendingTotal;
-                        final canAdd = canEdit && remaining > 0;
-                        final canRemove = canEdit && pendingValue > 0;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      label,
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                    if (pendingValue > 0)
-                                      Text(
-                                        '+$pendingValue pending',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(
-                                width: 48,
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Text(
-                                    bonusLabel,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: bonusColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '$displayValue',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed: canRemove
-                                    ? () => _bumpStat(key, -1, remaining)
-                                    : null,
-                                icon: const Icon(Icons.remove_circle_outline),
-                              ),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed: canAdd
-                                    ? () => _bumpStat(key, 1, remaining)
-                                    : null,
-                                icon: const Icon(Icons.add_circle_outline),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    if (canEdit && _pendingTotal > 0) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setState(() => _pending = {}),
-                              child: const Text('Cancel'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () =>
-                                  _confirmAllocations(statsProvider),
-                              child: const Text('Confirm'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+              if (!hasUnspentPoints) ...[statsCard, const SizedBox(height: 16)],
               _buildAffinitiesCard(
                 context,
                 affinityDamageBonuses: affinityDamageBonuses,

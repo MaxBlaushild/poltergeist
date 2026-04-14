@@ -7,9 +7,7 @@ import 'package:image/image.dart' as img;
 const _placeholderUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _thumbnailSize = 192;
-const _cornerRadius = 12;
-const _questMarkerSize = 44;
-const _questMarkerPadding = 6;
+const _cornerRadius = 14;
 
 final Map<String, Uint8List> _thumbnailCache = {};
 final Map<String, Future<Uint8List?>> _thumbnailInFlight = {};
@@ -74,21 +72,21 @@ Uint8List? peekPoiThumbnail(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['plain|$url'];
+  return _thumbnailCache['plain_v8|$url'];
 }
 
 Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['quest|$url'];
+  return _thumbnailCache['quest_v8|$url'];
 }
 
 Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['main_story|$url'];
+  return _thumbnailCache['main_story_v8|$url'];
 }
 
 /// Fetches the POI image (or placeholder), resizes to a square, applies
@@ -97,20 +95,68 @@ Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'plain|$url';
+  final cacheKey = 'plain_v8|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
+    final square = _buildTransparentRoundedThumbnail(decoded);
     return Uint8List.fromList(img.encodePng(square));
+  });
+}
+
+Future<Uint8List?> loadBaseDiamondMarker({bool isCurrentUserBase = false}) {
+  final cacheKey = isCurrentUserBase
+      ? 'base_diamond_marker_self_v6'
+      : 'base_diamond_marker_v6';
+  return _loadThumbnailCached(cacheKey, () async {
+    final image = img.Image(
+      width: _thumbnailSize,
+      height: _thumbnailSize,
+      numChannels: 4,
+    );
+    img.fill(image, color: img.ColorRgba8(0, 0, 0, 0));
+
+    final outlineColor = isCurrentUserBase
+        ? img.ColorRgba8(52, 73, 94, 255)
+        : img.ColorRgba8(122, 78, 46, 255);
+    final accentColor = isCurrentUserBase
+        ? img.ColorRgba8(95, 171, 184, 255)
+        : img.ColorRgba8(231, 195, 106, 255);
+    final fillColor = isCurrentUserBase
+        ? img.ColorRgba8(232, 241, 242, 255)
+        : img.ColorRgba8(241, 226, 189, 255);
+    final houseColor = outlineColor;
+
+    final center = _thumbnailSize ~/ 2;
+    _fillDiamond(image, center, center, 64, outlineColor);
+    _fillDiamond(image, center, center, 58, accentColor);
+    _fillDiamond(image, center, center, 52, fillColor);
+    _drawBaseHouseGlyph(
+      image,
+      centerX: center,
+      roofTop: 56,
+      roofBaseY: 95,
+      roofHalfWidth: 38,
+      bodyLeft: 68,
+      bodyTop: 95,
+      bodyRight: 124,
+      bodyBottom: 136,
+      color: houseColor,
+      cutoutColor: fillColor,
+    );
+    if (isCurrentUserBase) {
+      _drawCurrentUserBaseBadge(
+        image,
+        centerX: center,
+        centerY: 40,
+        outlineColor: outlineColor,
+        accentColor: accentColor,
+      );
+    }
+
+    return Uint8List.fromList(img.encodePng(image));
   });
 }
 
@@ -124,21 +170,19 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'border:$borderWidth|$url';
+  final cacheKey = 'border_v7:$borderWidth|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
+    final square = _buildTransparentRoundedThumbnail(decoded);
     final borderedSize = _thumbnailSize + borderWidth * 2;
-    final bordered = img.Image(width: borderedSize, height: borderedSize);
+    final bordered = img.Image(
+      width: borderedSize,
+      height: borderedSize,
+      numChannels: 4,
+    );
     img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
     final gold = img.ColorRgba8(245, 197, 66, 255);
     final max = borderedSize - 1;
@@ -157,25 +201,19 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
   });
 }
 
-/// Same as [loadPoiThumbnail], but adds a golden quest marker in the corner.
+/// Same as [loadPoiThumbnail], but keeps a separate cache namespace for
+/// quest-available markers.
 Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'quest|$url';
+  final cacheKey = 'quest_v8|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
-    _drawQuestMarker(square);
+    final square = _buildTransparentRoundedThumbnail(decoded);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
@@ -184,102 +222,59 @@ Future<Uint8List?> loadPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'main_story|$url';
+  final cacheKey = 'main_story_v8|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
+    final square = _buildTransparentRoundedThumbnail(decoded);
     _drawMainStoryFrame(square);
-    _drawQuestMarker(square);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
 
-void _applyParchmentFrame(img.Image image) {
-  final width = image.width;
-  final height = image.height;
-  final edge = math.max(2, (width * 0.06).round());
-  final vignette = img.Image(width: width, height: height);
+img.Image _buildTransparentRoundedThumbnail(img.Image source) {
+  final cropped = img.copyResizeCropSquare(
+    source,
+    size: _thumbnailSize,
+    antialias: true,
+  );
+  final output = img.Image(
+    width: _thumbnailSize,
+    height: _thumbnailSize,
+    numChannels: 4,
+  );
+  img.fill(output, color: img.ColorRgba8(0, 0, 0, 0));
 
-  for (var y = 0; y < height; y++) {
-    for (var x = 0; x < width; x++) {
-      final dx = math.min(x, width - 1 - x);
-      final dy = math.min(y, height - 1 - y);
-      final dist = math.min(dx, dy);
-      final t = (dist / edge).clamp(0.0, 1.0);
-      final alpha = (1.0 - t) * 0.55;
-      final color = img.ColorRgba8(224, 207, 170, (alpha * 255).round());
-      vignette.setPixel(x, y, color);
+  for (var y = 0; y < _thumbnailSize; y++) {
+    for (var x = 0; x < _thumbnailSize; x++) {
+      if (!_isInsideRoundedRect(x, y, _thumbnailSize, _thumbnailSize)) {
+        continue;
+      }
+      output.setPixel(x, y, cropped.getPixel(x, y));
     }
   }
 
-  img.compositeImage(image, vignette, blend: img.BlendMode.multiply);
-  img.gaussianBlur(image, radius: 1);
-
-  final border = math.max(2, (width * 0.02).round());
-  final stroke = img.ColorRgba8(0, 0, 0, 210);
-  for (var i = 0; i < border; i++) {
-    img.drawRect(
-      image,
-      x1: i,
-      y1: i,
-      x2: width - 1 - i,
-      y2: height - 1 - i,
-      color: stroke,
-    );
-  }
+  return output;
 }
 
-void _drawQuestMarker(img.Image image) {
-  final radius = (_questMarkerSize / 2).round();
-  final centerX = _thumbnailSize - _questMarkerPadding - radius;
-  final centerY = _questMarkerPadding + radius;
-  final gold = img.ColorRgba8(245, 197, 66, 255);
-  final goldEdge = img.ColorRgba8(255, 233, 168, 255);
-  final dark = img.ColorRgba8(54, 35, 0, 255);
+bool _isInsideRoundedRect(int x, int y, int width, int height) {
+  final innerLeft = _cornerRadius;
+  final innerRight = width - _cornerRadius - 1;
+  final innerTop = _cornerRadius;
+  final innerBottom = height - _cornerRadius - 1;
 
-  img.fillCircle(
-    image,
-    x: centerX,
-    y: centerY,
-    radius: radius,
-    color: gold,
-    antialias: true,
-  );
-  img.drawCircle(
-    image,
-    x: centerX,
-    y: centerY,
-    radius: radius,
-    color: goldEdge,
-    antialias: true,
-  );
+  if ((x >= innerLeft && x <= innerRight) ||
+      (y >= innerTop && y <= innerBottom)) {
+    return true;
+  }
 
-  final barWidth = 6;
-  final barHeight = 18;
-  img.fillRect(
-    image,
-    x1: centerX - (barWidth ~/ 2),
-    y1: centerY - (barHeight ~/ 2) - 3,
-    x2: centerX + (barWidth ~/ 2),
-    y2: centerY + (barHeight ~/ 2) - 3,
-    color: dark,
-  );
-  img.fillCircle(
-    image,
-    x: centerX,
-    y: centerY + (barHeight ~/ 2) + 4,
-    radius: 3,
-    color: dark,
-  );
+  final cornerCenterX = x < innerLeft ? innerLeft : innerRight;
+  final cornerCenterY = y < innerTop ? innerTop : innerBottom;
+  final dx = x - cornerCenterX;
+  final dy = y - cornerCenterY;
+  return dx * dx + dy * dy <= _cornerRadius * _cornerRadius;
 }
 
 void _drawMainStoryFrame(img.Image image) {
@@ -292,7 +287,112 @@ void _drawMainStoryFrame(img.Image image) {
   for (var i = 0; i < outer; i++) {
     img.drawRect(image, x1: i, y1: i, x2: max - i, y2: max - i, color: ruby);
   }
-  for (var i = outer; i < outer + inner; i++) {
-    img.drawRect(image, x1: i, y1: i, x2: max - i, y2: max - i, color: gold);
+  for (var i = 0; i < inner; i++) {
+    img.drawRect(
+      image,
+      x1: outer + i,
+      y1: outer + i,
+      x2: max - (outer + i),
+      y2: max - (outer + i),
+      color: gold,
+    );
   }
+}
+
+void _fillDiamond(
+  img.Image image,
+  int centerX,
+  int centerY,
+  int radius,
+  img.Color color,
+) {
+  final minY = math.max(0, centerY - radius);
+  final maxY = math.min(image.height - 1, centerY + radius);
+  for (var y = minY; y <= maxY; y++) {
+    final verticalDistance = (y - centerY).abs();
+    final halfWidth = radius - verticalDistance;
+    final minX = math.max(0, centerX - halfWidth);
+    final maxX = math.min(image.width - 1, centerX + halfWidth);
+    for (var x = minX; x <= maxX; x++) {
+      image.setPixel(x, y, color);
+    }
+  }
+}
+
+void _drawBaseHouseGlyph(
+  img.Image image, {
+  required int centerX,
+  required int roofTop,
+  required int roofBaseY,
+  required int roofHalfWidth,
+  required int bodyLeft,
+  required int bodyTop,
+  required int bodyRight,
+  required int bodyBottom,
+  required img.Color color,
+  required img.Color cutoutColor,
+}) {
+  img.fillRect(
+    image,
+    x1: bodyLeft,
+    y1: bodyTop,
+    x2: bodyRight,
+    y2: bodyBottom,
+    color: color,
+  );
+  img.fillRect(
+    image,
+    x1: bodyRight - 11,
+    y1: roofTop + 10,
+    x2: bodyRight - 3,
+    y2: roofTop + 28,
+    color: color,
+  );
+  for (var y = roofTop; y <= roofBaseY; y++) {
+    final progress = (y - roofTop) / (roofBaseY - roofTop);
+    final halfWidth = (roofHalfWidth * progress).round();
+    final minX = centerX - halfWidth;
+    final maxX = centerX + halfWidth;
+    img.fillRect(image, x1: minX, y1: y, x2: maxX, y2: y, color: color);
+  }
+
+  img.fillRect(
+    image,
+    x1: centerX - 10,
+    y1: bodyBottom - 20,
+    x2: centerX + 10,
+    y2: bodyBottom,
+    color: cutoutColor,
+  );
+  img.fillRect(
+    image,
+    x1: bodyLeft + 9,
+    y1: bodyTop + 9,
+    x2: bodyLeft + 20,
+    y2: bodyTop + 20,
+    color: cutoutColor,
+  );
+  img.fillRect(
+    image,
+    x1: bodyRight - 20,
+    y1: bodyTop + 9,
+    x2: bodyRight - 9,
+    y2: bodyTop + 20,
+    color: cutoutColor,
+  );
+}
+
+void _drawCurrentUserBaseBadge(
+  img.Image image, {
+  required int centerX,
+  required int centerY,
+  required img.Color outlineColor,
+  required img.Color accentColor,
+}) {
+  final glowColor = img.ColorRgba8(247, 214, 114, 255);
+  final centerFillColor = img.ColorRgba8(255, 245, 216, 255);
+  _fillDiamond(image, centerX, centerY, 14, glowColor);
+  _fillDiamond(image, centerX, centerY, 10, outlineColor);
+  _fillDiamond(image, centerX, centerY, 6, accentColor);
+  _fillDiamond(image, centerX, centerY, 3, centerFillColor);
 }

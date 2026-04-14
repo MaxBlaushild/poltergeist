@@ -1,6 +1,6 @@
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import { TreasureChest } from '@poltergeist/types';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
@@ -34,6 +34,44 @@ interface TreasureChestDistributionResponse {
     large: number;
   };
 }
+
+interface StaticThumbnailResponse {
+  status?: string;
+  exists?: boolean;
+  thumbnailUrl?: string;
+  requestedAt?: string | null;
+  lastModified?: string | null;
+}
+
+const defaultTreasureChestMapIconPrompt =
+  'A retro 16-bit RPG map marker icon for a treasure chest. Ornate loot chest silhouette with latch and subtle sparkle motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
+const defaultTreasureChestMapIconUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/treasure-chest-undiscovered.png';
+
+const formatDate = (value?: string | null): string => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
+const staticStatusClassName = (status: string): string => {
+  switch ((status || '').trim()) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'missing':
+      return 'bg-gray-500';
+    default:
+      return 'bg-gray-400';
+  }
+};
 
 export const TreasureChests = () => {
   const { apiClient } = useAPI();
@@ -69,6 +107,32 @@ export const TreasureChests = () => {
   const [quickCreating, setQuickCreating] = useState(false);
   const [zoneQuery, setZoneQuery] = useState('');
   const [showZoneSuggestions, setShowZoneSuggestions] = useState(false);
+  const [treasureChestIconPrompt, setTreasureChestIconPrompt] = useState(
+    defaultTreasureChestMapIconPrompt
+  );
+  const [treasureChestIconUrl, setTreasureChestIconUrl] = useState(
+    defaultTreasureChestMapIconUrl
+  );
+  const [treasureChestIconStatus, setTreasureChestIconStatus] = useState(
+    'unknown'
+  );
+  const [treasureChestIconExists, setTreasureChestIconExists] =
+    useState(false);
+  const [treasureChestIconRequestedAt, setTreasureChestIconRequestedAt] =
+    useState<string | null>(null);
+  const [treasureChestIconLastModified, setTreasureChestIconLastModified] =
+    useState<string | null>(null);
+  const [treasureChestIconStatusLoading, setTreasureChestIconStatusLoading] =
+    useState(false);
+  const [treasureChestIconBusy, setTreasureChestIconBusy] = useState(false);
+  const [treasureChestIconMessage, setTreasureChestIconMessage] = useState<
+    string | null
+  >(null);
+  const [treasureChestIconError, setTreasureChestIconError] = useState<
+    string | null
+  >(null);
+  const [treasureChestIconPreviewNonce, setTreasureChestIconPreviewNonce] =
+    useState(Date.now());
 
   const [formData, setFormData] = useState({
     latitude: '',
@@ -105,9 +169,47 @@ export const TreasureChests = () => {
     setShowZoneSuggestions(false);
   };
 
-  useEffect(() => {
-    fetchChests();
-  }, []);
+  const refreshTreasureChestIconStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setTreasureChestIconStatusLoading(true);
+        setTreasureChestIconError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/treasure-chest-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setTreasureChestIconUrl(url);
+        }
+        setTreasureChestIconStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setTreasureChestIconExists(Boolean(response?.exists));
+        setTreasureChestIconRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setTreasureChestIconLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setTreasureChestIconPreviewNonce(Date.now());
+        if (showMessage) {
+          setTreasureChestIconMessage(
+            'Treasure chest map icon status refreshed.'
+          );
+        }
+      } catch (error) {
+        console.error('Error loading treasure chest map icon status:', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load treasure chest map icon status.';
+        setTreasureChestIconError(message);
+      } finally {
+        setTreasureChestIconStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     if (searchQuery === '') {
@@ -138,7 +240,7 @@ export const TreasureChests = () => {
     });
   }, [chests]);
 
-  const fetchChests = async () => {
+  const fetchChests = useCallback(async () => {
     try {
       const response = await apiClient.get<TreasureChest[]>(
         '/sonar/treasure-chests'
@@ -150,7 +252,25 @@ export const TreasureChests = () => {
       console.error('Error fetching treasure chests:', error);
       setLoading(false);
     }
-  };
+  }, [apiClient]);
+
+  useEffect(() => {
+    void fetchChests();
+    void refreshTreasureChestIconStatus();
+  }, [fetchChests, refreshTreasureChestIconStatus]);
+
+  useEffect(() => {
+    if (
+      treasureChestIconStatus !== 'queued' &&
+      treasureChestIconStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshTreasureChestIconStatus();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [treasureChestIconStatus, refreshTreasureChestIconStatus]);
 
   const resetForm = () => {
     setFormData({
@@ -339,6 +459,58 @@ export const TreasureChests = () => {
       setSeeding(false);
     }
   };
+
+  const handleGenerateTreasureChestIcon = useCallback(async () => {
+    const prompt = treasureChestIconPrompt.trim();
+    if (!prompt) {
+      setTreasureChestIconError('Prompt is required.');
+      return;
+    }
+    try {
+      setTreasureChestIconBusy(true);
+      setTreasureChestIconError(null);
+      setTreasureChestIconMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/treasure-chest-undiscovered',
+        { prompt }
+      );
+      setTreasureChestIconMessage(
+        'Treasure chest map icon queued for generation.'
+      );
+      await refreshTreasureChestIconStatus();
+    } catch (error) {
+      console.error('Error generating treasure chest map icon:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate treasure chest map icon.';
+      setTreasureChestIconError(message);
+    } finally {
+      setTreasureChestIconBusy(false);
+    }
+  }, [apiClient, refreshTreasureChestIconStatus, treasureChestIconPrompt]);
+
+  const handleDeleteTreasureChestIcon = useCallback(async () => {
+    try {
+      setTreasureChestIconBusy(true);
+      setTreasureChestIconError(null);
+      setTreasureChestIconMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/treasure-chest-undiscovered'
+      );
+      setTreasureChestIconMessage('Treasure chest map icon deleted.');
+      await refreshTreasureChestIconStatus();
+    } catch (error) {
+      console.error('Error deleting treasure chest map icon:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete treasure chest map icon.';
+      setTreasureChestIconError(message);
+    } finally {
+      setTreasureChestIconBusy(false);
+    }
+  }, [apiClient, refreshTreasureChestIconStatus]);
 
   const handleReconfigureLockDistribution = async () => {
     const unlockedPercentage = parseInt(
@@ -737,6 +909,94 @@ export const TreasureChests = () => {
           </div>
         </div>
       )}
+
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Treasure Chest Map Icon
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              This shared static icon is used for treasure chests on the map.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-md bg-slate-700 px-3 py-1 text-white disabled:opacity-60"
+              onClick={() => void refreshTreasureChestIconStatus(true)}
+              disabled={treasureChestIconStatusLoading}
+            >
+              {treasureChestIconStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-indigo-600 px-3 py-1 text-white disabled:opacity-60"
+              onClick={() => void handleGenerateTreasureChestIcon()}
+              disabled={treasureChestIconBusy || treasureChestIconStatusLoading}
+            >
+              {treasureChestIconBusy ? 'Working…' : 'Generate Icon'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-red-600 px-3 py-1 text-white disabled:opacity-60"
+              onClick={() => void handleDeleteTreasureChestIcon()}
+              disabled={treasureChestIconBusy || treasureChestIconStatusLoading}
+            >
+              {treasureChestIconBusy ? 'Working…' : 'Delete Icon'}
+            </button>
+          </div>
+        </div>
+        <div className="mb-2">
+          <span
+            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
+              treasureChestIconStatus
+            )}`}
+          >
+            {treasureChestIconStatus || 'unknown'}
+          </span>
+        </div>
+        <div className="break-all text-xs text-slate-600">
+          URL: {treasureChestIconUrl}
+        </div>
+        <div className="mt-1 text-xs text-slate-600">
+          Requested: {formatDate(treasureChestIconRequestedAt)}
+          {' · '}
+          Last updated: {formatDate(treasureChestIconLastModified)}
+        </div>
+        <label className="mt-3 block text-sm">
+          Generation Prompt
+          <textarea
+            className="mt-1 min-h-[88px] w-full rounded-md border border-slate-300 p-2"
+            value={treasureChestIconPrompt}
+            onChange={(event) => setTreasureChestIconPrompt(event.target.value)}
+            placeholder="Prompt used to generate the treasure chest map icon."
+          />
+        </label>
+        {treasureChestIconExists ? (
+          <div className="mt-3">
+            <img
+              src={`${treasureChestIconUrl}?v=${treasureChestIconPreviewNonce}`}
+              alt="Treasure chest map icon preview"
+              className="h-24 w-24 rounded-md border bg-slate-50 object-cover"
+            />
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-slate-500">
+            No icon currently found at this URL.
+          </div>
+        )}
+        {treasureChestIconMessage ? (
+          <div className="mt-2 text-sm text-emerald-700">
+            {treasureChestIconMessage}
+          </div>
+        ) : null}
+        {treasureChestIconError ? (
+          <div className="mt-2 text-sm text-red-600">
+            {treasureChestIconError}
+          </div>
+        ) : null}
+      </div>
 
       {/* Search */}
       <div className="mb-4">

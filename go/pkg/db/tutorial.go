@@ -461,6 +461,7 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 		Preload("Character").
 		Preload("BaseQuestArchetype").
 		Preload("BaseQuestGiverCharacter").
+		Preload("BaseQuestGiverCharacterTemplate").
 		Preload("MonsterEncounter").
 		First(&config, 1).Error
 	if err == nil {

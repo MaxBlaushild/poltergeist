@@ -40,6 +40,8 @@ type client struct {
 	challengeGenerationJobHandle         *challengeGenerationJobHandle
 	scenarioTemplateHandle               *scenarioTemplateHandle
 	challengeTemplateHandle              *challengeTemplateHandle
+	characterTemplateHandle              *characterTemplateHandle
+	expositionTemplateHandle             *expositionTemplateHandle
 	scenarioTemplateGenerationJobHandle  *scenarioTemplateGenerationJobHandle
 	challengeTemplateGenerationJobHandle *challengeTemplateGenerationJobHandle
 	zoneFlavorGenerationJobHandle        *zoneFlavorGenerationJobHandle
@@ -216,6 +218,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		challengeGenerationJobHandle:         &challengeGenerationJobHandle{db: db},
 		scenarioTemplateHandle:               &scenarioTemplateHandle{db: db},
 		challengeTemplateHandle:              &challengeTemplateHandle{db: db},
+		characterTemplateHandle:              &characterTemplateHandle{db: db},
+		expositionTemplateHandle:             &expositionTemplateHandle{db: db},
 		scenarioTemplateGenerationJobHandle:  &scenarioTemplateGenerationJobHandle{db: db},
 		challengeTemplateGenerationJobHandle: &challengeTemplateGenerationJobHandle{db: db},
 		zoneFlavorGenerationJobHandle:        &zoneFlavorGenerationJobHandle{db: db},
@@ -608,6 +612,14 @@ func (c *client) ScenarioTemplate() ScenarioTemplateHandle {
 
 func (c *client) ChallengeTemplate() ChallengeTemplateHandle {
 	return c.challengeTemplateHandle
+}
+
+func (c *client) CharacterTemplate() CharacterTemplateHandle {
+	return c.characterTemplateHandle
+}
+
+func (c *client) ExpositionTemplate() ExpositionTemplateHandle {
+	return c.expositionTemplateHandle
 }
 
 func (c *client) ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle {

@@ -140,6 +140,8 @@ type QuestArchetypeNode struct {
 	ScenarioTemplateID         *uuid.UUID                              `json:"scenarioTemplateId,omitempty"`
 	FetchCharacter             *Character                              `json:"fetchCharacter,omitempty" gorm:"foreignKey:FetchCharacterID"`
 	FetchCharacterID           *uuid.UUID                              `json:"fetchCharacterId,omitempty" gorm:"column:fetch_character_id;type:uuid"`
+	FetchCharacterTemplate     *CharacterTemplate                      `json:"fetchCharacterTemplate,omitempty" gorm:"foreignKey:FetchCharacterTemplateID"`
+	FetchCharacterTemplateID   *uuid.UUID                              `json:"fetchCharacterTemplateId,omitempty" gorm:"column:fetch_character_template_id;type:uuid"`
 	FetchRequirements          FetchQuestRequirements                  `json:"fetchRequirements" gorm:"column:fetch_requirements_json;type:jsonb;default:'[]'"`
 	ObjectiveDescription       string                                  `json:"objectiveDescription,omitempty" gorm:"column:objective_description"`
 	StoryFlagKey               string                                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
@@ -152,6 +154,8 @@ type QuestArchetypeNode struct {
 	EncounterMaterialRewards   BaseMaterialRewards                     `json:"encounterMaterialRewards" gorm:"column:encounter_material_rewards_json;type:jsonb;default:'[]'"`
 	EncounterItemRewards       MonsterEncounterRewardItems             `json:"encounterItemRewards" gorm:"column:encounter_item_rewards_json;type:jsonb;default:'[]'"`
 	EncounterProximityMeters   int                                     `json:"encounterProximityMeters" gorm:"column:encounter_proximity_meters;default:100"`
+	ExpositionTemplate         *ExpositionTemplate                     `json:"expositionTemplate,omitempty" gorm:"foreignKey:ExpositionTemplateID"`
+	ExpositionTemplateID       *uuid.UUID                              `json:"expositionTemplateId,omitempty" gorm:"column:exposition_template_id;type:uuid"`
 	ExpositionTitle            string                                  `json:"expositionTitle" gorm:"column:exposition_title"`
 	ExpositionDescription      string                                  `json:"expositionDescription" gorm:"column:exposition_description"`
 	ExpositionDialogue         DialogueSequence                        `json:"expositionDialogue" gorm:"column:exposition_dialogue;type:jsonb;default:'[]'"`

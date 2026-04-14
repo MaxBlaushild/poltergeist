@@ -4,8 +4,10 @@ import { QuestDifficultyMode } from './questDifficulty';
 import { CharacterRelationshipState, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 import { Character } from './character';
+import { CharacterTemplate } from './characterTemplate';
 import type { DialogueMessage } from './characterAction';
 import type { ExpositionMaterialReward, ExpositionRewardMode, ExpositionRandomRewardSize } from './exposition';
+import type { ExpositionTemplate } from './expositionTemplate';
 export interface QuestArchetypeChallenge {
     id: string;
     createdAt: Date;
@@ -67,12 +69,16 @@ export interface QuestArchetypeNode {
     scenarioTemplateId?: string | null;
     fetchCharacter?: Character | null;
     fetchCharacterId?: string | null;
+    fetchCharacterTemplate?: CharacterTemplate | null;
+    fetchCharacterTemplateId?: string | null;
     fetchRequirements?: QuestArchetypeNodeFetchRequirement[];
     objectiveDescription?: string | null;
     storyFlagKey?: string | null;
     monsterTemplateIds?: string[];
     targetLevel?: number | null;
     encounterProximityMeters?: number | null;
+    expositionTemplate?: ExpositionTemplate | null;
+    expositionTemplateId?: string | null;
     expositionTitle?: string | null;
     expositionDescription?: string | null;
     expositionDialogue?: DialogueMessage[];

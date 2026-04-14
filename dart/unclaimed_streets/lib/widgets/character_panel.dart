@@ -19,12 +19,11 @@ import '../providers/quest_log_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../screens/fetch_quest_turn_in_screen.dart';
 import '../services/poi_service.dart';
+import '../utils/sticky_proximity_access.dart';
 import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
 
 const _unlockRadiusMeters = kProximityUnlockRadiusMeters;
-const _placeholderImageUrl =
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 
 class CharacterPanel extends StatefulWidget {
   const CharacterPanel({
@@ -60,6 +59,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   bool _acceptingQuest = false;
   bool _turningInQuest = false;
   bool _openingFetchTurnIn = false;
+  final StickyProximityAccess _proximityAccess = StickyProximityAccess();
 
   @override
   void initState() {
@@ -356,7 +356,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final accepted = await showDialog<bool>(
       context: context,
       useRootNavigator: true,
+      useSafeArea: false,
       barrierDismissible: true,
+      barrierColor: Colors.transparent,
       builder: (dialogContext) {
         final footer = metaDifficulty != null
             ? _buildQuestDifficultySummaryFromMetadata(
@@ -390,11 +392,15 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Future<void> _handleQuest(CharacterAction action) async {
     final questId = action.questId;
     if (questId == null) return;
-    final location = context.read<LocationProvider>().location;
+    final questLogProvider = context.read<QuestLogProvider>();
+    final location =
+        _proximityAccess.grantedLocation ??
+        context.read<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
     final proximityBlockedReason = _questAcceptDisabledReason(
       location,
       distance,
+      hasProximityAccess: _proximityAccess.granted,
     );
     if (proximityBlockedReason != null) {
       if (mounted) {
@@ -410,7 +416,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
         characterId: widget.character.id,
         questId: questId,
       );
-      await context.read<QuestLogProvider>().refresh();
+      await questLogProvider.refresh();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -432,6 +438,24 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Future<void> _handleTurnIn(Quest quest, CharacterAction action) async {
     final questId = action.questId ?? quest.id;
     if (questId.isEmpty) return;
+    final location =
+        _proximityAccess.grantedLocation ??
+        context.read<LocationProvider>().location;
+    final distance = _questDistanceFrom(location);
+    final proximityBlockedReason = _characterInteractionDisabledReason(
+      location,
+      distance,
+      'turn in this quest',
+      hasProximityAccess: _proximityAccess.granted,
+    );
+    if (proximityBlockedReason != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(proximityBlockedReason)));
+      }
+      return;
+    }
     setState(() => _turningInQuest = true);
     final statsProvider = context.read<CharacterStatsProvider>();
     final authProvider = context.read<AuthProvider>();
@@ -566,8 +590,12 @@ class _CharacterPanelState extends State<CharacterPanel> {
   String? _characterInteractionDisabledReason(
     AppLocation? location,
     double? distanceMeters,
-    String actionLabel,
-  ) {
+    String actionLabel, {
+    bool hasProximityAccess = false,
+  }) {
+    if (hasProximityAccess) {
+      return null;
+    }
     if (!_hasCharacterLocation) return null;
     if (location == null) {
       return 'Enable location to $actionLabel.';
@@ -583,11 +611,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
 
   String? _questAcceptDisabledReason(
     AppLocation? location,
-    double? distanceMeters,
-  ) => _characterInteractionDisabledReason(
+    double? distanceMeters, {
+    bool hasProximityAccess = false,
+  }) => _characterInteractionDisabledReason(
     location,
     distanceMeters,
     'accept this quest',
+    hasProximityAccess: hasProximityAccess,
   );
 
   bool get _isDiscoveryManaged {
@@ -641,7 +671,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
       return;
     }
     final poiId = widget.character.pointOfInterestId?.trim() ?? '';
-    final loc = context.read<LocationProvider>().location;
+    final loc =
+        _proximityAccess.grantedLocation ??
+        context.read<LocationProvider>().location;
     if (loc == null) {
       setState(
         () => _unlockError = 'Location not available. Enable location access.',
@@ -658,7 +690,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
       setState(() => _unlockError = 'Character location unavailable.');
       return;
     }
-    if (distance > _unlockRadiusMeters) {
+    if (!_proximityAccess.granted && distance > _unlockRadiusMeters) {
       setState(() {
         _unlockError =
             'Too far away (${distance.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.';
@@ -807,262 +839,239 @@ class _CharacterPanelState extends State<CharacterPanel> {
         : null;
     final userLocation = context.watch<LocationProvider>().location;
     final questDistance = _questDistanceFrom(userLocation);
+    final liveWithinRange =
+        questDistance != null && questDistance <= _unlockRadiusMeters;
+    final hasProximityAccess = _proximityAccess.resolve(
+      currentLocation: userLocation,
+      withinRange: liveWithinRange,
+    );
     final questAcceptDisabledReason = _questAcceptDisabledReason(
       userLocation,
       questDistance,
+      hasProximityAccess: hasProximityAccess,
+    );
+    final questTurnInDisabledReason = _characterInteractionDisabledReason(
+      userLocation,
+      questDistance,
+      'turn in this quest',
+      hasProximityAccess: hasProximityAccess,
     );
     final fetchTurnInDisabledReason = _characterInteractionDisabledReason(
       userLocation,
       questDistance,
       'deliver these items',
+      hasProximityAccess: hasProximityAccess,
+    );
+    final shopDisabledReason = _characterInteractionDisabledReason(
+      userLocation,
+      questDistance,
+      'use this shop',
+      hasProximityAccess: hasProximityAccess,
+    );
+    final talkDisabledReason = _characterInteractionDisabledReason(
+      userLocation,
+      questDistance,
+      'talk to this character',
+      hasProximityAccess: hasProximityAccess,
     );
     final fetchTurnInActions = _actions
         .where((action) => action.actionType == 'receiveQuestItems')
         .where((action) => action.questId != null && action.questId!.isNotEmpty)
         .toList();
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.9,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => PaperSheet(
-        child: Column(
+    return AdaptivePaperSheet(
+      maxHeightFactor: 0.95,
+      header: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.character.name,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: widget.onClose,
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  if (imageUrl != null) ...[
-                    const SizedBox(height: 12),
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () => _showCharacterImageDialog(imageUrl),
-                        child: Ink(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: SizedBox(
-                              height: 172,
-                              child: Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.surfaceContainerHighest,
-                                  child: const Icon(Icons.person, size: 64),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (widget.character.description != null &&
-                      widget.character.description!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      widget.character.description!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                  if (widget.character.relationship != null &&
-                      !widget.character.relationship!.isZero) ...[
-                    const SizedBox(height: 12),
-                    _buildRelationshipSummary(context),
-                  ],
-                ],
+            Expanded(
+              child: Text(
+                widget.character.name,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
-            Expanded(
-              child: _loadingActions
-                  ? const Center(child: CircularProgressIndicator())
-                  : _actions.isEmpty
-                  ? const Center(child: Text('No actions available'))
-                  : ListView(
-                      controller: scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.black87,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white70, width: 2),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (widget.character.hasAvailableMainStoryQuest)
-                                Container(
-                                  width: double.infinity,
-                                  margin: const EdgeInsets.only(bottom: 14),
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF7A1823),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: const Color(0xFFE7C36A),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Main Story',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelLarge
-                                            ?.copyWith(
-                                              color: const Color(0xFFF8EBD0),
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '${widget.character.name} is carrying the next main story thread for this district.',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ...questActions.map((action) {
-                                final quest = _questForAction(action);
-                                final questReadyToTurnIn = _questReadyToTurnIn(
-                                  action,
-                                );
-                                if (questReadyToTurnIn != null) {
-                                  final turnInPrefix =
-                                      questReadyToTurnIn.isMainStory
-                                      ? 'Main Story: '
-                                      : '';
-                                  return _DialogueChoiceButton(
-                                    label: _turningInQuest
-                                        ? 'Turning in…'
-                                        : '${turnInPrefix}Turn in: ${questReadyToTurnIn.name}',
-                                    icon: Icons.assignment_turned_in,
-                                    onTap: _turningInQuest
-                                        ? null
-                                        : () => _handleTurnIn(
-                                            questReadyToTurnIn,
-                                            action,
-                                          ),
-                                  );
-                                }
-                                if (quest?.isAccepted == true) {
-                                  return const SizedBox.shrink();
-                                }
-                                final questAcceptBlocked =
-                                    !_acceptingQuest &&
-                                    questAcceptDisabledReason != null;
-                                return _DialogueChoiceButton(
-                                  label: _acceptingQuest
-                                      ? 'Accepting quest…'
-                                      : '${action.isMainStoryQuest ? 'Main Story: ' : ''}Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
-                                  icon: Icons.assignment_turned_in,
-                                  subtitle: questAcceptBlocked
-                                      ? questAcceptDisabledReason
-                                      : null,
-                                  onTap:
-                                      _acceptingQuest ||
-                                          questAcceptDisabledReason != null
-                                      ? null
-                                      : () =>
-                                            _showQuestAcceptanceDialog(action),
-                                );
-                              }),
-                              ...fetchTurnInActions.map((action) {
-                                final quest = _questForAction(action);
-                                final labelQuestName =
-                                    quest?.name ??
-                                    action.questName?.trim() ??
-                                    'Quest';
-                                return _DialogueChoiceButton(
-                                  label: _openingFetchTurnIn
-                                      ? 'Opening delivery...'
-                                      : 'Deliver Items: $labelQuestName',
-                                  icon: Icons.inventory_2_outlined,
-                                  subtitle:
-                                      !_openingFetchTurnIn &&
-                                          fetchTurnInDisabledReason != null
-                                      ? fetchTurnInDisabledReason
-                                      : null,
-                                  onTap:
-                                      _openingFetchTurnIn ||
-                                          fetchTurnInDisabledReason != null
-                                      ? null
-                                      : () => _openFetchTurnIn(action),
-                                );
-                              }),
-                              if (shopAction != null)
-                                _DialogueChoiceButton(
-                                  label: 'Shop',
-                                  icon: Icons.storefront,
-                                  onTap: widget.onStartShop == null
-                                      ? null
-                                      : () {
-                                          widget.onStartShop!(
-                                            context,
-                                            widget.character,
-                                            shopAction,
-                                          );
-                                          widget.onClose();
-                                        },
-                                ),
-                              if (talkAction != null)
-                                _DialogueChoiceButton(
-                                  label: 'Talk',
-                                  icon: Icons.chat_bubble_outline,
-                                  onTap: widget.onStartDialogue == null
-                                      ? null
-                                      : () {
-                                          widget.onStartDialogue!(
-                                            context,
-                                            widget.character,
-                                            talkAction,
-                                          );
-                                        },
-                                ),
-                            ],
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (imageUrl != null) ...[
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _showCharacterImageDialog(imageUrl),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        height: 172,
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            child: const Icon(Icons.person, size: 64),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-            ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (widget.character.description != null &&
+                widget.character.description!.isNotEmpty) ...[
+              Text(
+                widget.character.description!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (widget.character.relationship != null &&
+                !widget.character.relationship!.isZero) ...[
+              _buildRelationshipSummary(context),
+              const SizedBox(height: 12),
+            ],
+            if (_loadingActions)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_actions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text('No actions available')),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white70, width: 2),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...questActions.map((action) {
+                      final quest = _questForAction(action);
+                      final questReadyToTurnIn = _questReadyToTurnIn(action);
+                      if (questReadyToTurnIn != null) {
+                        final turnInPrefix = questReadyToTurnIn.isMainStory
+                            ? 'Main Story: '
+                            : '';
+                        return _DialogueChoiceButton(
+                          label: _turningInQuest
+                              ? 'Turning in…'
+                              : '${turnInPrefix}Turn in: ${questReadyToTurnIn.name}',
+                          icon: Icons.assignment_turned_in,
+                          subtitle: _turningInQuest
+                              ? null
+                              : questTurnInDisabledReason,
+                          onTap:
+                              _turningInQuest ||
+                                  questTurnInDisabledReason != null
+                              ? null
+                              : () => _handleTurnIn(questReadyToTurnIn, action),
+                        );
+                      }
+                      if (quest?.isAccepted == true) {
+                        return const SizedBox.shrink();
+                      }
+                      final questAcceptBlocked =
+                          !_acceptingQuest && questAcceptDisabledReason != null;
+                      return _DialogueChoiceButton(
+                        label: _acceptingQuest
+                            ? 'Accepting quest…'
+                            : '${action.isMainStoryQuest ? 'Main Story: ' : ''}Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
+                        icon: Icons.assignment_turned_in,
+                        subtitle: questAcceptBlocked
+                            ? questAcceptDisabledReason
+                            : null,
+                        onTap:
+                            _acceptingQuest || questAcceptDisabledReason != null
+                            ? null
+                            : () => _showQuestAcceptanceDialog(action),
+                      );
+                    }),
+                    ...fetchTurnInActions.map((action) {
+                      final quest = _questForAction(action);
+                      final labelQuestName =
+                          quest?.name ?? action.questName?.trim() ?? 'Quest';
+                      return _DialogueChoiceButton(
+                        label: _openingFetchTurnIn
+                            ? 'Opening delivery...'
+                            : 'Deliver Items: $labelQuestName',
+                        icon: Icons.inventory_2_outlined,
+                        subtitle:
+                            !_openingFetchTurnIn &&
+                                fetchTurnInDisabledReason != null
+                            ? fetchTurnInDisabledReason
+                            : null,
+                        onTap:
+                            _openingFetchTurnIn ||
+                                fetchTurnInDisabledReason != null
+                            ? null
+                            : () => _openFetchTurnIn(action),
+                      );
+                    }),
+                    if (shopAction != null)
+                      _DialogueChoiceButton(
+                        label: 'Shop',
+                        icon: Icons.storefront,
+                        subtitle: shopDisabledReason,
+                        onTap:
+                            widget.onStartShop == null ||
+                                shopDisabledReason != null
+                            ? null
+                            : () {
+                                widget.onStartShop!(
+                                  context,
+                                  widget.character,
+                                  shopAction,
+                                );
+                                widget.onClose();
+                              },
+                      ),
+                    if (talkAction != null)
+                      _DialogueChoiceButton(
+                        label: 'Talk',
+                        icon: Icons.chat_bubble_outline,
+                        subtitle: talkDisabledReason,
+                        onTap:
+                            widget.onStartDialogue == null ||
+                                talkDisabledReason != null
+                            ? null
+                            : () {
+                                widget.onStartDialogue!(
+                                  context,
+                                  widget.character,
+                                  talkAction,
+                                );
+                              },
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -1072,116 +1081,93 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Widget _buildUndiscovered(BuildContext context) {
     final location = context.watch<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
-    final withinRange = distance != null && distance <= _unlockRadiusMeters;
+    final liveWithinRange = distance != null && distance <= _unlockRadiusMeters;
+    final withinRange = _proximityAccess.resolve(
+      currentLocation: location,
+      withinRange: liveWithinRange,
+    );
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.9,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => PaperSheet(
-        child: Column(
+    return AdaptivePaperSheet(
+      maxHeightFactor: 0.58,
+      header: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.lock_outline,
-                        size: 28,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Undiscovered',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
+            Row(
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  size: 28,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Undiscovered',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: Image.network(
-                        _placeholderImageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          color: Theme.of(context).colorScheme.surfaceVariant,
-                          child: const Icon(Icons.person_search, size: 72),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Visit this location to unlock this character. You must be within ${_unlockRadiusMeters.round()} meters to discover it.',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  if (distance != null)
-                    Text(
-                      withinRange
-                          ? 'Within range! Tap Unlock to discover.'
-                          : 'You are ${distance.round()} m away.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: withinRange
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.7),
-                        fontWeight: withinRange ? FontWeight.w600 : null,
-                      ),
-                    )
-                  else
-                    Text(
-                      _hasCharacterLocation
-                          ? 'Enable location to see distance.'
-                          : 'Character location unavailable.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Visit this location to unlock this character. You must be within ${_unlockRadiusMeters.round()} meters to discover it.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 12),
+            if (distance != null)
+              Text(
+                withinRange
+                    ? 'Within range! Tap Unlock to discover.'
+                    : 'You are ${distance.round()} m away.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: withinRange
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(
                           context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  if (_unlockError != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _unlockError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: (_unlocking || !withinRange)
-                        ? null
-                        : _handleUnlock,
-                    child: Text(
-                      _unlocking
-                          ? 'Unlocking...'
-                          : !withinRange
-                          ? 'Too far to unlock'
-                          : 'Unlock',
-                    ),
-                  ),
-                ],
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontWeight: withinRange ? FontWeight.w600 : null,
+                ),
+              )
+            else
+              Text(
+                _hasCharacterLocation
+                    ? 'Enable location to see distance.'
+                    : 'Character location unavailable.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            if (_unlockError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _unlockError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: (_unlocking || !withinRange) ? null : _handleUnlock,
+              child: Text(
+                _unlocking
+                    ? 'Unlocking...'
+                    : !withinRange
+                    ? 'Too far to unlock'
+                    : 'Unlock',
               ),
             ),
           ],

@@ -23,6 +23,9 @@ class TrackedQuestsOverlay extends StatefulWidget {
     required this.onFocusNode,
     this.onOpenQuestDetails,
     this.controller,
+    this.featuredMainStoryPoi,
+    this.featuredMainStoryQuestGiverName,
+    this.onFocusFeaturedMainStoryLead,
   });
 
   /// When user taps a POI: fly to location then open POI panel.
@@ -30,6 +33,9 @@ class TrackedQuestsOverlay extends StatefulWidget {
   final void Function(QuestNode node) onFocusNode;
   final void Function(Quest quest)? onOpenQuestDetails;
   final TrackedQuestsOverlayController? controller;
+  final PointOfInterest? featuredMainStoryPoi;
+  final String? featuredMainStoryQuestGiverName;
+  final VoidCallback? onFocusFeaturedMainStoryLead;
 
   @override
   State<TrackedQuestsOverlay> createState() => _TrackedQuestsOverlayState();
@@ -101,6 +107,21 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     widget.onFocusPoI(poi);
   }
 
+  void _onFeaturedMainStoryLeadTap() {
+    final poi = widget.featuredMainStoryPoi;
+    if (poi == null) return;
+    setState(() {
+      _expanded = false;
+      _showContent = false;
+    });
+    final onFocusLead = widget.onFocusFeaturedMainStoryLead;
+    if (onFocusLead != null) {
+      onFocusLead();
+      return;
+    }
+    widget.onFocusPoI(poi);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<QuestLogProvider, DiscoveriesProvider>(
@@ -129,11 +150,14 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
               .toList();
         }
         final visibleTracked = tracked.isNotEmpty ? tracked : _cachedTracked;
+        final featuredMainStoryPoi = widget.featuredMainStoryPoi;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
 
-        if (visibleTracked.isEmpty) return const SizedBox.shrink();
+        if (visibleTracked.isEmpty && featuredMainStoryPoi == null) {
+          return const SizedBox.shrink();
+        }
 
         final screenWidth = MediaQuery.sizeOf(context).width;
         const rightMargin = 16.0;
@@ -191,23 +215,31 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                             child: SingleChildScrollView(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: visibleTracked
-                                    .map(
-                                      (quest) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 8,
-                                        ),
-                                        child: _TrackedQuestCard(
-                                          quest: quest,
-                                          discoveredIds: discoveredIds,
-                                          onPoITap: _onPoITap,
-                                          onNodeTap: widget.onFocusNode,
-                                          onOpenQuestDetails:
-                                              widget.onOpenQuestDetails,
-                                        ),
+                                children: [
+                                  if (featuredMainStoryPoi != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: _ImportantQuestLeadCard(
+                                        poi: featuredMainStoryPoi,
+                                        questGiverName: widget
+                                            .featuredMainStoryQuestGiverName,
+                                        onTap: _onFeaturedMainStoryLeadTap,
                                       ),
-                                    )
-                                    .toList(),
+                                    ),
+                                  ...visibleTracked.map(
+                                    (quest) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: _TrackedQuestCard(
+                                        quest: quest,
+                                        discoveredIds: discoveredIds,
+                                        onPoITap: _onPoITap,
+                                        onNodeTap: widget.onFocusNode,
+                                        onOpenQuestDetails:
+                                            widget.onOpenQuestDetails,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -223,6 +255,80 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
           ),
         );
       },
+    );
+  }
+}
+
+class _ImportantQuestLeadCard extends StatelessWidget {
+  const _ImportantQuestLeadCard({
+    required this.poi,
+    required this.onTap,
+    this.questGiverName,
+  });
+
+  final PointOfInterest poi;
+  final VoidCallback onTap;
+  final String? questGiverName;
+
+  @override
+  Widget build(BuildContext context) {
+    final questGiver = questGiverName?.trim() ?? '';
+    final locationName = poi.name.trim().isNotEmpty
+        ? poi.name.trim()
+        : 'nearby';
+    final headline = questGiver.isNotEmpty
+        ? 'Talk to $questGiver.'
+        : 'A main story thread is waiting nearby.';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7A1823), Color(0xFF4E0F17)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE7C36A)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7C36A),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Important Quest Available',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: const Color(0xFF3A1A11),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              headline,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Head to $locationName.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: const Color(0xFFF8EBD0)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -247,18 +353,11 @@ class _TrackedQuestCard extends StatelessWidget {
     final node = quest.currentNode;
     final poi = node?.pointOfInterest;
     final objectiveLines = questObjectiveLines(node);
-    final hasDirectFocusTarget =
-        poi != null ||
-        (node?.scenarioId?.trim().isNotEmpty ?? false) ||
-        (node?.expositionId?.trim().isNotEmpty ?? false) ||
-        (node?.monsterEncounterId?.trim().isNotEmpty ?? false) ||
-        (node?.monsterId?.trim().isNotEmpty ?? false) ||
-        (node?.challengeId?.trim().isNotEmpty ?? false) ||
-        (node?.polygon.isNotEmpty ?? false);
+    final hasDirectFocusTarget = questNodeHasDirectFocusTarget(node);
     final detailFallbackTap = onOpenQuestDetails == null
         ? null
         : () => onOpenQuestDetails!(quest);
-    final nodeTap = hasDirectFocusTarget || detailFallbackTap == null
+    final VoidCallback? nodeTap = hasDirectFocusTarget
         ? () => onNodeTap(node!)
         : detailFallbackTap;
 
@@ -303,40 +402,43 @@ class _TrackedQuestCard extends StatelessWidget {
               objectiveLines: objectiveLines,
             )
           else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                QuestObjectiveIcon(
-                  node: node,
-                  discoveredPoiIds: discoveredIds,
-                  size: 28,
-                  borderRadius: 4,
-                  iconColor: Colors.white70,
-                  backgroundColor: Colors.grey.shade700,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ...objectiveLines.map(
-                        (line) => GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: nodeTap,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              line,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.white70),
+            InkWell(
+              onTap: nodeTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    QuestObjectiveIcon(
+                      node: node,
+                      discoveredPoiIds: discoveredIds,
+                      size: 28,
+                      borderRadius: 4,
+                      iconColor: Colors.white70,
+                      backgroundColor: Colors.grey.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ...objectiveLines.map(
+                            (line) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                line,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.white70),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
         ],
       ),

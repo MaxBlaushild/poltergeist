@@ -497,17 +497,12 @@ func cloneFetchQuestCharacterInternalTags(
 	return tags
 }
 
-func (c *client) createQuestFetchCharacter(
+func (c *client) createQuestFetchCharacterFromTemplateData(
 	ctx context.Context,
-	sourceCharacter *models.Character,
+	template models.CharacterTemplateData,
 	pointOfInterest *models.PointOfInterest,
 	anchor *questNodeAnchor,
 ) (*models.Character, error) {
-	if sourceCharacter == nil {
-		return nil, markNonRetriableQuestGenerationError(
-			fmt.Errorf("fetch quest character is required"),
-		)
-	}
 	if anchor == nil {
 		return nil, markNonRetriableQuestGenerationError(
 			fmt.Errorf("fetch quest anchor is required"),
@@ -515,22 +510,16 @@ func (c *client) createQuestFetchCharacter(
 	}
 
 	now := time.Now()
-	clonedCharacter := &models.Character{
-		ID:                    uuid.New(),
-		CreatedAt:             now,
-		UpdatedAt:             now,
-		Name:                  strings.TrimSpace(sourceCharacter.Name),
-		Description:           strings.TrimSpace(sourceCharacter.Description),
-		InternalTags:          cloneFetchQuestCharacterInternalTags(sourceCharacter.InternalTags),
-		MapIconURL:            strings.TrimSpace(sourceCharacter.MapIconURL),
-		DialogueImageURL:      strings.TrimSpace(sourceCharacter.DialogueImageURL),
-		ThumbnailURL:          strings.TrimSpace(sourceCharacter.ThumbnailURL),
-		Ephemeral:             true,
-		StoryVariants:         append(models.CharacterStoryVariants{}, sourceCharacter.StoryVariants...),
-		PointOfInterestID:     optionalPointOfInterestID(pointOfInterest),
-		ImageGenerationStatus: sourceCharacter.ImageGenerationStatus,
-		ImageGenerationError:  sourceCharacter.ImageGenerationError,
-	}
+	clonedCharacter := template.Instantiate(
+		models.CharacterTemplateInstanceOptions{
+			ID:                uuid.New(),
+			CreatedAt:         now,
+			UpdatedAt:         now,
+			Ephemeral:         true,
+			PointOfInterestID: optionalPointOfInterestID(pointOfInterest),
+			InternalTags:      cloneFetchQuestCharacterInternalTags(template.InternalTags),
+		},
+	)
 	if clonedCharacter.Name == "" {
 		clonedCharacter.Name = "Character"
 	}
@@ -553,6 +542,108 @@ func (c *client) createQuestFetchCharacter(
 		return nil, err
 	}
 	return c.dbClient.Character().FindByID(ctx, clonedCharacter.ID)
+}
+
+func (c *client) resolveFetchQuestCharacterTemplateData(
+	ctx context.Context,
+	questArchTypeNode *models.QuestArchetypeNode,
+) (models.CharacterTemplateData, error) {
+	if questArchTypeNode == nil {
+		return models.CharacterTemplateData{}, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest node is required"),
+		)
+	}
+	switch {
+	case questArchTypeNode.FetchCharacterTemplateID != nil &&
+		*questArchTypeNode.FetchCharacterTemplateID != uuid.Nil:
+		if questArchTypeNode.FetchCharacterTemplate != nil &&
+			questArchTypeNode.FetchCharacterTemplate.ID == *questArchTypeNode.FetchCharacterTemplateID {
+			return models.CharacterTemplateDataFromCharacterTemplate(
+				questArchTypeNode.FetchCharacterTemplate,
+			), nil
+		}
+		template, err := c.dbClient.CharacterTemplate().FindByID(
+			ctx,
+			*questArchTypeNode.FetchCharacterTemplateID,
+		)
+		if err != nil {
+			return models.CharacterTemplateData{}, err
+		}
+		if template == nil {
+			return models.CharacterTemplateData{}, markNonRetriableQuestGenerationError(
+				fmt.Errorf(
+					"fetch quest character template %s not found",
+					questArchTypeNode.FetchCharacterTemplateID.String(),
+				),
+			)
+		}
+		return models.CharacterTemplateDataFromCharacterTemplate(template), nil
+	case questArchTypeNode.FetchCharacterID != nil &&
+		*questArchTypeNode.FetchCharacterID != uuid.Nil:
+		if questArchTypeNode.FetchCharacter != nil &&
+			questArchTypeNode.FetchCharacter.ID == *questArchTypeNode.FetchCharacterID {
+			return models.CharacterTemplateDataFromCharacter(
+				questArchTypeNode.FetchCharacter,
+			), nil
+		}
+		fetchCharacter, err := c.dbClient.Character().FindByID(
+			ctx,
+			*questArchTypeNode.FetchCharacterID,
+		)
+		if err != nil {
+			return models.CharacterTemplateData{}, err
+		}
+		if fetchCharacter == nil {
+			return models.CharacterTemplateData{}, markNonRetriableQuestGenerationError(
+				fmt.Errorf(
+					"fetch quest character %s not found",
+					questArchTypeNode.FetchCharacterID.String(),
+				),
+			)
+		}
+		return models.CharacterTemplateDataFromCharacter(fetchCharacter), nil
+	default:
+		return models.CharacterTemplateData{}, markNonRetriableQuestGenerationError(
+			fmt.Errorf("fetch quest node requires a fetch character or fetch character template"),
+		)
+	}
+}
+
+func (c *client) resolveQuestExpositionTemplateData(
+	ctx context.Context,
+	questArchTypeNode *models.QuestArchetypeNode,
+) (models.ExpositionTemplateData, error) {
+	if questArchTypeNode == nil {
+		return models.ExpositionTemplateData{}, markNonRetriableQuestGenerationError(
+			fmt.Errorf("exposition node is required"),
+		)
+	}
+	if questArchTypeNode.ExpositionTemplateID != nil &&
+		*questArchTypeNode.ExpositionTemplateID != uuid.Nil {
+		if questArchTypeNode.ExpositionTemplate != nil &&
+			questArchTypeNode.ExpositionTemplate.ID == *questArchTypeNode.ExpositionTemplateID {
+			return models.ExpositionTemplateDataFromExpositionTemplate(
+				questArchTypeNode.ExpositionTemplate,
+			), nil
+		}
+		template, err := c.dbClient.ExpositionTemplate().FindByID(
+			ctx,
+			*questArchTypeNode.ExpositionTemplateID,
+		)
+		if err != nil {
+			return models.ExpositionTemplateData{}, err
+		}
+		if template == nil {
+			return models.ExpositionTemplateData{}, markNonRetriableQuestGenerationError(
+				fmt.Errorf(
+					"exposition template %s not found",
+					questArchTypeNode.ExpositionTemplateID.String(),
+				),
+			)
+		}
+		return models.ExpositionTemplateDataFromExpositionTemplate(template), nil
+	}
+	return models.ExpositionTemplateDataFromQuestArchetypeNode(questArchTypeNode), nil
 }
 
 func (c *client) processQuestScenarioNode(
@@ -711,77 +802,6 @@ func (c *client) processQuestScenarioNode(
 	return currentAnchor, nil
 }
 
-func cloneQuestArchetypeNodeExpositionDialogue(
-	input models.DialogueSequence,
-) models.DialogueSequence {
-	out := make(models.DialogueSequence, 0, len(input))
-	for index, message := range input {
-		next := models.DialogueMessage{
-			Speaker: message.Speaker,
-			Text:    strings.TrimSpace(message.Text),
-			Order:   index,
-			Effect:  models.NormalizeDialogueEffect(string(message.Effect)),
-		}
-		if message.CharacterID != nil && *message.CharacterID != uuid.Nil {
-			characterID := *message.CharacterID
-			next.CharacterID = &characterID
-		}
-		if next.Text == "" {
-			continue
-		}
-		next.Order = len(out)
-		out = append(out, next)
-	}
-	return out
-}
-
-func cloneQuestArchetypeNodeExpositionMaterials(
-	input models.BaseMaterialRewards,
-) models.BaseMaterialRewards {
-	out := make(models.BaseMaterialRewards, 0, len(input))
-	for _, reward := range input {
-		if reward.ResourceKey == "" || reward.Amount == 0 {
-			continue
-		}
-		out = append(out, models.BaseResourceDelta{
-			ResourceKey: reward.ResourceKey,
-			Amount:      reward.Amount,
-		})
-	}
-	return out
-}
-
-func expositionItemRewardsFromQuestArchetypeNode(
-	input models.QuestArchetypeExpositionItemRewards,
-) []models.ExpositionItemReward {
-	rewards := make([]models.ExpositionItemReward, 0, len(input))
-	for _, reward := range input {
-		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
-			continue
-		}
-		rewards = append(rewards, models.ExpositionItemReward{
-			InventoryItemID: reward.InventoryItemID,
-			Quantity:        reward.Quantity,
-		})
-	}
-	return rewards
-}
-
-func expositionSpellRewardsFromQuestArchetypeNode(
-	input models.QuestArchetypeExpositionSpellRewards,
-) []models.ExpositionSpellReward {
-	rewards := make([]models.ExpositionSpellReward, 0, len(input))
-	for _, reward := range input {
-		if reward.SpellID == uuid.Nil {
-			continue
-		}
-		rewards = append(rewards, models.ExpositionSpellReward{
-			SpellID: reward.SpellID,
-		})
-	}
-	return rewards
-}
-
 func (c *client) processQuestExpositionNode(
 	ctx context.Context,
 	zone *models.Zone,
@@ -813,15 +833,17 @@ func (c *client) processQuestExpositionNode(
 		)
 	}
 
-	title := strings.TrimSpace(questArchTypeNode.ExpositionTitle)
+	template, err := c.resolveQuestExpositionTemplateData(ctx, questArchTypeNode)
+	if err != nil {
+		return previousAnchor, err
+	}
+	title := strings.TrimSpace(template.Title)
 	if title == "" {
 		return previousAnchor, markNonRetriableQuestGenerationError(
 			fmt.Errorf("exposition node requires a title"),
 		)
 	}
-	dialogue := cloneQuestArchetypeNodeExpositionDialogue(
-		questArchTypeNode.ExpositionDialogue,
-	)
+	dialogue := append(models.DialogueSequence{}, template.Dialogue...)
 	if len(dialogue) == 0 {
 		return previousAnchor, markNonRetriableQuestGenerationError(
 			fmt.Errorf("exposition node requires dialogue"),
@@ -840,45 +862,30 @@ func (c *client) processQuestExpositionNode(
 		return previousAnchor, err
 	}
 
-	exposition := &models.Exposition{
+	now := time.Now()
+	exposition := template.Instantiate(models.ExpositionTemplateInstanceOptions{
 		ID:                uuid.New(),
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 		ZoneID:            zone.ID,
 		PointOfInterestID: optionalPointOfInterestID(pointOfInterest),
 		Latitude:          currentAnchor.Latitude,
 		Longitude:         currentAnchor.Longitude,
-		Title:             title,
-		Description:       strings.TrimSpace(questArchTypeNode.ExpositionDescription),
-		Dialogue:          dialogue,
-		ImageURL:          "",
-		ThumbnailURL:      "",
-		RewardMode:        questArchTypeNode.ExpositionRewardMode,
-		RandomRewardSize:  questArchTypeNode.ExpositionRandomRewardSize,
-		RewardExperience:  questArchTypeNode.ExpositionRewardExperience,
-		RewardGold:        questArchTypeNode.ExpositionRewardGold,
-		MaterialRewards: cloneQuestArchetypeNodeExpositionMaterials(
-			questArchTypeNode.ExpositionMaterialRewards,
-		),
-	}
+	})
 	if err := c.dbClient.Exposition().Create(ctx, exposition); err != nil {
 		return previousAnchor, err
 	}
 	if err := c.dbClient.Exposition().ReplaceItemRewards(
 		ctx,
 		exposition.ID,
-		expositionItemRewardsFromQuestArchetypeNode(
-			questArchTypeNode.ExpositionItemRewards,
-		),
+		template.ItemRewardsForExposition(exposition.ID),
 	); err != nil {
 		return previousAnchor, err
 	}
 	if err := c.dbClient.Exposition().ReplaceSpellRewards(
 		ctx,
 		exposition.ID,
-		expositionSpellRewardsFromQuestArchetypeNode(
-			questArchTypeNode.ExpositionSpellRewards,
-		),
+		template.SpellRewardsForExposition(exposition.ID),
 	); err != nil {
 		return previousAnchor, err
 	}
@@ -1024,35 +1031,17 @@ func (c *client) processQuestFetchNode(
 		)
 	}
 
-	if questArchTypeNode.FetchCharacterID == nil || *questArchTypeNode.FetchCharacterID == uuid.Nil {
-		return previousAnchor, markNonRetriableQuestGenerationError(
-			fmt.Errorf("fetch quest node requires a fetch character"),
-		)
-	}
 	if len(questArchTypeNode.FetchRequirements) == 0 {
 		return previousAnchor, markNonRetriableQuestGenerationError(
 			fmt.Errorf("fetch quest node requires at least one item requirement"),
 		)
 	}
-
-	fetchCharacter := questArchTypeNode.FetchCharacter
-	if fetchCharacter == nil || fetchCharacter.ID != *questArchTypeNode.FetchCharacterID {
-		loadedCharacter, err := c.dbClient.Character().FindByID(
-			ctx,
-			*questArchTypeNode.FetchCharacterID,
-		)
-		if err != nil {
-			return previousAnchor, err
-		}
-		if loadedCharacter == nil {
-			return previousAnchor, markNonRetriableQuestGenerationError(
-				fmt.Errorf(
-					"fetch quest character %s not found",
-					questArchTypeNode.FetchCharacterID.String(),
-				),
-			)
-		}
-		fetchCharacter = loadedCharacter
+	fetchCharacterTemplate, err := c.resolveFetchQuestCharacterTemplateData(
+		ctx,
+		questArchTypeNode,
+	)
+	if err != nil {
+		return previousAnchor, err
 	}
 
 	currentAnchor, pointOfInterest, err := c.resolveQuestNodeAnchor(
@@ -1071,9 +1060,9 @@ func (c *client) processQuestFetchNode(
 			fmt.Errorf("fetch quest node anchor is required"),
 		)
 	}
-	placedCharacter, err := c.createQuestFetchCharacter(
+	placedCharacter, err := c.createQuestFetchCharacterFromTemplateData(
 		ctx,
-		fetchCharacter,
+		fetchCharacterTemplate,
 		pointOfInterest,
 		currentAnchor,
 	)

@@ -78,6 +78,20 @@ bool isQuestPointOfInterestHidden(
   return !discoveredPoiIds.contains(poi.id);
 }
 
+bool questNodeHasDirectFocusTarget(QuestNode? node) {
+  if (node == null) return false;
+  if (node.pointOfInterest != null) return true;
+  if (_hasValue(node.fetchCharacterId) || _hasFetchCharacterLocation(node)) {
+    return true;
+  }
+  return _hasValue(node.scenarioId) ||
+      _hasValue(node.expositionId) ||
+      _hasValue(node.monsterEncounterId) ||
+      _hasValue(node.monsterId) ||
+      _hasValue(node.challengeId) ||
+      node.polygon.isNotEmpty;
+}
+
 class QuestObjectiveIcon extends StatelessWidget {
   const QuestObjectiveIcon({
     super.key,
@@ -163,8 +177,7 @@ class _ObjectiveIconFallback extends StatelessWidget {
 
 String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
   final poi = node?.pointOfInterest;
-  final isPoiBackedExposition = _hasValue(node?.expositionId) && poi != null;
-  if (isPoiBackedExposition) {
+  if (poi != null) {
     if (!discoveredPoiIds.contains(poi.id)) {
       return hiddenPoiPlaceholderImageUrl;
     }
@@ -172,6 +185,15 @@ String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
     if (poiImageUrl != null) {
       return poiImageUrl;
     }
+  }
+
+  final objectiveThumbnail = node?.objective?.thumbnailUrl.trim() ?? '';
+  if (objectiveThumbnail.isNotEmpty) {
+    return objectiveThumbnail;
+  }
+  final objectiveImage = node?.objective?.imageUrl.trim() ?? '';
+  if (objectiveImage.isNotEmpty) {
+    return objectiveImage;
   }
 
   final fetchCharacterThumb = node?.fetchCharacter?.thumbnailUrl?.trim() ?? '';
@@ -195,11 +217,7 @@ String? _objectiveImageUrl(QuestNode? node, Set<String> discoveredPoiIds) {
   if (expositionImage.isNotEmpty) {
     return expositionImage;
   }
-  if (poi == null) return null;
-  if (!discoveredPoiIds.contains(poi.id)) {
-    return hiddenPoiPlaceholderImageUrl;
-  }
-  return _pointOfInterestImageUrl(poi);
+  return null;
 }
 
 String? _pointOfInterestImageUrl(PointOfInterest poi) {
@@ -211,6 +229,29 @@ String? _pointOfInterestImageUrl(PointOfInterest poi) {
 }
 
 bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;
+
+bool _hasFetchCharacterLocation(QuestNode? node) {
+  final character = node?.fetchCharacter;
+  if (character == null) return false;
+  if (_isValidCoordinate(
+    character.pointOfInterestLat,
+    character.pointOfInterestLng,
+  )) {
+    return true;
+  }
+  for (final location in character.locations) {
+    if (_isValidCoordinate(location.latitude, location.longitude)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _isValidCoordinate(double? latitude, double? longitude) {
+  if (latitude == null || longitude == null) return false;
+  if (!latitude.isFinite || !longitude.isFinite) return false;
+  return latitude.abs() <= 90 && longitude.abs() <= 180;
+}
 
 IconData _objectiveIconData(QuestNode? node) {
   if (_hasValue(node?.fetchCharacterId)) {

@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
+import '../screens/layout_shell.dart';
 import '../services/poi_service.dart';
 
 class CelebrationModalManager extends StatelessWidget {
@@ -18,6 +20,12 @@ class CelebrationModalManager extends StatelessWidget {
 
         final type = modal['type'] as String?;
         final data = modal['data'] as Map<String, dynamic>? ?? {};
+        final unspentPoints = context
+            .watch<CharacterStatsProvider>()
+            .unspentPoints;
+        final drawerController = LayoutShellDrawerController.maybeReadOf(
+          context,
+        );
         final scenarioSuccess = type == 'scenarioOutcome'
             ? data['successful'] == true
             : true;
@@ -71,11 +79,18 @@ class CelebrationModalManager extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _contentFor(type, data, context),
+                    _contentFor(
+                      type,
+                      data,
+                      context,
+                      unspentPoints: unspentPoints,
+                    ),
                     const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => provider.clearModal(),
-                      child: const Text('OK'),
+                    _buildActions(
+                      context,
+                      provider,
+                      type,
+                      drawerController: drawerController,
                     ),
                   ],
                 ),
@@ -121,8 +136,9 @@ class CelebrationModalManager extends StatelessWidget {
   Widget _contentFor(
     String? type,
     Map<String, dynamic> data,
-    BuildContext context,
-  ) {
+    BuildContext context, {
+    required int unspentPoints,
+  }) {
     switch (type) {
       case 'questCompleted':
         final questName = data['questName'] as String? ?? 'Quest';
@@ -221,32 +237,134 @@ class CelebrationModalManager extends StatelessWidget {
         );
       case 'levelUp':
         final newLevel = (data['newLevel'] as num?)?.toInt();
+        final previousLevel = (data['previousLevel'] as num?)?.toInt();
         final levelsGained = (data['levelsGained'] as num?)?.toInt() ?? 1;
+        final theme = Theme.of(context);
+        final pointsLabel = unspentPoints == 1
+            ? '1 stat point'
+            : '$unspentPoints stat points';
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64,
-              height: 64,
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.blue.shade100,
-                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFF2C2), Color(0xFFF4D57A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFB8841F), width: 1.4),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x332D2416),
+                    blurRadius: 16,
+                    offset: Offset(0, 8),
+                  ),
+                ],
               ),
-              child: const Center(
-                child: Text(
-                  '+1',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              child: Column(
+                children: [
+                  Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7A1823),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFFFF1C9),
+                        width: 3,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        newLevel?.toString() ?? '!',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    previousLevel != null && newLevel != null
+                        ? 'Level $previousLevel -> Level $newLevel'
+                        : (newLevel != null
+                              ? 'You reached level $newLevel'
+                              : 'You leveled up'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF3A2418),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    levelsGained > 1
+                        ? 'You gained $levelsGained levels at once.'
+                        : 'Your character just got stronger.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF5A412C),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (unspentPoints > 0) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E2),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2BF63)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF7A1823),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.north_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$pointsLabel ready to spend',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF3A2418),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Open Character to allocate your new points and finish leveling up.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF5A412C),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              levelsGained > 1
-                  ? 'You gained $levelsGained levels!'
-                  : 'You gained a level!',
-            ),
-            if (newLevel != null) ...[
-              const SizedBox(height: 6),
-              Text('You reached level $newLevel.'),
             ],
           ],
         );
@@ -713,6 +831,41 @@ class CelebrationModalManager extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildActions(
+    BuildContext context,
+    CompletedTaskProvider provider,
+    String? type, {
+    LayoutShellDrawerController? drawerController,
+  }) {
+    if (type == 'levelUp' && drawerController != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: provider.clearModal,
+              child: const Text('Later'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: () {
+                provider.clearModal();
+                drawerController.openCharacter();
+              },
+              icon: const Icon(Icons.person),
+              label: const Text('Open Character'),
+            ),
+          ),
+        ],
+      );
+    }
+    return FilledButton(
+      onPressed: provider.clearModal,
+      child: const Text('OK'),
     );
   }
 

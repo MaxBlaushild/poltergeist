@@ -204,6 +204,7 @@ export const Users = () => {
   const [materialGrantAmounts, setMaterialGrantAmounts] = useState<
     Record<string, string>
   >(createEmptyMaterialGrantAmounts);
+  const [grantingLevelUp, setGrantingLevelUp] = useState(false);
   const [resourceSubmitting, setResourceSubmitting] = useState(false);
   const [resourceMessage, setResourceMessage] = useState<string | null>(null);
   const [resourceMessageKind, setResourceMessageKind] = useState<
@@ -416,6 +417,17 @@ export const Users = () => {
     [apiClient]
   );
 
+  const refreshSelectedUserActivities = React.useCallback(
+    async (userId: string) => {
+      const activitiesRes = await apiClient.get<ActivityFeed[]>(
+        `/sonar/users/${userId}/activities`
+      );
+      setActivities(activitiesRes);
+      return activitiesRes;
+    },
+    [apiClient]
+  );
+
   const selectUser = async (user: User) => {
     setSelectedUser(user);
     setSelectedDiscoveries(new Set());
@@ -457,7 +469,7 @@ export const Users = () => {
         apiClient.get<PointOfInterestChallengeSubmission[]>(
           `/sonar/users/${user.id}/submissions`
         ),
-        apiClient.get<ActivityFeed[]>(`/sonar/users/${user.id}/activities`),
+        refreshSelectedUserActivities(user.id),
         apiClient.get<UserCharacterProfileResponse>(
           `/sonar/users/${user.id}/character`
         ),
@@ -475,6 +487,31 @@ export const Users = () => {
       setMaterialBalances([]);
     } finally {
       setResourceLoading(false);
+    }
+  };
+
+  const grantLevelUp = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setGrantingLevelUp(true);
+      setResourceMessage(null);
+      setResourceMessageKind(null);
+
+      await apiClient.post(`/sonar/admin/users/${selectedUser.id}/level-up`, {});
+      await Promise.all([
+        refreshSelectedUserResources(selectedUser.id),
+        refreshSelectedUserProfile(selectedUser.id),
+        refreshSelectedUserActivities(selectedUser.id),
+      ]);
+      setResourceMessage('Granted one level and refreshed the user state.');
+      setResourceMessageKind('success');
+    } catch (error) {
+      console.error('Error granting level up:', error);
+      setResourceMessage('Failed to grant a level up.');
+      setResourceMessageKind('error');
+    } finally {
+      setGrantingLevelUp(false);
     }
   };
 
@@ -1305,6 +1342,30 @@ export const Users = () => {
                     </h3>
                   </div>
                   <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="rounded-full bg-indigo-100 px-3 py-1 font-semibold text-indigo-700">
+                          Level {profileLevel?.level ?? 'Unknown'}
+                        </span>
+                        <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700">
+                          Unspent Points {profileStats?.unspentPoints ?? 0}
+                        </span>
+                      </div>
+                      <button
+                        onClick={grantLevelUp}
+                        disabled={
+                          grantingLevelUp || resourceSubmitting || resourceLoading
+                        }
+                        className={`px-4 py-2 rounded text-white ${
+                          grantingLevelUp || resourceSubmitting || resourceLoading
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-violet-600 hover:bg-violet-700'
+                        }`}
+                      >
+                        {grantingLevelUp ? 'Granting Level...' : 'Grant Level Up'}
+                      </button>
+                    </div>
+
                     <div className="text-sm font-medium text-gray-700">
                       Health & Mana
                     </div>
@@ -1473,9 +1534,11 @@ export const Users = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={applyDamageAndDrain}
-                        disabled={resourceSubmitting || resourceLoading}
+                        disabled={
+                          grantingLevelUp || resourceSubmitting || resourceLoading
+                        }
                         className={`px-4 py-2 rounded text-white ${
-                          resourceSubmitting || resourceLoading
+                          grantingLevelUp || resourceSubmitting || resourceLoading
                             ? 'bg-gray-400 cursor-not-allowed'
                             : 'bg-red-600 hover:bg-red-700'
                         }`}
@@ -1484,9 +1547,11 @@ export const Users = () => {
                       </button>
                       <button
                         onClick={restoreHealthAndMana}
-                        disabled={resourceSubmitting || resourceLoading}
+                        disabled={
+                          grantingLevelUp || resourceSubmitting || resourceLoading
+                        }
                         className={`px-4 py-2 rounded text-white ${
-                          resourceSubmitting || resourceLoading
+                          grantingLevelUp || resourceSubmitting || resourceLoading
                             ? 'bg-gray-400 cursor-not-allowed'
                             : 'bg-emerald-600 hover:bg-emerald-700'
                         }`}
@@ -1495,9 +1560,11 @@ export const Users = () => {
                       </button>
                       <button
                         onClick={grantMaterials}
-                        disabled={resourceSubmitting || resourceLoading}
+                        disabled={
+                          grantingLevelUp || resourceSubmitting || resourceLoading
+                        }
                         className={`px-4 py-2 rounded text-white ${
-                          resourceSubmitting || resourceLoading
+                          grantingLevelUp || resourceSubmitting || resourceLoading
                             ? 'bg-gray-400 cursor-not-allowed'
                             : 'bg-amber-600 hover:bg-amber-700'
                         }`}

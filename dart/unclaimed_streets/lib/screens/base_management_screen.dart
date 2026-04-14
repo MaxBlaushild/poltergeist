@@ -62,6 +62,86 @@ class _BaseManagementScreenState extends State<BaseManagementScreen> {
   }
 }
 
+class BaseManagementSheet extends StatefulWidget {
+  const BaseManagementSheet({
+    super.key,
+    required this.baseId,
+    this.onClose,
+    this.onTutorialProgressChanged,
+  });
+
+  final String baseId;
+  final VoidCallback? onClose;
+  final Future<void> Function()? onTutorialProgressChanged;
+
+  @override
+  State<BaseManagementSheet> createState() => _BaseManagementSheetState();
+}
+
+class _BaseManagementSheetState extends State<BaseManagementSheet> {
+  final GlobalKey<_BaseManagementContentState> _contentKey =
+      GlobalKey<_BaseManagementContentState>();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final contentState = _contentKey.currentState;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.92;
+
+    return PaperSheet(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DefaultTextStyle(
+                      style:
+                          theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ) ??
+                          const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                      child:
+                          contentState?.buildHeaderTitle(theme) ??
+                          const Text('Your Base'),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed:
+                        widget.onClose ?? () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: BaseManagementContent(
+                key: _contentKey,
+                baseId: widget.baseId,
+                onTutorialProgressChanged: widget.onTutorialProgressChanged,
+                onHeaderChanged: () {
+                  if (mounted) {
+                    setState(() {});
+                  }
+                },
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class BaseManagementContent extends StatefulWidget {
   const BaseManagementContent({
     super.key,

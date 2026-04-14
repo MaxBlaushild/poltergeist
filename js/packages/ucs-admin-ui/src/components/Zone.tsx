@@ -51,10 +51,12 @@ interface MapProps {
   showBoundaryControls?: boolean;
   pins?: AdminMapPin[];
   pinDragEnabled?: boolean;
+  deletingPinId?: string | null;
   onPinLocationChange?: (
     pin: AdminMapPin,
     coordinates: [number, number]
   ) => Promise<void> | void;
+  onPinDelete?: (pin: AdminMapPin) => Promise<void> | void;
 }
 
 type HealingFountainRecord = {
@@ -139,7 +141,7 @@ const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
 };
 
 const chestImageUrl =
-  'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/treasure-chest-undiscovered.png';
 const poiMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const characterMysteryImageUrl =
@@ -226,12 +228,19 @@ const isValidCoordinate = (latitude: number, longitude: number) =>
   Number.isFinite(longitude) &&
   !(latitude === 0 && longitude === 0);
 
-const createPinPopup = (pin: AdminMapPin) => {
+const createPinPopup = (
+  pin: AdminMapPin,
+  options?: {
+    isDeleting?: boolean;
+    onDelete?: (pin: AdminMapPin) => Promise<void> | void;
+  }
+) => {
   const style = markerStyleByKind[pin.kind];
   const container = document.createElement('div');
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
-  container.style.gap = '2px';
+  container.style.gap = '8px';
+  container.style.minWidth = '180px';
 
   const title = document.createElement('div');
   title.style.fontWeight = '600';
@@ -244,6 +253,28 @@ const createPinPopup = (pin: AdminMapPin) => {
   subtitle.style.color = '#475569';
   subtitle.textContent = style.fullLabel;
   container.appendChild(subtitle);
+
+  if (options?.onDelete) {
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = options.isDeleting ? 'Deleting...' : 'Delete';
+    deleteButton.disabled = Boolean(options.isDeleting);
+    deleteButton.style.alignSelf = 'flex-start';
+    deleteButton.style.padding = '6px 10px';
+    deleteButton.style.border = 'none';
+    deleteButton.style.borderRadius = '8px';
+    deleteButton.style.background = options.isDeleting ? '#fca5a5' : '#dc2626';
+    deleteButton.style.color = '#ffffff';
+    deleteButton.style.fontSize = '12px';
+    deleteButton.style.fontWeight = '600';
+    deleteButton.style.cursor = options.isDeleting ? 'wait' : 'pointer';
+    deleteButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void options.onDelete?.(pin);
+    });
+    container.appendChild(deleteButton);
+  }
 
   return container;
 };
@@ -353,7 +384,9 @@ const ZoneMap: React.FC<MapProps> = ({
   showBoundaryControls,
   pins = [],
   pinDragEnabled = false,
+  deletingPinId,
   onPinLocationChange,
+  onPinDelete,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -487,12 +520,18 @@ const ZoneMap: React.FC<MapProps> = ({
 
       let lastSavedCoordinates = pin.coordinates;
       if (!pinDragEnabled) {
+        const canDeleteFromPopup = !onMapClick && Boolean(onPinDelete);
         marker.setPopup(
           new mapboxgl.Popup({
             offset: 18,
             closeButton: false,
             className: 'zone-map-pin-popup',
-          }).setDOMContent(createPinPopup(pin))
+          }).setDOMContent(
+            createPinPopup(pin, {
+              isDeleting: deletingPinId === pin.id,
+              onDelete: canDeleteFromPopup ? onPinDelete : undefined,
+            })
+          )
         );
       }
 
@@ -518,7 +557,15 @@ const ZoneMap: React.FC<MapProps> = ({
       pinMarkers.current.forEach((marker) => marker.remove());
       pinMarkers.current = [];
     };
-  }, [mapLoaded, onMapClick, onPinLocationChange, pinDragEnabled, pins]);
+  }, [
+    deletingPinId,
+    mapLoaded,
+    onMapClick,
+    onPinDelete,
+    onPinLocationChange,
+    pinDragEnabled,
+    pins,
+  ]);
 
   useEffect(() => {
     if (
@@ -1935,7 +1982,9 @@ export const Zone = () => {
           showBoundaryControls={true}
           pins={mapPins}
           pinDragEnabled={isEditingPins}
+          deletingPinId={deletingPinId}
           onPinLocationChange={handlePinLocationChange}
+          onPinDelete={handleDeletePin}
         />
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
           {(
@@ -1971,6 +2020,12 @@ export const Zone = () => {
         {pinMoveStatus ? (
           <p className="mt-2 text-sm text-slate-600">
             {movingPinId ? 'Saving location...' : pinMoveStatus}
+          </p>
+        ) : null}
+        {!isEditingBoundary && !isEditingPins ? (
+          <p className="mt-2 text-sm text-gray-600">
+            Click a marker to inspect it and delete the underlying entity from
+            the popup.
           </p>
         ) : null}
         {isEditingPins && !pinMoveError ? (

@@ -64,8 +64,11 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 		Preload("Root.ChallengeTemplate").
 		Preload("Root.Challenges").
 		Preload("Root.Challenges.ChallengeTemplate").
+		Preload("Root.FetchCharacter").
+		Preload("Root.FetchCharacterTemplate").
 		Preload("Root.LocationArchetype").
 		Preload("Root.ScenarioTemplate").
+		Preload("Root.ExpositionTemplate").
 		First(&questArchetype, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -125,8 +128,11 @@ func (h *questArchetypeHandle) FindAll(ctx context.Context) ([]*models.QuestArch
 		Preload("Root.ChallengeTemplate").
 		Preload("Root.Challenges").
 		Preload("Root.Challenges.ChallengeTemplate").
+		Preload("Root.FetchCharacter").
+		Preload("Root.FetchCharacterTemplate").
 		Preload("Root.LocationArchetype").
 		Preload("Root.ScenarioTemplate").
+		Preload("Root.ExpositionTemplate").
 		Find(&questArchetypes).Error; err != nil {
 		return nil, err
 	}

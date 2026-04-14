@@ -16,6 +16,7 @@ type questArchetypeNodePayload struct {
 	ChallengeTemplateID        *uuid.UUID                   `json:"challengeTemplateId"`
 	ScenarioTemplateID         *uuid.UUID                   `json:"scenarioTemplateId"`
 	FetchCharacterID           *uuid.UUID                   `json:"fetchCharacterId"`
+	FetchCharacterTemplateID   *uuid.UUID                   `json:"fetchCharacterTemplateId"`
 	FetchRequirements          []scenarioRewardItemPayload  `json:"fetchRequirements"`
 	ObjectiveDescription       string                       `json:"objectiveDescription"`
 	StoryFlagKey               string                       `json:"storyFlagKey"`
@@ -24,6 +25,7 @@ type questArchetypeNodePayload struct {
 	TargetLevel                *int                         `json:"targetLevel"`
 	EncounterProximityMeters   *int                         `json:"encounterProximityMeters"`
 	Difficulty                 *int                         `json:"difficulty"`
+	ExpositionTemplateID       *uuid.UUID                   `json:"expositionTemplateId"`
 	ExpositionTitle            string                       `json:"expositionTitle"`
 	ExpositionDescription      string                       `json:"expositionDescription"`
 	ExpositionDialogue         []models.DialogueMessage     `json:"expositionDialogue"`
@@ -56,10 +58,12 @@ func (p questArchetypeNodePayload) hasStoryFlagConfig() bool {
 }
 
 func (p questArchetypeNodePayload) hasFetchQuestConfig() bool {
-	return p.FetchCharacterID != nil || len(p.FetchRequirements) > 0
+	return p.FetchCharacterID != nil ||
+		p.FetchCharacterTemplateID != nil ||
+		len(p.FetchRequirements) > 0
 }
 
-func (p questArchetypeNodePayload) hasExpositionConfig() bool {
+func (p questArchetypeNodePayload) hasInlineExpositionConfig() bool {
 	return strings.TrimSpace(p.ExpositionTitle) != "" ||
 		strings.TrimSpace(p.ExpositionDescription) != "" ||
 		len(p.ExpositionDialogue) > 0 ||
@@ -70,6 +74,10 @@ func (p questArchetypeNodePayload) hasExpositionConfig() bool {
 		len(p.ExpositionMaterialRewards) > 0 ||
 		len(p.ExpositionItemRewards) > 0 ||
 		len(p.ExpositionSpellRewards) > 0
+}
+
+func (p questArchetypeNodePayload) hasExpositionConfig() bool {
+	return p.ExpositionTemplateID != nil || p.hasInlineExpositionConfig()
 }
 
 func (p questArchetypeNodePayload) inferredNodeType() models.QuestArchetypeNodeType {
@@ -106,6 +114,8 @@ func clearQuestArchetypeNodeExposition(node *models.QuestArchetypeNode) {
 	if node == nil {
 		return
 	}
+	node.ExpositionTemplateID = nil
+	node.ExpositionTemplate = nil
 	node.ExpositionTitle = ""
 	node.ExpositionDescription = ""
 	node.ExpositionDialogue = models.DialogueSequence{}
@@ -139,6 +149,8 @@ func clearQuestArchetypeNodeFetchQuest(node *models.QuestArchetypeNode) {
 	}
 	node.FetchCharacterID = nil
 	node.FetchCharacter = nil
+	node.FetchCharacterTemplateID = nil
+	node.FetchCharacterTemplate = nil
 	node.FetchRequirements = models.FetchQuestRequirements{}
 }
 
@@ -207,15 +219,31 @@ func (s *server) applyQuestArchetypeNodeFetchQuestPayload(
 		}
 		return nil
 	}
-	if payload.FetchCharacterID == nil || *payload.FetchCharacterID == uuid.Nil {
-		return fmt.Errorf("fetchCharacterId is required for fetch quest nodes")
+	if payload.FetchCharacterID != nil &&
+		*payload.FetchCharacterID != uuid.Nil &&
+		payload.FetchCharacterTemplateID != nil &&
+		*payload.FetchCharacterTemplateID != uuid.Nil {
+		return fmt.Errorf("fetch quest nodes must use either fetchCharacterId or fetchCharacterTemplateId")
 	}
-	character, err := s.dbClient.Character().FindByID(ctx, *payload.FetchCharacterID)
-	if err != nil {
-		return fmt.Errorf("fetchCharacterId could not be loaded")
-	}
-	if character == nil {
-		return fmt.Errorf("fetchCharacterId could not be loaded")
+	var (
+		fetchCharacterID         *uuid.UUID
+		fetchCharacterTemplateID *uuid.UUID
+	)
+	switch {
+	case payload.FetchCharacterID != nil && *payload.FetchCharacterID != uuid.Nil:
+		character, err := s.dbClient.Character().FindByID(ctx, *payload.FetchCharacterID)
+		if err != nil || character == nil {
+			return fmt.Errorf("fetchCharacterId could not be loaded")
+		}
+		fetchCharacterID = payload.FetchCharacterID
+	case payload.FetchCharacterTemplateID != nil && *payload.FetchCharacterTemplateID != uuid.Nil:
+		template, err := s.dbClient.CharacterTemplate().FindByID(ctx, *payload.FetchCharacterTemplateID)
+		if err != nil || template == nil {
+			return fmt.Errorf("fetchCharacterTemplateId could not be loaded")
+		}
+		fetchCharacterTemplateID = payload.FetchCharacterTemplateID
+	default:
+		return fmt.Errorf("fetch quest nodes require a fetchCharacterId or fetchCharacterTemplateId")
 	}
 	itemRewards, err := s.parseExpositionItemRewards(payload.FetchRequirements)
 	if err != nil {
@@ -232,8 +260,10 @@ func (s *server) applyQuestArchetypeNodeFetchQuestPayload(
 	if len(normalizedRequirements) == 0 {
 		return fmt.Errorf("fetch quest nodes require at least one item requirement")
 	}
-	node.FetchCharacterID = payload.FetchCharacterID
+	node.FetchCharacterID = fetchCharacterID
 	node.FetchCharacter = nil
+	node.FetchCharacterTemplateID = fetchCharacterTemplateID
+	node.FetchCharacterTemplate = nil
 	node.FetchRequirements = normalizedRequirements
 	return nil
 }
@@ -251,6 +281,22 @@ func (s *server) applyQuestArchetypeNodeExpositionPayload(
 		if requireConfig {
 			return fmt.Errorf("exposition configuration is required for exposition nodes")
 		}
+		return nil
+	}
+	if payload.ExpositionTemplateID != nil {
+		if *payload.ExpositionTemplateID == uuid.Nil {
+			return fmt.Errorf("expositionTemplateId must be a valid UUID when provided")
+		}
+		if payload.hasInlineExpositionConfig() {
+			return fmt.Errorf("exposition nodes must use either expositionTemplateId or inline exposition fields")
+		}
+		template, err := s.dbClient.ExpositionTemplate().FindByID(ctx, *payload.ExpositionTemplateID)
+		if err != nil || template == nil {
+			return fmt.Errorf("expositionTemplateId could not be loaded")
+		}
+		clearQuestArchetypeNodeExposition(node)
+		node.ExpositionTemplateID = payload.ExpositionTemplateID
+		node.ExpositionTemplate = nil
 		return nil
 	}
 
@@ -294,6 +340,8 @@ func (s *server) applyQuestArchetypeNodeExpositionPayload(
 	node.ExpositionTitle = title
 	node.ExpositionDescription = strings.TrimSpace(payload.ExpositionDescription)
 	node.ExpositionDialogue = dialogue
+	node.ExpositionTemplateID = nil
+	node.ExpositionTemplate = nil
 	node.ExpositionRewardMode = rewardMode
 	node.ExpositionRandomRewardSize = models.NormalizeRandomRewardSize(
 		payload.ExpositionRandomRewardSize,

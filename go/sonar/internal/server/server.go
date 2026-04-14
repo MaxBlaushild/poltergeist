@@ -56,6 +56,7 @@ const (
 	poiUndiscoveredIconKey             = "thumbnails/placeholders/poi-undiscovered.png"
 	scenarioUndiscoveredIconKey        = "thumbnails/placeholders/scenario-undiscovered.png"
 	expositionUndiscoveredIconKey      = "thumbnails/placeholders/exposition-undiscovered.png"
+	treasureChestUndiscoveredIconKey   = "thumbnails/placeholders/treasure-chest-undiscovered.png"
 	monsterUndiscoveredIconKey         = "thumbnails/placeholders/monster-undiscovered.png"
 	bossUndiscoveredIconKey            = "thumbnails/placeholders/boss-undiscovered.png"
 	raidUndiscoveredIconKey            = "thumbnails/placeholders/raid-undiscovered.png"
@@ -67,6 +68,7 @@ const (
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
 	expositionUndiscoveredStatusKey    = "admin:thumbnails:exposition-undiscovered:requested-at"
+	treasureChestUndiscoveredStatusKey = "admin:thumbnails:treasure-chest-undiscovered:requested-at"
 	monsterUndiscoveredStatusKey       = "admin:thumbnails:monster-undiscovered:requested-at"
 	bossUndiscoveredStatusKey          = "admin:thumbnails:boss-undiscovered:requested-at"
 	raidUndiscoveredStatusKey          = "admin:thumbnails:raid-undiscovered:requested-at"
@@ -78,6 +80,7 @@ const (
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	expositionUndiscoveredIconText     = "A retro 16-bit RPG map marker icon for an exposition encounter. Dialogue scroll sigil with multiple speaking silhouettes, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	treasureChestUndiscoveredIconText  = "A retro 16-bit RPG map marker icon for a treasure chest. Ornate loot chest silhouette with latch and subtle sparkle motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	monsterUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	bossUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered boss encounter. Hidden crown-horned beast silhouette with elite warning sigil motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	raidUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
@@ -354,6 +357,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/tutorial/instantiate-base-quest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminInstantiateTutorialBaseQuest))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
+	r.POST("/sonar/admin/users/:id/level-up", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminGrantUserLevelUp))
 	r.GET("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminUserResources))
 	r.POST("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAdjustUserResources))
 	r.GET("/sonar/admin/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterTemplates))
@@ -430,6 +434,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/exposition-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateExpositionUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/treasure-chest-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTreasureChestUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
@@ -441,6 +446,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/exposition-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/treasure-chest-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChestUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/:encounterType/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
@@ -451,6 +457,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/exposition-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteExpositionUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/treasure-chest-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChestUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
@@ -612,8 +619,6 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
 	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
-	r.GET("/sonar/admin/base-description-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDescriptionGenerationJobs))
-	r.POST("/sonar/admin/bases/:id/generate-description", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createBaseDescriptionGenerationJob))
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/admin/base-structures", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminBaseStructures))
 	r.PUT("/sonar/admin/base-structures/:id/prompts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructurePrompts))
@@ -670,17 +675,22 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarios))
 	r.GET("/sonar/scenario-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioTemplates))
 	r.GET("/sonar/scenario-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioTemplate))
+	r.GET("/sonar/exposition-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionTemplates))
+	r.GET("/sonar/exposition-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionTemplate))
 	r.GET("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenario))
 	r.GET("/sonar/zones/:id/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenariosForZone))
 	r.POST("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenario))
 	r.POST("/sonar/scenario-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenarioTemplate))
+	r.POST("/sonar/exposition-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createExpositionTemplate))
 	r.POST("/sonar/scenarios/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteScenarios))
 	r.PUT("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenario))
 	r.PUT("/sonar/scenario-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenarioTemplate))
+	r.PUT("/sonar/exposition-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateExpositionTemplate))
 	r.PATCH("/sonar/scenarios/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenarioLocation))
 	r.POST("/sonar/scenarios/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioImage))
 	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
 	r.DELETE("/sonar/scenario-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioTemplate))
+	r.DELETE("/sonar/exposition-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteExpositionTemplate))
 	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
 	r.POST("/sonar/scenarios/:id/rewards/choose-item", middleware.WithAuthenticationWithoutLocation(s.authClient, s.chooseScenarioItemChoiceReward))
 	r.GET("/sonar/expositions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExposition))
@@ -694,12 +704,16 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallenges))
 	r.GET("/sonar/challenge-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplates))
 	r.GET("/sonar/challenge-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplate))
+	r.GET("/sonar/character-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterTemplates))
+	r.GET("/sonar/character-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterTemplate))
 	r.GET("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallenge))
 	r.GET("/sonar/zones/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengesForZone))
 	r.POST("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallenge))
 	r.POST("/sonar/challenge-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallengeTemplate))
+	r.POST("/sonar/character-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCharacterTemplate))
 	r.PUT("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallenge))
 	r.PUT("/sonar/challenge-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallengeTemplate))
+	r.PUT("/sonar/character-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacterTemplate))
 	r.PATCH("/sonar/challenges/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallengeLocation))
 	r.POST("/sonar/challenges/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitStandaloneChallenge))
 	r.POST("/sonar/challenges/:id/rewards/choose-item", middleware.WithAuthenticationWithoutLocation(s.authClient, s.chooseChallengeItemChoiceReward))
@@ -707,6 +721,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/challenge-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeTemplateImage))
 	r.DELETE("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallenge))
 	r.DELETE("/sonar/challenge-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallengeTemplate))
+	r.DELETE("/sonar/character-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterTemplate))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 }
 
@@ -2091,6 +2106,25 @@ func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, 
 	}
 
 	return userLat, userLng, nil
+}
+
+func (s *server) pointOfInterestDistanceFromUser(ctx context.Context, userID uuid.UUID, pointOfInterestID uuid.UUID) (float64, error) {
+	pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(ctx, pointOfInterestID)
+	if err != nil {
+		return 0, err
+	}
+
+	poiLat, poiLng, err := parsePointOfInterestCoordinates(pointOfInterest)
+	if err != nil {
+		return 0, err
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+
+	return util.HaversineDistance(userLat, userLng, poiLat, poiLng), nil
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -7495,6 +7529,10 @@ func (s *server) generateExpositionUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, expositionUndiscoveredIconText, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
 }
 
+func (s *server) generateTreasureChestUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, treasureChestUndiscoveredIconText, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
+}
+
 func (s *server) generatePoiUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, poiUndiscoveredIconText, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
 }
@@ -7555,6 +7593,10 @@ func (s *server) getScenarioUndiscoveredIconStatus(ctx *gin.Context) {
 
 func (s *server) getExpositionUndiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+}
+
+func (s *server) getTreasureChestUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
 }
 
 func (s *server) getPoiUndiscoveredIconStatus(ctx *gin.Context) {
@@ -7690,6 +7732,10 @@ func (s *server) deleteScenarioUndiscoveredIcon(ctx *gin.Context) {
 
 func (s *server) deleteExpositionUndiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+}
+
+func (s *server) deleteTreasureChestUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
 }
 
 func (s *server) deletePoiUndiscoveredIcon(ctx *gin.Context) {
@@ -8119,9 +8165,6 @@ func (s *server) useItem(ctx *gin.Context) {
 				"error": err.Error(),
 			})
 			return
-		}
-		if base != nil {
-			s.queueBaseDescriptionGenerationFromItemUse(ctx, base.ID)
 		}
 		tutorialStatus := s.maybeAdvanceTutorialAfterHomeBaseKitUse(ctx, *ownedInventoryItem.UserID)
 		response := gin.H{
@@ -10588,6 +10631,23 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	distanceToPoi, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, challenge.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if distanceToPoi > scenarioInteractRadiusMeters {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
+				scenarioInteractRadiusMeters,
+				distanceToPoi,
+			),
+		})
+		return
+	}
+
 	if challenge.PointOfInterestGroupID != nil {
 		acceptanceV2, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, *challenge.PointOfInterestGroupID)
 		if err != nil {
@@ -10740,7 +10800,23 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		return
 	}
 
-	if challenge.HasPolygon() {
+	if challenge.PointOfInterestID != nil && *challenge.PointOfInterestID != uuid.Nil {
+		distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *challenge.PointOfInterestID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if distance > scenarioInteractRadiusMeters {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
+					scenarioInteractRadiusMeters,
+					distance,
+				),
+			})
+			return
+		}
+	} else if challenge.HasPolygon() {
 		if !challenge.ContainsPoint(userLat, userLng) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
 			return
@@ -11289,7 +11365,23 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
 			return
 		}
-		if standaloneChallenge.HasPolygon() {
+		if standaloneChallenge.PointOfInterestID != nil && *standaloneChallenge.PointOfInterestID != uuid.Nil {
+			distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *standaloneChallenge.PointOfInterestID)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if distance > scenarioInteractRadiusMeters {
+				ctx.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf(
+						"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
+						scenarioInteractRadiusMeters,
+						distance,
+					),
+				})
+				return
+			}
+		} else if standaloneChallenge.HasPolygon() {
 			if !standaloneChallenge.ContainsPoint(userLat, userLng) {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
 				return
@@ -13086,6 +13178,86 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, status)
 }
 
+func (s *server) adminGrantUserLevelUp(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user level: " + err.Error()})
+		return
+	}
+
+	experienceToGrant := userLevel.XPToNextLevel() - userLevel.ExperiencePointsOnLevel
+	if experienceToGrant <= 0 {
+		experienceToGrant = 1
+	}
+
+	updatedLevel, err := s.dbClient.UserLevel().ProcessExperiencePointAdditions(ctx, userID, experienceToGrant)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to grant experience: " + err.Error()})
+		return
+	}
+	if updatedLevel.LevelsGained <= 0 {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to grant a level"})
+		return
+	}
+
+	if _, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, updatedLevel.Level); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ensure level points: " + err.Error()})
+		return
+	}
+	if _, err := s.dbClient.UserCharacterStats().RestoreResourcesToFull(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to restore resources: " + err.Error()})
+		return
+	}
+
+	activityData, err := json.Marshal(models.LevelUpActivity{
+		NewLevel: updatedLevel.Level,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to serialize level-up activity: " + err.Error()})
+		return
+	}
+	if err := s.dbClient.Activity().CreateActivity(ctx, models.Activity{
+		UserID:       userID,
+		ActivityType: models.ActivityTypeLevelUp,
+		Data:         activityData,
+		Seen:         false,
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create level-up activity: " + err.Error()})
+		return
+	}
+
+	response, err := s.adminUserResourcesResponse(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response["userLevel"] = updatedLevel
+
+	ctx.JSON(http.StatusOK, response)
+}
+
 func (s *server) adminUserResourcesResponse(
 	ctx *gin.Context,
 	userID uuid.UUID,
@@ -14606,6 +14778,21 @@ func (s *server) purchaseFromShop(ctx *gin.Context) {
 		return
 	}
 
+	inRange, err := s.userIsInRangeForCharacter(ctx, user.ID, action.CharacterID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !inRange {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"you must be within %.0f meters of the character to use this shop",
+				scenarioInteractRadiusMeters,
+			),
+		})
+		return
+	}
+
 	// Parse request body
 	var requestBody struct {
 		ItemID   int `json:"itemId" binding:"required"`
@@ -14732,6 +14919,21 @@ func (s *server) sellToShop(ctx *gin.Context) {
 
 	if action.ActionType != models.ActionTypeShop {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is not a shop action"})
+		return
+	}
+
+	inRange, err := s.userIsInRangeForCharacter(ctx, user.ID, action.CharacterID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !inRange {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"you must be within %.0f meters of the character to use this shop",
+				scenarioInteractRadiusMeters,
+			),
+		})
 		return
 	}
 

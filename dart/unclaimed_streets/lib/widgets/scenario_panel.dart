@@ -9,12 +9,8 @@ import '../constants/gameplay_constants.dart';
 import '../models/scenario.dart';
 import '../providers/location_provider.dart';
 import '../services/poi_service.dart';
+import '../utils/sticky_proximity_access.dart';
 import 'paper_texture.dart';
-
-const _scenarioMysteryImageUrl =
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
-const _legacyMysteryImageUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 
 class ScenarioPanel extends StatefulWidget {
   const ScenarioPanel({
@@ -50,6 +46,7 @@ class _ScenarioPanelState extends State<ScenarioPanel>
   Timer? _partyStatusPollTicker;
   int _rollingValue = 1;
   final math.Random _rng = math.Random();
+  final StickyProximityAccess _proximityAccess = StickyProximityAccess();
 
   @override
   void initState() {
@@ -223,381 +220,342 @@ class _ScenarioPanelState extends State<ScenarioPanel>
             widget.scenario.latitude,
             widget.scenario.longitude,
           );
-    final withinRange =
+    final liveWithinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
-    final mysteryState = !withinRange;
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.88,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => PaperSheet(
-        child: Column(
+    final hasProximityAccess = _proximityAccess.resolve(
+      currentLocation: location,
+      withinRange: liveWithinRange,
+    );
+    final mysteryState = !hasProximityAccess;
+    return AdaptivePaperSheet(
+      maxHeightFactor: mysteryState ? 0.58 : 0.95,
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 10, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 10, 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Text(
-                      'SCENARIO',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close),
-                    visualDensity: VisualDensity.compact,
-                    splashRadius: 20,
-                  ),
-                ],
-              ),
-            ),
             Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: Image.network(
-                          mysteryState
-                              ? _scenarioMysteryImageUrl
-                              : (widget.scenario.thumbnailUrl.isNotEmpty
-                                    ? widget.scenario.thumbnailUrl
-                                    : widget.scenario.imageUrl),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => mysteryState
-                              ? Image.network(
-                                  _legacyMysteryImageUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
-                                    color: theme
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                    child: const Icon(
-                                      Icons.auto_awesome_outlined,
-                                    ),
-                                  ),
-                                )
-                              : Container(
-                                  color:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  child: const Icon(
-                                    Icons.auto_awesome_outlined,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (distance != null)
-                          _Chip(
-                            icon: Icons.place_outlined,
-                            label: '${distance.round()} m away',
-                          ),
-                        _Chip(
-                          icon: Icons.shield_outlined,
-                          label:
-                              'Need ${kProximityUnlockRadiusMeters.round()} m',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    if (mysteryState)
-                      Text(
-                        'This scenario remains a mystery until you are close enough to investigate.',
-                        style: theme.textTheme.bodyMedium,
-                      )
-                    else ...[
-                      Text(
-                        widget.scenario.prompt,
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeIn,
-                        child: _rolling
-                            ? Container(
-                                key: const ValueKey('scenario-roll-animation'),
-                                margin: const EdgeInsets.only(bottom: 16),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: theme
-                                      .colorScheme
-                                      .surfaceContainerHighest
-                                      .withValues(alpha: 0.45),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: theme.colorScheme.outline.withValues(
-                                      alpha: 0.24,
-                                    ),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    AnimatedBuilder(
-                                      animation: _diceController,
-                                      builder: (context, child) {
-                                        return Transform.rotate(
-                                          angle: _diceTilt.value,
-                                          child: Transform.scale(
-                                            scale: _dicePulse.value,
-                                            child: child,
-                                          ),
-                                        );
-                                      },
-                                      child: Icon(
-                                        Icons.casino_rounded,
-                                        color: theme.colorScheme.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        'Rolling fate… d20: $_rollingValue',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey('scenario-roll-animation-hidden'),
-                              ),
-                      ),
-                      if (_attempted)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: theme.colorScheme.outline.withValues(
-                                alpha: 0.2,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            _result?.reason.isNotEmpty == true
-                                ? _result!.reason
-                                : 'You have already resolved this scenario.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        )
-                      else if (_partySubmissionLocked)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: theme.colorScheme.outline.withValues(
-                                alpha: 0.2,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            (_partySubmissionStatus ?? '').toLowerCase() ==
-                                    'completed'
-                                ? 'A party member already resolved this scenario.'
-                                : 'A party member is submitting this scenario now.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        )
-                      else if (widget.scenario.openEnded) ...[
-                        TextField(
-                          minLines: 3,
-                          maxLines: 6,
-                          onChanged: (value) => _responseText = value,
-                          decoration: const InputDecoration(
-                            labelText: 'Your response',
-                            hintText:
-                                'Describe exactly how your character responds…',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: (_loading || _partySubmissionStatusLoading)
-                              ? null
-                              : () => _perform(),
-                          child: Text(
-                            _loading ? 'Resolving…' : 'Resolve Scenario',
-                          ),
-                        ),
-                      ] else ...[
-                        for (final option in widget.scenario.options) ...[
-                          FilledButton.tonal(
-                            onPressed:
-                                (_loading || _partySubmissionStatusLoading)
-                                ? null
-                                : () => _perform(optionId: option.id),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(option.optionText),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ],
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        style: TextStyle(
-                          color: theme.colorScheme.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (_result != null) ...[
-                      const SizedBox(height: 12),
-                      TweenAnimationBuilder<double>(
-                        tween: Tween<double>(begin: 0, end: 1),
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, value, child) {
-                          return Opacity(
-                            opacity: value,
-                            child: Transform.translate(
-                              offset: Offset(0, 10 * (1 - value)),
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: _result!.successful
-                                ? const Color(0xFFDEEED8)
-                                : const Color(0xFFF2DFDD),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color:
-                                  (_result!.successful
-                                          ? Colors.green.shade200
-                                          : Colors.red.shade200)
-                                      .withValues(alpha: 0.8),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    _result!.successful
-                                        ? Icons.emoji_events_rounded
-                                        : Icons.analytics_outlined,
-                                    color: _result!.successful
-                                        ? Colors.green.shade800
-                                        : Colors.red.shade800,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _result!.successful
-                                          ? 'You cleared the check by ${(_result!.totalScore - _result!.threshold).abs()} points.'
-                                          : 'You were ${(_result!.threshold - _result!.totalScore).abs()} points short.',
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Score breakdown',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _ScoreBreakdownChip(
-                                    icon: Icons.casino_rounded,
-                                    label: 'Roll',
-                                    value: _result!.roll,
-                                  ),
-                                  _ScoreBreakdownChip(
-                                    icon: Icons.fitness_center_rounded,
-                                    label: _formatStatLabel(_result!.statTag),
-                                    value: _result!.statValue,
-                                  ),
-                                  _ScoreBreakdownChip(
-                                    icon: Icons.workspace_premium_rounded,
-                                    label: 'Proficiency',
-                                    value: _result!.proficiencyBonus,
-                                  ),
-                                  if (_result!.responseScore > 0)
-                                    _ScoreBreakdownChip(
-                                      icon: Icons.psychology_alt_rounded,
-                                      label: 'Execution',
-                                      value: _result!.responseScore,
-                                    ),
-                                  _ScoreBreakdownChip(
-                                    icon: Icons.lightbulb_rounded,
-                                    label: 'Creativity',
-                                    value: _result!.creativityBonus,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Total ${_result!.totalScore} vs target ${_result!.threshold}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _result!.responseScore > 0
-                                    ? 'Your score combines the roll, the chosen stat, training, the AI response score, and any creativity bonus.'
-                                    : 'Your score combines the roll, the chosen stat, training, and any creativity bonus.',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+              child: Text(
+                'SCENARIO',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close),
+              visualDensity: VisualDensity.compact,
+              splashRadius: 20,
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!mysteryState) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Image.network(
+                    widget.scenario.thumbnailUrl.isNotEmpty
+                        ? widget.scenario.thumbnailUrl
+                        : widget.scenario.imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: const Icon(Icons.auto_awesome_outlined),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (distance != null)
+                  _Chip(
+                    icon: Icons.place_outlined,
+                    label: '${distance.round()} m away',
+                  ),
+                _Chip(
+                  icon: Icons.shield_outlined,
+                  label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (mysteryState)
+              Text(
+                'This scenario remains a mystery until you are close enough to investigate.',
+                style: theme.textTheme.bodyMedium,
+              )
+            else ...[
+              Text(widget.scenario.prompt, style: theme.textTheme.bodyLarge),
+              const SizedBox(height: 16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _rolling
+                    ? Container(
+                        key: const ValueKey('scenario-roll-animation'),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withValues(
+                              alpha: 0.24,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            AnimatedBuilder(
+                              animation: _diceController,
+                              builder: (context, child) {
+                                return Transform.rotate(
+                                  angle: _diceTilt.value,
+                                  child: Transform.scale(
+                                    scale: _dicePulse.value,
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Icon(
+                                Icons.casino_rounded,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Rolling fate… d20: $_rollingValue',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey('scenario-roll-animation-hidden'),
+                      ),
+              ),
+              if (_attempted)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.45,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    _result?.reason.isNotEmpty == true
+                        ? _result!.reason
+                        : 'You have already resolved this scenario.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                )
+              else if (_partySubmissionLocked)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.45,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    (_partySubmissionStatus ?? '').toLowerCase() == 'completed'
+                        ? 'A party member already resolved this scenario.'
+                        : 'A party member is submitting this scenario now.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                )
+              else if (widget.scenario.openEnded) ...[
+                TextField(
+                  minLines: 3,
+                  maxLines: 6,
+                  onChanged: (value) => _responseText = value,
+                  decoration: const InputDecoration(
+                    labelText: 'Your response',
+                    hintText: 'Describe exactly how your character responds…',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: (_loading || _partySubmissionStatusLoading)
+                      ? null
+                      : () => _perform(),
+                  child: Text(_loading ? 'Resolving…' : 'Resolve Scenario'),
+                ),
+              ] else ...[
+                for (final option in widget.scenario.options) ...[
+                  FilledButton.tonal(
+                    onPressed: (_loading || _partySubmissionStatusLoading)
+                        ? null
+                        : () => _perform(optionId: option.id),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(option.optionText),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            if (_result != null) ...[
+              const SizedBox(height: 12),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, 10 * (1 - value)),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _result!.successful
+                        ? const Color(0xFFDEEED8)
+                        : const Color(0xFFF2DFDD),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color:
+                          (_result!.successful
+                                  ? Colors.green.shade200
+                                  : Colors.red.shade200)
+                              .withValues(alpha: 0.8),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _result!.successful
+                                ? Icons.emoji_events_rounded
+                                : Icons.analytics_outlined,
+                            color: _result!.successful
+                                ? Colors.green.shade800
+                                : Colors.red.shade800,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _result!.successful
+                                  ? 'You cleared the check by ${(_result!.totalScore - _result!.threshold).abs()} points.'
+                                  : 'You were ${(_result!.threshold - _result!.totalScore).abs()} points short.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Score breakdown',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _ScoreBreakdownChip(
+                            icon: Icons.casino_rounded,
+                            label: 'Roll',
+                            value: _result!.roll,
+                          ),
+                          _ScoreBreakdownChip(
+                            icon: Icons.fitness_center_rounded,
+                            label: _formatStatLabel(_result!.statTag),
+                            value: _result!.statValue,
+                          ),
+                          _ScoreBreakdownChip(
+                            icon: Icons.workspace_premium_rounded,
+                            label: 'Proficiency',
+                            value: _result!.proficiencyBonus,
+                          ),
+                          if (_result!.responseScore > 0)
+                            _ScoreBreakdownChip(
+                              icon: Icons.psychology_alt_rounded,
+                              label: 'Execution',
+                              value: _result!.responseScore,
+                            ),
+                          _ScoreBreakdownChip(
+                            icon: Icons.lightbulb_rounded,
+                            label: 'Creativity',
+                            value: _result!.creativityBonus,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Total ${_result!.totalScore} vs target ${_result!.threshold}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _result!.responseScore > 0
+                            ? 'Your score combines the roll, the chosen stat, training, the AI response score, and any creativity bonus.'
+                            : 'Your score combines the roll, the chosen stat, training, and any creativity bonus.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

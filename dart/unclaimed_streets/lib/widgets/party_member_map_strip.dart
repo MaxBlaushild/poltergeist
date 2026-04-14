@@ -190,7 +190,7 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
     User member,
     String currentUserId,
   ) {
-    final drawerController = LayoutShellDrawerController.maybeOf(context);
+    final drawerController = LayoutShellDrawerController.maybeReadOf(context);
     if (drawerController != null) {
       if (member.id == currentUserId) {
         drawerController.openCharacter();

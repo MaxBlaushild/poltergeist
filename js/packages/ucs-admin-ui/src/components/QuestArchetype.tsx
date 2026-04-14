@@ -1,4 +1,10 @@
-import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import {
   QuestArchetypeDraft,
@@ -19,6 +25,8 @@ import {
   InventoryItem,
   Spell,
   Character,
+  CharacterTemplate,
+  ExpositionTemplate,
 } from '@poltergeist/types';
 import {
   MaterialRewardsEditor,
@@ -37,6 +45,8 @@ interface FlowNodeProps {
   scenarioTemplates: ScenarioTemplateRecord[];
   challengeTemplates: ChallengeTemplateRecord[];
   characters: Character[];
+  characterTemplates: CharacterTemplate[];
+  expositionTemplates: ExpositionTemplate[];
   inventoryItems: InventoryItem[];
   spells: Spell[];
   depth: number;
@@ -285,6 +295,37 @@ const validateQuestArchetypeNodeEditor = (
     editor.challengeTemplateId.trim().length === 0
   ) {
     return `${sourceLabel} challenge nodes require a challenge template.`;
+  }
+  if (editor.nodeType === 'fetch_quest') {
+    if (
+      editor.fetchCharacterSource === 'template' &&
+      editor.fetchCharacterTemplateId.trim().length === 0
+    ) {
+      return `${sourceLabel} fetch quest nodes require a character template.`;
+    }
+    if (
+      editor.fetchCharacterSource === 'character' &&
+      editor.fetchCharacterId.trim().length === 0
+    ) {
+      return `${sourceLabel} fetch quest nodes require a target character.`;
+    }
+    if (editor.fetchRequirements.length === 0) {
+      return `${sourceLabel} fetch quest nodes require at least one delivery item.`;
+    }
+  }
+  if (editor.nodeType === 'exposition') {
+    if (
+      editor.expositionSource === 'template' &&
+      editor.expositionTemplateId.trim().length === 0
+    ) {
+      return `${sourceLabel} exposition nodes require an exposition template.`;
+    }
+    if (
+      editor.expositionSource === 'inline' &&
+      editor.expositionTitle.trim().length === 0
+    ) {
+      return `${sourceLabel} exposition nodes require a title.`;
+    }
   }
   return '';
 };
@@ -648,13 +689,17 @@ type QuestArchetypeNodeEditorState = {
   locationSelectionMode: 'random' | 'closest';
   challengeTemplateId: string;
   scenarioTemplateId: string;
+  fetchCharacterSource: 'character' | 'template';
   fetchCharacterId: string;
+  fetchCharacterTemplateId: string;
   fetchRequirements: Array<{ inventoryItemId: string; quantity: number }>;
   objectiveDescription: string;
   storyFlagKey: string;
   monsterTemplateIds: string[];
   targetLevel: number;
   encounterProximityMeters: number;
+  expositionSource: 'inline' | 'template';
+  expositionTemplateId: string;
   expositionTitle: string;
   expositionDescription: string;
   expositionDialogue: DialogueMessage[];
@@ -675,13 +720,17 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   locationSelectionMode: 'random',
   challengeTemplateId: '',
   scenarioTemplateId: '',
+  fetchCharacterSource: 'character',
   fetchCharacterId: '',
+  fetchCharacterTemplateId: '',
   fetchRequirements: [],
   objectiveDescription: '',
   storyFlagKey: '',
   monsterTemplateIds: [],
   targetLevel: 1,
   encounterProximityMeters: 100,
+  expositionSource: 'inline',
+  expositionTemplateId: '',
   expositionTitle: '',
   expositionDescription: '',
   expositionDialogue: [],
@@ -707,9 +756,9 @@ const buildNodeEditorState = (
           ? 'exposition'
           : node.nodeType === 'fetch_quest'
             ? 'fetch_quest'
-          : node.nodeType === 'story_flag'
-            ? 'story_flag'
-            : 'challenge',
+            : node.nodeType === 'story_flag'
+              ? 'story_flag'
+              : 'challenge',
   locationMode:
     node.locationSelectionMode === 'same_as_previous'
       ? 'ditto'
@@ -734,9 +783,15 @@ const buildNodeEditorState = (
   locationSelectionMode:
     node.locationSelectionMode === 'closest' ? 'closest' : 'random',
   challengeTemplateId: node.challengeTemplateId ?? '',
+  fetchCharacterSource: node.fetchCharacterTemplateId
+    ? 'template'
+    : 'character',
   monsterTemplateIds: [...(node.monsterTemplateIds ?? [])],
+  fetchCharacterTemplateId: node.fetchCharacterTemplateId ?? '',
   targetLevel: node.targetLevel ?? 1,
   encounterProximityMeters: node.encounterProximityMeters ?? 100,
+  expositionSource: node.expositionTemplateId ? 'template' : 'inline',
+  expositionTemplateId: node.expositionTemplateId ?? '',
   expositionTitle: node.expositionTitle ?? '',
   expositionDescription: node.expositionDescription ?? '',
   expositionDialogue: node.expositionDialogue ?? [],
@@ -803,7 +858,15 @@ const buildNodeDraft = (
   scenarioTemplateId:
     state.nodeType === 'scenario' ? state.scenarioTemplateId || null : null,
   fetchCharacterId:
-    state.nodeType === 'fetch_quest' ? state.fetchCharacterId || null : null,
+    state.nodeType === 'fetch_quest' &&
+    state.fetchCharacterSource === 'character'
+      ? state.fetchCharacterId || null
+      : null,
+  fetchCharacterTemplateId:
+    state.nodeType === 'fetch_quest' &&
+    state.fetchCharacterSource === 'template'
+      ? state.fetchCharacterTemplateId || null
+      : null,
   fetchRequirements:
     state.nodeType === 'fetch_quest'
       ? state.fetchRequirements
@@ -835,14 +898,20 @@ const buildNodeDraft = (
     state.nodeType === 'fetch_quest'
       ? Number(state.encounterProximityMeters) || 0
       : undefined,
+  expositionTemplateId:
+    state.nodeType === 'exposition' && state.expositionSource === 'template'
+      ? state.expositionTemplateId || null
+      : null,
   expositionTitle:
-    state.nodeType === 'exposition' ? state.expositionTitle.trim() : undefined,
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
+      ? state.expositionTitle.trim()
+      : undefined,
   expositionDescription:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? state.expositionDescription.trim()
       : undefined,
   expositionDialogue:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? state.expositionDialogue.map((message, index) => ({
           speaker: message.speaker === 'user' ? 'user' : 'character',
           text: (message.text ?? '').trim(),
@@ -855,36 +924,36 @@ const buildNodeDraft = (
         }))
       : undefined,
   expositionRewardMode:
-    state.nodeType === 'exposition' ? state.expositionRewardMode : undefined,
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
+      ? state.expositionRewardMode
+      : undefined,
   expositionRandomRewardSize:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? state.expositionRandomRewardSize
       : undefined,
   expositionRewardExperience:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? Number(state.expositionRewardExperience) || 0
       : undefined,
   expositionRewardGold:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? Number(state.expositionRewardGold) || 0
       : undefined,
   expositionMaterialRewards:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? normalizeMaterialRewards(state.expositionMaterialRewards)
       : undefined,
   expositionItemRewards:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? state.expositionItemRewards
           .map((reward) => ({
             inventoryItemId: Number(reward.inventoryItemId) || 0,
             quantity: Number(reward.quantity) || 0,
           }))
-          .filter(
-            (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-          )
+          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
       : undefined,
   expositionSpellRewards:
-    state.nodeType === 'exposition'
+    state.nodeType === 'exposition' && state.expositionSource === 'inline'
       ? state.expositionSpellRewards
           .map((reward) => ({
             spellId: reward.spellId.trim(),
@@ -897,7 +966,9 @@ const describeQuestArchetypeNode = (
   node: QuestArchetypeNode | undefined | null,
   locationArchetypes: LocationArchetype[],
   monsterTemplates: MonsterTemplateRecord[],
-  scenarioTemplates: ScenarioTemplateRecord[]
+  scenarioTemplates: ScenarioTemplateRecord[],
+  characterTemplates: CharacterTemplate[] = [],
+  expositionTemplates: ExpositionTemplate[] = []
 ) => {
   const locationLabelForNode = (() => {
     if (node?.locationSelectionMode === 'same_as_previous') {
@@ -937,11 +1008,23 @@ const describeQuestArchetypeNode = (
     return `${encounterLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'exposition') {
-    const expositionLabel = node.expositionTitle?.trim() || 'Exposition';
+    const expositionLabel =
+      node.expositionTemplate?.title?.trim() ||
+      expositionTemplates.find(
+        (entry) => entry.id === node.expositionTemplateId
+      )?.title ||
+      node.expositionTitle?.trim() ||
+      'Exposition';
     return `${expositionLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'fetch_quest') {
-    const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
+    const characterLabel =
+      node.fetchCharacterTemplate?.name?.trim() ||
+      characterTemplates.find(
+        (entry) => entry.id === node.fetchCharacterTemplateId
+      )?.name ||
+      node.fetchCharacter?.name?.trim() ||
+      'Character';
     const requirements = (node.fetchRequirements ?? [])
       .map((requirement) => {
         return `${requirement.quantity}x item ${requirement.inventoryItemId}`;
@@ -957,7 +1040,8 @@ const describeQuestArchetypeNode = (
     const storyFlagKey = node.storyFlagKey?.trim() || 'story flag';
     return `Story flag: ${storyFlagKey}`;
   }
-  const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
+  const challengeLabel =
+    node.challengeTemplate?.question?.trim() || 'Challenge';
   return `${challengeLabel} @ ${locationLabelForNode}`;
 };
 
@@ -973,6 +1057,8 @@ type QuestArchetypeNodeConfigFieldsProps = {
   monsterTemplates: MonsterTemplateRecord[];
   scenarioTemplates: ScenarioTemplateRecord[];
   characters: Character[];
+  characterTemplates: CharacterTemplate[];
+  expositionTemplates: ExpositionTemplate[];
   inventoryItems: InventoryItem[];
   spells: Spell[];
 };
@@ -989,6 +1075,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
   monsterTemplates,
   scenarioTemplates,
   characters,
+  characterTemplates,
+  expositionTemplates,
   inventoryItems,
   spells,
 }) => {
@@ -1006,6 +1094,10 @@ const QuestArchetypeNodeConfigFields: React.FC<
   const characterOptions = characters.map((character) => ({
     value: character.id,
     label: character.name || character.id,
+  }));
+  const characterTemplateOptions = characterTemplates.map((template) => ({
+    value: template.id,
+    label: template.name || template.id,
   }));
 
   const setSelectedLocationArchetype = (nextId: string, nextQuery: string) =>
@@ -1041,7 +1133,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
       <div className="qa-field">
         <div className="qa-label">{prefix} Objective Description</div>
         <div className="qa-helper">
-          Optional. Overrides the auto-generated objective text shown in the quest log and tracked quest widget for this node.
+          Optional. Overrides the auto-generated objective text shown in the
+          quest log and tracked quest widget for this node.
         </div>
         <textarea
           className="qa-textarea"
@@ -1079,7 +1172,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
                       ? 'coordinates'
                       : e.target.value === 'ditto'
                         ? 'ditto'
-                      : 'point_of_interest',
+                        : 'point_of_interest',
                   locationArchetypeId:
                     e.target.value === 'coordinates'
                       ? ''
@@ -1165,7 +1258,9 @@ const QuestArchetypeNodeConfigFields: React.FC<
                   }
                 >
                   <option value="random">Random In Zone</option>
-                  <option value="closest">Closest To Previous / Questgiver</option>
+                  <option value="closest">
+                    Closest To Previous / Questgiver
+                  </option>
                 </select>
               </div>
             </>
@@ -1210,13 +1305,18 @@ const QuestArchetypeNodeConfigFields: React.FC<
           >
             <option value="">Select a challenge template</option>
             {availableChallengeTemplates.map((template) => (
-              <option key={`${prefix}-challenge-${template.id}`} value={template.id}>
+              <option
+                key={`${prefix}-challenge-${template.id}`}
+                value={template.id}
+              >
                 {describeChallengeTemplate(template, locationArchetypes)}
               </option>
             ))}
           </select>
           {availableChallengeTemplates.length === 0 ? (
-            <div className="qa-helper">No challenge templates are available yet.</div>
+            <div className="qa-helper">
+              No challenge templates are available yet.
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1289,322 +1389,379 @@ const QuestArchetypeNodeConfigFields: React.FC<
       {editor.nodeType === 'exposition' ? (
         <>
           <div className="qa-field">
-            <div className="qa-label">{prefix} Exposition Title</div>
-            <input
-              type="text"
-              className="qa-input"
-              value={editor.expositionTitle}
+            <div className="qa-label">{prefix} Exposition Source</div>
+            <select
+              className="qa-select"
+              value={editor.expositionSource}
               onChange={(e) =>
                 setEditor((prev) => ({
                   ...prev,
-                  expositionTitle: e.target.value,
+                  expositionSource:
+                    e.target.value === 'template' ? 'template' : 'inline',
+                  expositionTemplateId:
+                    e.target.value === 'template'
+                      ? prev.expositionTemplateId
+                      : '',
                 }))
               }
-              placeholder="Whispers Beneath the Overpass"
-            />
+            >
+              <option value="inline">Inline Copy</option>
+              <option value="template">Exposition Template</option>
+            </select>
+            <div className="qa-helper">
+              Use a shared exposition template when multiple quests should point
+              at the same authored scene.
+            </div>
           </div>
-          <div className="qa-field">
-            <div className="qa-label">{prefix} Exposition Description</div>
-            <textarea
-              className="qa-textarea"
-              rows={3}
-              value={editor.expositionDescription}
-              onChange={(e) =>
-                setEditor((prev) => ({
-                  ...prev,
-                  expositionDescription: e.target.value,
-                }))
-              }
-              placeholder="Optional internal summary for the scene."
-            />
-          </div>
-          <div className="qa-field">
-            <DialogueMessageListEditor
-              label={`${prefix} Dialogue`}
-              helperText="Every line in an exposition needs a speaking character."
-              value={editor.expositionDialogue}
-              onChange={(value) =>
-                setEditor((prev) => ({
-                  ...prev,
-                  expositionDialogue: value,
-                }))
-              }
-              characterOptions={characterOptions}
-              requireCharacterSelection
-            />
-          </div>
-          <div className="qa-grid qa-grid-2">
+
+          {editor.expositionSource === 'template' ? (
             <div className="qa-field">
-              <div className="qa-label">{prefix} Reward Mode</div>
+              <div className="qa-label">{prefix} Exposition Template</div>
               <select
                 className="qa-select"
-                value={editor.expositionRewardMode}
+                value={editor.expositionTemplateId}
                 onChange={(e) =>
                   setEditor((prev) => ({
                     ...prev,
-                    expositionRewardMode:
-                      e.target.value === 'explicit' ? 'explicit' : 'random',
+                    expositionTemplateId: e.target.value,
                   }))
                 }
               >
-                <option value="random">Random Reward</option>
-                <option value="explicit">Explicit Reward</option>
+                <option value="">Select an exposition template</option>
+                {expositionTemplates.map((template) => (
+                  <option
+                    key={`${prefix}-exposition-template-${template.id}`}
+                    value={template.id}
+                  >
+                    {template.title || template.id}
+                  </option>
+                ))}
               </select>
             </div>
-            {editor.expositionRewardMode === 'random' ? (
+          ) : null}
+
+          {editor.expositionSource === 'inline' ? (
+            <>
               <div className="qa-field">
-                <div className="qa-label">{prefix} Random Reward Size</div>
-                <select
-                  className="qa-select"
-                  value={editor.expositionRandomRewardSize}
+                <div className="qa-label">{prefix} Exposition Title</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editor.expositionTitle}
                   onChange={(e) =>
                     setEditor((prev) => ({
                       ...prev,
-                      expositionRandomRewardSize:
-                        e.target.value === 'large'
-                          ? 'large'
-                          : e.target.value === 'medium'
-                            ? 'medium'
-                            : 'small',
+                      expositionTitle: e.target.value,
                     }))
                   }
-                >
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                  <option value="large">Large</option>
-                </select>
-              </div>
-            ) : null}
-          </div>
-          {editor.expositionRewardMode === 'explicit' ? (
-            <>
-              <div className="qa-grid qa-grid-2">
-                <div className="qa-field">
-                  <div className="qa-label">{prefix} Reward Experience</div>
-                  <input
-                    type="number"
-                    min={0}
-                    className="qa-input"
-                    value={editor.expositionRewardExperience}
-                    onChange={(e) =>
-                      setEditor((prev) => ({
-                        ...prev,
-                        expositionRewardExperience:
-                          parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="qa-field">
-                  <div className="qa-label">{prefix} Reward Gold</div>
-                  <input
-                    type="number"
-                    min={0}
-                    className="qa-input"
-                    value={editor.expositionRewardGold}
-                    onChange={(e) =>
-                      setEditor((prev) => ({
-                        ...prev,
-                        expositionRewardGold: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="qa-field">
-                <div className="qa-label">{prefix} Material Rewards</div>
-                <MaterialRewardsEditor
-                  value={editor.expositionMaterialRewards}
-                  onChange={(rewards) =>
-                    setEditor((prev) => ({
-                      ...prev,
-                      expositionMaterialRewards: rewards,
-                    }))
-                  }
+                  placeholder="Whispers Beneath the Overpass"
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">{prefix} Item Rewards</div>
-                {editor.expositionItemRewards.length === 0 ? (
-                  <div className="qa-empty">
-                    No item rewards configured for this exposition.
-                  </div>
-                ) : (
-                  <div className="qa-stack">
-                    {editor.expositionItemRewards.map((reward, index) => (
-                      <div
-                        key={`${prefix}-exposition-item-${index}`}
-                        className="qa-inline"
-                        style={{ alignItems: 'flex-end' }}
-                      >
-                        <label className="qa-field" style={{ flex: 1 }}>
-                          <div className="qa-label">Inventory Item</div>
-                          <select
-                            className="qa-select"
-                            value={reward.inventoryItemId}
-                            onChange={(e) =>
-                              setEditor((prev) => ({
-                                ...prev,
-                                expositionItemRewards:
-                                  prev.expositionItemRewards.map(
-                                    (entry, entryIndex) =>
-                                      entryIndex === index
-                                        ? {
-                                            ...entry,
-                                            inventoryItemId: e.target.value,
-                                          }
-                                        : entry
-                                  ),
-                              }))
-                            }
-                          >
-                            <option value="">Select an item</option>
-                            {inventoryItems.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name || item.id}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="qa-field" style={{ width: 120 }}>
-                          <div className="qa-label">Quantity</div>
-                          <input
-                            type="number"
-                            min={1}
-                            className="qa-input"
-                            value={reward.quantity}
-                            onChange={(e) =>
-                              setEditor((prev) => ({
-                                ...prev,
-                                expositionItemRewards:
-                                  prev.expositionItemRewards.map(
-                                    (entry, entryIndex) =>
-                                      entryIndex === index
-                                        ? {
-                                            ...entry,
-                                            quantity: parseInt(e.target.value) || 1,
-                                          }
-                                        : entry
-                                  ),
-                              }))
-                            }
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="qa-btn qa-btn-ghost"
-                          onClick={() =>
-                            setEditor((prev) => ({
-                              ...prev,
-                              expositionItemRewards:
-                                prev.expositionItemRewards.filter(
-                                  (_, entryIndex) => entryIndex !== index
-                                ),
-                            }))
-                          }
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="qa-btn qa-btn-outline"
-                  style={{ marginTop: 12 }}
-                  onClick={() =>
+                <div className="qa-label">{prefix} Exposition Description</div>
+                <textarea
+                  className="qa-textarea"
+                  rows={3}
+                  value={editor.expositionDescription}
+                  onChange={(e) =>
                     setEditor((prev) => ({
                       ...prev,
-                      expositionItemRewards: [
-                        ...prev.expositionItemRewards,
-                        { inventoryItemId: '', quantity: 1 },
-                      ],
+                      expositionDescription: e.target.value,
                     }))
                   }
-                >
-                  Add Item Reward
-                </button>
+                  placeholder="Optional internal summary for the scene."
+                />
               </div>
               <div className="qa-field">
-                <div className="qa-label">{prefix} Spell Rewards</div>
-                {editor.expositionSpellRewards.length === 0 ? (
-                  <div className="qa-empty">
-                    No spell rewards configured for this exposition.
-                  </div>
-                ) : (
-                  <div className="qa-stack">
-                    {editor.expositionSpellRewards.map((reward, index) => (
-                      <div
-                        key={`${prefix}-exposition-spell-${index}`}
-                        className="qa-inline"
-                        style={{ alignItems: 'flex-end' }}
-                      >
-                        <label className="qa-field" style={{ flex: 1 }}>
-                          <div className="qa-label">Spell</div>
-                          <select
-                            className="qa-select"
-                            value={reward.spellId}
-                            onChange={(e) =>
-                              setEditor((prev) => ({
-                                ...prev,
-                                expositionSpellRewards:
-                                  prev.expositionSpellRewards.map(
-                                    (entry, entryIndex) =>
-                                      entryIndex === index
-                                        ? {
-                                            ...entry,
-                                            spellId: e.target.value,
-                                          }
-                                        : entry
-                                  ),
-                              }))
-                            }
-                          >
-                            <option value="">Select a spell</option>
-                            {spells.map((spell) => (
-                              <option key={spell.id} value={spell.id}>
-                                {spell.name || spell.id}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <button
-                          type="button"
-                          className="qa-btn qa-btn-ghost"
-                          onClick={() =>
-                            setEditor((prev) => ({
-                              ...prev,
-                              expositionSpellRewards:
-                                prev.expositionSpellRewards.filter(
-                                  (_, entryIndex) => entryIndex !== index
-                                ),
-                            }))
-                          }
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="qa-btn qa-btn-outline"
-                  style={{ marginTop: 12 }}
-                  onClick={() =>
+                <DialogueMessageListEditor
+                  label={`${prefix} Dialogue`}
+                  helperText="Every line in an exposition needs a speaking character."
+                  value={editor.expositionDialogue}
+                  onChange={(value) =>
                     setEditor((prev) => ({
                       ...prev,
-                      expositionSpellRewards: [
-                        ...prev.expositionSpellRewards,
-                        { spellId: '' },
-                      ],
+                      expositionDialogue: value,
                     }))
                   }
-                >
-                  Add Spell Reward
-                </button>
+                  characterOptions={characterOptions}
+                  requireCharacterSelection
+                />
               </div>
+              <div className="qa-grid qa-grid-2">
+                <div className="qa-field">
+                  <div className="qa-label">{prefix} Reward Mode</div>
+                  <select
+                    className="qa-select"
+                    value={editor.expositionRewardMode}
+                    onChange={(e) =>
+                      setEditor((prev) => ({
+                        ...prev,
+                        expositionRewardMode:
+                          e.target.value === 'explicit' ? 'explicit' : 'random',
+                      }))
+                    }
+                  >
+                    <option value="random">Random Reward</option>
+                    <option value="explicit">Explicit Reward</option>
+                  </select>
+                </div>
+                {editor.expositionRewardMode === 'random' ? (
+                  <div className="qa-field">
+                    <div className="qa-label">{prefix} Random Reward Size</div>
+                    <select
+                      className="qa-select"
+                      value={editor.expositionRandomRewardSize}
+                      onChange={(e) =>
+                        setEditor((prev) => ({
+                          ...prev,
+                          expositionRandomRewardSize:
+                            e.target.value === 'large'
+                              ? 'large'
+                              : e.target.value === 'medium'
+                                ? 'medium'
+                                : 'small',
+                        }))
+                      }
+                    >
+                      <option value="small">Small</option>
+                      <option value="medium">Medium</option>
+                      <option value="large">Large</option>
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+              {editor.expositionRewardMode === 'explicit' ? (
+                <>
+                  <div className="qa-grid qa-grid-2">
+                    <div className="qa-field">
+                      <div className="qa-label">{prefix} Reward Experience</div>
+                      <input
+                        type="number"
+                        min={0}
+                        className="qa-input"
+                        value={editor.expositionRewardExperience}
+                        onChange={(e) =>
+                          setEditor((prev) => ({
+                            ...prev,
+                            expositionRewardExperience:
+                              parseInt(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="qa-field">
+                      <div className="qa-label">{prefix} Reward Gold</div>
+                      <input
+                        type="number"
+                        min={0}
+                        className="qa-input"
+                        value={editor.expositionRewardGold}
+                        onChange={(e) =>
+                          setEditor((prev) => ({
+                            ...prev,
+                            expositionRewardGold: parseInt(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="qa-field">
+                    <div className="qa-label">{prefix} Material Rewards</div>
+                    <MaterialRewardsEditor
+                      value={editor.expositionMaterialRewards}
+                      onChange={(rewards) =>
+                        setEditor((prev) => ({
+                          ...prev,
+                          expositionMaterialRewards: rewards,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="qa-field">
+                    <div className="qa-label">{prefix} Item Rewards</div>
+                    {editor.expositionItemRewards.length === 0 ? (
+                      <div className="qa-empty">
+                        No item rewards configured for this exposition.
+                      </div>
+                    ) : (
+                      <div className="qa-stack">
+                        {editor.expositionItemRewards.map((reward, index) => (
+                          <div
+                            key={`${prefix}-exposition-item-${index}`}
+                            className="qa-inline"
+                            style={{ alignItems: 'flex-end' }}
+                          >
+                            <label className="qa-field" style={{ flex: 1 }}>
+                              <div className="qa-label">Inventory Item</div>
+                              <select
+                                className="qa-select"
+                                value={reward.inventoryItemId}
+                                onChange={(e) =>
+                                  setEditor((prev) => ({
+                                    ...prev,
+                                    expositionItemRewards:
+                                      prev.expositionItemRewards.map(
+                                        (entry, entryIndex) =>
+                                          entryIndex === index
+                                            ? {
+                                                ...entry,
+                                                inventoryItemId: e.target.value,
+                                              }
+                                            : entry
+                                      ),
+                                  }))
+                                }
+                              >
+                                <option value="">Select an item</option>
+                                {inventoryItems.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name || item.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="qa-field" style={{ width: 120 }}>
+                              <div className="qa-label">Quantity</div>
+                              <input
+                                type="number"
+                                min={1}
+                                className="qa-input"
+                                value={reward.quantity}
+                                onChange={(e) =>
+                                  setEditor((prev) => ({
+                                    ...prev,
+                                    expositionItemRewards:
+                                      prev.expositionItemRewards.map(
+                                        (entry, entryIndex) =>
+                                          entryIndex === index
+                                            ? {
+                                                ...entry,
+                                                quantity:
+                                                  parseInt(e.target.value) || 1,
+                                              }
+                                            : entry
+                                      ),
+                                  }))
+                                }
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="qa-btn qa-btn-ghost"
+                              onClick={() =>
+                                setEditor((prev) => ({
+                                  ...prev,
+                                  expositionItemRewards:
+                                    prev.expositionItemRewards.filter(
+                                      (_, entryIndex) => entryIndex !== index
+                                    ),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="qa-btn qa-btn-outline"
+                      style={{ marginTop: 12 }}
+                      onClick={() =>
+                        setEditor((prev) => ({
+                          ...prev,
+                          expositionItemRewards: [
+                            ...prev.expositionItemRewards,
+                            { inventoryItemId: '', quantity: 1 },
+                          ],
+                        }))
+                      }
+                    >
+                      Add Item Reward
+                    </button>
+                  </div>
+                  <div className="qa-field">
+                    <div className="qa-label">{prefix} Spell Rewards</div>
+                    {editor.expositionSpellRewards.length === 0 ? (
+                      <div className="qa-empty">
+                        No spell rewards configured for this exposition.
+                      </div>
+                    ) : (
+                      <div className="qa-stack">
+                        {editor.expositionSpellRewards.map((reward, index) => (
+                          <div
+                            key={`${prefix}-exposition-spell-${index}`}
+                            className="qa-inline"
+                            style={{ alignItems: 'flex-end' }}
+                          >
+                            <label className="qa-field" style={{ flex: 1 }}>
+                              <div className="qa-label">Spell</div>
+                              <select
+                                className="qa-select"
+                                value={reward.spellId}
+                                onChange={(e) =>
+                                  setEditor((prev) => ({
+                                    ...prev,
+                                    expositionSpellRewards:
+                                      prev.expositionSpellRewards.map(
+                                        (entry, entryIndex) =>
+                                          entryIndex === index
+                                            ? {
+                                                ...entry,
+                                                spellId: e.target.value,
+                                              }
+                                            : entry
+                                      ),
+                                  }))
+                                }
+                              >
+                                <option value="">Select a spell</option>
+                                {spells.map((spell) => (
+                                  <option key={spell.id} value={spell.id}>
+                                    {spell.name || spell.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              className="qa-btn qa-btn-ghost"
+                              onClick={() =>
+                                setEditor((prev) => ({
+                                  ...prev,
+                                  expositionSpellRewards:
+                                    prev.expositionSpellRewards.filter(
+                                      (_, entryIndex) => entryIndex !== index
+                                    ),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="qa-btn qa-btn-outline"
+                      style={{ marginTop: 12 }}
+                      onClick={() =>
+                        setEditor((prev) => ({
+                          ...prev,
+                          expositionSpellRewards: [
+                            ...prev.expositionSpellRewards,
+                            { spellId: '' },
+                          ],
+                        }))
+                      }
+                    >
+                      Add Spell Reward
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </>
           ) : null}
         </>
@@ -1634,30 +1791,82 @@ const QuestArchetypeNodeConfigFields: React.FC<
       {editor.nodeType === 'fetch_quest' ? (
         <>
           <div className="qa-field">
-            <div className="qa-label">{prefix} Target Character</div>
+            <div className="qa-label">{prefix} Fetch Target Source</div>
+            <select
+              className="qa-select"
+              value={editor.fetchCharacterSource}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  fetchCharacterSource:
+                    e.target.value === 'template' ? 'template' : 'character',
+                  fetchCharacterId:
+                    e.target.value === 'character' ? prev.fetchCharacterId : '',
+                  fetchCharacterTemplateId:
+                    e.target.value === 'template'
+                      ? prev.fetchCharacterTemplateId
+                      : '',
+                }))
+              }
+            >
+              <option value="character">Live Character</option>
+              <option value="template">Character Template</option>
+            </select>
             <div className="qa-helper">
               The user must deliver the required items to this character to
               continue.
             </div>
+          </div>
+          <div className="qa-field">
+            <div className="qa-label">
+              {prefix}{' '}
+              {editor.fetchCharacterSource === 'template'
+                ? 'Character Template'
+                : 'Target Character'}
+            </div>
             <select
               className="qa-select"
-              value={editor.fetchCharacterId}
+              value={
+                editor.fetchCharacterSource === 'template'
+                  ? editor.fetchCharacterTemplateId
+                  : editor.fetchCharacterId
+              }
               onChange={(e) =>
                 setEditor((prev) => ({
                   ...prev,
-                  fetchCharacterId: e.target.value,
+                  fetchCharacterId:
+                    prev.fetchCharacterSource === 'character'
+                      ? e.target.value
+                      : prev.fetchCharacterId,
+                  fetchCharacterTemplateId:
+                    prev.fetchCharacterSource === 'template'
+                      ? e.target.value
+                      : prev.fetchCharacterTemplateId,
                 }))
               }
             >
-              <option value="">Select a character</option>
-              {characters.map((character) => (
-                <option
-                  key={`${prefix}-fetch-character-${character.id}`}
-                  value={character.id}
-                >
-                  {character.name || character.id}
-                </option>
-              ))}
+              <option value="">
+                {editor.fetchCharacterSource === 'template'
+                  ? 'Select a character template'
+                  : 'Select a character'}
+              </option>
+              {editor.fetchCharacterSource === 'template'
+                ? characterTemplateOptions.map((template) => (
+                    <option
+                      key={`${prefix}-fetch-character-template-${template.value}`}
+                      value={template.value}
+                    >
+                      {template.label}
+                    </option>
+                  ))
+                : characters.map((character) => (
+                    <option
+                      key={`${prefix}-fetch-character-${character.id}`}
+                      value={character.id}
+                    >
+                      {character.name || character.id}
+                    </option>
+                  ))}
             </select>
           </div>
           <div className="qa-field">
@@ -1773,6 +1982,8 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   scenarioTemplates,
   challengeTemplates,
   characters,
+  characterTemplates,
+  expositionTemplates,
   inventoryItems,
   spells,
   depth,
@@ -1786,7 +1997,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
     node,
     locationArchetypes,
     monsterTemplates,
-    scenarioTemplates
+    scenarioTemplates,
+    characterTemplates,
+    expositionTemplates
   );
   const [isAdding, setIsAdding] = useState(false);
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
@@ -1829,6 +2042,8 @@ const FlowNode: React.FC<FlowNodeProps> = ({
             monsterTemplates={monsterTemplates}
             scenarioTemplates={scenarioTemplates}
             characters={characters}
+            characterTemplates={characterTemplates}
+            expositionTemplates={expositionTemplates}
             inventoryItems={inventoryItems}
             spells={spells}
           />
@@ -1874,22 +2089,23 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                 </span>
               </label>
             </div>
-            {childEnabled &&
-              (
-                <QuestArchetypeNodeConfigFields
-                  editor={childEditor}
-                  setEditor={setChildEditor}
-                  allowSameAsPreviousLocationMode
-                  prefix="Child"
-                  locationArchetypes={locationArchetypes}
-                  challengeTemplates={challengeTemplates}
-                  monsterTemplates={monsterTemplates}
-                  scenarioTemplates={scenarioTemplates}
-                  characters={characters}
-                  inventoryItems={inventoryItems}
-                  spells={spells}
-                />
-              )}
+            {childEnabled && (
+              <QuestArchetypeNodeConfigFields
+                editor={childEditor}
+                setEditor={setChildEditor}
+                allowSameAsPreviousLocationMode
+                prefix="Child"
+                locationArchetypes={locationArchetypes}
+                challengeTemplates={challengeTemplates}
+                monsterTemplates={monsterTemplates}
+                scenarioTemplates={scenarioTemplates}
+                characters={characters}
+                characterTemplates={characterTemplates}
+                expositionTemplates={expositionTemplates}
+                inventoryItems={inventoryItems}
+                spells={spells}
+              />
+            )}
             <div className="qa-flow-form-actions">
               <button
                 className="qa-btn qa-btn-outline"
@@ -1902,10 +2118,9 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const validationError =
-                    childEnabled
-                      ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
-                      : '';
+                  const validationError = childEnabled
+                    ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                    : '';
                   if (validationError) {
                     window.alert(validationError);
                     return;
@@ -1988,6 +2203,8 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                         scenarioTemplates={scenarioTemplates}
                         challengeTemplates={challengeTemplates}
                         characters={characters}
+                        characterTemplates={characterTemplates}
+                        expositionTemplates={expositionTemplates}
                         inventoryItems={inventoryItems}
                         spells={spells}
                         depth={depth + 1}
@@ -2310,20 +2527,21 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             </div>
           </div>
           <div className="qa-inline">
-            {nodeEditor.nodeType === 'challenge' && selectedChallengeTemplate && (
-              <button
-                className="qa-btn qa-btn-ghost"
-                onClick={() =>
-                  onEditChallengeTemplate(
-                    selectedChallengeTemplate.id,
-                    `Challenge node ${pathLabel}`,
-                    selectedChallengeTemplate.locationArchetypeId || null
-                  )
-                }
-              >
-                Edit Challenge Template
-              </button>
-            )}
+            {nodeEditor.nodeType === 'challenge' &&
+              selectedChallengeTemplate && (
+                <button
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() =>
+                    onEditChallengeTemplate(
+                      selectedChallengeTemplate.id,
+                      `Challenge node ${pathLabel}`,
+                      selectedChallengeTemplate.locationArchetypeId || null
+                    )
+                  }
+                >
+                  Edit Challenge Template
+                </button>
+              )}
             {nodeEditor.nodeType === 'scenario' && selectedScenarioTemplate && (
               <button
                 className="qa-btn qa-btn-ghost"
@@ -2374,6 +2592,8 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             monsterTemplates={monsterTemplates}
             scenarioTemplates={scenarioTemplates}
             characters={characters}
+            characterTemplates={characterTemplates}
+            expositionTemplates={expositionTemplates}
             inventoryItems={inventoryItems}
             spells={spells}
           />
@@ -2446,6 +2666,8 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                 monsterTemplates={monsterTemplates}
                 scenarioTemplates={scenarioTemplates}
                 characters={characters}
+                characterTemplates={characterTemplates}
+                expositionTemplates={expositionTemplates}
                 inventoryItems={inventoryItems}
                 spells={spells}
               />
@@ -2460,10 +2682,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const validationError =
-                    childEnabled
-                      ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
-                      : '';
+                  const validationError = childEnabled
+                    ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                    : '';
                   if (validationError) {
                     window.alert(validationError);
                     return;
@@ -2943,6 +3164,9 @@ export const QuestArchetypeComponent = () => {
     updateQuestArchetypeNode,
   } = useQuestArchetypes();
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [characterTemplates, setCharacterTemplates] = useState<
+    CharacterTemplate[]
+  >([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [monsterTemplates, setMonsterTemplates] = useState<
     MonsterTemplateRecord[]
@@ -2952,6 +3176,9 @@ export const QuestArchetypeComponent = () => {
   >([]);
   const [challengeTemplates, setChallengeTemplates] = useState<
     ChallengeTemplateRecord[]
+  >([]);
+  const [expositionTemplates, setExpositionTemplates] = useState<
+    ExpositionTemplate[]
   >([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [inventoryItemsLoading, setInventoryItemsLoading] =
@@ -2996,7 +3223,9 @@ export const QuestArchetypeComponent = () => {
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [archetypeSearch, setArchetypeSearch] = useState<string>('');
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<string>('');
-  const [selectedArchetypeIds, setSelectedArchetypeIds] = useState<string[]>([]);
+  const [selectedArchetypeIds, setSelectedArchetypeIds] = useState<string[]>(
+    []
+  );
   const attemptedDeepLinkRefreshIdRef = useRef<string>('');
   const appliedDeepLinkedArchetypeIdRef = useRef<string>('');
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
@@ -3029,7 +3258,9 @@ export const QuestArchetypeComponent = () => {
       return;
     }
     const archetypeLabel =
-      selectedArchetypeIds.length === 1 ? 'quest archetype' : 'quest archetypes';
+      selectedArchetypeIds.length === 1
+        ? 'quest archetype'
+        : 'quest archetypes';
     if (
       !window.confirm(
         `Are you sure you want to delete ${selectedArchetypeIds.length} ${archetypeLabel}?`
@@ -3221,22 +3452,23 @@ export const QuestArchetypeComponent = () => {
     [inlineEditor, monsterTemplates]
   );
   const deepLinkedArchetypeId = searchParams.get('id')?.trim() ?? '';
-  const replaceDeepLinkedArchetypeId = useCallback((
-    archetypeId?: string | null
-  ) => {
-    const normalizedArchetypeId = (archetypeId ?? '').trim();
-    const currentArchetypeId = searchParams.get('id')?.trim() ?? '';
-    if (normalizedArchetypeId === currentArchetypeId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (normalizedArchetypeId) {
-      next.set('id', normalizedArchetypeId);
-    } else {
-      next.delete('id');
-    }
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const replaceDeepLinkedArchetypeId = useCallback(
+    (archetypeId?: string | null) => {
+      const normalizedArchetypeId = (archetypeId ?? '').trim();
+      const currentArchetypeId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedArchetypeId === currentArchetypeId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedArchetypeId) {
+        next.set('id', normalizedArchetypeId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   useEffect(() => {
     if (!deepLinkedArchetypeId) {
@@ -3267,9 +3499,7 @@ export const QuestArchetypeComponent = () => {
         (archetype) => archetype.id === deepLinkedArchetypeId
       );
       if (matchingArchetype) {
-        if (
-          appliedDeepLinkedArchetypeIdRef.current !== deepLinkedArchetypeId
-        ) {
+        if (appliedDeepLinkedArchetypeIdRef.current !== deepLinkedArchetypeId) {
           appliedDeepLinkedArchetypeIdRef.current = deepLinkedArchetypeId;
           setSelectedArchetypeId(matchingArchetype.id);
           return;
@@ -3296,7 +3526,9 @@ export const QuestArchetypeComponent = () => {
     }
     if (
       deepLinkedArchetypeId &&
-      !questArchetypes.some((archetype) => archetype.id === deepLinkedArchetypeId)
+      !questArchetypes.some(
+        (archetype) => archetype.id === deepLinkedArchetypeId
+      )
     ) {
       return;
     }
@@ -3444,13 +3676,16 @@ export const QuestArchetypeComponent = () => {
       try {
         const [
           characterResponse,
+          characterTemplateResponse,
           inventoryResponse,
           spellsResponse,
           monsterTemplateResponse,
           scenarioTemplateResponse,
           challengeTemplateResponse,
+          expositionTemplateResponse,
         ] = await Promise.all([
           apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<CharacterTemplate[]>('/sonar/character-templates'),
           apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
           apiClient.get<Spell[]>('/sonar/spells'),
           apiClient.get<PaginatedResponse<MonsterTemplateRecord>>(
@@ -3462,13 +3697,16 @@ export const QuestArchetypeComponent = () => {
           apiClient.get<ChallengeTemplateRecord[]>(
             '/sonar/challenge-templates'
           ),
+          apiClient.get<ExpositionTemplate[]>('/sonar/exposition-templates'),
         ]);
         setCharacters(characterResponse ?? []);
+        setCharacterTemplates(characterTemplateResponse ?? []);
         setInventoryItems(inventoryResponse);
         setSpells(spellsResponse);
         setMonsterTemplates(monsterTemplateResponse.items ?? []);
         setScenarioTemplates(scenarioTemplateResponse.items ?? []);
         setChallengeTemplates(challengeTemplateResponse ?? []);
+        setExpositionTemplates(expositionTemplateResponse ?? []);
       } catch (error) {
         console.error('Error fetching quest archetype reference data:', error);
       } finally {
@@ -3862,14 +4100,14 @@ export const QuestArchetypeComponent = () => {
                             onClick={(event) => event.stopPropagation()}
                           />
                           <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="qa-sidebar-item-title">
-                          {questArchetype.name}
-                        </div>
-                        <div className="qa-meta">
-                          Root: {rootLocation} ·{' '}
-                          {questArchetype.root?.challenges?.length ?? 0}{' '}
-                          challenges
-                        </div>
+                            <div className="qa-sidebar-item-title">
+                              {questArchetype.name}
+                            </div>
+                            <div className="qa-meta">
+                              Root: {rootLocation} ·{' '}
+                              {questArchetype.root?.challenges?.length ?? 0}{' '}
+                              challenges
+                            </div>
                           </div>
                         </div>
                       </button>
@@ -3900,9 +4138,9 @@ export const QuestArchetypeComponent = () => {
                       {selectedArchetype.name}
                     </h2>
                     <p className="qa-subtitle">
-                      Craft the journey by stacking challenges, expositions,
-                      and branching nodes. Each beat can unlock a new node to
-                      extend the quest.
+                      Craft the journey by stacking challenges, expositions, and
+                      branching nodes. Each beat can unlock a new node to extend
+                      the quest.
                     </p>
                   </div>
                   <div className="qa-actions">
@@ -6662,6 +6900,8 @@ export const QuestArchetypeComponent = () => {
                     monsterTemplates={monsterTemplates}
                     scenarioTemplates={scenarioTemplates}
                     characters={sortedCharacters}
+                    characterTemplates={characterTemplates}
+                    expositionTemplates={expositionTemplates}
                     inventoryItems={inventoryItems}
                     spells={spells}
                   />

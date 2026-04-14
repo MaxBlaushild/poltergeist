@@ -27,17 +27,6 @@ type StaticThumbnailResponse = {
   lastModified?: string;
 };
 
-type BaseDescriptionGenerationJob = {
-  id: string;
-  baseId: string;
-  status?: string;
-  generatedDescription?: string;
-  generatedImageUrl?: string;
-  errorMessage?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
 type BaseStructureLevelVisual = {
   id?: string | null;
   level: number;
@@ -289,13 +278,7 @@ export const Bases = () => {
     alt: string;
   } | null>(null);
   const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
-  const [regeneratingBaseId, setRegeneratingBaseId] = useState<string | null>(
-    null
-  );
   const [baseMessage, setBaseMessage] = useState<string | null>(null);
-  const [descriptionJobsByBaseId, setDescriptionJobsByBaseId] = useState<
-    Record<string, BaseDescriptionGenerationJob>
-  >({});
   const [structures, setStructures] = useState<BaseStructureDefinition[]>([]);
   const [structureLoading, setStructureLoading] = useState(true);
   const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<
@@ -622,52 +605,6 @@ export const Bases = () => {
       }
     },
     [apiClient]
-  );
-
-  const fetchDescriptionJobs = useCallback(async () => {
-    try {
-      const response = await apiClient.get<BaseDescriptionGenerationJob[]>(
-        '/sonar/admin/base-description-jobs?limit=100'
-      );
-      const jobs = Array.isArray(response) ? response : [];
-      const next: Record<string, BaseDescriptionGenerationJob> = {};
-      jobs.forEach((job) => {
-        if (!job.baseId) return;
-        if (!next[job.baseId]) {
-          next[job.baseId] = job;
-        }
-      });
-      setDescriptionJobsByBaseId(next);
-    } catch (err) {
-      console.error('Failed to load base description jobs', err);
-    }
-  }, [apiClient]);
-
-  const handleRegenerateDescription = useCallback(
-    async (record: BaseRecord) => {
-      try {
-        setRegeneratingBaseId(record.id);
-        setError(null);
-        setBaseMessage(null);
-        await apiClient.post(
-          `/sonar/admin/bases/${record.id}/generate-description`
-        );
-        setBaseMessage(
-          `Queued base flavor generation for ${ownerLabel(record)}.`
-        );
-        await fetchDescriptionJobs();
-      } catch (err) {
-        console.error('Failed to queue base description generation', err);
-        const message =
-          err instanceof Error
-            ? err.message
-            : 'Failed to queue base description generation.';
-        setError(message);
-      } finally {
-        setRegeneratingBaseId(null);
-      }
-    },
-    [apiClient, fetchDescriptionJobs]
   );
 
   const fetchStructures = useCallback(async () => {
@@ -1138,10 +1075,6 @@ export const Bases = () => {
   }, [grassTilesByKey, selectedGrassKey]);
 
   useEffect(() => {
-    void fetchDescriptionJobs();
-  }, [fetchDescriptionJobs]);
-
-  useEffect(() => {
     if (iconStatus !== 'queued' && iconStatus !== 'in_progress') {
       return;
     }
@@ -1165,9 +1098,6 @@ export const Bases = () => {
   }, [grassTilesByKey, refreshGrassStatus]);
 
   useEffect(() => {
-    const hasPendingJobs = Object.values(descriptionJobsByBaseId).some((job) =>
-      ['queued', 'in_progress'].includes((job.status || '').toLowerCase())
-    );
     const hasPendingRoomImages = structures.some((structure) =>
       (structure.levelVisuals || []).some(
         (visual) =>
@@ -1179,19 +1109,16 @@ export const Bases = () => {
           )
       )
     );
-    if (!hasPendingJobs && !hasPendingRoomImages) {
+    if (!hasPendingRoomImages) {
       return;
     }
     const interval = window.setInterval(() => {
-      void fetchDescriptionJobs();
       void fetchBases();
       void fetchStructures();
     }, 4000);
     return () => window.clearInterval(interval);
   }, [
-    descriptionJobsByBaseId,
     fetchBases,
-    fetchDescriptionJobs,
     fetchStructures,
     structures,
   ]);
@@ -1996,11 +1923,7 @@ export const Bases = () => {
           </div>
         ) : (
           records.map((record) => {
-            const latestJob = descriptionJobsByBaseId[record.id];
-            const generatedImageUrl =
-              record.imageUrl?.trim() ||
-              latestJob?.generatedImageUrl?.trim() ||
-              '';
+            const generatedImageUrl = record.imageUrl?.trim() || '';
             return (
               <div
                 key={record.id}
@@ -2056,44 +1979,15 @@ export const Bases = () => {
                   </p>
                 ) : (
                   <p className="mt-3 text-sm italic text-gray-500">
-                    No description generated yet.
+                    No description saved.
                   </p>
                 )}
-                {latestJob ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                    <span
-                      className={`rounded-full px-2 py-1 font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
-                        latestJob.status
-                      )}`}
-                    >
-                      {latestJob.status || 'unknown'}
-                    </span>
-                    <span className="text-gray-500">
-                      {formatDate(latestJob.updatedAt)}
-                    </span>
-                    {latestJob.errorMessage ? (
-                      <span className="text-red-700">
-                        {latestJob.errorMessage}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
                 <div className="mt-3 grid gap-2 text-sm text-gray-700 md:grid-cols-3">
                   <div>Latitude: {record.latitude.toFixed(6)}</div>
                   <div>Longitude: {record.longitude.toFixed(6)}</div>
                   <div>User ID: {record.userId}</div>
                 </div>
                 <div className="mt-4 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleRegenerateDescription(record)}
-                    disabled={regeneratingBaseId === record.id}
-                    className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {regeneratingBaseId === record.id
-                      ? 'Queueing...'
-                      : 'Regenerate Flavor'}
-                  </button>
                   <button
                     type="button"
                     onClick={() => void handleDeleteBase(record)}

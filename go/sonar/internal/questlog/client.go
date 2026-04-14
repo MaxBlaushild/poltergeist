@@ -793,7 +793,7 @@ func buildQuestNodeView(
 	dbClient db.DbClient,
 	node models.QuestNode,
 ) (*QuestNode, error) {
-	objective, pointOfInterest, polygon, err := buildQuestNodeObjective(
+	objective, pointOfInterest, polygon, fetchCharacter, err := buildQuestNodeObjective(
 		ctx,
 		dbClient,
 		node,
@@ -827,7 +827,7 @@ func buildQuestNodeView(
 		ScenarioID:           node.ScenarioID,
 		ExpositionID:         node.ExpositionID,
 		FetchCharacterID:     node.FetchCharacterID,
-		FetchCharacter:       node.FetchCharacter,
+		FetchCharacter:       firstNonNilCharacter(fetchCharacter, node.FetchCharacter),
 		StoryFlagKey:         node.StoryFlagKeyNormalized(),
 		MonsterID:            node.MonsterID,
 		MonsterEncounterID:   node.MonsterEncounterID,
@@ -840,7 +840,7 @@ func buildQuestNodeObjective(
 	ctx context.Context,
 	dbClient db.DbClient,
 	node models.QuestNode,
-) (*QuestNodeObjective, *models.PointOfInterest, []QuestNodePolygonPoint, error) {
+) (*QuestNodeObjective, *models.PointOfInterest, []QuestNodePolygonPoint, *models.Character, error) {
 	if node.IsStoryFlagNode() {
 		storyFlagKey := node.StoryFlagKeyNormalized()
 		return &QuestNodeObjective{
@@ -850,7 +850,7 @@ func buildQuestNodeObjective(
 			Description:    "This objective completes automatically once the required story flag becomes active.",
 			StoryFlagKey:   storyFlagKey,
 			SubmissionType: models.DefaultQuestNodeSubmissionType(),
-		}, nil, nil, nil
+		}, nil, nil, nil, nil
 	}
 	if node.IsFetchQuestNode() {
 		character := node.FetchCharacter
@@ -862,7 +862,7 @@ func buildQuestNodeObjective(
 					node.FetchCharacterID.String(),
 					err,
 				)
-				return nil, nil, nil, nil
+				return nil, nil, nil, nil, nil
 			}
 			character = loadedCharacter
 		}
@@ -929,13 +929,13 @@ func buildQuestNodeObjective(
 			CharacterID:       node.FetchCharacterID,
 			CharacterName:     characterName,
 			FetchRequirements: requirements,
-		}, pointOfInterest, nil, nil
+		}, pointOfInterest, nil, character, nil
 	}
 	if node.ChallengeID != nil {
 		challenge, err := dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
 		if err != nil {
 			log.Printf("resolveObjectiveText: challenge lookup failed for %s: %v", node.ChallengeID.String(), err)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
 		if challenge != nil {
 			submissionType := challenge.SubmissionType
@@ -961,16 +961,17 @@ func buildQuestNodeObjective(
 				},
 				challenge.PointOfInterest,
 				convertPolygonPoints(challenge.PolygonPoints),
+				nil,
 				nil
 		}
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	if node.ScenarioID != nil {
 		scenario, err := dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
 		if err != nil {
 			log.Printf("resolveObjectiveText: scenario lookup failed for %s: %v", node.ScenarioID.String(), err)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
 		if scenario != nil {
 			submissionType := node.SubmissionType
@@ -1023,9 +1024,10 @@ func buildQuestNodeObjective(
 				},
 				scenario.PointOfInterest,
 				nil,
+				nil,
 				nil
 		}
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	if node.ExpositionID != nil {
@@ -1036,7 +1038,7 @@ func buildQuestNodeObjective(
 				node.ExpositionID.String(),
 				err,
 			)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
 		if exposition != nil {
 			submissionType := node.SubmissionType
@@ -1063,9 +1065,10 @@ func buildQuestNodeObjective(
 				},
 				exposition.PointOfInterest,
 				nil,
+				nil,
 				nil
 		}
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	if node.MonsterEncounterID != nil {
@@ -1079,7 +1082,7 @@ func buildQuestNodeObjective(
 				node.MonsterEncounterID.String(),
 				err,
 			)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
 		if encounter != nil {
 			name := strings.TrimSpace(encounter.Name)
@@ -1105,10 +1108,10 @@ func buildQuestNodeObjective(
 					ThumbnailURL:   strings.TrimSpace(encounter.ThumbnailURL),
 					SubmissionType: submissionType,
 					Difficulty:     difficulty,
-				}, encounter.PointOfInterest, nil, nil
+				}, encounter.PointOfInterest, nil, nil, nil
 			}
 		}
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	if node.MonsterID != nil {
@@ -1122,7 +1125,7 @@ func buildQuestNodeObjective(
 				node.MonsterID.String(),
 				err,
 			)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
 		if monster != nil {
 			name := strings.TrimSpace(monster.Name)
@@ -1140,12 +1143,21 @@ func buildQuestNodeObjective(
 					ThumbnailURL:   strings.TrimSpace(monster.ThumbnailURL),
 					SubmissionType: submissionType,
 					Difficulty:     monster.EffectiveLevel(),
-				}, nil, nil, nil
+				}, nil, nil, nil, nil
 			}
 		}
 	}
 
-	return nil, nil, nil, nil
+	return nil, nil, nil, nil, nil
+}
+
+func firstNonNilCharacter(characters ...*models.Character) *models.Character {
+	for _, character := range characters {
+		if character != nil {
+			return character
+		}
+	}
+	return nil
 }
 
 func convertPolygonPoints(raw [][2]float64) []QuestNodePolygonPoint {

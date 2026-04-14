@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
 import {
   Character,
+  CharacterTemplate,
   DialogueMessage,
   QuestArchetype,
   Spell,
@@ -50,6 +51,7 @@ type TutorialConfigResponse = {
   characterId?: string | null;
   baseQuestArchetypeId?: string | null;
   baseQuestGiverCharacterId?: string | null;
+  baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
   postMonsterDialogue?: DialogueMessage[];
@@ -261,6 +263,9 @@ export const Tutorial = () => {
   );
   const [users, setUsers] = useState<User[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [characterTemplates, setCharacterTemplates] = useState<
+    CharacterTemplate[]
+  >([]);
   const [questArchetypes, setQuestArchetypes] = useState<QuestArchetype[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<
@@ -268,8 +273,15 @@ export const Tutorial = () => {
   >([]);
   const [characterId, setCharacterId] = useState('');
   const [baseQuestArchetypeId, setBaseQuestArchetypeId] = useState('');
+  const [baseQuestGiverSourceType, setBaseQuestGiverSourceType] = useState<
+    'character' | 'template'
+  >('character');
   const [baseQuestGiverCharacterId, setBaseQuestGiverCharacterId] =
     useState('');
+  const [
+    baseQuestGiverCharacterTemplateId,
+    setBaseQuestGiverCharacterTemplateId,
+  ] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
   const [postMonsterDialogue, setPostMonsterDialogue] = useState<
@@ -321,7 +333,13 @@ export const Tutorial = () => {
 
         setCharacterId(config.characterId ?? '');
         setBaseQuestArchetypeId(config.baseQuestArchetypeId ?? '');
+        setBaseQuestGiverSourceType(
+          config.baseQuestGiverCharacterTemplateId ? 'template' : 'character'
+        );
         setBaseQuestGiverCharacterId(config.baseQuestGiverCharacterId ?? '');
+        setBaseQuestGiverCharacterTemplateId(
+          config.baseQuestGiverCharacterTemplateId ?? ''
+        );
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
         setLoadoutDialogue(
           Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
@@ -422,12 +440,14 @@ export const Tutorial = () => {
         const [
           loadedUsers,
           loadedCharacters,
+          loadedCharacterTemplates,
           loadedQuestArchetypes,
           loadedSpells,
           loadedMonsterEncounters,
         ] = await Promise.all([
           apiClient.get<User[]>('/sonar/users'),
           apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<CharacterTemplate[]>('/sonar/character-templates'),
           apiClient.get<QuestArchetype[]>('/sonar/questArchetypes'),
           apiClient.get<Spell[]>('/sonar/spells'),
           apiClient.get<AdminMonsterEncounterListResponse>(
@@ -437,6 +457,11 @@ export const Tutorial = () => {
 
         setUsers(Array.isArray(loadedUsers) ? loadedUsers : []);
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
+        setCharacterTemplates(
+          Array.isArray(loadedCharacterTemplates)
+            ? loadedCharacterTemplates
+            : []
+        );
         setQuestArchetypes(
           Array.isArray(loadedQuestArchetypes) ? loadedQuestArchetypes : []
         );
@@ -503,6 +528,15 @@ export const Tutorial = () => {
         label: character.name,
       })),
     [characters]
+  );
+
+  const characterTemplateOptions = useMemo(
+    () =>
+      characterTemplates.map((template) => ({
+        value: template.id,
+        label: template.name,
+      })),
+    [characterTemplates]
   );
 
   const userOptions = useMemo(
@@ -690,7 +724,14 @@ export const Tutorial = () => {
       await apiClient.put('/sonar/admin/tutorial', {
         characterId: characterId || null,
         baseQuestArchetypeId: baseQuestArchetypeId || null,
-        baseQuestGiverCharacterId: baseQuestGiverCharacterId || null,
+        baseQuestGiverCharacterId:
+          baseQuestGiverSourceType === 'character'
+            ? baseQuestGiverCharacterId || null
+            : null,
+        baseQuestGiverCharacterTemplateId:
+          baseQuestGiverSourceType === 'template'
+            ? baseQuestGiverCharacterTemplateId || null
+            : null,
         dialogue,
         loadoutDialogue,
         postMonsterDialogue,
@@ -756,7 +797,12 @@ export const Tutorial = () => {
       setStatusKind('error');
       return;
     }
-    if (!baseQuestArchetypeId || !baseQuestGiverCharacterId) {
+    if (
+      !baseQuestArchetypeId ||
+      (baseQuestGiverSourceType === 'character'
+        ? !baseQuestGiverCharacterId
+        : !baseQuestGiverCharacterTemplateId)
+    ) {
       setStatusMessage(
         'Configure the Home Base Quest archetype and source questgiver first.'
       );
@@ -778,10 +824,14 @@ export const Tutorial = () => {
         userId: baseQuestPreviewUserId,
       });
 
-      const selectedUser = users.find((user) => user.id === baseQuestPreviewUserId);
+      const selectedUser = users.find(
+        (user) => user.id === baseQuestPreviewUserId
+      );
       setStatusMessage(
         `Queued the tutorial follow-up quest for ${
-          selectedUser ? formatUserOptionLabel(selectedUser) : 'the selected user'
+          selectedUser
+            ? formatUserOptionLabel(selectedUser)
+            : 'the selected user'
         }.`
       );
       setStatusKind('success');
@@ -1321,11 +1371,55 @@ export const Tutorial = () => {
                   onChange={setBaseQuestArchetypeId}
                 />
                 <SearchableSelect
-                  label="Source Questgiver Character"
-                  placeholder="Search character name…"
-                  options={characterOptions}
-                  value={baseQuestGiverCharacterId}
-                  onChange={setBaseQuestGiverCharacterId}
+                  label="Questgiver Source Type"
+                  placeholder="Choose source type…"
+                  options={[
+                    {
+                      value: 'character',
+                      label: 'Live Character',
+                    },
+                    {
+                      value: 'template',
+                      label: 'Character Template',
+                    },
+                  ]}
+                  value={baseQuestGiverSourceType}
+                  onChange={(value) =>
+                    setBaseQuestGiverSourceType(
+                      value === 'template' ? 'template' : 'character'
+                    )
+                  }
+                />
+                <SearchableSelect
+                  label={
+                    baseQuestGiverSourceType === 'template'
+                      ? 'Source Questgiver Template'
+                      : 'Source Questgiver Character'
+                  }
+                  placeholder={
+                    baseQuestGiverSourceType === 'template'
+                      ? 'Search template name…'
+                      : 'Search character name…'
+                  }
+                  options={
+                    baseQuestGiverSourceType === 'template'
+                      ? characterTemplateOptions
+                      : characterOptions
+                  }
+                  value={
+                    baseQuestGiverSourceType === 'template'
+                      ? baseQuestGiverCharacterTemplateId
+                      : baseQuestGiverCharacterId
+                  }
+                  onChange={(value) => {
+                    if (baseQuestGiverSourceType === 'template') {
+                      setBaseQuestGiverCharacterTemplateId(value);
+                      setBaseQuestGiverCharacterId('');
+                    } else {
+                      setBaseQuestGiverCharacterId(value);
+                      setBaseQuestGiverCharacterTemplateId('');
+                    }
+                  }}
                 />
               </div>
 

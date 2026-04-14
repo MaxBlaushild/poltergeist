@@ -37,6 +37,8 @@ type DbClient interface {
 	ChallengeGenerationJob() ChallengeGenerationJobHandle
 	ScenarioTemplate() ScenarioTemplateHandle
 	ChallengeTemplate() ChallengeTemplateHandle
+	CharacterTemplate() CharacterTemplateHandle
+	ExpositionTemplate() ExpositionTemplateHandle
 	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
 	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
 	ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle
@@ -470,6 +472,22 @@ type ChallengeTemplateHandle interface {
 	FindAll(ctx context.Context) ([]models.ChallengeTemplate, error)
 	FindRecentByLocationArchetypeID(ctx context.Context, locationArchetypeID uuid.UUID, limit int) ([]models.ChallengeTemplate, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.ChallengeTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type CharacterTemplateHandle interface {
+	Create(ctx context.Context, template *models.CharacterTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.CharacterTemplate, error)
+	FindAll(ctx context.Context) ([]models.CharacterTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.CharacterTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ExpositionTemplateHandle interface {
+	Create(ctx context.Context, template *models.ExpositionTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ExpositionTemplate, error)
+	FindAll(ctx context.Context) ([]models.ExpositionTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.ExpositionTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

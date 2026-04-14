@@ -5,13 +5,12 @@ import {
   Character,
   DialogueMessage,
   Exposition,
+  ExpositionTemplate,
   InventoryItem,
   PointOfInterest,
   Spell,
 } from '@poltergeist/types';
-import {
-  DialogueMessageListEditor,
-} from './DialogueMessageListEditor.tsx';
+import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 import {
   MaterialRewardsEditor,
   MaterialRewardForm,
@@ -144,10 +143,13 @@ export const Expositions: React.FC = () => {
   const [form, setForm] = useState<ExpositionFormState>(emptyExpositionForm());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [locationBusy, setLocationBusy] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
-  const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
+  const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>(
+    []
+  );
   const [characters, setCharacters] = useState<Character[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [expositionIconPrompt, setExpositionIconPrompt] = useState(
@@ -255,7 +257,11 @@ export const Expositions: React.FC = () => {
       setRecords(items);
       if (deepLinkedId && items.some((item) => item.id === deepLinkedId)) {
         setSelectedId(deepLinkedId);
-        setForm(buildFormFromExposition(items.find((item) => item.id === deepLinkedId)!));
+        setForm(
+          buildFormFromExposition(
+            items.find((item) => item.id === deepLinkedId)!
+          )
+        );
         return;
       }
       if (items.length === 0) {
@@ -386,7 +392,9 @@ export const Expositions: React.FC = () => {
     } else if (!form.pointOfInterestId.trim()) {
       return 'Pick a point of interest or switch to coordinates.';
     }
-    const hasDialogue = form.dialogue.some((line) => line.text.trim().length > 0);
+    const hasDialogue = form.dialogue.some(
+      (line) => line.text.trim().length > 0
+    );
     if (!hasDialogue) {
       return 'Dialogue is required.';
     }
@@ -422,9 +430,13 @@ export const Expositions: React.FC = () => {
     rewardMode: form.rewardMode,
     randomRewardSize: form.randomRewardSize,
     rewardExperience:
-      form.rewardMode === 'explicit' ? Number.parseInt(form.rewardExperience, 10) || 0 : 0,
+      form.rewardMode === 'explicit'
+        ? Number.parseInt(form.rewardExperience, 10) || 0
+        : 0,
     rewardGold:
-      form.rewardMode === 'explicit' ? Number.parseInt(form.rewardGold, 10) || 0 : 0,
+      form.rewardMode === 'explicit'
+        ? Number.parseInt(form.rewardGold, 10) || 0
+        : 0,
     materialRewards:
       form.rewardMode === 'explicit'
         ? normalizeMaterialRewards(form.materialRewards)
@@ -458,7 +470,10 @@ export const Expositions: React.FC = () => {
     try {
       const payload = buildPayload();
       const saved = selectedId
-        ? await apiClient.put<Exposition>(`/sonar/expositions/${selectedId}`, payload)
+        ? await apiClient.put<Exposition>(
+            `/sonar/expositions/${selectedId}`,
+            payload
+          )
         : await apiClient.post<Exposition>('/sonar/expositions', payload);
       setRecords((prev) => {
         const next = prev.filter((record) => record.id !== saved.id);
@@ -467,7 +482,9 @@ export const Expositions: React.FC = () => {
       });
       setSelectedId(saved.id);
       setForm(buildFormFromExposition(saved));
-      setStatusMessage(selectedId ? 'Exposition updated.' : 'Exposition created.');
+      setStatusMessage(
+        selectedId ? 'Exposition updated.' : 'Exposition created.'
+      );
     } catch (err) {
       console.error('Failed to save exposition', err);
       setError('Failed to save exposition.');
@@ -507,13 +524,41 @@ export const Expositions: React.FC = () => {
     setError('');
     setStatusMessage('');
     try {
-      await apiClient.post(`/sonar/expositions/${selectedId}/generate-image`, {});
+      await apiClient.post(
+        `/sonar/expositions/${selectedId}/generate-image`,
+        {}
+      );
       setStatusMessage('Image generation queued.');
     } catch (err) {
       console.error('Failed to queue exposition image generation', err);
       setError('Failed to queue image generation.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSavingTemplate(true);
+    setError('');
+    setStatusMessage('');
+    try {
+      const template = await apiClient.post<ExpositionTemplate>(
+        '/sonar/exposition-templates',
+        buildPayload()
+      );
+      setStatusMessage(
+        `Saved "${template.title || 'exposition'}" as a reusable exposition template.`
+      );
+    } catch (err) {
+      console.error('Failed to save exposition template', err);
+      setError('Failed to save exposition template.');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -607,7 +652,8 @@ export const Expositions: React.FC = () => {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Expositions</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Author dialogue-driven encounters that can live on the map or sit behind a quest node.
+            Author dialogue-driven encounters that can live on the map or sit
+            behind a quest node.
           </p>
         </div>
         <div className="flex gap-2">
@@ -624,7 +670,11 @@ export const Expositions: React.FC = () => {
             onClick={handleSave}
             disabled={saving}
           >
-            {saving ? 'Saving...' : selectedId ? 'Save Changes' : 'Create Exposition'}
+            {saving
+              ? 'Saving...'
+              : selectedId
+                ? 'Save Changes'
+                : 'Create Exposition'}
           </button>
         </div>
       </div>
@@ -712,9 +762,7 @@ export const Expositions: React.FC = () => {
           </div>
         ) : null}
         {expositionIconError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {expositionIconError}
-          </div>
+          <div className="mt-2 text-sm text-red-600">{expositionIconError}</div>
         ) : null}
       </div>
 
@@ -856,7 +904,8 @@ export const Expositions: React.FC = () => {
               </select>
               {selectedPointOfInterest ? (
                 <p className="mt-2 text-xs text-slate-500">
-                  Coordinates: {selectedPointOfInterest.lat}, {selectedPointOfInterest.lng}
+                  Coordinates: {selectedPointOfInterest.lat},{' '}
+                  {selectedPointOfInterest.lng}
                 </p>
               ) : null}
             </label>
@@ -878,7 +927,10 @@ export const Expositions: React.FC = () => {
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={form.latitude}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, latitude: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      latitude: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -888,7 +940,10 @@ export const Expositions: React.FC = () => {
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={form.longitude}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, longitude: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      longitude: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -931,7 +986,10 @@ export const Expositions: React.FC = () => {
               className="mt-1 min-h-[96px] w-full rounded-md border border-slate-300 bg-white p-2"
               value={form.description}
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, description: event.target.value }))
+                setForm((prev) => ({
+                  ...prev,
+                  description: event.target.value,
+                }))
               }
             />
           </label>
@@ -975,6 +1033,14 @@ export const Expositions: React.FC = () => {
             <button
               type="button"
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 disabled:opacity-50"
+              onClick={handleSaveTemplate}
+              disabled={savingTemplate}
+            >
+              {savingTemplate ? 'Saving Template…' : 'Save As Template'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 disabled:opacity-50"
               onClick={handleGenerateImage}
               disabled={!selectedId || saving}
             >
@@ -1015,8 +1081,8 @@ export const Expositions: React.FC = () => {
                       event.target.value === 'large'
                         ? 'large'
                         : event.target.value === 'medium'
-                        ? 'medium'
-                        : 'small',
+                          ? 'medium'
+                          : 'small',
                   }))
                 }
               >
@@ -1105,13 +1171,14 @@ export const Expositions: React.FC = () => {
                           onChange={(event) =>
                             setForm((prev) => ({
                               ...prev,
-                              itemRewards: prev.itemRewards.map((entry, entryIndex) =>
-                                entryIndex === index
-                                  ? {
-                                      ...entry,
-                                      inventoryItemId: event.target.value,
-                                    }
-                                  : entry
+                              itemRewards: prev.itemRewards.map(
+                                (entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...entry,
+                                        inventoryItemId: event.target.value,
+                                      }
+                                    : entry
                               ),
                             }))
                           }
@@ -1135,13 +1202,17 @@ export const Expositions: React.FC = () => {
                           onChange={(event) =>
                             setForm((prev) => ({
                               ...prev,
-                              itemRewards: prev.itemRewards.map((entry, entryIndex) =>
-                                entryIndex === index
-                                  ? {
-                                      ...entry,
-                                      quantity: parsePositiveInt(event.target.value, 1),
-                                    }
-                                  : entry
+                              itemRewards: prev.itemRewards.map(
+                                (entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...entry,
+                                        quantity: parsePositiveInt(
+                                          event.target.value,
+                                          1
+                                        ),
+                                      }
+                                    : entry
                               ),
                             }))
                           }
@@ -1202,10 +1273,11 @@ export const Expositions: React.FC = () => {
                           onChange={(event) =>
                             setForm((prev) => ({
                               ...prev,
-                              spellRewards: prev.spellRewards.map((entry, entryIndex) =>
-                                entryIndex === index
-                                  ? { ...entry, spellId: event.target.value }
-                                  : entry
+                              spellRewards: prev.spellRewards.map(
+                                (entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? { ...entry, spellId: event.target.value }
+                                    : entry
                               ),
                             }))
                           }

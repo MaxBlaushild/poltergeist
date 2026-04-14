@@ -32,25 +32,26 @@ type tutorialOptionPayload struct {
 }
 
 type tutorialConfigRequest struct {
-	CharacterID               *string                      `json:"characterId"`
-	BaseQuestArchetypeID      *string                      `json:"baseQuestArchetypeId"`
-	BaseQuestGiverCharacterID *string                      `json:"baseQuestGiverCharacterId"`
-	Dialogue                  []models.DialogueMessage     `json:"dialogue"`
-	LoadoutDialogue           []models.DialogueMessage     `json:"loadoutDialogue"`
-	PostMonsterDialogue       []models.DialogueMessage     `json:"postMonsterDialogue"`
-	BaseKitDialogue           []models.DialogueMessage     `json:"baseKitDialogue"`
-	PostBaseDialogue          []models.DialogueMessage     `json:"postBaseDialogue"`
-	ScenarioPrompt            string                       `json:"scenarioPrompt"`
-	ScenarioImageURL          string                       `json:"scenarioImageUrl"`
-	Options                   []tutorialOptionPayload      `json:"options"`
-	MonsterEncounterID        *string                      `json:"monsterEncounterId"`
-	MonsterRewardExperience   int                          `json:"monsterRewardExperience"`
-	MonsterRewardGold         int                          `json:"monsterRewardGold"`
-	MonsterItemRewards        []scenarioRewardItemPayload  `json:"monsterItemRewards"`
-	RewardExperience          int                          `json:"rewardExperience"`
-	RewardGold                int                          `json:"rewardGold"`
-	ItemRewards               []scenarioRewardItemPayload  `json:"itemRewards"`
-	SpellRewards              []scenarioRewardSpellPayload `json:"spellRewards"`
+	CharacterID                       *string                      `json:"characterId"`
+	BaseQuestArchetypeID              *string                      `json:"baseQuestArchetypeId"`
+	BaseQuestGiverCharacterID         *string                      `json:"baseQuestGiverCharacterId"`
+	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
+	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
+	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
+	PostMonsterDialogue               []models.DialogueMessage     `json:"postMonsterDialogue"`
+	BaseKitDialogue                   []models.DialogueMessage     `json:"baseKitDialogue"`
+	PostBaseDialogue                  []models.DialogueMessage     `json:"postBaseDialogue"`
+	ScenarioPrompt                    string                       `json:"scenarioPrompt"`
+	ScenarioImageURL                  string                       `json:"scenarioImageUrl"`
+	Options                           []tutorialOptionPayload      `json:"options"`
+	MonsterEncounterID                *string                      `json:"monsterEncounterId"`
+	MonsterRewardExperience           int                          `json:"monsterRewardExperience"`
+	MonsterRewardGold                 int                          `json:"monsterRewardGold"`
+	MonsterItemRewards                []scenarioRewardItemPayload  `json:"monsterItemRewards"`
+	RewardExperience                  int                          `json:"rewardExperience"`
+	RewardGold                        int                          `json:"rewardGold"`
+	ItemRewards                       []scenarioRewardItemPayload  `json:"itemRewards"`
+	SpellRewards                      []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
 type tutorialStatusResponse struct {
@@ -211,7 +212,8 @@ func (s *server) adminInstantiateTutorialBaseQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+	if config == nil || config.BaseQuestArchetypeID == nil ||
+		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tutorial home base quest is not fully configured"})
 		return
 	}
@@ -584,6 +586,19 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 			config.BaseQuestGiverCharacterID = &characterID
 		}
 	}
+	if body.BaseQuestGiverCharacterTemplateID != nil {
+		trimmed := strings.TrimSpace(*body.BaseQuestGiverCharacterTemplateID)
+		if trimmed != "" {
+			templateID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("baseQuestGiverCharacterTemplateId must be a valid UUID")
+			}
+			config.BaseQuestGiverCharacterTemplateID = &templateID
+		}
+	}
+	if config.BaseQuestGiverCharacterID != nil && config.BaseQuestGiverCharacterTemplateID != nil {
+		return nil, fmt.Errorf("tutorial home base quest must use either baseQuestGiverCharacterId or baseQuestGiverCharacterTemplateId")
+	}
 
 	config.Dialogue = models.DialogueSequence(body.Dialogue)
 	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
@@ -839,14 +854,16 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 	base *models.Base,
 	config *models.TutorialConfig,
 ) {
-	if base == nil || config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil ||
+		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
 		return
 	}
 
 	baseLatitude := base.Latitude
 	baseLongitude := base.Longitude
 	questArchetypeID := *config.BaseQuestArchetypeID
-	questGiverCharacterID := *config.BaseQuestGiverCharacterID
+	questGiverCharacterID := cloneOptionalTutorialUUID(config.BaseQuestGiverCharacterID)
+	questGiverCharacterTemplateID := cloneOptionalTutorialUUID(config.BaseQuestGiverCharacterTemplateID)
 
 	fallback := func() {
 		go func() {
@@ -858,8 +875,9 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 				Longitude: baseLongitude,
 			}
 			asyncConfig := &models.TutorialConfig{
-				BaseQuestArchetypeID:      &questArchetypeID,
-				BaseQuestGiverCharacterID: &questGiverCharacterID,
+				BaseQuestArchetypeID:              &questArchetypeID,
+				BaseQuestGiverCharacterID:         questGiverCharacterID,
+				BaseQuestGiverCharacterTemplateID: questGiverCharacterTemplateID,
 			}
 
 			if err := s.instantiateTutorialBaseQuest(
@@ -883,11 +901,12 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 	}
 
 	payloadBytes, err := json.Marshal(jobs.InstantiateTutorialBaseQuestTaskPayload{
-		UserID:                    userID,
-		BaseLatitude:              baseLatitude,
-		BaseLongitude:             baseLongitude,
-		BaseQuestArchetypeID:      questArchetypeID,
-		BaseQuestGiverCharacterID: questGiverCharacterID,
+		UserID:                            userID,
+		BaseLatitude:                      baseLatitude,
+		BaseLongitude:                     baseLongitude,
+		BaseQuestArchetypeID:              questArchetypeID,
+		BaseQuestGiverCharacterID:         questGiverCharacterID,
+		BaseQuestGiverCharacterTemplateID: questGiverCharacterTemplateID,
 	})
 	if err != nil {
 		log.Printf("[tutorial] failed to marshal tutorial base quest task payload user=%s err=%v", userID, err)
@@ -908,6 +927,14 @@ func activeTutorialScenarioID(state *models.UserTutorialState) *uuid.UUID {
 		return nil
 	}
 	return state.TutorialScenarioID
+}
+
+func cloneOptionalTutorialUUID(input *uuid.UUID) *uuid.UUID {
+	if input == nil {
+		return nil
+	}
+	value := *input
+	return &value
 }
 
 func activeTutorialMonsterEncounterID(state *models.UserTutorialState) *uuid.UUID {
@@ -1230,7 +1257,8 @@ func (s *server) instantiateTutorialBaseQuest(
 	base *models.Base,
 	config *models.TutorialConfig,
 ) error {
-	if base == nil || config == nil || config.BaseQuestArchetypeID == nil || config.BaseQuestGiverCharacterID == nil {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil ||
+		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
 		return nil
 	}
 	return dungeonmasterruntime.InstantiateTutorialBaseQuest(
@@ -1240,7 +1268,8 @@ func (s *server) instantiateTutorialBaseQuest(
 		userID,
 		base,
 		*config.BaseQuestArchetypeID,
-		*config.BaseQuestGiverCharacterID,
+		config.BaseQuestGiverCharacterID,
+		config.BaseQuestGiverCharacterTemplateID,
 	)
 }
 

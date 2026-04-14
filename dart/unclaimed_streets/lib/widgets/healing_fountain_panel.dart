@@ -9,6 +9,7 @@ import '../constants/gameplay_constants.dart';
 import '../models/healing_fountain.dart';
 import '../providers/location_provider.dart';
 import '../services/poi_service.dart';
+import '../utils/sticky_proximity_access.dart';
 import 'paper_texture.dart';
 
 const _fallbackFountainImageUrl =
@@ -41,6 +42,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
   String? _error;
   Timer? _cooldownTicker;
   late HealingFountain _fountain;
+  final StickyProximityAccess _proximityAccess = StickyProximityAccess();
 
   @override
   void initState() {
@@ -218,7 +220,9 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
 
   Future<void> _unlockFountain() async {
     if (_loading) return;
-    final location = context.read<LocationProvider>().location;
+    final location =
+        _proximityAccess.grantedLocation ??
+        context.read<LocationProvider>().location;
     if (location == null) {
       setState(
         () => _error = 'Location not available. Enable location access.',
@@ -231,7 +235,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
       _fountain.latitude,
       _fountain.longitude,
     );
-    if (distance > kProximityUnlockRadiusMeters) {
+    if (!_proximityAccess.granted && distance > kProximityUnlockRadiusMeters) {
       setState(
         () => _error =
             'Too far away (${distance.round()} m). Get within ${kProximityUnlockRadiusMeters.round()} m to unlock.',
@@ -321,124 +325,111 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
             _fountain.latitude,
             _fountain.longitude,
           );
-    final withinRange =
+    final liveWithinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
+    final hasProximityAccess = _proximityAccess.resolve(
+      currentLocation: location,
+      withinRange: liveWithinRange,
+    );
     if (!_isDiscovered) {
-      return _buildUndiscovered(context, distance, withinRange);
+      return _buildUndiscovered(context, distance, hasProximityAccess);
     }
     final now = DateTime.now();
     final nextAvailableAt = _fountain.nextAvailableAt;
     final remaining = nextAvailableAt?.difference(now);
     final cooldownActive =
         !_fountain.availableNow && remaining != null && !remaining.isNegative;
-    final buttonDisabled = _loading || !withinRange || cooldownActive;
-    final buttonLabel = !withinRange
+    final buttonDisabled = _loading || !hasProximityAccess || cooldownActive;
+    final buttonLabel = !hasProximityAccess
         ? 'Too far away'
         : (_loading ? 'Restoring...' : 'Restore Health & Mana');
 
     final thumbnail = _resolvedThumbnailUrl(_fountain);
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.86,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => PaperSheet(
-        child: Column(
+    return AdaptivePaperSheet(
+      maxHeightFactor: 0.95,
+      header: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _fountain.name.isNotEmpty
-                        ? _fountain.name
-                        : 'Healing Fountain',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+            Text(
+              _fountain.name.isNotEmpty ? _fountain.name : 'Healing Fountain',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: Image.network(
-                          thumbnail,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            child: const Icon(
-                              Icons.water_drop_outlined,
-                              size: 46,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (distance != null)
-                          _InfoChip(
-                            icon: Icons.place_outlined,
-                            label: '${distance.round()} m away',
-                          ),
-                        _InfoChip(
-                          icon: Icons.shield_outlined,
-                          label:
-                              'Need ${kProximityUnlockRadiusMeters.round()} m',
-                        ),
-                        _InfoChip(
-                          icon: Icons.refresh_outlined,
-                          label: cooldownActive ? 'Weekly cooldown' : 'Ready',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _fountain.description.trim().isNotEmpty
-                          ? _fountain.description.trim()
-                          : 'Touch the fountain to fully restore health and mana. Each healing fountain can be used once every 7 days.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    if (cooldownActive && nextAvailableAt != null) ...[
-                      const SizedBox(height: 14),
-                      _buildCooldownCard(context, remaining, nextAvailableAt),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      onPressed: buttonDisabled ? null : _useFountain,
-                      icon: const Icon(Icons.auto_fix_high),
-                      label: Text(buttonLabel),
-                    ),
-                  ],
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Image.network(
+                  thumbnail,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: const Icon(Icons.water_drop_outlined, size: 46),
+                  ),
                 ),
               ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (distance != null)
+                  _InfoChip(
+                    icon: Icons.place_outlined,
+                    label: '${distance.round()} m away',
+                  ),
+                _InfoChip(
+                  icon: Icons.shield_outlined,
+                  label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
+                ),
+                _InfoChip(
+                  icon: Icons.refresh_outlined,
+                  label: cooldownActive ? 'Weekly cooldown' : 'Ready',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _fountain.description.trim().isNotEmpty
+                  ? _fountain.description.trim()
+                  : 'Touch the fountain to fully restore health and mana. Each healing fountain can be used once every 7 days.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (cooldownActive && nextAvailableAt != null) ...[
+              const SizedBox(height: 14),
+              _buildCooldownCard(context, remaining, nextAvailableAt),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: buttonDisabled ? null : _useFountain,
+              icon: const Icon(Icons.auto_fix_high),
+              label: Text(buttonLabel),
             ),
           ],
         ),
@@ -452,95 +443,78 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     bool withinRange,
   ) {
     final theme = Theme.of(context);
-    return DraggableScrollableSheet(
-      initialChildSize: 0.86,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => PaperSheet(
-        child: Column(
+    return AdaptivePaperSheet(
+      maxHeightFactor: 0.52,
+      header: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.lock_outline,
-                        size: 28,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Undiscovered',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+            Row(
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  size: 28,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Undiscovered',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                children: [
-                  Text(
-                    'Visit this location to unlock this healing fountain. You must be within ${kProximityUnlockRadiusMeters.round()} meters to discover it.',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: 16),
-                  if (distance != null)
-                    Text(
-                      withinRange
-                          ? 'Within range! Tap Unlock to discover.'
-                          : 'You are ${distance.round()} m away.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: withinRange
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurface.withValues(
-                                alpha: 0.7,
-                              ),
-                        fontWeight: withinRange ? FontWeight.w600 : null,
-                      ),
-                    )
-                  else
-                    Text(
-                      'Enable location to see distance.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.6,
-                        ),
-                      ),
-                    ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: (_loading || !withinRange)
-                        ? null
-                        : _unlockFountain,
-                    child: Text(
-                      _loading
-                          ? 'Unlocking...'
-                          : !withinRange
-                          ? 'Too far to unlock'
-                          : 'Unlock',
-                    ),
-                  ),
-                ],
+            IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Visit this location to unlock this healing fountain. You must be within ${kProximityUnlockRadiusMeters.round()} meters to discover it.',
+              style: theme.textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 16),
+            if (distance != null)
+              Text(
+                withinRange
+                    ? 'Within range! Tap Unlock to discover.'
+                    : 'You are ${distance.round()} m away.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: withinRange
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontWeight: withinRange ? FontWeight.w600 : null,
+                ),
+              )
+            else
+              Text(
+                'Enable location to see distance.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ],
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: (_loading || !withinRange) ? null : _unlockFountain,
+              child: Text(
+                _loading
+                    ? 'Unlocking...'
+                    : !withinRange
+                    ? 'Too far to unlock'
+                    : 'Unlock',
               ),
             ),
           ],

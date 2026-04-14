@@ -71,6 +71,16 @@ class LayoutShellDrawerController extends InheritedWidget {
         .dependOnInheritedWidgetOfExactType<LayoutShellDrawerController>();
   }
 
+  static LayoutShellDrawerController? maybeReadOf(BuildContext context) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<LayoutShellDrawerController>();
+    final widget = element?.widget;
+    if (widget is LayoutShellDrawerController) {
+      return widget;
+    }
+    return null;
+  }
+
   @override
   bool updateShouldNotify(LayoutShellDrawerController oldWidget) {
     return openCharacter != oldWidget.openCharacter ||
@@ -812,15 +822,58 @@ class _LayoutHeader extends StatelessWidget {
   }
 }
 
-class _DrawerMenuTrigger extends StatelessWidget {
+class _DrawerMenuTrigger extends StatefulWidget {
   const _DrawerMenuTrigger();
+
+  @override
+  State<_DrawerMenuTrigger> createState() => _DrawerMenuTriggerState();
+}
+
+class _DrawerMenuTriggerState extends State<_DrawerMenuTrigger>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseScale;
+  bool _hasUnspentPoints = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _pulseScale = Tween<double>(begin: 1.0, end: 1.14).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hasUnspentPoints = Provider.of<CharacterStatsProvider>(
+      context,
+    ).hasUnspentPoints;
+    if (hasUnspentPoints == _hasUnspentPoints) return;
+    _hasUnspentPoints = hasUnspentPoints;
+    if (_hasUnspentPoints) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else {
+      _pulseController.stop();
+      _pulseController.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasUnspentPoints = context
-        .watch<CharacterStatsProvider>()
-        .hasUnspentPoints;
     return GestureDetector(
       onTap: () {
         Scaffold.of(context).openEndDrawer();
@@ -836,24 +889,27 @@ class _DrawerMenuTrigger extends StatelessWidget {
               size: 28,
             ),
           ),
-          if (hasUnspentPoints)
+          if (_hasUnspentPoints)
             Positioned(
               right: -2,
               top: -2,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFD54F),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.surface,
-                    width: 1.2,
+              child: ScaleTransition(
+                scale: _pulseScale,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFD54F),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.surface,
+                      width: 1.2,
+                    ),
                   ),
-                ),
-                child: const Icon(
-                  Icons.arrow_upward,
-                  size: 10,
-                  color: Colors.white,
+                  child: const Icon(
+                    Icons.arrow_upward,
+                    size: 10,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -982,6 +1038,8 @@ class _SideDrawerState extends State<_SideDrawer> {
     final screenWidth = MediaQuery.of(context).size.width;
     final drawerWidth = (screenWidth * 0.9).clamp(320.0, 520.0);
     final theme = Theme.of(context);
+    final characterStats = context.watch<CharacterStatsProvider>();
+    final hasUnspentStatPoints = characterStats.hasUnspentPoints;
     final profileUser = _profileUser;
     return Drawer(
       width: drawerWidth,
@@ -1016,9 +1074,14 @@ class _SideDrawerState extends State<_SideDrawer> {
                             onTap: () => _selectTab(_inventoryTab),
                           ),
                           _DrawerMenuButton(
-                            label: 'Character',
-                            icon: Icons.person,
+                            label: hasUnspentStatPoints
+                                ? 'Level up!'
+                                : 'Character',
+                            icon: hasUnspentStatPoints
+                                ? Icons.north_rounded
+                                : Icons.person,
                             selected: _tabIndex == _characterTab,
+                            highlighted: hasUnspentStatPoints,
                             onTap: () => _selectTab(_characterTab),
                           ),
                           _DrawerMenuButton(
@@ -1124,6 +1187,18 @@ class _SideDrawerState extends State<_SideDrawer> {
                                     context
                                         .read<MapFocusProvider>()
                                         .focusTurnInQuest(quest);
+                                    context.go('/single-player');
+                                  },
+                                  onFocusNode: (node) {
+                                    context.read<MapFocusProvider>().focusNode(
+                                      node,
+                                    );
+                                    context.go('/single-player');
+                                  },
+                                  onFocusFeaturedMainStoryLead: (poi) {
+                                    context
+                                        .read<MapFocusProvider>()
+                                        .focusMainStoryLead(poi);
                                     context.go('/single-player');
                                   },
                                 )
@@ -1262,24 +1337,31 @@ class _DrawerMenuButton extends StatelessWidget {
     required this.icon,
     required this.selected,
     required this.onTap,
+    this.highlighted = false,
   });
 
   final String label;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
+    final highlightBackground = const Color(0xFFFFF4D4);
+    final highlightBorder = const Color(0xFFE0B651);
+    final highlightText = const Color(0xFF5A412C);
     final textColor = selected
         ? theme.colorScheme.onPrimaryContainer
-        : theme.colorScheme.onSurface;
+        : (highlighted ? highlightText : theme.colorScheme.onSurface);
     final bgColor = selected
         ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.surface;
-    final borderColor = selected ? accent : theme.colorScheme.outlineVariant;
+        : (highlighted ? highlightBackground : theme.colorScheme.surface);
+    final borderColor = selected
+        ? accent
+        : (highlighted ? highlightBorder : theme.colorScheme.outlineVariant);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1310,7 +1392,9 @@ class _DrawerMenuButton extends StatelessWidget {
                 size: 18,
                 color: selected
                     ? theme.colorScheme.onPrimaryContainer
-                    : theme.colorScheme.onSurfaceVariant,
+                    : (highlighted
+                          ? const Color(0xFF9C6B00)
+                          : theme.colorScheme.onSurfaceVariant),
               ),
               const SizedBox(width: 8),
               Text(

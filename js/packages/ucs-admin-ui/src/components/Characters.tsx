@@ -1,6 +1,7 @@
 import { useAPI } from '@poltergeist/contexts';
 import {
   Character,
+  CharacterTemplate,
   PointOfInterest,
   CharacterAction,
   DialogueMessage,
@@ -474,6 +475,11 @@ export const Characters = () => {
     [number, number][]
   >([]);
   const [savingLocations, setSavingLocations] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateSaveState, setTemplateSaveState] = useState<{
+    kind: 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [locationsError, setLocationsError] = useState<string | null>(null);
   const [generationData, setGenerationData] = useState({
     name: '',
@@ -515,20 +521,23 @@ export const Characters = () => {
     useState(defaultCharacterUndiscoveredIconPrompt);
   const didHydrateDeepLinkedCharacterRef = React.useRef(false);
   const deepLinkedCharacterId = searchParams.get('id')?.trim() ?? '';
-  const replaceDeepLinkedCharacterId = useCallback((characterId?: string | null) => {
-    const normalizedCharacterId = (characterId ?? '').trim();
-    const currentCharacterId = searchParams.get('id')?.trim() ?? '';
-    if (normalizedCharacterId === currentCharacterId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (normalizedCharacterId) {
-      next.set('id', normalizedCharacterId);
-    } else {
-      next.delete('id');
-    }
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const replaceDeepLinkedCharacterId = useCallback(
+    (characterId?: string | null) => {
+      const normalizedCharacterId = (characterId ?? '').trim();
+      const currentCharacterId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedCharacterId === currentCharacterId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedCharacterId) {
+        next.set('id', normalizedCharacterId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const pointOfInterestOptions = React.useMemo<ComboOption[]>(() => {
     return [...availablePointsOfInterest]
@@ -962,6 +971,7 @@ export const Characters = () => {
     });
     setCharacterLocations([]);
     setLocationsError(null);
+    setTemplateSaveState(null);
     setSelectedZoneQuestArchetypeIds([]);
   };
 
@@ -1162,6 +1172,29 @@ export const Characters = () => {
     }
   };
 
+  const handleSaveCharacterTemplate = async () => {
+    try {
+      setSavingTemplate(true);
+      setTemplateSaveState(null);
+      const template = await apiClient.post<CharacterTemplate>(
+        '/sonar/character-templates',
+        buildCharacterPayload()
+      );
+      setTemplateSaveState({
+        kind: 'success',
+        message: `Saved "${template.name || 'character'}" as a reusable character template.`,
+      });
+    } catch (error) {
+      console.error('Error saving character template:', error);
+      setTemplateSaveState({
+        kind: 'error',
+        message: getErrorMessage(error, 'Failed to save character template.'),
+      });
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const allFilteredSelected =
     filteredCharacters.length > 0 &&
     filteredCharacters.every((character) =>
@@ -1244,35 +1277,38 @@ export const Characters = () => {
     }
   };
 
-  const handleEditCharacter = useCallback((character: Character) => {
-    setEditingCharacter(character);
-    setFormData({
-      name: character.name,
-      description: character.description,
-      internalTagsInput: (character.internalTags ?? []).join(', '),
-      storyVariants: (character.storyVariants ?? []).map((variant) =>
-        buildCharacterStoryVariantForm(variant)
-      ),
-      mapIconUrl: character.mapIconUrl,
-      dialogueImageUrl: character.dialogueImageUrl,
-      thumbnailUrl: character.thumbnailUrl ?? '',
-      pointOfInterestId: character.pointOfInterestId ?? '',
-    });
-    const locations =
-      character.locations?.map(
-        (loc) => [loc.longitude, loc.latitude] as [number, number]
-      ) ?? [];
-    setCharacterLocations(locations);
-    setLocationsError(null);
-    setSelectedZoneQuestArchetypeIds(
-      zoneQuestArchetypes
-        .filter(
-          (zoneQuestArchetype) =>
-            zoneQuestArchetype.characterId === character.id
-        )
-        .map((zoneQuestArchetype) => zoneQuestArchetype.id)
-    );
-  }, [zoneQuestArchetypes]);
+  const handleEditCharacter = useCallback(
+    (character: Character) => {
+      setEditingCharacter(character);
+      setFormData({
+        name: character.name,
+        description: character.description,
+        internalTagsInput: (character.internalTags ?? []).join(', '),
+        storyVariants: (character.storyVariants ?? []).map((variant) =>
+          buildCharacterStoryVariantForm(variant)
+        ),
+        mapIconUrl: character.mapIconUrl,
+        dialogueImageUrl: character.dialogueImageUrl,
+        thumbnailUrl: character.thumbnailUrl ?? '',
+        pointOfInterestId: character.pointOfInterestId ?? '',
+      });
+      const locations =
+        character.locations?.map(
+          (loc) => [loc.longitude, loc.latitude] as [number, number]
+        ) ?? [];
+      setCharacterLocations(locations);
+      setLocationsError(null);
+      setSelectedZoneQuestArchetypeIds(
+        zoneQuestArchetypes
+          .filter(
+            (zoneQuestArchetype) =>
+              zoneQuestArchetype.characterId === character.id
+          )
+          .map((zoneQuestArchetype) => zoneQuestArchetype.id)
+      );
+    },
+    [zoneQuestArchetypes]
+  );
 
   useEffect(() => {
     if (didHydrateDeepLinkedCharacterRef.current) {
@@ -1315,7 +1351,13 @@ export const Characters = () => {
         console.error('Failed to deep link character', error);
         didHydrateDeepLinkedCharacterRef.current = true;
       });
-  }, [apiClient, characters, deepLinkedCharacterId, editingCharacter, handleEditCharacter]);
+  }, [
+    apiClient,
+    characters,
+    deepLinkedCharacterId,
+    editingCharacter,
+    handleEditCharacter,
+  ]);
 
   useEffect(() => {
     if (!didHydrateDeepLinkedCharacterRef.current) {
@@ -1709,6 +1751,31 @@ export const Characters = () => {
             }}
           >
             <h2>{editingCharacter ? 'Edit Character' : 'Create Character'}</h2>
+            {templateSaveState ? (
+              <div
+                style={{
+                  marginTop: '10px',
+                  marginBottom: '15px',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  border:
+                    templateSaveState.kind === 'success'
+                      ? '1px solid #a7f3d0'
+                      : '1px solid #fecaca',
+                  backgroundColor:
+                    templateSaveState.kind === 'success'
+                      ? '#ecfdf5'
+                      : '#fef2f2',
+                  color:
+                    templateSaveState.kind === 'success'
+                      ? '#047857'
+                      : '#b91c1c',
+                  fontSize: '14px',
+                }}
+              >
+                {templateSaveState.message}
+              </div>
+            ) : null}
 
             {/* Character Fields */}
             <div style={{ marginBottom: '15px' }}>
@@ -2246,6 +2313,13 @@ export const Characters = () => {
               }}
             >
               <button
+                onClick={handleSaveCharacterTemplate}
+                className="bg-white text-slate-900 px-4 py-2 rounded-md border border-slate-300"
+                disabled={savingTemplate}
+              >
+                {savingTemplate ? 'Saving Template...' : 'Save As Template'}
+              </button>
+              <button
                 onClick={() => {
                   setShowCreateCharacter(false);
                   setEditingCharacter(null);
@@ -2297,7 +2371,13 @@ export const Characters = () => {
             }}
           >
             <h2>Generate Character</h2>
-            <p style={{ marginTop: '8px', marginBottom: '16px', color: '#4b5563' }}>
+            <p
+              style={{
+                marginTop: '8px',
+                marginBottom: '16px',
+                color: '#4b5563',
+              }}
+            >
               Queue a new character and their image generation job.
             </p>
 

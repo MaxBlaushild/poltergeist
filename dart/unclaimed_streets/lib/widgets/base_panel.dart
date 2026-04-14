@@ -6,23 +6,19 @@ import 'package:provider/provider.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/base.dart';
 import '../providers/location_provider.dart';
-import '../screens/base_management_screen.dart';
 import 'paper_texture.dart';
-
-const _fallbackBaseImageUrl =
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-discovered.png';
 
 class BasePanel extends StatelessWidget {
   const BasePanel({
     super.key,
     required this.base,
     required this.onClose,
-    this.onTutorialProgressChanged,
+    this.onOpenBaseManagement,
   });
 
   final BasePin base;
   final VoidCallback onClose;
-  final Future<void> Function()? onTutorialProgressChanged;
+  final VoidCallback? onOpenBaseManagement;
 
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
     const earthRadiusMeters = 6371e3;
@@ -40,7 +36,7 @@ class BasePanel extends StatelessWidget {
     return earthRadiusMeters * c;
   }
 
-  String get _baseTitle {
+  String _baseTitle(BasePin base) {
     final explicitName = base.name.trim();
     if (explicitName.isNotEmpty) {
       return explicitName;
@@ -57,18 +53,9 @@ class BasePanel extends StatelessWidget {
     return "$preferredName's Base";
   }
 
-  String get _baseImageUrl {
-    final thumbnail = base.thumbnailUrl.trim();
-    if (thumbnail.isNotEmpty) return thumbnail;
-    final image = base.imageUrl.trim();
-    if (image.isNotEmpty) return image;
-    return _fallbackBaseImageUrl;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
     final location = context.watch<LocationProvider>().location;
     final distance = location == null
         ? null
@@ -78,126 +65,111 @@ class BasePanel extends StatelessWidget {
             base.latitude,
             base.longitude,
           );
-    final canEnterBase =
+    final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
-    final description = base.description.trim();
-
-    return PaperSheet(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
+    return AdaptivePaperSheet(
+      maxHeightFactor: 0.42,
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _baseTitle,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.home_work_outlined,
+                          color: theme.colorScheme.primary,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          base.owner.displayName,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.7,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(onPressed: onClose, icon: const Icon(Icons.close)),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (distance != null)
-                    _InfoChip(
-                      icon: Icons.place_outlined,
-                      label: '${distance.round()} m away',
-                    ),
-                  _InfoChip(
-                    icon: Icons.shield_outlined,
-                    label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: canEnterBase
-                  ? BaseManagementContent(
-                      baseId: base.id,
-                      onTutorialProgressChanged: onTutorialProgressChanged,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: AspectRatio(
-                              aspectRatio: 1,
-                              child: Image.network(
-                                _baseImageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  child: const Icon(
-                                    Icons.home_work_outlined,
-                                    size: 46,
-                                  ),
-                                ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _baseTitle(base),
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                          if (description.isNotEmpty) ...[
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 4),
                             Text(
-                              description,
-                              style: theme.textTheme.bodyMedium,
+                              base.owner.displayName,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
                             ),
                           ],
-                          const SizedBox(height: 16),
-                          Text(
-                            location == null
-                                ? 'Enable location to see distance and enter this base.'
-                                : 'Move within ${kProximityUnlockRadiusMeters.round()} m to enter this base.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          if (distance != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                'You are ${distance.round()} m away.',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurface.withValues(
-                                    alpha: 0.72,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+                IconButton(onPressed: onClose, icon: const Icon(Icons.close)),
+              ],
             ),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (distance != null)
+                  _InfoChip(
+                    icon: Icons.place_outlined,
+                    label: '${distance.round()} m away',
+                  ),
+                _InfoChip(
+                  icon: Icons.shield_outlined,
+                  label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              location == null
+                  ? 'Enable location to see distance and enter this base.'
+                  : withinRange
+                  ? 'You are close enough to enter this base.'
+                  : 'You are too far away to enter this base right now.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (location != null && !withinRange) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Move within ${kProximityUnlockRadiusMeters.round()} m of the base pin to open base management.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (withinRange && onOpenBaseManagement != null) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: onOpenBaseManagement,
+                  child: const Text('Open Base Management'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

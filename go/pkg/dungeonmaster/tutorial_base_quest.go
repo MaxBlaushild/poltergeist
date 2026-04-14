@@ -79,9 +79,10 @@ func InstantiateTutorialBaseQuest(
 	userID uuid.UUID,
 	base *models.Base,
 	baseQuestArchetypeID uuid.UUID,
-	baseQuestGiverCharacterID uuid.UUID,
+	baseQuestGiverCharacterID *uuid.UUID,
+	baseQuestGiverCharacterTemplateID *uuid.UUID,
 ) error {
-	if base == nil || baseQuestArchetypeID == uuid.Nil || baseQuestGiverCharacterID == uuid.Nil {
+	if base == nil || baseQuestArchetypeID == uuid.Nil {
 		return nil
 	}
 
@@ -89,12 +90,14 @@ func InstantiateTutorialBaseQuest(
 		return err
 	}
 
-	sourceCharacter, err := dbClient.Character().FindByID(ctx, baseQuestGiverCharacterID)
+	sourceTemplate, err := loadTutorialBaseQuestGiverTemplateData(
+		ctx,
+		dbClient,
+		baseQuestGiverCharacterID,
+		baseQuestGiverCharacterTemplateID,
+	)
 	if err != nil {
 		return err
-	}
-	if sourceCharacter == nil {
-		return fmt.Errorf("tutorial base quest giver character not found")
 	}
 
 	zones, err := dbClient.Zone().FindAll(ctx)
@@ -133,26 +136,16 @@ func InstantiateTutorialBaseQuest(
 		}
 	}()
 
-	clonedCharacter := &models.Character{
-		ID:          clonedCharacterID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		Name:        sourceCharacter.Name,
-		Description: sourceCharacter.Description,
-		InternalTags: append(
-			append(models.StringArray{}, sourceCharacter.InternalTags...),
-			TutorialGeneratedBaseQuestGiverTag,
-		),
-		MapIconURL:            sourceCharacter.MapIconURL,
-		DialogueImageURL:      sourceCharacter.DialogueImageURL,
-		ThumbnailURL:          sourceCharacter.ThumbnailURL,
-		OwnerUserID:           &userID,
-		Ephemeral:             true,
-		StoryVariants:         append(models.CharacterStoryVariants{}, sourceCharacter.StoryVariants...),
-		PointOfInterestID:     nil,
-		ImageGenerationStatus: sourceCharacter.ImageGenerationStatus,
-		ImageGenerationError:  sourceCharacter.ImageGenerationError,
-	}
+	clonedCharacter := sourceTemplate.Instantiate(
+		models.CharacterTemplateInstanceOptions{
+			ID:           clonedCharacterID,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+			OwnerUserID:  &userID,
+			Ephemeral:    true,
+			InternalTags: cloneTutorialQuestGiverInternalTags(sourceTemplate.InternalTags),
+		},
+	)
 	if err := dbClient.Character().Create(ctx, clonedCharacter); err != nil {
 		return err
 	}
@@ -187,6 +180,47 @@ func InstantiateTutorialBaseQuest(
 
 	cleanupArtifacts = false
 	return nil
+}
+
+func loadTutorialBaseQuestGiverTemplateData(
+	ctx context.Context,
+	dbClient db.DbClient,
+	baseQuestGiverCharacterID *uuid.UUID,
+	baseQuestGiverCharacterTemplateID *uuid.UUID,
+) (models.CharacterTemplateData, error) {
+	switch {
+	case baseQuestGiverCharacterID != nil && *baseQuestGiverCharacterID != uuid.Nil:
+		sourceCharacter, err := dbClient.Character().FindByID(ctx, *baseQuestGiverCharacterID)
+		if err != nil {
+			return models.CharacterTemplateData{}, err
+		}
+		if sourceCharacter == nil {
+			return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character not found")
+		}
+		return models.CharacterTemplateDataFromCharacter(sourceCharacter), nil
+	case baseQuestGiverCharacterTemplateID != nil && *baseQuestGiverCharacterTemplateID != uuid.Nil:
+		sourceTemplate, err := dbClient.CharacterTemplate().FindByID(ctx, *baseQuestGiverCharacterTemplateID)
+		if err != nil {
+			return models.CharacterTemplateData{}, err
+		}
+		if sourceTemplate == nil {
+			return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character template not found")
+		}
+		return models.CharacterTemplateDataFromCharacterTemplate(sourceTemplate), nil
+	default:
+		return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character source is required")
+	}
+}
+
+func cloneTutorialQuestGiverInternalTags(input models.StringArray) models.StringArray {
+	tags := append(models.StringArray{}, input...)
+	if !models.CharacterHasInternalTag(
+		&models.Character{InternalTags: tags},
+		TutorialGeneratedBaseQuestGiverTag,
+	) {
+		tags = append(tags, TutorialGeneratedBaseQuestGiverTag)
+	}
+	return tags
 }
 
 func isTutorialReplayCharacterArtifact(

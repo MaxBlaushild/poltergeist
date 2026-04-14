@@ -133,11 +133,12 @@ type GenerateQuestForZoneTaskPayload struct {
 }
 
 type InstantiateTutorialBaseQuestTaskPayload struct {
-	UserID                    uuid.UUID `json:"user_id"`
-	BaseLatitude              float64   `json:"base_latitude"`
-	BaseLongitude             float64   `json:"base_longitude"`
-	BaseQuestArchetypeID      uuid.UUID `json:"base_quest_archetype_id"`
-	BaseQuestGiverCharacterID uuid.UUID `json:"base_quest_giver_character_id"`
+	UserID                            uuid.UUID  `json:"user_id"`
+	BaseLatitude                      float64    `json:"base_latitude"`
+	BaseLongitude                     float64    `json:"base_longitude"`
+	BaseQuestArchetypeID              uuid.UUID  `json:"base_quest_archetype_id"`
+	BaseQuestGiverCharacterID         *uuid.UUID `json:"base_quest_giver_character_id,omitempty"`
+	BaseQuestGiverCharacterTemplateID *uuid.UUID `json:"base_quest_giver_character_template_id,omitempty"`
 }
 
 type GenerateQuestArchetypeSuggestionsTaskPayload struct {
