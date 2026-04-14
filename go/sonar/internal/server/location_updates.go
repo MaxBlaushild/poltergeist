@@ -54,19 +54,9 @@ func (s *server) updatePointOfInterestLocation(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Edit(
-		ctx,
-		pointOfInterestID,
-		existing.Name,
-		existing.Description,
-		strconv.FormatFloat(latitude, 'f', 6, 64),
-		strconv.FormatFloat(longitude, 'f', 6, 64),
-		existing.UnlockTier,
-		existing.Clue,
-		existing.ImageUrl,
-		existing.OriginalName,
-		existing.GoogleMapsPlaceID,
-	); err != nil {
+	existing.Lat = strconv.FormatFloat(latitude, 'f', 6, 64)
+	existing.Lng = strconv.FormatFloat(longitude, 'f', 6, 64)
+	if err := s.dbClient.PointOfInterest().Update(ctx, pointOfInterestID, existing); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

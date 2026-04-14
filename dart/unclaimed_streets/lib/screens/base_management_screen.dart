@@ -840,12 +840,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         availableNow: true,
         hearthLevel: level,
         statusesApplied: 0,
+        removedWounded: false,
       );
     }
     final state = effect.state;
     final nextAvailableAt = _parseDateTime(state['nextAvailableAt']);
     final lastUsedAt = _parseDateTime(state['usedAt']);
     final statusCount = _statusCount(state['statusesApplied']);
+    final removedWounded = _hasStatusNamed(state['statusesRemoved'], 'Wounded');
     return _HearthRecoveryInfo(
       availableNow: nextAvailableAt == null
           ? false
@@ -854,6 +856,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       lastUsedAt: lastUsedAt,
       hearthLevel: (state['hearthLevel'] as num?)?.toInt() ?? level,
       statusesApplied: statusCount,
+      removedWounded: removedWounded,
     );
   }
 
@@ -867,6 +870,17 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       return value.length;
     }
     return 0;
+  }
+
+  bool _hasStatusNamed(Object? value, String name) {
+    if (value is! List) return false;
+    final target = name.trim().toLowerCase();
+    for (final entry in value) {
+      if (entry.toString().trim().toLowerCase() == target) {
+        return true;
+      }
+    }
+    return false;
   }
 
   String _formatHearthAvailability(DateTime? value) {
@@ -895,6 +909,10 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       final currentHealth = (response['currentHealth'] as num?)?.toInt();
       final currentMana = (response['currentMana'] as num?)?.toInt();
       final statusesApplied = _statusCount(response['statusesApplied']);
+      final removedWounded = _hasStatusNamed(
+        response['statusesRemoved'],
+        'Wounded',
+      );
       final statsProvider = context.read<CharacterStatsProvider>();
       if (currentHealth != null && currentMana != null) {
         await statsProvider.setHealthAndManaTo(
@@ -911,9 +929,18 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       _notifyHeaderChanged();
       await _notifyTutorialProgressChanged();
       if (!mounted) return;
-      final statusText = statusesApplied > 0
-          ? ' and gained $statusesApplied blessing${statusesApplied == 1 ? '' : 's'}'
-          : '';
+      final statusFragments = <String>[];
+      if (removedWounded) {
+        statusFragments.add('cleared Wounded');
+      }
+      if (statusesApplied > 0) {
+        statusFragments.add(
+          'gained $statusesApplied blessing${statusesApplied == 1 ? '' : 's'}',
+        );
+      }
+      final statusText = statusFragments.isEmpty
+          ? ''
+          : ', ${statusFragments.join(' and ')}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -948,6 +975,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                     'nextAvailableAt': payload['nextAvailableAt'],
                     'hearthLevel': (_structureByKey['hearth']?.level ?? 0),
                     'statusesApplied': const <dynamic>[],
+                    'statusesRemoved': const <dynamic>[],
                   },
                 ),
               );
@@ -2231,6 +2259,15 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                         ),
                       ),
                     ],
+                    if (hearthInfo.removedWounded) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Wounded was cleared on the last use.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
@@ -2366,6 +2403,7 @@ class _HearthRecoveryInfo {
     required this.availableNow,
     required this.hearthLevel,
     required this.statusesApplied,
+    required this.removedWounded,
     this.nextAvailableAt,
     this.lastUsedAt,
   });
@@ -2375,6 +2413,7 @@ class _HearthRecoveryInfo {
   final DateTime? lastUsedAt;
   final int hearthLevel;
   final int statusesApplied;
+  final bool removedWounded;
 
   String get formattedNextAvailableAt {
     final value = nextAvailableAt;

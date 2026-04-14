@@ -118,8 +118,12 @@ const summarizeQuestArchetypeRoot = (
   return `Starts with a ${nodeType} node`;
 };
 
-const countQuestArchetypeNodes = (archetype: QuestArchetype | null | undefined) => {
-  const countNode = (node: QuestArchetype['root'] | null | undefined): number => {
+const countQuestArchetypeNodes = (
+  archetype: QuestArchetype | null | undefined
+) => {
+  const countNode = (
+    node: QuestArchetype['root'] | null | undefined
+  ): number => {
     if (!node) {
       return 0;
     }
@@ -190,15 +194,17 @@ const describeQuestArchetypeNode = (
   if (node.nodeType === 'fetch_quest') {
     const characterLabel = node.fetchCharacter?.name?.trim() || 'Character';
     const requirementCount = node.fetchRequirements?.length ?? 0;
-    const label = requirementCount > 0
-      ? `Deliver ${requirementCount} item${requirementCount === 1 ? '' : 's'} to ${characterLabel}`
-      : `Fetch quest for ${characterLabel}`;
+    const label =
+      requirementCount > 0
+        ? `Deliver ${requirementCount} item${requirementCount === 1 ? '' : 's'} to ${characterLabel}`
+        : `Fetch quest for ${characterLabel}`;
     return `${label} @ ${locationLabel}`;
   }
   if (node.nodeType === 'story_flag') {
     return `Story flag: ${node.storyFlagKey?.trim() || 'story flag'}`;
   }
-  const challengeLabel = node.challengeTemplate?.question?.trim() || 'Challenge';
+  const challengeLabel =
+    node.challengeTemplate?.question?.trim() || 'Challenge';
   return `${challengeLabel} @ ${locationLabel}`;
 };
 
@@ -215,7 +221,8 @@ const describeQuestArchetypeChallenge = (
 
 export const MainStoryTemplates = () => {
   const { apiClient } = useAPI();
-  const { questArchetypes, locationArchetypes } = useQuestArchetypes();
+  const { questArchetypes, locationArchetypes, refreshQuestArchetypes } =
+    useQuestArchetypes();
   const [templates, setTemplates] = useState<MainStoryTemplate[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [runs, setRuns] = useState<MainStoryDistrictRun[]>([]);
@@ -234,9 +241,15 @@ export const MainStoryTemplates = () => {
   const [selectedZoneByTemplate, setSelectedZoneByTemplate] = useState<
     Record<string, string>
   >({});
-  const [instantiatingRunKey, setInstantiatingRunKey] = useState<
+  const [zoneQueryByTemplate, setZoneQueryByTemplate] = useState<
+    Record<string, string>
+  >({});
+  const [openZoneComboboxTemplateId, setOpenZoneComboboxTemplateId] = useState<
     string | null
   >(null);
+  const [instantiatingRunKey, setInstantiatingRunKey] = useState<string | null>(
+    null
+  );
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(
     null
   );
@@ -307,7 +320,10 @@ export const MainStoryTemplates = () => {
   }, []);
 
   const renderQuestArchetypeNode = useCallback(
-    (node: QuestArchetypeNode | null | undefined, depth = 0): React.ReactNode => {
+    (
+      node: QuestArchetypeNode | null | undefined,
+      depth = 0
+    ): React.ReactNode => {
       if (!node) {
         return null;
       }
@@ -415,7 +431,10 @@ export const MainStoryTemplates = () => {
                         <div className="qa-flow-branch-label">
                           Unlocks next node
                         </div>
-                        {renderQuestArchetypeNode(challenge.unlockedNode, depth + 1)}
+                        {renderQuestArchetypeNode(
+                          challenge.unlockedNode,
+                          depth + 1
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -430,11 +449,7 @@ export const MainStoryTemplates = () => {
         </div>
       );
     },
-    [
-      locationArchetypesById,
-      monsterTemplatesById,
-      scenarioTemplatesById,
-    ]
+    [locationArchetypesById, monsterTemplatesById, scenarioTemplatesById]
   );
 
   const loadPage = useCallback(async () => {
@@ -446,6 +461,7 @@ export const MainStoryTemplates = () => {
           apiClient.get<District[]>('/sonar/districts'),
           apiClient.get<MainStoryDistrictRun[]>('/sonar/mainStoryDistrictRuns'),
         ]);
+      await refreshQuestArchetypes();
       setTemplates(templatesResponse);
       setDistricts(districtsResponse);
       setRuns(runsResponse);
@@ -481,7 +497,7 @@ export const MainStoryTemplates = () => {
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, refreshQuestArchetypes]);
 
   useEffect(() => {
     void loadPage();
@@ -506,7 +522,10 @@ export const MainStoryTemplates = () => {
         setMonsterTemplates(monsterResponse.items ?? []);
         setScenarioTemplates(scenarioResponse.items ?? []);
       } catch (error) {
-        console.error('Failed to load main story template reference data', error);
+        console.error(
+          'Failed to load main story template reference data',
+          error
+        );
       }
     };
 
@@ -529,19 +548,48 @@ export const MainStoryTemplates = () => {
   }, [loadPage, runs]);
 
   const resolveSelectedZone = useCallback(
-    (templateId: string, district: District | null | undefined): Zone | null => {
+    (
+      templateId: string,
+      district: District | null | undefined
+    ): Zone | null => {
       const zones = district?.zones ?? [];
       if (zones.length === 0) {
         return null;
       }
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          selectedZoneByTemplate,
+          templateId
+        )
+      ) {
+        return zones[0] ?? null;
+      }
       const selectedZoneId = selectedZoneByTemplate[templateId];
+      if (!selectedZoneId) {
+        return null;
+      }
       return (
-        zones.find((zone) => zone.id === selectedZoneId) ??
-        zones[0] ??
-        null
+        zones.find((zone) => zone.id === selectedZoneId) ?? zones[0] ?? null
       );
     },
     [selectedZoneByTemplate]
+  );
+
+  const selectZoneForTemplate = useCallback(
+    (templateId: string, zone: Zone | null) => {
+      setSelectedZoneByTemplate((current) => ({
+        ...current,
+        [templateId]: zone?.id ?? '',
+      }));
+      setZoneQueryByTemplate((current) => ({
+        ...current,
+        [templateId]: zone?.name ?? '',
+      }));
+      setOpenZoneComboboxTemplateId((current) =>
+        current === templateId ? null : current
+      );
+    },
+    []
   );
 
   const handleInstantiate = async (templateId: string) => {
@@ -584,11 +632,15 @@ export const MainStoryTemplates = () => {
     zoneId: string
   ) => {
     if (!districtId) {
-      setActionError('Choose a district before instantiating a zone-focused chain.');
+      setActionError(
+        'Choose a district before instantiating a zone-focused chain.'
+      );
       return;
     }
     if (!zoneId) {
-      setActionError('Choose a zone before instantiating a zone-focused chain.');
+      setActionError(
+        'Choose a zone before instantiating a zone-focused chain.'
+      );
       return;
     }
 
@@ -645,10 +697,7 @@ export const MainStoryTemplates = () => {
     } catch (error) {
       console.error('Failed to retry main story district run', error);
       setActionError(
-        extractApiErrorMessage(
-          error,
-          'Failed to retry that district run.'
-        )
+        extractApiErrorMessage(error, 'Failed to retry that district run.')
       );
     } finally {
       setRetryingRunId(null);
@@ -667,14 +716,13 @@ export const MainStoryTemplates = () => {
     setActionError(null);
     try {
       await apiClient.delete(`/sonar/mainStoryDistrictRuns/${run.id}`);
-      setRuns((current) => current.filter((candidate) => candidate.id !== run.id));
+      setRuns((current) =>
+        current.filter((candidate) => candidate.id !== run.id)
+      );
     } catch (error) {
       console.error('Failed to delete main story district run', error);
       setActionError(
-        extractApiErrorMessage(
-          error,
-          'Failed to clean up that district run.'
-        )
+        extractApiErrorMessage(error, 'Failed to clean up that district run.')
       );
     } finally {
       setDeletingRunId(null);
@@ -731,7 +779,10 @@ export const MainStoryTemplates = () => {
             `/sonar/mainStoryTemplates/${template.id}`,
             template
           )
-        : await apiClient.post<MainStoryTemplate>('/sonar/mainStoryTemplates', template);
+        : await apiClient.post<MainStoryTemplate>(
+            '/sonar/mainStoryTemplates',
+            template
+          );
       setTemplates((current) => {
         const remaining = current.filter((entry) => entry.id !== saved.id);
         return [saved, ...remaining];
@@ -764,8 +815,9 @@ export const MainStoryTemplates = () => {
           const district = districtsById.get(run.districtId);
           const zone =
             run.zoneId && district
-              ? district.zones.find((candidate) => candidate.id === run.zoneId) ??
-                null
+              ? district.zones.find(
+                  (candidate) => candidate.id === run.zoneId
+                ) ?? null
               : null;
           const isZoneRun = Boolean(run.zoneId);
           return (
@@ -779,7 +831,9 @@ export const MainStoryTemplates = () => {
                   </div>
                   <div className="qa-meta">
                     {[
-                      isZoneRun ? district?.name ?? 'Unknown district' : 'District-wide',
+                      isZoneRun
+                        ? district?.name ?? 'Unknown district'
+                        : 'District-wide',
                       isZoneRun ? 'Zone-focused' : null,
                       `Started ${formatDate(run.createdAt)}`,
                       `Updated ${formatDate(run.updatedAt)}`,
@@ -835,7 +889,10 @@ export const MainStoryTemplates = () => {
               </div>
               <div className="qa-tree" style={{ marginTop: 14 }}>
                 {(run.beatRuns || []).map((beatRun) => (
-                  <div className="qa-node" key={`${run.id}-${beatRun.orderIndex}`}>
+                  <div
+                    className="qa-node"
+                    key={`${run.id}-${beatRun.orderIndex}`}
+                  >
                     <div className="qa-node-card">
                       <div className="qa-card-header">
                         <div>
@@ -855,7 +912,9 @@ export const MainStoryTemplates = () => {
                         </div>
                       </div>
                       {beatRun.questName ? (
-                        <div className="qa-meta">Quest: {beatRun.questName}</div>
+                        <div className="qa-meta">
+                          Quest: {beatRun.questName}
+                        </div>
                       ) : null}
                       {beatRun.errorMessage ? (
                         <div
@@ -884,8 +943,8 @@ export const MainStoryTemplates = () => {
             <div className="qa-kicker">Main Story Templates</div>
             <h1 className="qa-title">Converted Campaign Templates</h1>
             <p className="qa-subtitle">
-              Review converted campaign templates, inspect recent live runs,
-              and start building district-wide or zone-focused main-story quest
+              Review converted campaign templates, inspect recent live runs, and
+              start building district-wide or zone-focused main-story quest
               chains from reusable story blueprints.
             </p>
           </div>
@@ -947,9 +1006,20 @@ export const MainStoryTemplates = () => {
               const selectedDistrictId =
                 selectedDistrictByTemplate[template.id] ?? '';
               const selectedDistrict = districtsById.get(selectedDistrictId);
-              const selectedZone = resolveSelectedZone(template.id, selectedDistrict);
+              const availableZones = selectedDistrict?.zones ?? [];
+              const selectedZone = resolveSelectedZone(
+                template.id,
+                selectedDistrict
+              );
+              const zoneQuery =
+                zoneQueryByTemplate[template.id] ?? selectedZone?.name ?? '';
+              const filteredZones = availableZones.filter((zone) =>
+                zone.name.toLowerCase().includes(zoneQuery.trim().toLowerCase())
+              );
               const districtRuns = templateRuns.filter((run) => !run.zoneId);
-              const zoneRuns = templateRuns.filter((run) => Boolean(run.zoneId));
+              const zoneRuns = templateRuns.filter((run) =>
+                Boolean(run.zoneId)
+              );
               return (
                 <article className="qa-card" key={template.id}>
                   <div className="qa-card-header">
@@ -1038,12 +1108,19 @@ export const MainStoryTemplates = () => {
                     <div className="qa-actions">
                       <select
                         value={selectedDistrictId}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const nextDistrictId = event.target.value;
+                          const nextDistrict =
+                            districtsById.get(nextDistrictId) ?? null;
                           setSelectedDistrictByTemplate((current) => ({
                             ...current,
-                            [template.id]: event.target.value,
-                          }))
-                        }
+                            [template.id]: nextDistrictId,
+                          }));
+                          selectZoneForTemplate(
+                            template.id,
+                            nextDistrict?.zones?.[0] ?? null
+                          );
+                        }}
                         style={{
                           minWidth: 240,
                           borderRadius: 999,
@@ -1094,37 +1171,81 @@ export const MainStoryTemplates = () => {
                       </div>
                     </div>
                     <div className="qa-actions">
-                      <select
-                        value={selectedZone?.id ?? ''}
-                        onChange={(event) =>
-                          setSelectedZoneByTemplate((current) => ({
-                            ...current,
-                            [template.id]: event.target.value,
-                          }))
-                        }
-                        style={{
-                          minWidth: 240,
-                          borderRadius: 999,
-                          padding: '8px 14px',
-                          background: 'rgba(255,255,255,0.08)',
-                          border: '1px solid rgba(255,255,255,0.16)',
-                          color: 'var(--qa-ink)',
-                        }}
-                        disabled={!selectedDistrict || (selectedDistrict.zones?.length ?? 0) === 0}
+                      <div
+                        className="qa-combobox"
+                        style={{ minWidth: 240, flex: '1 1 260px' }}
                       >
-                        <option value="">
-                          {selectedDistrict
-                            ? selectedDistrict.zones?.length
-                              ? 'Choose a zone'
-                              : 'No zones in district'
-                            : 'Choose a district first'}
-                        </option>
-                        {(selectedDistrict?.zones ?? []).map((zone) => (
-                          <option key={zone.id} value={zone.id}>
-                            {zone.name}
-                          </option>
-                        ))}
-                      </select>
+                        <input
+                          type="text"
+                          className="qa-input"
+                          value={zoneQuery}
+                          onFocus={() =>
+                            setOpenZoneComboboxTemplateId(template.id)
+                          }
+                          onBlur={() => {
+                            window.setTimeout(() => {
+                              setOpenZoneComboboxTemplateId((current) =>
+                                current === template.id ? null : current
+                              );
+                            }, 120);
+                          }}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            const matchedZone = availableZones.find(
+                              (zone) =>
+                                zone.name.toLowerCase() ===
+                                value.trim().toLowerCase()
+                            );
+                            setZoneQueryByTemplate((current) => ({
+                              ...current,
+                              [template.id]: value,
+                            }));
+                            setSelectedZoneByTemplate((current) => ({
+                              ...current,
+                              [template.id]: matchedZone?.id ?? '',
+                            }));
+                            setOpenZoneComboboxTemplateId(template.id);
+                          }}
+                          placeholder={
+                            !selectedDistrict
+                              ? 'Choose a district first'
+                              : availableZones.length === 0
+                                ? 'No zones in district'
+                                : 'Search zones...'
+                          }
+                          disabled={
+                            !selectedDistrict || availableZones.length === 0
+                          }
+                        />
+                        {openZoneComboboxTemplateId === template.id &&
+                        selectedDistrict ? (
+                          <div className="qa-combobox-list">
+                            {filteredZones.length === 0 ? (
+                              <div className="qa-combobox-empty">
+                                No matching zones.
+                              </div>
+                            ) : (
+                              filteredZones.map((zone) => (
+                                <button
+                                  key={`${template.id}-zone-${zone.id}`}
+                                  type="button"
+                                  className={`qa-combobox-option ${
+                                    selectedZone?.id === zone.id
+                                      ? 'is-active'
+                                      : ''
+                                  }`}
+                                  onMouseDown={(event) => {
+                                    event.preventDefault();
+                                    selectZoneForTemplate(template.id, zone);
+                                  }}
+                                >
+                                  {zone.name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         className="qa-btn qa-btn-primary"
@@ -1170,153 +1291,187 @@ export const MainStoryTemplates = () => {
                         ? questArchetypesById.get(beat.questArchetypeId) ?? null
                         : null;
                       return (
-                      <div className="qa-node" key={beatKey}>
-                        <div
-                          className="qa-node-card"
-                          style={{
-                            background: isExpanded
-                              ? 'linear-gradient(180deg, rgba(18, 30, 37, 0.92), rgba(10, 18, 23, 0.92))'
-                              : undefined,
-                          }}
-                        >
-                          <div className="qa-card-header">
-                            <div>
-                              <div className="qa-node-title">
-                                Beat {beat.orderIndex}: {beat.chapterTitle}
+                        <div className="qa-node" key={beatKey}>
+                          <div
+                            className="qa-node-card"
+                            style={{
+                              background: isExpanded
+                                ? 'linear-gradient(180deg, rgba(18, 30, 37, 0.92), rgba(10, 18, 23, 0.92))'
+                                : undefined,
+                            }}
+                          >
+                            <div className="qa-card-header">
+                              <div>
+                                <div className="qa-node-title">
+                                  Beat {beat.orderIndex}: {beat.chapterTitle}
+                                </div>
+                                <div className="qa-meta">
+                                  {beat.chapterSummary || beat.name}
+                                </div>
                               </div>
-                              <div className="qa-meta">
-                                {beat.chapterSummary || beat.name}
-                              </div>
-                            </div>
-                            <div className="qa-actions">
-                              <span className="qa-chip muted">
-                                Act {beat.act}
-                              </span>
-                              <span className="qa-chip muted">
-                                {beat.storyRole || 'story beat'}
-                              </span>
-                              {beat.questGiverCharacterName ? (
-                                <span className="qa-chip accent">
-                                  {beat.questGiverCharacterName}
+                              <div className="qa-actions">
+                                <span className="qa-chip muted">
+                                  Act {beat.act}
                                 </span>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="qa-btn qa-btn-outline"
-                                onClick={() => toggleBeatExpanded(beatKey)}
-                              >
-                                {isExpanded ? 'Hide Archetype Details' : 'Show Archetype Details'}
-                              </button>
-                            </div>
-                          </div>
-                          {isExpanded && (
-                            <div style={{ marginTop: 16 }}>
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns:
-                                    'repeat(auto-fit, minmax(180px, 1fr))',
-                                  gap: 12,
-                                }}
-                              >
-                                <div className="qa-stat">
-                                  <div className="qa-stat-label">Archetype</div>
-                                  <div className="qa-stat-value">
-                                    {questArchetype?.name ||
-                                      beat.questArchetypeName ||
-                                      'Not resolved'}
-                                  </div>
-                                </div>
-                                <div className="qa-stat">
-                                  <div className="qa-stat-label">Category</div>
-                                  <div className="qa-stat-value">
-                                    {questArchetype?.category || 'n/a'}
-                                  </div>
-                                </div>
-                                <div className="qa-stat">
-                                  <div className="qa-stat-label">Flow</div>
-                                  <div className="qa-stat-value">
-                                    {summarizeQuestArchetypeRoot(questArchetype)}
-                                  </div>
-                                </div>
-                                <div className="qa-stat">
-                                  <div className="qa-stat-label">Scale</div>
-                                  <div className="qa-stat-value">
-                                    {countQuestArchetypeNodes(questArchetype)} nodes ·{' '}
-                                    {countQuestArchetypeChallenges(questArchetype)} challenges
-                                  </div>
-                                </div>
+                                <span className="qa-chip muted">
+                                  {beat.storyRole || 'story beat'}
+                                </span>
+                                {beat.questGiverCharacterName ? (
+                                  <span className="qa-chip accent">
+                                    {beat.questGiverCharacterName}
+                                  </span>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="qa-btn qa-btn-outline"
+                                  onClick={() => toggleBeatExpanded(beatKey)}
+                                >
+                                  {isExpanded
+                                    ? 'Hide Archetype Details'
+                                    : 'Show Archetype Details'}
+                                </button>
                               </div>
-
-                              {questArchetype?.description && (
-                                <div className="qa-meta" style={{ marginTop: 14 }}>
-                                  {questArchetype.description}
-                                </div>
-                              )}
-
-                              {questArchetype &&
-                              ((questArchetype.acceptanceDialogue ?? []).length > 0 ||
-                                (questArchetype.characterTags ?? []).length > 0 ||
-                                (questArchetype.internalTags ?? []).length > 0) ? (
+                            </div>
+                            {isExpanded && (
+                              <div style={{ marginTop: 16 }}>
                                 <div
                                   style={{
                                     display: 'grid',
-                                    gap: 10,
-                                    marginTop: 14,
+                                    gridTemplateColumns:
+                                      'repeat(auto-fit, minmax(180px, 1fr))',
+                                    gap: 12,
                                   }}
                                 >
-                                  {(questArchetype.acceptanceDialogue ?? []).length > 0 && (
-                                    <div className="qa-meta">
-                                      <strong>Acceptance Dialogue:</strong>{' '}
-                                      {(questArchetype.acceptanceDialogue ?? [])
-                                        .map((line) =>
-                                          line.effect
-                                            ? `${line.text} (${line.effect})`
-                                            : line.text
-                                        )
-                                        .join(' / ')}
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">
+                                      Archetype
                                     </div>
-                                  )}
-                                  {(questArchetype.characterTags ?? []).length > 0 && (
-                                    <div className="qa-meta">
-                                      <strong>Character Tags:</strong>{' '}
-                                      {(questArchetype.characterTags ?? []).join(', ')}
-                                    </div>
-                                  )}
-                                  {(questArchetype.internalTags ?? []).length > 0 && (
-                                    <div className="qa-meta">
-                                      <strong>Internal Tags:</strong>{' '}
-                                      {(questArchetype.internalTags ?? []).join(', ')}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : null}
-
-                              {questArchetype?.root ? (
-                                <>
-                                  <div className="qa-divider" style={{ margin: '16px 0' }} />
-                                  <div className="qa-card-header">
-                                    <div>
-                                      <h4
-                                        className="qa-card-title"
-                                        style={{ fontSize: 16 }}
-                                      >
-                                        Quest Flow
-                                      </h4>
-                                      <div className="qa-meta">
-                                        Every node and unlocked branch in this beat’s
-                                        quest archetype.
-                                      </div>
+                                    <div className="qa-stat-value">
+                                      {questArchetype?.name ||
+                                        beat.questArchetypeName ||
+                                        'Not resolved'}
                                     </div>
                                   </div>
-                                  {renderQuestArchetypeNode(questArchetype.root)}
-                                </>
-                              ) : null}
-                            </div>
-                          )}
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">
+                                      Category
+                                    </div>
+                                    <div className="qa-stat-value">
+                                      {questArchetype?.category || 'n/a'}
+                                    </div>
+                                  </div>
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">Flow</div>
+                                    <div className="qa-stat-value">
+                                      {summarizeQuestArchetypeRoot(
+                                        questArchetype
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="qa-stat">
+                                    <div className="qa-stat-label">Scale</div>
+                                    <div className="qa-stat-value">
+                                      {countQuestArchetypeNodes(questArchetype)}{' '}
+                                      nodes ·{' '}
+                                      {countQuestArchetypeChallenges(
+                                        questArchetype
+                                      )}{' '}
+                                      challenges
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {questArchetype?.description && (
+                                  <div
+                                    className="qa-meta"
+                                    style={{ marginTop: 14 }}
+                                  >
+                                    {questArchetype.description}
+                                  </div>
+                                )}
+
+                                {questArchetype &&
+                                ((questArchetype.acceptanceDialogue ?? [])
+                                  .length > 0 ||
+                                  (questArchetype.characterTags ?? []).length >
+                                    0 ||
+                                  (questArchetype.internalTags ?? []).length >
+                                    0) ? (
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gap: 10,
+                                      marginTop: 14,
+                                    }}
+                                  >
+                                    {(questArchetype.acceptanceDialogue ?? [])
+                                      .length > 0 && (
+                                      <div className="qa-meta">
+                                        <strong>Acceptance Dialogue:</strong>{' '}
+                                        {(
+                                          questArchetype.acceptanceDialogue ??
+                                          []
+                                        )
+                                          .map((line) =>
+                                            line.effect
+                                              ? `${line.text} (${line.effect})`
+                                              : line.text
+                                          )
+                                          .join(' / ')}
+                                      </div>
+                                    )}
+                                    {(questArchetype.characterTags ?? [])
+                                      .length > 0 && (
+                                      <div className="qa-meta">
+                                        <strong>Character Tags:</strong>{' '}
+                                        {(
+                                          questArchetype.characterTags ?? []
+                                        ).join(', ')}
+                                      </div>
+                                    )}
+                                    {(questArchetype.internalTags ?? [])
+                                      .length > 0 && (
+                                      <div className="qa-meta">
+                                        <strong>Internal Tags:</strong>{' '}
+                                        {(
+                                          questArchetype.internalTags ?? []
+                                        ).join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : null}
+
+                                {questArchetype?.root ? (
+                                  <>
+                                    <div
+                                      className="qa-divider"
+                                      style={{ margin: '16px 0' }}
+                                    />
+                                    <div className="qa-card-header">
+                                      <div>
+                                        <h4
+                                          className="qa-card-title"
+                                          style={{ fontSize: 16 }}
+                                        >
+                                          Quest Flow
+                                        </h4>
+                                        <div className="qa-meta">
+                                          Every node and unlocked branch in this
+                                          beat’s quest archetype.
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {renderQuestArchetypeNode(
+                                      questArchetype.root
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )})}
+                      );
+                    })}
                   </div>
 
                   <div className="qa-divider" />

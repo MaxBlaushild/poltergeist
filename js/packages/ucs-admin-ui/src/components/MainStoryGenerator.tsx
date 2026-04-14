@@ -88,12 +88,14 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
-const formatRelationshipEffects = (effects?: {
-  trust?: number;
-  respect?: number;
-  fear?: number;
-  debt?: number;
-} | null) =>
+const formatRelationshipEffects = (
+  effects?: {
+    trust?: number;
+    respect?: number;
+    fear?: number;
+    debt?: number;
+  } | null
+) =>
   effects
     ? [
         effects.trust
@@ -142,7 +144,7 @@ const summarizeUnlockedContent = (
 
 export const MainStoryGenerator = () => {
   const { apiClient } = useAPI();
-  const { locationArchetypes } = useQuestArchetypes();
+  const { locationArchetypes, refreshQuestArchetypes } = useQuestArchetypes();
   const [form, setForm] = useState<GeneratorFormState>(emptyGeneratorForm);
   const [jobs, setJobs] = useState<MainStorySuggestionJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -331,6 +333,7 @@ export const MainStoryGenerator = () => {
         `/sonar/mainStorySuggestionDrafts/${draftId}/convert`,
         {}
       );
+      await refreshQuestArchetypes();
       if (selectedJobId) {
         await fetchDrafts(selectedJobId);
       }
@@ -759,7 +762,10 @@ export const MainStoryGenerator = () => {
                         <span className={statusChipClass(draft.status)}>
                           {formatStatus(draft.status)}
                         </span>
-                        <div className="qa-actions" style={{ justifyContent: 'flex-end' }}>
+                        <div
+                          className="qa-actions"
+                          style={{ justifyContent: 'flex-end' }}
+                        >
                           {draft.mainStoryTemplateId ? (
                             <Link
                               className="qa-btn qa-btn-outline"
@@ -841,7 +847,10 @@ export const MainStoryGenerator = () => {
                       }}
                     >
                       {draft.themeTags.map((tag) => (
-                        <span key={`${draft.id}-theme-${tag}`} className="qa-chip">
+                        <span
+                          key={`${draft.id}-theme-${tag}`}
+                          className="qa-chip"
+                        >
                           {tag}
                         </span>
                       ))}
@@ -1046,7 +1055,8 @@ export const MainStoryGenerator = () => {
                                     </div>
                                   )}
                                   {(beat.questGiverAfterDescription ||
-                                    beat.questGiverAfterDialogue.length > 0) && (
+                                    beat.questGiverAfterDialogue.length >
+                                      0) && (
                                     <div className="qa-stat">
                                       <div className="qa-stat-label">
                                         Aftermath
@@ -1058,7 +1068,8 @@ export const MainStoryGenerator = () => {
                                           lineHeight: 1.6,
                                         }}
                                       >
-                                        {beat.questGiverAfterDescription || 'n/a'}
+                                        {beat.questGiverAfterDescription ||
+                                          'n/a'}
                                         {beat.questGiverAfterDialogue.length > 0
                                           ? ` ${beat.questGiverAfterDialogue.join(' / ')}`
                                           : ''}

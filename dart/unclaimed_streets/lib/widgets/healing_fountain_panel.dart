@@ -10,6 +10,7 @@ import '../models/healing_fountain.dart';
 import '../providers/location_provider.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
+import 'discovery_proximity_section.dart';
 import 'paper_texture.dart';
 
 const _fallbackFountainImageUrl =
@@ -440,9 +441,11 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
   Widget _buildUndiscovered(
     BuildContext context,
     double? distance,
-    bool withinRange,
+    bool hasProximityAccess,
   ) {
     final theme = Theme.of(context);
+    final liveWithinRange =
+        distance != null && distance <= kProximityUnlockRadiusMeters;
     return AdaptivePaperSheet(
       maxHeightFactor: 0.52,
       header: Padding(
@@ -478,41 +481,26 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Visit this location to unlock this healing fountain. You must be within ${kProximityUnlockRadiusMeters.round()} meters to discover it.',
-              style: theme.textTheme.bodyLarge,
+            DiscoveryProximitySection(
+              subjectLabel: 'healing fountain',
+              unlockRadiusMeters: kProximityUnlockRadiusMeters,
+              distanceMeters: distance,
+              hasProximityAccess: hasProximityAccess,
+              liveWithinRange: liveWithinRange,
             ),
-            const SizedBox(height: 16),
-            if (distance != null)
-              Text(
-                withinRange
-                    ? 'Within range! Tap Unlock to discover.'
-                    : 'You are ${distance.round()} m away.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: withinRange
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                  fontWeight: withinRange ? FontWeight.w600 : null,
-                ),
-              )
-            else
-              Text(
-                'Enable location to see distance.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: (_loading || !withinRange) ? null : _unlockFountain,
+              onPressed: (_loading || !hasProximityAccess)
+                  ? null
+                  : _unlockFountain,
               child: Text(
                 _loading
                     ? 'Unlocking...'
-                    : !withinRange
+                    : !hasProximityAccess
                     ? 'Too far to unlock'
                     : 'Unlock',
               ),

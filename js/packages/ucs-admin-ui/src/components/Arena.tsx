@@ -1,10 +1,72 @@
-import { useAPI, useArena, useInventory, useMediaContext } from '@poltergeist/contexts';
-import { usePointOfInterestGroups } from '@poltergeist/hooks';
+import { useAPI, useArena, useInventory } from '@poltergeist/contexts';
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import { AddNewPointOfInterest } from './AddNewPointOfInterest.tsx';
-import { Character, PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
+import { Character, PointOfInterest, PointOfInterestChallenge, PointOfInterestGroupType, Spell } from '@poltergeist/types';
 import { useTagContext } from '@poltergeist/contexts';
+import { MaterialRewardForm, MaterialRewardsEditor, normalizeMaterialRewards, summarizeMaterialRewards } from './MaterialRewardsEditor.tsx';
+
+type EditablePointOfInterest = PointOfInterest & {
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  rewardExperience: number;
+  rewardGold: number;
+  materialRewards: MaterialRewardForm[];
+  itemRewards: Array<{ inventoryItemId: number; quantity: number }>;
+  spellRewards: Array<{ spellId: string }>;
+};
+
+const buildEditablePoint = (point: PointOfInterest): EditablePointOfInterest => ({
+  ...point,
+  rewardMode: point.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    point.randomRewardSize === 'medium' || point.randomRewardSize === 'large'
+      ? point.randomRewardSize
+      : 'small',
+  rewardExperience: point.rewardExperience ?? 0,
+  rewardGold: point.rewardGold ?? 0,
+  materialRewards: (point.materialRewards ?? []).map((reward) => ({
+    resourceKey: reward.resourceKey,
+    amount: reward.amount ?? 1,
+  })),
+  itemRewards: (point.itemRewards ?? []).map((reward) => ({
+    inventoryItemId: reward.inventoryItemId ?? 0,
+    quantity: reward.quantity ?? 1,
+  })),
+  spellRewards: (point.spellRewards ?? []).map((reward) => ({
+    spellId: reward.spellId ?? '',
+  })),
+});
+
+const sanitizePointForSave = (point: EditablePointOfInterest): Partial<PointOfInterest> => ({
+  ...point,
+  rewardExperience:
+    point.rewardMode === 'explicit'
+      ? Math.max(0, Number(point.rewardExperience) || 0)
+      : 0,
+  rewardGold:
+    point.rewardMode === 'explicit'
+      ? Math.max(0, Number(point.rewardGold) || 0)
+      : 0,
+  materialRewards:
+    point.rewardMode === 'explicit'
+      ? normalizeMaterialRewards(point.materialRewards ?? [])
+      : [],
+  itemRewards:
+    point.rewardMode === 'explicit'
+      ? (point.itemRewards ?? [])
+          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+          .map((reward) => ({
+            inventoryItemId: reward.inventoryItemId,
+            quantity: Math.max(1, reward.quantity || 1),
+          }))
+      : [],
+  spellRewards:
+    point.rewardMode === 'explicit'
+      ? (point.spellRewards ?? [])
+          .filter((reward) => reward.spellId)
+          .map((reward) => ({ spellId: reward.spellId }))
+      : [],
+});
 
 export const Arena = () => {
   const arenaCtx = useArena() as any;
@@ -24,7 +86,6 @@ export const Arena = () => {
     createPointOfInterestChildren,
     deletePointOfInterestChildren,
     addTagToPointOfInterest,
-    removeTagFromPointOfInterest,
   } = arenaCtx;
   const { getZoneForPointOfInterest, addPointOfInterestToZone, removePointOfInterestFromZone, pointOfInterestZones = {} } = arenaCtx;
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
@@ -41,7 +102,6 @@ export const Arena = () => {
   const [showNewChallengeModal, setShowNewChallengeModal] = useState(false);
   const [showNewChildModal, setShowNewChildModal] = useState(false);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
-  const [selectedChallenge, setSelectedChallenge] = useState<PointOfInterestChallenge | null>(null);
   const [showEditChallengeModal, setShowEditChallengeModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [arenaType, setArenaType] = useState<PointOfInterestGroupType | undefined>(arena?.type);
@@ -49,6 +109,7 @@ export const Arena = () => {
   const [arenaInventoryItemId, setArenaInventoryItemId] = useState<number | undefined>((arena as any)?.inventoryItemId);
   const [arenaQuestGiverCharacterId, setArenaQuestGiverCharacterId] = useState<string>((arena as any)?.questGiverCharacterId ?? '');
   const [availableCharacters, setAvailableCharacters] = useState<Character[]>([]);
+  const [availableSpells, setAvailableSpells] = useState<Spell[]>([]);
   const [newChild, setNewChild] = useState({
     pointOfInterestId: '',
     pointOfInterestChallengeId: '',
@@ -66,15 +127,8 @@ export const Arena = () => {
     createdAt: new Date(),
     updatedAt: new Date()
   });
-  const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { apiClient } = useAPI();
   const { tagGroups } = useTagContext();
-  const [newPoint, setNewPoint] = useState({
-    name: '',
-    description: '',
-    lat: 0,
-    lng: 0,
-  });
 
   const tags = tagGroups.flatMap(group => group.tags);
 
@@ -95,16 +149,20 @@ export const Arena = () => {
         getZoneForPointOfInterest(member.pointOfInterest.id);
       });
     }
-  }, [arena?.groupMembers]);
+  }, [arena?.groupMembers, getZoneForPointOfInterest]);
 
   // Fetch characters for quest giver selector
   useEffect(() => {
     const fetchCharacters = async () => {
       try {
-        const response = await apiClient.get<Character[]>('/sonar/characters');
-        setAvailableCharacters(response);
+        const [characterResponse, spellResponse] = await Promise.all([
+          apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<Spell[]>('/sonar/spells'),
+        ]);
+        setAvailableCharacters(characterResponse);
+        setAvailableSpells(spellResponse);
       } catch (err) {
-        console.error('Error fetching characters:', err);
+        console.error('Error fetching arena dependencies:', err);
       }
     };
     fetchCharacters();
@@ -179,14 +237,16 @@ export const Arena = () => {
     }
   };
 
-  const handlePointEdit = (point: any) => {
+  const handlePointEdit = (point: PointOfInterest) => {
     setEditingPointId(point.id);
-    setEditedPoint(point);
+    setEditedPoint(buildEditablePoint(point));
   };
 
   const handlePointSave = async (pointId: string) => {
     try {
-      await updatePointOfInterest(pointId, editedPoint);
+      await updatePointOfInterest(pointId, sanitizePointForSave(editedPoint as EditablePointOfInterest));
+      setEditingPointId(null);
+      setEditedPoint(null);
     } catch (error) {
       console.error('Error saving point:', error);
     }
@@ -521,6 +581,225 @@ export const Arena = () => {
                       placeholder="Leave empty for unlocked"
                     />
                   </div>
+                  <div className="mb-3 rounded border border-slate-200 bg-slate-50 p-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reward Mode</label>
+                    <select
+                      value={editedPoint?.rewardMode ?? 'random'}
+                      onChange={(e) =>
+                        setEditedPoint({
+                          ...editedPoint,
+                          rewardMode: e.target.value === 'explicit' ? 'explicit' : 'random',
+                        })
+                      }
+                      className="border rounded px-2 py-1 w-full"
+                    >
+                      <option value="random">Random</option>
+                      <option value="explicit">Explicit</option>
+                    </select>
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Random Reward Size</label>
+                      <select
+                        value={editedPoint?.randomRewardSize ?? 'small'}
+                        onChange={(e) =>
+                          setEditedPoint({
+                            ...editedPoint,
+                            randomRewardSize:
+                              e.target.value === 'medium' || e.target.value === 'large'
+                                ? e.target.value
+                                : 'small',
+                          })
+                        }
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                      </select>
+                    </div>
+                    {editedPoint?.rewardMode === 'explicit' && (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            Experience
+                            <input
+                              type="number"
+                              min="0"
+                              value={editedPoint?.rewardExperience ?? 0}
+                              onChange={(e) =>
+                                setEditedPoint({
+                                  ...editedPoint,
+                                  rewardExperience: parseInt(e.target.value) || 0,
+                                })
+                              }
+                              className="mt-1 border rounded px-2 py-1 w-full"
+                            />
+                          </label>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Gold
+                            <input
+                              type="number"
+                              min="0"
+                              value={editedPoint?.rewardGold ?? 0}
+                              onChange={(e) =>
+                                setEditedPoint({
+                                  ...editedPoint,
+                                  rewardGold: parseInt(e.target.value) || 0,
+                                })
+                              }
+                              className="mt-1 border rounded px-2 py-1 w-full"
+                            />
+                          </label>
+                        </div>
+                        <MaterialRewardsEditor
+                          value={editedPoint?.materialRewards ?? []}
+                          onChange={(materialRewards) =>
+                            setEditedPoint({
+                              ...editedPoint,
+                              materialRewards,
+                            })
+                          }
+                        />
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-gray-700">Item Rewards</h4>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditedPoint({
+                                  ...editedPoint,
+                                  itemRewards: [
+                                    ...(editedPoint?.itemRewards ?? []),
+                                    { inventoryItemId: 0, quantity: 1 },
+                                  ],
+                                })
+                              }
+                              className="bg-slate-700 text-white px-2 py-1 rounded text-xs"
+                            >
+                              Add Item Reward
+                            </button>
+                          </div>
+                          {(editedPoint?.itemRewards ?? []).length === 0 ? (
+                            <div className="text-xs text-gray-500">No item rewards configured.</div>
+                          ) : (
+                            (editedPoint?.itemRewards ?? []).map((reward, index) => (
+                              <div key={`${reward.inventoryItemId}-${index}`} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_100px_auto]">
+                                <select
+                                  value={reward.inventoryItemId || ''}
+                                  onChange={(e) =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, inventoryItemId: parseInt(e.target.value) || 0 }
+                                          : entry
+                                      ),
+                                    })
+                                  }
+                                  className="border rounded px-2 py-1 w-full"
+                                >
+                                  <option value="">Select an item</option>
+                                  {inventoryItems.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={reward.quantity}
+                                  onChange={(e) =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, quantity: Math.max(1, parseInt(e.target.value) || 1) }
+                                          : entry
+                                      ),
+                                    })
+                                  }
+                                  className="border rounded px-2 py-1 w-full"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).filter((_, entryIndex) => entryIndex !== index),
+                                    })
+                                  }
+                                  className="bg-red-500 text-white px-2 py-1 rounded text-xs"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-gray-700">Spell Rewards</h4>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditedPoint({
+                                  ...editedPoint,
+                                  spellRewards: [
+                                    ...(editedPoint?.spellRewards ?? []),
+                                    { spellId: '' },
+                                  ],
+                                })
+                              }
+                              className="bg-slate-700 text-white px-2 py-1 rounded text-xs"
+                            >
+                              Add Spell Reward
+                            </button>
+                          </div>
+                          {(editedPoint?.spellRewards ?? []).length === 0 ? (
+                            <div className="text-xs text-gray-500">No spell rewards configured.</div>
+                          ) : (
+                            (editedPoint?.spellRewards ?? []).map((reward, index) => (
+                              <div key={`${reward.spellId}-${index}`} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                                <select
+                                  value={reward.spellId}
+                                  onChange={(e) =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      spellRewards: (editedPoint?.spellRewards ?? []).map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, spellId: e.target.value }
+                                          : entry
+                                      ),
+                                    })
+                                  }
+                                  className="border rounded px-2 py-1 w-full"
+                                >
+                                  <option value="">Select a spell</option>
+                                  {availableSpells.map((spell) => (
+                                    <option key={spell.id} value={spell.id}>
+                                      {spell.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      spellRewards: (editedPoint?.spellRewards ?? []).filter((_, entryIndex) => entryIndex !== index),
+                                    })
+                                  }
+                                  className="bg-red-500 text-white px-2 py-1 rounded text-xs"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2 mt-2">
                     <button
                       onClick={() => handlePointSave(point.id)}
@@ -584,6 +863,17 @@ export const Arena = () => {
                       Place ID: <a href={`/place/${point.googleMapsPlaceId}`} className="text-blue-500 hover:underline">{point.googleMapsPlaceId}</a>
                     </p>
                     <p className="text-gray-600 mb-2">Geometry: {point.geometry}</p>
+                    <p className="text-gray-600 mb-2">
+                      Rewards:{' '}
+                      {point.rewardMode === 'explicit'
+                        ? `XP ${point.rewardExperience ?? 0} · Gold ${point.rewardGold ?? 0} · Items ${point.itemRewards?.length ?? 0} · Spells ${point.spellRewards?.length ?? 0}`
+                        : `Random ${point.randomRewardSize ?? 'small'}`}
+                    </p>
+                    {point.materialRewards && point.materialRewards.length > 0 && (
+                      <p className="text-gray-600 mb-2">
+                        Materials: {summarizeMaterialRewards(point.materialRewards)}
+                      </p>
+                    )}
                     <p className="text-gray-600 mb-2">Tags: {point.tags?.map(tag => tag.name).join(', ')}</p>
                     <div className="text-sm text-gray-500">
                       <p>Latitude: {point.lat}</p>

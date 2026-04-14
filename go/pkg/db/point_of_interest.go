@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -12,6 +13,45 @@ import (
 
 type pointOfInterestHandle struct {
 	db *gorm.DB
+}
+
+func (c *pointOfInterestHandle) preloadBase(ctx context.Context) *gorm.DB {
+	return c.db.WithContext(ctx).
+		Preload("Characters").
+		Preload("Tags").
+		Preload("PointOfInterestChallenges").
+		Preload("ItemRewards").
+		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell")
+}
+
+func normalizePointOfInterestRewards(pointOfInterest *models.PointOfInterest) {
+	if pointOfInterest == nil {
+		return
+	}
+	if pointOfInterest.MaterialRewards == nil {
+		pointOfInterest.MaterialRewards = models.BaseMaterialRewards{}
+	}
+	if strings.TrimSpace(string(pointOfInterest.RewardMode)) == "" {
+		if pointOfInterest.RewardExperience > 0 ||
+			pointOfInterest.RewardGold > 0 ||
+			len(pointOfInterest.MaterialRewards) > 0 ||
+			len(pointOfInterest.ItemRewards) > 0 ||
+			len(pointOfInterest.SpellRewards) > 0 {
+			pointOfInterest.RewardMode = models.RewardModeExplicit
+		} else {
+			pointOfInterest.RewardMode = models.RewardModeRandom
+		}
+	}
+	pointOfInterest.RewardMode = models.NormalizeRewardMode(string(pointOfInterest.RewardMode))
+	pointOfInterest.RandomRewardSize = models.NormalizeRandomRewardSize(string(pointOfInterest.RandomRewardSize))
+	if pointOfInterest.RewardExperience < 0 {
+		pointOfInterest.RewardExperience = 0
+	}
+	if pointOfInterest.RewardGold < 0 {
+		pointOfInterest.RewardGold = 0
+	}
 }
 
 type CreatePointOfInterestRequest struct {
@@ -141,12 +181,12 @@ func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name str
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {
 	var pointsOfInterest []models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).
-		Preload("Characters").
-		Preload("Tags").
-		Preload("PointOfInterestChallenges").
+	if err := c.preloadBase(ctx).
 		Find(&pointsOfInterest).Error; err != nil {
 		return nil, err
+	}
+	for i := range pointsOfInterest {
+		normalizePointOfInterestRewards(&pointsOfInterest[i])
 	}
 
 	return pointsOfInterest, nil
@@ -155,13 +195,11 @@ func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfIn
 func (c *pointOfInterestHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error) {
 	var pointOfInterest models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).
-		Preload("Characters").
-		Preload("Tags").
-		Preload("PointOfInterestChallenges").
+	if err := c.preloadBase(ctx).
 		First(&pointOfInterest, id).Error; err != nil {
 		return nil, err
 	}
+	normalizePointOfInterestRewards(&pointOfInterest)
 
 	return &pointOfInterest, nil
 }
@@ -189,13 +227,13 @@ func (c *pointOfInterestHandle) FindByGroupID(ctx context.Context, groupID uuid.
 func (c *pointOfInterestHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.PointOfInterest, error) {
 	var pointsOfInterest []models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).
-		Preload("Characters").
-		Preload("Tags").
-		Preload("PointOfInterestChallenges").
+	if err := c.preloadBase(ctx).
 		Where("id IN (?)", ids).
 		Find(&pointsOfInterest).Error; err != nil {
 		return nil, err
+	}
+	for i := range pointsOfInterest {
+		normalizePointOfInterestRewards(&pointsOfInterest[i])
 	}
 
 	return pointsOfInterest, nil
@@ -225,6 +263,7 @@ func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest mode
 	if err := pointOfInterest.SetGeometry(pointOfInterest.Lat, pointOfInterest.Lng); err != nil {
 		return err
 	}
+	normalizePointOfInterestRewards(&pointOfInterest)
 
 	return c.db.WithContext(ctx).Create(&pointOfInterest).Error
 }
@@ -233,6 +272,7 @@ func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInter
 	pointOfInterest.ID = uuid.New()
 	pointOfInterest.CreatedAt = time.Now()
 	pointOfInterest.UpdatedAt = time.Now()
+	normalizePointOfInterestRewards(pointOfInterest)
 
 	if err := c.db.WithContext(ctx).Create(&pointOfInterest).Error; err != nil {
 		return err
@@ -277,18 +317,91 @@ func (c *pointOfInterestHandle) FindAllForZone(ctx context.Context, zoneID uuid.
 
 func (c *pointOfInterestHandle) FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error) {
 	var pointOfInterest models.PointOfInterest
-	if err := c.db.WithContext(ctx).Where("google_maps_place_id = ?", googleMapsPlaceID).First(&pointOfInterest).Error; err != nil {
+	if err := c.preloadBase(ctx).Where("google_maps_place_id = ?", googleMapsPlaceID).First(&pointOfInterest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	normalizePointOfInterestRewards(&pointOfInterest)
 
 	return &pointOfInterest, nil
 }
 
 func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error {
-	return c.db.WithContext(ctx).Model(&models.PointOfInterest{}).Where("id = ?", pointOfInterestID).Updates(updates).Error
+	if updates == nil {
+		return nil
+	}
+	updates.ID = pointOfInterestID
+	updates.UpdatedAt = time.Now()
+	if err := updates.SetGeometry(updates.Lat, updates.Lng); err != nil {
+		return err
+	}
+	normalizePointOfInterestRewards(updates)
+
+	payload := map[string]interface{}{
+		"name":                    updates.Name,
+		"description":             updates.Description,
+		"lat":                     updates.Lat,
+		"lng":                     updates.Lng,
+		"image_url":               updates.ImageUrl,
+		"thumbnail_url":           updates.ThumbnailURL,
+		"image_generation_status": updates.ImageGenerationStatus,
+		"image_generation_error":  updates.ImageGenerationError,
+		"clue":                    updates.Clue,
+		"original_name":           updates.OriginalName,
+		"google_maps_place_id":    updates.GoogleMapsPlaceID,
+		"google_maps_place_name":  updates.GoogleMapsPlaceName,
+		"story_variants":          updates.StoryVariants,
+		"geometry":                updates.Geometry,
+		"reward_mode":             updates.RewardMode,
+		"random_reward_size":      updates.RandomRewardSize,
+		"reward_experience":       updates.RewardExperience,
+		"reward_gold":             updates.RewardGold,
+		"material_rewards_json":   updates.MaterialRewards,
+		"unlock_tier":             updates.UnlockTier,
+		"updated_at":              updates.UpdatedAt,
+	}
+
+	return c.db.WithContext(ctx).Model(&models.PointOfInterest{}).Where("id = ?", pointOfInterestID).Updates(payload).Error
+}
+
+func (c *pointOfInterestHandle) ReplaceItemRewards(ctx context.Context, pointOfInterestID uuid.UUID, rewards []models.PointOfInterestItemReward) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("point_of_interest_id = ?", pointOfInterestID).Delete(&models.PointOfInterestItemReward{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, reward := range rewards {
+			reward.ID = uuid.New()
+			reward.PointOfInterestID = pointOfInterestID
+			reward.CreatedAt = now
+			reward.UpdatedAt = now
+			if err := tx.Create(&reward).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (c *pointOfInterestHandle) ReplaceSpellRewards(ctx context.Context, pointOfInterestID uuid.UUID, rewards []models.PointOfInterestSpellReward) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("point_of_interest_id = ?", pointOfInterestID).Delete(&models.PointOfInterestSpellReward{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, reward := range rewards {
+			reward.ID = uuid.New()
+			reward.PointOfInterestID = pointOfInterestID
+			reward.CreatedAt = now
+			reward.UpdatedAt = now
+			if err := tx.Create(&reward).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (c *pointOfInterestHandle) FindZoneForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) (*models.PointOfInterestZone, error) {

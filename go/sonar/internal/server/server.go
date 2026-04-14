@@ -93,6 +93,7 @@ const (
 	staticThumbnailStatusTTL           = 2 * time.Hour
 	questAcceptRadiusMeters            = 50.0
 	scenarioInteractRadiusMeters       = 50.0
+	treasureChestInteractRadiusMeters  = 50.0
 	scenarioDefaultDifficulty          = 24
 	scenarioRollSides                  = 20
 )
@@ -6931,21 +6932,32 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name              string  `binding:"required" json:"name"`
-		Description       string  `binding:"required" json:"description"`
-		Lat               string  `binding:"required" json:"lat"`
-		Lng               string  `binding:"required" json:"lng"`
-		UnlockTier        *int    `json:"unlockTier"`
-		Clue              string  `json:"clue"`
-		ImageUrl          string  `json:"imageUrl"`
-		OriginalName      string  `json:"originalName"`
-		GoogleMapsPlaceID *string `json:"googleMapsPlaceId"`
+		Name              string                       `binding:"required" json:"name"`
+		Description       string                       `binding:"required" json:"description"`
+		Lat               string                       `binding:"required" json:"lat"`
+		Lng               string                       `binding:"required" json:"lng"`
+		UnlockTier        *int                         `json:"unlockTier"`
+		Clue              string                       `json:"clue"`
+		ImageUrl          string                       `json:"imageUrl"`
+		OriginalName      string                       `json:"originalName"`
+		GoogleMapsPlaceID *string                      `json:"googleMapsPlaceId"`
+		RewardMode        string                       `json:"rewardMode"`
+		RandomRewardSize  string                       `json:"randomRewardSize"`
+		RewardExperience  int                          `json:"rewardExperience"`
+		RewardGold        int                          `json:"rewardGold"`
+		MaterialRewards   []baseMaterialRewardPayload  `json:"materialRewards"`
+		ItemRewards       []scenarioRewardItemPayload  `json:"itemRewards"`
+		SpellRewards      []scenarioRewardSpellPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
+		return
+	}
+	if requestBody.UnlockTier != nil && *requestBody.UnlockTier < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
 
@@ -6956,23 +6968,63 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		})
 		return
 	}
+	if existingPoi == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "point of interest not found"})
+		return
+	}
+	rewardConfig, err := s.parsePointOfInterestRewardConfig(ctx, pointOfInterestRewardConfigRequest{
+		RewardMode:       requestBody.RewardMode,
+		RandomRewardSize: requestBody.RandomRewardSize,
+		RewardExperience: requestBody.RewardExperience,
+		RewardGold:       requestBody.RewardGold,
+		MaterialRewards:  requestBody.MaterialRewards,
+		ItemRewards:      requestBody.ItemRewards,
+		SpellRewards:     requestBody.SpellRewards,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	googleMapsPlaceID := existingPoi.GoogleMapsPlaceID
+	if requestBody.GoogleMapsPlaceID != nil {
+		googleMapsPlaceID = requestBody.GoogleMapsPlaceID
+	}
 
-	if err := s.dbClient.PointOfInterest().Edit(
-		ctx,
-		pointOfInterestID,
-		requestBody.Name,
-		requestBody.Description,
-		requestBody.Lat,
-		requestBody.Lng,
-		requestBody.UnlockTier,
-		requestBody.Clue,
-		requestBody.ImageUrl,
-		requestBody.OriginalName,
-		requestBody.GoogleMapsPlaceID,
-	); err != nil {
+	updates := &models.PointOfInterest{
+		ID:                    pointOfInterestID,
+		Name:                  requestBody.Name,
+		Description:           requestBody.Description,
+		Lat:                   requestBody.Lat,
+		Lng:                   requestBody.Lng,
+		UnlockTier:            requestBody.UnlockTier,
+		Clue:                  requestBody.Clue,
+		ImageUrl:              requestBody.ImageUrl,
+		ThumbnailURL:          existingPoi.ThumbnailURL,
+		OriginalName:          requestBody.OriginalName,
+		GoogleMapsPlaceID:     googleMapsPlaceID,
+		GoogleMapsPlaceName:   existingPoi.GoogleMapsPlaceName,
+		StoryVariants:         existingPoi.StoryVariants,
+		RewardMode:            rewardConfig.RewardMode,
+		RandomRewardSize:      rewardConfig.RandomRewardSize,
+		RewardExperience:      rewardConfig.RewardExperience,
+		RewardGold:            rewardConfig.RewardGold,
+		MaterialRewards:       rewardConfig.MaterialRewards,
+		ImageGenerationStatus: existingPoi.ImageGenerationStatus,
+		ImageGenerationError:  existingPoi.ImageGenerationError,
+	}
+
+	if err := s.dbClient.PointOfInterest().Update(ctx, pointOfInterestID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
+		return
+	}
+	if err := s.dbClient.PointOfInterest().ReplaceItemRewards(ctx, pointOfInterestID, rewardConfig.ItemRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.PointOfInterest().ReplaceSpellRewards(ctx, pointOfInterestID, rewardConfig.SpellRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -7285,13 +7337,20 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 	}
 
 	var request struct {
-		Name        string `binding:"required" json:"name"`
-		Description string `binding:"required" json:"description"`
-		Latitude    string `binding:"required" json:"latitude"`
-		Longitude   string `binding:"required" json:"longitude"`
-		ImageUrl    string `binding:"required" json:"imageUrl"`
-		Clue        string `binding:"required" json:"clue"`
-		UnlockTier  *int   `json:"unlockTier"`
+		Name             string                       `binding:"required" json:"name"`
+		Description      string                       `binding:"required" json:"description"`
+		Latitude         string                       `binding:"required" json:"latitude"`
+		Longitude        string                       `binding:"required" json:"longitude"`
+		ImageUrl         string                       `binding:"required" json:"imageUrl"`
+		Clue             string                       `binding:"required" json:"clue"`
+		UnlockTier       *int                         `json:"unlockTier"`
+		RewardMode       string                       `json:"rewardMode"`
+		RandomRewardSize string                       `json:"randomRewardSize"`
+		RewardExperience int                          `json:"rewardExperience"`
+		RewardGold       int                          `json:"rewardGold"`
+		MaterialRewards  []baseMaterialRewardPayload  `json:"materialRewards"`
+		ItemRewards      []scenarioRewardItemPayload  `json:"itemRewards"`
+		SpellRewards     []scenarioRewardSpellPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&request); err != nil {
@@ -7300,21 +7359,51 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		})
 		return
 	}
+	if request.UnlockTier != nil && *request.UnlockTier < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
+		return
+	}
+	rewardConfig, err := s.parsePointOfInterestRewardConfig(ctx, pointOfInterestRewardConfigRequest{
+		RewardMode:       request.RewardMode,
+		RandomRewardSize: request.RandomRewardSize,
+		RewardExperience: request.RewardExperience,
+		RewardGold:       request.RewardGold,
+		MaterialRewards:  request.MaterialRewards,
+		ItemRewards:      request.ItemRewards,
+		SpellRewards:     request.SpellRewards,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	poi := &models.PointOfInterest{
-		Name:        request.Name,
-		Description: request.Description,
-		Lat:         request.Latitude,
-		Lng:         request.Longitude,
-		ImageUrl:    request.ImageUrl,
-		Clue:        request.Clue,
-		UnlockTier:  request.UnlockTier,
+		Name:             request.Name,
+		Description:      request.Description,
+		Lat:              request.Latitude,
+		Lng:              request.Longitude,
+		ImageUrl:         request.ImageUrl,
+		Clue:             request.Clue,
+		UnlockTier:       request.UnlockTier,
+		RewardMode:       rewardConfig.RewardMode,
+		RandomRewardSize: rewardConfig.RandomRewardSize,
+		RewardExperience: rewardConfig.RewardExperience,
+		RewardGold:       rewardConfig.RewardGold,
+		MaterialRewards:  rewardConfig.MaterialRewards,
 	}
 
 	if err := s.dbClient.PointOfInterest().CreateForGroup(ctx, poi, pointOfInterestGroupID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
+		return
+	}
+	if err := s.dbClient.PointOfInterest().ReplaceItemRewards(ctx, poi.ID, rewardConfig.ItemRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.PointOfInterest().ReplaceSpellRewards(ctx, poi.ID, rewardConfig.SpellRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -7950,6 +8039,19 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
+		return
+	}
+	alreadyDiscovered, err := s.dbClient.PointOfInterestDiscovery().ExistsForTeamAndPointOfInterest(
+		ctx,
+		*requestBody.TeamID,
+		requestBody.PointOfInterestID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if alreadyDiscovered {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "point of interest already discovered"})
 		return
 	}
 
@@ -12570,6 +12672,10 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
+	if pointOfInterest == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "point of interest not found"})
+		return
+	}
 
 	latPOI, err := strconv.ParseFloat(pointOfInterest.Lat, 64)
 	if err != nil {
@@ -12596,6 +12702,39 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 
 	if distanceFromPOI > 200 {
 		c.JSON(400, gin.H{"error": fmt.Sprintf("point of interest is not within 200 meters: %f", distanceFromPOI)})
+		return
+	}
+
+	if pointOfInterestUnlockRequest.TeamID != nil {
+		alreadyDiscovered, err := s.dbClient.PointOfInterestDiscovery().ExistsForTeamAndPointOfInterest(
+			c,
+			*pointOfInterestUnlockRequest.TeamID,
+			pointOfInterestUnlockRequest.PointOfInterestID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if alreadyDiscovered {
+			c.JSON(http.StatusConflict, gin.H{"error": "point of interest already discovered"})
+			return
+		}
+	}
+	discoveryUserID := pointOfInterestUnlockRequest.UserID
+	if discoveryUserID == nil || *discoveryUserID == uuid.Nil {
+		discoveryUserID = &user.ID
+	}
+	alreadyDiscovered, err := s.dbClient.PointOfInterestDiscovery().ExistsForUserAndPointOfInterest(
+		c,
+		user.ID,
+		pointOfInterestUnlockRequest.PointOfInterestID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if alreadyDiscovered {
+		c.JSON(http.StatusConflict, gin.H{"error": "point of interest already discovered"})
 		return
 	}
 
@@ -12657,22 +12796,96 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		}
 	}
 
-	if err := s.dbClient.PointOfInterest().Unlock(c, pointOfInterestUnlockRequest.PointOfInterestID, pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.UserID); err != nil {
+	if err := s.dbClient.PointOfInterest().Unlock(c, pointOfInterestUnlockRequest.PointOfInterestID, pointOfInterestUnlockRequest.TeamID, discoveryUserID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
+	rewardMode := models.NormalizeRewardMode(string(pointOfInterest.RewardMode))
+	rewardSize := models.NormalizeRandomRewardSize(string(pointOfInterest.RandomRewardSize))
+	rewardExperience := 0
+	rewardGold := 0
+	rewardItems := []scenarioRewardItem{}
+	rewardSpells := []scenarioRewardSpell{}
+	if rewardMode == models.RewardModeRandom {
+		plan, _, err := s.randomRewardPlanForUser(
+			c,
+			user.ID,
+			rewardSize,
+			fmt.Sprintf("point_of_interest:%s:user:%s", pointOfInterest.ID, user.ID),
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		rewardExperience = plan.Experience
+		rewardGold = plan.Gold
+		rewardItems = randomRewardPlanToScenarioItems(plan)
+	} else {
+		rewardExperience = pointOfInterest.RewardExperience
+		if rewardExperience < 0 {
+			rewardExperience = 0
+		}
+		rewardGold = pointOfInterest.RewardGold
+		if rewardGold < 0 {
+			rewardGold = 0
+		}
+		rewardItems = pointOfInterestRewardItemsFromRewards(pointOfInterest.ItemRewards)
+		rewardSpells = pointOfInterestRewardSpellsFromRewards(pointOfInterest.SpellRewards)
+	}
+	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
+		c,
+		user.ID,
+		rewardExperience,
+		rewardGold,
+		rewardItems,
+		rewardSpells,
+		[]string{},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
+		c,
+		user.ID,
+		resolveBaseMaterialRewards(
+			pointOfInterest.RewardMode,
+			pointOfInterest.MaterialRewards,
+			fmt.Sprintf("point_of_interest:%s:user:%s:materials", pointOfInterest.ID, user.ID),
+		),
+		"point_of_interest",
+		&pointOfInterest.ID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	if pointOfInterestUnlockRequest.TeamID != nil {
-		if err := s.chatClient.AddUnlockMessage(c, pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.UserID, pointOfInterestUnlockRequest.PointOfInterestID); err != nil {
+		if err := s.chatClient.AddUnlockMessage(c, pointOfInterestUnlockRequest.TeamID, discoveryUserID, pointOfInterestUnlockRequest.PointOfInterestID); err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
 	}
+	updatedUser, err := s.dbClient.User().FindByID(c, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
 
 	c.JSON(200, gin.H{
-		"message": "everything cool",
+		"message":              "point of interest unlocked successfully",
+		"rewardMode":           rewardMode,
+		"randomRewardSize":     rewardSize,
+		"rewardExperience":     rewardExperience,
+		"rewardGold":           rewardGold,
+		"goldAwarded":          rewardGold,
+		"itemsAwarded":         itemsAwarded,
+		"spellsAwarded":        spellsAwarded,
+		"baseResourcesAwarded": serializeBaseResourceDeltas(baseResourcesAwarded),
+		"user":                 updatedUser,
 	})
 }
 
@@ -15542,8 +15755,8 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	}
 
 	distance := util.HaversineDistance(userLat, userLng, treasureChest.Latitude, treasureChest.Longitude)
-	if distance > 25 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 25 meters of the treasure chest. Currently %.0f meters away", distance)})
+	if distance > treasureChestInteractRadiusMeters {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within %.0f meters of the treasure chest. Currently %.0f meters away", treasureChestInteractRadiusMeters, distance)})
 		return
 	}
 

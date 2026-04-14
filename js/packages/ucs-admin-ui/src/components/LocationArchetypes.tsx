@@ -20,11 +20,15 @@ const buildEmptyArchetype = (): LocationArchetype => ({
   updatedAt: new Date(),
 });
 
-const clampPreview = (items: string[], limit: number) => {
-  if (items.length <= limit) {
-    return { preview: items, remaining: 0 };
+const clampPreview = (items: string[] | null | undefined, limit: number) => {
+  const safeItems = items ?? [];
+  if (safeItems.length <= limit) {
+    return { preview: safeItems, remaining: 0 };
   }
-  return { preview: items.slice(0, limit), remaining: items.length - limit };
+  return {
+    preview: safeItems.slice(0, limit),
+    remaining: safeItems.length - limit,
+  };
 };
 
 const mergeUnique = (list: string[], values: string[]) => {
@@ -279,9 +283,9 @@ const LocationArchetypes: React.FC = () => {
   const openEdit = (archetype: LocationArchetype) => {
     setEditDraft({
       ...archetype,
-      includedTypes: [...archetype.includedTypes],
-      excludedTypes: [...archetype.excludedTypes],
-      challenges: archetype.challenges.map((challenge) => ({
+      includedTypes: [...(archetype.includedTypes ?? [])],
+      excludedTypes: [...(archetype.excludedTypes ?? [])],
+      challenges: (archetype.challenges ?? []).map((challenge) => ({
         ...challenge,
         submissionType: (challenge.submissionType ??
           'photo') as QuestNodeSubmissionType,
@@ -341,27 +345,31 @@ const LocationArchetypes: React.FC = () => {
   };
 
   const clampChallengePreview = (
-    items: LocationArchetypeChallenge[],
+    items: LocationArchetypeChallenge[] | null | undefined,
     limit: number
   ) => {
-    if (items.length <= limit) {
-      return { preview: items, remaining: 0 };
+    const safeItems = items ?? [];
+    if (safeItems.length <= limit) {
+      return { preview: safeItems, remaining: 0 };
     }
-    return { preview: items.slice(0, limit), remaining: items.length - limit };
+    return {
+      preview: safeItems.slice(0, limit),
+      remaining: safeItems.length - limit,
+    };
   };
 
   const createIncludedOptions = placeTypes
     .filter((type) =>
       type.toLowerCase().includes(createIncludedQuery.trim().toLowerCase())
     )
-    .filter((type) => !createDraft.includedTypes.includes(type))
+    .filter((type) => !(createDraft.includedTypes ?? []).includes(type))
     .slice(0, 8);
 
   const createExcludedOptions = placeTypes
     .filter((type) =>
       type.toLowerCase().includes(createExcludedQuery.trim().toLowerCase())
     )
-    .filter((type) => !createDraft.excludedTypes.includes(type))
+    .filter((type) => !(createDraft.excludedTypes ?? []).includes(type))
     .slice(0, 8);
 
   const editIncludedOptions = editDraft
@@ -369,7 +377,7 @@ const LocationArchetypes: React.FC = () => {
         .filter((type) =>
           type.toLowerCase().includes(editIncludedQuery.trim().toLowerCase())
         )
-        .filter((type) => !editDraft.includedTypes.includes(type))
+        .filter((type) => !(editDraft.includedTypes ?? []).includes(type))
         .slice(0, 8)
     : [];
 
@@ -378,7 +386,7 @@ const LocationArchetypes: React.FC = () => {
         .filter((type) =>
           type.toLowerCase().includes(editExcludedQuery.trim().toLowerCase())
         )
-        .filter((type) => !editDraft.excludedTypes.includes(type))
+        .filter((type) => !(editDraft.excludedTypes ?? []).includes(type))
         .slice(0, 8)
     : [];
 
@@ -426,8 +434,8 @@ const LocationArchetypes: React.FC = () => {
         }[];
       }>('/sonar/locationArchetypes/challenges/generate', {
         name: draft.name,
-        includedTypes: draft.includedTypes,
-        excludedTypes: draft.excludedTypes,
+        includedTypes: draft.includedTypes ?? [],
+        excludedTypes: draft.excludedTypes ?? [],
         allowedSubmissionTypes: submissionTypeOptions.map(
           (option) => option.value
         ),
@@ -501,12 +509,12 @@ const LocationArchetypes: React.FC = () => {
             </div>
           ) : (
             filteredArchetypes.map((archetype, index) => {
-              const includedPreview = clampPreview(archetype.includedTypes, 6);
-              const excludedPreview = clampPreview(archetype.excludedTypes, 6);
-              const challengePreview = clampChallengePreview(
-                archetype.challenges,
-                6
-              );
+              const includedTypes = archetype.includedTypes ?? [];
+              const excludedTypes = archetype.excludedTypes ?? [];
+              const challenges = archetype.challenges ?? [];
+              const includedPreview = clampPreview(includedTypes, 6);
+              const excludedPreview = clampPreview(excludedTypes, 6);
+              const challengePreview = clampChallengePreview(challenges, 6);
               return (
                 <article
                   key={archetype.id}
@@ -517,9 +525,8 @@ const LocationArchetypes: React.FC = () => {
                     <div>
                       <h3 className="qa-card-title">{archetype.name}</h3>
                       <div className="qa-meta">
-                        {archetype.includedTypes.length} included ·{' '}
-                        {archetype.excludedTypes.length} excluded ·{' '}
-                        {archetype.challenges.length} challenges
+                        {includedTypes.length} included · {excludedTypes.length}{' '}
+                        excluded · {challenges.length} challenges
                       </div>
                     </div>
                     <div className="qa-actions">
@@ -548,20 +555,18 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-stat">
                       <div className="qa-stat-label">Included Types</div>
                       <div className="qa-stat-value">
-                        {archetype.includedTypes.length}
+                        {includedTypes.length}
                       </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Excluded Types</div>
                       <div className="qa-stat-value">
-                        {archetype.excludedTypes.length}
+                        {excludedTypes.length}
                       </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Challenge Prompts</div>
-                      <div className="qa-stat-value">
-                        {archetype.challenges.length}
-                      </div>
+                      <div className="qa-stat-value">{challenges.length}</div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Updated</div>

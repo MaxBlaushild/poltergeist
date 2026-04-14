@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,17 +18,21 @@ import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../models/scenario.dart';
+import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
+import '../providers/completed_task_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
+import '../providers/user_level_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/media_service.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
 import '../utils/camera_capture.dart';
 import '../widgets/paper_texture.dart';
+import 'discovery_proximity_section.dart';
 
 const _placeholderImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
@@ -40,6 +43,7 @@ typedef QuestSubmissionOverlayCallback =
     void Function(
       QuestSubmissionOverlayPhase phase, {
       String? message,
+      String? stepLabel,
       int? score,
       int? difficulty,
       int? combinedScore,
@@ -109,7 +113,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   bool _usingTelescope = false;
   bool _telescopeChecked = false;
   String? _telescopeError;
-  InventoryItem? _telescopeItem;
   OwnedInventoryItem? _ownedTelescope;
   final StickyProximityAccess _proximityAccess = StickyProximityAccess();
 
@@ -143,7 +146,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         oldWidget.pointOfInterest.id != widget.pointOfInterest.id) {
       _telescopeChecked = false;
       _ownedTelescope = null;
-      _telescopeItem = null;
       _telescopeError = null;
       _maybeLoadTelescope();
     }
@@ -225,7 +227,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         }
       }
       setState(() {
-        _telescopeItem = telescopeItem;
         _ownedTelescope = telescopeOwned;
         _loadingTelescope = false;
       });
@@ -332,6 +333,77 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     }
   }
 
+  Map<String, dynamic>? _discoveryRewardModalData(
+    Map<String, dynamic> response,
+  ) {
+    final rewardExperience =
+        (response['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold =
+        (response['rewardGold'] as num?)?.toInt() ??
+        (response['goldAwarded'] as num?)?.toInt() ??
+        0;
+    final itemsAwarded =
+        (response['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final spellsAwarded =
+        (response['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final baseResourcesAwarded =
+        (response['baseResourcesAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+
+    if (rewardExperience <= 0 &&
+        rewardGold <= 0 &&
+        itemsAwarded.isEmpty &&
+        spellsAwarded.isEmpty &&
+        baseResourcesAwarded.isEmpty) {
+      return null;
+    }
+
+    return {
+      'pointOfInterestName': widget.pointOfInterest.name,
+      'rewardExperience': rewardExperience,
+      'rewardGold': rewardGold,
+      'goldAwarded': rewardGold,
+      'itemsAwarded': itemsAwarded,
+      'spellsAwarded': spellsAwarded,
+      'baseResourcesAwarded': baseResourcesAwarded,
+    };
+  }
+
+  Future<void> _presentDiscoveryRewards(Map<String, dynamic> response) async {
+    final statsProvider = context.read<CharacterStatsProvider>();
+    final previousLevel = statsProvider.level;
+    await Future.wait([
+      context.read<AuthProvider>().refresh(),
+      statsProvider.refresh(silent: true),
+      context.read<UserLevelProvider>().refresh(),
+      context.read<ActivityFeedProvider>().refresh(),
+    ]);
+    if (!mounted) return;
+    final modalData = _discoveryRewardModalData(response);
+    final completedTaskProvider = context.read<CompletedTaskProvider>();
+    if (modalData != null) {
+      completedTaskProvider.showModal(
+        'pointOfInterestDiscovered',
+        data: modalData,
+      );
+    }
+    completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+      previousLevel: previousLevel,
+      currentLevel: statsProvider.level,
+    );
+  }
+
   Future<void> _handleUnlock() async {
     if (_loading) return;
     if (_isAlreadyDiscovered()) {
@@ -376,12 +448,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       _error = null;
     });
     try {
-      await context.read<PoiService>().unlockPointOfInterest(
+      final result = await context.read<PoiService>().unlockPointOfInterest(
         poi.id,
         loc.latitude,
         loc.longitude,
         userId: userId,
       );
+      await _presentDiscoveryRewards(result);
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
@@ -447,12 +520,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final poi = widget.pointOfInterest;
     final plat = double.tryParse(poi.lat) ?? 0.0;
     final plng = double.tryParse(poi.lng) ?? 0.0;
+    final inventoryService = context.read<InventoryService>();
     setState(() {
       _usingTelescope = true;
       _telescopeError = null;
     });
     try {
-      await context.read<PoiService>().unlockPointOfInterest(
+      final result = await context.read<PoiService>().unlockPointOfInterest(
         poi.id,
         plat,
         plng,
@@ -460,12 +534,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       );
       String? consumeWarning;
       try {
-        await context.read<InventoryService>().useItem(owned.id);
+        await inventoryService.useItem(owned.id);
       } catch (e) {
         consumeWarning =
             'Discovered, but we could not consume the Golden Telescope. Please check your inventory.';
         debugPrint('Golden Telescope consumption failed: $e');
       }
+      await _presentDiscoveryRewards(result);
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
@@ -645,7 +720,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   : () async {
                                       final result =
                                           await captureImageFromCamera();
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       if (result == null ||
                                           result.bytes.isEmpty) {
                                         ScaffoldMessenger.of(
@@ -706,7 +781,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                           type: FileType.video,
                                           withData: true,
                                         );
-                                    if (!mounted) return;
+                                    if (!context.mounted) return;
                                     if (result == null ||
                                         result.files.isEmpty) {
                                       ScaffoldMessenger.of(
@@ -794,8 +869,19 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
                             widget.onClose();
-                            widget.onQuestSubmissionState?.call(
-                              QuestSubmissionOverlayPhase.loading,
+                            void updateLoadingStep(String stepLabel) {
+                              widget.onQuestSubmissionState?.call(
+                                QuestSubmissionOverlayPhase.loading,
+                                stepLabel: stepLabel,
+                              );
+                            }
+
+                            updateLoadingStep(
+                              isPhotoSubmission
+                                  ? 'Preparing photo upload...'
+                                  : isVideoSubmission
+                                  ? 'Preparing video upload...'
+                                  : 'Sending answer to the Dungeonmaster...',
                             );
                             try {
                               String? imageSubmissionUrl;
@@ -809,6 +895,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                     'jpg';
                                 final key =
                                     'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                updateLoadingStep('Preparing photo upload...');
                                 final url = await mediaService
                                     .getPresignedUploadUrl(
                                       ApiConstants.crewPointsOfInterestBucket,
@@ -830,6 +917,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   );
                                   return;
                                 }
+                                updateLoadingStep('Uploading photo...');
                                 final ok = await mediaService.uploadToPresigned(
                                   url,
                                   Uint8List.fromList(capturedImage!.bytes),
@@ -862,6 +950,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                     'mp4';
                                 final key =
                                     'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                updateLoadingStep('Preparing video upload...');
                                 final url = await mediaService
                                     .getPresignedUploadUrl(
                                       ApiConstants.crewPointsOfInterestBucket,
@@ -900,6 +989,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   );
                                   return;
                                 }
+                                updateLoadingStep('Uploading video...');
                                 final ok = await mediaService.uploadToPresigned(
                                   url,
                                   Uint8List.fromList(bytes),
@@ -924,6 +1014,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                 }
                                 videoSubmissionUrl = url.split('?').first;
                               }
+                              updateLoadingStep(
+                                'Waiting for the Dungeonmaster to judge your submission...',
+                              );
                               final resp = await questLogProvider
                                   .submitQuestNode(
                                     node.id,
@@ -1071,7 +1164,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         ? _haversineMeters(loc.latitude, loc.longitude, plat, plng)
         : null;
     final liveWithinRange = distance != null && distance <= _unlockRadiusMeters;
-    final withinRange = _proximityAccess.resolve(
+    final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: loc,
       withinRange: liveWithinRange,
     );
@@ -1140,34 +1233,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
               ),
               const SizedBox(height: 20),
             ],
-            Text(
-              'Visit this location to unlock this point of interest. You must be within ${_unlockRadiusMeters.round()} meters to discover it.',
-              style: Theme.of(context).textTheme.bodyLarge,
+            DiscoveryProximitySection(
+              subjectLabel: 'point of interest',
+              unlockRadiusMeters: _unlockRadiusMeters,
+              distanceMeters: distance,
+              hasProximityAccess: hasProximityAccess,
+              liveWithinRange: liveWithinRange,
             ),
-            const SizedBox(height: 16),
-            if (distance != null)
-              Text(
-                withinRange
-                    ? 'Within range! Tap Unlock to discover.'
-                    : 'You are ${distance.round()} m away.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: withinRange
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.7),
-                  fontWeight: withinRange ? FontWeight.w600 : null,
-                ),
-              )
-            else
-              Text(
-                'Enable location to see distance.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -1261,11 +1333,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: (_loading || !withinRange) ? null : _handleUnlock,
+              onPressed: (_loading || !hasProximityAccess)
+                  ? null
+                  : _handleUnlock,
               child: Text(
                 _loading
                     ? 'Unlocking…'
-                    : !withinRange
+                    : !hasProximityAccess
                     ? 'Too far to unlock'
                     : 'Unlock',
               ),
@@ -1383,15 +1457,16 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                imageUrl,
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 200,
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.image_not_supported, size: 48),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Image.network(
+                  imageUrl,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.image_not_supported, size: 48),
+                  ),
                 ),
               ),
             ),

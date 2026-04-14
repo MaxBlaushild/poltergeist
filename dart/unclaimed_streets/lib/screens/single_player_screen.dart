@@ -21,6 +21,7 @@ import '../models/base.dart';
 import '../models/exposition.dart';
 import '../models/healing_fountain.dart';
 import '../models/inventory_item.dart';
+import '../models/location.dart';
 import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -107,11 +108,27 @@ const _discoveredCharactersPrefsKeyPrefix =
 const _mapThumbnailVersion = 'v11';
 const _standardMarkerThumbnailSize = 0.75;
 const _baseMarkerSizeScale = 0.75;
+const int _monsterBattleDefeatHealthFloorPercent = 30;
+const int _monsterBattleDefeatManaFloorPercent = 25;
+const int _monsterBattleDefeatStatusDurationMinutes = 15;
+
+int _monsterBattleDefeatResourceFloor(int maxResource, int floorPercent) {
+  if (maxResource <= 0) return 0;
+  final floor = ((maxResource * floorPercent) / 100).ceil();
+  return math.max(1, math.min(maxResource, floor));
+}
+
 const _baseMarkerIconSize = 1.68 * _baseMarkerSizeScale;
 const _basePlacementPreviewIconSize = 1.76 * _baseMarkerSizeScale;
 const _baseFallbackCircleRadius = 42.0 * _baseMarkerSizeScale;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
+const _zoneBaseContentFreshDuration = Duration(minutes: 2);
+const _zoneBaseContentWarmupDebounce = Duration(milliseconds: 900);
+const _zoneBaseContentWarmupThrottle = Duration(seconds: 4);
+const _zoneBaseContentWarmCount = 4;
+const _zoneBaseContentMaxCacheEntries = 6;
+const _zoneBaseContentThumbnailWarmCount = 8;
 const _poiAssociationCoordinatePrecision = 4;
 const _pinSelectionHitRadiusPx = 24.0;
 const _transparentMapHaloColor = 'rgba(0,0,0,0)';
@@ -248,12 +265,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String _lastMapFilterKey = '';
   bool _pinBatchRevealInProgress = false;
   int _zoneContentRequestVersion = 0;
-  final Map<String, _ZoneBaseContent> _zoneBaseContentCache = {};
+  final Map<String, _ZoneBaseContentCacheEntry> _zoneBaseContentCache = {};
   final Map<String, Future<_ZoneBaseContent>> _zoneBaseContentRequests = {};
+  Timer? _zoneBaseContentWarmupTimer;
+  String _lastZoneBaseContentWarmSignature = '';
+  DateTime? _lastZoneBaseContentWarmAt;
   String? _renderedTreasureChestZoneId;
   QuestSubmissionOverlayPhase _questSubmissionPhase =
       QuestSubmissionOverlayPhase.hidden;
   String? _questSubmissionMessage;
+  String? _questSubmissionStepLabel;
   int? _questSubmissionScore;
   int? _questSubmissionDifficulty;
   int? _questSubmissionCombinedScore;
@@ -276,6 +297,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialReplayPending = false;
   int _lastTutorialReplayRequestCount = 0;
   bool _loadAllInFlight = false;
+  int _loadAllGeneration = 0;
   String? _tutorialFocusedScenarioId;
   String? _tutorialFocusedMonsterEncounterId;
   bool _tutorialNormalPinsRevealInProgress = false;
@@ -334,6 +356,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _mapLoadTimeout?.cancel();
     _questGlowTimer?.cancel();
     _questPoiPulseTimer?.cancel();
+    _zoneBaseContentWarmupTimer?.cancel();
     _clearQuestSubmissionRevealTimers();
     _trackedQuestsController.dispose();
     try {
@@ -373,15 +396,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _onZoneChanged() {
     if (!mounted) return;
+    final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
     if (_styleLoaded &&
         _mapController != null &&
         _markersAdded &&
         !_isTutorialMapFocusActive &&
-        !_tutorialNormalPinsRevealInProgress) {
+        !_tutorialNormalPinsRevealInProgress &&
+        _hasZoneBaseContentSnapshot(selectedZoneId)) {
       _pinBatchRevealInProgress = true;
       unawaited(_hideZoneScopedPins());
     }
     unawaited(_loadTreasureChestsForSelectedZone());
+    _scheduleZoneBaseContentWarmup(immediate: true);
     unawaited(_addZoneBoundaries());
     if (_styleLoaded && _mapController != null && !_markersAdded) {
       unawaited(_addPoiMarkers());
@@ -392,6 +418,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     _updateSelectedZoneFromLocation();
     _requestQuestLogIfReady();
+    _scheduleZoneBaseContentWarmup();
     _refreshScenarioVisibilityForLocationChange();
     _maybeShowTutorialDialogues();
   }
@@ -2400,43 +2427,50 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     _loadAllInFlight = true;
+    final loadGeneration = ++_loadAllGeneration;
     debugPrint('SinglePlayer: _loadAll start');
     final svc = context.read<PoiService>();
     final discoveriesProvider = context.read<DiscoveriesProvider>();
     final zoneProvider = context.read<ZoneProvider>();
     try {
-      await _restoreDefeatedMonsterIds();
-      await _restoreDiscoveredCharacterIds();
+      final restoreDefeatedFuture = _restoreDefeatedMonsterIds();
+      final restoreDiscoveredCharactersFuture =
+          _restoreDiscoveredCharacterIds();
       final discoveriesFuture = discoveriesProvider.refresh();
       final zonesFuture = svc.getZones();
       final poisFuture = svc.getPointsOfInterest();
-      final charactersFuture = svc.getCharacters();
       final basesFuture = svc.getVisibleBases();
-      await discoveriesFuture;
+      final charactersFuture = svc.getCharacters();
       final zones = await zonesFuture;
       final pois = await poisFuture;
-      final characters = await charactersFuture;
-      final bases = await basesFuture;
-      if (!mounted) return;
+      if (!_isCurrentLoadGeneration(loadGeneration)) return;
       debugPrint(
-        'SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}',
+        'SinglePlayer: _loadAll shell ready: zones=${zones.length} pois=${pois.length}',
       );
       zoneProvider.setZones(zones);
       setState(() {
         _zones = zones;
         _pois = pois;
-        _characters = characters;
-        _bases = bases;
         _markersAdded = false;
       });
       _updateSelectedZoneFromLocation();
       _requestQuestLogIfReady(force: true);
-      await _loadTreasureChestsForSelectedZone();
-      await _prefetchZoneBaseContent();
-      await _addPoiMarkers();
-      await _refreshDiscoveredPoiMarkers();
-      await _addZoneBoundaries();
-      debugPrint('SinglePlayer: _loadAll done');
+      _scheduleZoneBaseContentWarmup(immediate: true);
+      if (_styleLoaded && _mapController != null) {
+        unawaited(_addPoiMarkers());
+        unawaited(_addZoneBoundaries());
+      }
+      unawaited(
+        _hydrateWorldShellBackground(
+          loadGeneration,
+          restoreDefeatedFuture: restoreDefeatedFuture,
+          restoreDiscoveredCharactersFuture: restoreDiscoveredCharactersFuture,
+          discoveriesFuture: discoveriesFuture,
+          basesFuture: basesFuture,
+          charactersFuture: charactersFuture,
+        ),
+      );
+      debugPrint('SinglePlayer: _loadAll shell staged');
     } catch (e, stackTrace) {
       debugPrint('SinglePlayer: _loadAll error: $e');
       debugPrint('SinglePlayer: _loadAll stack: $stackTrace');
@@ -2462,6 +2496,95 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadBases error: $e');
+    }
+  }
+
+  bool _isCurrentLoadGeneration(int generation) {
+    return mounted && generation == _loadAllGeneration;
+  }
+
+  Future<void> _hydrateWorldShellBackground(
+    int loadGeneration, {
+    required Future<void> restoreDefeatedFuture,
+    required Future<void> restoreDiscoveredCharactersFuture,
+    required Future<void> discoveriesFuture,
+    required Future<List<BasePin>> basesFuture,
+    required Future<List<Character>> charactersFuture,
+  }) async {
+    unawaited(_applyBootstrapBases(loadGeneration, basesFuture));
+    unawaited(
+      _applyBootstrapCharacters(
+        loadGeneration,
+        restoreDiscoveredCharactersFuture: restoreDiscoveredCharactersFuture,
+        charactersFuture: charactersFuture,
+      ),
+    );
+    unawaited(
+      _applyBootstrapZoneContent(
+        loadGeneration,
+        restoreDefeatedFuture: restoreDefeatedFuture,
+      ),
+    );
+
+    try {
+      await discoveriesFuture;
+    } catch (e) {
+      debugPrint('SinglePlayer: discoveries bootstrap error: $e');
+    }
+  }
+
+  Future<void> _applyBootstrapBases(
+    int loadGeneration,
+    Future<List<BasePin>> basesFuture,
+  ) async {
+    try {
+      final bases = await basesFuture;
+      if (!_isCurrentLoadGeneration(loadGeneration)) return;
+      setState(() {
+        _bases = bases;
+      });
+      if (_styleLoaded && _mapController != null && _markersAdded) {
+        await _refreshBaseSymbols();
+        if (_isPlacingBase) {
+          await _hideMarkersForBasePlacement();
+          await _refreshBasePlacementPreview();
+        }
+      }
+    } catch (e) {
+      debugPrint('SinglePlayer: bootstrap bases error: $e');
+    }
+  }
+
+  Future<void> _applyBootstrapCharacters(
+    int loadGeneration, {
+    required Future<void> restoreDiscoveredCharactersFuture,
+    required Future<List<Character>> charactersFuture,
+  }) async {
+    try {
+      await restoreDiscoveredCharactersFuture;
+      final characters = await charactersFuture;
+      if (!_isCurrentLoadGeneration(loadGeneration)) return;
+      setState(() {
+        _characters = characters;
+      });
+      if (_styleLoaded && _mapController != null && _markersAdded) {
+        await _updateCharacterSymbolsForState(characters);
+      }
+    } catch (e) {
+      debugPrint('SinglePlayer: bootstrap characters error: $e');
+    }
+  }
+
+  Future<void> _applyBootstrapZoneContent(
+    int loadGeneration, {
+    required Future<void> restoreDefeatedFuture,
+  }) async {
+    try {
+      await restoreDefeatedFuture;
+      if (!_isCurrentLoadGeneration(loadGeneration)) return;
+      await _loadTreasureChestsForSelectedZone();
+    } catch (e) {
+      debugPrint('SinglePlayer: bootstrap zone content error: $e');
     }
   }
 
@@ -2926,7 +3049,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     final zoneChanged = _renderedTreasureChestZoneId != zoneId;
+    final hasZoneSnapshot = _hasZoneBaseContentSnapshot(zoneId);
     if (zoneChanged &&
+        hasZoneSnapshot &&
         _styleLoaded &&
         _mapController != null &&
         _markersAdded &&
@@ -3177,23 +3302,52 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     String zoneId, {
     PoiService? svc,
   }) {
-    final cached = _zoneBaseContentCache[zoneId];
+    final normalizedZoneId = zoneId.trim();
+    final service = svc ?? context.read<PoiService>();
+    final cached = _zoneBaseContentCache[normalizedZoneId];
     if (cached != null) {
-      return Future<_ZoneBaseContent>.value(cached);
+      cached.touch();
+      if (!cached.isFresh) {
+        // Keep movement snappy by serving the last snapshot immediately while
+        // the selected zone refreshes in the background.
+        unawaited(
+          _warmZoneBaseContentInBackground(normalizedZoneId, svc: service),
+        );
+      }
+      return Future<_ZoneBaseContent>.value(cached.content);
     }
-    final inFlight = _zoneBaseContentRequests[zoneId];
+    final inFlight = _zoneBaseContentRequests[normalizedZoneId];
+    if (inFlight != null) return inFlight;
+    return _fetchZoneBaseContent(normalizedZoneId, svc: service);
+  }
+
+  Future<_ZoneBaseContent> _fetchZoneBaseContent(
+    String zoneId, {
+    PoiService? svc,
+    bool forceRefresh = false,
+  }) {
+    final normalizedZoneId = zoneId.trim();
+    if (!forceRefresh) {
+      final cached = _zoneBaseContentCache[normalizedZoneId];
+      if (cached != null && cached.isFresh) {
+        cached.touch();
+        return Future<_ZoneBaseContent>.value(cached.content);
+      }
+    }
+
+    final inFlight = _zoneBaseContentRequests[normalizedZoneId];
     if (inFlight != null) return inFlight;
 
     final service = svc ?? context.read<PoiService>();
     final request = () async {
       try {
         final results = await Future.wait<dynamic>([
-          service.getTreasureChestsForZone(zoneId),
-          service.getHealingFountainsForZone(zoneId),
-          service.getScenariosForZone(zoneId),
-          service.getExpositionsForZone(zoneId),
-          service.getMonsterEncountersForZone(zoneId),
-          service.getChallengesForZone(zoneId),
+          service.getTreasureChestsForZone(normalizedZoneId),
+          service.getHealingFountainsForZone(normalizedZoneId),
+          service.getScenariosForZone(normalizedZoneId),
+          service.getExpositionsForZone(normalizedZoneId),
+          service.getMonsterEncountersForZone(normalizedZoneId),
+          service.getChallengesForZone(normalizedZoneId),
         ]);
         final content = _ZoneBaseContent(
           treasureChests: results[0] as List<TreasureChest>,
@@ -3203,27 +3357,224 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           monsters: results[4] as List<MonsterEncounter>,
           challenges: results[5] as List<Challenge>,
         );
-        _zoneBaseContentCache[zoneId] = content;
+        _storeZoneBaseContent(normalizedZoneId, content);
         return content;
       } finally {
-        _zoneBaseContentRequests.remove(zoneId);
+        _zoneBaseContentRequests.remove(normalizedZoneId);
       }
     }();
 
-    _zoneBaseContentRequests[zoneId] = request;
+    _zoneBaseContentRequests[normalizedZoneId] = request;
     return request;
   }
 
-  Future<void> _prefetchZoneBaseContent() async {
+  Future<void> _warmZoneBaseContentInBackground(
+    String zoneId, {
+    PoiService? svc,
+  }) async {
+    try {
+      await _fetchZoneBaseContent(zoneId, svc: svc, forceRefresh: true);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
+    if (selectedZoneId != zoneId) return;
+    await _loadTreasureChestsForSelectedZone();
+  }
+
+  void _scheduleZoneBaseContentWarmup({bool immediate = false}) {
+    if (!mounted || _zones.isEmpty) return;
+    final location = context.read<LocationProvider>().location;
+    final signature = _zoneBaseContentWarmSignature(location);
+    final now = DateTime.now();
+    final warmupAge = _lastZoneBaseContentWarmAt == null
+        ? _zoneBaseContentWarmupThrottle
+        : now.difference(_lastZoneBaseContentWarmAt!);
+    final recentlyWarmed =
+        _lastZoneBaseContentWarmAt != null &&
+        warmupAge < _zoneBaseContentWarmupThrottle;
+    if (!immediate &&
+        signature == _lastZoneBaseContentWarmSignature &&
+        recentlyWarmed) {
+      return;
+    }
+
+    _zoneBaseContentWarmupTimer?.cancel();
+    final delay = immediate
+        ? Duration.zero
+        : (recentlyWarmed
+              ? _zoneBaseContentWarmupThrottle - warmupAge
+              : _zoneBaseContentWarmupDebounce);
+    _zoneBaseContentWarmupTimer = Timer(delay, () {
+      if (!mounted) return;
+      _lastZoneBaseContentWarmSignature = signature;
+      _lastZoneBaseContentWarmAt = DateTime.now();
+      unawaited(_prefetchZoneBaseContent(location: location));
+    });
+  }
+
+  String _zoneBaseContentWarmSignature(AppLocation? location) {
+    final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
+    return _prioritizedZoneBaseContentZoneIds(
+      location: location,
+      selectedZoneId: selectedZoneId,
+    ).take(_zoneBaseContentWarmCount).join('|');
+  }
+
+  Future<void> _prefetchZoneBaseContent({AppLocation? location}) async {
     if (_zones.isEmpty) return;
     final svc = context.read<PoiService>();
     final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
-    for (final zone in _zones) {
-      if (zone.id.isEmpty || zone.id == selectedZoneId) continue;
+    final warmIds = _prioritizedZoneBaseContentZoneIds(
+      location: location,
+      selectedZoneId: selectedZoneId,
+    ).take(_zoneBaseContentWarmCount).toList(growable: false);
+    for (final zoneId in warmIds) {
+      if (zoneId.isEmpty) continue;
+      final cached = _zoneBaseContentCache[zoneId];
+      if (cached != null && cached.isFresh) {
+        cached.touch();
+        continue;
+      }
       try {
-        await _getZoneBaseContent(zone.id, svc: svc);
+        await _fetchZoneBaseContent(
+          zoneId,
+          svc: svc,
+          forceRefresh: cached != null,
+        );
       } catch (_) {}
     }
+    _trimZoneBaseContentCache(pinnedZoneIds: warmIds.toSet());
+  }
+
+  List<String> _prioritizedZoneBaseContentZoneIds({
+    AppLocation? location,
+    String? selectedZoneId,
+  }) {
+    final normalizedSelectedZoneId = selectedZoneId?.trim() ?? '';
+    Zone? selectedZone;
+    if (normalizedSelectedZoneId.isNotEmpty) {
+      for (final zone in _zones) {
+        if (zone.id == normalizedSelectedZoneId) {
+          selectedZone = zone;
+          break;
+        }
+      }
+    }
+    final anchorLatitude = location?.latitude ?? selectedZone?.latitude;
+    final anchorLongitude = location?.longitude ?? selectedZone?.longitude;
+    final candidates = _zones.where((zone) => zone.id.trim().isNotEmpty).map((
+      zone,
+    ) {
+      final isSelected =
+          normalizedSelectedZoneId.isNotEmpty &&
+          zone.id == normalizedSelectedZoneId;
+      final distance = anchorLatitude == null || anchorLongitude == null
+          ? double.infinity
+          : _distanceMeters(
+              anchorLatitude,
+              anchorLongitude,
+              zone.latitude,
+              zone.longitude,
+            );
+      return (zoneId: zone.id, isSelected: isSelected, distance: distance);
+    }).toList();
+    candidates.sort((a, b) {
+      if (a.isSelected != b.isSelected) {
+        return a.isSelected ? -1 : 1;
+      }
+      final distanceOrder = a.distance.compareTo(b.distance);
+      if (distanceOrder != 0) return distanceOrder;
+      return a.zoneId.compareTo(b.zoneId);
+    });
+    return candidates.map((candidate) => candidate.zoneId).toList();
+  }
+
+  void _storeZoneBaseContent(String zoneId, _ZoneBaseContent content) {
+    _zoneBaseContentCache[zoneId] = _ZoneBaseContentCacheEntry(
+      content: content,
+    );
+    _trimZoneBaseContentCache();
+    unawaited(_warmZoneBaseContentThumbnails(content));
+  }
+
+  void _trimZoneBaseContentCache({Set<String> pinnedZoneIds = const {}}) {
+    if (_zoneBaseContentCache.length <= _zoneBaseContentMaxCacheEntries) {
+      return;
+    }
+    final selectedZoneId = mounted
+        ? context.read<ZoneProvider>().selectedZone?.id
+        : null;
+    final protectedZoneIds = <String>{
+      ...pinnedZoneIds,
+      if (selectedZoneId != null && selectedZoneId.isNotEmpty) selectedZoneId,
+    };
+    final evictableEntries =
+        _zoneBaseContentCache.entries
+            .where((entry) => !protectedZoneIds.contains(entry.key))
+            .toList()
+          ..sort(
+            (a, b) => a.value.lastAccessedAt.compareTo(b.value.lastAccessedAt),
+          );
+    while (_zoneBaseContentCache.length > _zoneBaseContentMaxCacheEntries &&
+        evictableEntries.isNotEmpty) {
+      final staleEntry = evictableEntries.removeAt(0);
+      _zoneBaseContentCache.remove(staleEntry.key);
+    }
+  }
+
+  bool _hasZoneBaseContentSnapshot(String? zoneId) {
+    final normalizedZoneId = zoneId?.trim() ?? '';
+    if (normalizedZoneId.isEmpty) return false;
+    final cached = _zoneBaseContentCache[normalizedZoneId];
+    if (cached == null) return false;
+    cached.touch();
+    return true;
+  }
+
+  Future<void> _warmZoneBaseContentThumbnails(_ZoneBaseContent content) async {
+    final urls = _zoneContentThumbnailUrls(
+      content,
+    ).take(_zoneBaseContentThumbnailWarmCount).toList(growable: false);
+    if (urls.isEmpty) return;
+    await Future.wait(
+      urls.map((url) => loadPoiThumbnail(url).catchError((_) => null)),
+    );
+  }
+
+  Iterable<String> _zoneContentThumbnailUrls(_ZoneBaseContent content) {
+    final seen = <String>{};
+    final urls = <String>[];
+
+    void add(String rawUrl) {
+      final normalized = rawUrl.trim();
+      if (normalized.isEmpty || !seen.add(normalized)) return;
+      urls.add(normalized);
+    }
+
+    for (final scenario in content.scenarios) {
+      add(
+        scenario.thumbnailUrl.isNotEmpty
+            ? scenario.thumbnailUrl
+            : scenario.imageUrl,
+      );
+    }
+    for (final monster in content.monsters) {
+      add(
+        monster.thumbnailUrl.isNotEmpty
+            ? monster.thumbnailUrl
+            : monster.imageUrl,
+      );
+    }
+    for (final challenge in content.challenges) {
+      add(
+        challenge.thumbnailUrl.isNotEmpty
+            ? challenge.thumbnailUrl
+            : challenge.imageUrl,
+      );
+    }
+    return urls;
   }
 
   bool _isScenarioMystery(Scenario scenario) {
@@ -8164,8 +8515,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             final startedAt = DateTime.now();
                             setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
-                            _setQuestSubmissionOverlay(
-                              QuestSubmissionOverlayPhase.loading,
+                            void updateLoadingStep(String stepLabel) {
+                              _setQuestSubmissionOverlay(
+                                QuestSubmissionOverlayPhase.loading,
+                                stepLabel: stepLabel,
+                              );
+                            }
+
+                            updateLoadingStep(
+                              isPhotoSubmission
+                                  ? 'Preparing photo upload...'
+                                  : isVideoSubmission
+                                  ? 'Preparing video upload...'
+                                  : 'Sending answer to the Dungeonmaster...',
                             );
                             String? imageSubmissionUrl;
                             String? videoSubmissionUrl;
@@ -8178,6 +8540,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                   'jpg';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              updateLoadingStep('Preparing photo upload...');
                               final url = await mediaService
                                   .getPresignedUploadUrl(
                                     ApiConstants.crewPointsOfInterestBucket,
@@ -8199,6 +8562,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 );
                                 return;
                               }
+                              updateLoadingStep('Uploading photo...');
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(capturedImage!.bytes),
@@ -8231,6 +8595,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                   'mp4';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              updateLoadingStep('Preparing video upload...');
                               final url = await mediaService
                                   .getPresignedUploadUrl(
                                     ApiConstants.crewPointsOfInterestBucket,
@@ -8269,6 +8634,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 );
                                 return;
                               }
+                              updateLoadingStep('Uploading video...');
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(bytes),
@@ -8297,6 +8663,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             final previousLevel = context
                                 .read<CharacterStatsProvider>()
                                 .level;
+                            updateLoadingStep(
+                              'Waiting for the Dungeonmaster to judge your submission...',
+                            );
                             try {
                               resp = standaloneChallengeId == null
                                   ? await questLogProvider.submitQuestNode(
@@ -8441,6 +8810,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _setQuestSubmissionOverlay(
     QuestSubmissionOverlayPhase phase, {
     String? message,
+    String? stepLabel,
     int? score,
     int? difficulty,
     int? combinedScore,
@@ -8457,6 +8827,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     setState(() {
       _questSubmissionPhase = phase;
       _questSubmissionMessage = message;
+      _questSubmissionStepLabel = phase == QuestSubmissionOverlayPhase.loading
+          ? stepLabel
+          : null;
       if (phase == QuestSubmissionOverlayPhase.loading || !hasDetails) {
         _questSubmissionScore = null;
         _questSubmissionDifficulty = null;
@@ -8489,6 +8862,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     setState(() {
       _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
       _questSubmissionMessage = null;
+      _questSubmissionStepLabel = null;
       _questSubmissionScore = null;
       _questSubmissionDifficulty = null;
       _questSubmissionCombinedScore = null;
@@ -9067,12 +9441,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                         _questSubmissionRevealStep == 0) ...[
                                       Center(
                                         child: Text(
-                                          'Calculating...',
+                                          isLoading
+                                              ? 'Submitting...'
+                                              : 'Calculating...',
                                           style: Theme.of(
                                             context,
                                           ).textTheme.bodySmall,
                                         ),
                                       ),
+                                      if ((_questSubmissionStepLabel ?? '')
+                                          .isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Center(
+                                          child: Text(
+                                            _questSubmissionStepLabel!,
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withValues(alpha: 0.72),
+                                                ),
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(height: 10),
                                       LinearProgressIndicator(
                                         minHeight: 6,
@@ -11199,7 +11594,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } finally {
       if (!effectivePartyBattle) {
         try {
-          await poiService.endMonsterBattle(battleMonsterId);
+          await poiService.endMonsterBattle(
+            battleMonsterId,
+            outcome: result?.outcome.name,
+          );
         } catch (error) {
           debugPrint('Failed to end server monster battle: $error');
         }
@@ -11217,14 +11615,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final previousLevel = statsProvider.level;
     final questLogProvider = context.read<QuestLogProvider>();
 
-    await statsProvider.setHealthAndManaTo(
-      health: result.playerHealthRemaining,
-      mana: result.playerManaRemaining,
-    );
-
     if (result.outcome == MonsterBattleOutcome.escaped) {
+      await statsProvider.setHealthAndManaTo(
+        health: result.playerHealthRemaining,
+        mana: result.playerManaRemaining,
+      );
       return;
     }
+
+    final defeatHealthSetTo = _monsterBattleDefeatResourceFloor(
+      statsProvider.maxHealth,
+      _monsterBattleDefeatHealthFloorPercent,
+    );
+    final defeatManaSetTo = _monsterBattleDefeatResourceFloor(
+      statsProvider.maxMana,
+      _monsterBattleDefeatManaFloorPercent,
+    );
+    final healthSetTo = result.outcome == MonsterBattleOutcome.defeat
+        ? math.max(result.playerHealthRemaining, defeatHealthSetTo)
+        : result.playerHealthRemaining;
+    final manaSetTo = result.outcome == MonsterBattleOutcome.defeat
+        ? math.max(result.playerManaRemaining, defeatManaSetTo)
+        : result.playerManaRemaining;
+
+    await statsProvider.setHealthAndManaTo(
+      health: healthSetTo,
+      mana: manaSetTo,
+    );
 
     if (result.outcome == MonsterBattleOutcome.victory) {
       await _refreshRewardDrivenPlayerState();
@@ -11270,14 +11687,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
 
-    await statsProvider.setHealthAndManaTo(
-      health: 1,
-      mana: result.playerManaRemaining,
-    );
     if (!mounted || !parentContext.mounted) return;
     parentContext.read<CompletedTaskProvider>().showModal(
       'monsterBattleDefeat',
-      data: {'monsterName': monster.name, 'healthSetTo': 1},
+      data: {
+        'monsterName': monster.name,
+        'healthSetTo': healthSetTo,
+        'manaSetTo': manaSetTo,
+        'statusName': 'Wounded',
+        'statusDurationMinutes': _monsterBattleDefeatStatusDurationMinutes,
+      },
     );
   }
 
@@ -11786,4 +12205,24 @@ class _ZoneBaseContent {
   final List<Exposition> expositions;
   final List<MonsterEncounter> monsters;
   final List<Challenge> challenges;
+}
+
+class _ZoneBaseContentCacheEntry {
+  _ZoneBaseContentCacheEntry({
+    required this.content,
+    DateTime? fetchedAt,
+    DateTime? lastAccessedAt,
+  }) : fetchedAt = fetchedAt ?? DateTime.now(),
+       lastAccessedAt = lastAccessedAt ?? DateTime.now();
+
+  final _ZoneBaseContent content;
+  final DateTime fetchedAt;
+  DateTime lastAccessedAt;
+
+  bool get isFresh =>
+      DateTime.now().difference(fetchedAt) <= _zoneBaseContentFreshDuration;
+
+  void touch() {
+    lastAccessedAt = DateTime.now();
+  }
 }

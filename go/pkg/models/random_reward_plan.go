@@ -123,7 +123,7 @@ func randomRewardProfileForSize(size RandomRewardSize) randomRewardProfile {
 			consumableMinQty:     1,
 			consumableMaxQty:     2,
 			consumableGuaranteed: true,
-			equippableChance:     0.2,
+			equippableChance:     0.35,
 		}
 	case RandomRewardSizeLarge:
 		return randomRewardProfile{
@@ -145,6 +145,7 @@ func randomRewardProfileForSize(size RandomRewardSize) randomRewardProfile {
 			consumableMinQty: 1,
 			consumableMaxQty: 1,
 			consumableChance: 0.55,
+			equippableChance: 0.1,
 		}
 	}
 }

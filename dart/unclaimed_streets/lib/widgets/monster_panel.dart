@@ -75,7 +75,7 @@ class _MonsterPanelState extends State<MonsterPanel> {
             Expanded(
               child: Text(
                 mysteryState
-                    ? 'Mysterious $encounterTypeLabel'
+                    ? 'Mysterious Encounter'
                     : widget.encounter.name,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,

@@ -21,6 +21,7 @@ import '../screens/fetch_quest_turn_in_screen.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
 import '../widgets/paper_texture.dart';
+import 'discovery_proximity_section.dart';
 import 'rpg_dialogue_modal.dart';
 
 const _unlockRadiusMeters = kProximityUnlockRadiusMeters;
@@ -656,6 +657,77 @@ class _CharacterPanelState extends State<CharacterPanel> {
     return mentionsDiscovery && mentionsDuplicate;
   }
 
+  Map<String, dynamic>? _discoveryRewardModalData(
+    Map<String, dynamic> response,
+  ) {
+    final rewardExperience =
+        (response['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold =
+        (response['rewardGold'] as num?)?.toInt() ??
+        (response['goldAwarded'] as num?)?.toInt() ??
+        0;
+    final itemsAwarded =
+        (response['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final spellsAwarded =
+        (response['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final baseResourcesAwarded =
+        (response['baseResourcesAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+
+    if (rewardExperience <= 0 &&
+        rewardGold <= 0 &&
+        itemsAwarded.isEmpty &&
+        spellsAwarded.isEmpty &&
+        baseResourcesAwarded.isEmpty) {
+      return null;
+    }
+
+    return {
+      'pointOfInterestName': widget.character.name,
+      'rewardExperience': rewardExperience,
+      'rewardGold': rewardGold,
+      'goldAwarded': rewardGold,
+      'itemsAwarded': itemsAwarded,
+      'spellsAwarded': spellsAwarded,
+      'baseResourcesAwarded': baseResourcesAwarded,
+    };
+  }
+
+  Future<void> _presentDiscoveryRewards(Map<String, dynamic> response) async {
+    final statsProvider = context.read<CharacterStatsProvider>();
+    final previousLevel = statsProvider.level;
+    await Future.wait([
+      context.read<AuthProvider>().refresh(),
+      statsProvider.refresh(silent: true),
+      context.read<UserLevelProvider>().refresh(),
+      context.read<ActivityFeedProvider>().refresh(),
+    ]);
+    if (!mounted) return;
+    final modalData = _discoveryRewardModalData(response);
+    final completedTaskProvider = context.read<CompletedTaskProvider>();
+    if (modalData != null) {
+      completedTaskProvider.showModal(
+        'pointOfInterestDiscovered',
+        data: modalData,
+      );
+    }
+    completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+      previousLevel: previousLevel,
+      currentLevel: statsProvider.level,
+    );
+  }
+
   Future<void> _handleUnlock() async {
     if (_unlocking) return;
     if (_isAlreadyDiscovered()) {
@@ -715,12 +787,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
       return;
     }
     try {
-      await context.read<PoiService>().unlockPointOfInterest(
+      final result = await context.read<PoiService>().unlockPointOfInterest(
         poiId,
         loc.latitude,
         loc.longitude,
         userId: userId,
       );
+      await _presentDiscoveryRewards(result);
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
@@ -1082,7 +1155,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final location = context.watch<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
     final liveWithinRange = distance != null && distance <= _unlockRadiusMeters;
-    final withinRange = _proximityAccess.resolve(
+    final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
     );
@@ -1122,36 +1195,16 @@ class _CharacterPanelState extends State<CharacterPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Visit this location to unlock this character. You must be within ${_unlockRadiusMeters.round()} meters to discover it.',
-              style: Theme.of(context).textTheme.bodyLarge,
+            DiscoveryProximitySection(
+              subjectLabel: 'character',
+              unlockRadiusMeters: _unlockRadiusMeters,
+              distanceMeters: distance,
+              hasProximityAccess: hasProximityAccess,
+              liveWithinRange: liveWithinRange,
+              locationUnavailableText: _hasCharacterLocation
+                  ? 'Enable location to see distance.'
+                  : 'Character location unavailable.',
             ),
-            const SizedBox(height: 12),
-            if (distance != null)
-              Text(
-                withinRange
-                    ? 'Within range! Tap Unlock to discover.'
-                    : 'You are ${distance.round()} m away.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: withinRange
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.7),
-                  fontWeight: withinRange ? FontWeight.w600 : null,
-                ),
-              )
-            else
-              Text(
-                _hasCharacterLocation
-                    ? 'Enable location to see distance.'
-                    : 'Character location unavailable.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
             if (_unlockError != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -1161,11 +1214,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: (_unlocking || !withinRange) ? null : _handleUnlock,
+              onPressed: (_unlocking || !hasProximityAccess)
+                  ? null
+                  : _handleUnlock,
               child: Text(
                 _unlocking
                     ? 'Unlocking...'
-                    : !withinRange
+                    : !hasProximityAccess
                     ? 'Too far to unlock'
                     : 'Unlock',
               ),

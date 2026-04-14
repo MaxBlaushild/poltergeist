@@ -28,6 +28,28 @@ func (h *pointOfInterestDiscoveryHandle) GetDiscoveriesForUser(userID uuid.UUID)
 	return discoveries, nil
 }
 
+func (h *pointOfInterestDiscoveryHandle) ExistsForTeamAndPointOfInterest(ctx context.Context, teamID uuid.UUID, pointOfInterestID uuid.UUID) (bool, error) {
+	var count int64
+	if err := h.db.WithContext(ctx).
+		Model(&models.PointOfInterestDiscovery{}).
+		Where("team_id = ? AND point_of_interest_id = ?", teamID, pointOfInterestID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (h *pointOfInterestDiscoveryHandle) ExistsForUserAndPointOfInterest(ctx context.Context, userID uuid.UUID, pointOfInterestID uuid.UUID) (bool, error) {
+	var count int64
+	if err := h.db.WithContext(ctx).
+		Model(&models.PointOfInterestDiscovery{}).
+		Where("user_id = ? AND point_of_interest_id = ?", userID, pointOfInterestID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (h *pointOfInterestDiscoveryHandle) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.PointOfInterestDiscovery{}).Error
 }

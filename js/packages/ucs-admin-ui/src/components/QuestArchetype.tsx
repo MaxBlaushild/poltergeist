@@ -1074,11 +1074,11 @@ const QuestArchetypeNodeConfigFields: React.FC<
   challengeTemplates,
   monsterTemplates,
   scenarioTemplates,
-  characters,
-  characterTemplates,
-  expositionTemplates,
-  inventoryItems,
-  spells,
+  characters = [],
+  characterTemplates = [],
+  expositionTemplates = [],
+  inventoryItems = [],
+  spells = [],
 }) => {
   const showsLocationConfig = editor.nodeType !== 'story_flag';
   const allowsDittoOption =
@@ -2423,6 +2423,8 @@ interface QuestNodeInspectorProps {
   scenarioTemplates: ScenarioTemplateRecord[];
   challengeTemplates: ChallengeTemplateRecord[];
   characters: Character[];
+  characterTemplates: CharacterTemplate[];
+  expositionTemplates: ExpositionTemplate[];
   inventoryItems: InventoryItem[];
   spells: Spell[];
   addChallengeToQuestArchetype: (
@@ -2455,6 +2457,8 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   scenarioTemplates,
   challengeTemplates,
   characters,
+  characterTemplates,
+  expositionTemplates,
   inventoryItems,
   spells,
   addChallengeToQuestArchetype,
@@ -2469,7 +2473,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
     node,
     locationArchetypes,
     monsterTemplates,
-    scenarioTemplates
+    scenarioTemplates,
+    characterTemplates,
+    expositionTemplates
   );
   const [isAdding, setIsAdding] = useState(false);
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
@@ -2722,7 +2728,9 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                     challenge.unlockedNode,
                     locationArchetypes,
                     monsterTemplates,
-                    scenarioTemplates
+                    scenarioTemplates,
+                    characterTemplates,
+                    expositionTemplates
                   )
                 : null;
               return (
@@ -4510,6 +4518,8 @@ export const QuestArchetypeComponent = () => {
                               scenarioTemplates={scenarioTemplates}
                               challengeTemplates={challengeTemplates}
                               characters={characters}
+                              characterTemplates={characterTemplates}
+                              expositionTemplates={expositionTemplates}
                               inventoryItems={inventoryItems}
                               spells={spells}
                               addChallengeToQuestArchetype={

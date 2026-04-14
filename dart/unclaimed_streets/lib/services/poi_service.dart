@@ -241,9 +241,13 @@ class PoiService {
     return raw;
   }
 
-  Future<Map<String, dynamic>> endMonsterBattle(String monsterId) async {
+  Future<Map<String, dynamic>> endMonsterBattle(
+    String monsterId, {
+    String? outcome,
+  }) async {
     final raw = await _api.post<dynamic>(
       ApiConstants.monsterBattleEndEndpoint(monsterId),
+      data: outcome == null ? null : {'outcome': outcome},
     );
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
@@ -555,13 +559,13 @@ class PoiService {
 
   /// POST /sonar/pointOfInterest/unlock — unlock a POI when user is within 200m.
   /// [userId] must be set so the discovery is stored for the user and persists.
-  Future<void> unlockPointOfInterest(
+  Future<Map<String, dynamic>> unlockPointOfInterest(
     String pointOfInterestId,
     double lat,
     double lng, {
     String? userId,
   }) async {
-    await _api.post<dynamic>(
+    final raw = await _api.post<dynamic>(
       '/sonar/pointOfInterest/unlock',
       data: {
         'pointOfInterestId': pointOfInterestId,
@@ -570,6 +574,7 @@ class PoiService {
         if (userId != null && userId.isNotEmpty) 'userId': userId,
       },
     );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
   Future<UserZoneReputation?> getUserZoneReputation(String zoneId) async {

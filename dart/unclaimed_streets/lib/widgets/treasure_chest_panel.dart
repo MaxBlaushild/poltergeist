@@ -18,9 +18,10 @@ import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
 import '../widgets/paper_texture.dart';
+import 'discovery_proximity_section.dart';
 
 const _chestImageUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/treasure-chest-undiscovered.png';
 
 const _openRadiusMeters = kTreasureChestUnlockRadiusMeters;
 const _unlockMethodItem = 'item';
@@ -478,18 +479,19 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       currentLocation: loc,
       withinRange: liveWithinRange,
     );
-    final button = _buttonState(hasProximityAccess, abilities);
     final isOpened = widget.treasureChest.openedByUser == true;
+    final mysteryState = !hasProximityAccess && !isOpened;
+    final button = _buttonState(hasProximityAccess, abilities);
 
     return AdaptivePaperSheet(
-      maxHeightFactor: 0.95,
+      maxHeightFactor: mysteryState ? 0.54 : 0.95,
       header: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Treasure Chest',
+              mysteryState ? 'Mysterious Treasure Chest' : 'Treasure Chest',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -506,104 +508,117 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primary.withOpacity(0.12),
-                    theme.colorScheme.secondary.withOpacity(0.18),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            if (!mysteryState) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primary.withOpacity(0.12),
+                      theme.colorScheme.secondary.withOpacity(0.18),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withOpacity(0.25),
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: theme.colorScheme.primary.withOpacity(0.25),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: theme.colorScheme.primary.withOpacity(0.08),
-                          boxShadow: [
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withOpacity(
-                                0.35,
+                child: Column(
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: theme.colorScheme.primary.withOpacity(0.08),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.colorScheme.primary.withOpacity(
+                                  0.35,
+                                ),
+                                blurRadius: 24,
+                                spreadRadius: 6,
                               ),
-                              blurRadius: 24,
-                              spreadRadius: 6,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          _chestImageUrl,
-                          width: 128,
-                          height: 128,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Container(
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.network(
+                            _chestImageUrl,
                             width: 128,
                             height: 128,
-                            color: Colors.grey.shade300,
-                            child: const Icon(
-                              Icons.inventory_2_outlined,
-                              size: 48,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 128,
+                              height: 128,
+                              color: Colors.grey.shade300,
+                              child: const Icon(
+                                Icons.inventory_2_outlined,
+                                size: 48,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        isOpened ? Icons.lock_open : Icons.lock_outline,
-                        size: 18,
-                        color: isOpened
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isOpened ? 'Loot claimed' : 'Awaiting discovery',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isOpened ? Icons.lock_open : Icons.lock_outline,
+                          size: 18,
+                          color: isOpened
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurface.withOpacity(0.7),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 8),
+                        Text(
+                          isOpened ? 'Loot claimed' : 'Awaiting discovery',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 16),
+            ],
+            DiscoveryProximitySection(
+              subjectLabel: 'treasure chest',
+              unlockRadiusMeters: _openRadiusMeters,
+              distanceMeters: distance,
+              hasProximityAccess: hasProximityAccess,
+              liveWithinRange: liveWithinRange,
             ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (distance != null)
-                  _InfoChip(
-                    icon: Icons.place_outlined,
-                    label: '${distance.round()} m away',
-                  ),
-                if (widget.treasureChest.unlockTier != null)
+            if (mysteryState) ...[
+              const SizedBox(height: 14),
+              Text(
+                'This treasure chest remains a mystery until you are close enough to inspect it.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+            if (!mysteryState && widget.treasureChest.unlockTier != null) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
                   _InfoChip(
                     icon: Icons.vpn_key_outlined,
                     label: 'Lock Strength ${widget.treasureChest.unlockTier}',
                   ),
-              ],
-            ),
+                ],
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -611,13 +626,15 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                 style: TextStyle(color: theme.colorScheme.error, fontSize: 14),
               ),
             ],
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: button.disabled || _loading
-                  ? null
-                  : () => _handlePrimaryAction(abilities),
-              child: Text(_loading ? 'Opening…' : button.text),
-            ),
+            if (!mysteryState) ...[
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: button.disabled || _loading
+                    ? null
+                    : () => _handlePrimaryAction(abilities),
+                child: Text(_loading ? 'Opening…' : button.text),
+              ),
+            ],
           ],
         ),
       ),

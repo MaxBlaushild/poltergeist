@@ -1033,6 +1033,25 @@ func (s *server) useBaseHearth(ctx *gin.Context) {
 		currentMana = maxMana
 	}
 
+	removedStatuses := []string{}
+	activeStatuses, err := s.dbClient.UserStatus().FindActiveByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, status := range activeStatuses {
+		if strings.EqualFold(strings.TrimSpace(status.Name), monsterBattleDefeatWoundedStatusName) {
+			removedStatuses = append(removedStatuses, monsterBattleDefeatWoundedStatusName)
+			break
+		}
+	}
+	if len(removedStatuses) > 0 {
+		if err := s.dbClient.UserStatus().DeleteActiveByUserIDAndNames(ctx, user.ID, removedStatuses); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	statusTemplates := hearthRecoveryStatusesByLevel(hearthDefinition.EffectConfig, hearthLevel)
 	appliedStatuses, err := s.applyMonsterBattleUserStatuses(ctx, []uuid.UUID{user.ID}, statusTemplates)
 	if err != nil {
@@ -1049,6 +1068,7 @@ func (s *server) useBaseHearth(ctx *gin.Context) {
 			"nextAvailableAt": nextAvailableAt.Format(time.RFC3339),
 			"hearthLevel":     hearthLevel,
 			"statusesApplied": appliedStatuses,
+			"statusesRemoved": removedStatuses,
 		},
 		ResetsOn: todayBaseDailyResetDate(now),
 	}
@@ -1075,6 +1095,7 @@ func (s *server) useBaseHearth(ctx *gin.Context) {
 	snapshot["nextAvailableAt"] = nextAvailableAt
 	snapshot["cooldownSecondsRemaining"] = int(time.Until(nextAvailableAt).Seconds())
 	snapshot["statusesApplied"] = appliedStatuses
+	snapshot["statusesRemoved"] = removedStatuses
 
 	ctx.JSON(http.StatusOK, snapshot)
 }

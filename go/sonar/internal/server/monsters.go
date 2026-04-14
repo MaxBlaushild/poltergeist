@@ -3500,6 +3500,15 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 		return
 	}
 
+	var requestBody struct {
+		Outcome string `json:"outcome"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && !errors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	outcome := strings.TrimSpace(strings.ToLower(requestBody.Outcome))
+
 	monsterID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
@@ -3525,14 +3534,21 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 		participants = []models.MonsterBattleParticipant{{BattleID: battle.ID, UserID: user.ID}}
 	}
 	log.Printf(
-		"[combat][defeat-recovery][end-battle] battle=%s monster=%s participants=%d",
+		"[combat][defeat-recovery][end-battle] battle=%s monster=%s participants=%d outcome=%s",
 		battle.ID,
 		monsterID,
 		len(participants),
+		outcome,
 	)
 	for _, participant := range participants {
-		if err := s.restoreUserToOneHealthIfDowned(ctx, participant.UserID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		recoveryErr := error(nil)
+		if outcome == "defeat" {
+			recoveryErr = s.applyMonsterBattleDefeatPenalty(ctx, participant.UserID)
+		} else {
+			recoveryErr = s.restoreUserToOneHealthIfDowned(ctx, participant.UserID)
+		}
+		if recoveryErr != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": recoveryErr.Error()})
 			return
 		}
 	}

@@ -1970,7 +1970,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     if (monsterId.isEmpty) return;
     try {
       final poiService = context.read<PoiService>();
-      await poiService.endMonsterBattle(monsterId);
+      await poiService.endMonsterBattle(
+        monsterId,
+        outcome: MonsterBattleOutcome.defeat.name,
+      );
     } catch (_) {
       // Best-effort: battle may already be ended by another participant.
     }

@@ -35,6 +35,9 @@ export type ZoneAdminSummary = {
     scenarioCount: number;
     monsterCount: number;
     monsterEncounterCount: number;
+    standardEncounterCount: number;
+    bossEncounterCount: number;
+    raidEncounterCount: number;
     treasureChestCount: number;
     healingFountainCount: number;
 };

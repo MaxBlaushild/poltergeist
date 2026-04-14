@@ -114,6 +114,8 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Quest Complete!';
       case 'treasureChestOpened':
         return 'Treasure Found!';
+      case 'pointOfInterestDiscovered':
+        return 'Discovery!';
       case 'healingFountainUsed':
         return 'Fully Restored!';
       case 'scenarioOutcome':
@@ -215,6 +217,48 @@ class CelebrationModalManager extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: rewards,
+        );
+      case 'pointOfInterestDiscovered':
+        final pointOfInterestName =
+            data['pointOfInterestName'] as String? ?? 'point of interest';
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final goldAwarded =
+            (data['rewardGold'] as num?)?.toInt() ??
+            (data['goldAwarded'] as num?)?.toInt() ??
+            0;
+        final baseResourcesAwarded = _baseResourcesFromData(data);
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
+        final spellsAwarded =
+            (data['spellsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'You discovered $pointOfInterestName and received:',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 10),
+            _buildRewardSection(
+              context,
+              experience: rewardExperience,
+              gold: goldAwarded,
+              materials: baseResourcesAwarded,
+              items: itemsAwarded,
+              spells: spellsAwarded,
+              emptyMessage: 'No additional rewards.',
+            ),
+          ],
         );
       case 'healingFountainUsed':
         final healthRestored = (data['healthRestored'] as num?)?.toInt() ?? 0;
@@ -445,13 +489,22 @@ class CelebrationModalManager extends StatelessWidget {
         final monsterName =
             (data['monsterName'] as String?)?.trim() ?? 'The monster';
         final healthSetTo = (data['healthSetTo'] as num?)?.toInt() ?? 1;
+        final manaSetTo = (data['manaSetTo'] as num?)?.toInt();
+        final statusName = (data['statusName'] as String?)?.trim() ?? '';
+        final statusDurationMinutes =
+            (data['statusDurationMinutes'] as num?)?.toInt() ?? 0;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('$monsterName defeated you.'),
             const SizedBox(height: 8),
-            Text('Your life has been set to $healthSetTo.'),
+            Text('You recover to $healthSetTo life.'),
+            if (manaSetTo != null) Text('Your mana steadies at $manaSetTo.'),
+            if (statusName.isNotEmpty && statusDurationMinutes > 0)
+              Text(
+                '$statusName will linger for $statusDurationMinutes minutes.',
+              ),
           ],
         );
       default:

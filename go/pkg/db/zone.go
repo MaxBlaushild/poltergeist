@@ -55,6 +55,9 @@ SELECT
 	COALESCE(scenarios.scenario_count, 0) AS scenario_count,
 	COALESCE(monsters.monster_count, 0) AS monster_count,
 	COALESCE(monster_encounters.monster_encounter_count, 0) AS monster_encounter_count,
+	COALESCE(monster_encounters.standard_encounter_count, 0) AS standard_encounter_count,
+	COALESCE(monster_encounters.boss_encounter_count, 0) AS boss_encounter_count,
+	COALESCE(monster_encounters.raid_encounter_count, 0) AS raid_encounter_count,
 	COALESCE(treasure_chests.treasure_chest_count, 0) AS treasure_chest_count,
 	COALESCE(healing_fountains.healing_fountain_count, 0) AS healing_fountain_count
 FROM zones
@@ -105,7 +108,12 @@ LEFT JOIN (
 ) AS monsters
 	ON monsters.zone_id = zones.id
 LEFT JOIN (
-	SELECT zone_id, COUNT(*) AS monster_encounter_count
+	SELECT
+		zone_id,
+		COUNT(*) AS monster_encounter_count,
+		SUM(CASE WHEN encounter_type = 'monster' OR encounter_type IS NULL OR encounter_type = '' THEN 1 ELSE 0 END) AS standard_encounter_count,
+		SUM(CASE WHEN encounter_type = 'boss' THEN 1 ELSE 0 END) AS boss_encounter_count,
+		SUM(CASE WHEN encounter_type = 'raid' THEN 1 ELSE 0 END) AS raid_encounter_count
 	FROM monster_encounters
 	GROUP BY zone_id
 ) AS monster_encounters

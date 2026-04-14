@@ -279,6 +279,8 @@ type PointOfInterestHandle interface {
 	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
 	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)
 	Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error
+	ReplaceItemRewards(ctx context.Context, pointOfInterestID uuid.UUID, rewards []models.PointOfInterestItemReward) error
+	ReplaceSpellRewards(ctx context.Context, pointOfInterestID uuid.UUID, rewards []models.PointOfInterestSpellReward) error
 	FindZoneForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) (*models.PointOfInterestZone, error)
 	UpdateLastUsedInQuest(ctx context.Context, pointOfInterestID uuid.UUID) error
 	FindRecentlyUsedInZone(ctx context.Context, zoneID uuid.UUID, since time.Time) (map[string]bool, error)
@@ -671,6 +673,8 @@ type PointOfInterestChildrenHandle interface {
 type PointOfInterestDiscoveryHandle interface {
 	GetDiscoveriesForTeam(teamID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
 	GetDiscoveriesForUser(userID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
+	ExistsForTeamAndPointOfInterest(ctx context.Context, teamID uuid.UUID, pointOfInterestID uuid.UUID) (bool, error)
+	ExistsForUserAndPointOfInterest(ctx context.Context, userID uuid.UUID, pointOfInterestID uuid.UUID) (bool, error)
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 	Create(ctx context.Context, discovery *models.PointOfInterestDiscovery) error

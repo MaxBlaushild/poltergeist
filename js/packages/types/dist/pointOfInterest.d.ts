@@ -1,6 +1,26 @@
 import { PointOfInterestChallenge } from './pointOfInterestChallenge';
 import { PointOfInterestChallengeSubmission } from './pointOfInterestChallengeSubmission';
 import { Tag } from './tag';
+export type PointOfInterestRewardMode = 'explicit' | 'random';
+export type PointOfInterestRandomRewardSize = 'small' | 'medium' | 'large';
+export interface PointOfInterestMaterialReward {
+    resourceKey: string;
+    amount: number;
+}
+export interface PointOfInterestItemReward {
+    id?: string;
+    inventoryItemId: number;
+    quantity: number;
+}
+export interface PointOfInterestSpellReward {
+    id?: string;
+    spellId: string;
+    spell?: {
+        id: string;
+        name: string;
+        iconUrl?: string;
+    };
+}
 export interface PointOfInterestStoryVariant {
     id?: string;
     createdAt?: Date;
@@ -31,6 +51,13 @@ export interface PointOfInterest {
     geometry: string;
     unlockTier?: number | null;
     storyVariants?: PointOfInterestStoryVariant[];
+    rewardMode?: PointOfInterestRewardMode;
+    randomRewardSize?: PointOfInterestRandomRewardSize;
+    rewardExperience?: number;
+    rewardGold?: number;
+    materialRewards?: PointOfInterestMaterialReward[];
+    itemRewards?: PointOfInterestItemReward[];
+    spellRewards?: PointOfInterestSpellReward[];
 }
 export declare const getHighestFirstCompletedChallenge: (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]) => {
     submission: PointOfInterestChallengeSubmission | null;

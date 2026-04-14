@@ -145,11 +145,19 @@ func (c *pointOfInterestGroupHandle) preloadPointOfInterestGroupRelations(query 
 		Preload("PointsOfInterest.Characters").
 		Preload("PointsOfInterest.Tags").
 		Preload("PointsOfInterest.PointOfInterestChallenges").
+		Preload("PointsOfInterest.ItemRewards").
+		Preload("PointsOfInterest.ItemRewards.InventoryItem").
+		Preload("PointsOfInterest.SpellRewards").
+		Preload("PointsOfInterest.SpellRewards.Spell").
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Characters").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
+		Preload("GroupMembers.PointOfInterest.ItemRewards").
+		Preload("GroupMembers.PointOfInterest.ItemRewards.InventoryItem").
+		Preload("GroupMembers.PointOfInterest.SpellRewards").
+		Preload("GroupMembers.PointOfInterest.SpellRewards.Spell").
 		Preload("GroupMembers.Children").
 		Preload("QuestGiverCharacter")
 }

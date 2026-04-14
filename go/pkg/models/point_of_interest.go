@@ -28,6 +28,13 @@ type PointOfInterest struct {
 	Characters                 []Character                  `json:"characters" gorm:"foreignKey:PointOfInterestID"`
 	Geometry                   string                       `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Tags                       []Tag                        `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
+	RewardMode                 RewardMode                   `json:"rewardMode" gorm:"column:reward_mode"`
+	RandomRewardSize           RandomRewardSize             `json:"randomRewardSize" gorm:"column:random_reward_size"`
+	RewardExperience           int                          `json:"rewardExperience" gorm:"column:reward_experience"`
+	RewardGold                 int                          `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards            BaseMaterialRewards          `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
+	ItemRewards                []PointOfInterestItemReward  `json:"itemRewards" gorm:"foreignKey:PointOfInterestID"`
+	SpellRewards               []PointOfInterestSpellReward `json:"spellRewards" gorm:"foreignKey:PointOfInterestID"`
 	GoogleMapsPlaceID          *string                      `json:"googleMapsPlaceId"`
 	GoogleMapsPlaceName        *string                      `json:"googleMapsPlaceName"`
 	LastUsedInQuestAt          *time.Time                   `json:"lastUsedInQuestAt,omitempty"`
@@ -49,6 +56,9 @@ const (
 )
 
 func (p *PointOfInterest) BeforeSave(tx *gorm.DB) error {
+	if p.MaterialRewards == nil {
+		p.MaterialRewards = BaseMaterialRewards{}
+	}
 	if p.Lat != "" && p.Lng != "" {
 		if err := p.SetGeometry(p.Lat, p.Lng); err != nil {
 			return err

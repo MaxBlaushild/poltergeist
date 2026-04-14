@@ -174,6 +174,21 @@ export const QuestArchetypesProvider = ({
   const [zoneQuestArchetypes, setZoneQuestArchetypes] = useState<
     ZoneQuestArchetype[]
   >([]);
+
+  const normalizeLocationArchetype = useCallback(
+    (locationArchetype: LocationArchetype): LocationArchetype => ({
+      ...locationArchetype,
+      includedTypes: locationArchetype.includedTypes ?? [],
+      excludedTypes: locationArchetype.excludedTypes ?? [],
+      challenges: (locationArchetype.challenges ?? []).map((challenge) => ({
+        ...challenge,
+        submissionType: challenge.submissionType ?? 'photo',
+        proficiency: challenge.proficiency ?? null,
+        difficulty: challenge.difficulty ?? 0,
+      })),
+    }),
+    []
+  );
   const populateChallengesForNode = useCallback(
     async function populateQuestArchetypeNode(node: QuestArchetypeNode) {
       const challenges = await apiClient.get<QuestArchetypeChallenge[]>(
@@ -212,7 +227,7 @@ export const QuestArchetypesProvider = ({
     const locationArchetypes = await apiClient.get<LocationArchetype[]>(
       '/sonar/locationArchetypes'
     );
-    setLocationArchetypes(locationArchetypes);
+    setLocationArchetypes(locationArchetypes.map(normalizeLocationArchetype));
   };
 
   const fetchPlaceTypes = async () => {
@@ -254,7 +269,10 @@ export const QuestArchetypesProvider = ({
       '/sonar/locationArchetypes',
       locationArchetype
     );
-    setLocationArchetypes([...locationArchetypes, newLocationArchetype]);
+    setLocationArchetypes([
+      ...locationArchetypes,
+      normalizeLocationArchetype(newLocationArchetype),
+    ]);
   };
 
   const createQuestArchetype = async (
@@ -365,7 +383,7 @@ export const QuestArchetypesProvider = ({
     setLocationArchetypes(
       locationArchetypes.map((locationArchetype) =>
         locationArchetype.id === updatedLocationArchetype.id
-          ? updatedLocationArchetype
+          ? normalizeLocationArchetype(updatedLocationArchetype)
           : locationArchetype
       )
     );

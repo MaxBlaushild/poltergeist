@@ -25,6 +25,9 @@ type ZoneAdminSummary struct {
 	ScenarioCount           int         `json:"scenarioCount" gorm:"column:scenario_count"`
 	MonsterCount            int         `json:"monsterCount" gorm:"column:monster_count"`
 	MonsterEncounterCount   int         `json:"monsterEncounterCount" gorm:"column:monster_encounter_count"`
+	StandardEncounterCount  int         `json:"standardEncounterCount" gorm:"column:standard_encounter_count"`
+	BossEncounterCount      int         `json:"bossEncounterCount" gorm:"column:boss_encounter_count"`
+	RaidEncounterCount      int         `json:"raidEncounterCount" gorm:"column:raid_encounter_count"`
 	TreasureChestCount      int         `json:"treasureChestCount" gorm:"column:treasure_chest_count"`
 	HealingFountainCount    int         `json:"healingFountainCount" gorm:"column:healing_fountain_count"`
 }

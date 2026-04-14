@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone, ZoneAdminSummary, ZoneImport } from '@poltergeist/types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -823,7 +829,8 @@ export const Zones = () => {
     setZoneSummariesLoading(true);
     setZoneSummariesError(null);
     try {
-      const response = await apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones');
+      const response =
+        await apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones');
       setZoneSummaries(response);
     } catch (error) {
       console.error('Failed to fetch zone summaries', error);
@@ -860,6 +867,9 @@ export const Zones = () => {
           totals.scenarioCount += zone.scenarioCount;
           totals.monsterCount += zone.monsterCount;
           totals.monsterEncounterCount += zone.monsterEncounterCount;
+          totals.standardEncounterCount += zone.standardEncounterCount;
+          totals.bossEncounterCount += zone.bossEncounterCount;
+          totals.raidEncounterCount += zone.raidEncounterCount;
           totals.treasureChestCount += zone.treasureChestCount;
           totals.healingFountainCount += zone.healingFountainCount;
           return totals;
@@ -872,6 +882,9 @@ export const Zones = () => {
           scenarioCount: 0,
           monsterCount: 0,
           monsterEncounterCount: 0,
+          standardEncounterCount: 0,
+          bossEncounterCount: 0,
+          raidEncounterCount: 0,
           treasureChestCount: 0,
           healingFountainCount: 0,
         }
@@ -895,7 +908,8 @@ export const Zones = () => {
 
       if (zoneSort === 'updated') {
         return (
-          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+          new Date(right.updatedAt).getTime() -
+          new Date(left.updatedAt).getTime()
         );
       }
 
@@ -928,7 +942,9 @@ export const Zones = () => {
         right.treasureChestCount +
         right.healingFountainCount;
 
-      return rightRichness - leftRichness || left.name.localeCompare(right.name);
+      return (
+        rightRichness - leftRichness || left.name.localeCompare(right.name)
+      );
     });
   }, [zoneSearchQuery, zoneSort, zoneSummaries]);
 
@@ -1209,6 +1225,9 @@ export const Zones = () => {
             challengeCount: summary?.challengeCount ?? 0,
             scenarioCount: summary?.scenarioCount ?? 0,
             monsterEncounterCount: summary?.monsterEncounterCount ?? 0,
+            standardEncounterCount: summary?.standardEncounterCount ?? 0,
+            bossEncounterCount: summary?.bossEncounterCount ?? 0,
+            raidEncounterCount: summary?.raidEncounterCount ?? 0,
             importMetroName: summary?.importMetroName ?? '',
           },
         };
@@ -1290,8 +1309,14 @@ export const Zones = () => {
         );
         const challengeCount = Number(feature.properties.challengeCount ?? 0);
         const scenarioCount = Number(feature.properties.scenarioCount ?? 0);
-        const monsterEncounterCount = Number(
-          feature.properties.monsterEncounterCount ?? 0
+        const standardEncounterCount = Number(
+          feature.properties.standardEncounterCount ?? 0
+        );
+        const bossEncounterCount = Number(
+          feature.properties.bossEncounterCount ?? 0
+        );
+        const raidEncounterCount = Number(
+          feature.properties.raidEncounterCount ?? 0
         );
         const importMetroName = feature.properties.importMetroName as string;
 
@@ -1329,7 +1354,9 @@ export const Zones = () => {
 
         const objectiveCounts = document.createElement('div');
         objectiveCounts.className = 'mt-1 text-xs text-slate-500';
-        objectiveCounts.textContent = `Challenges: ${challengeCount} · Scenarios: ${scenarioCount} · Encounters: ${monsterEncounterCount}`;
+        objectiveCounts.textContent =
+          `Challenges: ${challengeCount} · Scenarios: ${scenarioCount} · ` +
+          `Standard: ${standardEncounterCount} · Bosses: ${bossEncounterCount} · Raids: ${raidEncounterCount}`;
         popupContent.appendChild(objectiveCounts);
 
         const button = document.createElement('button');
@@ -1604,7 +1631,11 @@ export const Zones = () => {
               value={zoneSort}
               onChange={(event) =>
                 setZoneSort(
-                  event.target.value as 'richest' | 'quests' | 'updated' | 'name'
+                  event.target.value as
+                    | 'richest'
+                    | 'quests'
+                    | 'updated'
+                    | 'name'
                 )
               }
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -1624,7 +1655,9 @@ export const Zones = () => {
         )}
 
         {zoneSummariesLoading ? (
-          <div className="mt-6 text-sm text-slate-500">Loading zone summaries...</div>
+          <div className="mt-6 text-sm text-slate-500">
+            Loading zone summaries...
+          </div>
         ) : filteredZoneSummaries.length === 0 ? (
           <div className="mt-6 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
             No zones matched that search.
@@ -1642,8 +1675,16 @@ export const Zones = () => {
                 { label: 'Challenges', value: zone.challengeCount },
                 { label: 'Scenarios', value: zone.scenarioCount },
                 {
-                  label: 'Encounters',
-                  value: zone.monsterEncounterCount,
+                  label: 'Standard Encounters',
+                  value: zone.standardEncounterCount,
+                },
+                {
+                  label: 'Boss Encounters',
+                  value: zone.bossEncounterCount,
+                },
+                {
+                  label: 'Raid Encounters',
+                  value: zone.raidEncounterCount,
                 },
                 { label: 'Monsters', value: zone.monsterCount },
                 { label: 'Chests', value: zone.treasureChestCount },
@@ -1766,7 +1807,9 @@ export const Zones = () => {
                       disabled={deletingZoneId === zone.id}
                       className="rounded-md border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
                     >
-                      {deletingZoneId === zone.id ? 'Deleting...' : 'Delete Zone'}
+                      {deletingZoneId === zone.id
+                        ? 'Deleting...'
+                        : 'Delete Zone'}
                     </button>
                   </div>
                 </article>
