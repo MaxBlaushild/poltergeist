@@ -171,6 +171,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         path: '/healing-fountains',
         description: 'Manage healing fountain placements and behavior.',
       },
+      {
+        id: 'resources',
+        label: 'Resources',
+        path: '/resources',
+        description:
+          'Create resource types, generate gathering icons, and place gatherable nodes.',
+      },
     ],
   },
   {

@@ -9,6 +9,11 @@ export type QuestNodeSubmissionType =
   | 'video'
   | (string & {});
 
+export type QuestNodeFailurePolicy =
+  | 'retry'
+  | 'transition'
+  | (string & {});
+
 export type QuestNodeObjectiveType =
   | 'challenge'
   | 'fetch_quest'
@@ -135,6 +140,7 @@ export interface QuestNode {
   questId: string;
   orderIndex: number;
   submissionType?: QuestNodeSubmissionType;
+  failurePolicy?: QuestNodeFailurePolicy;
   objectiveText?: string;
   objectiveDescription?: string;
   objective?: QuestNodeObjective | null;

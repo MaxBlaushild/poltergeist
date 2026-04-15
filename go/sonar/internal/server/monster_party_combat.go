@@ -1780,7 +1780,7 @@ func (s *server) completeQuestMonsterObjectives(
 			return err
 		}
 		for _, acceptance := range acceptances {
-			if acceptance.TurnedInAt != nil {
+			if acceptance.IsClosed() {
 				continue
 			}
 			quest, err := s.dbClient.Quest().FindByID(ctx, acceptance.QuestID)
@@ -1800,6 +1800,7 @@ func (s *server) completeQuestMonsterObjectives(
 
 			completedNode, err := s.markQuestNodeCompleteForAcceptance(
 				ctx,
+				quest,
 				&acceptance,
 				currentNode.ID,
 				now,

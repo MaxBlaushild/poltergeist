@@ -4,6 +4,7 @@ import {
   InventoryItemSuggestionDraft,
   InventoryItemSuggestionJob,
   Rarity,
+  ResourceType,
   Spell,
 } from '@poltergeist/types';
 import React, {
@@ -83,6 +84,8 @@ type InventoryItemRecord = InventoryItem & {
   alchemyRecipes?: InventoryRecipeDraft[];
   workshopRecipes?: InventoryRecipeDraft[];
 };
+
+type ResourceTypeRecord = ResourceType;
 
 type InventorySetGenerationResponse = {
   sourceItemId?: number;
@@ -427,6 +430,49 @@ const applyBulkTagAction = (
     default:
       return normalizedCurrent;
   }
+};
+
+const formatInventoryResourceType = (
+  value?: ResourceType | string | null
+) => {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return value.name?.trim() || value.slug?.trim() || '';
+};
+
+const rarityRank: Record<string, number> = {
+  [Rarity.Common]: 1,
+  [Rarity.Uncommon]: 2,
+  [Rarity.Epic]: 3,
+  [Rarity.Mythic]: 4,
+  [Rarity.NotDroppable]: 5,
+};
+
+const numericValue = (value: string) => {
+  if (value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const matchRange = (
+  value: number | undefined,
+  minValue: string,
+  maxValue: string,
+  defaultValue?: number
+) => {
+  const min = numericValue(minValue);
+  const max = numericValue(maxValue);
+  let actual = value;
+  if (actual === undefined || actual === null) {
+    actual = defaultValue;
+  }
+  if (min === undefined && max === undefined) return true;
+  if (actual === undefined || actual === null) return false;
+  if (min !== undefined && actual < min) return false;
+  if (max !== undefined && actual > max) return false;
+  return true;
 };
 
 const SearchableSelect = ({
@@ -948,6 +994,7 @@ export const InventoryItems = () => {
   const [deletingSuggestionDraftId, setDeletingSuggestionDraftId] = useState<
     string | null
   >(null);
+  const [resourceTypes, setResourceTypes] = useState<ResourceTypeRecord[]>([]);
   const deepLinkedItemId = searchParams.get('id')?.trim() ?? '';
   const replaceDeepLinkedItemId = useCallback((itemId?: number | string | null) => {
     const normalizedItemId = String(itemId ?? '').trim();
@@ -965,6 +1012,7 @@ export const InventoryItems = () => {
   }, [searchParams, setSearchParams]);
   const [filters, setFilters] = useState({
     rarity: '',
+    resourceType: '',
     equipSlot: '',
     imageStatus: '',
     captureType: '',
@@ -995,6 +1043,7 @@ export const InventoryItems = () => {
     flavorText: '',
     effectText: '',
     rarityTier: 'Common' as string,
+    resourceTypeId: '' as string | undefined,
     isCaptureType: false,
     buyPrice: undefined as number | undefined,
     unlockTier: undefined as number | undefined,
@@ -1134,6 +1183,24 @@ export const InventoryItems = () => {
     [selectedSuggestionJobId, suggestionJobs]
   );
 
+  const resourceTypeOptions = useMemo<SelectOption[]>(
+    () =>
+      resourceTypes.map((resourceType) => ({
+        value: resourceType.id,
+        label: resourceType.name,
+        secondary: resourceType.slug,
+      })),
+    [resourceTypes]
+  );
+
+  const resourceTypeNameByID = useMemo(() => {
+    const map = new Map<string, string>();
+    resourceTypes.forEach((resourceType) => {
+      map.set(resourceType.id, resourceType.name);
+    });
+    return map;
+  }, [resourceTypes]);
+
   const fetchItems = useCallback(async () => {
     try {
       const response = await apiClient.get<InventoryItemRecord[]>(
@@ -1144,6 +1211,18 @@ export const InventoryItems = () => {
     } catch (error) {
       console.error('Error fetching inventory items:', error);
       setLoading(false);
+    }
+  }, [apiClient]);
+
+  const fetchResourceTypes = useCallback(async () => {
+    try {
+      const response = await apiClient.get<ResourceTypeRecord[]>(
+        '/sonar/resource-types'
+      );
+      setResourceTypes(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching resource types:', error);
+      setResourceTypes([]);
     }
   }, [apiClient]);
 
@@ -1217,10 +1296,11 @@ export const InventoryItems = () => {
   );
 
   useEffect(() => {
+    void fetchResourceTypes();
     void fetchItems();
     void fetchSpells();
     void fetchSuggestionJobs();
-  }, [fetchItems, fetchSpells, fetchSuggestionJobs]);
+  }, [fetchItems, fetchResourceTypes, fetchSpells, fetchSuggestionJobs]);
 
   useEffect(() => {
     const hasPending = items.some((item) =>
@@ -1414,6 +1494,7 @@ export const InventoryItems = () => {
       flavorText: '',
       effectText: '',
       rarityTier: 'Common',
+      resourceTypeId: '',
       isCaptureType: false,
       buyPrice: undefined,
       unlockTier: undefined,
@@ -1577,6 +1658,9 @@ export const InventoryItems = () => {
 
   const normalizeHandFieldsForSubmit = () => {
     const next = { ...formData };
+    const normalizedResourceTypeId = (next.resourceTypeId ?? '').trim();
+    next.resourceTypeId =
+      normalizedResourceTypeId === '' ? undefined : normalizedResourceTypeId;
     if (!isHandEquipSlot(next.equipSlot)) {
       return { ...next, ...clearHandFields() };
     }
@@ -2043,6 +2127,12 @@ export const InventoryItems = () => {
         overrides.internalTags ?? item.internalTags
       ),
     };
+    const normalizedResourceTypeId = (next.resourceTypeId ?? '')
+      .toString()
+      .trim();
+    next.resourceTypeId =
+      normalizedResourceTypeId === '' ? undefined : normalizedResourceTypeId;
+    next.resourceType = undefined;
 
     if (!isHandEquipSlot(next.equipSlot ?? '')) {
       return { ...next, ...clearHandFields() };
@@ -2664,6 +2754,7 @@ export const InventoryItems = () => {
       flavorText: item.flavorText,
       effectText: item.effectText,
       rarityTier: item.rarityTier,
+      resourceTypeId: item.resourceTypeId ?? item.resourceType?.id ?? '',
       isCaptureType: item.isCaptureType,
       buyPrice: item.buyPrice,
       unlockTier: item.unlockTier,
@@ -3129,31 +3220,6 @@ export const InventoryItems = () => {
     }
   };
 
-  const numericValue = (value: string) => {
-    if (value.trim() === '') return undefined;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  };
-
-  const matchRange = (
-    value: number | undefined,
-    minValue: string,
-    maxValue: string,
-    defaultValue?: number
-  ) => {
-    const min = numericValue(minValue);
-    const max = numericValue(maxValue);
-    let actual = value;
-    if (actual === undefined || actual === null) {
-      actual = defaultValue;
-    }
-    if (min === undefined && max === undefined) return true;
-    if (actual === undefined || actual === null) return false;
-    if (min !== undefined && actual < min) return false;
-    if (max !== undefined && actual > max) return false;
-    return true;
-  };
-
   const sortOptions = [
     { value: 'name', label: 'Name' },
     { value: 'id', label: 'ID' },
@@ -3161,6 +3227,7 @@ export const InventoryItems = () => {
     { value: 'effectText', label: 'Effect Text' },
     { value: 'imageUrl', label: 'Image URL' },
     { value: 'rarityTier', label: 'Rarity' },
+    { value: 'resourceType', label: 'Resource Type' },
     { value: 'equipSlot', label: 'Equip Slot' },
     { value: 'imageGenerationStatus', label: 'Image Status' },
     { value: 'isCaptureType', label: 'Capture Type' },
@@ -3192,14 +3259,6 @@ export const InventoryItems = () => {
     { value: 'updatedAt', label: 'Updated At' },
   ];
 
-  const rarityRank: Record<string, number> = {
-    [Rarity.Common]: 1,
-    [Rarity.Uncommon]: 2,
-    [Rarity.Epic]: 3,
-    [Rarity.Mythic]: 4,
-    [Rarity.NotDroppable]: 5,
-  };
-
   const activeFilterCount = useMemo(() => {
     return Object.values(filters).filter((value) => value !== '').length;
   }, [filters]);
@@ -3217,6 +3276,7 @@ export const InventoryItems = () => {
         item.effectText,
         item.imageUrl,
         item.rarityTier,
+        formatInventoryResourceType(item.resourceType),
         item.equipSlot,
         item.imageGenerationStatus,
         item.buyPrice?.toString(),
@@ -3252,6 +3312,12 @@ export const InventoryItems = () => {
       if (query && !haystack.includes(query)) return false;
 
       if (filters.rarity && item.rarityTier !== filters.rarity) return false;
+      if (
+        filters.resourceType &&
+        (item.resourceTypeId ?? item.resourceType?.id ?? '') !==
+          filters.resourceType
+      )
+        return false;
       if (filters.equipSlot && (item.equipSlot ?? '') !== filters.equipSlot)
         return false;
       if (
@@ -3341,6 +3407,11 @@ export const InventoryItems = () => {
         const rankA = rarityRank[a.rarityTier] ?? 999;
         const rankB = rarityRank[b.rarityTier] ?? 999;
         return (rankA - rankB) * direction;
+      }
+      if (field === 'resourceType') {
+        const labelA = formatInventoryResourceType(a.resourceType);
+        const labelB = formatInventoryResourceType(b.resourceType);
+        return labelA.localeCompare(labelB) * direction;
       }
       if (field === 'createdAt' || field === 'updatedAt') {
         const timeA = a[field] ? new Date(a[field] as string).getTime() : 0;
@@ -4489,6 +4560,7 @@ export const InventoryItems = () => {
               onClick={() =>
                 setFilters({
                   rarity: '',
+                  resourceType: '',
                   equipSlot: '',
                   imageStatus: '',
                   captureType: '',
@@ -4537,6 +4609,20 @@ export const InventoryItems = () => {
                   <option value={Rarity.Epic}>Epic</option>
                   <option value={Rarity.Mythic}>Mythic</option>
                   <option value={Rarity.NotDroppable}>Not Droppable</option>
+                </select>
+                <select
+                  value={filters.resourceType}
+                  onChange={(e) =>
+                    setFilters({ ...filters, resourceType: e.target.value })
+                  }
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All resource types</option>
+                  {resourceTypeOptions.map((option) => (
+                    <option key={`resource-filter-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={filters.equipSlot}
@@ -4936,6 +5022,14 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Rarity: {item.rarityTier}
             </p>
+            {(item.resourceType || item.resourceTypeId) && (
+              <p style={{ margin: '5px 0', color: '#666' }}>
+                Resource Type:{' '}
+                {formatInventoryResourceType(item.resourceType) ||
+                  resourceTypeNameByID.get(item.resourceTypeId ?? '') ||
+                  'Unknown'}
+              </p>
+            )}
 
             <p style={{ margin: '5px 0', color: '#666' }}>
               Item Level: {item.itemLevel ?? 1}
@@ -5247,6 +5341,35 @@ export const InventoryItems = () => {
                 <option value={Rarity.Mythic}>Mythic</option>
                 <option value="Not Droppable">Not Droppable</option>
               </select>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Resource Type:
+              </label>
+              <select
+                value={formData.resourceTypeId ?? ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, resourceTypeId: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                <option value="">None</option>
+                {resourceTypeOptions.map((option) => (
+                  <option key={`resource-type-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Optional gathering type for this item. Resource nodes must use
+                an item with a matching resource type.
+              </small>
             </div>
 
             <div style={{ marginBottom: '15px' }}>

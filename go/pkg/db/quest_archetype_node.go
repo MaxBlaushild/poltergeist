@@ -33,6 +33,14 @@ func (h *questArchetypeNodeHandle) FindByID(ctx context.Context, id uuid.UUID) (
 		Preload("ChallengeTemplate").
 		Preload("Challenges").
 		Preload("Challenges.ChallengeTemplate").
+		Preload("Challenges.UnlockedNode").
+		Preload("Challenges.UnlockedNode.ChallengeTemplate").
+		Preload("Challenges.UnlockedNode.LocationArchetype").
+		Preload("Challenges.UnlockedNode.ScenarioTemplate").
+		Preload("Challenges.FailureUnlockedNode").
+		Preload("Challenges.FailureUnlockedNode.ChallengeTemplate").
+		Preload("Challenges.FailureUnlockedNode.LocationArchetype").
+		Preload("Challenges.FailureUnlockedNode.ScenarioTemplate").
 		Preload("FetchCharacter").
 		Preload("FetchCharacterTemplate").
 		Preload("LocationArchetype").
@@ -50,6 +58,14 @@ func (h *questArchetypeNodeHandle) FindAll(ctx context.Context) ([]*models.Quest
 		Preload("ChallengeTemplate").
 		Preload("Challenges").
 		Preload("Challenges.ChallengeTemplate").
+		Preload("Challenges.UnlockedNode").
+		Preload("Challenges.UnlockedNode.ChallengeTemplate").
+		Preload("Challenges.UnlockedNode.LocationArchetype").
+		Preload("Challenges.UnlockedNode.ScenarioTemplate").
+		Preload("Challenges.FailureUnlockedNode").
+		Preload("Challenges.FailureUnlockedNode.ChallengeTemplate").
+		Preload("Challenges.FailureUnlockedNode.LocationArchetype").
+		Preload("Challenges.FailureUnlockedNode.ScenarioTemplate").
 		Preload("FetchCharacter").
 		Preload("FetchCharacterTemplate").
 		Preload("LocationArchetype").

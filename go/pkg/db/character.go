@@ -41,6 +41,18 @@ func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, er
 	return characters, nil
 }
 
+func (h *characterHandler) FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) ([]*models.Character, error) {
+	var characters []*models.Character
+	if err := h.db.WithContext(ctx).
+		Preload("PointOfInterest").
+		Preload("Locations").
+		Where("point_of_interest_id = ?", pointOfInterestID).
+		Find(&characters).Error; err != nil {
+		return nil, err
+	}
+	return characters, nil
+}
+
 func (h *characterHandler) Update(ctx context.Context, id uuid.UUID, updates *models.Character) error {
 	return h.db.WithContext(ctx).Model(&models.Character{}).Where("id = ?", id).Updates(updates).Error
 }

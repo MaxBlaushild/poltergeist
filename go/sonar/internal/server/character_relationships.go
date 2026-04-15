@@ -97,14 +97,31 @@ func (s *server) applyQuestGiverRelationshipEffectsOnTurnIn(
 	if quest == nil || quest.QuestGiverCharacterID == nil {
 		return nil
 	}
-	delta := normalizeCharacterRelationshipState(quest.QuestGiverRelationshipEffects)
+	return s.applyQuestGiverRelationshipDelta(
+		ctx,
+		userID,
+		*quest.QuestGiverCharacterID,
+		quest.QuestGiverRelationshipEffects,
+	)
+}
+
+func (s *server) applyQuestGiverRelationshipDelta(
+	ctx context.Context,
+	userID uuid.UUID,
+	characterID uuid.UUID,
+	delta models.CharacterRelationshipState,
+) error {
+	if characterID == uuid.Nil {
+		return nil
+	}
+	delta = normalizeCharacterRelationshipState(delta)
 	if delta.IsZero() {
 		return nil
 	}
 	_, err := s.dbClient.UserCharacterRelationship().ApplyDelta(
 		ctx,
 		userID,
-		*quest.QuestGiverCharacterID,
+		characterID,
 		delta,
 	)
 	return err

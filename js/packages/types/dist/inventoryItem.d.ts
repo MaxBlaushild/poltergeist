@@ -1,3 +1,4 @@
+import type { ResourceType } from './resourceType';
 export type InventoryConsumeStatus = {
     name: string;
     description: string;
@@ -52,6 +53,8 @@ export type InventoryItem = {
     flavorText: string;
     effectText: string;
     rarityTier: Rarity | string;
+    resourceTypeId?: string | null;
+    resourceType?: ResourceType | null;
     isCaptureType: boolean;
     buyPrice?: number;
     unlockTier?: number;

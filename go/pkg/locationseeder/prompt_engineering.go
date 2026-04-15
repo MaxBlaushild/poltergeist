@@ -147,6 +147,7 @@ func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place, zone *mode
 		place.Types,
 		place.DisplayName.Text,
 		c.generateSophistication(place),
+		place.DisplayName.Text,
 		zone.Name,
 		zone.Description,
 	)
@@ -174,6 +175,7 @@ func (c *client) makeFantasyThemingPrompt(place googlemaps.Place, zone *models.Z
 		place.Types,
 		place.DisplayName.Text,
 		c.generateSophistication(place),
+		place.DisplayName.Text,
 		zone.Name,
 		zone.Description,
 	)

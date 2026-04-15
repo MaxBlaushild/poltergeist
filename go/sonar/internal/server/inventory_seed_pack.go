@@ -168,6 +168,7 @@ func inventoryItemUpdatesFromModel(
 		"flavor_text":                                    item.FlavorText,
 		"effect_text":                                    item.EffectText,
 		"rarity_tier":                                    item.RarityTier,
+		"resource_type_id":                               item.ResourceTypeID,
 		"is_capture_type":                                item.IsCaptureType,
 		"buy_price":                                      item.BuyPrice,
 		"unlock_tier":                                    item.UnlockTier,

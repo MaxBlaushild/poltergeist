@@ -86,27 +86,37 @@ type QuestSpellReward struct {
 }
 
 type Quest struct {
-	ID                       uuid.UUID                `json:"id"`
-	Name                     string                   `json:"name"`
-	Description              string                   `json:"description"`
-	Category                 string                   `json:"category"`
-	IsTutorial               bool                     `json:"isTutorial,omitempty"`
-	AcceptanceDialogue       []models.DialogueMessage `json:"acceptanceDialogue,omitempty"`
-	ImageUrl                 string                   `json:"imageUrl"`
-	RewardMode               models.RewardMode        `json:"rewardMode"`
-	RandomRewardSize         models.RandomRewardSize  `json:"randomRewardSize"`
-	Gold                     int                      `json:"gold"`
-	ItemRewards              []QuestItemReward        `json:"itemRewards"`
-	SpellRewards             []QuestSpellReward       `json:"spellRewards"`
-	QuestGiverCharacterID    *uuid.UUID               `json:"questGiverCharacterId,omitempty"`
-	MainStoryPreviousQuestID *uuid.UUID               `json:"mainStoryPreviousQuestId,omitempty"`
-	MainStoryNextQuestID     *uuid.UUID               `json:"mainStoryNextQuestId,omitempty"`
-	RecurringQuestID         *uuid.UUID               `json:"recurringQuestId,omitempty"`
-	IsAccepted               bool                     `json:"isAccepted"`
-	TurnedInAt               *time.Time               `json:"turnedInAt,omitempty"`
-	CompletionCount          int                      `json:"completionCount,omitempty"`
-	ReadyToTurnIn            bool                     `json:"readyToTurnIn"`
-	CurrentNode              *QuestNode               `json:"currentNode,omitempty"`
+	ID                       uuid.UUID                 `json:"id"`
+	Name                     string                    `json:"name"`
+	Description              string                    `json:"description"`
+	Category                 string                    `json:"category"`
+	IsTutorial               bool                      `json:"isTutorial,omitempty"`
+	AcceptanceDialogue       []models.DialogueMessage  `json:"acceptanceDialogue,omitempty"`
+	ImageUrl                 string                    `json:"imageUrl"`
+	RewardMode               models.RewardMode         `json:"rewardMode"`
+	RandomRewardSize         models.RandomRewardSize   `json:"randomRewardSize"`
+	Gold                     int                       `json:"gold"`
+	ItemRewards              []QuestItemReward         `json:"itemRewards"`
+	SpellRewards             []QuestSpellReward        `json:"spellRewards"`
+	QuestGiverCharacterID    *uuid.UUID                `json:"questGiverCharacterId,omitempty"`
+	MainStoryPreviousQuestID *uuid.UUID                `json:"mainStoryPreviousQuestId,omitempty"`
+	MainStoryNextQuestID     *uuid.UUID                `json:"mainStoryNextQuestId,omitempty"`
+	RecurringQuestID         *uuid.UUID                `json:"recurringQuestId,omitempty"`
+	ClosurePolicy            models.QuestClosurePolicy `json:"closurePolicy"`
+	DebriefPolicy            models.QuestDebriefPolicy `json:"debriefPolicy"`
+	IsAccepted               bool                      `json:"isAccepted"`
+	ObjectivesCompletedAt    *time.Time                `json:"objectivesCompletedAt,omitempty"`
+	ClosedAt                 *time.Time                `json:"closedAt,omitempty"`
+	ClosureMethod            models.QuestClosureMethod `json:"closureMethod,omitempty"`
+	DebriefPending           bool                      `json:"debriefPending"`
+	DebriefedAt              *time.Time                `json:"debriefedAt,omitempty"`
+	TurnedInAt               *time.Time                `json:"turnedInAt,omitempty"`
+	CompletionCount          int                       `json:"completionCount,omitempty"`
+	ReadyToClose             bool                      `json:"readyToClose"`
+	ReadyToTurnIn            bool                      `json:"readyToTurnIn"`
+	CanCloseRemotely         bool                      `json:"canCloseRemotely"`
+	CanDebriefNow            bool                      `json:"canDebriefNow"`
+	CurrentNode              *QuestNode                `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -169,77 +179,119 @@ func (c *questlogClient) loadUserStoryFlagMap(
 	return userStoryFlagMap(flags), nil
 }
 
-func (c *questlogClient) markQuestNodeCompleteForAcceptance(
-	ctx context.Context,
-	acceptance *models.QuestAcceptanceV2,
-	nodeID uuid.UUID,
-	completedAt time.Time,
-) error {
-	if acceptance == nil {
-		return nil
-	}
-	progress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(
-		ctx,
-		acceptance.ID,
-		nodeID,
-	)
-	if err != nil {
-		return err
-	}
-	if progress == nil {
-		progress = &models.QuestNodeProgress{
-			ID:                uuid.New(),
-			CreatedAt:         completedAt,
-			UpdatedAt:         completedAt,
-			QuestAcceptanceID: acceptance.ID,
-			QuestNodeID:       nodeID,
-			CompletedAt:       &completedAt,
+func questNodeStatusMap(
+	progressEntries []models.QuestNodeProgress,
+) map[uuid.UUID]models.QuestNodeProgressStatus {
+	statuses := make(map[uuid.UUID]models.QuestNodeProgressStatus, len(progressEntries))
+	for _, entry := range progressEntries {
+		statuses[entry.QuestNodeID] = models.NormalizeQuestNodeProgressStatus(string(entry.Status))
+		if entry.CompletedAt != nil {
+			statuses[entry.QuestNodeID] = models.QuestNodeProgressStatusCompleted
 		}
-		return c.dbClient.QuestNodeProgress().Create(ctx, progress)
 	}
-	if progress.CompletedAt != nil {
-		return nil
-	}
-	return c.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID)
+	return statuses
 }
 
-func (c *questlogClient) autoCompleteStoryFlagNodes(
+func questNodeIDPointer(node *models.QuestNode) *uuid.UUID {
+	if node == nil || node.ID == uuid.Nil {
+		return nil
+	}
+	nodeID := node.ID
+	return &nodeID
+}
+
+func sameQuestNodePointer(left *uuid.UUID, right *uuid.UUID) bool {
+	switch {
+	case left == nil && right == nil:
+		return true
+	case left == nil || right == nil:
+		return false
+	default:
+		return *left == *right
+	}
+}
+
+func (c *questlogClient) syncQuestAcceptanceCurrentNode(
 	ctx context.Context,
 	quest *models.Quest,
 	acceptance *models.QuestAcceptanceV2,
-	completed map[uuid.UUID]bool,
 	activeStoryFlags map[string]bool,
-) (map[uuid.UUID]bool, error) {
+) (*models.QuestNode, bool, error) {
 	if quest == nil || acceptance == nil {
-		return completed, nil
+		return nil, false, nil
 	}
-	_, autoCompleted := models.ResolveCurrentQuestNode(
+
+	progressEntries, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	statuses := questNodeStatusMap(progressEntries)
+
+	currentNode, autoCompleted := models.ResolveCurrentQuestNode(
 		quest.Nodes,
-		completed,
+		acceptance.CurrentQuestNodeID,
+		statuses,
 		activeStoryFlags,
 	)
-	if len(autoCompleted) == 0 {
-		return completed, nil
+	if len(autoCompleted) > 0 {
+		completedAt := time.Now()
+		for _, nodeID := range autoCompleted {
+			progress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(
+				ctx,
+				acceptance.ID,
+				nodeID,
+			)
+			if err != nil {
+				return nil, false, err
+			}
+			if progress == nil {
+				progress = &models.QuestNodeProgress{
+					ID:                uuid.New(),
+					CreatedAt:         completedAt,
+					UpdatedAt:         completedAt,
+					QuestAcceptanceID: acceptance.ID,
+					QuestNodeID:       nodeID,
+				}
+				if err := c.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
+					return nil, false, err
+				}
+			}
+			progress.Status = models.QuestNodeProgressStatusCompleted
+			progress.CompletedAt = &completedAt
+			progress.AttemptCount++
+			progress.LastFailedAt = nil
+			progress.LastFailureReason = ""
+			progress.UpdatedAt = completedAt
+			if err := c.dbClient.QuestNodeProgress().Update(ctx, progress); err != nil {
+				return nil, false, err
+			}
+		}
 	}
 
-	nextCompleted := make(map[uuid.UUID]bool, len(completed)+len(autoCompleted))
-	for nodeID, isCompleted := range completed {
-		nextCompleted[nodeID] = isCompleted
-	}
-	completedAt := time.Now()
-	for _, nodeID := range autoCompleted {
-		if err := c.markQuestNodeCompleteForAcceptance(
+	desiredCurrentNodeID := questNodeIDPointer(currentNode)
+	if !sameQuestNodePointer(acceptance.CurrentQuestNodeID, desiredCurrentNodeID) {
+		if err := c.dbClient.QuestAcceptanceV2().UpdateCurrentNode(
 			ctx,
-			acceptance,
-			nodeID,
+			acceptance.ID,
+			desiredCurrentNodeID,
+		); err != nil {
+			return nil, false, err
+		}
+		acceptance.CurrentQuestNodeID = desiredCurrentNodeID
+	}
+	if currentNode == nil && acceptance.ObjectivesCompletedAt == nil {
+		completedAt := time.Now()
+		if err := c.dbClient.QuestAcceptanceV2().MarkObjectivesCompleted(
+			ctx,
+			acceptance.ID,
 			completedAt,
 		); err != nil {
-			return completed, err
+			return nil, false, err
 		}
-		nextCompleted[nodeID] = true
+		acceptance.ObjectivesCompletedAt = &completedAt
 	}
 
-	return nextCompleted, nil
+	return currentNode, currentNode == nil, nil
 }
 
 func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
@@ -303,32 +355,19 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			continue
 		}
 
-		progress := map[uuid.UUID]bool{}
-		nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range nodeProgress {
-			if p.CompletedAt != nil {
-				progress[p.QuestNodeID] = true
-			}
-		}
-		progress, err = c.autoCompleteStoryFlagNodes(
+		currentNodeModel, allCompleted, err := c.syncQuestAcceptanceCurrentNode(
 			ctx,
 			&quest,
 			&acceptance,
-			progress,
 			activeStoryFlags,
 		)
 		if err != nil {
 			return nil, err
 		}
-
-		currentNode, err := buildCurrentNode(ctx, c.dbClient, &quest, progress)
+		currentNode, err := buildCurrentNode(ctx, c.dbClient, currentNodeModel)
 		if err != nil {
 			return nil, err
 		}
-		allCompleted := len(quest.Nodes) > 0 && allNodesCompleted(&quest, progress)
 		itemRewards := make([]QuestItemReward, 0, len(quest.ItemRewards))
 		for _, reward := range quest.ItemRewards {
 			var invItem *models.InventoryItem
@@ -374,10 +413,24 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			MainStoryPreviousQuestID: quest.MainStoryPreviousQuestID,
 			MainStoryNextQuestID:     quest.MainStoryNextQuestID,
 			RecurringQuestID:         &seriesIDCopy,
+			ClosurePolicy:            quest.ClosurePolicyNormalized(),
+			DebriefPolicy:            quest.DebriefPolicyNormalized(),
 			IsAccepted:               accepted,
+			ObjectivesCompletedAt:    acceptance.ObjectivesCompletedAt,
+			ClosedAt:                 acceptance.EffectiveClosedAt(),
+			ClosureMethod:            models.NormalizeQuestClosureMethod(string(acceptance.ClosureMethod)),
+			DebriefPending:           acceptance.IsDebriefPending(),
+			DebriefedAt:              acceptance.EffectiveDebriefedAt(),
 			TurnedInAt:               acceptance.TurnedInAt,
-			ReadyToTurnIn:            accepted && acceptance.TurnedInAt == nil && allCompleted,
-			CurrentNode:              currentNode,
+			ReadyToClose:             accepted && acceptance.EffectiveClosedAt() == nil && allCompleted,
+			ReadyToTurnIn: accepted && acceptance.TurnedInAt == nil &&
+				((acceptance.EffectiveClosedAt() == nil && allCompleted) || acceptance.IsDebriefPending()),
+			CanCloseRemotely: quest.ClosurePolicyNormalized() != models.QuestClosurePolicyInPerson &&
+				accepted &&
+				acceptance.EffectiveClosedAt() == nil &&
+				allCompleted,
+			CanDebriefNow: acceptance.IsDebriefPending(),
+			CurrentNode:   currentNode,
 		}
 		if acceptance.TurnedInAt != nil {
 			completedCounts[seriesID]++
@@ -490,66 +543,31 @@ func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID 
 		return false, nil
 	}
 
-	progressEntries, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
-	if err != nil {
-		return false, err
-	}
-
-	completed := map[uuid.UUID]bool{}
-	for _, p := range progressEntries {
-		if p.CompletedAt != nil {
-			completed[p.QuestNodeID] = true
-		}
-	}
 	activeStoryFlags, err := c.loadUserStoryFlagMap(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	completed, err = c.autoCompleteStoryFlagNodes(
+	_, allCompleted, err := c.syncQuestAcceptanceCurrentNode(
 		ctx,
 		quest,
 		acceptance,
-		completed,
 		activeStoryFlags,
 	)
 	if err != nil {
 		return false, err
 	}
-	return allNodesCompleted(quest, completed), nil
-}
-
-func allNodesCompleted(quest *models.Quest, completed map[uuid.UUID]bool) bool {
-	if len(quest.Nodes) == 0 {
-		return false
-	}
-	for _, node := range quest.Nodes {
-		if !completed[node.ID] {
-			return false
-		}
-	}
-	return true
+	return allCompleted, nil
 }
 
 func buildCurrentNode(
 	ctx context.Context,
 	dbClient db.DbClient,
-	quest *models.Quest,
-	completed map[uuid.UUID]bool,
+	node *models.QuestNode,
 ) (*QuestNode, error) {
-	if quest == nil || len(quest.Nodes) == 0 {
+	if node == nil {
 		return nil, nil
 	}
-	nodes := append([]models.QuestNode(nil), quest.Nodes...)
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].OrderIndex < nodes[j].OrderIndex
-	})
-	for _, node := range nodes {
-		if completed[node.ID] {
-			continue
-		}
-		return buildQuestNodeView(ctx, dbClient, node)
-	}
-	return nil, nil
+	return buildQuestNodeView(ctx, dbClient, *node)
 }
 
 func (c *questlogClient) loadActiveTutorialQuest(

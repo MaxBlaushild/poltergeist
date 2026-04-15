@@ -31,6 +31,7 @@ type Character struct {
 }
 
 const CharacterInternalTagGeneratedFetchQuest = "generated_fetch_quest_character"
+const CharacterInternalTagGeneratedPOILocal = "generated_poi_local"
 
 func CharacterHasInternalTag(character *Character, tag string) bool {
 	if character == nil || tag == "" {

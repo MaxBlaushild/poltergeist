@@ -62,7 +62,7 @@ func (s *server) activeFetchQuestCharacterIDsForUser(
 
 	ids := make(map[uuid.UUID]struct{})
 	for _, acceptance := range acceptances {
-		if acceptance.TurnedInAt != nil {
+		if acceptance.IsClosed() {
 			continue
 		}
 		quest, err := s.dbClient.Quest().FindByID(ctx, acceptance.QuestID)
@@ -112,7 +112,7 @@ func (s *server) currentFetchQuestNodeForUser(
 	if acceptance == nil {
 		return nil, nil, nil, fmt.Errorf("quest not accepted")
 	}
-	if acceptance.TurnedInAt != nil {
+	if acceptance.IsClosed() {
 		return nil, nil, nil, fmt.Errorf("quest already turned in")
 	}
 
@@ -225,7 +225,7 @@ func (s *server) buildFetchQuestTurnInActionsForCharacter(
 
 	actions := make([]*models.CharacterAction, 0)
 	for _, acceptance := range acceptances {
-		if acceptance.TurnedInAt != nil {
+		if acceptance.IsClosed() {
 			continue
 		}
 
@@ -385,6 +385,7 @@ func (s *server) submitQuestFetchTurnIn(ctx *gin.Context) {
 
 	if _, err := s.markQuestNodeCompleteForAcceptance(
 		ctx,
+		quest,
 		acceptance,
 		node.ID,
 		time.Now(),

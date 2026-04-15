@@ -122,6 +122,8 @@ type DbClient interface {
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
 	HealingFountain() HealingFountainHandle
+	ResourceType() ResourceTypeHandle
+	Resource() ResourceHandle
 	Base() BaseHandle
 	BaseResourceBalance() BaseResourceBalanceHandle
 	BaseResourceLedger() BaseResourceLedgerHandle
@@ -275,6 +277,7 @@ type PointOfInterestHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	UpdateImageGenerationStatus(ctx context.Context, id uuid.UUID, status string, errMsg *string) error
+	UpdateMarkerCategory(ctx context.Context, id uuid.UUID, category models.PointOfInterestMarkerCategory) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
 	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
 	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)
@@ -1152,6 +1155,7 @@ type CharacterHandle interface {
 	Create(ctx context.Context, character *models.Character) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error)
 	FindAll(ctx context.Context) ([]*models.Character, error)
+	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) ([]*models.Character, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	UpdateFields(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -1183,6 +1187,10 @@ type QuestAcceptanceV2Handle interface {
 	Create(ctx context.Context, acceptance *models.QuestAcceptanceV2) error
 	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (*models.QuestAcceptanceV2, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptanceV2, error)
+	UpdateCurrentNode(ctx context.Context, id uuid.UUID, currentNodeID *uuid.UUID) error
+	MarkObjectivesCompleted(ctx context.Context, id uuid.UUID, completedAt time.Time) error
+	MarkClosed(ctx context.Context, id uuid.UUID, closedAt time.Time, closureMethod models.QuestClosureMethod, debriefPending bool, debriefedAt *time.Time) error
+	MarkDebriefed(ctx context.Context, id uuid.UUID, debriefedAt time.Time) error
 	MarkTurnedIn(ctx context.Context, id uuid.UUID) error
 }
 
@@ -1228,6 +1236,7 @@ type QuestNodeProgressHandle interface {
 	Create(ctx context.Context, progress *models.QuestNodeProgress) error
 	FindByAcceptanceID(ctx context.Context, acceptanceID uuid.UUID) ([]models.QuestNodeProgress, error)
 	FindByAcceptanceAndNode(ctx context.Context, acceptanceID uuid.UUID, nodeID uuid.UUID) (*models.QuestNodeProgress, error)
+	Update(ctx context.Context, progress *models.QuestNodeProgress) error
 	MarkCompleted(ctx context.Context, id uuid.UUID) error
 	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
@@ -1275,6 +1284,29 @@ type HealingFountainHandle interface {
 	FindLatestVisitByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainVisit, error)
 	FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error)
 	CreateUserHealingFountainVisit(ctx context.Context, visit *models.UserHealingFountainVisit) error
+}
+
+type ResourceTypeHandle interface {
+	Create(ctx context.Context, resourceType *models.ResourceType) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ResourceType, error)
+	FindBySlug(ctx context.Context, slug string) (*models.ResourceType, error)
+	FindAll(ctx context.Context) ([]models.ResourceType, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.ResourceType) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ResourceHandle interface {
+	Create(ctx context.Context, resource *models.Resource) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Resource, error)
+	FindAll(ctx context.Context) ([]models.Resource, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Resource, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Resource) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	HasUserGathered(ctx context.Context, userID uuid.UUID, resourceID uuid.UUID) (bool, error)
+	CreateUserGathering(ctx context.Context, gathering *models.UserResourceGathering) error
+	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.Resource, bool, error)
+	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Resource, map[uuid.UUID]bool, error)
+	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Resource, map[uuid.UUID]bool, error)
 }
 
 type BaseHandle interface {

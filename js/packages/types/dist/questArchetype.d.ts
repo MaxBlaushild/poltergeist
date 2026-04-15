@@ -1,7 +1,7 @@
 import { InventoryItem } from './inventoryItem';
 import { LocationArchetype } from './locationArchetype';
 import { QuestDifficultyMode } from './questDifficulty';
-import { CharacterRelationshipState, QuestMaterialReward } from './quest';
+import { CharacterRelationshipState, QuestClosurePolicy, QuestDebriefPolicy, QuestMaterialReward } from './quest';
 import { Spell } from './spell';
 import { Character } from './character';
 import { CharacterTemplate } from './characterTemplate';
@@ -19,6 +19,8 @@ export interface QuestArchetypeChallenge {
     difficulty?: number | null;
     unlockedNodeId?: string;
     unlockedNode?: QuestArchetypeNode;
+    failureUnlockedNodeId?: string | null;
+    failureUnlockedNode?: QuestArchetypeNode | null;
 }
 export interface QuestArchetypeChallengeTemplate {
     id: string;
@@ -73,6 +75,7 @@ export interface QuestArchetypeNode {
     fetchCharacterTemplateId?: string | null;
     fetchRequirements?: QuestArchetypeNodeFetchRequirement[];
     objectiveDescription?: string | null;
+    failurePolicy?: 'retry' | 'transition' | string | null;
     storyFlagKey?: string | null;
     monsterTemplateIds?: string[];
     targetLevel?: number | null;
@@ -99,6 +102,11 @@ export interface QuestArchetype {
     category?: 'side' | 'main_story';
     questGiverCharacterId?: string | null;
     questGiverCharacter?: Character | null;
+    closurePolicy?: QuestClosurePolicy;
+    debriefPolicy?: QuestDebriefPolicy;
+    returnBonusGold?: number;
+    returnBonusExperience?: number;
+    returnBonusRelationshipEffects?: CharacterRelationshipState;
     acceptanceDialogue?: DialogueMessage[];
     imageUrl?: string;
     difficultyMode?: QuestDifficultyMode;

@@ -31,6 +31,13 @@ export interface CharacterRelationshipState {
   debt?: number;
 }
 
+export type QuestClosurePolicy = 'auto' | 'remote' | 'in_person';
+export type QuestDebriefPolicy =
+  | 'none'
+  | 'optional'
+  | 'required_for_followup';
+export type QuestClosureMethod = 'auto' | 'remote' | 'in_person';
+
 export interface Quest {
   id: string;
   createdAt: string;
@@ -45,6 +52,11 @@ export interface Quest {
   zoneId?: string | null;
   questArchetypeId?: string | null;
   questGiverCharacterId?: string | null;
+  closurePolicy?: QuestClosurePolicy;
+  debriefPolicy?: QuestDebriefPolicy;
+  returnBonusGold?: number;
+  returnBonusExperience?: number;
+  returnBonusRelationshipEffects?: CharacterRelationshipState;
   mainStoryPreviousQuestId?: string | null;
   mainStoryNextQuestId?: string | null;
   recurringQuestId?: string | null;

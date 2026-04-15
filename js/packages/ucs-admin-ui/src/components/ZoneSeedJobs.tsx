@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
@@ -36,10 +42,36 @@ type ZoneSeedDraft = {
   characters?: ZoneSeedCharacterDraft[];
 };
 
+type SeedMode = 'manual' | 'auto';
+
+type ZoneSeedCounts = {
+  placeCount: number;
+  monsterCount: number;
+  bossEncounterCount: number;
+  raidEncounterCount: number;
+  inputEncounterCount: number;
+  optionEncounterCount: number;
+  treasureChestCount: number;
+  healingFountainCount: number;
+};
+
+type SeedCountField = keyof ZoneSeedCounts;
+
+type SeedCountInputMap = Record<SeedCountField, string>;
+
+type ZoneSeedAutoAudit = {
+  zoneAreaSquareFeet?: number;
+  zoneAreaAcres?: number;
+  recommendedCounts?: ZoneSeedCounts;
+  finalCounts?: ZoneSeedCounts;
+  warnings?: string[];
+};
+
 type ZoneSeedJob = {
   id: string;
   zoneId: string;
   status: string;
+  seedMode?: SeedMode;
   errorMessage?: string;
   placeCount: number;
   characterCount: number;
@@ -56,18 +88,12 @@ type ZoneSeedJob = {
   shopkeeperItemTags?: string[];
   createdAt?: string;
   updatedAt?: string;
+  autoSeedAudit?: ZoneSeedAutoAudit;
   draft?: ZoneSeedDraft;
 };
 
-type ZoneSeedDraftPayload = {
-  placeCount: number;
-  monsterCount: number;
-  bossEncounterCount: number;
-  raidEncounterCount: number;
-  inputEncounterCount: number;
-  optionEncounterCount: number;
-  treasureChestCount: number;
-  healingFountainCount: number;
+type ZoneSeedDraftPayload = Partial<ZoneSeedCounts> & {
+  seedMode?: SeedMode;
   requiredPlaceTags: string[];
   shopkeeperItemTags: string[];
 };
@@ -78,21 +104,80 @@ type BulkQueueZoneSeedJobsResponse = {
   jobs: ZoneSeedJob[];
 };
 
+const defaultSeedCountInputs: SeedCountInputMap = {
+  placeCount: '0',
+  monsterCount: '0',
+  bossEncounterCount: '0',
+  raidEncounterCount: '0',
+  inputEncounterCount: '0',
+  optionEncounterCount: '0',
+  treasureChestCount: '0',
+  healingFountainCount: '0',
+};
+
+const seedCountFields: Array<{
+  key: SeedCountField;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'placeCount',
+    label: 'Places',
+    description: 'POIs and coupled standalone challenges',
+  },
+  {
+    key: 'monsterCount',
+    label: 'Monster encounters',
+    description: 'Random scalable encounters',
+  },
+  {
+    key: 'bossEncounterCount',
+    label: 'Boss encounters',
+    description: 'Random scalable boss encounters',
+  },
+  {
+    key: 'raidEncounterCount',
+    label: 'Raid encounters',
+    description: 'Random 5-player raid encounters',
+  },
+  {
+    key: 'inputEncounterCount',
+    label: 'Input scenarios',
+    description: 'Random scalable input scenarios',
+  },
+  {
+    key: 'optionEncounterCount',
+    label: 'Option scenarios',
+    description: 'Random scalable option scenarios',
+  },
+  {
+    key: 'treasureChestCount',
+    label: 'Treasure chests',
+    description: 'Random scalable reward chests',
+  },
+  {
+    key: 'healingFountainCount',
+    label: 'Healing fountains',
+    description: 'Random healing fountain placements',
+  },
+];
+
 const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
   if (points.length < 3) return points.slice();
 
   const centroid = points.reduce(
-    (acc, point) => [acc[0] + point[0] / points.length, acc[1] + point[1] / points.length],
+    (acc, point) => [
+      acc[0] + point[0] / points.length,
+      acc[1] + point[1] / points.length,
+    ],
     [0, 0]
   );
 
-  const sorted = points
-    .slice()
-    .sort((a, b) => {
-      const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
-      const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
-      return angleA - angleB;
-    });
+  const sorted = points.slice().sort((a, b) => {
+    const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+    const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+    return angleA - angleB;
+  });
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
@@ -106,13 +191,17 @@ const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
 const getZoneRing = (zone: Zone): [number, number][] => {
   if (zone.points?.length) {
     return sortBoundaryPoints(
-      zone.points.map((point) => [point.longitude, point.latitude] as [number, number])
+      zone.points.map(
+        (point) => [point.longitude, point.latitude] as [number, number]
+      )
     );
   }
 
   if (zone.boundaryCoords?.length) {
     return sortBoundaryPoints(
-      zone.boundaryCoords.map((coord) => [coord.longitude, coord.latitude] as [number, number])
+      zone.boundaryCoords.map(
+        (coord) => [coord.longitude, coord.latitude] as [number, number]
+      )
     );
   }
 
@@ -177,7 +266,9 @@ const BulkZoneSelectionMap: React.FC<BulkZoneSelectionMapProps> = ({
     }
 
     if (!mapboxgl.accessToken) {
-      setSearchStatus('Location search is unavailable because the Mapbox token is missing.');
+      setSearchStatus(
+        'Location search is unavailable because the Mapbox token is missing.'
+      );
       return;
     }
 
@@ -374,7 +465,9 @@ const BulkZoneSelectionMap: React.FC<BulkZoneSelectionMapProps> = ({
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">
       <div className="mb-2">
-        <div className="text-sm font-semibold text-gray-900">Visual zone selection</div>
+        <div className="text-sm font-semibold text-gray-900">
+          Visual zone selection
+        </div>
         <div className="text-xs text-gray-500">
           Click zone polygons to add or remove them from the bulk queue.
         </div>
@@ -442,7 +535,9 @@ const BulkZoneSelectionMap: React.FC<BulkZoneSelectionMapProps> = ({
         ref={mapContainer}
         className="h-[320px] w-full overflow-hidden rounded border border-gray-200"
       />
-      {searchStatus && <p className="mt-2 text-xs text-gray-500">{searchStatus}</p>}
+      {searchStatus && (
+        <p className="mt-2 text-xs text-gray-500">{searchStatus}</p>
+      )}
     </div>
   );
 };
@@ -488,54 +583,170 @@ const formatDate = (value?: string) => {
   return parsed.toLocaleString();
 };
 
+const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
+  placeCount: job.placeCount ?? 0,
+  monsterCount: job.monsterCount ?? 0,
+  bossEncounterCount: job.bossEncounterCount ?? 0,
+  raidEncounterCount: job.raidEncounterCount ?? 0,
+  inputEncounterCount: job.inputEncounterCount ?? 0,
+  optionEncounterCount: job.optionEncounterCount ?? 0,
+  treasureChestCount: job.treasureChestCount ?? 0,
+  healingFountainCount: job.healingFountainCount ?? 0,
+});
+
+const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
+  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains`;
+
+const autoSeedEarthRadiusMeters = 6378137;
+const autoSeedSquareFeetPerSquareMeter = 10.763910416709722;
+const autoSeedSquareFeetPerAcre = 43560;
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const ringAreaSquareMeters = (ring: [number, number][]) => {
+  if (ring.length < 3) return 0;
+
+  const closedRing =
+    ring[0][0] === ring[ring.length - 1][0] &&
+    ring[0][1] === ring[ring.length - 1][1]
+      ? ring
+      : [...ring, ring[0]];
+
+  let area = 0;
+  for (let i = 0; i < closedRing.length; i += 1) {
+    let lowIndex = i;
+    let middleIndex = i + 1;
+    let highIndex = i + 2;
+
+    if (i === closedRing.length - 3) {
+      lowIndex = closedRing.length - 3;
+      middleIndex = closedRing.length - 2;
+      highIndex = 0;
+    } else if (i === closedRing.length - 2) {
+      lowIndex = closedRing.length - 2;
+      middleIndex = 0;
+      highIndex = 0;
+    } else if (i === closedRing.length - 1) {
+      lowIndex = 0;
+      middleIndex = 0;
+      highIndex = 1;
+    }
+
+    area +=
+      (toRadians(closedRing[highIndex][0]) -
+        toRadians(closedRing[lowIndex][0])) *
+      Math.sin(toRadians(closedRing[middleIndex][1]));
+  }
+
+  return Math.abs(
+    (-area * autoSeedEarthRadiusMeters * autoSeedEarthRadiusMeters) / 2
+  );
+};
+
+const getZoneAreaSquareFeet = (zone?: Zone) => {
+  if (!zone) return null;
+  const ring = getZoneRing(zone);
+  if (ring.length < 3) return null;
+  const squareMeters = ringAreaSquareMeters(ring);
+  if (!Number.isFinite(squareMeters) || squareMeters <= 0) return null;
+  return squareMeters * autoSeedSquareFeetPerSquareMeter;
+};
+
+const inferAutoCount = (areaAcres: number, multiplier: number) => {
+  const count = Math.round(Math.log1p(Math.max(areaAcres, 0)) * multiplier);
+  return Math.max(1, count);
+};
+
+const inferAutoSeedCounts = (
+  areaSquareFeet?: number | null,
+  requiredPlaceTags: string[] = []
+): ZoneSeedCounts | null => {
+  if (!areaSquareFeet || areaSquareFeet <= 0) {
+    return null;
+  }
+
+  const areaAcres = areaSquareFeet / autoSeedSquareFeetPerAcre;
+  const placeCount = Math.max(
+    inferAutoCount(areaAcres, 2.75),
+    requiredPlaceTags.length
+  );
+
+  return {
+    placeCount,
+    monsterCount: inferAutoCount(areaAcres, 1.9),
+    bossEncounterCount: inferAutoCount(areaAcres, 0.85),
+    raidEncounterCount: inferAutoCount(areaAcres, 0.55),
+    inputEncounterCount: inferAutoCount(areaAcres, 1.1),
+    optionEncounterCount: inferAutoCount(areaAcres, 1.1),
+    treasureChestCount: inferAutoCount(areaAcres, 1.35),
+    healingFountainCount: inferAutoCount(areaAcres, 0.75),
+  };
+};
+
+const formatSquareFeet = (value?: number) => {
+  if (!value || value <= 0) return 'n/a';
+  return `${Math.round(value).toLocaleString()} sq ft`;
+};
+
+const formatAcres = (value?: number) => {
+  if (!value || value <= 0) return 'n/a';
+  return `${value.toFixed(value >= 10 ? 1 : 2)} acres`;
+};
+
+const parseCountInput = (value: string) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 const buildSeedDraftPayload = (params: {
-  placeCount: string;
-  monsterCount: string;
-  bossEncounterCount: string;
-  raidEncounterCount: string;
-  inputEncounterCount: string;
-  optionEncounterCount: string;
-  treasureChestCount: string;
-  healingFountainCount: string;
+  seedMode: SeedMode;
+  manualCountInputs: SeedCountInputMap;
+  autoOverrideInputs: Partial<SeedCountInputMap>;
+  autoRecommendation: ZoneSeedCounts | null;
   requiredPlaceTags: string[];
   shopkeeperItemTags: string[];
 }): { payload?: ZoneSeedDraftPayload; error?: string } => {
-  const placeCount = Number.parseInt(params.placeCount, 10);
-  const monsterCount = Number.parseInt(params.monsterCount, 10);
-  const bossEncounterCount = Number.parseInt(params.bossEncounterCount, 10);
-  const raidEncounterCount = Number.parseInt(params.raidEncounterCount, 10);
-  const inputEncounterCount = Number.parseInt(params.inputEncounterCount, 10);
-  const optionEncounterCount = Number.parseInt(params.optionEncounterCount, 10);
-  const treasureChestCount = Number.parseInt(params.treasureChestCount, 10);
-  const healingFountainCount = Number.parseInt(params.healingFountainCount, 10);
-
-  if (
-    Number.isNaN(placeCount) ||
-    Number.isNaN(monsterCount) ||
-    Number.isNaN(bossEncounterCount) ||
-    Number.isNaN(raidEncounterCount) ||
-    Number.isNaN(inputEncounterCount) ||
-    Number.isNaN(optionEncounterCount) ||
-    Number.isNaN(treasureChestCount) ||
-    Number.isNaN(healingFountainCount)
-  ) {
-    return { error: 'Counts must be integers.' };
-  }
-
-  return {
-    payload: {
-      placeCount,
-      monsterCount,
-      bossEncounterCount,
-      raidEncounterCount,
-      inputEncounterCount,
-      optionEncounterCount,
-      treasureChestCount,
-      healingFountainCount,
+  if (params.seedMode === 'manual') {
+    const payload: ZoneSeedDraftPayload = {
+      seedMode: 'manual',
       requiredPlaceTags: params.requiredPlaceTags,
       shopkeeperItemTags: params.shopkeeperItemTags,
-    },
+    };
+
+    for (const field of seedCountFields) {
+      const parsed = parseCountInput(params.manualCountInputs[field.key]);
+      if (parsed === null) {
+        return { error: 'Counts must be integers.' };
+      }
+      payload[field.key] = parsed;
+    }
+
+    return { payload };
+  }
+
+  if (!params.autoRecommendation) {
+    return { error: 'Auto mode needs a zone with valid boundary geometry.' };
+  }
+
+  const payload: ZoneSeedDraftPayload = {
+    seedMode: 'auto',
+    requiredPlaceTags: params.requiredPlaceTags,
+    shopkeeperItemTags: params.shopkeeperItemTags,
   };
+
+  for (const field of seedCountFields) {
+    const override = params.autoOverrideInputs[field.key];
+    if (override == null) {
+      continue;
+    }
+    const parsed = parseCountInput(override);
+    if (parsed === null) {
+      return { error: 'Counts must be integers.' };
+    }
+    payload[field.key] = parsed;
+  }
+
+  return { payload };
 };
 
 export const ZoneSeedJobs = () => {
@@ -554,17 +765,17 @@ export const ZoneSeedJobs = () => {
   const [bulkDeletingJobs, setBulkDeletingJobs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [placeCount, setPlaceCount] = useState('0');
-  const [monsterCount, setMonsterCount] = useState('0');
-  const [bossEncounterCount, setBossEncounterCount] = useState('0');
-  const [raidEncounterCount, setRaidEncounterCount] = useState('0');
-  const [inputEncounterCount, setInputEncounterCount] = useState('0');
-  const [optionEncounterCount, setOptionEncounterCount] = useState('0');
-  const [treasureChestCount, setTreasureChestCount] = useState('0');
-  const [healingFountainCount, setHealingFountainCount] = useState('0');
+  const [seedMode, setSeedMode] = useState<SeedMode>('manual');
+  const [manualCountInputs, setManualCountInputs] = useState<SeedCountInputMap>(
+    defaultSeedCountInputs
+  );
+  const [autoOverrideInputs, setAutoOverrideInputs] = useState<
+    Partial<SeedCountInputMap>
+  >({});
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
-  const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
+  const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] =
+    useState(false);
   const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
   const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
   const [bulkZoneQuery, setBulkZoneQuery] = useState('');
@@ -612,9 +823,11 @@ export const ZoneSeedJobs = () => {
     []
   );
   const [draftZoneQuery, setDraftZoneQuery] = useState('');
-  const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
+  const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] =
+    useState(false);
   const [filterZoneQuery, setFilterZoneQuery] = useState('');
-  const [showFilterZoneSuggestions, setShowFilterZoneSuggestions] = useState(false);
+  const [showFilterZoneSuggestions, setShowFilterZoneSuggestions] =
+    useState(false);
   const sortedZones = useMemo(
     () => [...zones].sort((left, right) => left.name.localeCompare(right.name)),
     [zones]
@@ -628,14 +841,72 @@ export const ZoneSeedJobs = () => {
     return sortedZones.find((zone) => zone.id === draftZoneId);
   }, [sortedZones, draftZoneId]);
 
+  const autoAreaSquareFeet = useMemo(
+    () => getZoneAreaSquareFeet(selectedZone),
+    [selectedZone]
+  );
+
+  const autoAreaAcres = useMemo(
+    () =>
+      autoAreaSquareFeet
+        ? autoAreaSquareFeet / autoSeedSquareFeetPerAcre
+        : null,
+    [autoAreaSquareFeet]
+  );
+
+  const autoRecommendation = useMemo(
+    () => inferAutoSeedCounts(autoAreaSquareFeet, requiredPlaceTags),
+    [autoAreaSquareFeet, requiredPlaceTags]
+  );
+
+  const autoDisplayedCountInputs = useMemo(() => {
+    return seedCountFields.reduce((acc, field) => {
+      const override = autoOverrideInputs[field.key];
+      if (override != null) {
+        acc[field.key] = override;
+        return acc;
+      }
+
+      const recommendedValue = autoRecommendation?.[field.key];
+      acc[field.key] =
+        typeof recommendedValue === 'number' ? String(recommendedValue) : '';
+      return acc;
+    }, {} as SeedCountInputMap);
+  }, [autoOverrideInputs, autoRecommendation]);
+
+  const autoFinalPreviewCounts = useMemo<ZoneSeedCounts | null>(() => {
+    if (!autoRecommendation) {
+      return null;
+    }
+
+    const nextCounts = { ...autoRecommendation };
+    for (const field of seedCountFields) {
+      const override = autoOverrideInputs[field.key];
+      if (override == null) {
+        continue;
+      }
+      const parsed = parseCountInput(override);
+      if (parsed == null) {
+        return null;
+      }
+      nextCounts[field.key] = parsed;
+    }
+
+    return nextCounts;
+  }, [autoOverrideInputs, autoRecommendation]);
+
   const draftZoneSuggestions = useMemo(() => {
     const query = draftZoneQuery.toLowerCase();
-    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+    return sortedZones.filter((zone) =>
+      zone.name.toLowerCase().includes(query)
+    );
   }, [sortedZones, draftZoneQuery]);
 
   const filterZoneSuggestions = useMemo(() => {
     const query = filterZoneQuery.toLowerCase();
-    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+    return sortedZones.filter((zone) =>
+      zone.name.toLowerCase().includes(query)
+    );
   }, [sortedZones, filterZoneQuery]);
 
   const bulkMatchingZones = useMemo(() => {
@@ -643,7 +914,9 @@ export const ZoneSeedJobs = () => {
     if (!query) {
       return sortedZones;
     }
-    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+    return sortedZones.filter((zone) =>
+      zone.name.toLowerCase().includes(query)
+    );
   }, [sortedZones, bulkZoneQuery]);
 
   const bulkTargetZones = useMemo(() => {
@@ -671,29 +944,32 @@ export const ZoneSeedJobs = () => {
     }
   }, [sortedZones, draftZoneId, refreshZones]);
 
-  const fetchJobs = useCallback(async (zoneId?: string, statuses: string[] = []) => {
-    setLoadingJobs(true);
-    setError(null);
-    try {
-      const query: Record<string, string | number> = { limit: 25 };
-      if (zoneId) {
-        query.zoneId = zoneId;
+  const fetchJobs = useCallback(
+    async (zoneId?: string, statuses: string[] = []) => {
+      setLoadingJobs(true);
+      setError(null);
+      try {
+        const query: Record<string, string | number> = { limit: 25 };
+        if (zoneId) {
+          query.zoneId = zoneId;
+        }
+        if (statuses.length > 0) {
+          query.statuses = statuses.join(',');
+        }
+        const response = await apiClient.get<ZoneSeedJob[]>(
+          '/sonar/admin/zone-seed-jobs',
+          query
+        );
+        setJobs(response);
+      } catch (err) {
+        console.error('Failed to load zone seed jobs', err);
+        setError('Failed to load zone seed jobs.');
+      } finally {
+        setLoadingJobs(false);
       }
-      if (statuses.length > 0) {
-        query.statuses = statuses.join(',');
-      }
-      const response = await apiClient.get<ZoneSeedJob[]>(
-        '/sonar/admin/zone-seed-jobs',
-        query
-      );
-      setJobs(response);
-    } catch (err) {
-      console.error('Failed to load zone seed jobs', err);
-      setError('Failed to load zone seed jobs.');
-    } finally {
-      setLoadingJobs(false);
-    }
-  }, [apiClient]);
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
@@ -706,8 +982,14 @@ export const ZoneSeedJobs = () => {
   }, [selectedZone]);
 
   useEffect(() => {
+    setAutoOverrideInputs({});
+  }, [draftZoneId]);
+
+  useEffect(() => {
     const validZoneIds = new Set(sortedZones.map((zone) => zone.id));
-    setBulkSelectedZoneIds((prev) => prev.filter((zoneId) => validZoneIds.has(zoneId)));
+    setBulkSelectedZoneIds((prev) =>
+      prev.filter((zoneId) => validZoneIds.has(zoneId))
+    );
   }, [sortedZones]);
 
   useEffect(() => {
@@ -728,6 +1010,35 @@ export const ZoneSeedJobs = () => {
   const visibleDeletableJobs = useMemo(
     () => jobs.filter((job) => canDeleteZoneSeedJob(job)),
     [jobs]
+  );
+
+  const updateManualCountInput = useCallback(
+    (field: SeedCountField, value: string) => {
+      setManualCountInputs((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    },
+    []
+  );
+
+  const updateAutoOverrideInput = useCallback(
+    (field: SeedCountField, value: string) => {
+      setAutoOverrideInputs((prev) => {
+        const recommendedValue = autoRecommendation?.[field];
+        if (recommendedValue != null && value === String(recommendedValue)) {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        }
+
+        return {
+          ...prev,
+          [field]: value,
+        };
+      });
+    },
+    [autoRecommendation]
   );
 
   const allVisibleDeletableJobsSelected =
@@ -774,14 +1085,19 @@ export const ZoneSeedJobs = () => {
     const selectedIds = Array.from(selectedJobIds);
     const selectedLabels = jobs
       .filter((job) => selectedJobIds.has(job.id))
-      .map((job) => `${zoneNameById.get(job.zoneId) || job.zoneId} · ${job.id.slice(0, 8)}`);
+      .map(
+        (job) =>
+          `${zoneNameById.get(job.zoneId) || job.zoneId} · ${job.id.slice(0, 8)}`
+      );
     const preview = selectedLabels.slice(0, 5).join(', ');
     const moreCount = Math.max(0, selectedLabels.length - 5);
     const confirmMessage =
       selectedIds.length === 1
         ? `Delete 1 selected zone seed job (${preview})? This cannot be undone.`
         : `Delete ${selectedIds.length} selected zone seed jobs${
-            preview ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})` : ''
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
           }? This cannot be undone.`;
 
     if (!window.confirm(confirmMessage)) return;
@@ -790,7 +1106,9 @@ export const ZoneSeedJobs = () => {
     setError(null);
     setSuccess(null);
     try {
-      await apiClient.post('/sonar/admin/zone-seed-jobs/bulk-delete', { ids: selectedIds });
+      await apiClient.post('/sonar/admin/zone-seed-jobs/bulk-delete', {
+        ids: selectedIds,
+      });
       const deletedIds = new Set(selectedIds);
       setJobs((prev) => prev.filter((job) => !deletedIds.has(job.id)));
       setSelectedJobIds(new Set());
@@ -805,7 +1123,14 @@ export const ZoneSeedJobs = () => {
     } finally {
       setBulkDeletingJobs(false);
     }
-  }, [apiClient, bulkDeletingJobs, deletingId, jobs, selectedJobIds, zoneNameById]);
+  }, [
+    apiClient,
+    bulkDeletingJobs,
+    deletingId,
+    jobs,
+    selectedJobIds,
+    zoneNameById,
+  ]);
 
   const handleCreateDraft = async () => {
     if (!draftZoneId) {
@@ -813,14 +1138,10 @@ export const ZoneSeedJobs = () => {
       return;
     }
     const { payload, error: payloadError } = buildSeedDraftPayload({
-      placeCount,
-      monsterCount,
-      bossEncounterCount,
-      raidEncounterCount,
-      inputEncounterCount,
-      optionEncounterCount,
-      treasureChestCount,
-      healingFountainCount,
+      seedMode,
+      manualCountInputs,
+      autoOverrideInputs,
+      autoRecommendation,
       requiredPlaceTags,
       shopkeeperItemTags,
     });
@@ -837,7 +1158,12 @@ export const ZoneSeedJobs = () => {
         payload
       );
       setJobs((prev) => [created, ...prev]);
-      setSuccess('Draft queued successfully.');
+      const warningCount = created.autoSeedAudit?.warnings?.length ?? 0;
+      setSuccess(
+        warningCount > 0
+          ? `Draft queued successfully with ${warningCount} auto-mode note${warningCount === 1 ? '' : 's'}.`
+          : 'Draft queued successfully.'
+      );
     } catch (err) {
       console.error('Failed to queue draft', err);
       setError('Failed to queue zone seed draft.');
@@ -851,16 +1177,16 @@ export const ZoneSeedJobs = () => {
       setError('Select at least one zone for bulk queueing.');
       return;
     }
+    if (seedMode !== 'manual') {
+      setError('Auto mode is only available for single-zone drafts.');
+      return;
+    }
 
     const { payload, error: payloadError } = buildSeedDraftPayload({
-      placeCount,
-      monsterCount,
-      bossEncounterCount,
-      raidEncounterCount,
-      inputEncounterCount,
-      optionEncounterCount,
-      treasureChestCount,
-      healingFountainCount,
+      seedMode: 'manual',
+      manualCountInputs,
+      autoOverrideInputs: {},
+      autoRecommendation: null,
       requiredPlaceTags,
       shopkeeperItemTags,
     });
@@ -936,7 +1262,9 @@ export const ZoneSeedJobs = () => {
 
   const handleDelete = async (job: ZoneSeedJob) => {
     if (deletingId) return;
-    const confirmed = window.confirm(`Delete draft job ${job.id.slice(0, 8)}? This cannot be undone.`);
+    const confirmed = window.confirm(
+      `Delete draft job ${job.id.slice(0, 8)}? This cannot be undone.`
+    );
     if (!confirmed) return;
     setDeletingId(job.id);
     setError(null);
@@ -994,7 +1322,9 @@ export const ZoneSeedJobs = () => {
 
   const filteredTagSuggestions = useMemo(() => {
     const query = requiredTagQuery.trim().toLowerCase();
-    const available = knownPlaceTags.filter((tag) => !requiredPlaceTags.includes(tag));
+    const available = knownPlaceTags.filter(
+      (tag) => !requiredPlaceTags.includes(tag)
+    );
     if (!query) return available;
     return available.filter((tag) => tag.includes(query));
   }, [knownPlaceTags, requiredPlaceTags, requiredTagQuery]);
@@ -1005,12 +1335,15 @@ export const ZoneSeedJobs = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Zone Seeding</h1>
           <p className="text-sm text-gray-500">
-            Create fantasy zone drafts with POIs, standalone challenges, scalable encounters, and treasure.
+            Create fantasy zone drafts with POIs, standalone challenges,
+            scalable encounters, and treasure.
           </p>
         </div>
         <button
           className="px-4 py-2 rounded bg-gray-800 text-white hover:bg-gray-700"
-          onClick={() => fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses)}
+          onClick={() =>
+            fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses)
+          }
           disabled={loadingJobs}
         >
           {loadingJobs ? 'Refreshing...' : 'Refresh drafts'}
@@ -1030,7 +1363,9 @@ export const ZoneSeedJobs = () => {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Draft settings</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Draft settings
+          </h2>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Zone
           </label>
@@ -1055,18 +1390,18 @@ export const ZoneSeedJobs = () => {
             {showDraftZoneSuggestions && draftZoneSuggestions.length > 0 && (
               <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
                 {draftZoneSuggestions.map((zone) => (
-                    <button
-                      type="button"
-                      key={zone.id}
-                      onClick={() => {
-                        setDraftZoneId(zone.id);
-                        setDraftZoneQuery(zone.name);
-                        setShowDraftZoneSuggestions(false);
-                      }}
-                      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      {zone.name}
-                    </button>
+                  <button
+                    type="button"
+                    key={zone.id}
+                    onClick={() => {
+                      setDraftZoneId(zone.id);
+                      setDraftZoneQuery(zone.name);
+                      setShowDraftZoneSuggestions(false);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    {zone.name}
+                  </button>
                 ))}
               </div>
             )}
@@ -1076,87 +1411,119 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-8">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Places
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={placeCount}
-                onChange={(e) => setPlaceCount(e.target.value)}
-              />
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-500 mb-2">
+              Seeding mode
+            </label>
+            <div className="inline-flex rounded border border-gray-300 bg-gray-50 p-1">
+              <button
+                type="button"
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  seedMode === 'manual'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => setSeedMode('manual')}
+              >
+                Manual
+              </button>
+              <button
+                type="button"
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  seedMode === 'auto'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => setSeedMode('auto')}
+              >
+                Auto
+              </button>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Monster encounters
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={monsterCount}
-                onChange={(e) => setMonsterCount(e.target.value)}
-              />
+            <p className="mt-2 text-xs text-gray-500">
+              Auto mode uses the selected zone boundary area to recommend
+              counts. Bulk queueing stays manual-only.
+            </p>
+          </div>
+          {seedMode === 'auto' && (
+            <div
+              className={`mt-4 rounded border px-3 py-3 text-sm ${
+                autoRecommendation
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-red-200 bg-red-50 text-red-700'
+              }`}
+            >
+              {autoRecommendation ? (
+                <>
+                  <div className="font-medium">
+                    Area-based recommendation active
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-800">
+                    Boundary area:{' '}
+                    {formatSquareFeet(autoAreaSquareFeet ?? undefined)} (
+                    {formatAcres(autoAreaAcres ?? undefined)}).
+                  </div>
+                  {autoFinalPreviewCounts && (
+                    <div className="mt-1 text-xs text-emerald-800">
+                      Current queued counts:{' '}
+                      {formatZoneSeedCounts(autoFinalPreviewCounts)}.
+                    </div>
+                  )}
+                  <div className="mt-1 text-xs text-emerald-800">
+                    Final auto counts can still be adjusted at queue time if
+                    place availability is lower than the recommendation.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-medium">
+                    Auto mode is unavailable for this zone
+                  </div>
+                  <div className="mt-1 text-xs text-red-700">
+                    This zone needs valid boundary geometry before auto
+                    inference can be queued.
+                  </div>
+                </>
+              )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Boss encounters
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={bossEncounterCount}
-                onChange={(e) => setBossEncounterCount(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Raid encounters
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={raidEncounterCount}
-                onChange={(e) => setRaidEncounterCount(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Input scenarios
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={inputEncounterCount}
-                onChange={(e) => setInputEncounterCount(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Option scenarios
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={optionEncounterCount}
-                onChange={(e) => setOptionEncounterCount(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Treasure chests
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={treasureChestCount}
-                onChange={(e) => setTreasureChestCount(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Healing fountains
-              </label>
-              <input
-                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                value={healingFountainCount}
-                onChange={(e) => setHealingFountainCount(e.target.value)}
-              />
-            </div>
+          )}
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {seedCountFields.map((field) => {
+              const inputValue =
+                seedMode === 'auto'
+                  ? autoDisplayedCountInputs[field.key]
+                  : manualCountInputs[field.key];
+              const recommendedValue = autoRecommendation?.[field.key];
+              const hasOverride =
+                seedMode === 'auto' &&
+                autoOverrideInputs[field.key] != null &&
+                autoOverrideInputs[field.key] !==
+                  String(recommendedValue ?? '');
+
+              return (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    {field.label}
+                  </label>
+                  <input
+                    className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                    value={inputValue}
+                    onChange={(e) =>
+                      seedMode === 'auto'
+                        ? updateAutoOverrideInput(field.key, e.target.value)
+                        : updateManualCountInput(field.key, e.target.value)
+                    }
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {field.description}
+                    {seedMode === 'auto' && typeof recommendedValue === 'number'
+                      ? hasOverride
+                        ? ` Recommended: ${recommendedValue}.`
+                        : ` Recommended: ${recommendedValue}.`
+                      : ''}
+                  </p>
+                </div>
+              );
+            })}
           </div>
           <div className="mt-4">
             <label className="block text-xs font-medium text-gray-500 mb-1">
@@ -1189,49 +1556,65 @@ export const ZoneSeedJobs = () => {
                       setShowRequiredTagSuggestions(true);
                     }}
                     onFocus={() => setShowRequiredTagSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowRequiredTagSuggestions(false), 120)}
+                    onBlur={() =>
+                      setTimeout(
+                        () => setShowRequiredTagSuggestions(false),
+                        120
+                      )
+                    }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ',') {
                         e.preventDefault();
                         addRequiredTag(requiredTagQuery);
                         setRequiredTagQuery('');
                       }
-                      if (e.key === 'Backspace' && requiredTagQuery === '' && requiredPlaceTags.length > 0) {
-                        removeRequiredTag(requiredPlaceTags[requiredPlaceTags.length - 1]);
+                      if (
+                        e.key === 'Backspace' &&
+                        requiredTagQuery === '' &&
+                        requiredPlaceTags.length > 0
+                      ) {
+                        removeRequiredTag(
+                          requiredPlaceTags[requiredPlaceTags.length - 1]
+                        );
                       }
                     }}
                   />
-                  {showRequiredTagSuggestions && (filteredTagSuggestions.length > 0 || requiredTagQuery.trim()) && (
-                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
-                      {filteredTagSuggestions.map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                          onClick={() => {
-                            addRequiredTag(tag);
-                            setRequiredTagQuery('');
-                            setShowRequiredTagSuggestions(false);
-                          }}
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                      {requiredTagQuery.trim() && !requiredPlaceTags.includes(requiredTagQuery.trim().toLowerCase()) && (
-                        <button
-                          type="button"
-                          className="block w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50"
-                          onClick={() => {
-                            addRequiredTag(requiredTagQuery);
-                            setRequiredTagQuery('');
-                            setShowRequiredTagSuggestions(false);
-                          }}
-                        >
-                          Add &quot;{requiredTagQuery.trim()}&quot;
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {showRequiredTagSuggestions &&
+                    (filteredTagSuggestions.length > 0 ||
+                      requiredTagQuery.trim()) && (
+                      <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                        {filteredTagSuggestions.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                            onClick={() => {
+                              addRequiredTag(tag);
+                              setRequiredTagQuery('');
+                              setShowRequiredTagSuggestions(false);
+                            }}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                        {requiredTagQuery.trim() &&
+                          !requiredPlaceTags.includes(
+                            requiredTagQuery.trim().toLowerCase()
+                          ) && (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50"
+                              onClick={() => {
+                                addRequiredTag(requiredTagQuery);
+                                setRequiredTagQuery('');
+                                setShowRequiredTagSuggestions(false);
+                              }}
+                            >
+                              Add &quot;{requiredTagQuery.trim()}&quot;
+                            </button>
+                          )}
+                      </div>
+                    )}
                 </div>
               </div>
             </div>
@@ -1271,31 +1654,49 @@ export const ZoneSeedJobs = () => {
                       addShopkeeperTag(shopkeeperTagQuery);
                       setShopkeeperTagQuery('');
                     }
-                    if (e.key === 'Backspace' && shopkeeperTagQuery === '' && shopkeeperItemTags.length > 0) {
-                      removeShopkeeperTag(shopkeeperItemTags[shopkeeperItemTags.length - 1]);
+                    if (
+                      e.key === 'Backspace' &&
+                      shopkeeperTagQuery === '' &&
+                      shopkeeperItemTags.length > 0
+                    ) {
+                      removeShopkeeperTag(
+                        shopkeeperItemTags[shopkeeperItemTags.length - 1]
+                      );
                     }
                   }}
                 />
               </div>
             </div>
             <p className="mt-1 text-xs text-gray-400">
-              One shopkeeper will be generated per tag at a random location in the zone.
+              One shopkeeper will be generated per tag at a random location in
+              the zone. Auto mode does not infer these tags for you.
             </p>
           </div>
           <button
             className="mt-5 w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500 disabled:opacity-60"
             onClick={handleCreateDraft}
-            disabled={creatingDraft || !draftZoneId}
+            disabled={
+              creatingDraft ||
+              !draftZoneId ||
+              (seedMode === 'auto' && !autoRecommendation)
+            }
           >
             {creatingDraft ? 'Queuing...' : 'Create draft'}
           </button>
           <div className="mt-6 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">Bulk queue</h3>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Bulk queue
+                </h3>
                 <p className="text-xs text-gray-500">
                   Queue this same seed configuration across many zones at once.
                 </p>
+                {seedMode === 'auto' && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Switch back to manual mode to bulk queue drafts.
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-3">
@@ -1334,20 +1735,33 @@ export const ZoneSeedJobs = () => {
               onToggleZone={handleBulkToggleZone}
             />
             <p className="mt-2 text-xs text-gray-500">
-              Matching zones: {bulkMatchingZones.length}. Selected zones: {bulkTargetZones.length}.
+              Matching zones: {bulkMatchingZones.length}. Selected zones:{' '}
+              {bulkTargetZones.length}.
             </p>
             {bulkTargetZones.length > 0 && (
               <p className="mt-2 text-xs text-gray-500">
-                Selected: {bulkTargetZones.slice(0, 5).map((zone) => zone.name).join(', ')}
-                {bulkTargetZones.length > 5 ? ` +${bulkTargetZones.length - 5} more` : ''}
+                Selected:{' '}
+                {bulkTargetZones
+                  .slice(0, 5)
+                  .map((zone) => zone.name)
+                  .join(', ')}
+                {bulkTargetZones.length > 5
+                  ? ` +${bulkTargetZones.length - 5} more`
+                  : ''}
               </p>
             )}
             <button
               className="mt-4 w-full rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-60"
               onClick={handleBulkCreateDrafts}
-              disabled={creatingBulkDrafts || bulkTargetZones.length === 0}
+              disabled={
+                creatingBulkDrafts ||
+                bulkTargetZones.length === 0 ||
+                seedMode !== 'manual'
+              }
             >
-              {creatingBulkDrafts ? 'Queuing bulk drafts...' : `Queue for ${bulkTargetZones.length} zones`}
+              {creatingBulkDrafts
+                ? 'Queuing bulk drafts...'
+                : `Queue for ${bulkTargetZones.length} zones`}
             </button>
           </div>
         </div>
@@ -1355,7 +1769,9 @@ export const ZoneSeedJobs = () => {
         <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 space-y-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Draft jobs</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Draft jobs
+              </h2>
               <div className="relative w-full md:w-72">
                 <input
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
@@ -1369,38 +1785,41 @@ export const ZoneSeedJobs = () => {
                     }
                   }}
                   onFocus={() => setShowFilterZoneSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowFilterZoneSuggestions(false), 120)}
+                  onBlur={() =>
+                    setTimeout(() => setShowFilterZoneSuggestions(false), 120)
+                  }
                   placeholder="Filter by zone (optional)..."
                 />
-                {showFilterZoneSuggestions && filterZoneSuggestions.length > 0 && (
-                  <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setJobFilterZoneId('');
-                        setFilterZoneQuery('');
-                        setShowFilterZoneSuggestions(false);
-                      }}
-                      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      All zones
-                    </button>
-                    {filterZoneSuggestions.map((zone) => (
+                {showFilterZoneSuggestions &&
+                  filterZoneSuggestions.length > 0 && (
+                    <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
                       <button
                         type="button"
-                        key={zone.id}
                         onClick={() => {
-                          setJobFilterZoneId(zone.id);
-                          setFilterZoneQuery(zone.name);
+                          setJobFilterZoneId('');
+                          setFilterZoneQuery('');
                           setShowFilterZoneSuggestions(false);
                         }}
                         className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                       >
-                        {zone.name}
+                        All zones
                       </button>
-                    ))}
-                  </div>
-                )}
+                      {filterZoneSuggestions.map((zone) => (
+                        <button
+                          type="button"
+                          key={zone.id}
+                          onClick={() => {
+                            setJobFilterZoneId(zone.id);
+                            setFilterZoneQuery(zone.name);
+                            setShowFilterZoneSuggestions(false);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          {zone.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
             </div>
 
@@ -1451,9 +1870,14 @@ export const ZoneSeedJobs = () => {
                   type="button"
                   className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   onClick={handleSelectVisibleJobs}
-                  disabled={visibleDeletableJobs.length === 0 || allVisibleDeletableJobsSelected}
+                  disabled={
+                    visibleDeletableJobs.length === 0 ||
+                    allVisibleDeletableJobsSelected
+                  }
                 >
-                  {allVisibleDeletableJobsSelected ? 'All visible selected' : 'Select visible'}
+                  {allVisibleDeletableJobsSelected
+                    ? 'All visible selected'
+                    : 'Select visible'}
                 </button>
                 <button
                   type="button"
@@ -1467,9 +1891,15 @@ export const ZoneSeedJobs = () => {
                   type="button"
                   className="rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
                   onClick={handleBulkDeleteJobs}
-                  disabled={selectedJobIds.size === 0 || bulkDeletingJobs || deletingId !== null}
+                  disabled={
+                    selectedJobIds.size === 0 ||
+                    bulkDeletingJobs ||
+                    deletingId !== null
+                  }
                 >
-                  {bulkDeletingJobs ? 'Deleting selected...' : 'Delete selected'}
+                  {bulkDeletingJobs
+                    ? 'Deleting selected...'
+                    : 'Delete selected'}
                 </button>
               </div>
             </div>
@@ -1487,205 +1917,336 @@ export const ZoneSeedJobs = () => {
               {jobs.map((job) => {
                 const zoneName = zoneNameById.get(job.zoneId) || job.zoneId;
                 const canDelete = canDeleteZoneSeedJob(job);
+                const finalCounts = getJobFinalCounts(job);
+                const recommendedCounts = job.autoSeedAudit?.recommendedCounts;
                 return (
                   <div
                     key={job.id}
                     className="rounded-lg border border-gray-200 p-4"
                   >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedJobIds.has(job.id)}
-                        disabled={!canDelete || bulkDeletingJobs}
-                        onChange={() => handleToggleJobSelection(job.id)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-                        title={canDelete ? 'Select draft job' : 'Cannot select a running job'}
-                      />
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Job {job.id.slice(0, 8)}
-                      </h3>
-                      <p className="text-xs font-medium text-indigo-700">
-                        Zone: {zoneName}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Created: {formatDate(job.createdAt)} | Updated: {formatDate(job.updatedAt)}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Counts: {job.placeCount} POIs/challenges, {job.monsterCount ?? 0} monster encounters,{' '}
-                        {job.bossEncounterCount ?? 0} boss encounters, {job.raidEncounterCount ?? 0} raid encounters,{' '}
-                        {job.inputEncounterCount ?? 0} input scenarios, {job.optionEncounterCount ?? 0} option scenarios,{' '}
-                        {job.treasureChestCount ?? 0} treasure chests, {job.healingFountainCount ?? 0} healing fountains,{' '}
-                        {job.shopkeeperItemTags?.length ?? 0} shopkeepers
-                      </p>
-                      {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (
-                        <p className="text-xs text-gray-500">
-                          Required tags: {job.requiredPlaceTags.join(', ')}
-                        </p>
-                      )}
-                      {job.shopkeeperItemTags && job.shopkeeperItemTags.length > 0 && (
-                        <p className="text-xs text-gray-500">
-                          Shopkeeper tags: {job.shopkeeperItemTags.join(', ')}
-                        </p>
-                      )}
-                    </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
-                          job.status
-                        )}`}
-                      >
-                        {job.status.replace(/_/g, ' ')}
-                      </span>
-                      {job.status === 'failed' && (
-                        <button
-                          className="rounded border border-gray-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                          onClick={() => handleRetry(job)}
-                          disabled={retryingId === job.id}
-                          title="Retry draft job"
-                        >
-                          {retryingId === job.id ? 'Retrying...' : 'Retry'}
-                        </button>
-                      )}
-                      <button
-                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                        onClick={() => handleDelete(job)}
-                        disabled={deletingId === job.id || bulkDeletingJobs || !canDelete}
-                        title={
-                          !canDelete
-                            ? 'Cannot delete while running'
-                            : 'Delete draft job'
-                        }
-                      >
-                        {deletingId === job.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {job.errorMessage && (
-                    <div className="mt-3 rounded border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-                      {job.errorMessage}
-                    </div>
-                  )}
-
-                  {job.draft && (
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-sm font-medium text-gray-700">
-                        Draft details
-                      </summary>
-                      <div className="mt-3 space-y-6 text-sm text-gray-700">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedJobIds.has(job.id)}
+                          disabled={!canDelete || bulkDeletingJobs}
+                          onChange={() => handleToggleJobSelection(job.id)}
+                          className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={
+                            canDelete
+                              ? 'Select draft job'
+                              : 'Cannot select a running job'
+                          }
+                        />
                         <div>
-                          <div className="font-semibold">Fantasy branding</div>
-                          <div className="text-sm text-gray-600">
-                            {job.draft.fantasyName || 'Untitled district'}
-                          </div>
-                          {job.draft.zoneDescription && (
-                            <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">
-                              {job.draft.zoneDescription}
+                          <h3 className="text-sm font-semibold text-gray-900">
+                            Job {job.id.slice(0, 8)}
+                          </h3>
+                          <p className="text-xs font-medium text-indigo-700">
+                            Zone: {zoneName}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Created: {formatDate(job.createdAt)} | Updated:{' '}
+                            {formatDate(job.updatedAt)}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Mode: {job.seedMode || 'manual'} | Counts:{' '}
+                            {formatZoneSeedCounts(finalCounts)},{' '}
+                            {job.shopkeeperItemTags?.length ?? 0} shopkeepers
+                          </p>
+                          {job.seedMode === 'auto' && job.autoSeedAudit && (
+                            <p className="text-xs text-gray-500">
+                              Auto audit:{' '}
+                              {formatSquareFeet(
+                                job.autoSeedAudit.zoneAreaSquareFeet
+                              )}{' '}
+                              ({formatAcres(job.autoSeedAudit.zoneAreaAcres)})
+                              {recommendedCounts
+                                ? ` | Recommended: ${formatZoneSeedCounts(recommendedCounts)}`
+                                : ''}
                             </p>
                           )}
-                        </div>
-                        <div>
-                          <div className="font-semibold">Points of interest</div>
-                          <div className="mt-2 space-y-3 text-xs text-gray-600">
-                            {(job.draft.pointsOfInterest || []).map((poi) => (
-                              <div
-                                key={poi.draftId}
-                                className="rounded border border-gray-100 bg-gray-50 p-3"
-                              >
-                                <div className="text-sm font-semibold text-gray-800">
-                                  {poi.name || 'Unnamed place'}
-                                </div>
-                                <div>Place ID: {poi.placeId || 'n/a'}</div>
-                                {poi.address && <div>Address: {poi.address}</div>}
-                                {typeof poi.latitude === 'number' &&
-                                  typeof poi.longitude === 'number' && (
-                                    <div>
-                                      Coordinates: {poi.latitude}, {poi.longitude}
-                                    </div>
-                                  )}
-                                {typeof poi.rating === 'number' && (
-                                  <div>
-                                    Rating: {poi.rating}
-                                    {typeof poi.userRatingCount === 'number'
-                                      ? ` (${poi.userRatingCount} reviews)`
-                                      : ''}
-                                  </div>
-                                )}
-                                {poi.types && poi.types.length > 0 && (
-                                  <div>Types: {poi.types.join(', ')}</div>
-                                )}
-                                {poi.editorialSummary && (
-                                  <div className="mt-1 text-gray-500">
-                                    Summary: {poi.editorialSummary}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Characters</div>
-                          <div className="mt-2 space-y-3 text-xs text-gray-600">
-                            {(job.draft.characters || []).map((character) => (
-                              <div
-                                key={character.draftId}
-                                className="rounded border border-gray-100 bg-gray-50 p-3"
-                              >
-                                <div className="text-sm font-semibold text-gray-800">
-                                  {character.name || 'Unnamed character'}
-                                </div>
-                                <div>Place ID: {character.placeId || 'n/a'}</div>
-                                {typeof character.latitude === 'number' &&
-                                  typeof character.longitude === 'number' && (
-                                    <div>
-                                      Coordinates: {character.latitude}, {character.longitude}
-                                    </div>
-                                  )}
-                                {character.shopItemTags && character.shopItemTags.length > 0 && (
-                                  <div>Shopkeeper tags: {character.shopItemTags.join(', ')}</div>
-                                )}
-                                {character.description && (
-                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
-                                    {character.description}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Seeding plan preview</div>
-                          <div className="mt-2 rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
-                            <div>{job.placeCount} POIs selected for challenge placement</div>
-                            <div>{job.placeCount} standalone challenges at those POIs</div>
-                            <div>{job.monsterCount ?? 0} random monster encounters (scalable)</div>
-                            <div>{job.bossEncounterCount ?? 0} random boss encounters (scalable +5 levels)</div>
-                            <div>{job.raidEncounterCount ?? 0} random raid encounters (scaled for 5-player parties)</div>
-                            <div>{job.inputEncounterCount ?? 0} random input scenarios (scalable)</div>
-                            <div>{job.optionEncounterCount ?? 0} random option scenarios (scalable)</div>
-                            <div>{job.treasureChestCount ?? 0} random treasure chests (scalable rewards)</div>
-                            <div>{job.healingFountainCount ?? 0} random healing fountains</div>
-                            <div>{job.shopkeeperItemTags?.length ?? 0} shopkeepers generated at random zone locations</div>
-                          </div>
+                          {job.requiredPlaceTags &&
+                            job.requiredPlaceTags.length > 0 && (
+                              <p className="text-xs text-gray-500">
+                                Required tags:{' '}
+                                {job.requiredPlaceTags.join(', ')}
+                              </p>
+                            )}
+                          {job.shopkeeperItemTags &&
+                            job.shopkeeperItemTags.length > 0 && (
+                              <p className="text-xs text-gray-500">
+                                Shopkeeper tags:{' '}
+                                {job.shopkeeperItemTags.join(', ')}
+                              </p>
+                            )}
                         </div>
                       </div>
-                    </details>
-                  )}
-
-                  {job.status === 'awaiting_approval' && (
-                    <div className="mt-4">
-                      <button
-                        className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-60"
-                        onClick={() => handleApprove(job)}
-                        disabled={approvingId === job.id}
-                      >
-                        {approvingId === job.id ? 'Approving...' : 'Approve and apply'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
+                            job.status
+                          )}`}
+                        >
+                          {job.status.replace(/_/g, ' ')}
+                        </span>
+                        {job.status === 'failed' && (
+                          <button
+                            className="rounded border border-gray-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                            onClick={() => handleRetry(job)}
+                            disabled={retryingId === job.id}
+                            title="Retry draft job"
+                          >
+                            {retryingId === job.id ? 'Retrying...' : 'Retry'}
+                          </button>
+                        )}
+                        <button
+                          className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                          onClick={() => handleDelete(job)}
+                          disabled={
+                            deletingId === job.id ||
+                            bulkDeletingJobs ||
+                            !canDelete
+                          }
+                          title={
+                            !canDelete
+                              ? 'Cannot delete while running'
+                              : 'Delete draft job'
+                          }
+                        >
+                          {deletingId === job.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
                     </div>
-                  )}
+
+                    {job.errorMessage && (
+                      <div className="mt-3 rounded border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {job.errorMessage}
+                      </div>
+                    )}
+
+                    {job.seedMode === 'auto' &&
+                      job.autoSeedAudit?.warnings &&
+                      job.autoSeedAudit.warnings.length > 0 && (
+                        <div className="mt-3 rounded border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {job.autoSeedAudit.warnings.join(' ')}
+                        </div>
+                      )}
+
+                    {job.draft && (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                          Draft details
+                        </summary>
+                        <div className="mt-3 space-y-6 text-sm text-gray-700">
+                          <div>
+                            <div className="font-semibold">
+                              Fantasy branding
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {job.draft.fantasyName || 'Untitled district'}
+                            </div>
+                            {job.draft.zoneDescription && (
+                              <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">
+                                {job.draft.zoneDescription}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold">
+                              Points of interest
+                            </div>
+                            <div className="mt-2 space-y-3 text-xs text-gray-600">
+                              {(job.draft.pointsOfInterest || []).map((poi) => (
+                                <div
+                                  key={poi.draftId}
+                                  className="rounded border border-gray-100 bg-gray-50 p-3"
+                                >
+                                  <div className="text-sm font-semibold text-gray-800">
+                                    {poi.name || 'Unnamed place'}
+                                  </div>
+                                  <div>Place ID: {poi.placeId || 'n/a'}</div>
+                                  {poi.address && (
+                                    <div>Address: {poi.address}</div>
+                                  )}
+                                  {typeof poi.latitude === 'number' &&
+                                    typeof poi.longitude === 'number' && (
+                                      <div>
+                                        Coordinates: {poi.latitude},{' '}
+                                        {poi.longitude}
+                                      </div>
+                                    )}
+                                  {typeof poi.rating === 'number' && (
+                                    <div>
+                                      Rating: {poi.rating}
+                                      {typeof poi.userRatingCount === 'number'
+                                        ? ` (${poi.userRatingCount} reviews)`
+                                        : ''}
+                                    </div>
+                                  )}
+                                  {poi.types && poi.types.length > 0 && (
+                                    <div>Types: {poi.types.join(', ')}</div>
+                                  )}
+                                  {poi.editorialSummary && (
+                                    <div className="mt-1 text-gray-500">
+                                      Summary: {poi.editorialSummary}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-semibold">Characters</div>
+                            <div className="mt-2 space-y-3 text-xs text-gray-600">
+                              {(job.draft.characters || []).map((character) => (
+                                <div
+                                  key={character.draftId}
+                                  className="rounded border border-gray-100 bg-gray-50 p-3"
+                                >
+                                  <div className="text-sm font-semibold text-gray-800">
+                                    {character.name || 'Unnamed character'}
+                                  </div>
+                                  <div>
+                                    Place ID: {character.placeId || 'n/a'}
+                                  </div>
+                                  {typeof character.latitude === 'number' &&
+                                    typeof character.longitude === 'number' && (
+                                      <div>
+                                        Coordinates: {character.latitude},{' '}
+                                        {character.longitude}
+                                      </div>
+                                    )}
+                                  {character.shopItemTags &&
+                                    character.shopItemTags.length > 0 && (
+                                      <div>
+                                        Shopkeeper tags:{' '}
+                                        {character.shopItemTags.join(', ')}
+                                      </div>
+                                    )}
+                                  {character.description && (
+                                    <div className="mt-1 text-gray-500 whitespace-pre-wrap">
+                                      {character.description}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            {job.seedMode === 'auto' && job.autoSeedAudit && (
+                              <div className="mb-6">
+                                <div className="font-semibold">
+                                  Auto seed audit
+                                </div>
+                                <div className="mt-2 rounded border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-900">
+                                  <div>
+                                    Boundary area:{' '}
+                                    {formatSquareFeet(
+                                      job.autoSeedAudit.zoneAreaSquareFeet
+                                    )}{' '}
+                                    (
+                                    {formatAcres(
+                                      job.autoSeedAudit.zoneAreaAcres
+                                    )}
+                                    )
+                                  </div>
+                                  {recommendedCounts && (
+                                    <div className="mt-1">
+                                      Recommended counts:{' '}
+                                      {formatZoneSeedCounts(recommendedCounts)}
+                                    </div>
+                                  )}
+                                  {job.autoSeedAudit.finalCounts && (
+                                    <div className="mt-1">
+                                      Final queued counts:{' '}
+                                      {formatZoneSeedCounts(
+                                        job.autoSeedAudit.finalCounts
+                                      )}
+                                    </div>
+                                  )}
+                                  {job.autoSeedAudit.warnings &&
+                                    job.autoSeedAudit.warnings.length > 0 && (
+                                      <div className="mt-2 space-y-1 text-amber-900">
+                                        {job.autoSeedAudit.warnings.map(
+                                          (warning, index) => (
+                                            <div
+                                              key={`${job.id}-warning-${index}`}
+                                            >
+                                              {warning}
+                                            </div>
+                                          )
+                                        )}
+                                      </div>
+                                    )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold">
+                              Seeding plan preview
+                            </div>
+                            <div className="mt-2 rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+                              <div>
+                                {job.placeCount} POIs selected for challenge
+                                placement
+                              </div>
+                              <div>
+                                {job.placeCount} standalone challenges at those
+                                POIs
+                              </div>
+                              <div>
+                                {job.monsterCount ?? 0} random monster
+                                encounters (scalable)
+                              </div>
+                              <div>
+                                {job.bossEncounterCount ?? 0} random boss
+                                encounters (scalable +5 levels)
+                              </div>
+                              <div>
+                                {job.raidEncounterCount ?? 0} random raid
+                                encounters (scaled for 5-player parties)
+                              </div>
+                              <div>
+                                {job.inputEncounterCount ?? 0} random input
+                                scenarios (scalable)
+                              </div>
+                              <div>
+                                {job.optionEncounterCount ?? 0} random option
+                                scenarios (scalable)
+                              </div>
+                              <div>
+                                {job.treasureChestCount ?? 0} random treasure
+                                chests (scalable rewards)
+                              </div>
+                              <div>
+                                {job.healingFountainCount ?? 0} random healing
+                                fountains
+                              </div>
+                              <div>
+                                {job.shopkeeperItemTags?.length ?? 0}{' '}
+                                shopkeepers generated at random zone locations
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </details>
+                    )}
+
+                    {job.status === 'awaiting_approval' && (
+                      <div className="mt-4">
+                        <button
+                          className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-60"
+                          onClick={() => handleApprove(job)}
+                          disabled={approvingId === job.id}
+                        >
+                          {approvingId === job.id
+                            ? 'Approving...'
+                            : 'Approve and apply'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

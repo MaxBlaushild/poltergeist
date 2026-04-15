@@ -157,7 +157,6 @@ func NewServerFromDependencies(
 	questlogClient := questlog.NewClient(dbClient)
 	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
 	locationSeeder := locationseeder.NewClient(googlemapsClient, dbClient, deepPriest, awsClient)
-	dungeonmasterClient := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient)
 
 	var redisClient *redis.Client
 	var asyncClient *asynq.Client
@@ -170,6 +169,7 @@ func NewServerFromDependencies(
 		})
 		asyncClient = asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
 	}
+	dungeonmasterClient := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient, asyncClient)
 
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
 	var livenessClient liveness.LivenessClient

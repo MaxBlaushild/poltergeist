@@ -68,6 +68,7 @@ import ChallengeTemplates from './components/ChallengeTemplates.tsx';
 import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
+import Resources from './components/Resources.tsx';
 import Tutorial from './components/Tutorial.tsx';
 import { AdminHome } from './components/AdminHome.tsx';
 import {
@@ -428,6 +429,11 @@ const router = createBrowserRouter([
       {
         path: '/healing-fountains',
         element: <HealingFountains />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/resources',
+        element: <Resources />,
         loader: onlyAuthenticated,
       },
       {

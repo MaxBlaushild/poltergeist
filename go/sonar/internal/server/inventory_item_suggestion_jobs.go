@@ -41,6 +41,8 @@ type inventoryItemUpsertRequest struct {
 	FlavorText                               string                         `json:"flavorText"`
 	EffectText                               string                         `json:"effectText"`
 	RarityTier                               string                         `json:"rarityTier"`
+	ResourceTypeID                           *string                        `json:"resourceTypeId"`
+	ResourceType                             *string                        `json:"resourceType"`
 	IsCaptureType                            bool                           `json:"isCaptureType"`
 	BuyPrice                                 *int                           `json:"buyPrice"`
 	UnlockTier                               *int                           `json:"unlockTier"`
@@ -540,12 +542,17 @@ func normalizeInventorySuggestionEquipSlots(input []string) models.StringArray {
 }
 
 func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inventoryItemUpsertRequest {
+	var resourceTypeID *string
+	if item.ResourceTypeID != nil {
+		resourceTypeID = stringPtr(item.ResourceTypeID.String())
+	}
 	return inventoryItemUpsertRequest{
 		Name:                                     item.Name,
 		ImageURL:                                 item.ImageURL,
 		FlavorText:                               item.FlavorText,
 		EffectText:                               item.EffectText,
 		RarityTier:                               item.RarityTier,
+		ResourceTypeID:                           resourceTypeID,
 		IsCaptureType:                            item.IsCaptureType,
 		BuyPrice:                                 item.BuyPrice,
 		UnlockTier:                               item.UnlockTier,
@@ -977,6 +984,24 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 	if requestBody.BuyPrice != nil && *requestBody.BuyPrice < 0 {
 		return nil, fmt.Errorf("buyPrice must be 0 or greater")
 	}
+	var resourceTypeID *uuid.UUID
+	var resourceType *models.ResourceType
+	if existingItem != nil {
+		resourceTypeID = existingItem.ResourceTypeID
+		resourceType = existingItem.ResourceType
+	}
+	if requestBody.ResourceTypeID != nil || requestBody.ResourceType != nil {
+		resolvedResourceTypeID, resolvedResourceType, err := s.resolveResourceTypeReference(
+			ctx,
+			requestBody.ResourceTypeID,
+			requestBody.ResourceType,
+		)
+		if err != nil {
+			return nil, err
+		}
+		resourceTypeID = resolvedResourceTypeID
+		resourceType = resolvedResourceType
+	}
 	if requestBody.UnlockLocksStrength != nil &&
 		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
 		return nil, fmt.Errorf("unlockLocksStrength must be between 1 and 100")
@@ -1081,6 +1106,8 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 		FlavorText:                               requestBody.FlavorText,
 		EffectText:                               requestBody.EffectText,
 		RarityTier:                               requestBody.RarityTier,
+		ResourceTypeID:                           resourceTypeID,
+		ResourceType:                             resourceType,
 		IsCaptureType:                            requestBody.IsCaptureType,
 		BuyPrice:                                 requestBody.BuyPrice,
 		UnlockTier:                               requestBody.UnlockTier,

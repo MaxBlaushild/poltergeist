@@ -54,6 +54,19 @@ func NewClient(
 	}
 }
 
+func pointOfInterestMarkerCategoryForPlace(place googlemaps.Place) models.PointOfInterestMarkerCategory {
+	return models.InferPointOfInterestMarkerCategory(
+		place.PrimaryType,
+		place.Types,
+		place.PrimaryTypeDisplayName.Text,
+		place.ServesCoffee != nil && *place.ServesCoffee,
+		place.ServesBeer != nil && *place.ServesBeer,
+		place.ServesWine != nil && *place.ServesWine,
+		place.ServesCocktails != nil && *place.ServesCocktails,
+		place.LiveMusic != nil && *place.LiveMusic,
+	)
+}
+
 func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error) {
 	place, err := c.googlemapsClient.FindPlaceByID(placeID)
 	if err != nil {
@@ -101,11 +114,15 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 	}
 
 	if err := c.dbClient.PointOfInterest().Update(ctx, poi.ID, &models.PointOfInterest{
-		Name:         fantasyPointOfInterest.Name,
-		Description:  fantasyPointOfInterest.Description,
-		Clue:         fantasyPointOfInterest.Clue,
-		ImageUrl:     imageUrl,
-		OriginalName: place.DisplayName.Text,
+		Name:                  fantasyPointOfInterest.Name,
+		Description:           fantasyPointOfInterest.Description,
+		Clue:                  fantasyPointOfInterest.Clue,
+		ImageUrl:              imageUrl,
+		ThumbnailURL:          poi.ThumbnailURL,
+		ImageGenerationStatus: poi.ImageGenerationStatus,
+		ImageGenerationError:  poi.ImageGenerationError,
+		OriginalName:          place.DisplayName.Text,
+		GoogleMapsPlaceID:     poi.GoogleMapsPlaceID,
 		GoogleMapsPlaceName: func() *string {
 			if place.DisplayName.Text == "" {
 				return nil
@@ -113,8 +130,18 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 			name := place.DisplayName.Text
 			return &name
 		}(),
-		Geometry:  poi.Geometry,
-		UpdatedAt: time.Now(),
+		MarkerCategory:   pointOfInterestMarkerCategoryForPlace(*place),
+		Lat:              poi.Lat,
+		Lng:              poi.Lng,
+		StoryVariants:    poi.StoryVariants,
+		RewardMode:       poi.RewardMode,
+		RandomRewardSize: poi.RandomRewardSize,
+		RewardExperience: poi.RewardExperience,
+		RewardGold:       poi.RewardGold,
+		MaterialRewards:  poi.MaterialRewards,
+		UnlockTier:       poi.UnlockTier,
+		Geometry:         poi.Geometry,
+		UpdatedAt:        time.Now(),
 	}); err != nil {
 		log.Printf("Error updating point of interest: %v", err)
 		return err
@@ -483,6 +510,7 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 		Description:       fantasyPointOfInterest.Description,
 		Clue:              fantasyPointOfInterest.Clue,
 		ImageUrl:          imageUrl,
+		MarkerCategory:    pointOfInterestMarkerCategoryForPlace(place),
 		GoogleMapsPlaceID: &place.ID,
 		GoogleMapsPlaceName: func() *string {
 			if place.DisplayName.Text == "" {

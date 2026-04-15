@@ -32,7 +32,11 @@ func (h *questNodeProgressHandle) MarkCompleted(ctx context.Context, id uuid.UUI
 	return h.db.WithContext(ctx).
 		Model(&models.QuestNodeProgress{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{"completed_at": now, "updated_at": now}).Error
+		Updates(map[string]interface{}{
+			"status":       models.QuestNodeProgressStatusCompleted,
+			"completed_at": now,
+			"updated_at":   now,
+		}).Error
 }
 
 func (h *questNodeProgressHandle) FindByAcceptanceAndNode(ctx context.Context, acceptanceID uuid.UUID, nodeID uuid.UUID) (*models.QuestNodeProgress, error) {
@@ -46,6 +50,10 @@ func (h *questNodeProgressHandle) FindByAcceptanceAndNode(ctx context.Context, a
 		return nil, err
 	}
 	return &progress, nil
+}
+
+func (h *questNodeProgressHandle) Update(ctx context.Context, progress *models.QuestNodeProgress) error {
+	return h.db.WithContext(ctx).Save(progress).Error
 }
 
 func (h *questNodeProgressHandle) DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error {

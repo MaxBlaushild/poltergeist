@@ -21,7 +21,10 @@ import {
   QuestArchetypeChallengeTemplate,
   QuestGenerationJob,
   QuestArchetypeNodeType,
+  QuestClosurePolicy,
+  QuestDebriefPolicy,
   QuestDifficultyMode,
+  QuestNodeFailurePolicy,
   InventoryItem,
   Spell,
   Character,
@@ -54,7 +57,8 @@ interface FlowNodeProps {
     questArchetypeId: string,
     proficiency?: string | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
-    challengeTemplateId?: string | null
+    challengeTemplateId?: string | null,
+    failureUnlockedNode?: QuestArchetypeNodeDraft | null
   ) => void;
   onSaveNode: (nodeId: string, updates: QuestArchetypeNodeDraft) => void;
   onEditChallenge: (
@@ -284,6 +288,34 @@ const resolveChallengeProficiency = (
     challengeTemplates
   );
   return template?.proficiency ?? challenge.proficiency ?? '';
+};
+
+type QuestBranchOutcome = 'success' | 'failure';
+
+const normalizeQuestNodeFailurePolicy = (
+  policy?: QuestNodeFailurePolicy | null
+): QuestNodeFailurePolicy => (policy === 'transition' ? 'transition' : 'retry');
+
+const branchOutcomeLabel = (outcome: QuestBranchOutcome) =>
+  outcome === 'failure' ? 'Failure' : 'Success';
+
+const branchOutcomeChipClass = (outcome: QuestBranchOutcome) =>
+  outcome === 'failure' ? 'qa-chip danger' : 'qa-chip success';
+
+const challengeBranchTargets = (
+  challenge: QuestArchetypeChallenge
+): Array<{ outcome: QuestBranchOutcome; node: QuestArchetypeNode }> => {
+  const targets: Array<{
+    outcome: QuestBranchOutcome;
+    node: QuestArchetypeNode;
+  }> = [];
+  if (challenge.unlockedNode) {
+    targets.push({ outcome: 'success', node: challenge.unlockedNode });
+  }
+  if (challenge.failureUnlockedNode) {
+    targets.push({ outcome: 'failure', node: challenge.failureUnlockedNode });
+  }
+  return targets;
 };
 
 const validateQuestArchetypeNodeEditor = (
@@ -694,6 +726,7 @@ type QuestArchetypeNodeEditorState = {
   fetchCharacterTemplateId: string;
   fetchRequirements: Array<{ inventoryItemId: string; quantity: number }>;
   objectiveDescription: string;
+  failurePolicy: QuestNodeFailurePolicy;
   storyFlagKey: string;
   monsterTemplateIds: string[];
   targetLevel: number;
@@ -725,6 +758,7 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   fetchCharacterTemplateId: '',
   fetchRequirements: [],
   objectiveDescription: '',
+  failurePolicy: 'retry',
   storyFlagKey: '',
   monsterTemplateIds: [],
   targetLevel: 1,
@@ -775,6 +809,7 @@ const buildNodeEditorState = (
     quantity: requirement.quantity ?? 1,
   })),
   objectiveDescription: node.objectiveDescription ?? '',
+  failurePolicy: normalizeQuestNodeFailurePolicy(node.failurePolicy),
   storyFlagKey: node.storyFlagKey ?? '',
   locationArchetypeId: node.locationArchetypeId ?? '',
   locationArchetypeQuery:
@@ -880,6 +915,8 @@ const buildNodeDraft = (
           )
       : undefined,
   objectiveDescription: state.objectiveDescription.trim() || undefined,
+  failurePolicy:
+    state.nodeType === 'story_flag' ? undefined : state.failurePolicy,
   storyFlagKey:
     state.nodeType === 'story_flag' ? state.storyFlagKey.trim() : undefined,
   monsterTemplateIds:
@@ -1149,6 +1186,30 @@ const QuestArchetypeNodeConfigFields: React.FC<
           placeholder="Listen to the argument beneath the bridge."
         />
       </div>
+
+      {editor.nodeType !== 'story_flag' ? (
+        <div className="qa-field">
+          <div className="qa-label">{prefix} Failure Handling</div>
+          <div className="qa-helper">
+            Retry keeps the player on this node after failure. Follow failure
+            branch uses any failure nodes attached to outgoing branches instead.
+          </div>
+          <select
+            className="qa-select"
+            value={editor.failurePolicy}
+            onChange={(e) =>
+              setEditor((prev) => ({
+                ...prev,
+                failurePolicy:
+                  e.target.value === 'transition' ? 'transition' : 'retry',
+              }))
+            }
+          >
+            <option value="retry">Retry Current Node</option>
+            <option value="transition">Follow Failure Branch</option>
+          </select>
+        </div>
+      ) : null}
 
       {showsLocationConfig ? (
         <>
@@ -2005,13 +2066,22 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
     buildNodeEditorState(node, locationArchetypes)
   );
-  const [childEditor, setChildEditor] = useState<QuestArchetypeNodeEditorState>(
-    emptyNodeEditorState()
-  );
-  const [childEnabled, setChildEnabled] = useState<boolean>(false);
+  const [successChildEditor, setSuccessChildEditor] =
+    useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
+  const [successChildEnabled, setSuccessChildEnabled] =
+    useState<boolean>(false);
+  const [failureChildEditor, setFailureChildEditor] =
+    useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
+  const [failureChildEnabled, setFailureChildEnabled] =
+    useState<boolean>(false);
 
   useEffect(() => {
     setNodeEditor(buildNodeEditorState(node, locationArchetypes));
+    setSuccessChildEnabled(false);
+    setFailureChildEnabled(false);
+    setSuccessChildEditor(emptyNodeEditorState());
+    setFailureChildEditor(emptyNodeEditorState());
+    setIsAdding(false);
   }, [locationArchetypes, node]);
 
   return (
@@ -2081,20 +2151,53 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <label className="qa-inline" style={{ alignItems: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={childEnabled}
-                  onChange={(e) => setChildEnabled(e.target.checked)}
+                  checked={successChildEnabled}
+                  onChange={(e) => setSuccessChildEnabled(e.target.checked)}
                 />
                 <span className="qa-label" style={{ marginBottom: 0 }}>
-                  Unlock a child node
+                  Unlock a success node
                 </span>
               </label>
             </div>
-            {childEnabled && (
+            {successChildEnabled && (
               <QuestArchetypeNodeConfigFields
-                editor={childEditor}
-                setEditor={setChildEditor}
+                editor={successChildEditor}
+                setEditor={setSuccessChildEditor}
                 allowSameAsPreviousLocationMode
-                prefix="Child"
+                prefix="Success"
+                locationArchetypes={locationArchetypes}
+                challengeTemplates={challengeTemplates}
+                monsterTemplates={monsterTemplates}
+                scenarioTemplates={scenarioTemplates}
+                characters={characters}
+                characterTemplates={characterTemplates}
+                expositionTemplates={expositionTemplates}
+                inventoryItems={inventoryItems}
+                spells={spells}
+              />
+            )}
+            <div className="qa-field" style={{ marginTop: 16 }}>
+              <label className="qa-inline" style={{ alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={failureChildEnabled}
+                  onChange={(e) => setFailureChildEnabled(e.target.checked)}
+                />
+                <span className="qa-label" style={{ marginBottom: 0 }}>
+                  Unlock a failure node
+                </span>
+              </label>
+              <div className="qa-helper" style={{ marginTop: 8 }}>
+                Save this node with "Follow failure branch" enabled if you want
+                failed attempts to use this path.
+              </div>
+            </div>
+            {failureChildEnabled && (
+              <QuestArchetypeNodeConfigFields
+                editor={failureChildEditor}
+                setEditor={setFailureChildEditor}
+                allowSameAsPreviousLocationMode
+                prefix="Failure"
                 locationArchetypes={locationArchetypes}
                 challengeTemplates={challengeTemplates}
                 monsterTemplates={monsterTemplates}
@@ -2110,6 +2213,10 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <button
                 className="qa-btn qa-btn-outline"
                 onClick={() => {
+                  setSuccessChildEnabled(false);
+                  setFailureChildEnabled(false);
+                  setSuccessChildEditor(emptyNodeEditorState());
+                  setFailureChildEditor(emptyNodeEditorState());
                   setIsAdding(false);
                 }}
               >
@@ -2118,9 +2225,20 @@ const FlowNode: React.FC<FlowNodeProps> = ({
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const validationError = childEnabled
-                    ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                  const successValidationError = successChildEnabled
+                    ? validateQuestArchetypeNodeEditor(
+                        successChildEditor,
+                        'Success'
+                      )
                     : '';
+                  const failureValidationError = failureChildEnabled
+                    ? validateQuestArchetypeNodeEditor(
+                        failureChildEditor,
+                        'Failure'
+                      )
+                    : '';
+                  const validationError =
+                    successValidationError || failureValidationError;
                   if (validationError) {
                     window.alert(validationError);
                     return;
@@ -2128,11 +2246,18 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                   await addChallengeToQuestArchetype(
                     node.id,
                     null,
-                    childEnabled ? buildNodeDraft(childEditor) : null,
-                    null
+                    successChildEnabled
+                      ? buildNodeDraft(successChildEditor)
+                      : null,
+                    null,
+                    failureChildEnabled
+                      ? buildNodeDraft(failureChildEditor)
+                      : null
                   );
-                  setChildEnabled(false);
-                  setChildEditor(emptyNodeEditorState());
+                  setSuccessChildEnabled(false);
+                  setFailureChildEnabled(false);
+                  setSuccessChildEditor(emptyNodeEditorState());
+                  setFailureChildEditor(emptyNodeEditorState());
                   setIsAdding(false);
                 }}
               >
@@ -2153,6 +2278,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                 challenge,
                 challengeTemplates
               );
+              const branchTargets = challengeBranchTargets(challenge);
               return (
                 <div key={challenge.id} className="qa-flow-challenge-card">
                   <div className="qa-flow-challenge-header">
@@ -2193,28 +2319,35 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                     </button>
                   </div>
 
-                  {challenge.unlockedNode ? (
-                    <div className="qa-flow-branch">
-                      <div className="qa-flow-branch-label">Unlocks</div>
-                      <FlowNode
-                        node={challenge.unlockedNode}
-                        locationArchetypes={locationArchetypes}
-                        monsterTemplates={monsterTemplates}
-                        scenarioTemplates={scenarioTemplates}
-                        challengeTemplates={challengeTemplates}
-                        characters={characters}
-                        characterTemplates={characterTemplates}
-                        expositionTemplates={expositionTemplates}
-                        inventoryItems={inventoryItems}
-                        spells={spells}
-                        depth={depth + 1}
-                        addChallengeToQuestArchetype={
-                          addChallengeToQuestArchetype
-                        }
-                        onSaveNode={onSaveNode}
-                        onEditChallenge={onEditChallenge}
-                      />
-                    </div>
+                  {branchTargets.length > 0 ? (
+                    branchTargets.map(({ outcome, node: targetNode }) => (
+                      <div
+                        key={`${challenge.id}-${outcome}-${targetNode.id}`}
+                        className="qa-flow-branch"
+                      >
+                        <div className="qa-flow-branch-label">
+                          {branchOutcomeLabel(outcome)}
+                        </div>
+                        <FlowNode
+                          node={targetNode}
+                          locationArchetypes={locationArchetypes}
+                          monsterTemplates={monsterTemplates}
+                          scenarioTemplates={scenarioTemplates}
+                          challengeTemplates={challengeTemplates}
+                          characters={characters}
+                          characterTemplates={characterTemplates}
+                          expositionTemplates={expositionTemplates}
+                          inventoryItems={inventoryItems}
+                          spells={spells}
+                          depth={depth + 1}
+                          addChallengeToQuestArchetype={
+                            addChallengeToQuestArchetype
+                          }
+                          onSaveNode={onSaveNode}
+                          onEditChallenge={onEditChallenge}
+                        />
+                      </div>
+                    ))
                   ) : (
                     <div className="qa-flow-branch qa-flow-branch-terminal">
                       <div className="qa-meta">No further node unlocked.</div>
@@ -2244,11 +2377,18 @@ type FlowMapNode = {
 type FlowMapEdge = {
   from: string;
   to: string;
+  outcome: QuestBranchOutcome;
 };
 
 type FlowMapLayout = {
   nodes: Array<FlowMapNode & { x: number; y: number }>;
-  edges: Array<{ fromX: number; fromY: number; toX: number; toY: number }>;
+  edges: Array<{
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    outcome: QuestBranchOutcome;
+  }>;
   width: number;
   height: number;
 };
@@ -2284,9 +2424,10 @@ const buildFlowMapLayout = (
       orderIndex += 1;
     }
     node.challenges?.forEach((challenge) => {
-      if (!challenge.unlockedNode) return;
-      edges.push({ from: node.id, to: challenge.unlockedNode.id });
-      walk(challenge.unlockedNode, depth + 1);
+      challengeBranchTargets(challenge).forEach(({ outcome, node: target }) => {
+        edges.push({ from: node.id, to: target.id, outcome });
+        walk(target, depth + 1);
+      });
     });
   };
 
@@ -2311,6 +2452,7 @@ const buildFlowMapLayout = (
         fromY: from.y,
         toX: to.x,
         toY: to.y,
+        outcome: edge.outcome,
       };
     })
     .filter(Boolean) as Array<{
@@ -2318,6 +2460,7 @@ const buildFlowMapLayout = (
     fromY: number;
     toX: number;
     toY: number;
+    outcome: QuestBranchOutcome;
   }>;
 
   const width = padding * 2 + Math.max(1, maxDepth + 1) * xSpacing;
@@ -2340,6 +2483,7 @@ type QuestFlowRouteNode = {
   parentNodeId: string | null;
   incomingChallenge: QuestArchetypeChallenge | null;
   incomingChallengeIndex: number | null;
+  incomingOutcome: QuestBranchOutcome | null;
 };
 
 const buildQuestFlowRoute = (
@@ -2357,7 +2501,8 @@ const buildQuestFlowRoute = (
     pathLabel: string,
     parentNodeId: string | null,
     incomingChallenge: QuestArchetypeChallenge | null,
-    incomingChallengeIndex: number | null
+    incomingChallengeIndex: number | null,
+    incomingOutcome: QuestBranchOutcome | null
   ) => {
     if (!node || visited.has(node.id)) {
       return;
@@ -2372,23 +2517,26 @@ const buildQuestFlowRoute = (
       parentNodeId,
       incomingChallenge,
       incomingChallengeIndex,
+      incomingOutcome,
     });
     node.challenges?.forEach((challenge, index) => {
-      if (!challenge.unlockedNode) {
-        return;
-      }
-      walk(
-        challenge.unlockedNode,
-        depth + 1,
-        `${pathLabel}.${index + 1}`,
-        node.id,
-        challenge,
-        index
-      );
+      challengeBranchTargets(challenge).forEach(({ outcome, node: target }) => {
+        walk(
+          target,
+          depth + 1,
+          outcome === 'failure'
+            ? `${pathLabel}.${index + 1}F`
+            : `${pathLabel}.${index + 1}`,
+          node.id,
+          challenge,
+          index,
+          outcome
+        );
+      });
     });
   };
 
-  walk(root, 0, '1', null, null, null);
+  walk(root, 0, '1', null, null, null, null);
   return routes;
 };
 
@@ -2431,7 +2579,8 @@ interface QuestNodeInspectorProps {
     questArchetypeId: string,
     proficiency?: string | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
-    challengeTemplateId?: string | null
+    challengeTemplateId?: string | null,
+    failureUnlockedNode?: QuestArchetypeNodeDraft | null
   ) => void;
   onSaveNode: (nodeId: string, updates: QuestArchetypeNodeDraft) => void;
   onEditChallenge: (
@@ -2481,15 +2630,21 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
     buildNodeEditorState(node, locationArchetypes)
   );
-  const [childEditor, setChildEditor] = useState<QuestArchetypeNodeEditorState>(
-    emptyNodeEditorState()
-  );
-  const [childEnabled, setChildEnabled] = useState<boolean>(false);
+  const [successChildEditor, setSuccessChildEditor] =
+    useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
+  const [successChildEnabled, setSuccessChildEnabled] =
+    useState<boolean>(false);
+  const [failureChildEditor, setFailureChildEditor] =
+    useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
+  const [failureChildEnabled, setFailureChildEnabled] =
+    useState<boolean>(false);
 
   useEffect(() => {
     setNodeEditor(buildNodeEditorState(node, locationArchetypes));
-    setChildEnabled(false);
-    setChildEditor(emptyNodeEditorState());
+    setSuccessChildEnabled(false);
+    setFailureChildEnabled(false);
+    setSuccessChildEditor(emptyNodeEditorState());
+    setFailureChildEditor(emptyNodeEditorState());
     setIsAdding(false);
   }, [locationArchetypes, node]);
   const selectedChallengeTemplate = challengeTemplates.find(
@@ -2500,6 +2655,10 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   );
   const selectedMonsterTemplates = monsterTemplates.filter((template) =>
     nodeEditor.monsterTemplateIds.includes(template.id)
+  );
+  const outgoingTransitionCount = (node.challenges ?? []).reduce(
+    (total, challenge) => total + challengeBranchTargets(challenge).length,
+    0
   );
 
   return (
@@ -2516,7 +2675,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
           </div>
           <div className="qa-inline">
             <span className="qa-chip accent">
-              {node.challenges?.length ?? 0} outgoing
+              {outgoingTransitionCount} outgoing
             </span>
             <span className="qa-chip muted">Inherits quest difficulty</span>
           </div>
@@ -2636,7 +2795,8 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
           <div>
             <div className="qa-card-title">Outgoing Branches</div>
             <div className="qa-meta">
-              Each row is a possible next beat unlocked from this node.
+              Each row defines one branch challenge, with optional success and
+              failure destinations.
             </div>
           </div>
           <button
@@ -2653,20 +2813,53 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
               <label className="qa-inline" style={{ alignItems: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={childEnabled}
-                  onChange={(e) => setChildEnabled(e.target.checked)}
+                  checked={successChildEnabled}
+                  onChange={(e) => setSuccessChildEnabled(e.target.checked)}
                 />
                 <span className="qa-label" style={{ marginBottom: 0 }}>
-                  Unlock a child node
+                  Unlock a success node
                 </span>
               </label>
             </div>
-            {childEnabled && (
+            {successChildEnabled && (
               <QuestArchetypeNodeConfigFields
-                editor={childEditor}
-                setEditor={setChildEditor}
+                editor={successChildEditor}
+                setEditor={setSuccessChildEditor}
                 allowSameAsPreviousLocationMode
-                prefix="Child"
+                prefix="Success"
+                locationArchetypes={locationArchetypes}
+                challengeTemplates={challengeTemplates}
+                monsterTemplates={monsterTemplates}
+                scenarioTemplates={scenarioTemplates}
+                characters={characters}
+                characterTemplates={characterTemplates}
+                expositionTemplates={expositionTemplates}
+                inventoryItems={inventoryItems}
+                spells={spells}
+              />
+            )}
+            <div className="qa-field" style={{ marginTop: 16 }}>
+              <label className="qa-inline" style={{ alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={failureChildEnabled}
+                  onChange={(e) => setFailureChildEnabled(e.target.checked)}
+                />
+                <span className="qa-label" style={{ marginBottom: 0 }}>
+                  Unlock a failure node
+                </span>
+              </label>
+              <div className="qa-helper" style={{ marginTop: 8 }}>
+                Save this node with "Follow failure branch" enabled if you want
+                failed attempts to use this path.
+              </div>
+            </div>
+            {failureChildEnabled && (
+              <QuestArchetypeNodeConfigFields
+                editor={failureChildEditor}
+                setEditor={setFailureChildEditor}
+                allowSameAsPreviousLocationMode
+                prefix="Failure"
                 locationArchetypes={locationArchetypes}
                 challengeTemplates={challengeTemplates}
                 monsterTemplates={monsterTemplates}
@@ -2681,16 +2874,33 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             <div className="qa-flow-form-actions">
               <button
                 className="qa-btn qa-btn-outline"
-                onClick={() => setIsAdding(false)}
+                onClick={() => {
+                  setSuccessChildEnabled(false);
+                  setFailureChildEnabled(false);
+                  setSuccessChildEditor(emptyNodeEditorState());
+                  setFailureChildEditor(emptyNodeEditorState());
+                  setIsAdding(false);
+                }}
               >
                 Cancel
               </button>
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
-                  const validationError = childEnabled
-                    ? validateQuestArchetypeNodeEditor(childEditor, 'Child')
+                  const successValidationError = successChildEnabled
+                    ? validateQuestArchetypeNodeEditor(
+                        successChildEditor,
+                        'Success'
+                      )
                     : '';
+                  const failureValidationError = failureChildEnabled
+                    ? validateQuestArchetypeNodeEditor(
+                        failureChildEditor,
+                        'Failure'
+                      )
+                    : '';
+                  const validationError =
+                    successValidationError || failureValidationError;
                   if (validationError) {
                     window.alert(validationError);
                     return;
@@ -2698,11 +2908,18 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                   await addChallengeToQuestArchetype(
                     node.id,
                     null,
-                    childEnabled ? buildNodeDraft(childEditor) : null,
-                    null
+                    successChildEnabled
+                      ? buildNodeDraft(successChildEditor)
+                      : null,
+                    null,
+                    failureChildEnabled
+                      ? buildNodeDraft(failureChildEditor)
+                      : null
                   );
-                  setChildEnabled(false);
-                  setChildEditor(emptyNodeEditorState());
+                  setSuccessChildEnabled(false);
+                  setFailureChildEnabled(false);
+                  setSuccessChildEditor(emptyNodeEditorState());
+                  setFailureChildEditor(emptyNodeEditorState());
                   setIsAdding(false);
                 }}
               >
@@ -2723,16 +2940,20 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                 challenge,
                 challengeTemplates
               );
-              const unlockedNodeLabel = challenge.unlockedNode
-                ? describeQuestArchetypeNode(
-                    challenge.unlockedNode,
+              const branchTargets = challengeBranchTargets(challenge).map(
+                ({ outcome, node: targetNode }) => ({
+                  outcome,
+                  node: targetNode,
+                  label: describeQuestArchetypeNode(
+                    targetNode,
                     locationArchetypes,
                     monsterTemplates,
                     scenarioTemplates,
                     characterTemplates,
                     expositionTemplates
-                  )
-                : null;
+                  ),
+                })
+              );
               return (
                 <div key={challenge.id} className="qa-route-branch-card">
                   <div className="qa-flow-challenge-header">
@@ -2754,14 +2975,15 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                             {challengeProficiencyValue}
                           </span>
                         )}
-                        {challenge.unlockedNode && (
-                          <span className="qa-chip">
-                            Unlocks{' '}
-                            {questArchetypeNodeTypeLabel(
-                              challenge.unlockedNode.nodeType
-                            )}
+                        {branchTargets.map(({ outcome, node: targetNode }) => (
+                          <span
+                            key={`${challenge.id}-${outcome}-${targetNode.id}-chip`}
+                            className={branchOutcomeChipClass(outcome)}
+                          >
+                            {branchOutcomeLabel(outcome)}{' '}
+                            {questArchetypeNodeTypeLabel(targetNode.nodeType)}
                           </span>
-                        )}
+                        ))}
                       </div>
                     </div>
                     <div className="qa-inline" style={{ flexWrap: 'wrap' }}>
@@ -2796,15 +3018,40 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
                       )}
                     </div>
                   </div>
-                  {challenge.unlockedNode ? (
-                    <div className="qa-route-branch-footer">
-                      <div className="qa-meta">Next: {unlockedNodeLabel}</div>
-                      <button
-                        className="qa-btn qa-btn-outline"
-                        onClick={() => onSelectNode(challenge.unlockedNode!.id)}
-                      >
-                        Open Node
-                      </button>
+                  {branchTargets.length > 0 ? (
+                    <div
+                      className="qa-route-branch-footer"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'stretch',
+                        gap: 10,
+                      }}
+                    >
+                      {branchTargets.map(
+                        ({ outcome, node: targetNode, label }) => (
+                          <div
+                            key={`${challenge.id}-${outcome}-${targetNode.id}-footer`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <div className="qa-meta">
+                              {branchOutcomeLabel(outcome)}: {label}
+                            </div>
+                            <button
+                              className="qa-btn qa-btn-outline"
+                              onClick={() => onSelectNode(targetNode.id)}
+                            >
+                              Open Node
+                            </button>
+                          </div>
+                        )
+                      )}
                     </div>
                   ) : (
                     <div className="qa-meta" style={{ marginTop: 12 }}>
@@ -2839,6 +3086,14 @@ type QuestArchetypeFormState = {
   description: string;
   category: 'side' | 'main_story';
   questGiverCharacterId: string;
+  closurePolicy: QuestClosurePolicy;
+  debriefPolicy: QuestDebriefPolicy;
+  returnBonusGold: number;
+  returnBonusExperience: number;
+  returnBonusRelationshipTrust: number;
+  returnBonusRelationshipRespect: number;
+  returnBonusRelationshipFear: number;
+  returnBonusRelationshipDebt: number;
   acceptanceDialogue: DialogueMessage[];
   imageUrl: string;
   rootNode: QuestArchetypeNodeEditorState;
@@ -2871,6 +3126,14 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   description: '',
   category: 'side',
   questGiverCharacterId: '',
+  closurePolicy: 'remote',
+  debriefPolicy: 'optional',
+  returnBonusGold: 0,
+  returnBonusExperience: 0,
+  returnBonusRelationshipTrust: 0,
+  returnBonusRelationshipRespect: 0,
+  returnBonusRelationshipFear: 0,
+  returnBonusRelationshipDebt: 0,
   acceptanceDialogue: [],
   imageUrl: '',
   rootNode: emptyNodeEditorState(),
@@ -2906,6 +3169,18 @@ const buildQuestArchetypeFormFromRecord = (
   description: archetype.description ?? '',
   category: archetype.category === 'main_story' ? 'main_story' : 'side',
   questGiverCharacterId: archetype.questGiverCharacterId ?? '',
+  closurePolicy: archetype.closurePolicy ?? 'remote',
+  debriefPolicy: archetype.debriefPolicy ?? 'optional',
+  returnBonusGold: archetype.returnBonusGold ?? 0,
+  returnBonusExperience: archetype.returnBonusExperience ?? 0,
+  returnBonusRelationshipTrust:
+    archetype.returnBonusRelationshipEffects?.trust ?? 0,
+  returnBonusRelationshipRespect:
+    archetype.returnBonusRelationshipEffects?.respect ?? 0,
+  returnBonusRelationshipFear:
+    archetype.returnBonusRelationshipEffects?.fear ?? 0,
+  returnBonusRelationshipDebt:
+    archetype.returnBonusRelationshipEffects?.debt ?? 0,
   acceptanceDialogue: archetype.acceptanceDialogue ?? [],
   imageUrl: archetype.imageUrl ?? '',
   rootNode: buildNodeEditorState(archetype.root, locationArchetypes),
@@ -3002,6 +3277,25 @@ const normalizeQuestArchetypeDraft = (
     fear: Math.max(-3, Math.min(3, Number(form.relationshipFear) || 0)),
     debt: Math.max(-3, Math.min(3, Number(form.relationshipDebt) || 0)),
   };
+  const returnBonusRelationshipEffects = {
+    trust: Math.max(
+      -3,
+      Math.min(3, Number(form.returnBonusRelationshipTrust) || 0)
+    ),
+    respect: Math.max(
+      -3,
+      Math.min(3, Number(form.returnBonusRelationshipRespect) || 0)
+    ),
+    fear: Math.max(
+      -3,
+      Math.min(3, Number(form.returnBonusRelationshipFear) || 0)
+    ),
+    debt: Math.max(
+      -3,
+      Math.min(3, Number(form.returnBonusRelationshipDebt) || 0)
+    ),
+  };
+  const debriefPolicy = form.debriefPolicy;
 
   return {
     name: form.name.trim(),
@@ -3011,6 +3305,18 @@ const normalizeQuestArchetypeDraft = (
       form.category === 'main_story' && form.questGiverCharacterId
         ? form.questGiverCharacterId
         : null,
+    closurePolicy: form.closurePolicy,
+    debriefPolicy,
+    returnBonusGold:
+      debriefPolicy === 'none' ? 0 : Number(form.returnBonusGold) || 0,
+    returnBonusExperience:
+      debriefPolicy === 'none'
+        ? 0
+        : Number(form.returnBonusExperience) || 0,
+    returnBonusRelationshipEffects:
+      debriefPolicy === 'none'
+        ? { trust: 0, respect: 0, fear: 0, debt: 0 }
+        : returnBonusRelationshipEffects,
     acceptanceDialogue,
     imageUrl: form.imageUrl.trim(),
     rootNode: buildNodeDraft(form.rootNode),
@@ -3216,6 +3522,10 @@ export const QuestArchetypeComponent = () => {
     useState<boolean>(false);
   const [editChallengeProficiency, setEditChallengeProficiency] =
     useState<string>('');
+  const [
+    editChallengeFailureUnlockedNodeId,
+    setEditChallengeFailureUnlockedNodeId,
+  ] = useState<string>('');
   const [inlineEditor, setInlineEditor] =
     useState<QuestArchetypeInlineEditorState | null>(null);
   const [inlineEditorError, setInlineEditorError] = useState<string>('');
@@ -3364,7 +3674,7 @@ export const QuestArchetypeComponent = () => {
   const selectedArchetypeQuestGiver = useMemo(
     () =>
       selectedArchetype?.questGiverCharacterId
-        ? charactersById.get(selectedArchetype.questGiverCharacterId) ?? null
+        ? (charactersById.get(selectedArchetype.questGiverCharacterId) ?? null)
         : null,
     [charactersById, selectedArchetype?.questGiverCharacterId]
   );
@@ -3378,7 +3688,7 @@ export const QuestArchetypeComponent = () => {
   const editingQuestGiver = useMemo(
     () =>
       editForm.questGiverCharacterId
-        ? charactersById.get(editForm.questGiverCharacterId) ?? null
+        ? (charactersById.get(editForm.questGiverCharacterId) ?? null)
         : null,
     [charactersById, editForm.questGiverCharacterId]
   );
@@ -3429,13 +3739,49 @@ export const QuestArchetypeComponent = () => {
       null,
     [flowRoutes, selectedNodeId]
   );
+  const flowRouteNodeOptions = useMemo(
+    () =>
+      flowRoutes.map((route) => ({
+        id: route.node.id,
+        label: `${route.pathLabel} · ${describeQuestArchetypeNode(
+          route.node,
+          locationArchetypes,
+          monsterTemplates,
+          scenarioTemplates,
+          characterTemplates,
+          expositionTemplates
+        )}`,
+      })),
+    [
+      characterTemplates,
+      expositionTemplates,
+      flowRoutes,
+      locationArchetypes,
+      monsterTemplates,
+      scenarioTemplates,
+    ]
+  );
+  const totalFlowTransitions = useMemo(
+    () =>
+      flowRoutes.reduce(
+        (total, route) =>
+          total +
+          (route.node.challenges ?? []).reduce(
+            (challengeTotal, challenge) =>
+              challengeTotal + challengeBranchTargets(challenge).length,
+            0
+          ),
+        0
+      ),
+    [flowRoutes]
+  );
 
   const activeChallengeTemplate = useMemo(
     () =>
       inlineEditor?.kind === 'challenge'
-        ? challengeTemplates.find(
+        ? (challengeTemplates.find(
             (template) => template.id === inlineEditor.templateId
-          ) ?? null
+          ) ?? null)
         : null,
     [challengeTemplates, inlineEditor]
   );
@@ -3443,9 +3789,9 @@ export const QuestArchetypeComponent = () => {
   const activeScenarioTemplate = useMemo(
     () =>
       inlineEditor?.kind === 'scenario'
-        ? scenarioTemplates.find(
+        ? (scenarioTemplates.find(
             (template) => template.id === inlineEditor.templateId
-          ) ?? null
+          ) ?? null)
         : null,
     [inlineEditor, scenarioTemplates]
   );
@@ -3453,9 +3799,9 @@ export const QuestArchetypeComponent = () => {
   const activeMonsterTemplate = useMemo(
     () =>
       inlineEditor?.kind === 'monster'
-        ? monsterTemplates.find(
+        ? (monsterTemplates.find(
             (template) => template.id === inlineEditor.templateId
-          ) ?? null
+          ) ?? null)
         : null,
     [inlineEditor, monsterTemplates]
   );
@@ -3791,11 +4137,12 @@ export const QuestArchetypeComponent = () => {
     setEditingChallenge(selected);
     setEditingChallengeAllowsTemplate(allowsTemplate);
     setEditChallengeTemplateId(
-      allowsTemplate ? selected.challengeTemplateId ?? '' : ''
+      allowsTemplate ? (selected.challengeTemplateId ?? '') : ''
     );
     setEditChallengeProficiency(
       resolveChallengeProficiency(selected, challengeTemplates)
     );
+    setEditChallengeFailureUnlockedNodeId(selected.failureUnlockedNodeId ?? '');
     setProficiencySearch(
       resolveChallengeProficiency(selected, challengeTemplates)
     );
@@ -4219,7 +4566,7 @@ export const QuestArchetypeComponent = () => {
                       </div>
                       <div className="qa-stat-value">
                         {selectedArchetype.category === 'main_story'
-                          ? selectedArchetypeQuestGiver?.name ?? 'Unassigned'
+                          ? (selectedArchetypeQuestGiver?.name ?? 'Unassigned')
                           : (selectedArchetype.characterTags ?? []).length > 0
                             ? (selectedArchetype.characterTags ?? []).join(', ')
                             : 'Any'}
@@ -4260,7 +4607,7 @@ export const QuestArchetypeComponent = () => {
                       <span className="qa-chip muted">
                         Difficulty:{' '}
                         {selectedArchetype.difficultyMode === 'fixed'
-                          ? selectedArchetype.difficulty ?? 1
+                          ? (selectedArchetype.difficulty ?? 1)
                           : 'Scales'}
                       </span>
                       <span className="qa-chip muted">
@@ -4273,7 +4620,7 @@ export const QuestArchetypeComponent = () => {
                       <span className="qa-chip muted">
                         XP:{' '}
                         {selectedArchetype.rewardMode === 'explicit'
-                          ? selectedArchetype.rewardExperience ?? 0
+                          ? (selectedArchetype.rewardExperience ?? 0)
                           : 0}
                       </span>
                       <span className="qa-chip muted">
@@ -4353,9 +4700,13 @@ export const QuestArchetypeComponent = () => {
                   <div className="qa-card qa-flow-map">
                     <div className="qa-card-title">Flow Map</div>
                     <p className="qa-muted" style={{ marginTop: 6 }}>
-                      A mini-map of the quest flow. Each node represents a
-                      location archetype, connected by challenges.
+                      A mini-map of the quest flow. Solid lines are success
+                      paths, dashed lines are failure paths.
                     </p>
+                    <div className="qa-inline" style={{ marginTop: 10 }}>
+                      <span className="qa-chip success">Success path</span>
+                      <span className="qa-chip danger">Failure path</span>
+                    </div>
                     <div className="qa-flow-map-canvas">
                       <svg
                         viewBox={`0 0 ${flowMapLayout.width} ${flowMapLayout.height}`}
@@ -4385,8 +4736,15 @@ export const QuestArchetypeComponent = () => {
                             y1={edge.fromY}
                             x2={edge.toX}
                             y2={edge.toY}
-                            stroke="rgba(255,255,255,0.3)"
+                            stroke={
+                              edge.outcome === 'failure'
+                                ? 'rgba(255,107,74,0.55)'
+                                : 'rgba(95,211,181,0.55)'
+                            }
                             strokeWidth="2"
+                            strokeDasharray={
+                              edge.outcome === 'failure' ? '6 4' : undefined
+                            }
                             markerEnd="url(#qa-flow-arrow)"
                           />
                         ))}
@@ -4430,12 +4788,7 @@ export const QuestArchetypeComponent = () => {
                         {flowRoutes.length} nodes
                       </span>
                       <span className="qa-chip muted">
-                        {flowRoutes.reduce(
-                          (total, route) =>
-                            total + (route.node.challenges?.length ?? 0),
-                          0
-                        )}{' '}
-                        branches
+                        {totalFlowTransitions} transitions
                       </span>
                     </div>
                   </div>
@@ -4476,10 +4829,18 @@ export const QuestArchetypeComponent = () => {
                                   </div>
                                   <div className="qa-route-step-meta">
                                     {route.incomingChallenge
-                                      ? `Unlocked by ${route.parentNodeId ? 'previous beat' : 'root'}`
+                                      ? `${branchOutcomeLabel(
+                                          route.incomingOutcome ?? 'success'
+                                        )} path from previous beat`
                                       : 'Root beat'}
                                     {' · '}
-                                    {route.node.challenges?.length ?? 0}{' '}
+                                    {(route.node.challenges ?? []).reduce(
+                                      (total, challenge) =>
+                                        total +
+                                        challengeBranchTargets(challenge)
+                                          .length,
+                                      0
+                                    )}{' '}
                                     outgoing
                                   </div>
                                   {route.incomingChallenge && (
@@ -4487,6 +4848,15 @@ export const QuestArchetypeComponent = () => {
                                       className="qa-inline"
                                       style={{ marginTop: 8 }}
                                     >
+                                      <span
+                                        className={branchOutcomeChipClass(
+                                          route.incomingOutcome ?? 'success'
+                                        )}
+                                      >
+                                        {branchOutcomeLabel(
+                                          route.incomingOutcome ?? 'success'
+                                        )}
+                                      </span>
                                       {resolveChallengeProficiency(
                                         route.incomingChallenge,
                                         challengeTemplates
@@ -6883,6 +7253,147 @@ export const QuestArchetypeComponent = () => {
                   the quest is turned in.
                 </div>
               </div>
+              <div className="qa-field">
+                <div className="qa-label">Closure Policy</div>
+                <select
+                  className="qa-select"
+                  value={createForm.closurePolicy}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      closurePolicy: e.target.value as QuestClosurePolicy,
+                    }))
+                  }
+                >
+                  <option value="remote">Close Remotely</option>
+                  <option value="auto">Auto Close</option>
+                  <option value="in_person">Return To Quest Giver</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Debrief Policy</div>
+                <select
+                  className="qa-select"
+                  value={createForm.debriefPolicy}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      debriefPolicy: e.target.value as QuestDebriefPolicy,
+                    }))
+                  }
+                >
+                  <option value="optional">Optional</option>
+                  <option value="none">None</option>
+                  <option value="required_for_followup">
+                    Required Before Follow-up
+                  </option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Return Bonus Gold</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  disabled={createForm.debriefPolicy === 'none'}
+                  value={createForm.returnBonusGold}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      returnBonusGold: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Return Bonus Experience</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  disabled={createForm.debriefPolicy === 'none'}
+                  value={createForm.returnBonusExperience}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      returnBonusExperience: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                <div className="qa-label">Return Bonus Relationship Effects</div>
+                <div className="qa-inline-grid">
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={createForm.debriefPolicy === 'none'}
+                    value={createForm.returnBonusRelationshipTrust}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipTrust:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Trust"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={createForm.debriefPolicy === 'none'}
+                    value={createForm.returnBonusRelationshipRespect}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipRespect:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Respect"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={createForm.debriefPolicy === 'none'}
+                    value={createForm.returnBonusRelationshipFear}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipFear:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Fear"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={createForm.debriefPolicy === 'none'}
+                    value={createForm.returnBonusRelationshipDebt}
+                    onChange={(e) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipDebt:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Debt"
+                  />
+                </div>
+                <div className="qa-helper">
+                  Base rewards and story flags fire on quest close. These bonus
+                  effects fire on the later debrief.
+                </div>
+              </div>
               <div
                 className="qa-field"
                 style={{ gridColumn: '1 / -1', marginTop: 8 }}
@@ -7501,6 +8012,147 @@ export const QuestArchetypeComponent = () => {
                 </div>
               </div>
               <div className="qa-field">
+                <div className="qa-label">Closure Policy</div>
+                <select
+                  className="qa-select"
+                  value={editForm.closurePolicy}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      closurePolicy: e.target.value as QuestClosurePolicy,
+                    }))
+                  }
+                >
+                  <option value="remote">Close Remotely</option>
+                  <option value="auto">Auto Close</option>
+                  <option value="in_person">Return To Quest Giver</option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Debrief Policy</div>
+                <select
+                  className="qa-select"
+                  value={editForm.debriefPolicy}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      debriefPolicy: e.target.value as QuestDebriefPolicy,
+                    }))
+                  }
+                >
+                  <option value="optional">Optional</option>
+                  <option value="none">None</option>
+                  <option value="required_for_followup">
+                    Required Before Follow-up
+                  </option>
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Return Bonus Gold</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  disabled={editForm.debriefPolicy === 'none'}
+                  value={editForm.returnBonusGold}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      returnBonusGold: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Return Bonus Experience</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  disabled={editForm.debriefPolicy === 'none'}
+                  value={editForm.returnBonusExperience}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      returnBonusExperience: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </div>
+              <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                <div className="qa-label">Return Bonus Relationship Effects</div>
+                <div className="qa-inline-grid">
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={editForm.debriefPolicy === 'none'}
+                    value={editForm.returnBonusRelationshipTrust}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipTrust:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Trust"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={editForm.debriefPolicy === 'none'}
+                    value={editForm.returnBonusRelationshipRespect}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipRespect:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Respect"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={editForm.debriefPolicy === 'none'}
+                    value={editForm.returnBonusRelationshipFear}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipFear:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Fear"
+                  />
+                  <input
+                    type="number"
+                    className="qa-input"
+                    min={-3}
+                    max={3}
+                    disabled={editForm.debriefPolicy === 'none'}
+                    value={editForm.returnBonusRelationshipDebt}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        returnBonusRelationshipDebt:
+                          Number(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="Debt"
+                  />
+                </div>
+                <div className="qa-helper">
+                  Base rewards and story flags fire on quest close. These bonus
+                  effects fire on the later debrief.
+                </div>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Reward Mode</div>
                 <select
                   className="qa-select"
@@ -7831,6 +8483,12 @@ export const QuestArchetypeComponent = () => {
                     description: draft.description,
                     category: draft.category,
                     questGiverCharacterId: draft.questGiverCharacterId,
+                    closurePolicy: draft.closurePolicy,
+                    debriefPolicy: draft.debriefPolicy,
+                    returnBonusGold: draft.returnBonusGold ?? 0,
+                    returnBonusExperience: draft.returnBonusExperience ?? 0,
+                    returnBonusRelationshipEffects:
+                      draft.returnBonusRelationshipEffects,
                     acceptanceDialogue: draft.acceptanceDialogue,
                     imageUrl: draft.imageUrl,
                     difficultyMode: draft.difficultyMode,
@@ -7907,6 +8565,27 @@ export const QuestArchetypeComponent = () => {
                   placeholder="Optional proficiency (e.g. Persuasion)"
                 />
               </div>
+              <div className="qa-field">
+                <div className="qa-label">Failure Node</div>
+                <div className="qa-helper">
+                  Optional. Used when the source node is set to follow its
+                  failure branch.
+                </div>
+                <select
+                  className="qa-select"
+                  value={editChallengeFailureUnlockedNodeId}
+                  onChange={(e) =>
+                    setEditChallengeFailureUnlockedNodeId(e.target.value)
+                  }
+                >
+                  <option value="">Stay on current node</option>
+                  {flowRouteNodeOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="qa-footer">
               <button
@@ -7914,6 +8593,7 @@ export const QuestArchetypeComponent = () => {
                 onClick={() => {
                   setEditingChallenge(null);
                   setEditingChallengeAllowsTemplate(false);
+                  setEditChallengeFailureUnlockedNodeId('');
                 }}
               >
                 Cancel
@@ -7929,6 +8609,7 @@ export const QuestArchetypeComponent = () => {
                   await deleteQuestArchetypeChallenge(editingChallenge.id);
                   setEditingChallenge(null);
                   setEditingChallengeAllowsTemplate(false);
+                  setEditChallengeFailureUnlockedNodeId('');
                 }}
               >
                 Delete
@@ -7941,10 +8622,13 @@ export const QuestArchetypeComponent = () => {
                     challengeTemplateId: editingChallengeAllowsTemplate
                       ? editChallengeTemplateId || null
                       : undefined,
+                    failureUnlockedNodeId:
+                      editChallengeFailureUnlockedNodeId || null,
                     proficiency: trimmed.length > 0 ? trimmed : null,
                   });
                   setEditingChallenge(null);
                   setEditingChallengeAllowsTemplate(false);
+                  setEditChallengeFailureUnlockedNodeId('');
                 }}
               >
                 Save

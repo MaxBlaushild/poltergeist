@@ -101,12 +101,26 @@ func (s *server) applyQuestStoryFlagsOnTurnIn(
 	if quest == nil {
 		return nil
 	}
-	for _, flag := range normalizeStoryFlagKeys([]string(quest.SetStoryFlags)) {
+	return s.applyQuestStoryFlagChanges(
+		ctx,
+		userID,
+		[]string(quest.SetStoryFlags),
+		[]string(quest.ClearStoryFlags),
+	)
+}
+
+func (s *server) applyQuestStoryFlagChanges(
+	ctx context.Context,
+	userID uuid.UUID,
+	setFlags []string,
+	clearFlags []string,
+) error {
+	for _, flag := range normalizeStoryFlagKeys(setFlags) {
 		if err := s.dbClient.UserStoryFlag().Upsert(ctx, userID, flag, true); err != nil {
 			return err
 		}
 	}
-	for _, flag := range normalizeStoryFlagKeys([]string(quest.ClearStoryFlags)) {
+	for _, flag := range normalizeStoryFlagKeys([]string(clearFlags)) {
 		if err := s.dbClient.UserStoryFlag().DeleteByUserAndKeys(ctx, userID, []string{flag}); err != nil {
 			return err
 		}

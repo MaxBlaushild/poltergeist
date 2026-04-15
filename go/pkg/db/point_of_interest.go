@@ -54,6 +54,26 @@ func normalizePointOfInterestRewards(pointOfInterest *models.PointOfInterest) {
 	}
 }
 
+func normalizePointOfInterestMarkerCategory(pointOfInterest *models.PointOfInterest) {
+	if pointOfInterest == nil {
+		return
+	}
+
+	pointOfInterest.MarkerCategoryDerived = false
+	raw := strings.TrimSpace(string(pointOfInterest.MarkerCategory))
+	if raw != "" {
+		pointOfInterest.MarkerCategory = models.NormalizePointOfInterestMarkerCategory(raw)
+		return
+	}
+	pointOfInterest.MarkerCategoryDerived = true
+	pointOfInterest.MarkerCategory = models.InferPointOfInterestMarkerCategoryFromPointOfInterest(pointOfInterest)
+}
+
+func normalizePointOfInterest(pointOfInterest *models.PointOfInterest) {
+	normalizePointOfInterestRewards(pointOfInterest)
+	normalizePointOfInterestMarkerCategory(pointOfInterest)
+}
+
 type CreatePointOfInterestRequest struct {
 	Name                         string  `binding:"required" json:"name"`
 	Description                  string  `binding:"required" json:"description"`
@@ -157,6 +177,13 @@ func (c *pointOfInterestHandle) UpdateImageGenerationStatus(ctx context.Context,
 	}).Error
 }
 
+func (c *pointOfInterestHandle) UpdateMarkerCategory(ctx context.Context, id uuid.UUID, category models.PointOfInterestMarkerCategory) error {
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"marker_category": models.NormalizePointOfInterestMarkerCategory(string(category)),
+		"updated_at":      time.Now(),
+	}).Error
+}
+
 func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int, clue string, imageUrl string, originalName string, googleMapsPlaceId *string) error {
 	pointOfInterest := models.PointOfInterest{
 		ID:                id,
@@ -186,7 +213,7 @@ func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfIn
 		return nil, err
 	}
 	for i := range pointsOfInterest {
-		normalizePointOfInterestRewards(&pointsOfInterest[i])
+		normalizePointOfInterest(&pointsOfInterest[i])
 	}
 
 	return pointsOfInterest, nil
@@ -199,7 +226,7 @@ func (c *pointOfInterestHandle) FindByID(ctx context.Context, id uuid.UUID) (*mo
 		First(&pointOfInterest, id).Error; err != nil {
 		return nil, err
 	}
-	normalizePointOfInterestRewards(&pointOfInterest)
+	normalizePointOfInterest(&pointOfInterest)
 
 	return &pointOfInterest, nil
 }
@@ -233,7 +260,7 @@ func (c *pointOfInterestHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) 
 		return nil, err
 	}
 	for i := range pointsOfInterest {
-		normalizePointOfInterestRewards(&pointsOfInterest[i])
+		normalizePointOfInterest(&pointsOfInterest[i])
 	}
 
 	return pointsOfInterest, nil
@@ -244,6 +271,9 @@ func (c *pointOfInterestHandle) FindByMatchID(ctx context.Context, matchID uuid.
 
 	if err := c.db.WithContext(ctx).Where("match_id = ?", matchID).Find(&pointsOfInterest).Error; err != nil {
 		return nil, err
+	}
+	for i := range pointsOfInterest {
+		normalizePointOfInterest(&pointsOfInterest[i])
 	}
 
 	return pointsOfInterest, nil
@@ -263,7 +293,7 @@ func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest mode
 	if err := pointOfInterest.SetGeometry(pointOfInterest.Lat, pointOfInterest.Lng); err != nil {
 		return err
 	}
-	normalizePointOfInterestRewards(&pointOfInterest)
+	normalizePointOfInterest(&pointOfInterest)
 
 	return c.db.WithContext(ctx).Create(&pointOfInterest).Error
 }
@@ -272,7 +302,7 @@ func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInter
 	pointOfInterest.ID = uuid.New()
 	pointOfInterest.CreatedAt = time.Now()
 	pointOfInterest.UpdatedAt = time.Now()
-	normalizePointOfInterestRewards(pointOfInterest)
+	normalizePointOfInterest(pointOfInterest)
 
 	if err := c.db.WithContext(ctx).Create(&pointOfInterest).Error; err != nil {
 		return err
@@ -323,7 +353,7 @@ func (c *pointOfInterestHandle) FindByGoogleMapsPlaceID(ctx context.Context, goo
 		}
 		return nil, err
 	}
-	normalizePointOfInterestRewards(&pointOfInterest)
+	normalizePointOfInterest(&pointOfInterest)
 
 	return &pointOfInterest, nil
 }
@@ -337,7 +367,7 @@ func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uu
 	if err := updates.SetGeometry(updates.Lat, updates.Lng); err != nil {
 		return err
 	}
-	normalizePointOfInterestRewards(updates)
+	normalizePointOfInterest(updates)
 
 	payload := map[string]interface{}{
 		"name":                    updates.Name,
@@ -352,6 +382,7 @@ func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uu
 		"original_name":           updates.OriginalName,
 		"google_maps_place_id":    updates.GoogleMapsPlaceID,
 		"google_maps_place_name":  updates.GoogleMapsPlaceName,
+		"marker_category":         updates.MarkerCategory,
 		"story_variants":          updates.StoryVariants,
 		"geometry":                updates.Geometry,
 		"reward_mode":             updates.RewardMode,

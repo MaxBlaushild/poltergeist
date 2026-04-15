@@ -130,6 +130,9 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		if err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create character: %w", err))
 		}
+		if err := p.ensureTalkActionForCharacterDialogue(ctx, character, draftCharacter.Dialogue, poi); err != nil {
+			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create talk action: %w", err))
+		}
 		if err := p.ensureShopActionForCharacterTags(ctx, character, draftCharacter.ShopItemTags); err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create shop action: %w", err))
 		}
@@ -926,6 +929,7 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 		Name:                  draft.Name,
 		Description:           draft.Description,
 		PointOfInterestID:     nil,
+		InternalTags:          zoneSeedCharacterInternalTags(draft),
 		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
 	}
 	if poi != nil {
@@ -965,6 +969,16 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 	}
 
 	return character, nil
+}
+
+func zoneSeedCharacterInternalTags(draft models.ZoneSeedCharacterDraft) models.StringArray {
+	if strings.TrimSpace(draft.PlaceID) == "" {
+		return models.StringArray{}
+	}
+	if len(normalizeShopActionTags(draft.ShopItemTags)) > 0 {
+		return models.StringArray{}
+	}
+	return models.StringArray{models.CharacterInternalTagGeneratedPOILocal}
 }
 
 func normalizeShopActionTags(tags models.StringArray) []string {
@@ -1056,6 +1070,73 @@ func (p *ApplyZoneSeedDraftProcessor) ensureShopActionForCharacterTags(
 		},
 	}
 	return p.dbClient.CharacterAction().Create(ctx, action)
+}
+
+func (p *ApplyZoneSeedDraftProcessor) ensureTalkActionForCharacterDialogue(
+	ctx context.Context,
+	character *models.Character,
+	dialogueLines []string,
+	poi *models.PointOfInterest,
+) error {
+	if character == nil {
+		return fmt.Errorf("character is nil")
+	}
+
+	lines := sanitizeZoneSeedTalkDialogueLines(dialogueLines)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	actions, err := p.dbClient.CharacterAction().FindByCharacterID(ctx, character.ID)
+	if err != nil {
+		return err
+	}
+	for _, action := range actions {
+		if action == nil || action.ActionType != models.ActionTypeTalk || action.Metadata == nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(fmt.Sprint(action.Metadata["source"]))) == "poilocal" {
+			return nil
+		}
+	}
+
+	metadata := map[string]interface{}{"source": "poiLocal"}
+	if poi != nil {
+		metadata["pointOfInterestId"] = poi.ID.String()
+	}
+	return p.dbClient.CharacterAction().Create(ctx, &models.CharacterAction{
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CharacterID: character.ID,
+		ActionType:  models.ActionTypeTalk,
+		Dialogue:    models.DialogueSequenceFromStringLines(lines),
+		Metadata:    metadata,
+	})
+}
+
+func sanitizeZoneSeedTalkDialogueLines(lines []string) []string {
+	seen := map[string]struct{}{}
+	sanitized := make([]string, 0, 3)
+	for _, raw := range lines {
+		line := strings.TrimSpace(strings.ReplaceAll(raw, "\n", " "))
+		if line == "" {
+			continue
+		}
+		if len(line) > 180 {
+			line = strings.TrimSpace(line[:180])
+		}
+		key := strings.ToLower(line)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		sanitized = append(sanitized, line)
+		if len(sanitized) >= 3 {
+			break
+		}
+	}
+	return sanitized
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(

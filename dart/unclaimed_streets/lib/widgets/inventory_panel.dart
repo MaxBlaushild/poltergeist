@@ -430,6 +430,14 @@ class _InventoryPanelState extends State<InventoryPanel>
     return '${labels.sublist(0, labels.length - 1).join(', ')}, and ${labels.last}';
   }
 
+  String _formatResourceType(InventoryItem inv) {
+    final name = inv.resourceType?.name.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    final slug = inv.resourceType?.slug.trim() ?? '';
+    if (slug.isEmpty) return '';
+    return slug[0].toUpperCase() + slug.substring(1);
+  }
+
   String _equipActionLabel(
     OwnedInventoryItem owned,
     InventoryItem inv,
@@ -1859,6 +1867,13 @@ class _InventoryPanelState extends State<InventoryPanel>
           icon: Icons.auto_awesome,
           label: inv.rarityTier.trim(),
           colorOverride: _rarityAccentColor(inv.rarityTier),
+        ),
+      if (((inv.resourceType?.name.trim() ?? '').isNotEmpty) ||
+          ((inv.resourceType?.slug.trim() ?? '').isNotEmpty))
+        _buildMetaChip(
+          context,
+          icon: Icons.forest_outlined,
+          label: 'Gathering ${_formatResourceType(inv)}',
         ),
       if (inv.buyPrice != null)
         _buildMetaChip(

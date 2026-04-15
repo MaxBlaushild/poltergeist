@@ -28,6 +28,7 @@ type QuestNode struct {
 	FetchCharacter       *Character              `json:"fetchCharacter,omitempty" gorm:"foreignKey:FetchCharacterID"`
 	FetchRequirements    FetchQuestRequirements  `json:"fetchRequirements" gorm:"column:fetch_requirements_json;type:jsonb;default:'[]'"`
 	ObjectiveDescription string                  `json:"objectiveDescription,omitempty" gorm:"column:objective_description"`
+	FailurePolicy        QuestNodeFailurePolicy  `json:"failurePolicy" gorm:"column:failure_policy;type:text;default:'retry'"`
 	StoryFlagKey         string                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	SubmissionType       QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Children             []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
@@ -59,10 +60,15 @@ func (q *QuestNode) TableName() string {
 }
 
 func (q *QuestNode) BeforeCreate(tx *gorm.DB) (err error) {
+	return q.BeforeSave(tx)
+}
+
+func (q *QuestNode) BeforeSave(tx *gorm.DB) (err error) {
 	if q.SubmissionType == "" {
 		q.SubmissionType = DefaultQuestNodeSubmissionType()
 	}
 	q.ObjectiveDescription = strings.TrimSpace(q.ObjectiveDescription)
+	q.FailurePolicy = NormalizeQuestNodeFailurePolicy(string(q.FailurePolicy))
 	q.StoryFlagKey = NormalizeStoryFlagKey(q.StoryFlagKey)
 	q.FetchRequirements = NormalizeFetchQuestRequirements(q.FetchRequirements)
 	return nil
@@ -84,4 +90,11 @@ func (q *QuestNode) IsFetchQuestNode() bool {
 		q.FetchCharacterID != nil &&
 		*q.FetchCharacterID != uuid.Nil &&
 		len(q.FetchRequirements) > 0
+}
+
+func (q *QuestNode) FailurePolicyNormalized() QuestNodeFailurePolicy {
+	if q == nil {
+		return QuestNodeFailurePolicyRetry
+	}
+	return NormalizeQuestNodeFailurePolicy(string(q.FailurePolicy))
 }

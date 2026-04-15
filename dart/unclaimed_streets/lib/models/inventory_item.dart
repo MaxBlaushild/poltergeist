@@ -1,3 +1,5 @@
+import 'resource_type.dart';
+
 class InventoryItem {
   final int id;
   final String name;
@@ -5,6 +7,8 @@ class InventoryItem {
   final String flavorText;
   final String effectText;
   final String rarityTier;
+  final String? resourceTypeId;
+  final ResourceType? resourceType;
   final int? buyPrice;
   final int? unlockTier;
   final int? unlockLocksStrength;
@@ -47,6 +51,8 @@ class InventoryItem {
     required this.flavorText,
     required this.effectText,
     this.rarityTier = '',
+    this.resourceTypeId,
+    this.resourceType,
     this.buyPrice,
     this.unlockTier,
     this.unlockLocksStrength,
@@ -84,6 +90,7 @@ class InventoryItem {
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
+    final rawResourceType = json['resourceType'];
     return InventoryItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] as String? ?? '',
@@ -91,6 +98,10 @@ class InventoryItem {
       flavorText: json['flavorText'] as String? ?? '',
       effectText: json['effectText'] as String? ?? '',
       rarityTier: json['rarityTier'] as String? ?? '',
+      resourceTypeId: json['resourceTypeId']?.toString(),
+      resourceType: rawResourceType is Map<String, dynamic>
+          ? ResourceType.fromJson(rawResourceType)
+          : null,
       buyPrice: (json['buyPrice'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
       unlockLocksStrength: (json['unlockLocksStrength'] as num?)?.toInt(),

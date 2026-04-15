@@ -57,7 +57,6 @@ func main() {
 	questlogClient := questlog.NewClient(dbClient)
 	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
 	locationSeeder := locationseeder.NewClient(googlemapsClient, dbClient, deepPriest, awsClient)
-	dungeonmaster := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient)
 	redisAddr := util.NormalizeRedisAddr(cfg.Public.RedisUrl)
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
@@ -65,6 +64,7 @@ func main() {
 		DB:       0,
 	})
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	dungeonmaster := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient, asyncClient)
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
 	livenessClient := liveness.NewClient(redisClient)
 	pushClient := push.NewClient()

@@ -243,6 +243,12 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory-items/queue-missing-images", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueMissingInventoryItemImages))
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
+	r.GET("/sonar/resource-types", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourceTypes))
+	r.GET("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourceType))
+	r.POST("/sonar/resource-types", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createResourceType))
+	r.PUT("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResourceType))
+	r.DELETE("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResourceType))
+	r.POST("/sonar/resource-types/:id/generate-map-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeMapIcon))
 	r.POST("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItemSuggestionJob))
 	r.GET("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJobs))
 	r.GET("/sonar/inventory-item-suggestion-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJob))
@@ -327,6 +333,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/parties/:id/members", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAddPartyMember))
 	r.DELETE("/sonar/admin/parties/:id/members/:userId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminRemovePartyMember))
 	r.DELETE("/sonar/admin/parties/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminDeleteParty))
+	r.POST("/sonar/admin/pointsOfInterest/backfill-marker-categories", middleware.WithAuthentication(s.authClient, s.livenessClient, s.backfillPointOfInterestMarkerCategories))
 	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
 	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
 	r.POST("/sonar/pointsOfInterest/group/bulk-delete", s.bulkDeletePointOfInterestGroups)
@@ -465,6 +472,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
+	r.GET("/sonar/zones/:id/pins", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZonePins))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -552,6 +560,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
+	r.POST("/sonar/quests/close/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.closeQuest))
+	r.POST("/sonar/quests/:id/debrief", middleware.WithAuthentication(s.authClient, s.livenessClient, s.debriefQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
 	r.GET("/sonar/quests/:id/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestFetchTurnIn))
 	r.POST("/sonar/quests/:id/fetch-turn-in", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestFetchTurnIn))
@@ -619,6 +629,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
+	r.GET("/sonar/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResources))
+	r.GET("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResource))
+	r.GET("/sonar/zones/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourcesForZone))
+	r.POST("/sonar/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createResource))
+	r.PUT("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResource))
+	r.DELETE("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResource))
+	r.POST("/sonar/resources/:id/gather", middleware.WithAuthentication(s.authClient, s.livenessClient, s.gatherResource))
 	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
 	r.GET("/sonar/admin/base-structures", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminBaseStructures))
@@ -1901,18 +1918,44 @@ type characterQuestAvailability struct {
 	HasAvailableMainStoryQuest bool
 }
 
-func mainStoryQuestUnlockedFromAcceptances(
+func mainStoryQuestSatisfiedByAcceptance(
+	quest *models.Quest,
+	acceptance models.QuestAcceptanceV2,
+) bool {
+	if acceptance.EffectiveClosedAt() == nil {
+		return false
+	}
+	if quest != nil && quest.DebriefPolicyNormalized() == models.QuestDebriefPolicyRequiredForFollowup {
+		return acceptance.EffectiveDebriefedAt() != nil
+	}
+	return true
+}
+
+func (s *server) mainStoryQuestUnlockedFromAcceptances(
+	ctx context.Context,
 	quest *models.Quest,
 	acceptedByQuest map[uuid.UUID]models.QuestAcceptanceV2,
-) bool {
+	questByID map[uuid.UUID]*models.Quest,
+) (bool, error) {
 	if quest == nil || !models.IsMainStoryQuestCategory(quest.Category) {
-		return true
+		return true, nil
 	}
 	if quest.MainStoryPreviousQuestID == nil || *quest.MainStoryPreviousQuestID == uuid.Nil {
-		return true
+		return true, nil
 	}
 	acceptance, exists := acceptedByQuest[*quest.MainStoryPreviousQuestID]
-	return exists && acceptance.TurnedInAt != nil
+	if !exists {
+		return false, nil
+	}
+	previousQuest := questByID[*quest.MainStoryPreviousQuestID]
+	if previousQuest == nil {
+		loadedQuest, err := s.dbClient.Quest().FindByID(ctx, *quest.MainStoryPreviousQuestID)
+		if err != nil {
+			return false, err
+		}
+		previousQuest = loadedQuest
+	}
+	return mainStoryQuestSatisfiedByAcceptance(previousQuest, acceptance), nil
 }
 
 func (s *server) mainStoryQuestUnlockedForUser(
@@ -1931,7 +1974,7 @@ func (s *server) mainStoryQuestUnlockedForUser(
 	for _, acceptance := range acceptances {
 		acceptedByQuest[acceptance.QuestID] = acceptance
 	}
-	return mainStoryQuestUnlockedFromAcceptances(quest, acceptedByQuest), nil
+	return s.mainStoryQuestUnlockedFromAcceptances(ctx, quest, acceptedByQuest, nil)
 }
 
 func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]characterQuestAvailability, error) {
@@ -2011,7 +2054,16 @@ func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.U
 		if !hasRequiredStoryFlags(quest.RequiredStoryFlags, activeStoryFlags) {
 			continue
 		}
-		if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedByQuest) {
+		unlocked, err := s.mainStoryQuestUnlockedFromAcceptances(
+			ctx,
+			quest,
+			acceptedByQuest,
+			questByID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !unlocked {
 			continue
 		}
 		availableQuestIDs[questID] = characterQuestAvailability{
@@ -2046,43 +2098,14 @@ func (s *server) currentQuestNode(
 	if quest == nil || acceptance == nil {
 		return nil, nil
 	}
-	nodes, err := s.dbClient.QuestNode().FindByQuestID(ctx, quest.ID)
-	if err != nil {
-		return nil, err
-	}
-	progressEntries, err := s.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
-	if err != nil {
-		return nil, err
-	}
-	completed := map[uuid.UUID]bool{}
-	for _, p := range progressEntries {
-		if p.CompletedAt != nil {
-			completed[p.QuestNodeID] = true
+	if len(quest.Nodes) == 0 {
+		nodes, err := s.dbClient.QuestNode().FindByQuestID(ctx, quest.ID)
+		if err != nil {
+			return nil, err
 		}
+		quest.Nodes = nodes
 	}
-	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, acceptance.UserID)
-	if err != nil {
-		return nil, err
-	}
-	currentNode, autoCompleted := models.ResolveCurrentQuestNode(
-		nodes,
-		completed,
-		activeStoryFlags,
-	)
-	if len(autoCompleted) > 0 {
-		completedAt := time.Now()
-		for _, nodeID := range autoCompleted {
-			if _, err := s.markQuestNodeCompleteForAcceptance(
-				ctx,
-				acceptance,
-				nodeID,
-				completedAt,
-			); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return currentNode, nil
+	return s.syncQuestAcceptanceCurrentNode(ctx, quest, acceptance)
 }
 
 func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, float64, error) {
@@ -2452,6 +2475,14 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if _, err := s.currentQuestNode(ctx, quest, questAcceptance); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.finalizeQuestClosureIfReady(ctx, quest, questAcceptance, time.Now()); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Automatically track the quest
 	if err := s.dbClient.TrackedQuest().Create(ctx, questID, user.ID); err != nil {
@@ -2514,7 +2545,7 @@ func (s *server) shareQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": "you can only share quests you have accepted"})
 		return
 	}
-	if sharerAcceptance.TurnedInAt != nil {
+	if sharerAcceptance.IsClosed() {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot share a quest that has already been turned in"})
 		return
 	}
@@ -2560,7 +2591,7 @@ func (s *server) shareQuest(ctx *gin.Context) {
 		return
 	}
 	if targetAcceptance != nil {
-		if targetAcceptance.TurnedInAt != nil {
+		if targetAcceptance.IsClosed() {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has already completed this quest"})
 			return
 		}
@@ -2584,11 +2615,172 @@ func (s *server) shareQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if _, err := s.currentQuestNode(ctx, quest, questAcceptance); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.finalizeQuestClosureIfReady(ctx, quest, questAcceptance, time.Now()); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if err := s.dbClient.TrackedQuest().Create(ctx, questID, requestBody.TargetUserID); err != nil {
 		log.Printf("Error tracking shared quest after acceptance: %v", err)
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest shared successfully"})
+}
+
+func (s *server) loadQuestClosureContext(
+	ctx *gin.Context,
+	userID uuid.UUID,
+	questID uuid.UUID,
+) (*models.Quest, *models.QuestAcceptanceV2, error) {
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if quest == nil || !questVisibleToUser(userID, quest) {
+		return nil, nil, fmt.Errorf("quest not found")
+	}
+	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(
+		ctx,
+		userID,
+		questID,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if acceptance == nil {
+		return nil, nil, fmt.Errorf("quest not accepted")
+	}
+	return quest, acceptance, nil
+}
+
+func questClosureResponse(result *questClosureResult) gin.H {
+	if result == nil {
+		return gin.H{}
+	}
+	resp := gin.H{
+		"goldAwarded":          result.GoldAwarded,
+		"rewardExperience":     result.RewardExperience,
+		"baseResourcesAwarded": serializeBaseResourceDeltas(result.BaseResourcesAwarded),
+		"debriefPending":       result.DebriefPending,
+	}
+	if result.ClosedAt != nil {
+		resp["closedAt"] = result.ClosedAt
+	}
+	if result.DebriefedAt != nil {
+		resp["debriefedAt"] = result.DebriefedAt
+	}
+	if result.ClosureMethod != "" {
+		resp["closureMethod"] = result.ClosureMethod
+	}
+	if len(result.ItemsAwarded) > 0 {
+		resp["itemsAwarded"] = result.ItemsAwarded
+	}
+	if len(result.SpellsAwarded) > 0 {
+		resp["spellsAwarded"] = result.SpellsAwarded
+	}
+	return resp
+}
+
+func (s *server) closeQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil || user == nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	questID, err := uuid.Parse(strings.TrimSpace(ctx.Param("questId")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
+		return
+	}
+
+	quest, acceptance, err := s.loadQuestClosureContext(ctx, user.ID, questID)
+	if err != nil {
+		switch err.Error() {
+		case "quest not found":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case "quest not accepted":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	if acceptance.IsClosed() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already closed"})
+		return
+	}
+
+	objectivesComplete, err := s.questlogClient.AreQuestObjectivesComplete(ctx, user.ID, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !objectivesComplete {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest objectives not complete"})
+		return
+	}
+
+	result, err := s.closeQuestAcceptance(
+		ctx,
+		user.ID,
+		quest,
+		acceptance,
+		questClosureMethodForPolicy(quest),
+		time.Now(),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questClosureResponse(result))
+}
+
+func (s *server) debriefQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil || user == nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	questID, err := uuid.Parse(strings.TrimSpace(ctx.Param("id")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
+		return
+	}
+
+	quest, acceptance, err := s.loadQuestClosureContext(ctx, user.ID, questID)
+	if err != nil {
+		switch err.Error() {
+		case "quest not found":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case "quest not accepted":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	if !acceptance.IsDebriefPending() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest does not have a pending debrief"})
+		return
+	}
+
+	result, err := s.debriefQuestAcceptance(
+		ctx,
+		user.ID,
+		quest,
+		acceptance,
+		time.Now(),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questClosureResponse(result))
 }
 
 func (s *server) turnInQuest(ctx *gin.Context) {
@@ -2608,32 +2800,38 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
 		return
 	}
-	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+
+	quest, acceptance, err := s.loadQuestClosureContext(ctx, user.ID, questID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if quest == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
-		return
-	}
-	if !questVisibleToUser(user.ID, quest) {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		switch err.Error() {
+		case "quest not found":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case "quest not accepted":
+			requestlogger.Printf(ctx, "turnInQuest: no acceptance found questId=%s", questID.String())
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 	requestlogger.Printf(ctx, "turnInQuest: questId=%s", questID.String())
 
-	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if acceptance.IsDebriefPending() {
+		result, err := s.debriefQuestAcceptance(
+			ctx,
+			user.ID,
+			quest,
+			acceptance,
+			time.Now(),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, questClosureResponse(result))
 		return
 	}
-	if acceptance == nil {
-		requestlogger.Printf(ctx, "turnInQuest: no acceptance found questId=%s", questID.String())
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not accepted"})
-		return
-	}
-	if acceptance.TurnedInAt != nil {
+	if acceptance.IsClosed() {
 		requestlogger.Printf(ctx, "turnInQuest: already turned in questId=%s", questID.String())
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already turned in"})
 		return
@@ -2650,62 +2848,21 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 
-	// Award gold and items (teamID nil for single-player / user inventory)
-	requestlogger.Printf(ctx, "turnInQuest: awarding rewards questId=%s", questID.String())
-	goldAwarded, itemsAwarded, spellsAwarded, err := s.gameEngineClient.AwardQuestTurnInRewards(ctx, user.ID, questID, nil)
+	requestlogger.Printf(ctx, "turnInQuest: closing quest questId=%s", questID.String())
+	result, err := s.closeQuestAcceptance(
+		ctx,
+		user.ID,
+		quest,
+		acceptance,
+		questClosureMethodForPolicy(quest),
+		time.Now(),
+	)
 	if err != nil {
 		requestlogger.Printf(ctx, "turnInQuest: reward error questId=%s err=%v", questID.String(), err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	requestlogger.Printf(
-		ctx,
-		"turnInQuest: rewards awarded questId=%s gold=%d items=%d spells=%d",
-		questID.String(),
-		goldAwarded,
-		len(itemsAwarded),
-		len(spellsAwarded),
-	)
-	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
-		ctx,
-		user.ID,
-		resolveBaseMaterialRewards(
-			quest.RewardMode,
-			quest.MaterialRewards,
-			fmt.Sprintf("quest:%s:user:%s:materials", quest.ID, user.ID),
-		),
-		"quest_turn_in",
-		&questID,
-	)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := s.dbClient.QuestAcceptanceV2().MarkTurnedIn(ctx, acceptance.ID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.applyQuestStoryFlagsOnTurnIn(ctx, user.ID, quest); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := s.applyQuestGiverRelationshipEffectsOnTurnIn(ctx, user.ID, quest); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	resp := gin.H{
-		"goldAwarded":          goldAwarded,
-		"baseResourcesAwarded": serializeBaseResourceDeltas(baseResourcesAwarded),
-	}
-	if len(itemsAwarded) > 0 {
-		resp["itemsAwarded"] = itemsAwarded
-	}
-	if len(spellsAwarded) > 0 {
-		resp["spellsAwarded"] = spellsAwarded
-	}
-	ctx.JSON(http.StatusOK, resp)
+	ctx.JSON(http.StatusOK, questClosureResponse(result))
 }
 
 func (s *server) getRelevantTags(ctx *gin.Context) {
@@ -3058,8 +3215,10 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Proficiency         *string    `json:"proficiency"`
-		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
+		Proficiency           *string                    `json:"proficiency"`
+		ChallengeTemplateID   *uuid.UUID                 `json:"challengeTemplateId"`
+		FailureUnlockedNodeID *uuid.UUID                 `json:"failureUnlockedNodeId"`
+		FailureNode           *questArchetypeNodePayload `json:"failureNode"`
 		questArchetypeNodePayload
 	}
 
@@ -3115,16 +3274,50 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		}
 	}
 
+	var failureNodeID *uuid.UUID
+	switch {
+	case requestBody.FailureUnlockedNodeID != nil && *requestBody.FailureUnlockedNodeID != uuid.Nil:
+		failureNode, err := s.dbClient.QuestArchetypeNode().FindByID(ctx, *requestBody.FailureUnlockedNodeID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if failureNode == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "failureUnlockedNodeId could not be loaded"})
+			return
+		}
+		failureNodeID = requestBody.FailureUnlockedNodeID
+	case requestBody.FailureNode != nil && requestBody.FailureNode.hasExplicitConfig():
+		id := uuid.New()
+		failureNodeID = &id
+		questArchetypeNode := &models.QuestArchetypeNode{
+			ID:         id,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+			NodeType:   models.QuestArchetypeNodeTypeChallenge,
+			Difficulty: 0,
+		}
+		if err := s.applyQuestArchetypeNodePayload(ctx, questArchetypeNode, *requestBody.FailureNode, true); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	questArchetypeChallenge := &models.QuestArchetypeChallenge{
-		ID:                  uuid.New(),
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
-		ChallengeTemplateID: nil,
-		Reward:              0,
-		InventoryItemID:     nil,
-		Proficiency:         requestBody.Proficiency,
-		Difficulty:          0,
-		UnlockedNodeID:      newNodeID,
+		ID:                    uuid.New(),
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
+		ChallengeTemplateID:   nil,
+		Reward:                0,
+		InventoryItemID:       nil,
+		Proficiency:           requestBody.Proficiency,
+		Difficulty:            0,
+		UnlockedNodeID:        newNodeID,
+		FailureUnlockedNodeID: failureNodeID,
 	}
 	if challengeTemplate != nil {
 		questArchetypeChallenge.ChallengeTemplateID = &challengeTemplate.ID
@@ -3163,9 +3356,10 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Proficiency         *string    `json:"proficiency"`
-		Difficulty          *int       `json:"difficulty"`
-		ChallengeTemplateID *uuid.UUID `json:"challengeTemplateId"`
+		Proficiency           *string    `json:"proficiency"`
+		Difficulty            *int       `json:"difficulty"`
+		ChallengeTemplateID   *uuid.UUID `json:"challengeTemplateId"`
+		FailureUnlockedNodeID *uuid.UUID `json:"failureUnlockedNodeId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3224,6 +3418,24 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		}
 		if existing.ChallengeTemplateID == nil || *existing.ChallengeTemplateID == uuid.Nil {
 			existing.Difficulty = *requestBody.Difficulty
+		}
+	}
+	if requestBody.FailureUnlockedNodeID != nil {
+		if *requestBody.FailureUnlockedNodeID == uuid.Nil {
+			existing.FailureUnlockedNodeID = nil
+			existing.FailureUnlockedNode = nil
+		} else {
+			failureNode, err := s.dbClient.QuestArchetypeNode().FindByID(ctx, *requestBody.FailureUnlockedNodeID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if failureNode == nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "failureUnlockedNodeId could not be loaded"})
+				return
+			}
+			existing.FailureUnlockedNodeID = requestBody.FailureUnlockedNodeID
+			existing.FailureUnlockedNode = failureNode
 		}
 	}
 	existing.UpdatedAt = time.Now()
@@ -3372,29 +3584,34 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	var requestBody struct {
-		Name                          string                              `json:"name"`
-		Description                   string                              `json:"description"`
-		Category                      string                              `json:"category"`
-		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue            []models.DialogueMessage            `json:"acceptanceDialogue"`
-		ImageURL                      string                              `json:"imageUrl"`
-		DefaultGold                   *int                                `json:"defaultGold"`
-		DifficultyMode                string                              `json:"difficultyMode"`
-		Difficulty                    *int                                `json:"difficulty"`
-		MonsterEncounterTargetLevel   *int                                `json:"monsterEncounterTargetLevel"`
-		RewardMode                    string                              `json:"rewardMode"`
-		RandomRewardSize              string                              `json:"randomRewardSize"`
-		RewardExperience              *int                                `json:"rewardExperience"`
-		RecurrenceFrequency           *string                             `json:"recurrenceFrequency"`
-		MaterialRewards               []baseMaterialRewardPayload         `json:"materialRewards"`
-		RequiredStoryFlags            *[]string                           `json:"requiredStoryFlags"`
-		SetStoryFlags                 *[]string                           `json:"setStoryFlags"`
-		ClearStoryFlags               *[]string                           `json:"clearStoryFlags"`
-		QuestGiverRelationshipEffects *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
-		CharacterTags                 []string                            `json:"characterTags"`
-		InternalTags                  []string                            `json:"internalTags"`
-		ItemRewards                   *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards                  *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                           string                              `json:"name"`
+		Description                    string                              `json:"description"`
+		Category                       string                              `json:"category"`
+		QuestGiverCharacterID          *uuid.UUID                          `json:"questGiverCharacterId"`
+		ClosurePolicy                  string                              `json:"closurePolicy"`
+		DebriefPolicy                  string                              `json:"debriefPolicy"`
+		ReturnBonusGold                *int                                `json:"returnBonusGold"`
+		ReturnBonusExperience          *int                                `json:"returnBonusExperience"`
+		ReturnBonusRelationshipEffects *models.CharacterRelationshipState  `json:"returnBonusRelationshipEffects"`
+		AcceptanceDialogue             []models.DialogueMessage            `json:"acceptanceDialogue"`
+		ImageURL                       string                              `json:"imageUrl"`
+		DefaultGold                    *int                                `json:"defaultGold"`
+		DifficultyMode                 string                              `json:"difficultyMode"`
+		Difficulty                     *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel    *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                     string                              `json:"rewardMode"`
+		RandomRewardSize               string                              `json:"randomRewardSize"`
+		RewardExperience               *int                                `json:"rewardExperience"`
+		RecurrenceFrequency            *string                             `json:"recurrenceFrequency"`
+		MaterialRewards                []baseMaterialRewardPayload         `json:"materialRewards"`
+		RequiredStoryFlags             *[]string                           `json:"requiredStoryFlags"`
+		SetStoryFlags                  *[]string                           `json:"setStoryFlags"`
+		ClearStoryFlags                *[]string                           `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects  *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
+		CharacterTags                  []string                            `json:"characterTags"`
+		InternalTags                   []string                            `json:"internalTags"`
+		ItemRewards                    *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                   *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3408,6 +3625,14 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusGold != nil && *requestBody.ReturnBonusGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusGold must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusExperience != nil && *requestBody.ReturnBonusExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusExperience must be zero or greater"})
 		return
 	}
 	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
@@ -3474,6 +3699,14 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	questArchetype.Description = description
 	questArchetype.Category = category
 	questArchetype.QuestGiverCharacterID = questGiverCharacterID
+	questArchetype.ClosurePolicy = models.NormalizeQuestClosurePolicy(
+		requestBody.ClosurePolicy,
+		category,
+	)
+	questArchetype.DebriefPolicy = models.NormalizeQuestDebriefPolicy(
+		requestBody.DebriefPolicy,
+		category,
+	)
 	questArchetype.AcceptanceDialogue = acceptanceDialogue
 	questArchetype.ImageURL = requestBody.ImageURL
 	questArchetype.DifficultyMode = difficultyMode
@@ -3490,6 +3723,15 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	questArchetype.RandomRewardSize = models.NormalizeRandomRewardSize(requestBody.RandomRewardSize)
 	if requestBody.RewardExperience != nil {
 		questArchetype.RewardExperience = *requestBody.RewardExperience
+	}
+	if requestBody.ReturnBonusGold != nil {
+		questArchetype.ReturnBonusGold = *requestBody.ReturnBonusGold
+	}
+	if requestBody.ReturnBonusExperience != nil {
+		questArchetype.ReturnBonusExperience = *requestBody.ReturnBonusExperience
+	}
+	if requestBody.ReturnBonusRelationshipEffects != nil {
+		questArchetype.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.ReturnBonusRelationshipEffects)
 	}
 	questArchetype.RecurrenceFrequency = recurrenceFrequency
 	questArchetype.MaterialRewards = materialRewards
@@ -3947,30 +4189,35 @@ func (s *server) getQuest(ctx *gin.Context) {
 
 func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
-		Name                          string                             `json:"name"`
-		Description                   string                             `json:"description"`
-		Category                      string                             `json:"category"`
-		AcceptanceDialogue            []models.DialogueMessage           `json:"acceptanceDialogue"`
-		ImageURL                      string                             `json:"imageUrl"`
-		ZoneID                        *uuid.UUID                         `json:"zoneId"`
-		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
-		QuestGiverCharacterID         *uuid.UUID                         `json:"questGiverCharacterId"`
-		MainStoryPreviousQuestID      *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
-		MainStoryNextQuestID          *uuid.UUID                         `json:"mainStoryNextQuestId"`
-		RecurrenceFrequency           *string                            `json:"recurrenceFrequency"`
-		DifficultyMode                string                             `json:"difficultyMode"`
-		Difficulty                    *int                               `json:"difficulty"`
-		MonsterEncounterTargetLevel   *int                               `json:"monsterEncounterTargetLevel"`
-		RewardMode                    string                             `json:"rewardMode"`
-		RandomRewardSize              string                             `json:"randomRewardSize"`
-		RewardExperience              *int                               `json:"rewardExperience"`
-		Gold                          *int                               `json:"gold"`
-		MaterialRewards               []baseMaterialRewardPayload        `json:"materialRewards"`
-		RequiredStoryFlags            []string                           `json:"requiredStoryFlags"`
-		SetStoryFlags                 []string                           `json:"setStoryFlags"`
-		ClearStoryFlags               []string                           `json:"clearStoryFlags"`
-		QuestGiverRelationshipEffects *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
-		ItemRewards                   *[]struct {
+		Name                           string                             `json:"name"`
+		Description                    string                             `json:"description"`
+		Category                       string                             `json:"category"`
+		ClosurePolicy                  string                             `json:"closurePolicy"`
+		DebriefPolicy                  string                             `json:"debriefPolicy"`
+		ReturnBonusGold                *int                               `json:"returnBonusGold"`
+		ReturnBonusExperience          *int                               `json:"returnBonusExperience"`
+		ReturnBonusRelationshipEffects *models.CharacterRelationshipState `json:"returnBonusRelationshipEffects"`
+		AcceptanceDialogue             []models.DialogueMessage           `json:"acceptanceDialogue"`
+		ImageURL                       string                             `json:"imageUrl"`
+		ZoneID                         *uuid.UUID                         `json:"zoneId"`
+		QuestArchetypeID               *uuid.UUID                         `json:"questArchetypeId"`
+		QuestGiverCharacterID          *uuid.UUID                         `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID       *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID           *uuid.UUID                         `json:"mainStoryNextQuestId"`
+		RecurrenceFrequency            *string                            `json:"recurrenceFrequency"`
+		DifficultyMode                 string                             `json:"difficultyMode"`
+		Difficulty                     *int                               `json:"difficulty"`
+		MonsterEncounterTargetLevel    *int                               `json:"monsterEncounterTargetLevel"`
+		RewardMode                     string                             `json:"rewardMode"`
+		RandomRewardSize               string                             `json:"randomRewardSize"`
+		RewardExperience               *int                               `json:"rewardExperience"`
+		Gold                           *int                               `json:"gold"`
+		MaterialRewards                []baseMaterialRewardPayload        `json:"materialRewards"`
+		RequiredStoryFlags             []string                           `json:"requiredStoryFlags"`
+		SetStoryFlags                  []string                           `json:"setStoryFlags"`
+		ClearStoryFlags                []string                           `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects  *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
+		ItemRewards                    *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -3994,6 +4241,14 @@ func (s *server) createQuest(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusGold != nil && *requestBody.ReturnBonusGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusGold must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusExperience != nil && *requestBody.ReturnBonusExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusExperience must be zero or greater"})
 		return
 	}
 	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
@@ -4038,6 +4293,8 @@ func (s *server) createQuest(ctx *gin.Context) {
 		QuestGiverCharacterID:       requestBody.QuestGiverCharacterID,
 		MainStoryPreviousQuestID:    requestBody.MainStoryPreviousQuestID,
 		MainStoryNextQuestID:        requestBody.MainStoryNextQuestID,
+		ClosurePolicy:               models.NormalizeQuestClosurePolicy(requestBody.ClosurePolicy, category),
+		DebriefPolicy:               models.NormalizeQuestDebriefPolicy(requestBody.DebriefPolicy, category),
 		DifficultyMode:              difficultyMode,
 		Difficulty:                  difficulty,
 		MonsterEncounterTargetLevel: monsterEncounterTargetLevel,
@@ -4070,6 +4327,15 @@ func (s *server) createQuest(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil {
 		quest.RewardExperience = *requestBody.RewardExperience
+	}
+	if requestBody.ReturnBonusGold != nil {
+		quest.ReturnBonusGold = *requestBody.ReturnBonusGold
+	}
+	if requestBody.ReturnBonusExperience != nil {
+		quest.ReturnBonusExperience = *requestBody.ReturnBonusExperience
+	}
+	if requestBody.ReturnBonusRelationshipEffects != nil {
+		quest.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.ReturnBonusRelationshipEffects)
 	}
 	rewardMode := models.NormalizeRewardMode(requestBody.RewardMode)
 	if strings.TrimSpace(requestBody.RewardMode) == "" {
@@ -4167,30 +4433,35 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                          string                             `json:"name"`
-		Description                   string                             `json:"description"`
-		Category                      string                             `json:"category"`
-		AcceptanceDialogue            *[]models.DialogueMessage          `json:"acceptanceDialogue"`
-		ImageURL                      string                             `json:"imageUrl"`
-		ZoneID                        *uuid.UUID                         `json:"zoneId"`
-		QuestArchetypeID              *uuid.UUID                         `json:"questArchetypeId"`
-		QuestGiverCharacterID         *uuid.UUID                         `json:"questGiverCharacterId"`
-		MainStoryPreviousQuestID      *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
-		MainStoryNextQuestID          *uuid.UUID                         `json:"mainStoryNextQuestId"`
-		RecurrenceFrequency           *string                            `json:"recurrenceFrequency"`
-		DifficultyMode                string                             `json:"difficultyMode"`
-		Difficulty                    *int                               `json:"difficulty"`
-		MonsterEncounterTargetLevel   *int                               `json:"monsterEncounterTargetLevel"`
-		RewardMode                    string                             `json:"rewardMode"`
-		RandomRewardSize              string                             `json:"randomRewardSize"`
-		RewardExperience              *int                               `json:"rewardExperience"`
-		Gold                          *int                               `json:"gold"`
-		MaterialRewards               []baseMaterialRewardPayload        `json:"materialRewards"`
-		RequiredStoryFlags            *[]string                          `json:"requiredStoryFlags"`
-		SetStoryFlags                 *[]string                          `json:"setStoryFlags"`
-		ClearStoryFlags               *[]string                          `json:"clearStoryFlags"`
-		QuestGiverRelationshipEffects *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
-		ItemRewards                   *[]struct {
+		Name                           string                             `json:"name"`
+		Description                    string                             `json:"description"`
+		Category                       string                             `json:"category"`
+		ClosurePolicy                  string                             `json:"closurePolicy"`
+		DebriefPolicy                  string                             `json:"debriefPolicy"`
+		ReturnBonusGold                *int                               `json:"returnBonusGold"`
+		ReturnBonusExperience          *int                               `json:"returnBonusExperience"`
+		ReturnBonusRelationshipEffects *models.CharacterRelationshipState `json:"returnBonusRelationshipEffects"`
+		AcceptanceDialogue             *[]models.DialogueMessage          `json:"acceptanceDialogue"`
+		ImageURL                       string                             `json:"imageUrl"`
+		ZoneID                         *uuid.UUID                         `json:"zoneId"`
+		QuestArchetypeID               *uuid.UUID                         `json:"questArchetypeId"`
+		QuestGiverCharacterID          *uuid.UUID                         `json:"questGiverCharacterId"`
+		MainStoryPreviousQuestID       *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
+		MainStoryNextQuestID           *uuid.UUID                         `json:"mainStoryNextQuestId"`
+		RecurrenceFrequency            *string                            `json:"recurrenceFrequency"`
+		DifficultyMode                 string                             `json:"difficultyMode"`
+		Difficulty                     *int                               `json:"difficulty"`
+		MonsterEncounterTargetLevel    *int                               `json:"monsterEncounterTargetLevel"`
+		RewardMode                     string                             `json:"rewardMode"`
+		RandomRewardSize               string                             `json:"randomRewardSize"`
+		RewardExperience               *int                               `json:"rewardExperience"`
+		Gold                           *int                               `json:"gold"`
+		MaterialRewards                []baseMaterialRewardPayload        `json:"materialRewards"`
+		RequiredStoryFlags             *[]string                          `json:"requiredStoryFlags"`
+		SetStoryFlags                  *[]string                          `json:"setStoryFlags"`
+		ClearStoryFlags                *[]string                          `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects  *models.CharacterRelationshipState `json:"questGiverRelationshipEffects"`
+		ItemRewards                    *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"itemRewards"`
@@ -4209,6 +4480,14 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusGold != nil && *requestBody.ReturnBonusGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusGold must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusExperience != nil && *requestBody.ReturnBonusExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusExperience must be zero or greater"})
 		return
 	}
 	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
@@ -4260,6 +4539,14 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
 	quest.MainStoryPreviousQuestID = requestBody.MainStoryPreviousQuestID
 	quest.MainStoryNextQuestID = requestBody.MainStoryNextQuestID
+	quest.ClosurePolicy = models.NormalizeQuestClosurePolicy(
+		string(quest.ClosurePolicy),
+		quest.Category,
+	)
+	quest.DebriefPolicy = models.NormalizeQuestDebriefPolicy(
+		string(quest.DebriefPolicy),
+		quest.Category,
+	)
 	if !models.IsMainStoryQuestCategory(quest.Category) {
 		quest.MainStoryPreviousQuestID = nil
 		quest.MainStoryNextQuestID = nil
@@ -4283,6 +4570,27 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil {
 		quest.RewardExperience = *requestBody.RewardExperience
+	}
+	if strings.TrimSpace(requestBody.ClosurePolicy) != "" {
+		quest.ClosurePolicy = models.NormalizeQuestClosurePolicy(
+			requestBody.ClosurePolicy,
+			quest.Category,
+		)
+	}
+	if strings.TrimSpace(requestBody.DebriefPolicy) != "" {
+		quest.DebriefPolicy = models.NormalizeQuestDebriefPolicy(
+			requestBody.DebriefPolicy,
+			quest.Category,
+		)
+	}
+	if requestBody.ReturnBonusGold != nil {
+		quest.ReturnBonusGold = *requestBody.ReturnBonusGold
+	}
+	if requestBody.ReturnBonusExperience != nil {
+		quest.ReturnBonusExperience = *requestBody.ReturnBonusExperience
+	}
+	if requestBody.ReturnBonusRelationshipEffects != nil {
+		quest.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.ReturnBonusRelationshipEffects)
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
@@ -4481,6 +4789,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		Polygon            string       `json:"polygon"`
 		PolygonPoints      [][2]float64 `json:"polygonPoints"`
 		SubmissionType     string       `json:"submissionType"`
+		FailurePolicy      string       `json:"failurePolicy"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4557,6 +4866,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 			return
 		}
 	}
+	node.FailurePolicy = models.NormalizeQuestNodeFailurePolicy(requestBody.FailurePolicy)
 	if err := s.dbClient.QuestNode().Create(ctx, node); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -4609,30 +4919,35 @@ func (s *server) getQuestArchetype(ctx *gin.Context) {
 
 func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name                          string                              `json:"name"`
-		Description                   string                              `json:"description"`
-		Category                      string                              `json:"category"`
-		QuestGiverCharacterID         *uuid.UUID                          `json:"questGiverCharacterId"`
-		AcceptanceDialogue            []models.DialogueMessage            `json:"acceptanceDialogue"`
-		ImageURL                      string                              `json:"imageUrl"`
-		RootID                        uuid.UUID                           `json:"rootID"`
-		DefaultGold                   *int                                `json:"defaultGold"`
-		DifficultyMode                string                              `json:"difficultyMode"`
-		Difficulty                    *int                                `json:"difficulty"`
-		MonsterEncounterTargetLevel   *int                                `json:"monsterEncounterTargetLevel"`
-		RewardMode                    string                              `json:"rewardMode"`
-		RandomRewardSize              string                              `json:"randomRewardSize"`
-		RewardExperience              *int                                `json:"rewardExperience"`
-		RecurrenceFrequency           *string                             `json:"recurrenceFrequency"`
-		MaterialRewards               []baseMaterialRewardPayload         `json:"materialRewards"`
-		RequiredStoryFlags            []string                            `json:"requiredStoryFlags"`
-		SetStoryFlags                 []string                            `json:"setStoryFlags"`
-		ClearStoryFlags               []string                            `json:"clearStoryFlags"`
-		QuestGiverRelationshipEffects *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
-		CharacterTags                 []string                            `json:"characterTags"`
-		InternalTags                  []string                            `json:"internalTags"`
-		ItemRewards                   *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
-		SpellRewards                  *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
+		Name                           string                              `json:"name"`
+		Description                    string                              `json:"description"`
+		Category                       string                              `json:"category"`
+		QuestGiverCharacterID          *uuid.UUID                          `json:"questGiverCharacterId"`
+		ClosurePolicy                  string                              `json:"closurePolicy"`
+		DebriefPolicy                  string                              `json:"debriefPolicy"`
+		ReturnBonusGold                *int                                `json:"returnBonusGold"`
+		ReturnBonusExperience          *int                                `json:"returnBonusExperience"`
+		ReturnBonusRelationshipEffects *models.CharacterRelationshipState  `json:"returnBonusRelationshipEffects"`
+		AcceptanceDialogue             []models.DialogueMessage            `json:"acceptanceDialogue"`
+		ImageURL                       string                              `json:"imageUrl"`
+		RootID                         uuid.UUID                           `json:"rootID"`
+		DefaultGold                    *int                                `json:"defaultGold"`
+		DifficultyMode                 string                              `json:"difficultyMode"`
+		Difficulty                     *int                                `json:"difficulty"`
+		MonsterEncounterTargetLevel    *int                                `json:"monsterEncounterTargetLevel"`
+		RewardMode                     string                              `json:"rewardMode"`
+		RandomRewardSize               string                              `json:"randomRewardSize"`
+		RewardExperience               *int                                `json:"rewardExperience"`
+		RecurrenceFrequency            *string                             `json:"recurrenceFrequency"`
+		MaterialRewards                []baseMaterialRewardPayload         `json:"materialRewards"`
+		RequiredStoryFlags             []string                            `json:"requiredStoryFlags"`
+		SetStoryFlags                  []string                            `json:"setStoryFlags"`
+		ClearStoryFlags                []string                            `json:"clearStoryFlags"`
+		QuestGiverRelationshipEffects  *models.CharacterRelationshipState  `json:"questGiverRelationshipEffects"`
+		CharacterTags                  []string                            `json:"characterTags"`
+		InternalTags                   []string                            `json:"internalTags"`
+		ItemRewards                    *[]questArchetypeItemRewardPayload  `json:"itemRewards"`
+		SpellRewards                   *[]questArchetypeSpellRewardPayload `json:"spellRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -4646,6 +4961,14 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusGold != nil && *requestBody.ReturnBonusGold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusGold must be zero or greater"})
+		return
+	}
+	if requestBody.ReturnBonusExperience != nil && *requestBody.ReturnBonusExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "returnBonusExperience must be zero or greater"})
 		return
 	}
 	materialRewards, err := parseBaseMaterialRewards(requestBody.MaterialRewards, "materialRewards")
@@ -4701,6 +5024,8 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		Description:                 description,
 		Category:                    category,
 		QuestGiverCharacterID:       questGiverCharacterID,
+		ClosurePolicy:               models.NormalizeQuestClosurePolicy(requestBody.ClosurePolicy, category),
+		DebriefPolicy:               models.NormalizeQuestDebriefPolicy(requestBody.DebriefPolicy, category),
 		AcceptanceDialogue:          acceptanceDialogue,
 		ImageURL:                    requestBody.ImageURL,
 		RootID:                      requestBody.RootID,
@@ -4735,6 +5060,15 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	}
 	if requestBody.RewardExperience != nil {
 		questArchType.RewardExperience = *requestBody.RewardExperience
+	}
+	if requestBody.ReturnBonusGold != nil {
+		questArchType.ReturnBonusGold = *requestBody.ReturnBonusGold
+	}
+	if requestBody.ReturnBonusExperience != nil {
+		questArchType.ReturnBonusExperience = *requestBody.ReturnBonusExperience
+	}
+	if requestBody.ReturnBonusRelationshipEffects != nil {
+		questArchType.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(*requestBody.ReturnBonusRelationshipEffects)
 	}
 
 	err = s.dbClient.QuestArchetype().Create(ctx, questArchType)
@@ -5185,6 +5519,157 @@ func (s *server) getPointsOfInterestForZone(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, pointsOfInterest)
 }
+
+func isZoneCharacterCoordinateVisible(lat, lng float64) bool {
+	if lat > 90 || lat < -90 || lng > 180 || lng < -180 {
+		return false
+	}
+	return lat != 0 || lng != 0
+}
+
+func characterInZone(zone *models.Zone, zonePoiIDs map[uuid.UUID]struct{}, character *models.Character) bool {
+	if zone == nil || character == nil {
+		return false
+	}
+	if character.PointOfInterestID != nil {
+		if _, ok := zonePoiIDs[*character.PointOfInterestID]; ok {
+			return true
+		}
+	}
+	if character.PointOfInterest != nil {
+		lat, latErr := strconv.ParseFloat(character.PointOfInterest.Lat, 64)
+		lng, lngErr := strconv.ParseFloat(character.PointOfInterest.Lng, 64)
+		if latErr == nil && lngErr == nil && isZoneCharacterCoordinateVisible(lat, lng) {
+			return zone.IsPointInBoundary(lat, lng)
+		}
+	}
+	for _, location := range character.Locations {
+		if !isZoneCharacterCoordinateVisible(location.Latitude, location.Longitude) {
+			continue
+		}
+		if zone.IsPointInBoundary(location.Latitude, location.Longitude) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *server) getZonePins(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	characters, err := s.dbClient.Character().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	characterIDs := make([]uuid.UUID, 0, len(characters))
+	for _, character := range characters {
+		if character == nil || character.ID == uuid.Nil {
+			continue
+		}
+		characterIDs = append(characterIDs, character.ID)
+	}
+	relationshipMap, err := s.loadUserCharacterRelationshipMap(ctx, user.ID, characterIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.applyStoryWorldChangesToPointOfInterests(ctx, pointsOfInterest, activeStoryFlags); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	zonePoiIDs := make(map[uuid.UUID]struct{}, len(pointsOfInterest))
+	for i := range pointsOfInterest {
+		hasAvailable := false
+		hasAvailableMainStory := false
+		zonePoiIDs[pointsOfInterest[i].ID] = struct{}{}
+		applyPointOfInterestStoryVariant(&pointsOfInterest[i], activeStoryFlags)
+		for j := range pointsOfInterest[i].Characters {
+			pointsOfInterest[i].Characters[j].HasAvailableQuest =
+				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableQuest
+			pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest =
+				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableMainStoryQuest
+			applyCharacterStoryVariant(&pointsOfInterest[i].Characters[j], activeStoryFlags)
+			applyCharacterRelationship(&pointsOfInterest[i].Characters[j], relationshipMap)
+			if pointsOfInterest[i].Characters[j].HasAvailableQuest {
+				hasAvailable = true
+			}
+			if pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest {
+				hasAvailableMainStory = true
+			}
+		}
+		pointsOfInterest[i].HasAvailableQuest = hasAvailable
+		pointsOfInterest[i].HasAvailableMainStoryQuest = hasAvailableMainStory
+	}
+
+	visibleCharacters := make([]*models.Character, 0, len(characters))
+	for i := range characters {
+		ch := characters[i]
+		if ch == nil ||
+			!characterVisibleToUser(user.ID, ch) ||
+			!fetchQuestCharacterVisibleToUser(ch, activeFetchCharacterIDs) {
+			continue
+		}
+		if err := s.applyStoryWorldChangesToCharacter(ctx, ch, activeStoryFlags); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ch.HasAvailableQuest = availability[ch.ID].HasAvailableQuest
+		ch.HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
+		applyCharacterStoryVariant(ch, activeStoryFlags)
+		applyCharacterRelationship(ch, relationshipMap)
+		if !characterInZone(zone, zonePoiIDs, ch) {
+			continue
+		}
+		visibleCharacters = append(visibleCharacters, ch)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"pointsOfInterest": pointsOfInterest,
+		"characters":       visibleCharacters,
+	})
+}
+
 func (s *server) getZone(ctx *gin.Context) {
 	id := ctx.Param("id")
 	zoneID, err := uuid.Parse(id)
@@ -5511,9 +5996,14 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		return
 	}
 
-	settings, err := normalizeZoneSeedDraftRequest(requestBody)
+	settings, err := s.resolveZoneSeedDraftRequest(ctx, zone, requestBody)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		var resolutionErr *zoneSeedDraftResolutionError
+		if stdErrors.As(err, &resolutionErr) {
+			ctx.JSON(resolutionErr.statusCode, gin.H{"error": resolutionErr.Error()})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -5527,6 +6017,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 }
 
 type zoneSeedDraftRequest struct {
+	SeedMode             string   `json:"seedMode"`
 	PlaceCount           *int     `json:"placeCount"`
 	MonsterCount         *int     `json:"monsterCount"`
 	BossEncounterCount   *int     `json:"bossEncounterCount"`
@@ -5540,6 +6031,7 @@ type zoneSeedDraftRequest struct {
 }
 
 type normalizedZoneSeedDraftRequest struct {
+	SeedMode             string
 	PlaceCount           int
 	MonsterCount         int
 	BossEncounterCount   int
@@ -5550,75 +6042,27 @@ type normalizedZoneSeedDraftRequest struct {
 	HealingFountainCount int
 	RequiredPlaceTags    []string
 	ShopkeeperItemTags   []string
+	AutoSeedAudit        models.ZoneSeedAutoAudit
 }
 
 func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalizedZoneSeedDraftRequest, error) {
-	placeCount := 0
-	if requestBody.PlaceCount != nil {
-		placeCount = *requestBody.PlaceCount
+	mode, err := normalizeZoneSeedDraftMode(requestBody.SeedMode)
+	if err != nil {
+		return nil, err
 	}
-	monsterCount := 0
-	if requestBody.MonsterCount != nil {
-		monsterCount = *requestBody.MonsterCount
-	}
-	bossEncounterCount := 0
-	if requestBody.BossEncounterCount != nil {
-		bossEncounterCount = *requestBody.BossEncounterCount
-	}
-	raidEncounterCount := 0
-	if requestBody.RaidEncounterCount != nil {
-		raidEncounterCount = *requestBody.RaidEncounterCount
-	}
-	inputEncounterCount := 0
-	if requestBody.InputEncounterCount != nil {
-		inputEncounterCount = *requestBody.InputEncounterCount
-	}
-	optionEncounterCount := 0
-	if requestBody.OptionEncounterCount != nil {
-		optionEncounterCount = *requestBody.OptionEncounterCount
-	}
-	treasureChestCount := 0
-	if requestBody.TreasureChestCount != nil {
-		treasureChestCount = *requestBody.TreasureChestCount
-	}
-	healingFountainCount := 0
-	if requestBody.HealingFountainCount != nil {
-		healingFountainCount = *requestBody.HealingFountainCount
-	}
-	requiredPlaceTags := make([]string, 0)
-	if len(requestBody.RequiredPlaceTags) > 0 {
-		seenTags := make(map[string]struct{})
-		for _, tag := range requestBody.RequiredPlaceTags {
-			normalized := strings.ToLower(strings.TrimSpace(tag))
-			if normalized == "" {
-				continue
-			}
-			if _, ok := seenTags[normalized]; ok {
-				continue
-			}
-			seenTags[normalized] = struct{}{}
-			requiredPlaceTags = append(requiredPlaceTags, normalized)
-		}
-	}
-	shopkeeperItemTags := make([]string, 0)
-	if len(requestBody.ShopkeeperItemTags) > 0 {
-		seenTags := make(map[string]struct{})
-		for _, tag := range requestBody.ShopkeeperItemTags {
-			normalized := strings.ToLower(strings.TrimSpace(tag))
-			if normalized == "" {
-				continue
-			}
-			if _, ok := seenTags[normalized]; ok {
-				continue
-			}
-			seenTags[normalized] = struct{}{}
-			shopkeeperItemTags = append(shopkeeperItemTags, normalized)
-		}
+	if mode != models.ZoneSeedModeManual {
+		return nil, fmt.Errorf("auto seed mode is only supported for single-zone drafts")
 	}
 
-	if placeCount < 0 || monsterCount < 0 || bossEncounterCount < 0 || raidEncounterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 || healingFountainCount < 0 {
-		return nil, fmt.Errorf("placeCount, monsterCount, bossEncounterCount, raidEncounterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater")
+	overrides, err := zoneSeedDraftCountOverridesFromRequest(requestBody)
+	if err != nil {
+		return nil, err
 	}
+	counts := zoneSeedResolvedCountsFromOverrides(overrides)
+	requiredPlaceTags := normalizeZoneSeedDraftTags(requestBody.RequiredPlaceTags)
+	shopkeeperItemTags := normalizeZoneSeedDraftTags(requestBody.ShopkeeperItemTags)
+
+	placeCount := counts.PlaceCount
 	if placeCount > 0 && len(requiredPlaceTags) > placeCount {
 		return nil, fmt.Errorf("requiredPlaceTags cannot exceed placeCount")
 	}
@@ -5627,16 +6071,18 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	}
 
 	return &normalizedZoneSeedDraftRequest{
-		PlaceCount:           placeCount,
-		MonsterCount:         monsterCount,
-		BossEncounterCount:   bossEncounterCount,
-		RaidEncounterCount:   raidEncounterCount,
-		InputEncounterCount:  inputEncounterCount,
-		OptionEncounterCount: optionEncounterCount,
-		TreasureChestCount:   treasureChestCount,
-		HealingFountainCount: healingFountainCount,
+		SeedMode:             mode,
+		PlaceCount:           counts.PlaceCount,
+		MonsterCount:         counts.MonsterCount,
+		BossEncounterCount:   counts.BossEncounterCount,
+		RaidEncounterCount:   counts.RaidEncounterCount,
+		InputEncounterCount:  counts.InputEncounterCount,
+		OptionEncounterCount: counts.OptionEncounterCount,
+		TreasureChestCount:   counts.TreasureChestCount,
+		HealingFountainCount: counts.HealingFountainCount,
 		RequiredPlaceTags:    requiredPlaceTags,
 		ShopkeeperItemTags:   shopkeeperItemTags,
+		AutoSeedAudit:        models.ZoneSeedAutoAudit{},
 	}, nil
 }
 
@@ -5655,6 +6101,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		UpdatedAt:            time.Now(),
 		ZoneID:               zoneID,
 		Status:               models.ZoneSeedStatusQueued,
+		SeedMode:             settings.SeedMode,
 		PlaceCount:           settings.PlaceCount,
 		CharacterCount:       0,
 		QuestCount:           0,
@@ -5668,6 +6115,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		HealingFountainCount: settings.HealingFountainCount,
 		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
 		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
+		AutoSeedAudit:        settings.AutoSeedAudit,
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 		return nil, err
@@ -6655,6 +7103,42 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	autoClosedAny := false
+	for _, questEntry := range questLog.Quests {
+		if !questEntry.IsAccepted || questEntry.CurrentNode != nil || questEntry.ClosedAt != nil {
+			continue
+		}
+		if questEntry.ClosurePolicy != models.QuestClosurePolicyAuto {
+			continue
+		}
+		quest, acceptance, err := s.loadQuestClosureContext(ctx, user.ID, questEntry.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if acceptance.IsClosed() {
+			continue
+		}
+		if _, err := s.closeQuestAcceptance(
+			ctx,
+			user.ID,
+			quest,
+			acceptance,
+			models.QuestClosureMethodAuto,
+			time.Now(),
+		); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		autoClosedAny = true
+	}
+	if autoClosedAny {
+		questLog, err = s.questlogClient.GetQuestLog(ctx, user.ID, zoneID, tags)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	ctx.JSON(http.StatusOK, questLog)
 }
 
@@ -7003,6 +7487,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		OriginalName:          requestBody.OriginalName,
 		GoogleMapsPlaceID:     googleMapsPlaceID,
 		GoogleMapsPlaceName:   existingPoi.GoogleMapsPlaceName,
+		MarkerCategory:        existingPoi.MarkerCategory,
 		StoryVariants:         existingPoi.StoryVariants,
 		RewardMode:            rewardConfig.RewardMode,
 		RandomRewardSize:      rewardConfig.RandomRewardSize,
@@ -8641,7 +9126,13 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, item)
+	createdItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, item.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch created inventory item: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, createdItem)
 }
 
 func (s *server) generateInventoryItem(ctx *gin.Context) {
@@ -10411,6 +10902,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"flavor_text":                                    item.FlavorText,
 		"effect_text":                                    item.EffectText,
 		"rarity_tier":                                    item.RarityTier,
+		"resource_type_id":                               item.ResourceTypeID,
 		"is_capture_type":                                item.IsCaptureType,
 		"buy_price":                                      item.BuyPrice,
 		"unlock_tier":                                    item.UnlockTier,
@@ -11342,7 +11834,7 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": "quest must be accepted before completing challenges"})
 		return
 	}
-	if acceptance.TurnedInAt != nil {
+	if acceptance.IsClosed() {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already turned in"})
 		return
 	}
@@ -11643,6 +12135,17 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		if reason == "" {
 			reason = "Submission did not meet the difficulty threshold."
 		}
+		if err := s.markQuestNodeFailedForAcceptance(
+			ctx,
+			quest,
+			acceptance,
+			node,
+			reason,
+			time.Now(),
+		); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		scoreValue := score
 		difficultyValue := difficulty
 		combinedValue := combinedScore
@@ -11661,6 +12164,7 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 
 	shouldAward, err := s.markQuestNodeCompleteForAcceptance(
 		ctx,
+		quest,
 		acceptance,
 		node.ID,
 		time.Now(),
@@ -14601,7 +15105,17 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 				log.Printf("getCharacterActions: hiding story-locked quest action=%s questId=%s userId=%s", action.ID, quest.ID, user.ID)
 				continue
 			}
-			if !mainStoryQuestUnlockedFromAcceptances(quest, acceptedV2) {
+			unlocked, err := s.mainStoryQuestUnlockedFromAcceptances(
+				ctx,
+				quest,
+				acceptedV2,
+				nil,
+			)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if !unlocked {
 				log.Printf("getCharacterActions: hiding locked main story quest action=%s questId=%s userId=%s", action.ID, quest.ID, user.ID)
 				continue
 			}
@@ -18437,31 +18951,47 @@ func (s *server) performScenario(ctx *gin.Context) {
 		return
 	}
 	sharedQuestNodeIDs := map[uuid.UUID]struct{}{}
-	completedAt := time.Now()
+	resolutionAt := time.Now()
 	for _, target := range questTargets {
-		completedNode, err := s.markQuestNodeCompleteForAcceptance(
+		if success {
+			completedNode, err := s.markQuestNodeCompleteForAcceptance(
+				ctx,
+				target.Quest,
+				target.Acceptance,
+				target.Node.ID,
+				resolutionAt,
+			)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if !completedNode {
+				continue
+			}
+			if _, exists := sharedQuestNodeIDs[target.Node.ID]; exists {
+				continue
+			}
+			sharedQuestNodeIDs[target.Node.ID] = struct{}{}
+			s.shareQuestNodeCompletionWithEligiblePartyMembers(
+				ctx,
+				user,
+				target.Quest,
+				target.Node,
+			)
+			continue
+		}
+
+		if err := s.markQuestNodeFailedForAcceptance(
 			ctx,
+			target.Quest,
 			target.Acceptance,
-			target.Node.ID,
-			completedAt,
-		)
-		if err != nil {
+			target.Node,
+			reason,
+			resolutionAt,
+		); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if !completedNode {
-			continue
-		}
-		if _, exists := sharedQuestNodeIDs[target.Node.ID]; exists {
-			continue
-		}
-		sharedQuestNodeIDs[target.Node.ID] = struct{}{}
-		s.shareQuestNodeCompletionWithEligiblePartyMembers(
-			ctx,
-			user,
-			target.Quest,
-			target.Node,
-		)
 	}
 
 	response := scenarioPerformResponse{

@@ -22,9 +22,18 @@ func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *model
 		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
 		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)
 		questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.QuestGiverRelationshipEffects)
+		questArchetype.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.ReturnBonusRelationshipEffects)
+		questArchetype.ClosurePolicy = models.NormalizeQuestClosurePolicy(string(questArchetype.ClosurePolicy), questArchetype.Category)
+		questArchetype.DebriefPolicy = models.NormalizeQuestDebriefPolicy(string(questArchetype.DebriefPolicy), questArchetype.Category)
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
 		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
+		if questArchetype.ReturnBonusGold < 0 {
+			questArchetype.ReturnBonusGold = 0
+		}
+		if questArchetype.ReturnBonusExperience < 0 {
+			questArchetype.ReturnBonusExperience = 0
+		}
 		if questArchetype.Root.ID != uuid.Nil {
 			log.Printf(
 				"[main-story-convert][quest-archetype][create] archetype=%s includes root struct %s; omitting associations on save",
@@ -85,9 +94,18 @@ func (h *questArchetypeHandle) Update(ctx context.Context, questArchetype *model
 		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
 		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)
 		questArchetype.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.QuestGiverRelationshipEffects)
+		questArchetype.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(questArchetype.ReturnBonusRelationshipEffects)
+		questArchetype.ClosurePolicy = models.NormalizeQuestClosurePolicy(string(questArchetype.ClosurePolicy), questArchetype.Category)
+		questArchetype.DebriefPolicy = models.NormalizeQuestDebriefPolicy(string(questArchetype.DebriefPolicy), questArchetype.Category)
 		questArchetype.DifficultyMode = models.NormalizeQuestDifficultyMode(string(questArchetype.DifficultyMode))
 		questArchetype.Difficulty = models.NormalizeQuestDifficulty(questArchetype.Difficulty)
 		questArchetype.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(questArchetype.MonsterEncounterTargetLevel)
+		if questArchetype.ReturnBonusGold < 0 {
+			questArchetype.ReturnBonusGold = 0
+		}
+		if questArchetype.ReturnBonusExperience < 0 {
+			questArchetype.ReturnBonusExperience = 0
+		}
 	}
 	return h.db.WithContext(ctx).
 		Omit(clause.Associations).

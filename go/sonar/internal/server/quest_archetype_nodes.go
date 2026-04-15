@@ -19,6 +19,7 @@ type questArchetypeNodePayload struct {
 	FetchCharacterTemplateID   *uuid.UUID                   `json:"fetchCharacterTemplateId"`
 	FetchRequirements          []scenarioRewardItemPayload  `json:"fetchRequirements"`
 	ObjectiveDescription       string                       `json:"objectiveDescription"`
+	FailurePolicy              string                       `json:"failurePolicy"`
 	StoryFlagKey               string                       `json:"storyFlagKey"`
 	MonsterTemplateIDs         []string                     `json:"monsterTemplateIds"`
 	MonsterIDs                 []string                     `json:"monsterIds"`
@@ -45,6 +46,7 @@ func (p questArchetypeNodePayload) hasExplicitConfig() bool {
 		p.ChallengeTemplateID != nil ||
 		p.ScenarioTemplateID != nil ||
 		p.hasFetchQuestConfig() ||
+		strings.TrimSpace(p.FailurePolicy) != "" ||
 		p.hasStoryFlagConfig() ||
 		len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
@@ -423,6 +425,9 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.Difficulty = *payload.Difficulty
 	}
 	node.ObjectiveDescription = strings.TrimSpace(payload.ObjectiveDescription)
+	if strings.TrimSpace(payload.FailurePolicy) != "" || strings.TrimSpace(string(node.FailurePolicy)) == "" {
+		node.FailurePolicy = models.NormalizeQuestNodeFailurePolicy(payload.FailurePolicy)
+	}
 	if !payload.hasExplicitConfig() {
 		if requireConfig {
 			return fmt.Errorf("quest archetype node configuration is required")

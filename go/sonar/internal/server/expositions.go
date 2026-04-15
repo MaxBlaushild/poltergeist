@@ -632,6 +632,7 @@ func (s *server) performExposition(ctx *gin.Context) {
 	for _, target := range questTargets {
 		completedNode, err := s.markQuestNodeCompleteForAcceptance(
 			ctx,
+			target.Quest,
 			target.Acceptance,
 			target.Node.ID,
 			completedAt,

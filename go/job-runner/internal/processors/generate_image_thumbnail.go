@@ -166,9 +166,15 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 			return fmt.Errorf("failed to update character thumbnail: %w", err)
 		}
 	case jobs.ThumbnailEntityPointOfInterest:
-		if err := p.dbClient.PointOfInterest().Update(ctx, payload.EntityID, &models.PointOfInterest{
-			ThumbnailURL: thumbnailUrl,
-		}); err != nil {
+		existingPoi, err := p.dbClient.PointOfInterest().FindByID(ctx, payload.EntityID)
+		if err != nil {
+			return fmt.Errorf("failed to load point of interest before thumbnail update: %w", err)
+		}
+		if existingPoi == nil {
+			return fmt.Errorf("point of interest %s not found for thumbnail update", payload.EntityID)
+		}
+		existingPoi.ThumbnailURL = thumbnailUrl
+		if err := p.dbClient.PointOfInterest().Update(ctx, payload.EntityID, existingPoi); err != nil {
 			return fmt.Errorf("failed to update point of interest thumbnail: %w", err)
 		}
 	case jobs.ThumbnailEntityBase:

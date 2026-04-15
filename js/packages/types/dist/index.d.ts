@@ -12,6 +12,8 @@ export * from './verificationCode';
 export * from './pointOfInterestGroup';
 export * from './district';
 export * from './inventoryItem';
+export * from './resourceType';
+export * from './resource';
 export * from './inventoryItemSuggestion';
 export * from './spell';
 export * from './matchInventoryItemEffect';

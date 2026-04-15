@@ -13,6 +13,7 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster/poilocals"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -117,17 +118,9 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		}
 	}
 
-	characterCount := job.CharacterCount
-	if characterCount < 0 {
-		characterCount = 0
-	}
-
 	characters := []models.ZoneSeedCharacterDraft{}
-	if characterCount > 0 {
-		characters, err = p.generateCharacters(ctx, *zone, branding, places, characterCount)
-		if err != nil {
-			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate characters: %w", err))
-		}
+	if len(places) > 0 {
+		characters = p.generateCharacters(*zone, branding, places)
 	}
 	shopkeeperItemTags := normalizeZoneSeedShopkeeperItemTags(job.ShopkeeperItemTags)
 	if len(shopkeeperItemTags) > 0 {
@@ -492,54 +485,48 @@ func fallbackZoneBranding(zone models.Zone) *zoneBrandingResponse {
 }
 
 func (p *SeedZoneDraftProcessor) generateCharacters(
-	ctx context.Context,
 	zone models.Zone,
 	branding *zoneBrandingResponse,
 	places []googlemaps.Place,
-	count int,
-) ([]models.ZoneSeedCharacterDraft, error) {
-	prompt := fmt.Sprintf(
-		characterGenerationPromptTemplate,
-		branding.FantasyName,
-		branding.ZoneDescription,
-		formatPlacesForPrompt(places, 12),
-		count,
+) []models.ZoneSeedCharacterDraft {
+	placeContexts := make([]poilocals.PlaceContext, 0, len(places))
+	for _, place := range places {
+		placeContexts = append(placeContexts, poilocals.PlaceContext{
+			ID:               place.ID,
+			Name:             strings.TrimSpace(place.DisplayName.Text),
+			OriginalName:     strings.TrimSpace(place.Name),
+			Description:      strings.TrimSpace(place.EditorialSummary.Text),
+			Address:          strings.TrimSpace(place.FormattedAddress),
+			EditorialSummary: strings.TrimSpace(place.EditorialSummary.Text),
+			Types:            append([]string{}, place.Types...),
+		})
+	}
+
+	generated := poilocals.GenerateDrafts(
+		p.deepPriest,
+		poilocals.ZoneContext{
+			Name:        strings.TrimSpace(branding.FantasyName),
+			Description: strings.TrimSpace(branding.ZoneDescription),
+		},
+		placeContexts,
 	)
 
-	response, err := p.requestCharacterDrafts(ctx, prompt, 2)
-	if err != nil {
-		return nil, err
-	}
-
-	placeIDs := make(map[string]googlemaps.Place)
-	for _, place := range places {
-		placeIDs[place.ID] = place
-	}
-
-	characters := make([]models.ZoneSeedCharacterDraft, 0, len(response.Characters))
-	for _, draft := range response.Characters {
-		name := strings.TrimSpace(draft.Name)
-		if name == "" {
-			continue
-		}
-		description := strings.TrimSpace(draft.Description)
+	characters := make([]models.ZoneSeedCharacterDraft, 0, len(generated))
+	for _, draft := range generated {
 		placeID := strings.TrimSpace(draft.PlaceID)
-		if _, ok := placeIDs[placeID]; !ok {
+		if placeID == "" {
 			placeID = pickFallbackPlaceID(places)
 		}
 		characters = append(characters, models.ZoneSeedCharacterDraft{
 			DraftID:     uuid.New(),
-			Name:        name,
-			Description: description,
+			Name:        strings.TrimSpace(draft.Name),
+			Description: strings.TrimSpace(draft.Description),
 			PlaceID:     placeID,
+			Dialogue:    append([]string{}, draft.Dialogue...),
 		})
 	}
 
-	if len(characters) == 0 {
-		return nil, fmt.Errorf("no valid characters generated")
-	}
-
-	return characters, nil
+	return characters
 }
 
 func normalizeZoneSeedShopkeeperItemTags(input models.StringArray) []string {

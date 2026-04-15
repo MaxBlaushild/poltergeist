@@ -1,0 +1,3 @@
+ALTER TABLE zone_seed_jobs
+ADD COLUMN IF NOT EXISTS seed_mode TEXT NOT NULL DEFAULT 'manual',
+ADD COLUMN IF NOT EXISTS auto_seed_audit JSONB NOT NULL DEFAULT '{}'::jsonb;

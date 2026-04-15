@@ -11,6 +11,7 @@ import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
 import '../models/quest.dart';
 import '../models/healing_fountain.dart';
+import '../models/resource.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
@@ -41,6 +42,29 @@ class PartySubmissionStatus {
   }
 }
 
+class ZonePinsPayload {
+  const ZonePinsPayload({
+    required this.pointsOfInterest,
+    required this.characters,
+  });
+
+  final List<PointOfInterest> pointsOfInterest;
+  final List<Character> characters;
+
+  factory ZonePinsPayload.fromJson(Map<String, dynamic> json) {
+    final rawPois = json['pointsOfInterest'];
+    final rawCharacters = json['characters'];
+    return ZonePinsPayload(
+      pointsOfInterest: (rawPois as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => PointOfInterest.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      characters: (rawCharacters as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Character.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
 class PoiService {
   final ApiClient _api;
 
@@ -58,6 +82,13 @@ class PoiService {
     return list
         .map((e) => BasePin.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<ZonePinsPayload> getZonePins(String zoneId) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      '/sonar/zones/$zoneId/pins',
+    );
+    return ZonePinsPayload.fromJson(raw);
   }
 
   Future<Quest?> getQuestById(String questId) async {
@@ -86,6 +117,15 @@ class PoiService {
     );
     return list
         .map((e) => Scenario.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<ResourceNode>> getResourcesForZone(String zoneId) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/resources',
+    );
+    return list
+        .map((entry) => ResourceNode.fromJson(entry as Map<String, dynamic>))
         .toList();
   }
 
@@ -508,6 +548,11 @@ class PoiService {
     final raw = await _api.post<dynamic>(
       '/sonar/healing-fountains/$fountainId/unlock',
     );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> gatherResource(String resourceId) async {
+    final raw = await _api.post<dynamic>('/sonar/resources/$resourceId/gather');
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 

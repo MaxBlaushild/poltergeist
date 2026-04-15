@@ -3,11 +3,14 @@ import {
   DialogueMessage,
   QuestArchetype,
   QuestDifficultyMode,
+  QuestClosurePolicy,
+  QuestDebriefPolicy,
   LocationArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
   QuestArchetypeNodeLocationSelectionMode,
   QuestArchetypeNodeType,
+  QuestNodeFailurePolicy,
   ZoneQuestArchetype,
 } from '@poltergeist/types';
 import { useAPI, useAuth } from '@poltergeist/contexts';
@@ -22,6 +25,7 @@ export type QuestArchetypeNodeDraft = {
   fetchCharacterTemplateId?: string | null;
   fetchRequirements?: { inventoryItemId: number; quantity: number }[];
   objectiveDescription?: string;
+  failurePolicy?: QuestNodeFailurePolicy | null;
   storyFlagKey?: string;
   monsterTemplateIds?: string[];
   targetLevel?: number | null;
@@ -44,6 +48,16 @@ export type QuestArchetypeDraft = {
   description: string;
   category?: 'side' | 'main_story';
   questGiverCharacterId?: string | null;
+  closurePolicy?: QuestClosurePolicy;
+  debriefPolicy?: QuestDebriefPolicy;
+  returnBonusGold?: number;
+  returnBonusExperience?: number;
+  returnBonusRelationshipEffects?: {
+    trust?: number;
+    respect?: number;
+    fear?: number;
+    debt?: number;
+  };
   acceptanceDialogue?: DialogueMessage[];
   imageUrl?: string;
   rootNode: QuestArchetypeNodeDraft;
@@ -103,13 +117,15 @@ type QuestArchetypesContextType = {
     questArchetypeId: string,
     proficiency?: string | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
-    challengeTemplateId?: string | null
+    challengeTemplateId?: string | null,
+    failureUnlockedNode?: QuestArchetypeNodeDraft | null
   ) => void;
   updateQuestArchetypeChallenge: (
     challengeId: string,
     updates: {
       proficiency?: string | null;
       challengeTemplateId?: string | null;
+      failureUnlockedNodeId?: string | null;
     }
   ) => void;
   deleteQuestArchetypeChallenge: (challengeId: string) => void;
@@ -189,6 +205,36 @@ export const QuestArchetypesProvider = ({
     }),
     []
   );
+  const buildQuestArchetypeNodePayload = useCallback(
+    (draft: QuestArchetypeNodeDraft) => ({
+      nodeType: draft.nodeType,
+      locationArchetypeID: draft.locationArchetypeId,
+      locationSelectionMode: draft.locationSelectionMode,
+      challengeTemplateId: draft.challengeTemplateId,
+      scenarioTemplateId: draft.scenarioTemplateId,
+      fetchCharacterId: draft.fetchCharacterId,
+      fetchCharacterTemplateId: draft.fetchCharacterTemplateId,
+      fetchRequirements: draft.fetchRequirements,
+      objectiveDescription: draft.objectiveDescription,
+      failurePolicy: draft.failurePolicy,
+      storyFlagKey: draft.storyFlagKey,
+      monsterTemplateIds: draft.monsterTemplateIds,
+      targetLevel: draft.targetLevel,
+      encounterProximityMeters: draft.encounterProximityMeters,
+      expositionTemplateId: draft.expositionTemplateId,
+      expositionTitle: draft.expositionTitle,
+      expositionDescription: draft.expositionDescription,
+      expositionDialogue: draft.expositionDialogue,
+      expositionRewardMode: draft.expositionRewardMode,
+      expositionRandomRewardSize: draft.expositionRandomRewardSize,
+      expositionRewardExperience: draft.expositionRewardExperience,
+      expositionRewardGold: draft.expositionRewardGold,
+      expositionMaterialRewards: draft.expositionMaterialRewards,
+      expositionItemRewards: draft.expositionItemRewards,
+      expositionSpellRewards: draft.expositionSpellRewards,
+    }),
+    []
+  );
   const populateChallengesForNode = useCallback(
     async function populateQuestArchetypeNode(node: QuestArchetypeNode) {
       const challenges = await apiClient.get<QuestArchetypeChallenge[]>(
@@ -199,6 +245,9 @@ export const QuestArchetypesProvider = ({
         (node.challenges ?? []).map(async (challenge) => {
           if (challenge.unlockedNode) {
             await populateQuestArchetypeNode(challenge.unlockedNode);
+          }
+          if (challenge.failureUnlockedNode) {
+            await populateQuestArchetypeNode(challenge.failureUnlockedNode);
           }
         })
       );
@@ -280,32 +329,7 @@ export const QuestArchetypesProvider = ({
   ): Promise<QuestArchetype | null> => {
     const node = await apiClient.post<QuestArchetypeNode>(
       '/sonar/questArchetypeNodes',
-      {
-        nodeType: draft.rootNode.nodeType,
-        locationArchetypeID: draft.rootNode.locationArchetypeId,
-        locationSelectionMode: draft.rootNode.locationSelectionMode,
-        challengeTemplateId: draft.rootNode.challengeTemplateId,
-        scenarioTemplateId: draft.rootNode.scenarioTemplateId,
-        fetchCharacterId: draft.rootNode.fetchCharacterId,
-        fetchCharacterTemplateId: draft.rootNode.fetchCharacterTemplateId,
-        fetchRequirements: draft.rootNode.fetchRequirements,
-        objectiveDescription: draft.rootNode.objectiveDescription,
-        storyFlagKey: draft.rootNode.storyFlagKey,
-        monsterTemplateIds: draft.rootNode.monsterTemplateIds,
-        targetLevel: draft.rootNode.targetLevel,
-        encounterProximityMeters: draft.rootNode.encounterProximityMeters,
-        expositionTemplateId: draft.rootNode.expositionTemplateId,
-        expositionTitle: draft.rootNode.expositionTitle,
-        expositionDescription: draft.rootNode.expositionDescription,
-        expositionDialogue: draft.rootNode.expositionDialogue,
-        expositionRewardMode: draft.rootNode.expositionRewardMode,
-        expositionRandomRewardSize: draft.rootNode.expositionRandomRewardSize,
-        expositionRewardExperience: draft.rootNode.expositionRewardExperience,
-        expositionRewardGold: draft.rootNode.expositionRewardGold,
-        expositionMaterialRewards: draft.rootNode.expositionMaterialRewards,
-        expositionItemRewards: draft.rootNode.expositionItemRewards,
-        expositionSpellRewards: draft.rootNode.expositionSpellRewards,
-      }
+      buildQuestArchetypeNodePayload(draft.rootNode)
     );
     const questArchetype = await apiClient.post<QuestArchetype>(
       '/sonar/questArchetypes',
@@ -314,6 +338,11 @@ export const QuestArchetypesProvider = ({
         description: draft.description,
         category: draft.category,
         questGiverCharacterId: draft.questGiverCharacterId,
+        closurePolicy: draft.closurePolicy,
+        debriefPolicy: draft.debriefPolicy,
+        returnBonusGold: draft.returnBonusGold,
+        returnBonusExperience: draft.returnBonusExperience,
+        returnBonusRelationshipEffects: draft.returnBonusRelationshipEffects,
         acceptanceDialogue: draft.acceptanceDialogue,
         imageUrl: draft.imageUrl,
         rootId: node.id,
@@ -407,14 +436,16 @@ export const QuestArchetypesProvider = ({
     questArchetypeId: string,
     proficiency?: string | null,
     unlockedNode?: QuestArchetypeNodeDraft | null,
-    challengeTemplateId?: string | null
+    challengeTemplateId?: string | null,
+    failureUnlockedNode?: QuestArchetypeNodeDraft | null
   ) => {
     const payload: {
       proficiency?: string;
       challengeTemplateId?: string;
       nodeType?: QuestArchetypeNodeType;
-      locationArchetypeID?: string;
+      locationArchetypeID?: string | null;
       locationSelectionMode?: QuestArchetypeNodeLocationSelectionMode;
+      failurePolicy?: QuestNodeFailurePolicy | null;
       scenarioTemplateId?: string | null;
       fetchCharacterId?: string | null;
       fetchCharacterTemplateId?: string | null;
@@ -435,46 +466,14 @@ export const QuestArchetypesProvider = ({
       expositionMaterialRewards?: { resourceKey: string; amount: number }[];
       expositionItemRewards?: { inventoryItemId: number; quantity: number }[];
       expositionSpellRewards?: { spellId: string }[];
+      failureNode?: ReturnType<typeof buildQuestArchetypeNodePayload>;
     } = {};
 
     if (unlockedNode) {
-      if (unlockedNode.nodeType) {
-        payload.nodeType = unlockedNode.nodeType;
-      }
-      if (unlockedNode.locationArchetypeId) {
-        payload.locationArchetypeID = unlockedNode.locationArchetypeId;
-      }
-      payload.locationSelectionMode = unlockedNode.locationSelectionMode;
-      payload.challengeTemplateId =
-        unlockedNode.challengeTemplateId ?? undefined;
-      payload.scenarioTemplateId = unlockedNode.scenarioTemplateId;
-      payload.fetchCharacterId = unlockedNode.fetchCharacterId;
-      payload.fetchCharacterTemplateId = unlockedNode.fetchCharacterTemplateId;
-      payload.fetchRequirements = unlockedNode.fetchRequirements;
-      payload.objectiveDescription = unlockedNode.objectiveDescription;
-      payload.storyFlagKey = unlockedNode.storyFlagKey;
-      if (
-        unlockedNode.monsterTemplateIds &&
-        unlockedNode.monsterTemplateIds.length > 0
-      ) {
-        payload.monsterTemplateIds = unlockedNode.monsterTemplateIds;
-      }
-      payload.targetLevel = unlockedNode.targetLevel;
-      payload.encounterProximityMeters = unlockedNode.encounterProximityMeters;
-      payload.expositionTemplateId = unlockedNode.expositionTemplateId;
-      payload.expositionTitle = unlockedNode.expositionTitle;
-      payload.expositionDescription = unlockedNode.expositionDescription;
-      payload.expositionDialogue = unlockedNode.expositionDialogue;
-      payload.expositionRewardMode = unlockedNode.expositionRewardMode;
-      payload.expositionRandomRewardSize =
-        unlockedNode.expositionRandomRewardSize;
-      payload.expositionRewardExperience =
-        unlockedNode.expositionRewardExperience;
-      payload.expositionRewardGold = unlockedNode.expositionRewardGold;
-      payload.expositionMaterialRewards =
-        unlockedNode.expositionMaterialRewards;
-      payload.expositionItemRewards = unlockedNode.expositionItemRewards;
-      payload.expositionSpellRewards = unlockedNode.expositionSpellRewards;
+      Object.assign(payload, buildQuestArchetypeNodePayload(unlockedNode));
+    }
+    if (failureUnlockedNode) {
+      payload.failureNode = buildQuestArchetypeNodePayload(failureUnlockedNode);
     }
     if (proficiency && proficiency.trim().length > 0) {
       payload.proficiency = proficiency.trim();
@@ -496,6 +495,7 @@ export const QuestArchetypesProvider = ({
     updates: {
       proficiency?: string | null;
       challengeTemplateId?: string | null;
+      failureUnlockedNodeId?: string | null;
     }
   ) => {
     await apiClient.patch(
@@ -514,32 +514,10 @@ export const QuestArchetypesProvider = ({
     nodeId: string,
     updates: QuestArchetypeNodeDraft
   ) => {
-    await apiClient.patch(`/sonar/questArchetypeNodes/${nodeId}`, {
-      nodeType: updates.nodeType,
-      locationArchetypeID: updates.locationArchetypeId,
-      locationSelectionMode: updates.locationSelectionMode,
-      challengeTemplateId: updates.challengeTemplateId,
-      scenarioTemplateId: updates.scenarioTemplateId,
-      fetchCharacterId: updates.fetchCharacterId,
-      fetchCharacterTemplateId: updates.fetchCharacterTemplateId,
-      fetchRequirements: updates.fetchRequirements,
-      objectiveDescription: updates.objectiveDescription,
-      storyFlagKey: updates.storyFlagKey,
-      monsterTemplateIds: updates.monsterTemplateIds,
-      targetLevel: updates.targetLevel,
-      encounterProximityMeters: updates.encounterProximityMeters,
-      expositionTemplateId: updates.expositionTemplateId,
-      expositionTitle: updates.expositionTitle,
-      expositionDescription: updates.expositionDescription,
-      expositionDialogue: updates.expositionDialogue,
-      expositionRewardMode: updates.expositionRewardMode,
-      expositionRandomRewardSize: updates.expositionRandomRewardSize,
-      expositionRewardExperience: updates.expositionRewardExperience,
-      expositionRewardGold: updates.expositionRewardGold,
-      expositionMaterialRewards: updates.expositionMaterialRewards,
-      expositionItemRewards: updates.expositionItemRewards,
-      expositionSpellRewards: updates.expositionSpellRewards,
-    });
+    await apiClient.patch(
+      `/sonar/questArchetypeNodes/${nodeId}`,
+      buildQuestArchetypeNodePayload(updates)
+    );
     fetchQuestArchetypes();
   };
 

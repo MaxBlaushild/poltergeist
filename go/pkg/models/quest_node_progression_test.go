@@ -19,6 +19,13 @@ func TestResolveCurrentQuestNodeAutoCompletesSatisfiedStoryFlagNodes(t *testing.
 				OrderIndex:   0,
 				CreatedAt:    now,
 				StoryFlagKey: "intro_complete",
+				Children: []QuestNodeChild{
+					{
+						QuestNodeID:     waitNodeID,
+						NextQuestNodeID: challengeNodeID,
+						Outcome:         QuestNodeTransitionOutcomeSuccess,
+					},
+				},
 			},
 			{
 				ID:         challengeNodeID,
@@ -26,7 +33,8 @@ func TestResolveCurrentQuestNodeAutoCompletesSatisfiedStoryFlagNodes(t *testing.
 				CreatedAt:  now.Add(time.Second),
 			},
 		},
-		map[uuid.UUID]bool{},
+		nil,
+		map[uuid.UUID]QuestNodeProgressStatus{},
 		map[string]bool{"intro_complete": true},
 	)
 
@@ -52,7 +60,8 @@ func TestResolveCurrentQuestNodeStopsOnUnsatisfiedStoryFlagNode(t *testing.T) {
 				StoryFlagKey: "boss_seen",
 			},
 		},
-		map[uuid.UUID]bool{},
+		nil,
+		map[uuid.UUID]QuestNodeProgressStatus{},
 		map[string]bool{"other_flag": true},
 	)
 
@@ -64,5 +73,75 @@ func TestResolveCurrentQuestNodeStopsOnUnsatisfiedStoryFlagNode(t *testing.T) {
 	}
 	if currentNode.ID != waitNodeID {
 		t.Fatalf("expected story-flag node %s, got %s", waitNodeID, currentNode.ID)
+	}
+}
+
+func TestResolveCurrentQuestNodeUsesFailureTransitionForFailedNodes(t *testing.T) {
+	now := time.Now()
+	startNodeID := uuid.New()
+	failureNodeID := uuid.New()
+
+	currentNode, autoCompleted := ResolveCurrentQuestNode(
+		[]QuestNode{
+			{
+				ID:            startNodeID,
+				OrderIndex:    0,
+				CreatedAt:     now,
+				FailurePolicy: QuestNodeFailurePolicyTransition,
+				Children: []QuestNodeChild{
+					{
+						QuestNodeID:     startNodeID,
+						NextQuestNodeID: failureNodeID,
+						Outcome:         QuestNodeTransitionOutcomeFailure,
+					},
+				},
+			},
+			{
+				ID:         failureNodeID,
+				OrderIndex: 1,
+				CreatedAt:  now.Add(time.Second),
+			},
+		},
+		nil,
+		map[uuid.UUID]QuestNodeProgressStatus{
+			startNodeID: QuestNodeProgressStatusFailed,
+		},
+		map[string]bool{},
+	)
+
+	if len(autoCompleted) != 0 {
+		t.Fatalf("expected no auto-completions, got %+v", autoCompleted)
+	}
+	if currentNode == nil {
+		t.Fatalf("expected failure branch node to become current")
+	}
+	if currentNode.ID != failureNodeID {
+		t.Fatalf("expected failure node %s, got %s", failureNodeID, currentNode.ID)
+	}
+}
+
+func TestResolveCurrentQuestNodeKeepsRetryNodeCurrentAfterFailure(t *testing.T) {
+	nodeID := uuid.New()
+
+	currentNode, autoCompleted := ResolveCurrentQuestNode(
+		[]QuestNode{
+			{
+				ID:            nodeID,
+				OrderIndex:    0,
+				FailurePolicy: QuestNodeFailurePolicyRetry,
+			},
+		},
+		nil,
+		map[uuid.UUID]QuestNodeProgressStatus{
+			nodeID: QuestNodeProgressStatusFailed,
+		},
+		map[string]bool{},
+	)
+
+	if len(autoCompleted) != 0 {
+		t.Fatalf("expected no auto-completions, got %+v", autoCompleted)
+	}
+	if currentNode == nil || currentNode.ID != nodeID {
+		t.Fatalf("expected retry node %s to remain current, got %+v", nodeID, currentNode)
 	}
 }

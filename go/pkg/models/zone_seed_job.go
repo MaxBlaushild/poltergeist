@@ -19,6 +19,11 @@ const (
 	ZoneSeedStatusFailed           = "failed"
 )
 
+const (
+	ZoneSeedModeManual = "manual"
+	ZoneSeedModeAuto   = "auto"
+)
+
 var ZoneSeedStatuses = []string{
 	ZoneSeedStatusQueued,
 	ZoneSeedStatusInProgress,
@@ -29,9 +34,23 @@ var ZoneSeedStatuses = []string{
 	ZoneSeedStatusFailed,
 }
 
+var ZoneSeedModes = []string{
+	ZoneSeedModeManual,
+	ZoneSeedModeAuto,
+}
+
 func IsValidZoneSeedStatus(status string) bool {
 	for _, candidate := range ZoneSeedStatuses {
 		if candidate == status {
+			return true
+		}
+	}
+	return false
+}
+
+func IsValidZoneSeedMode(mode string) bool {
+	for _, candidate := range ZoneSeedModes {
+		if candidate == mode {
 			return true
 		}
 	}
@@ -46,26 +65,28 @@ const (
 )
 
 type ZoneSeedJob struct {
-	ID                   uuid.UUID     `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt            time.Time     `json:"createdAt"`
-	UpdatedAt            time.Time     `json:"updatedAt"`
-	ZoneID               uuid.UUID     `json:"zoneId" gorm:"type:uuid"`
-	Status               string        `json:"status"`
-	ErrorMessage         *string       `json:"errorMessage,omitempty"`
-	PlaceCount           int           `json:"placeCount"`
-	CharacterCount       int           `json:"characterCount"`
-	QuestCount           int           `json:"questCount"`
-	MainQuestCount       int           `json:"mainQuestCount"`
-	MonsterCount         int           `json:"monsterCount"`
-	BossEncounterCount   int           `json:"bossEncounterCount"`
-	RaidEncounterCount   int           `json:"raidEncounterCount"`
-	InputEncounterCount  int           `json:"inputEncounterCount"`
-	OptionEncounterCount int           `json:"optionEncounterCount"`
-	TreasureChestCount   int           `json:"treasureChestCount"`
-	HealingFountainCount int           `json:"healingFountainCount"`
-	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
-	ShopkeeperItemTags   StringArray   `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
-	Draft                ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
+	ID                   uuid.UUID         `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt            time.Time         `json:"createdAt"`
+	UpdatedAt            time.Time         `json:"updatedAt"`
+	ZoneID               uuid.UUID         `json:"zoneId" gorm:"type:uuid"`
+	Status               string            `json:"status"`
+	SeedMode             string            `json:"seedMode"`
+	ErrorMessage         *string           `json:"errorMessage,omitempty"`
+	PlaceCount           int               `json:"placeCount"`
+	CharacterCount       int               `json:"characterCount"`
+	QuestCount           int               `json:"questCount"`
+	MainQuestCount       int               `json:"mainQuestCount"`
+	MonsterCount         int               `json:"monsterCount"`
+	BossEncounterCount   int               `json:"bossEncounterCount"`
+	RaidEncounterCount   int               `json:"raidEncounterCount"`
+	InputEncounterCount  int               `json:"inputEncounterCount"`
+	OptionEncounterCount int               `json:"optionEncounterCount"`
+	TreasureChestCount   int               `json:"treasureChestCount"`
+	HealingFountainCount int               `json:"healingFountainCount"`
+	RequiredPlaceTags    StringArray       `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
+	ShopkeeperItemTags   StringArray       `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
+	AutoSeedAudit        ZoneSeedAutoAudit `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`
+	Draft                ZoneSeedDraft     `json:"draft" gorm:"type:jsonb"`
 }
 
 func (ZoneSeedJob) TableName() string {
@@ -99,6 +120,7 @@ type ZoneSeedCharacterDraft struct {
 	Name         string      `json:"name"`
 	Description  string      `json:"description"`
 	PlaceID      string      `json:"placeId"`
+	Dialogue     []string    `json:"dialogue,omitempty"`
 	Latitude     *float64    `json:"latitude,omitempty"`
 	Longitude    *float64    `json:"longitude,omitempty"`
 	ShopItemTags StringArray `json:"shopItemTags,omitempty"`

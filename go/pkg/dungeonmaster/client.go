@@ -19,6 +19,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
 type client struct {
@@ -27,6 +28,7 @@ type client struct {
 	deepPriest       deep_priest.DeepPriest
 	locationSeeder   locationseeder.Client
 	awsClient        aws.AWSClient
+	asyncClient      *asynq.Client
 }
 
 type Client interface {
@@ -45,6 +47,15 @@ func questNodeObjectiveDescription(
 		return ""
 	}
 	return strings.TrimSpace(node.ObjectiveDescription)
+}
+
+func questNodeFailurePolicy(
+	node *models.QuestArchetypeNode,
+) models.QuestNodeFailurePolicy {
+	if node == nil {
+		return models.QuestNodeFailurePolicyRetry
+	}
+	return node.FailurePolicyNormalized()
 }
 
 func normalizeQuestProficiency(proficiency *string) *string {
@@ -91,6 +102,7 @@ func NewClient(
 	deepPriest deep_priest.DeepPriest,
 	locationSeeder locationseeder.Client,
 	awsClient aws.AWSClient,
+	asyncClient *asynq.Client,
 ) Client {
 	return &client{
 		googlemapsClient: googlemapsClient,
@@ -98,6 +110,7 @@ func NewClient(
 		deepPriest:       deepPriest,
 		locationSeeder:   locationSeeder,
 		awsClient:        awsClient,
+		asyncClient:      asyncClient,
 	}
 }
 
@@ -163,32 +176,37 @@ func (c *client) GenerateQuest(
 
 	log.Println("Creating quest")
 	quest := &models.Quest{
-		ID:                            uuid.New(),
-		CreatedAt:                     time.Now(),
-		UpdatedAt:                     time.Now(),
-		Name:                          strings.TrimSpace(questArchType.Name),
-		Description:                   questArchType.Description,
-		Category:                      questArchType.Category,
-		AcceptanceDialogue:            acceptanceDialogue,
-		ImageURL:                      questArchType.ImageURL,
-		ZoneID:                        &zone.ID,
-		QuestArchetypeID:              &questArchetypeID,
-		QuestGiverCharacterID:         questGiverCharacterID,
-		RequiredStoryFlags:            questArchType.RequiredStoryFlags,
-		SetStoryFlags:                 questArchType.SetStoryFlags,
-		ClearStoryFlags:               questArchType.ClearStoryFlags,
-		QuestGiverRelationshipEffects: questArchType.QuestGiverRelationshipEffects,
-		RecurringQuestID:              recurringQuestID,
-		RecurrenceFrequency:           questArchType.RecurrenceFrequency,
-		NextRecurrenceAt:              nextRecurrenceAt,
-		DifficultyMode:                difficultyMode,
-		Difficulty:                    difficulty,
-		MonsterEncounterTargetLevel:   monsterEncounterTargetLevel,
-		RewardMode:                    rewardMode,
-		RandomRewardSize:              randomRewardSize,
-		RewardExperience:              questArchType.RewardExperience,
-		Gold:                          questArchType.DefaultGold,
-		MaterialRewards:               questArchType.MaterialRewards,
+		ID:                             uuid.New(),
+		CreatedAt:                      time.Now(),
+		UpdatedAt:                      time.Now(),
+		Name:                           strings.TrimSpace(questArchType.Name),
+		Description:                    questArchType.Description,
+		Category:                       questArchType.Category,
+		AcceptanceDialogue:             acceptanceDialogue,
+		ImageURL:                       questArchType.ImageURL,
+		ZoneID:                         &zone.ID,
+		QuestArchetypeID:               &questArchetypeID,
+		QuestGiverCharacterID:          questGiverCharacterID,
+		RequiredStoryFlags:             questArchType.RequiredStoryFlags,
+		SetStoryFlags:                  questArchType.SetStoryFlags,
+		ClearStoryFlags:                questArchType.ClearStoryFlags,
+		QuestGiverRelationshipEffects:  questArchType.QuestGiverRelationshipEffects,
+		ClosurePolicy:                  questArchType.ClosurePolicyNormalized(),
+		DebriefPolicy:                  questArchType.DebriefPolicyNormalized(),
+		ReturnBonusGold:                questArchType.ReturnBonusGold,
+		ReturnBonusExperience:          questArchType.ReturnBonusExperience,
+		ReturnBonusRelationshipEffects: questArchType.ReturnBonusRelationshipEffects,
+		RecurringQuestID:               recurringQuestID,
+		RecurrenceFrequency:            questArchType.RecurrenceFrequency,
+		NextRecurrenceAt:               nextRecurrenceAt,
+		DifficultyMode:                 difficultyMode,
+		Difficulty:                     difficulty,
+		MonsterEncounterTargetLevel:    monsterEncounterTargetLevel,
+		RewardMode:                     rewardMode,
+		RandomRewardSize:               randomRewardSize,
+		RewardExperience:               questArchType.RewardExperience,
+		Gold:                           questArchType.DefaultGold,
+		MaterialRewards:                questArchType.MaterialRewards,
 	}
 	if quest.Name == "" {
 		quest.Name = "Quest"
@@ -420,6 +438,7 @@ func (c *client) processQuestChallengeNode(
 		OrderIndex:           *orderIndex,
 		ChallengeID:          &locationChallenge.ID,
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		SubmissionType:       submissionType,
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -775,6 +794,7 @@ func (c *client) processQuestScenarioNode(
 		OrderIndex:           *orderIndex,
 		ScenarioID:           &scenario.ID,
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -899,6 +919,7 @@ func (c *client) processQuestExpositionNode(
 		OrderIndex:           *orderIndex,
 		ExpositionID:         &exposition.ID,
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -972,6 +993,7 @@ func (c *client) processQuestStoryFlagNode(
 		QuestID:              quest.ID,
 		OrderIndex:           *orderIndex,
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		StoryFlagKey:         storyFlagKey,
 		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
@@ -1082,6 +1104,7 @@ func (c *client) processQuestFetchNode(
 			questArchTypeNode.FetchRequirements,
 		),
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -1277,6 +1300,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		OrderIndex:           *orderIndex,
 		MonsterEncounterID:   &encounter.ID,
 		ObjectiveDescription: questNodeObjectiveDescription(questArchTypeNode),
+		FailurePolicy:        questNodeFailurePolicy(questArchTypeNode),
 		SubmissionType:       models.DefaultQuestNodeSubmissionType(),
 	}
 	if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -1317,29 +1341,86 @@ func (c *client) attachQuestBranchChildren(
 	questNodeID uuid.UUID,
 ) error {
 	for _, archetypeChallenge := range questArchTypeNode.Challenges {
-		if archetypeChallenge.UnlockedNodeID == nil {
-			continue
-		}
-		unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *archetypeChallenge.UnlockedNodeID)
-		if err != nil {
+		if err := c.attachQuestBranchChild(
+			ctx,
+			zone,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			questNodeID,
+			archetypeChallenge.UnlockedNodeID,
+			models.QuestNodeTransitionOutcomeSuccess,
+		); err != nil {
 			return err
 		}
-		if _, err := c.processQuestNode(ctx, zone, unlockedNode, quest, usedPOIs, orderIndex, nodeMap, anchorMap, currentAnchor); err != nil {
-			return err
-		}
-		childNodeID := nodeMap[unlockedNode.ID]
-		child := &models.QuestNodeChild{
-			ID:              uuid.New(),
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
-			QuestNodeID:     questNodeID,
-			NextQuestNodeID: childNodeID,
-		}
-		if err := c.dbClient.QuestNodeChild().Create(ctx, child); err != nil {
+		if err := c.attachQuestBranchChild(
+			ctx,
+			zone,
+			quest,
+			usedPOIs,
+			orderIndex,
+			nodeMap,
+			anchorMap,
+			currentAnchor,
+			questNodeID,
+			archetypeChallenge.FailureUnlockedNodeID,
+			models.QuestNodeTransitionOutcomeFailure,
+		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c *client) attachQuestBranchChild(
+	ctx context.Context,
+	zone *models.Zone,
+	quest *models.Quest,
+	usedPOIs map[uuid.UUID]bool,
+	orderIndex *int,
+	nodeMap map[uuid.UUID]uuid.UUID,
+	anchorMap map[uuid.UUID]*questNodeAnchor,
+	currentAnchor *questNodeAnchor,
+	questNodeID uuid.UUID,
+	nextArchetypeNodeID *uuid.UUID,
+	outcome models.QuestNodeTransitionOutcome,
+) error {
+	if nextArchetypeNodeID == nil || *nextArchetypeNodeID == uuid.Nil {
+		return nil
+	}
+	unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *nextArchetypeNodeID)
+	if err != nil {
+		return err
+	}
+	if unlockedNode == nil {
+		return nil
+	}
+	if _, err := c.processQuestNode(
+		ctx,
+		zone,
+		unlockedNode,
+		quest,
+		usedPOIs,
+		orderIndex,
+		nodeMap,
+		anchorMap,
+		currentAnchor,
+	); err != nil {
+		return err
+	}
+	childNodeID := nodeMap[unlockedNode.ID]
+	child := &models.QuestNodeChild{
+		ID:              uuid.New(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		QuestNodeID:     questNodeID,
+		NextQuestNodeID: childNodeID,
+		Outcome:         outcome,
+	}
+	return c.dbClient.QuestNodeChild().Create(ctx, child)
 }
 
 func pointOfInterestCoordinates(poi *models.PointOfInterest) (float64, float64, error) {
@@ -1641,6 +1722,9 @@ func (c *client) resolveQuestNodeAnchor(
 		}
 		if err := c.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, pointOfInterest.ID); err != nil {
 			log.Printf("Warning: failed to update last_used_in_quest_at for POI %s: %v", pointOfInterest.ID, err)
+		}
+		if err := c.ensurePointOfInterestLocals(ctx, zone, pointOfInterest); err != nil {
+			log.Printf("Warning: failed to ensure locals for POI %s: %v", pointOfInterest.ID, err)
 		}
 		latitude, longitude, err := pointOfInterestCoordinates(pointOfInterest)
 		if err != nil {

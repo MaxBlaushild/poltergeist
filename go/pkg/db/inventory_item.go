@@ -264,7 +264,10 @@ func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *mo
 
 func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error) {
 	var item models.InventoryItem
-	result := h.db.WithContext(ctx).Where("id = ?", id).First(&item)
+	result := h.db.WithContext(ctx).
+		Preload("ResourceType").
+		Where("id = ?", id).
+		First(&item)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -273,7 +276,9 @@ func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, id int
 
 func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
 	var items []models.InventoryItem
-	result := h.db.WithContext(ctx).Find(&items)
+	result := h.db.WithContext(ctx).
+		Preload("ResourceType").
+		Find(&items)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -282,7 +287,10 @@ func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]mod
 
 func (h *inventoryItemHandler) FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
 	var items []models.InventoryItem
-	result := h.db.WithContext(ctx).Where("archived = ?", false).Find(&items)
+	result := h.db.WithContext(ctx).
+		Preload("ResourceType").
+		Where("archived = ?", false).
+		Find(&items)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -310,6 +318,9 @@ func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, 
 	}
 	if value, exists := updates["internal_tags"]; exists && value == nil {
 		updates["internal_tags"] = models.StringArray{}
+	}
+	if value, exists := updates["resource_type_id"]; exists && value == "" {
+		updates["resource_type_id"] = nil
 	}
 	updates["updated_at"] = time.Now()
 	return h.db.WithContext(ctx).Model(&models.InventoryItem{}).Where("id = ?", id).Updates(updates).Error
@@ -401,6 +412,7 @@ func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, invento
 		"scenario_item_rewards",
 		"scenario_option_item_rewards",
 		"treasure_chest_items",
+		"resources",
 		"owned_inventory_items",
 		"match_inventory_item_effects",
 		"team_inventory_items",

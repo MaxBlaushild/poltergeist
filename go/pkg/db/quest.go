@@ -70,10 +70,13 @@ func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 		quest.SetStoryFlags = normalizeJSONStringArray(quest.SetStoryFlags)
 		quest.ClearStoryFlags = normalizeJSONStringArray(quest.ClearStoryFlags)
 		quest.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(quest.QuestGiverRelationshipEffects)
+		quest.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(quest.ReturnBonusRelationshipEffects)
 		if !models.IsMainStoryQuestCategory(quest.Category) {
 			quest.MainStoryPreviousQuestID = nil
 			quest.MainStoryNextQuestID = nil
 		}
+		quest.ClosurePolicy = models.NormalizeQuestClosurePolicy(string(quest.ClosurePolicy), quest.Category)
+		quest.DebriefPolicy = models.NormalizeQuestDebriefPolicy(string(quest.DebriefPolicy), quest.Category)
 		quest.DifficultyMode = models.NormalizeQuestDifficultyMode(string(quest.DifficultyMode))
 		quest.Difficulty = models.NormalizeQuestDifficulty(quest.Difficulty)
 		quest.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(quest.MonsterEncounterTargetLevel)
@@ -89,6 +92,12 @@ func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 		if quest.RewardExperience < 0 {
 			quest.RewardExperience = 0
 		}
+		if quest.ReturnBonusGold < 0 {
+			quest.ReturnBonusGold = 0
+		}
+		if quest.ReturnBonusExperience < 0 {
+			quest.ReturnBonusExperience = 0
+		}
 	}
 	return h.db.WithContext(ctx).Create(quest).Error
 }
@@ -103,10 +112,13 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	updates.SetStoryFlags = normalizeJSONStringArray(updates.SetStoryFlags)
 	updates.ClearStoryFlags = normalizeJSONStringArray(updates.ClearStoryFlags)
 	updates.QuestGiverRelationshipEffects = normalizeCharacterRelationshipState(updates.QuestGiverRelationshipEffects)
+	updates.ReturnBonusRelationshipEffects = normalizeCharacterRelationshipState(updates.ReturnBonusRelationshipEffects)
 	if !models.IsMainStoryQuestCategory(updates.Category) {
 		updates.MainStoryPreviousQuestID = nil
 		updates.MainStoryNextQuestID = nil
 	}
+	updates.ClosurePolicy = models.NormalizeQuestClosurePolicy(string(updates.ClosurePolicy), updates.Category)
+	updates.DebriefPolicy = models.NormalizeQuestDebriefPolicy(string(updates.DebriefPolicy), updates.Category)
 	updates.Difficulty = models.NormalizeQuestDifficulty(updates.Difficulty)
 	updates.MonsterEncounterTargetLevel = models.NormalizeMonsterEncounterTargetLevel(updates.MonsterEncounterTargetLevel)
 	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
@@ -114,34 +126,45 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	if updates.RewardExperience < 0 {
 		updates.RewardExperience = 0
 	}
+	if updates.ReturnBonusGold < 0 {
+		updates.ReturnBonusGold = 0
+	}
+	if updates.ReturnBonusExperience < 0 {
+		updates.ReturnBonusExperience = 0
+	}
 	payload := map[string]interface{}{
-		"name":                             updates.Name,
-		"description":                      updates.Description,
-		"category":                         updates.Category,
-		"required_story_flags":             updates.RequiredStoryFlags,
-		"set_story_flags":                  updates.SetStoryFlags,
-		"clear_story_flags":                updates.ClearStoryFlags,
-		"quest_giver_relationship_effects": updates.QuestGiverRelationshipEffects,
-		"acceptance_dialogue":              updates.AcceptanceDialogue,
-		"image_url":                        updates.ImageURL,
-		"owner_user_id":                    updates.OwnerUserID,
-		"ephemeral":                        updates.Ephemeral,
-		"zone_id":                          updates.ZoneID,
-		"quest_archetype_id":               updates.QuestArchetypeID,
-		"quest_giver_character_id":         updates.QuestGiverCharacterID,
-		"main_story_previous_quest_id":     updates.MainStoryPreviousQuestID,
-		"main_story_next_quest_id":         updates.MainStoryNextQuestID,
-		"recurring_quest_id":               updates.RecurringQuestID,
-		"recurrence_frequency":             updates.RecurrenceFrequency,
-		"next_recurrence_at":               updates.NextRecurrenceAt,
-		"difficulty_mode":                  updates.DifficultyMode,
-		"difficulty":                       updates.Difficulty,
-		"monster_encounter_target_level":   updates.MonsterEncounterTargetLevel,
-		"reward_mode":                      updates.RewardMode,
-		"random_reward_size":               updates.RandomRewardSize,
-		"reward_experience":                updates.RewardExperience,
-		"gold":                             updates.Gold,
-		"updated_at":                       updates.UpdatedAt,
+		"name":                              updates.Name,
+		"description":                       updates.Description,
+		"category":                          updates.Category,
+		"required_story_flags":              updates.RequiredStoryFlags,
+		"set_story_flags":                   updates.SetStoryFlags,
+		"clear_story_flags":                 updates.ClearStoryFlags,
+		"quest_giver_relationship_effects":  updates.QuestGiverRelationshipEffects,
+		"closure_policy":                    updates.ClosurePolicy,
+		"debrief_policy":                    updates.DebriefPolicy,
+		"return_bonus_gold":                 updates.ReturnBonusGold,
+		"return_bonus_experience":           updates.ReturnBonusExperience,
+		"return_bonus_relationship_effects": updates.ReturnBonusRelationshipEffects,
+		"acceptance_dialogue":               updates.AcceptanceDialogue,
+		"image_url":                         updates.ImageURL,
+		"owner_user_id":                     updates.OwnerUserID,
+		"ephemeral":                         updates.Ephemeral,
+		"zone_id":                           updates.ZoneID,
+		"quest_archetype_id":                updates.QuestArchetypeID,
+		"quest_giver_character_id":          updates.QuestGiverCharacterID,
+		"main_story_previous_quest_id":      updates.MainStoryPreviousQuestID,
+		"main_story_next_quest_id":          updates.MainStoryNextQuestID,
+		"recurring_quest_id":                updates.RecurringQuestID,
+		"recurrence_frequency":              updates.RecurrenceFrequency,
+		"next_recurrence_at":                updates.NextRecurrenceAt,
+		"difficulty_mode":                   updates.DifficultyMode,
+		"difficulty":                        updates.Difficulty,
+		"monster_encounter_target_level":    updates.MonsterEncounterTargetLevel,
+		"reward_mode":                       updates.RewardMode,
+		"random_reward_size":                updates.RandomRewardSize,
+		"reward_experience":                 updates.RewardExperience,
+		"gold":                              updates.Gold,
+		"updated_at":                        updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.Quest{}).Where("id = ?", id).Updates(payload).Error
 }

@@ -144,6 +144,7 @@ type QuestArchetypeNode struct {
 	FetchCharacterTemplateID   *uuid.UUID                              `json:"fetchCharacterTemplateId,omitempty" gorm:"column:fetch_character_template_id;type:uuid"`
 	FetchRequirements          FetchQuestRequirements                  `json:"fetchRequirements" gorm:"column:fetch_requirements_json;type:jsonb;default:'[]'"`
 	ObjectiveDescription       string                                  `json:"objectiveDescription,omitempty" gorm:"column:objective_description"`
+	FailurePolicy              QuestNodeFailurePolicy                  `json:"failurePolicy" gorm:"column:failure_policy;type:text;default:'retry'"`
 	StoryFlagKey               string                                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	MonsterTemplateIDs         StringArray                             `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
 	TargetLevel                int                                     `json:"targetLevel" gorm:"column:target_level;default:1"`
@@ -187,9 +188,17 @@ func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, e
 	return q.LocationArchetype.GetRandomChallengeByDifficulty(q.Difficulty)
 }
 
+func (q *QuestArchetypeNode) FailurePolicyNormalized() QuestNodeFailurePolicy {
+	if q == nil {
+		return QuestNodeFailurePolicyRetry
+	}
+	return NormalizeQuestNodeFailurePolicy(string(q.FailurePolicy))
+}
+
 func (q *QuestArchetypeNode) BeforeSave(tx *gorm.DB) error {
 	q.NodeType = NormalizeQuestArchetypeNodeType(string(q.NodeType))
 	q.ObjectiveDescription = strings.TrimSpace(q.ObjectiveDescription)
+	q.FailurePolicy = NormalizeQuestNodeFailurePolicy(string(q.FailurePolicy))
 	q.StoryFlagKey = NormalizeStoryFlagKey(q.StoryFlagKey)
 	q.LocationSelectionMode = NormalizeQuestArchetypeNodeLocationSelectionMode(
 		string(q.LocationSelectionMode),

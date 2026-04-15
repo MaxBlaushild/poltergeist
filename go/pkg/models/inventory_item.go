@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type InventoryItem struct {
 	ID                                       int                            `json:"id" gorm:"primaryKey"`
@@ -12,6 +16,8 @@ type InventoryItem struct {
 	FlavorText                               string                         `json:"flavorText" gorm:"column:flavor_text"`
 	EffectText                               string                         `json:"effectText" gorm:"column:effect_text"`
 	RarityTier                               string                         `json:"rarityTier" gorm:"column:rarity_tier"`
+	ResourceTypeID                           *uuid.UUID                     `json:"resourceTypeId" gorm:"column:resource_type_id"`
+	ResourceType                             *ResourceType                  `json:"resourceType,omitempty" gorm:"foreignKey:ResourceTypeID"`
 	IsCaptureType                            bool                           `json:"isCaptureType" gorm:"column:is_capture_type"`
 	BuyPrice                                 *int                           `json:"buyPrice" gorm:"column:buy_price"`
 	UnlockTier                               *int                           `json:"unlockTier" gorm:"column:unlock_tier"`

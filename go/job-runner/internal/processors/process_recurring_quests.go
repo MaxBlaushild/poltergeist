@@ -248,6 +248,7 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 			MonsterID:          node.MonsterID,
 			MonsterEncounterID: node.MonsterEncounterID,
 			ChallengeID:        node.ChallengeID,
+			FailurePolicy:      node.FailurePolicyNormalized(),
 			SubmissionType:     submissionType,
 		}
 
@@ -275,6 +276,7 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 				UpdatedAt:       now,
 				QuestNodeID:     newQuestNodeID,
 				NextQuestNodeID: nextNodeID,
+				Outcome:         child.TransitionOutcome(),
 			}
 			if err := p.dbClient.QuestNodeChild().Create(ctx, newChild); err != nil {
 				return err

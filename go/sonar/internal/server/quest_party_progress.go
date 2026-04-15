@@ -22,6 +22,149 @@ type questNodeCompletionTarget struct {
 	Node       *models.QuestNode
 }
 
+func questNodeStatusMap(
+	progressEntries []models.QuestNodeProgress,
+) map[uuid.UUID]models.QuestNodeProgressStatus {
+	statuses := make(map[uuid.UUID]models.QuestNodeProgressStatus, len(progressEntries))
+	for _, entry := range progressEntries {
+		statuses[entry.QuestNodeID] = models.NormalizeQuestNodeProgressStatus(string(entry.Status))
+		if entry.CompletedAt != nil {
+			statuses[entry.QuestNodeID] = models.QuestNodeProgressStatusCompleted
+		}
+	}
+	return statuses
+}
+
+func questNodeIDPointer(node *models.QuestNode) *uuid.UUID {
+	if node == nil || node.ID == uuid.Nil {
+		return nil
+	}
+	nodeID := node.ID
+	return &nodeID
+}
+
+func sameQuestNodePointer(left *uuid.UUID, right *uuid.UUID) bool {
+	switch {
+	case left == nil && right == nil:
+		return true
+	case left == nil || right == nil:
+		return false
+	default:
+		return *left == *right
+	}
+}
+
+func (s *server) findOrCreateQuestNodeProgress(
+	ctx context.Context,
+	acceptance *models.QuestAcceptanceV2,
+	nodeID uuid.UUID,
+	now time.Time,
+) (*models.QuestNodeProgress, bool, error) {
+	if acceptance == nil || nodeID == uuid.Nil {
+		return nil, false, nil
+	}
+
+	progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(
+		ctx,
+		acceptance.ID,
+		nodeID,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if progress != nil {
+		if progress.CompletedAt != nil {
+			progress.Status = models.QuestNodeProgressStatusCompleted
+		} else {
+			progress.Status = models.NormalizeQuestNodeProgressStatus(string(progress.Status))
+		}
+		return progress, false, nil
+	}
+
+	progress = &models.QuestNodeProgress{
+		ID:                uuid.New(),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		QuestAcceptanceID: acceptance.ID,
+		QuestNodeID:       nodeID,
+		Status:            models.QuestNodeProgressStatusActive,
+	}
+	if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
+		return nil, false, err
+	}
+	return progress, true, nil
+}
+
+func (s *server) syncQuestAcceptanceCurrentNode(
+	ctx context.Context,
+	quest *models.Quest,
+	acceptance *models.QuestAcceptanceV2,
+) (*models.QuestNode, error) {
+	if quest == nil || acceptance == nil {
+		return nil, nil
+	}
+
+	progressEntries, err := s.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
+	if err != nil {
+		return nil, err
+	}
+	statuses := questNodeStatusMap(progressEntries)
+
+	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, acceptance.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	currentNode, autoCompleted := models.ResolveCurrentQuestNode(
+		quest.Nodes,
+		acceptance.CurrentQuestNodeID,
+		statuses,
+		activeStoryFlags,
+	)
+	if len(autoCompleted) > 0 {
+		completedAt := time.Now()
+		for _, nodeID := range autoCompleted {
+			progress, _, err := s.findOrCreateQuestNodeProgress(
+				ctx,
+				acceptance,
+				nodeID,
+				completedAt,
+			)
+			if err != nil {
+				return nil, err
+			}
+			progress.Status = models.QuestNodeProgressStatusCompleted
+			progress.CompletedAt = &completedAt
+			progress.AttemptCount++
+			progress.UpdatedAt = completedAt
+			progress.LastFailureReason = ""
+			progress.LastFailedAt = nil
+			if err := s.dbClient.QuestNodeProgress().Update(ctx, progress); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	desiredCurrentNodeID := questNodeIDPointer(currentNode)
+	if !sameQuestNodePointer(acceptance.CurrentQuestNodeID, desiredCurrentNodeID) {
+		if err := s.dbClient.QuestAcceptanceV2().UpdateCurrentNode(
+			ctx,
+			acceptance.ID,
+			desiredCurrentNodeID,
+		); err != nil {
+			return nil, err
+		}
+		acceptance.CurrentQuestNodeID = desiredCurrentNodeID
+	}
+	if currentNode == nil {
+		if err := s.ensureQuestObjectivesCompleted(ctx, acceptance, time.Now()); err != nil {
+			return nil, err
+		}
+	}
+
+	return currentNode, nil
+}
+
 func (s *server) findMatchingCurrentQuestNodeTargets(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -34,7 +177,7 @@ func (s *server) findMatchingCurrentQuestNodeTargets(
 
 	targets := make([]questNodeCompletionTarget, 0)
 	for _, acceptance := range acceptances {
-		if acceptance.TurnedInAt != nil {
+		if acceptance.IsClosed() {
 			continue
 		}
 
@@ -68,43 +211,126 @@ func (s *server) findMatchingCurrentQuestNodeTargets(
 
 func (s *server) markQuestNodeCompleteForAcceptance(
 	ctx context.Context,
+	quest *models.Quest,
 	acceptance *models.QuestAcceptanceV2,
 	nodeID uuid.UUID,
 	completedAt time.Time,
 ) (bool, error) {
-	if acceptance == nil {
+	if quest == nil || acceptance == nil || nodeID == uuid.Nil {
 		return false, nil
 	}
 
-	progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(
+	progress, _, err := s.findOrCreateQuestNodeProgress(
 		ctx,
-		acceptance.ID,
+		acceptance,
 		nodeID,
+		completedAt,
 	)
 	if err != nil {
 		return false, err
 	}
-	if progress == nil {
-		progress = &models.QuestNodeProgress{
-			ID:                uuid.New(),
-			CreatedAt:         completedAt,
-			UpdatedAt:         completedAt,
-			QuestAcceptanceID: acceptance.ID,
-			QuestNodeID:       nodeID,
-			CompletedAt:       &completedAt,
-		}
-		if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
+
+	alreadyCompleted := progress.CompletedAt != nil ||
+		progress.Status == models.QuestNodeProgressStatusCompleted
+	if alreadyCompleted {
+		if _, err := s.syncQuestAcceptanceCurrentNode(ctx, quest, acceptance); err != nil {
 			return false, err
 		}
-		return true, nil
-	}
-	if progress.CompletedAt != nil {
 		return false, nil
 	}
-	if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
+
+	progress.Status = models.QuestNodeProgressStatusCompleted
+	progress.CompletedAt = &completedAt
+	progress.AttemptCount++
+	progress.LastFailedAt = nil
+	progress.LastFailureReason = ""
+	progress.UpdatedAt = completedAt
+	if err := s.dbClient.QuestNodeProgress().Update(ctx, progress); err != nil {
 		return false, err
 	}
-	return true, nil
+
+	nextNode := models.ResolveNextQuestNode(
+		quest.Nodes,
+		nodeID,
+		models.QuestNodeTransitionOutcomeSuccess,
+	)
+	nextNodeID := questNodeIDPointer(nextNode)
+	if err := s.dbClient.QuestAcceptanceV2().UpdateCurrentNode(
+		ctx,
+		acceptance.ID,
+		nextNodeID,
+	); err != nil {
+		return false, err
+	}
+	acceptance.CurrentQuestNodeID = nextNodeID
+
+	if _, err := s.syncQuestAcceptanceCurrentNode(ctx, quest, acceptance); err != nil {
+		return false, err
+	}
+	if err := s.finalizeQuestClosureIfReady(ctx, quest, acceptance, completedAt); err != nil {
+		return false, err
+	}
+
+	return !alreadyCompleted, nil
+}
+
+func (s *server) markQuestNodeFailedForAcceptance(
+	ctx context.Context,
+	quest *models.Quest,
+	acceptance *models.QuestAcceptanceV2,
+	node *models.QuestNode,
+	failureReason string,
+	failedAt time.Time,
+) error {
+	if quest == nil || acceptance == nil || node == nil || node.ID == uuid.Nil {
+		return nil
+	}
+
+	progress, _, err := s.findOrCreateQuestNodeProgress(
+		ctx,
+		acceptance,
+		node.ID,
+		failedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if progress.CompletedAt != nil || progress.Status == models.QuestNodeProgressStatusCompleted {
+		return nil
+	}
+
+	progress.Status = models.QuestNodeProgressStatusFailed
+	progress.AttemptCount++
+	progress.LastFailedAt = &failedAt
+	progress.LastFailureReason = strings.TrimSpace(failureReason)
+	progress.UpdatedAt = failedAt
+	if err := s.dbClient.QuestNodeProgress().Update(ctx, progress); err != nil {
+		return err
+	}
+
+	nextNodeID := questNodeIDPointer(node)
+	if node.FailurePolicyNormalized() == models.QuestNodeFailurePolicyTransition {
+		nextNodeID = questNodeIDPointer(models.ResolveNextQuestNode(
+			quest.Nodes,
+			node.ID,
+			models.QuestNodeTransitionOutcomeFailure,
+		))
+	}
+
+	if err := s.dbClient.QuestAcceptanceV2().UpdateCurrentNode(
+		ctx,
+		acceptance.ID,
+		nextNodeID,
+	); err != nil {
+		return err
+	}
+	acceptance.CurrentQuestNodeID = nextNodeID
+
+	_, err = s.syncQuestAcceptanceCurrentNode(ctx, quest, acceptance)
+	if err != nil {
+		return err
+	}
+	return s.finalizeQuestClosureIfReady(ctx, quest, acceptance, failedAt)
 }
 
 func (s *server) shareQuestNodeCompletionWithEligiblePartyMembers(
@@ -175,7 +401,7 @@ func (s *server) shareQuestNodeCompletionWithEligiblePartyMembers(
 			)
 			continue
 		}
-		if acceptance == nil || acceptance.TurnedInAt != nil {
+		if acceptance == nil || acceptance.IsClosed() {
 			continue
 		}
 
@@ -197,6 +423,7 @@ func (s *server) shareQuestNodeCompletionWithEligiblePartyMembers(
 
 		completed, err := s.markQuestNodeCompleteForAcceptance(
 			ctx,
+			quest,
 			acceptance,
 			node.ID,
 			completedAt,

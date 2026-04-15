@@ -3,6 +3,7 @@ import { Exposition } from './exposition';
 import { Character } from './character';
 import { InventoryItem } from './inventoryItem';
 export type QuestNodeSubmissionType = 'text' | 'photo' | 'video' | (string & {});
+export type QuestNodeFailurePolicy = 'retry' | 'transition' | (string & {});
 export type QuestNodeObjectiveType = 'challenge' | 'fetch_quest' | 'story_flag' | 'scenario' | 'exposition' | 'monster_encounter' | 'monster' | (string & {});
 export interface QuestNodeFetchRequirement {
     inventoryItemId: number;
@@ -94,6 +95,7 @@ export interface QuestNode {
     questId: string;
     orderIndex: number;
     submissionType?: QuestNodeSubmissionType;
+    failurePolicy?: QuestNodeFailurePolicy;
     objectiveText?: string;
     objectiveDescription?: string;
     objective?: QuestNodeObjective | null;

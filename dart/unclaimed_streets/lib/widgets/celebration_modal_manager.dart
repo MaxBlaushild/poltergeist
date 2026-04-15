@@ -118,6 +118,8 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Discovery!';
       case 'healingFountainUsed':
         return 'Fully Restored!';
+      case 'resourceGathered':
+        return 'Gathered!';
       case 'scenarioOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Success!' : 'Failed!';
@@ -277,6 +279,33 @@ class CelebrationModalManager extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
+          ],
+        );
+      case 'resourceGathered':
+        final resourceName = data['resourceName'] as String? ?? 'resource';
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList() ??
+            const [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'You gathered $resourceName and received:',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 10),
+            _buildRewardSection(
+              context,
+              experience: rewardExperience,
+              items: itemsAwarded,
+              emptyMessage: 'Nothing was gathered.',
+            ),
           ],
         );
       case 'levelUp':
