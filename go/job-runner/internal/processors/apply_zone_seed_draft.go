@@ -183,6 +183,9 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 	if err := p.seedHealingFountainsForZone(ctx, zone, job); err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed healing fountains: %w", err))
 	}
+	if err := p.seedResourcesForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed resources: %w", err))
+	}
 
 	job.Status = models.ZoneSeedStatusApplied
 	job.ErrorMessage = nil
@@ -745,6 +748,108 @@ func (p *ApplyZoneSeedDraftProcessor) seedHealingFountainsForZone(
 		}
 		if err := p.dbClient.HealingFountain().Create(ctx, fountain); err != nil {
 			return fmt.Errorf("failed to create healing fountain %d/%d: %w", i+1, fountainCount, err)
+		}
+	}
+
+	return nil
+}
+
+type zoneSeedResourcePool struct {
+	resourceType   models.ResourceType
+	inventoryItems []models.InventoryItem
+}
+
+func zoneSeedBuildResourcePools(
+	resourceTypes []models.ResourceType,
+	inventoryItems []models.InventoryItem,
+) []zoneSeedResourcePool {
+	resourceTypeByID := make(map[uuid.UUID]models.ResourceType, len(resourceTypes))
+	for _, resourceType := range resourceTypes {
+		if resourceType.ID == uuid.Nil {
+			continue
+		}
+		resourceTypeByID[resourceType.ID] = resourceType
+	}
+
+	itemsByTypeID := make(map[uuid.UUID][]models.InventoryItem)
+	for _, item := range inventoryItems {
+		if item.ResourceTypeID == nil || *item.ResourceTypeID == uuid.Nil {
+			continue
+		}
+		if _, ok := resourceTypeByID[*item.ResourceTypeID]; !ok {
+			continue
+		}
+		itemsByTypeID[*item.ResourceTypeID] = append(itemsByTypeID[*item.ResourceTypeID], item)
+	}
+
+	pools := make([]zoneSeedResourcePool, 0, len(resourceTypes))
+	for _, resourceType := range resourceTypes {
+		items := itemsByTypeID[resourceType.ID]
+		if len(items) == 0 {
+			continue
+		}
+		pools = append(pools, zoneSeedResourcePool{
+			resourceType:   resourceType,
+			inventoryItems: items,
+		})
+	}
+	return pools
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedResourcesForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	resourceCount := job.ResourceCount
+	if resourceCount <= 0 {
+		return nil
+	}
+
+	resourceTypes, err := p.dbClient.ResourceType().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load resource types: %w", err)
+	}
+	activeInventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load active inventory items: %w", err)
+	}
+
+	resourcePools := zoneSeedBuildResourcePools(resourceTypes, activeInventoryItems)
+	if len(resourcePools) == 0 {
+		return fmt.Errorf("no eligible resource types with active inventory items are available")
+	}
+
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	poolOrder := []int{}
+	for i := 0; i < resourceCount; i++ {
+		if len(poolOrder) == 0 {
+			poolOrder = rand.Perm(len(resourcePools))
+		}
+		poolIndex := poolOrder[0]
+		poolOrder = poolOrder[1:]
+		pool := resourcePools[poolIndex]
+		item := pool.inventoryItems[rand.Intn(len(pool.inventoryItems))]
+		location := p.randomLocationForZone(zone, fallbackLocations)
+
+		resource := &models.Resource{
+			ZoneID:          zone.ID,
+			ResourceTypeID:  pool.resourceType.ID,
+			InventoryItemID: item.ID,
+			Quantity:        1,
+			Latitude:        location.Latitude,
+			Longitude:       location.Longitude,
+			Invalidated:     false,
+		}
+		if err := p.dbClient.Resource().Create(ctx, resource); err != nil {
+			return fmt.Errorf(
+				"failed to create resource %d/%d for type %s with item %d: %w",
+				i+1,
+				resourceCount,
+				strings.TrimSpace(pool.resourceType.Name),
+				item.ID,
+				err,
+			)
 		}
 	}
 

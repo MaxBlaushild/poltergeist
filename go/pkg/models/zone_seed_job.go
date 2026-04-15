@@ -83,6 +83,7 @@ type ZoneSeedJob struct {
 	OptionEncounterCount int               `json:"optionEncounterCount"`
 	TreasureChestCount   int               `json:"treasureChestCount"`
 	HealingFountainCount int               `json:"healingFountainCount"`
+	ResourceCount        int               `json:"resourceCount"`
 	RequiredPlaceTags    StringArray       `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
 	ShopkeeperItemTags   StringArray       `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
 	AutoSeedAudit        ZoneSeedAutoAudit `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`

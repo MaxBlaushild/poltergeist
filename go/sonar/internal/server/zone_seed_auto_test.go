@@ -18,7 +18,8 @@ func TestZoneSeedInferAutoCountsAppliesMinimumFloors(t *testing.T) {
 		counts.InputEncounterCount != 1 ||
 		counts.OptionEncounterCount != 1 ||
 		counts.TreasureChestCount != 1 ||
-		counts.HealingFountainCount != 1 {
+		counts.HealingFountainCount != 1 ||
+		counts.ResourceCount != 1 {
 		t.Fatalf("expected minimum floor of 1 for every count, got %+v", counts)
 	}
 	if len(warnings) != 0 {

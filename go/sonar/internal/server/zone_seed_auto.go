@@ -55,6 +55,7 @@ type zoneSeedDraftCountOverrides struct {
 	OptionEncounterCount *int
 	TreasureChestCount   *int
 	HealingFountainCount *int
+	ResourceCount        *int
 }
 
 func normalizeZoneSeedDraftMode(mode string) (string, error) {
@@ -128,6 +129,9 @@ func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (z
 	if overrides.HealingFountainCount, err = copyCount(requestBody.HealingFountainCount, "healingFountainCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
+	if overrides.ResourceCount, err = copyCount(requestBody.ResourceCount, "resourceCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
 
 	return overrides, nil
 }
@@ -157,6 +161,9 @@ func zoneSeedResolvedCountsFromOverrides(overrides zoneSeedDraftCountOverrides) 
 	}
 	if overrides.HealingFountainCount != nil {
 		counts.HealingFountainCount = *overrides.HealingFountainCount
+	}
+	if overrides.ResourceCount != nil {
+		counts.ResourceCount = *overrides.ResourceCount
 	}
 	return counts
 }
@@ -190,6 +197,9 @@ func zoneSeedApplyCountOverrides(
 	if overrides.HealingFountainCount != nil {
 		counts.HealingFountainCount = *overrides.HealingFountainCount
 	}
+	if overrides.ResourceCount != nil {
+		counts.ResourceCount = *overrides.ResourceCount
+	}
 	return counts
 }
 
@@ -210,6 +220,7 @@ func zoneSeedCountsToNormalizedRequest(
 		OptionEncounterCount: counts.OptionEncounterCount,
 		TreasureChestCount:   counts.TreasureChestCount,
 		HealingFountainCount: counts.HealingFountainCount,
+		ResourceCount:        counts.ResourceCount,
 		RequiredPlaceTags:    requiredTags,
 		ShopkeeperItemTags:   shopkeeperTags,
 		AutoSeedAudit:        autoSeedAudit,
@@ -258,6 +269,7 @@ func zoneSeedInferAutoCounts(
 		OptionEncounterCount: zoneSeedAutoCurveCount(areaAcres, 1.1),
 		TreasureChestCount:   zoneSeedAutoCurveCount(areaAcres, 1.35),
 		HealingFountainCount: zoneSeedAutoCurveCount(areaAcres, 0.75),
+		ResourceCount:        zoneSeedAutoCurveCount(areaAcres, 1.6),
 	}
 
 	warnings := models.StringArray{}

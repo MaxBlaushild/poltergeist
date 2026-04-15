@@ -8,6 +8,8 @@ import '../models/point_of_interest.dart';
 
 const _placeholderUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+const _poiCategoryPlaceholderUrlPrefix =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-marker-category-';
 const _thumbnailSize = 192;
 const _cornerRadius = 14;
 
@@ -92,17 +94,17 @@ Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
 }
 
 Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
-  return _thumbnailCache['poi_category_plain_v1|${category.wireValue}'];
+  return _thumbnailCache['poi_category_plain_v2|${category.wireValue}'];
 }
 
 Uint8List? peekPoiCategoryThumbnailWithQuestMarker(PoiMarkerCategory category) {
-  return _thumbnailCache['poi_category_quest_v1|${category.wireValue}'];
+  return _thumbnailCache['poi_category_quest_v2|${category.wireValue}'];
 }
 
 Uint8List? peekPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  return _thumbnailCache['poi_category_main_story_v1|${category.wireValue}'];
+  return _thumbnailCache['poi_category_main_story_v2|${category.wireValue}'];
 }
 
 /// Fetches the POI image (or placeholder), resizes to a square, applies
@@ -123,8 +125,10 @@ Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
 }
 
 Future<Uint8List?> loadPoiCategoryThumbnail(PoiMarkerCategory category) {
-  final cacheKey = 'poi_category_plain_v1|${category.wireValue}';
+  final cacheKey = 'poi_category_plain_v2|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
+    final generated = await _loadGeneratedPoiCategoryThumbnail(category);
+    if (generated != null) return generated;
     final image = _buildPoiCategoryThumbnail(category);
     return Uint8List.fromList(img.encodePng(image));
   });
@@ -133,8 +137,10 @@ Future<Uint8List?> loadPoiCategoryThumbnail(PoiMarkerCategory category) {
 Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_quest_v1|${category.wireValue}';
+  final cacheKey = 'poi_category_quest_v2|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
+    final generated = await _loadGeneratedPoiCategoryThumbnail(category);
+    if (generated != null) return generated;
     final image = _buildPoiCategoryThumbnail(category);
     return Uint8List.fromList(img.encodePng(image));
   });
@@ -143,12 +149,40 @@ Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
 Future<Uint8List?> loadPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_main_story_v1|${category.wireValue}';
+  final cacheKey = 'poi_category_main_story_v2|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
+    final generated = await _loadGeneratedPoiCategoryThumbnail(
+      category,
+      addMainStoryFrame: true,
+    );
+    if (generated != null) return generated;
     final image = _buildPoiCategoryThumbnail(category);
     _drawMainStoryFrame(image);
     return Uint8List.fromList(img.encodePng(image));
   });
+}
+
+String _poiCategoryPlaceholderUrl(PoiMarkerCategory category) {
+  return '$_poiCategoryPlaceholderUrlPrefix${category.wireValue}.png';
+}
+
+Future<Uint8List?> _loadGeneratedPoiCategoryThumbnail(
+  PoiMarkerCategory category, {
+  bool addMainStoryFrame = false,
+}) async {
+  final bytes = await _loadSourceCached(_poiCategoryPlaceholderUrl(category));
+  if (bytes == null) return null;
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+  final square = img.copyResizeCropSquare(
+    decoded,
+    size: _thumbnailSize,
+    antialias: true,
+  );
+  if (addMainStoryFrame) {
+    _drawMainStoryFrame(square);
+  }
+  return Uint8List.fromList(img.encodePng(square));
 }
 
 Future<Uint8List?> loadBaseDiamondMarker({bool isCurrentUserBase = false}) {

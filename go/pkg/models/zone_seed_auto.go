@@ -15,6 +15,7 @@ type ZoneSeedResolvedCounts struct {
 	OptionEncounterCount int `json:"optionEncounterCount"`
 	TreasureChestCount   int `json:"treasureChestCount"`
 	HealingFountainCount int `json:"healingFountainCount"`
+	ResourceCount        int `json:"resourceCount"`
 }
 
 func (c ZoneSeedResolvedCounts) HasContent() bool {
@@ -25,7 +26,8 @@ func (c ZoneSeedResolvedCounts) HasContent() bool {
 		c.InputEncounterCount != 0 ||
 		c.OptionEncounterCount != 0 ||
 		c.TreasureChestCount != 0 ||
-		c.HealingFountainCount != 0
+		c.HealingFountainCount != 0 ||
+		c.ResourceCount != 0
 }
 
 type ZoneSeedAutoAudit struct {

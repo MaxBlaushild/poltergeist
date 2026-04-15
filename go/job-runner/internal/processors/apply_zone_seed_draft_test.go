@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 )
 
 func TestZoneSeedEncounterMemberCountRange(t *testing.T) {
@@ -44,5 +45,34 @@ func TestPreferredZoneSeedTemplatesForEncounterType(t *testing.T) {
 	standardTemplates := preferredZoneSeedTemplatesForEncounterType(templates, models.MonsterEncounterTypeMonster)
 	if len(standardTemplates) != 1 || standardTemplates[0].MonsterType != models.MonsterTemplateTypeMonster {
 		t.Fatalf("expected standard encounter to prefer monster templates, got %+v", standardTemplates)
+	}
+}
+
+func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
+	typeIDOne := uuid.New()
+	typeIDTwo := uuid.New()
+	typeIDUnused := uuid.New()
+
+	resourceTypes := []models.ResourceType{
+		{ID: typeIDOne, Name: "Ore"},
+		{ID: typeIDTwo, Name: "Herb"},
+		{ID: typeIDUnused, Name: "Crystal"},
+	}
+	items := []models.InventoryItem{
+		{ID: 101, Name: "Iron Ore", ResourceTypeID: &typeIDOne},
+		{ID: 102, Name: "Copper Ore", ResourceTypeID: &typeIDOne},
+		{ID: 201, Name: "Moonleaf", ResourceTypeID: &typeIDTwo},
+		{ID: 301, Name: "Loose Trinket"},
+	}
+
+	pools := zoneSeedBuildResourcePools(resourceTypes, items)
+	if len(pools) != 2 {
+		t.Fatalf("expected 2 eligible resource pools, got %d", len(pools))
+	}
+	if pools[0].resourceType.ID != typeIDOne || len(pools[0].inventoryItems) != 2 {
+		t.Fatalf("expected ore pool with 2 items, got %+v", pools[0])
+	}
+	if pools[1].resourceType.ID != typeIDTwo || len(pools[1].inventoryItems) != 1 {
+		t.Fatalf("expected herb pool with 1 item, got %+v", pools[1])
 	}
 }

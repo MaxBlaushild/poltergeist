@@ -53,6 +53,7 @@ type ZoneSeedCounts = {
   optionEncounterCount: number;
   treasureChestCount: number;
   healingFountainCount: number;
+  resourceCount: number;
 };
 
 type SeedCountField = keyof ZoneSeedCounts;
@@ -84,6 +85,7 @@ type ZoneSeedJob = {
   optionEncounterCount: number;
   treasureChestCount?: number;
   healingFountainCount?: number;
+  resourceCount?: number;
   requiredPlaceTags?: string[];
   shopkeeperItemTags?: string[];
   createdAt?: string;
@@ -113,6 +115,7 @@ const defaultSeedCountInputs: SeedCountInputMap = {
   optionEncounterCount: '0',
   treasureChestCount: '0',
   healingFountainCount: '0',
+  resourceCount: '0',
 };
 
 const seedCountFields: Array<{
@@ -159,6 +162,11 @@ const seedCountFields: Array<{
     key: 'healingFountainCount',
     label: 'Healing fountains',
     description: 'Random healing fountain placements',
+  },
+  {
+    key: 'resourceCount',
+    label: 'Resources',
+    description: 'Random resource nodes across resource types',
   },
 ];
 
@@ -592,10 +600,11 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
   optionEncounterCount: job.optionEncounterCount ?? 0,
   treasureChestCount: job.treasureChestCount ?? 0,
   healingFountainCount: job.healingFountainCount ?? 0,
+  resourceCount: job.resourceCount ?? 0,
 });
 
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
-  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains`;
+  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.resourceCount} resources`;
 
 const autoSeedEarthRadiusMeters = 6378137;
 const autoSeedSquareFeetPerSquareMeter = 10.763910416709722;
@@ -680,6 +689,7 @@ const inferAutoSeedCounts = (
     optionEncounterCount: inferAutoCount(areaAcres, 1.1),
     treasureChestCount: inferAutoCount(areaAcres, 1.35),
     healingFountainCount: inferAutoCount(areaAcres, 0.75),
+    resourceCount: inferAutoCount(areaAcres, 1.6),
   };
 };
 

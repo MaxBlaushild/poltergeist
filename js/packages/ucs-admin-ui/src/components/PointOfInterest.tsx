@@ -24,6 +24,21 @@ type StaticThumbnailResponse = {
   prompt?: string;
 };
 
+type PoiMarkerCategoryIconResponse = StaticThumbnailResponse & {
+  category: string;
+  label: string;
+  defaultPrompt: string;
+};
+
+type PoiMarkerCategoryIconState = PoiMarkerCategoryIconResponse & {
+  prompt: string;
+  busy: boolean;
+  statusLoading: boolean;
+  message: string | null;
+  error: string | null;
+  previewNonce: number;
+};
+
 const flattenTags = (tagGroups: { tags: Tag[] }[]): Tag[] => {
   return tagGroups.flatMap(group => group.tags);
 };
@@ -46,6 +61,35 @@ const formatDate = (value?: string | null) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+};
+
+const extractApiErrorMessage = (
+  error: unknown,
+  fallback: string
+): string => {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    typeof (error as { response?: unknown }).response === 'object'
+  ) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+    if (typeof data === 'object' && data !== null) {
+      const maybeMessage = (data as { error?: unknown; message?: unknown }).error;
+      if (typeof maybeMessage === 'string' && maybeMessage.trim() !== '') {
+        return maybeMessage;
+      }
+      const maybeFallback = (data as { message?: unknown }).message;
+      if (typeof maybeFallback === 'string' && maybeFallback.trim() !== '') {
+        return maybeFallback;
+      }
+    }
+  }
+  if (error instanceof Error && error.message.trim() !== '') {
+    return error.message;
+  }
+  return fallback;
 };
 
 export const PointOfInterest = () => {
@@ -92,6 +136,17 @@ export const PointOfInterest = () => {
   const [poiUndiscoveredPrompt, setPoiUndiscoveredPrompt] = useState(
     defaultPoiUndiscoveredIconPrompt
   );
+  const [poiMarkerCategoryOrder, setPoiMarkerCategoryOrder] = useState<string[]>(
+    []
+  );
+  const [poiMarkerCategoryStates, setPoiMarkerCategoryStates] = useState<
+    Record<string, PoiMarkerCategoryIconState>
+  >({});
+  const [poiMarkerCategoriesLoading, setPoiMarkerCategoriesLoading] =
+    useState(false);
+  const [poiMarkerCategoriesError, setPoiMarkerCategoriesError] = useState<
+    string | null
+  >(null);
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -118,6 +173,15 @@ export const PointOfInterest = () => {
   const [bulkDeletingPoints, setBulkDeletingPoints] = useState(false);
 
   const allTags = useMemo(() => flattenTags(tagGroups), [tagGroups]);
+  const orderedPoiMarkerCategoryStates = useMemo(
+    () =>
+      poiMarkerCategoryOrder
+        .map((category) => poiMarkerCategoryStates[category])
+        .filter(
+          (state): state is PoiMarkerCategoryIconState => state !== undefined
+        ),
+    [poiMarkerCategoryOrder, poiMarkerCategoryStates]
+  );
   const fetchPointsOfInterest = async () => {
     setLoading(true);
     setError(null);
@@ -293,9 +357,295 @@ export const PointOfInterest = () => {
     }
   }, [apiClient, refreshPoiUndiscoveredIconStatus]);
 
+  const applyPoiMarkerCategorySnapshots = React.useCallback(
+    (snapshots: PoiMarkerCategoryIconResponse[]) => {
+      setPoiMarkerCategoryOrder(snapshots.map((snapshot) => snapshot.category));
+      setPoiMarkerCategoryStates((prev) => {
+        const next: Record<string, PoiMarkerCategoryIconState> = {};
+        snapshots.forEach((snapshot) => {
+          const existing = prev[snapshot.category];
+          const changed =
+            existing?.thumbnailUrl !== snapshot.thumbnailUrl ||
+            existing?.status !== snapshot.status ||
+            existing?.exists !== Boolean(snapshot.exists) ||
+            existing?.requestedAt !== snapshot.requestedAt ||
+            existing?.lastModified !== snapshot.lastModified;
+          next[snapshot.category] = {
+            ...snapshot,
+            prompt: existing?.prompt ?? snapshot.defaultPrompt,
+            busy: existing?.busy ?? false,
+            statusLoading: false,
+            message: existing?.message ?? null,
+            error: existing?.error ?? null,
+            previewNonce:
+              existing && !changed ? existing.previewNonce : Date.now(),
+          };
+        });
+        return next;
+      });
+    },
+    []
+  );
+
+  const fetchPoiMarkerCategoryIcons = React.useCallback(async () => {
+    try {
+      setPoiMarkerCategoriesLoading(true);
+      setPoiMarkerCategoriesError(null);
+      const response = await apiClient.get<PoiMarkerCategoryIconResponse[]>(
+        '/sonar/admin/thumbnails/poi-marker-categories'
+      );
+      applyPoiMarkerCategorySnapshots(Array.isArray(response) ? response : []);
+    } catch (err) {
+      console.error('Failed to load POI marker category icons', err);
+      setPoiMarkerCategoriesError(
+        extractApiErrorMessage(
+          err,
+          'Failed to load discovered POI category icons.'
+        )
+      );
+    } finally {
+      setPoiMarkerCategoriesLoading(false);
+    }
+  }, [apiClient, applyPoiMarkerCategorySnapshots]);
+
+  const refreshPoiMarkerCategoryIconStatus = React.useCallback(
+    async (category: string, showMessage = false) => {
+      setPoiMarkerCategoryStates((prev) => {
+        const existing = prev[category];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [category]: {
+            ...existing,
+            statusLoading: true,
+            error: null,
+          },
+        };
+      });
+      try {
+        const response = await apiClient.get<PoiMarkerCategoryIconResponse>(
+          `/sonar/admin/thumbnails/poi-marker-categories/${category}/status`
+        );
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              ...response,
+              prompt: existing.prompt || response.defaultPrompt,
+              busy: false,
+              statusLoading: false,
+              message: showMessage
+                ? `${response.label} icon status refreshed.`
+                : existing.message,
+              error: null,
+              previewNonce: Date.now(),
+            },
+          };
+        });
+      } catch (err) {
+        console.error(
+          `Failed to refresh POI marker category icon status for ${category}`,
+          err
+        );
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              statusLoading: false,
+              error: extractApiErrorMessage(
+                err,
+                `Failed to load ${existing.label} icon status.`
+              ),
+            },
+          };
+        });
+      }
+    },
+    [apiClient]
+  );
+
+  const handlePoiMarkerCategoryPromptChange = React.useCallback(
+    (category: string, value: string) => {
+      setPoiMarkerCategoryStates((prev) => {
+        const existing = prev[category];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [category]: {
+            ...existing,
+            prompt: value,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const handleGeneratePoiMarkerCategoryIcon = React.useCallback(
+    async (category: string) => {
+      const current = poiMarkerCategoryStates[category];
+      if (!current) return;
+      const prompt = current.prompt.trim();
+      if (!prompt) {
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              error: 'Prompt is required.',
+            },
+          };
+        });
+        return;
+      }
+      try {
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              busy: true,
+              error: null,
+              message: null,
+            },
+          };
+        });
+        await apiClient.post(
+          `/sonar/admin/thumbnails/poi-marker-categories/${category}`,
+          { prompt }
+        );
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              message: `${current.label} icon queued for generation.`,
+            },
+          };
+        });
+        await refreshPoiMarkerCategoryIconStatus(category);
+      } catch (err) {
+        console.error(`Failed to generate ${current.label} icon`, err);
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              error: extractApiErrorMessage(
+                err,
+                `Failed to generate ${current.label} icon.`
+              ),
+            },
+          };
+        });
+      } finally {
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              busy: false,
+            },
+          };
+        });
+      }
+    },
+    [apiClient, poiMarkerCategoryStates, refreshPoiMarkerCategoryIconStatus]
+  );
+
+  const handleDeletePoiMarkerCategoryIcon = React.useCallback(
+    async (category: string) => {
+      const current = poiMarkerCategoryStates[category];
+      if (!current) return;
+      try {
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              busy: true,
+              error: null,
+              message: null,
+            },
+          };
+        });
+        await apiClient.delete(
+          `/sonar/admin/thumbnails/poi-marker-categories/${category}`
+        );
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              message: `${current.label} icon deleted.`,
+            },
+          };
+        });
+        await refreshPoiMarkerCategoryIconStatus(category);
+      } catch (err) {
+        console.error(`Failed to delete ${current.label} icon`, err);
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              error: extractApiErrorMessage(
+                err,
+                `Failed to delete ${current.label} icon.`
+              ),
+            },
+          };
+        });
+      } finally {
+        setPoiMarkerCategoryStates((prev) => {
+          const existing = prev[category];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [category]: {
+              ...existing,
+              busy: false,
+            },
+          };
+        });
+      }
+    },
+    [apiClient, poiMarkerCategoryStates, refreshPoiMarkerCategoryIconStatus]
+  );
+
   useEffect(() => {
     void refreshPoiUndiscoveredIconStatus();
   }, [refreshPoiUndiscoveredIconStatus]);
+
+  useEffect(() => {
+    void fetchPoiMarkerCategoryIcons();
+  }, [fetchPoiMarkerCategoryIcons]);
 
   useEffect(() => {
     if (
@@ -309,6 +659,21 @@ export const PointOfInterest = () => {
     }, 4000);
     return () => window.clearInterval(interval);
   }, [poiUndiscoveredStatus, refreshPoiUndiscoveredIconStatus]);
+
+  useEffect(() => {
+    if (
+      !orderedPoiMarkerCategoryStates.some(
+        (state) =>
+          state.status === 'queued' || state.status === 'in_progress'
+      )
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void fetchPoiMarkerCategoryIcons();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [fetchPoiMarkerCategoryIcons, orderedPoiMarkerCategoryStates]);
 
   const handleCreateImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -721,6 +1086,153 @@ export const PointOfInterest = () => {
             {poiUndiscoveredError}
           </div>
         ) : null}
+      </div>
+
+      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Discovered POI Category Icons
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Shared map icons for discovered POIs by marker category. If a
+              category image is missing, the game falls back to the in-app
+              generated marker.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+            onClick={() => void fetchPoiMarkerCategoryIcons()}
+            disabled={poiMarkerCategoriesLoading}
+          >
+            {poiMarkerCategoriesLoading ? 'Refreshing…' : 'Refresh All'}
+          </button>
+        </div>
+
+        {poiMarkerCategoriesError ? (
+          <div className="text-sm text-red-600 mb-3">
+            {poiMarkerCategoriesError}
+          </div>
+        ) : null}
+
+        {orderedPoiMarkerCategoryStates.length === 0 ? (
+          <div className="text-sm text-gray-500">
+            {poiMarkerCategoriesLoading
+              ? 'Loading category icons...'
+              : 'No discovered POI category icons found.'}
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {orderedPoiMarkerCategoryStates.map((state) => (
+              <div
+                key={state.category}
+                className="rounded-md border border-gray-200 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div>
+                    <h3 className="text-base font-semibold">{state.label}</h3>
+                    <div className="text-xs text-gray-500">
+                      Category: {state.category}
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
+                      state.status
+                    )}`}
+                  >
+                    {state.status || 'unknown'}
+                  </span>
+                </div>
+
+                <div className="text-xs text-gray-600 break-all">
+                  URL: {state.thumbnailUrl}
+                </div>
+                <div className="text-xs text-gray-600 mt-1">
+                  Requested: {formatDate(state.requestedAt ?? undefined)}
+                  {' · '}
+                  Last updated: {formatDate(state.lastModified ?? undefined)}
+                </div>
+
+                <label className="block text-sm mt-3">
+                  Generation Prompt
+                  <textarea
+                    className="w-full border rounded-md p-2 mt-1 min-h-[88px]"
+                    value={state.prompt}
+                    onChange={(event) =>
+                      handlePoiMarkerCategoryPromptChange(
+                        state.category,
+                        event.target.value
+                      )
+                    }
+                    placeholder={`Prompt used to generate the ${state.label.toLowerCase()} marker icon.`}
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    type="button"
+                    className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+                    onClick={() =>
+                      void refreshPoiMarkerCategoryIconStatus(
+                        state.category,
+                        true
+                      )
+                    }
+                    disabled={state.statusLoading || state.busy}
+                  >
+                    {state.statusLoading ? 'Refreshing…' : 'Refresh Status'}
+                  </button>
+                  <button
+                    type="button"
+                    className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+                    onClick={() =>
+                      void handleGeneratePoiMarkerCategoryIcon(state.category)
+                    }
+                    disabled={state.statusLoading || state.busy}
+                  >
+                    {state.busy ? 'Working…' : 'Generate Icon'}
+                  </button>
+                  <button
+                    type="button"
+                    className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+                    onClick={() =>
+                      void handleDeletePoiMarkerCategoryIcon(state.category)
+                    }
+                    disabled={state.statusLoading || state.busy}
+                  >
+                    {state.busy ? 'Working…' : 'Delete Icon'}
+                  </button>
+                </div>
+
+                {state.exists ? (
+                  <div className="mt-3">
+                    <img
+                      src={`${state.thumbnailUrl}?v=${state.previewNonce}`}
+                      alt={`${state.label} marker icon preview`}
+                      className="w-24 h-24 object-cover border rounded-md bg-gray-50"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-2">
+                    No icon currently found at this URL.
+                  </div>
+                )}
+
+                {state.message ? (
+                  <div className="text-sm text-emerald-700 mt-2">
+                    {state.message}
+                  </div>
+                ) : null}
+                {state.error ? (
+                  <div className="text-sm text-red-600 mt-2">
+                    {state.error}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">

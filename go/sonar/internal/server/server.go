@@ -448,6 +448,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseDiscoveredIcon))
+	r.GET("/sonar/admin/thumbnails/poi-marker-categories", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listPointOfInterestMarkerCategoryIcons))
+	r.POST("/sonar/admin/thumbnails/poi-marker-categories/:category", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointOfInterestMarkerCategoryIcon))
 	r.GET("/sonar/admin/thumbnails/base-grass", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listBaseGrassTiles))
 	r.POST("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseGrassTile))
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
@@ -460,6 +462,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/base/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/poi-marker-categories/:category/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestMarkerCategoryIconStatus))
 	r.GET("/sonar/admin/thumbnails/base-grass/:gridX/:gridY/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseGrassTileStatus))
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
@@ -471,6 +474,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/poi-marker-categories/:category", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePointOfInterestMarkerCategoryIcon))
 	r.DELETE("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
 	r.GET("/sonar/zones/:id/pins", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZonePins))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
@@ -6026,6 +6030,7 @@ type zoneSeedDraftRequest struct {
 	OptionEncounterCount *int     `json:"optionEncounterCount"`
 	TreasureChestCount   *int     `json:"treasureChestCount"`
 	HealingFountainCount *int     `json:"healingFountainCount"`
+	ResourceCount        *int     `json:"resourceCount"`
 	RequiredPlaceTags    []string `json:"requiredPlaceTags"`
 	ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
 }
@@ -6040,6 +6045,7 @@ type normalizedZoneSeedDraftRequest struct {
 	OptionEncounterCount int
 	TreasureChestCount   int
 	HealingFountainCount int
+	ResourceCount        int
 	RequiredPlaceTags    []string
 	ShopkeeperItemTags   []string
 	AutoSeedAudit        models.ZoneSeedAutoAudit
@@ -6080,6 +6086,7 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 		OptionEncounterCount: counts.OptionEncounterCount,
 		TreasureChestCount:   counts.TreasureChestCount,
 		HealingFountainCount: counts.HealingFountainCount,
+		ResourceCount:        counts.ResourceCount,
 		RequiredPlaceTags:    requiredPlaceTags,
 		ShopkeeperItemTags:   shopkeeperItemTags,
 		AutoSeedAudit:        models.ZoneSeedAutoAudit{},
@@ -6113,6 +6120,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		OptionEncounterCount: settings.OptionEncounterCount,
 		TreasureChestCount:   settings.TreasureChestCount,
 		HealingFountainCount: settings.HealingFountainCount,
+		ResourceCount:        settings.ResourceCount,
 		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
 		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
 		AutoSeedAudit:        settings.AutoSeedAudit,
