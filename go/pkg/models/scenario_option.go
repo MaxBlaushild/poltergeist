@@ -14,6 +14,8 @@ type ScenarioOption struct {
 	OptionText                string                           `json:"optionText" gorm:"column:option_text"`
 	SuccessText               string                           `json:"successText" gorm:"column:success_text"`
 	FailureText               string                           `json:"failureText" gorm:"column:failure_text"`
+	SuccessHandoffText        string                           `json:"successHandoffText" gorm:"column:success_handoff_text"`
+	FailureHandoffText        string                           `json:"failureHandoffText" gorm:"column:failure_handoff_text"`
 	StatTag                   string                           `json:"statTag" gorm:"column:stat_tag"`
 	Proficiencies             StringArray                      `json:"proficiencies" gorm:"type:jsonb"`
 	Difficulty                *int                             `json:"difficulty"`

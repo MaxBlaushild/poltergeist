@@ -115,6 +115,8 @@ type ScenarioTemplateRecord = {
   rewardExperience?: number;
   rewardGold?: number;
   openEnded?: boolean;
+  successHandoffText?: string;
+  failureHandoffText?: string;
   failurePenaltyMode?: 'shared' | 'individual';
   failureHealthDrainType?: 'none' | 'flat' | 'percent';
   failureHealthDrainValue?: number;
@@ -203,6 +205,8 @@ type ScenarioTemplateFormState = {
   rewardExperience: string;
   rewardGold: string;
   openEnded: boolean;
+  successHandoffText: string;
+  failureHandoffText: string;
   failurePenaltyMode: 'shared' | 'individual';
   failureHealthDrainType: 'none' | 'flat' | 'percent';
   failureHealthDrainValue: string;
@@ -497,6 +501,8 @@ const emptyScenarioTemplateForm = (): ScenarioTemplateFormState => ({
   rewardExperience: '0',
   rewardGold: '0',
   openEnded: false,
+  successHandoffText: '',
+  failureHandoffText: '',
   failurePenaltyMode: 'shared',
   failureHealthDrainType: 'none',
   failureHealthDrainValue: '0',
@@ -531,6 +537,8 @@ const scenarioTemplateFormFromRecord = (
   rewardExperience: String(record.rewardExperience ?? 0),
   rewardGold: String(record.rewardGold ?? 0),
   openEnded: Boolean(record.openEnded),
+  successHandoffText: record.successHandoffText?.trim() ?? '',
+  failureHandoffText: record.failureHandoffText?.trim() ?? '',
   failurePenaltyMode:
     record.failurePenaltyMode === 'individual' ? 'individual' : 'shared',
   failureHealthDrainType:
@@ -580,6 +588,8 @@ const buildScenarioTemplatePayloadFromForm = (
   rewardExperience: parseIntegerString(form.rewardExperience, 0),
   rewardGold: parseIntegerString(form.rewardGold, 0),
   openEnded: form.openEnded,
+  successHandoffText: form.successHandoffText.trim(),
+  failureHandoffText: form.failureHandoffText.trim(),
   failurePenaltyMode: form.failurePenaltyMode,
   failureHealthDrainType: form.failureHealthDrainType,
   failureHealthDrainValue: parseIntegerString(form.failureHealthDrainValue, 0),
@@ -5579,6 +5589,42 @@ export const QuestArchetypeComponent = () => {
                                       />
                                     </div>
                                     <div className="qa-field">
+                                      <div className="qa-label">
+                                        Success Handoff
+                                      </div>
+                                      <textarea
+                                        className="qa-textarea"
+                                        rows={3}
+                                        value={
+                                          scenarioTemplateForm.successHandoffText
+                                        }
+                                        onChange={(e) =>
+                                          setScenarioTemplateForm((prev) => ({
+                                            ...prev,
+                                            successHandoffText: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                    <div className="qa-field">
+                                      <div className="qa-label">
+                                        Failure Handoff
+                                      </div>
+                                      <textarea
+                                        className="qa-textarea"
+                                        rows={3}
+                                        value={
+                                          scenarioTemplateForm.failureHandoffText
+                                        }
+                                        onChange={(e) =>
+                                          setScenarioTemplateForm((prev) => ({
+                                            ...prev,
+                                            failureHandoffText: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                    <div className="qa-field">
                                       <div className="qa-label">Image URL</div>
                                       <input
                                         type="text"
@@ -6022,6 +6068,12 @@ export const QuestArchetypeComponent = () => {
                                     >
                                       <div className="qa-label">
                                         Options JSON
+                                      </div>
+                                      <div className="qa-meta">
+                                        Choice options can include
+                                        `successHandoffText` and
+                                        `failureHandoffText` alongside
+                                        `successText` and `failureText`.
                                       </div>
                                       <textarea
                                         className="qa-textarea"

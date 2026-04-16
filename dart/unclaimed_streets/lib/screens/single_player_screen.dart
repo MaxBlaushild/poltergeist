@@ -12243,6 +12243,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 'scenarioPrompt': scenario.prompt,
                 'successful': result.successful,
                 'outcomeText': outcomeText,
+                'questHandoffs': result.questHandoffs
+                    .map((handoff) => handoff.toJson())
+                    .toList(),
                 'reason': result.reason,
                 'roll': result.roll,
                 'statTag': result.statTag,

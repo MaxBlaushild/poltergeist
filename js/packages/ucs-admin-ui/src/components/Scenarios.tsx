@@ -73,6 +73,8 @@ type ScenarioOption = {
   optionText: string;
   successText: string;
   failureText: string;
+  successHandoffText: string;
+  failureHandoffText: string;
   statTag: string;
   proficiencies: string[];
   difficulty?: number | null;
@@ -113,6 +115,8 @@ type ScenarioRecord = {
   rewardGold: number;
   materialRewards: MaterialRewardForm[];
   openEnded: boolean;
+  successHandoffText: string;
+  failureHandoffText: string;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: number;
@@ -149,6 +153,8 @@ type ScenarioFormState = {
   rewardExperience: string;
   rewardGold: string;
   materialRewards: MaterialRewardForm[];
+  successHandoffText: string;
+  failureHandoffText: string;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: string;
@@ -358,6 +364,8 @@ const emptyOption = (): ScenarioOption => ({
   optionText: '',
   successText: 'Your approach works, and momentum turns in your favor.',
   failureText: 'The attempt falls short, and the moment slips away.',
+  successHandoffText: '',
+  failureHandoffText: '',
   statTag: 'charisma',
   proficiencies: [],
   difficulty: null,
@@ -396,6 +404,8 @@ const emptyFormState = (): ScenarioFormState => ({
   rewardExperience: '0',
   rewardGold: '0',
   materialRewards: [],
+  successHandoffText: '',
+  failureHandoffText: '',
   failurePenaltyMode: 'shared',
   failureHealthDrainType: 'none',
   failureHealthDrainValue: '0',
@@ -1330,6 +1340,8 @@ export const Scenarios = () => {
         resourceKey: reward.resourceKey,
         amount: reward.amount ?? 1,
       })),
+      successHandoffText: record.successHandoffText?.trim() ?? '',
+      failureHandoffText: record.failureHandoffText?.trim() ?? '',
       failurePenaltyMode: normalizeFailurePenaltyMode(
         record.failurePenaltyMode
       ),
@@ -1370,6 +1382,8 @@ export const Scenarios = () => {
               failureText:
                 option.failureText?.trim() ||
                 'The attempt falls short, and the moment slips away.',
+              successHandoffText: option.successHandoffText?.trim() ?? '',
+              failureHandoffText: option.failureHandoffText?.trim() ?? '',
               failureHealthDrainType: normalizeFailureDrainType(
                 option.failureHealthDrainType
               ),
@@ -1513,6 +1527,8 @@ export const Scenarios = () => {
         form.openEnded && form.rewardMode === 'explicit'
           ? form.materialRewards
           : [],
+      successHandoffText: form.successHandoffText.trim(),
+      failureHandoffText: form.failureHandoffText.trim(),
       failurePenaltyMode: scenarioPenaltyMode,
       successRewardMode,
       failureHealthDrainType: form.failureHealthDrainType,
@@ -1543,6 +1559,8 @@ export const Scenarios = () => {
             optionText: option.optionText.trim(),
             successText: option.successText.trim(),
             failureText: option.failureText.trim(),
+            successHandoffText: option.successHandoffText.trim(),
+            failureHandoffText: option.failureHandoffText.trim(),
             statTag: option.statTag,
             proficiencies: option.proficiencies,
             difficulty: option.difficulty,
@@ -3608,6 +3626,42 @@ export const Scenarios = () => {
               />
             </label>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <label className="text-sm">
+                Success Handoff
+                <textarea
+                  value={form.successHandoffText}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      successHandoffText: e.target.value,
+                    }))
+                  }
+                  className="w-full border rounded-md p-2 min-h-[72px]"
+                />
+                <span className="mt-1 block text-xs text-gray-500">
+                  Optional story bridge for what this success points to next.
+                </span>
+              </label>
+              <label className="text-sm">
+                Failure Handoff
+                <textarea
+                  value={form.failureHandoffText}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      failureHandoffText: e.target.value,
+                    }))
+                  }
+                  className="w-full border rounded-md p-2 min-h-[72px]"
+                />
+                <span className="mt-1 block text-xs text-gray-500">
+                  Optional story bridge for how the quest thread continues
+                  after failure.
+                </span>
+              </label>
+            </div>
+
             <label className="text-sm block mb-4">
               Internal Tags
               <input
@@ -4082,6 +4136,38 @@ export const Scenarios = () => {
                           }
                           className="w-full border rounded-md p-2 min-h-[64px]"
                         />
+                      </label>
+                      <label className="text-sm md:col-span-2">
+                        Success Handoff
+                        <textarea
+                          value={option.successHandoffText}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              successHandoffText: e.target.value,
+                            })
+                          }
+                          className="w-full border rounded-md p-2 min-h-[64px]"
+                        />
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Optional story bridge describing what this success
+                          reveals or leads to next.
+                        </span>
+                      </label>
+                      <label className="text-sm md:col-span-2">
+                        Failure Handoff
+                        <textarea
+                          value={option.failureHandoffText}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              failureHandoffText: e.target.value,
+                            })
+                          }
+                          className="w-full border rounded-md p-2 min-h-[64px]"
+                        />
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Optional story bridge describing how the quest thread
+                          continues after this choice fails.
+                        </span>
                       </label>
                       <label className="text-sm">
                         Stat Tag

@@ -834,25 +834,22 @@ func (p *ApplyZoneSeedDraftProcessor) seedResourcesForZone(
 		poolIndex := poolOrder[0]
 		poolOrder = poolOrder[1:]
 		pool := resourcePools[poolIndex]
-		item := pool.inventoryItems[rand.Intn(len(pool.inventoryItems))]
 		location := p.randomLocationForZone(zone, fallbackLocations)
 
 		resource := &models.Resource{
-			ZoneID:          zone.ID,
-			ResourceTypeID:  pool.resourceType.ID,
-			InventoryItemID: item.ID,
-			Quantity:        1,
-			Latitude:        location.Latitude,
-			Longitude:       location.Longitude,
-			Invalidated:     false,
+			ZoneID:         zone.ID,
+			ResourceTypeID: pool.resourceType.ID,
+			Quantity:       1,
+			Latitude:       location.Latitude,
+			Longitude:      location.Longitude,
+			Invalidated:    false,
 		}
 		if err := p.dbClient.Resource().Create(ctx, resource); err != nil {
 			return fmt.Errorf(
-				"failed to create resource %d/%d for type %s with item %d: %w",
+				"failed to create resource %d/%d for type %s: %w",
 				i+1,
 				resourceCount,
 				strings.TrimSpace(pool.resourceType.Name),
-				item.ID,
 				err,
 			)
 		}

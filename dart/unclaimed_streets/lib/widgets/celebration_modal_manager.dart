@@ -137,6 +137,25 @@ class CelebrationModalManager extends StatelessWidget {
     }
   }
 
+  DateTime? _parseLocalDateTime(dynamic raw) {
+    if (raw == null) return null;
+    final text = raw.toString().trim();
+    if (text.isEmpty) return null;
+    return DateTime.tryParse(text)?.toLocal();
+  }
+
+  String _formatDateTime(BuildContext context, DateTime dateTime) {
+    final localizations = MaterialLocalizations.of(context);
+    final use24HourFormat =
+        MediaQuery.maybeOf(context)?.alwaysUse24HourFormat ?? false;
+    final date = localizations.formatMediumDate(dateTime);
+    final time = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(dateTime),
+      alwaysUse24HourFormat: use24HourFormat,
+    );
+    return '$date at $time';
+  }
+
   Widget _contentFor(
     String? type,
     Map<String, dynamic> data,
@@ -265,17 +284,17 @@ class CelebrationModalManager extends StatelessWidget {
       case 'healingFountainUsed':
         final healthRestored = (data['healthRestored'] as num?)?.toInt() ?? 0;
         final manaRestored = (data['manaRestored'] as num?)?.toInt() ?? 0;
-        final nextAvailableAt = data['nextAvailableAt']?.toString() ?? '';
+        final nextAvailableAt = _parseLocalDateTime(data['nextAvailableAt']);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Health restored: $healthRestored'),
             Text('Mana restored: $manaRestored'),
-            if (nextAvailableAt.isNotEmpty) ...[
+            if (nextAvailableAt != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Next fountain use: $nextAvailableAt',
+                'Next fountain use: ${_formatDateTime(context, nextAvailableAt)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -604,6 +623,12 @@ class CelebrationModalManager extends StatelessWidget {
             .map((e) => Map<String, dynamic>.from(e))
             .toList() ??
         const [];
+    final questHandoffs =
+        (data['questHandoffs'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const [];
 
     final statLabel = _formatStatLabel(statTag);
     final progressValue = threshold <= 0
@@ -732,6 +757,26 @@ class CelebrationModalManager extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (questHandoffs.isNotEmpty) ...[
+            Text(
+              'What this changes',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...questHandoffs.map(
+              (handoff) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildScenarioQuestHandoffCard(
+                  context,
+                  handoff,
+                  accentColor: accentColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -911,6 +956,125 @@ class CelebrationModalManager extends StatelessWidget {
               spells: spellsAwarded,
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScenarioQuestHandoffCard(
+    BuildContext context,
+    Map<String, dynamic> handoff, {
+    required Color accentColor,
+  }) {
+    final theme = Theme.of(context);
+    final questName = (handoff['questName'] as String?)?.trim() ?? '';
+    final handoffText = (handoff['handoffText'] as String?)?.trim() ?? '';
+    final nextObjectiveText =
+        (handoff['nextObjectiveText'] as String?)?.trim() ?? '';
+    final nextObjectiveDescription =
+        (handoff['nextObjectiveDescription'] as String?)?.trim() ?? '';
+    final nextPointOfInterestName =
+        (handoff['nextPointOfInterestName'] as String?)?.trim() ?? '';
+    final nextCharacterName =
+        (handoff['nextCharacterName'] as String?)?.trim() ?? '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accentColor.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (questName.isNotEmpty)
+            Text(
+              questName,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: accentColor,
+              ),
+            ),
+          if (handoffText.isNotEmpty) ...[
+            if (questName.isNotEmpty) const SizedBox(height: 6),
+            Text(
+              handoffText,
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+            ),
+          ],
+          if (nextObjectiveText.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Next objective',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              nextObjectiveText,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (nextObjectiveDescription.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              nextObjectiveDescription,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (nextPointOfInterestName.isNotEmpty ||
+              nextCharacterName.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (nextPointOfInterestName.isNotEmpty)
+                  _buildScenarioLeadChip(
+                    context,
+                    icon: Icons.place_rounded,
+                    label: nextPointOfInterestName,
+                  ),
+                if (nextCharacterName.isNotEmpty)
+                  _buildScenarioLeadChip(
+                    context,
+                    icon: Icons.person_rounded,
+                    label: nextCharacterName,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScenarioLeadChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(label, style: theme.textTheme.labelMedium),
         ],
       ),
     );

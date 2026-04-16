@@ -16547,6 +16547,8 @@ type scenarioOptionPayload struct {
 	OptionText                string                         `json:"optionText"`
 	SuccessText               string                         `json:"successText"`
 	FailureText               string                         `json:"failureText"`
+	SuccessHandoffText        string                         `json:"successHandoffText"`
+	FailureHandoffText        string                         `json:"failureHandoffText"`
 	StatTag                   string                         `json:"statTag"`
 	Proficiencies             []string                       `json:"proficiencies"`
 	Difficulty                *int                           `json:"difficulty"`
@@ -16624,6 +16626,8 @@ type scenarioUpsertRequest struct {
 	RewardGold                int                            `json:"rewardGold"`
 	MaterialRewards           []baseMaterialRewardPayload    `json:"materialRewards"`
 	OpenEnded                 bool                           `json:"openEnded"`
+	SuccessHandoffText        string                         `json:"successHandoffText"`
+	FailureHandoffText        string                         `json:"failureHandoffText"`
 	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel"`
 	RecurrenceFrequency       *string                        `json:"recurrenceFrequency"`
 	FailurePenaltyMode        string                         `json:"failurePenaltyMode"`
@@ -16665,6 +16669,7 @@ type scenarioPerformResponse struct {
 	Successful             bool                           `json:"successful"`
 	Reason                 string                         `json:"reason"`
 	OutcomeText            string                         `json:"outcomeText"`
+	QuestHandoffs          []scenarioQuestHandoff         `json:"questHandoffs,omitempty"`
 	ScenarioID             uuid.UUID                      `json:"scenarioId"`
 	ScenarioOptionID       *uuid.UUID                     `json:"scenarioOptionId,omitempty"`
 	Roll                   int                            `json:"roll"`
@@ -16691,13 +16696,15 @@ type scenarioPerformResponse struct {
 }
 
 type scenarioFreeformAssessment struct {
-	StatTag         string   `json:"statTag"`
-	Proficiencies   []string `json:"proficiencies"`
-	ResponseScore   int      `json:"responseScore"`
-	CreativityBonus int      `json:"creativityBonus"`
-	Reasoning       string   `json:"reasoning"`
-	SuccessText     string   `json:"successText"`
-	FailureText     string   `json:"failureText"`
+	StatTag            string   `json:"statTag"`
+	Proficiencies      []string `json:"proficiencies"`
+	ResponseScore      int      `json:"responseScore"`
+	CreativityBonus    int      `json:"creativityBonus"`
+	Reasoning          string   `json:"reasoning"`
+	SuccessText        string   `json:"successText"`
+	FailureText        string   `json:"failureText"`
+	SuccessHandoffText string   `json:"successHandoffText"`
+	FailureHandoffText string   `json:"failureHandoffText"`
 }
 
 const scenarioFreeformAssessmentPromptTemplate = `
@@ -16707,6 +16714,9 @@ Scenario:
 %s
 
 Player response:
+%s
+
+Quest context:
 %s
 
 Pick the best primary DnD stat this response uses:
@@ -16733,7 +16743,9 @@ Return JSON only:
   "creativityBonus": 0,
   "reasoning": "short string",
   "successText": "one or two short sentences describing what success looks like for this response",
-  "failureText": "one or two short sentences describing what failure looks like for this response"
+  "failureText": "one or two short sentences describing what failure looks like for this response",
+  "successHandoffText": "one or two short sentences explaining how success points to the next quest beat",
+  "failureHandoffText": "one or two short sentences explaining how the quest thread continues after failure"
 }
 `
 
@@ -17211,8 +17223,21 @@ func extractLLMJSONObject(raw string) string {
 	return trimmed
 }
 
-func (s *server) assessScenarioFreeform(ctx context.Context, scenarioPrompt, responseText string) (*scenarioFreeformAssessment, error) {
-	prompt := fmt.Sprintf(scenarioFreeformAssessmentPromptTemplate, scenarioPrompt, responseText)
+func (s *server) assessScenarioFreeform(
+	ctx context.Context,
+	scenarioPrompt string,
+	responseText string,
+	questContext string,
+) (*scenarioFreeformAssessment, error) {
+	if strings.TrimSpace(questContext) == "" {
+		questContext = "none"
+	}
+	prompt := fmt.Sprintf(
+		scenarioFreeformAssessmentPromptTemplate,
+		scenarioPrompt,
+		responseText,
+		questContext,
+	)
 	answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
 		return nil, err
@@ -17244,6 +17269,8 @@ func (s *server) assessScenarioFreeform(ctx context.Context, scenarioPrompt, res
 	assessment.Reasoning = strings.TrimSpace(assessment.Reasoning)
 	assessment.SuccessText = strings.TrimSpace(assessment.SuccessText)
 	assessment.FailureText = strings.TrimSpace(assessment.FailureText)
+	assessment.SuccessHandoffText = strings.TrimSpace(assessment.SuccessHandoffText)
+	assessment.FailureHandoffText = strings.TrimSpace(assessment.FailureHandoffText)
 	return assessment, nil
 }
 
@@ -17687,6 +17714,8 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 		RewardGold:                body.RewardGold,
 		MaterialRewards:           materialRewards,
 		OpenEnded:                 body.OpenEnded,
+		SuccessHandoffText:        strings.TrimSpace(body.SuccessHandoffText),
+		FailureHandoffText:        strings.TrimSpace(body.FailureHandoffText),
 		FailurePenaltyMode:        failurePenaltyMode,
 		FailureHealthDrainType:    failureHealthDrainType,
 		FailureHealthDrainValue:   failureHealthDrainValue,
@@ -17838,6 +17867,8 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 			OptionText:                optionText,
 			SuccessText:               successText,
 			FailureText:               failureText,
+			SuccessHandoffText:        strings.TrimSpace(optionPayload.SuccessHandoffText),
+			FailureHandoffText:        strings.TrimSpace(optionPayload.FailureHandoffText),
 			StatTag:                   statTag,
 			Proficiencies:             models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
 			Difficulty:                optionDifficulty,
@@ -18742,6 +18773,20 @@ func (s *server) performScenario(ctx *gin.Context) {
 		)
 	}
 
+	questTargets, err := s.findMatchingCurrentQuestNodeTargets(
+		ctx,
+		user.ID,
+		func(node *models.QuestNode) bool {
+			return node != nil &&
+				node.ScenarioID != nil &&
+				*node.ScenarioID == scenario.ID
+		},
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	roll, err := rollScenarioDie()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to roll scenario die"})
@@ -18762,6 +18807,8 @@ func (s *server) performScenario(ctx *gin.Context) {
 	outcomeText := ""
 	openEndedSuccessText := ""
 	openEndedFailureText := ""
+	openEndedSuccessHandoffText := ""
+	openEndedFailureHandoffText := ""
 	var scenarioOptionID *uuid.UUID
 	var selectedOption *models.ScenarioOption
 	var freeformResponse *string
@@ -18776,7 +18823,16 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "responseText is required for open-ended scenarios"})
 			return
 		}
-		assessment, err := s.assessScenarioFreeform(ctx, scenario.Prompt, responseText)
+		questContext := ""
+		if len(questTargets) == 1 {
+			questContext = s.buildScenarioFreeformQuestContext(ctx, questTargets[0])
+		}
+		assessment, err := s.assessScenarioFreeform(
+			ctx,
+			scenario.Prompt,
+			responseText,
+			questContext,
+		)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -18790,6 +18846,8 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 		openEndedSuccessText = assessment.SuccessText
 		openEndedFailureText = assessment.FailureText
+		openEndedSuccessHandoffText = assessment.SuccessHandoffText
+		openEndedFailureHandoffText = assessment.FailureHandoffText
 		rewardExperience = scenario.RewardExperience
 		rewardGold = scenario.RewardGold
 		rewardItems = scenarioRewardItemsFromScenario(scenario.ItemRewards)
@@ -18986,6 +19044,27 @@ func (s *server) performScenario(ctx *gin.Context) {
 		outcomeText = "Success. Your plan holds."
 	}
 
+	preferredHandoffText := ""
+	if success {
+		switch {
+		case selectedOption != nil && strings.TrimSpace(selectedOption.SuccessHandoffText) != "":
+			preferredHandoffText = strings.TrimSpace(selectedOption.SuccessHandoffText)
+		case strings.TrimSpace(scenario.SuccessHandoffText) != "":
+			preferredHandoffText = strings.TrimSpace(scenario.SuccessHandoffText)
+		case scenario.OpenEnded:
+			preferredHandoffText = openEndedSuccessHandoffText
+		}
+	} else {
+		switch {
+		case selectedOption != nil && strings.TrimSpace(selectedOption.FailureHandoffText) != "":
+			preferredHandoffText = strings.TrimSpace(selectedOption.FailureHandoffText)
+		case strings.TrimSpace(scenario.FailureHandoffText) != "":
+			preferredHandoffText = strings.TrimSpace(scenario.FailureHandoffText)
+		case scenario.OpenEnded:
+			preferredHandoffText = openEndedFailureHandoffText
+		}
+	}
+
 	for _, participantID := range participantIDs {
 		attempt := &models.UserScenarioAttempt{
 			UserID:            participantID,
@@ -19033,19 +19112,6 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 	}
 
-	questTargets, err := s.findMatchingCurrentQuestNodeTargets(
-		ctx,
-		user.ID,
-		func(node *models.QuestNode) bool {
-			return node != nil &&
-				node.ScenarioID != nil &&
-				*node.ScenarioID == scenario.ID
-		},
-	)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 	sharedQuestNodeIDs := map[uuid.UUID]struct{}{}
 	resolutionAt := time.Now()
 	for _, target := range questTargets {
@@ -19090,10 +19156,18 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 	}
 
+	questHandoffs := s.buildScenarioQuestHandoffs(
+		ctx,
+		questTargets,
+		success,
+		preferredHandoffText,
+	)
+
 	response := scenarioPerformResponse{
 		Successful:             success,
 		Reason:                 reason,
 		OutcomeText:            outcomeText,
+		QuestHandoffs:          questHandoffs,
 		ScenarioID:             scenario.ID,
 		ScenarioOptionID:       scenarioOptionID,
 		Roll:                   roll,

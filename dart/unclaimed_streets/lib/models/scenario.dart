@@ -239,6 +239,7 @@ class ScenarioPerformResult {
   final bool successful;
   final String reason;
   final String outcomeText;
+  final List<ScenarioQuestHandoff> questHandoffs;
   final String scenarioId;
   final String? scenarioOptionId;
   final int roll;
@@ -267,6 +268,7 @@ class ScenarioPerformResult {
     required this.successful,
     required this.reason,
     required this.outcomeText,
+    this.questHandoffs = const [],
     required this.scenarioId,
     this.scenarioOptionId,
     required this.roll,
@@ -331,11 +333,25 @@ class ScenarioPerformResult {
         }
       }
     }
+    final questHandoffs = <ScenarioQuestHandoff>[];
+    final rawQuestHandoffs = json['questHandoffs'];
+    if (rawQuestHandoffs is List) {
+      for (final handoff in rawQuestHandoffs) {
+        if (handoff is Map<String, dynamic>) {
+          questHandoffs.add(ScenarioQuestHandoff.fromJson(handoff));
+        } else if (handoff is Map) {
+          questHandoffs.add(
+            ScenarioQuestHandoff.fromJson(Map<String, dynamic>.from(handoff)),
+          );
+        }
+      }
+    }
 
     return ScenarioPerformResult(
       successful: json['successful'] as bool? ?? false,
       reason: json['reason']?.toString() ?? '',
       outcomeText: json['outcomeText']?.toString() ?? '',
+      questHandoffs: questHandoffs,
       scenarioId: json['scenarioId']?.toString() ?? '',
       scenarioOptionId: json['scenarioOptionId']?.toString(),
       roll: (json['roll'] as num?)?.toInt() ?? 0,
@@ -383,6 +399,58 @@ class ScenarioPerformResult {
           const [],
     );
   }
+}
+
+class ScenarioQuestHandoff {
+  final String questId;
+  final String questName;
+  final String resolvedNodeId;
+  final String? nextNodeId;
+  final String nextObjectiveText;
+  final String nextObjectiveDescription;
+  final String nextPointOfInterestName;
+  final String nextCharacterName;
+  final String handoffText;
+
+  const ScenarioQuestHandoff({
+    required this.questId,
+    required this.questName,
+    required this.resolvedNodeId,
+    this.nextNodeId,
+    this.nextObjectiveText = '',
+    this.nextObjectiveDescription = '',
+    this.nextPointOfInterestName = '',
+    this.nextCharacterName = '',
+    this.handoffText = '',
+  });
+
+  factory ScenarioQuestHandoff.fromJson(Map<String, dynamic> json) {
+    return ScenarioQuestHandoff(
+      questId: json['questId']?.toString() ?? '',
+      questName: json['questName']?.toString() ?? '',
+      resolvedNodeId: json['resolvedNodeId']?.toString() ?? '',
+      nextNodeId: json['nextNodeId']?.toString(),
+      nextObjectiveText: json['nextObjectiveText']?.toString() ?? '',
+      nextObjectiveDescription:
+          json['nextObjectiveDescription']?.toString() ?? '',
+      nextPointOfInterestName:
+          json['nextPointOfInterestName']?.toString() ?? '',
+      nextCharacterName: json['nextCharacterName']?.toString() ?? '',
+      handoffText: json['handoffText']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'questId': questId,
+    'questName': questName,
+    'resolvedNodeId': resolvedNodeId,
+    'nextNodeId': nextNodeId,
+    'nextObjectiveText': nextObjectiveText,
+    'nextObjectiveDescription': nextObjectiveDescription,
+    'nextPointOfInterestName': nextPointOfInterestName,
+    'nextCharacterName': nextCharacterName,
+    'handoffText': handoffText,
+  };
 }
 
 class ScenarioAppliedFailureStatus {

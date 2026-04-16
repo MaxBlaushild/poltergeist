@@ -331,6 +331,8 @@ func scenarioOptionsToTemplateOptions(options []models.ScenarioOption) models.Sc
 			OptionText:                option.OptionText,
 			SuccessText:               option.SuccessText,
 			FailureText:               option.FailureText,
+			SuccessHandoffText:        option.SuccessHandoffText,
+			FailureHandoffText:        option.FailureHandoffText,
 			StatTag:                   option.StatTag,
 			Proficiencies:             option.Proficiencies,
 			Difficulty:                option.Difficulty,

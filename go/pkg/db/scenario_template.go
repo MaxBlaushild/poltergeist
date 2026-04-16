@@ -147,6 +147,8 @@ func (h *scenarioTemplateHandle) Update(ctx context.Context, id uuid.UUID, updat
 		"reward_experience":            updates.RewardExperience,
 		"reward_gold":                  updates.RewardGold,
 		"open_ended":                   updates.OpenEnded,
+		"success_handoff_text":         updates.SuccessHandoffText,
+		"failure_handoff_text":         updates.FailureHandoffText,
 		"failure_penalty_mode":         updates.FailurePenaltyMode,
 		"failure_health_drain_type":    updates.FailureHealthDrainType,
 		"failure_health_drain_value":   updates.FailureHealthDrainValue,

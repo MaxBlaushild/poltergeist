@@ -24,6 +24,8 @@ type ScenarioTemplateRecord = {
   rewardExperience: number;
   rewardGold: number;
   openEnded: boolean;
+  successHandoffText?: string;
+  failureHandoffText?: string;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: number;
@@ -66,6 +68,8 @@ type ScenarioTemplateFormState = {
   rewardExperience: string;
   rewardGold: string;
   openEnded: boolean;
+  successHandoffText: string;
+  failureHandoffText: string;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
   failureHealthDrainType: ScenarioFailureDrainType;
   failureHealthDrainValue: string;
@@ -156,6 +160,8 @@ const emptyFormState = (): ScenarioTemplateFormState => ({
   rewardExperience: '0',
   rewardGold: '0',
   openEnded: false,
+  successHandoffText: '',
+  failureHandoffText: '',
   failurePenaltyMode: 'shared',
   failureHealthDrainType: 'none',
   failureHealthDrainValue: '0',
@@ -210,6 +216,8 @@ const formFromRecord = (
   rewardExperience: String(record.rewardExperience ?? 0),
   rewardGold: String(record.rewardGold ?? 0),
   openEnded: Boolean(record.openEnded),
+  successHandoffText: record.successHandoffText?.trim() ?? '',
+  failureHandoffText: record.failureHandoffText?.trim() ?? '',
   failurePenaltyMode:
     record.failurePenaltyMode === 'individual' ? 'individual' : 'shared',
   failureHealthDrainType:
@@ -265,6 +273,8 @@ const buildPayloadFromForm = (form: ScenarioTemplateFormState) => ({
   rewardExperience: parseInteger(form.rewardExperience, 0),
   rewardGold: parseInteger(form.rewardGold, 0),
   openEnded: form.openEnded,
+  successHandoffText: form.successHandoffText.trim(),
+  failureHandoffText: form.failureHandoffText.trim(),
   failurePenaltyMode: form.failurePenaltyMode,
   failureHealthDrainType: form.failureHealthDrainType,
   failureHealthDrainValue: parseInteger(form.failureHealthDrainValue, 0),
@@ -681,6 +691,34 @@ export const ScenarioTemplates = () => {
                 />
               </label>
               <label className="block text-sm">
+                Success Handoff
+                <textarea
+                  value={form.successHandoffText}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      successHandoffText: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded border p-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Failure Handoff
+                <textarea
+                  value={form.failureHandoffText}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      failureHandoffText: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded border p-2"
+                />
+              </label>
+              <label className="block text-sm">
                 Image URL
                 <input
                   value={form.imageUrl}
@@ -1001,6 +1039,11 @@ export const ScenarioTemplates = () => {
               </label>
               <label className="block text-sm md:col-span-2">
                 Options JSON
+                <div className="mt-1 text-xs text-gray-500">
+                  Choice options can include `successHandoffText` and
+                  `failureHandoffText` in addition to `successText` and
+                  `failureText`.
+                </div>
                 <textarea
                   value={form.optionsJson}
                   onChange={(event) =>

@@ -33,6 +33,8 @@ type scenarioTemplateUpsertRequest struct {
 	RewardExperience          int                            `json:"rewardExperience"`
 	RewardGold                int                            `json:"rewardGold"`
 	OpenEnded                 bool                           `json:"openEnded"`
+	SuccessHandoffText        string                         `json:"successHandoffText"`
+	FailureHandoffText        string                         `json:"failureHandoffText"`
 	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel"`
 	FailurePenaltyMode        string                         `json:"failurePenaltyMode"`
 	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
@@ -219,6 +221,8 @@ func (s *server) parseScenarioTemplateUpsertRequest(body scenarioTemplateUpsertR
 			OptionText:                optionText,
 			SuccessText:               successText,
 			FailureText:               failureText,
+			SuccessHandoffText:        strings.TrimSpace(optionPayload.SuccessHandoffText),
+			FailureHandoffText:        strings.TrimSpace(optionPayload.FailureHandoffText),
 			StatTag:                   statTag,
 			Proficiencies:             models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
 			Difficulty:                optionDifficulty,
@@ -265,6 +269,8 @@ func (s *server) parseScenarioTemplateUpsertRequest(body scenarioTemplateUpsertR
 		RewardExperience:          body.RewardExperience,
 		RewardGold:                body.RewardGold,
 		OpenEnded:                 body.OpenEnded,
+		SuccessHandoffText:        strings.TrimSpace(body.SuccessHandoffText),
+		FailureHandoffText:        strings.TrimSpace(body.FailureHandoffText),
 		FailurePenaltyMode:        failurePenaltyMode,
 		FailureHealthDrainType:    failureHealthDrainType,
 		FailureHealthDrainValue:   failureHealthDrainValue,
