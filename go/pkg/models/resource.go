@@ -9,18 +9,19 @@ import (
 )
 
 type Resource struct {
-	ID             uuid.UUID    `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt      time.Time    `json:"createdAt"`
-	UpdatedAt      time.Time    `json:"updatedAt"`
-	ZoneID         uuid.UUID    `json:"zoneId"`
-	Zone           Zone         `json:"zone"`
-	ResourceTypeID uuid.UUID    `json:"resourceTypeId" gorm:"column:resource_type_id"`
-	ResourceType   ResourceType `json:"resourceType"`
-	Quantity       int          `json:"quantity"`
-	Latitude       float64      `json:"latitude"`
-	Longitude      float64      `json:"longitude"`
-	Geometry       string       `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	Invalidated    bool         `json:"invalidated"`
+	ID                 uuid.UUID                   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt          time.Time                   `json:"createdAt"`
+	UpdatedAt          time.Time                   `json:"updatedAt"`
+	ZoneID             uuid.UUID                   `json:"zoneId"`
+	Zone               Zone                        `json:"zone"`
+	ResourceTypeID     uuid.UUID                   `json:"resourceTypeId" gorm:"column:resource_type_id"`
+	ResourceType       ResourceType                `json:"resourceType"`
+	GatherRequirements []ResourceGatherRequirement `json:"gatherRequirements,omitempty" gorm:"foreignKey:ResourceID"`
+	Quantity           int                         `json:"quantity"`
+	Latitude           float64                     `json:"latitude"`
+	Longitude          float64                     `json:"longitude"`
+	Geometry           string                      `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Invalidated        bool                        `json:"invalidated"`
 }
 
 func (Resource) TableName() string {

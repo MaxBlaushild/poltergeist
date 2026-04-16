@@ -24,6 +24,11 @@ const (
 	ZoneSeedModeAuto   = "auto"
 )
 
+const (
+	ZoneSeedCountModeAbsolute     = "absolute"
+	ZoneSeedCountModeCurrentAware = "current_aware"
+)
+
 var ZoneSeedStatuses = []string{
 	ZoneSeedStatusQueued,
 	ZoneSeedStatusInProgress,
@@ -37,6 +42,11 @@ var ZoneSeedStatuses = []string{
 var ZoneSeedModes = []string{
 	ZoneSeedModeManual,
 	ZoneSeedModeAuto,
+}
+
+var ZoneSeedCountModes = []string{
+	ZoneSeedCountModeAbsolute,
+	ZoneSeedCountModeCurrentAware,
 }
 
 func IsValidZoneSeedStatus(status string) bool {
@@ -57,6 +67,15 @@ func IsValidZoneSeedMode(mode string) bool {
 	return false
 }
 
+func IsValidZoneSeedCountMode(mode string) bool {
+	for _, candidate := range ZoneSeedCountModes {
+		if candidate == mode {
+			return true
+		}
+	}
+	return false
+}
+
 const (
 	ZoneSeedChallengeShuffleStatusQueued     = "queued"
 	ZoneSeedChallengeShuffleStatusInProgress = "in_progress"
@@ -65,29 +84,31 @@ const (
 )
 
 type ZoneSeedJob struct {
-	ID                   uuid.UUID         `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt            time.Time         `json:"createdAt"`
-	UpdatedAt            time.Time         `json:"updatedAt"`
-	ZoneID               uuid.UUID         `json:"zoneId" gorm:"type:uuid"`
-	Status               string            `json:"status"`
-	SeedMode             string            `json:"seedMode"`
-	ErrorMessage         *string           `json:"errorMessage,omitempty"`
-	PlaceCount           int               `json:"placeCount"`
-	CharacterCount       int               `json:"characterCount"`
-	QuestCount           int               `json:"questCount"`
-	MainQuestCount       int               `json:"mainQuestCount"`
-	MonsterCount         int               `json:"monsterCount"`
-	BossEncounterCount   int               `json:"bossEncounterCount"`
-	RaidEncounterCount   int               `json:"raidEncounterCount"`
-	InputEncounterCount  int               `json:"inputEncounterCount"`
-	OptionEncounterCount int               `json:"optionEncounterCount"`
-	TreasureChestCount   int               `json:"treasureChestCount"`
-	HealingFountainCount int               `json:"healingFountainCount"`
-	ResourceCount        int               `json:"resourceCount"`
-	RequiredPlaceTags    StringArray       `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
-	ShopkeeperItemTags   StringArray       `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
-	AutoSeedAudit        ZoneSeedAutoAudit `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`
-	Draft                ZoneSeedDraft     `json:"draft" gorm:"type:jsonb"`
+	ID                   uuid.UUID          `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt            time.Time          `json:"createdAt"`
+	UpdatedAt            time.Time          `json:"updatedAt"`
+	ZoneID               uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
+	Status               string             `json:"status"`
+	SeedMode             string             `json:"seedMode"`
+	CountMode            string             `json:"countMode"`
+	ErrorMessage         *string            `json:"errorMessage,omitempty"`
+	PlaceCount           int                `json:"placeCount"`
+	CharacterCount       int                `json:"characterCount"`
+	QuestCount           int                `json:"questCount"`
+	MainQuestCount       int                `json:"mainQuestCount"`
+	MonsterCount         int                `json:"monsterCount"`
+	BossEncounterCount   int                `json:"bossEncounterCount"`
+	RaidEncounterCount   int                `json:"raidEncounterCount"`
+	InputEncounterCount  int                `json:"inputEncounterCount"`
+	OptionEncounterCount int                `json:"optionEncounterCount"`
+	TreasureChestCount   int                `json:"treasureChestCount"`
+	HealingFountainCount int                `json:"healingFountainCount"`
+	ResourceCount        int                `json:"resourceCount"`
+	RequiredPlaceTags    StringArray        `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
+	ShopkeeperItemTags   StringArray        `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
+	AutoSeedAudit        ZoneSeedAutoAudit  `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`
+	CountAudit           ZoneSeedCountAudit `json:"countAudit,omitempty" gorm:"type:jsonb"`
+	Draft                ZoneSeedDraft      `json:"draft" gorm:"type:jsonb"`
 }
 
 func (ZoneSeedJob) TableName() string {

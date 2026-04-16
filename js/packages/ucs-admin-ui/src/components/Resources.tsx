@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
-import { Resource, ResourceType } from '@poltergeist/types';
+import { InventoryItem, Resource, ResourceType } from '@poltergeist/types';
 
 type ResourceTypeRecord = ResourceType;
 type ResourceRecord = Resource;
@@ -18,6 +18,33 @@ type ResourceTypeInventorySyncSummary = {
   ambiguousCount: number;
   ambiguousItems: ResourceTypeInventorySyncConflict[];
 };
+
+type ResourceRequirementGenerationResponse = {
+  resource: ResourceRecord;
+  createdItems: InventoryItem[];
+  reusedItems: InventoryItem[];
+  generatedCount: number;
+  reusedCount: number;
+  message: string;
+};
+
+type ResourceGatherRequirementFormRow = {
+  key: string;
+  minLevel: string;
+  maxLevel: string;
+  requiredInventoryItemId: string;
+};
+
+const makeRequirementRow = (
+  values: Partial<ResourceGatherRequirementFormRow> = {}
+): ResourceGatherRequirementFormRow => ({
+  key:
+    values.key ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  minLevel: values.minLevel ?? '1',
+  maxLevel: values.maxLevel ?? '10',
+  requiredInventoryItemId: values.requiredInventoryItemId ?? '',
+});
 
 const extractApiErrorMessage = (
   error: unknown,
@@ -93,14 +120,30 @@ const emptyResourceTypeForm = () => ({
 const emptyResourceForm = () => ({
   zoneId: '',
   resourceTypeId: '',
+  gatherRequirements: [] as ResourceGatherRequirementFormRow[],
   quantity: '1',
   latitude: '',
   longitude: '',
 });
 
+const resourceToForm = (resource: ResourceRecord) => ({
+  zoneId: resource.zoneId,
+  resourceTypeId: resource.resourceTypeId,
+  gatherRequirements: (resource.gatherRequirements || []).map((requirement) =>
+    makeRequirementRow({
+      minLevel: requirement.minLevel.toString(),
+      maxLevel: requirement.maxLevel.toString(),
+      requiredInventoryItemId: requirement.requiredInventoryItemId.toString(),
+    })
+  ),
+  quantity: resource.quantity.toString(),
+  latitude: resource.latitude.toString(),
+  longitude: resource.longitude.toString(),
+});
+
 export const Resources = () => {
   const { apiClient } = useAPI();
-  const { refreshInventoryItems } = useInventory();
+  const { inventoryItems, refreshInventoryItems } = useInventory();
   const { zones } = useZoneContext();
   const [resourceTypes, setResourceTypes] = useState<ResourceTypeRecord[]>([]);
   const [resources, setResources] = useState<ResourceRecord[]>([]);
@@ -127,6 +170,12 @@ export const Resources = () => {
     zones.forEach((zone) => map.set(zone.id, zone.name || zone.id));
     return map;
   }, [zones]);
+
+  const inventoryItemById = useMemo(() => {
+    const map = new Map<number, InventoryItem>();
+    inventoryItems.forEach((item) => map.set(item.id, item));
+    return map;
+  }, [inventoryItems]);
 
   const fetchResourceTypes = useCallback(async () => {
     const response = await apiClient.get<ResourceTypeRecord[]>(
@@ -345,6 +394,39 @@ export const Resources = () => {
       return;
     }
 
+    const gatherRequirements = [];
+    for (const [index, requirement] of resourceForm.gatherRequirements.entries()) {
+      const minLevel = Number(requirement.minLevel);
+      const maxLevel = Number(requirement.maxLevel);
+      const requiredInventoryItemId = Number(requirement.requiredInventoryItemId);
+      if (!Number.isFinite(minLevel) || minLevel < 1) {
+        setError(
+          `Gather requirement ${index + 1} needs a minimum level of 1 or higher.`
+        );
+        return;
+      }
+      if (!Number.isFinite(maxLevel) || maxLevel < minLevel) {
+        setError(
+          `Gather requirement ${index + 1} needs a max level greater than or equal to its min level.`
+        );
+        return;
+      }
+      if (
+        !Number.isFinite(requiredInventoryItemId) ||
+        requiredInventoryItemId < 1
+      ) {
+        setError(
+          `Gather requirement ${index + 1} needs a required inventory item.`
+        );
+        return;
+      }
+      gatherRequirements.push({
+        minLevel,
+        maxLevel,
+        requiredInventoryItemId,
+      });
+    }
+
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -352,6 +434,7 @@ export const Resources = () => {
       const payload = {
         zoneId: resourceForm.zoneId,
         resourceTypeId: resourceForm.resourceTypeId,
+        gatherRequirements,
         quantity,
         latitude,
         longitude,
@@ -384,16 +467,68 @@ export const Resources = () => {
 
   const handleEditResource = useCallback((resource: ResourceRecord) => {
     setEditingResourceId(resource.id);
-    setResourceForm({
-      zoneId: resource.zoneId,
-      resourceTypeId: resource.resourceTypeId,
-      quantity: resource.quantity.toString(),
-      latitude: resource.latitude.toString(),
-      longitude: resource.longitude.toString(),
-    });
+    setResourceForm(resourceToForm(resource));
     setError(null);
     setMessage(null);
   }, []);
+
+  const handleGenerateRequirementItems = useCallback(
+    async (resource: ResourceRecord) => {
+      const resourceTypeName =
+        resource.resourceType?.name ||
+        resourceTypeById.get(resource.resourceTypeId)?.name ||
+        'resource';
+      const replacingExisting =
+        (resource.gatherRequirements?.length || 0) > 0
+          ? ' This will replace its current gather requirement bands.'
+          : '';
+      if (
+        !window.confirm(
+          `Generate the recommended required items for this ${resourceTypeName.toLowerCase()} node?${replacingExisting}`
+        )
+      ) {
+        return;
+      }
+
+      setBusy(true);
+      setError(null);
+      setMessage(null);
+      try {
+        const response =
+          await apiClient.post<ResourceRequirementGenerationResponse>(
+            `/sonar/resources/${resource.id}/generate-requirement-items`,
+            {}
+          );
+        await fetchResources();
+        refreshInventoryItems();
+        if (editingResourceId === resource.id && response.resource) {
+          setEditingResourceId(response.resource.id);
+          setResourceForm(resourceToForm(response.resource));
+        }
+        setMessage(
+          response.message ||
+            `Generated required items for ${resourceTypeName}.`
+        );
+      } catch (nextError) {
+        console.error('Failed to generate resource requirement items:', nextError);
+        setError(
+          extractApiErrorMessage(
+            nextError,
+            'Failed to generate resource requirement items.'
+          )
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      apiClient,
+      editingResourceId,
+      fetchResources,
+      refreshInventoryItems,
+      resourceTypeById,
+    ]
+  );
 
   const handleDeleteResource = useCallback(
     async (resource: ResourceRecord) => {
@@ -443,6 +578,52 @@ export const Resources = () => {
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }, []);
+
+  const updateGatherRequirementRow = useCallback(
+    (
+      key: string,
+      updates: Partial<Omit<ResourceGatherRequirementFormRow, 'key'>>
+    ) => {
+      setResourceForm((current) => ({
+        ...current,
+        gatherRequirements: current.gatherRequirements.map((row) =>
+          row.key === key ? { ...row, ...updates } : row
+        ),
+      }));
+    },
+    []
+  );
+
+  const addGatherRequirementRow = useCallback(() => {
+    setResourceForm((current) => ({
+      ...current,
+      gatherRequirements: [...current.gatherRequirements, makeRequirementRow()],
+    }));
+  }, []);
+
+  const removeGatherRequirementRow = useCallback((key: string) => {
+    setResourceForm((current) => ({
+      ...current,
+      gatherRequirements: current.gatherRequirements.filter(
+        (row) => row.key !== key
+      ),
+    }));
+  }, []);
+
+  const formatRequirementSummary = useCallback(
+    (resource: ResourceRecord) => {
+      const requirements = (resource.gatherRequirements || []).slice();
+      requirements.sort((left, right) => left.minLevel - right.minLevel);
+      return requirements.map((requirement) => {
+        const itemName =
+          requirement.requiredInventoryItem?.name ||
+          inventoryItemById.get(requirement.requiredInventoryItemId)?.name ||
+          `Item #${requirement.requiredInventoryItemId}`;
+        return `Lv ${requirement.minLevel}-${requirement.maxLevel}: ${itemName}`;
+      });
+    },
+    [inventoryItemById]
+  );
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-600">Loading resources…</div>;
@@ -705,6 +886,16 @@ export const Resources = () => {
                     <div className="flex gap-2">
                       <button
                         type="button"
+                        onClick={() => void handleGenerateRequirementItems(resource)}
+                        className="rounded-md border border-amber-200 px-2 py-1 text-xs text-amber-700"
+                        disabled={busy}
+                      >
+                        {resource.gatherRequirements?.length
+                          ? 'Regenerate Required Items'
+                          : 'Generate Required Items'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleEditResource(resource)}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
                       >
@@ -730,6 +921,24 @@ export const Resources = () => {
                       {formatCoordinates(resource.latitude, resource.longitude)}
                     </span>
                   </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Auto-generation creates recommended tool bands at levels 1,
+                    21, 41, 61, and 81, with each item level matching the start
+                    of its band.
+                  </p>
+                  {resource.gatherRequirements &&
+                    resource.gatherRequirements.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                        {formatRequirementSummary(resource).map((summary) => (
+                          <span
+                            key={summary}
+                            className="rounded-full bg-amber-50 px-2 py-1 text-amber-700"
+                          >
+                            Requires {summary}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                 </div>
               </article>
             ))}
@@ -811,6 +1020,105 @@ export const Resources = () => {
                   current level.
                 </div>
               </label>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="block text-sm font-medium text-slate-700">
+                    Gather Requirements
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addGatherRequirementRow}
+                    className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-700"
+                  >
+                    Add Requirement
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Add optional level bands that require a specific inventory
+                  item to gather this node. If no band matches, no tool is
+                  required.
+                </p>
+                {resourceForm.gatherRequirements.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">
+                    No gather requirements configured.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {resourceForm.gatherRequirements.map((requirement) => (
+                      <div
+                        key={requirement.key}
+                        className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                      >
+                        <div className="grid gap-3 sm:grid-cols-[100px_100px_minmax(0,1fr)_auto]">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">
+                              Min Lv
+                            </span>
+                            <input
+                              value={requirement.minLevel}
+                              onChange={(event) =>
+                                updateGatherRequirementRow(requirement.key, {
+                                  minLevel: event.target.value,
+                                })
+                              }
+                              inputMode="numeric"
+                              className="w-full rounded-md border border-slate-300 px-3 py-2"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">
+                              Max Lv
+                            </span>
+                            <input
+                              value={requirement.maxLevel}
+                              onChange={(event) =>
+                                updateGatherRequirementRow(requirement.key, {
+                                  maxLevel: event.target.value,
+                                })
+                              }
+                              inputMode="numeric"
+                              className="w-full rounded-md border border-slate-300 px-3 py-2"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">
+                              Required Item
+                            </span>
+                            <select
+                              value={requirement.requiredInventoryItemId}
+                              onChange={(event) =>
+                                updateGatherRequirementRow(requirement.key, {
+                                  requiredInventoryItemId: event.target.value,
+                                })
+                              }
+                              className="w-full rounded-md border border-slate-300 px-3 py-2"
+                            >
+                              <option value="">Select an inventory item</option>
+                              {inventoryItems.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeGatherRequirementRow(requirement.key)
+                              }
+                              className="rounded-md border border-red-200 px-3 py-2 text-sm text-red-600"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="block text-sm">

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/character.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/quest_log_provider.dart';
 import 'quest_objective_display.dart';
+import 'quest_turn_in_target.dart';
 
 class TrackedQuestsOverlayController extends ChangeNotifier {
   void open() {
@@ -21,7 +23,10 @@ class TrackedQuestsOverlay extends StatefulWidget {
     super.key,
     required this.onFocusPoI,
     required this.onFocusNode,
+    this.onFocusTurnInQuest,
     this.onOpenQuestDetails,
+    this.resolveQuestReceiverCharacter,
+    this.resolveQuestReceiverPoi,
     this.controller,
     this.featuredMainStoryPoi,
     this.featuredMainStoryQuestGiverName,
@@ -31,7 +36,10 @@ class TrackedQuestsOverlay extends StatefulWidget {
   /// When user taps a POI: fly to location then open POI panel.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
+  final void Function(Quest quest)? onFocusTurnInQuest;
   final void Function(Quest quest)? onOpenQuestDetails;
+  final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
+  final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
   final TrackedQuestsOverlayController? controller;
   final PointOfInterest? featuredMainStoryPoi;
   final String? featuredMainStoryQuestGiverName;
@@ -135,8 +143,10 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                 if (a.isMainStory != b.isMainStory) {
                   return a.isMainStory ? -1 : 1;
                 }
-                if (a.readyToTurnIn != b.readyToTurnIn) {
-                  return a.readyToTurnIn ? -1 : 1;
+                final aAwaitingTurnIn = questIsAwaitingTurnIn(a);
+                final bAwaitingTurnIn = questIsAwaitingTurnIn(b);
+                if (aAwaitingTurnIn != bAwaitingTurnIn) {
+                  return aAwaitingTurnIn ? -1 : 1;
                 }
                 return a.name.toLowerCase().compareTo(b.name.toLowerCase());
               });
@@ -234,8 +244,13 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                                         discoveredIds: discoveredIds,
                                         onPoITap: _onPoITap,
                                         onNodeTap: widget.onFocusNode,
+                                        onTurnInTap: widget.onFocusTurnInQuest,
                                         onOpenQuestDetails:
                                             widget.onOpenQuestDetails,
+                                        resolveQuestReceiverCharacter: widget
+                                            .resolveQuestReceiverCharacter,
+                                        resolveQuestReceiverPoi:
+                                            widget.resolveQuestReceiverPoi,
                                       ),
                                     ),
                                   ),
@@ -339,19 +354,28 @@ class _TrackedQuestCard extends StatelessWidget {
     required this.discoveredIds,
     required this.onPoITap,
     required this.onNodeTap,
+    this.onTurnInTap,
     this.onOpenQuestDetails,
+    this.resolveQuestReceiverCharacter,
+    this.resolveQuestReceiverPoi,
   });
 
   final Quest quest;
   final Set<String> discoveredIds;
   final void Function(PointOfInterest) onPoITap;
   final void Function(QuestNode) onNodeTap;
+  final void Function(Quest quest)? onTurnInTap;
   final void Function(Quest quest)? onOpenQuestDetails;
+  final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
+  final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
 
   @override
   Widget build(BuildContext context) {
     final node = quest.currentNode;
     final poi = node?.pointOfInterest;
+    final awaitingTurnIn = questIsAwaitingTurnIn(quest);
+    final questReceiver = resolveQuestReceiverCharacter?.call(quest);
+    final questReceiverPoi = resolveQuestReceiverPoi?.call(quest);
     final objectiveLines = questObjectiveLines(node);
     final hasDirectFocusTarget = questNodeHasDirectFocusTarget(node);
     final detailFallbackTap = onOpenQuestDetails == null
@@ -384,14 +408,19 @@ class _TrackedQuestCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (node == null)
-            const Text(
-              'Quest completed! Turn it in for rewards.',
-              style: TextStyle(color: Colors.white70),
+          if (awaitingTurnIn)
+            _TrackedQuestTurnInTile(
+              questReceiver: questReceiver,
+              pointOfInterest: questReceiverPoi,
+              onTap:
+                  onTurnInTap == null ||
+                      (questReceiver == null && questReceiverPoi == null)
+                  ? detailFallbackTap
+                  : () => onTurnInTap!(quest),
             )
           else if (poi != null)
             _QuestPoiTile(
-              node: node,
+              node: node!,
               poi: poi,
               discoveredIds: discoveredIds,
               onTap: () => onPoITap(poi),
@@ -444,6 +473,98 @@ class _TrackedQuestCard extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _TrackedQuestTurnInTile extends StatelessWidget {
+  const _TrackedQuestTurnInTile({
+    required this.questReceiver,
+    required this.pointOfInterest,
+    this.onTap,
+  });
+
+  final Character? questReceiver;
+  final PointOfInterest? pointOfInterest;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final receiverName = questTurnInReceiverLabel(questReceiver);
+    final locationName = questTurnInLocationLabel(
+      character: questReceiver,
+      pointOfInterest: pointOfInterest,
+    );
+    final headline = questReceiver != null
+        ? 'Return to $receiverName'
+        : 'Turn this quest in';
+    final subhead = pointOfInterest != null
+        ? 'Collect your rewards at $locationName.'
+        : 'Collect your rewards from $receiverName.';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0x1FFFFFFF),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0x33F1D597)),
+        ),
+        child: Row(
+          children: [
+            QuestTurnInPortrait(
+              character: questReceiver,
+              size: 40,
+              backgroundColor: const Color(0x33F1D597),
+              foregroundColor: const Color(0xFFF1D597),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1D597),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Ready to Turn In',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: const Color(0xFF3A1A11),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    headline,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subhead,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.white70),
+          ],
+        ),
       ),
     );
   }

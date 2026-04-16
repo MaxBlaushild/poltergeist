@@ -422,6 +422,14 @@ func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, invento
 			return err
 		}
 	}
+	if err := deleteByColumnIfTableExists(
+		tx,
+		"resource_gather_requirements",
+		"required_inventory_item_id",
+		inventoryItemID,
+	); err != nil {
+		return err
+	}
 
 	nullableItemColumns := []struct {
 		table  string
@@ -457,6 +465,13 @@ func deleteByInventoryItemIDIfTableExists(tx *gorm.DB, tableName string, invento
 		return nil
 	}
 	return tx.Exec("DELETE FROM "+tableName+" WHERE inventory_item_id = ?", inventoryItemID).Error
+}
+
+func deleteByColumnIfTableExists(tx *gorm.DB, tableName string, columnName string, value interface{}) error {
+	if !tx.Migrator().HasTable(tableName) {
+		return nil
+	}
+	return tx.Exec("DELETE FROM "+tableName+" WHERE "+columnName+" = ?", value).Error
 }
 
 func nullifyColumnByInventoryItemIDIfTableExists(tx *gorm.DB, tableName string, columnName string, inventoryItemID int) error {

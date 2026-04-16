@@ -18,6 +18,7 @@ import '../providers/tags_provider.dart';
 import '../providers/zone_provider.dart';
 import '../services/poi_service.dart';
 import 'quest_objective_display.dart';
+import 'quest_turn_in_target.dart';
 
 /// Bottom-sheet content for Quest Log.
 /// [onFocusPoI] when user taps a POI in a quest: close sheet, fly to POI, open POI panel.
@@ -32,6 +33,8 @@ class QuestLogPanel extends StatefulWidget {
     required this.onFocusPoI,
     required this.onFocusNode,
     required this.onFocusTurnInQuest,
+    this.resolveQuestReceiverCharacter,
+    this.resolveQuestReceiverPoi,
     this.initialSelectedQuest,
     this.featuredMainStoryPoi,
     this.featuredMainStoryQuestGiverName,
@@ -42,6 +45,8 @@ class QuestLogPanel extends StatefulWidget {
   final OnFocusPoI onFocusPoI;
   final OnFocusNode onFocusNode;
   final OnFocusTurnInQuest onFocusTurnInQuest;
+  final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
+  final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
   final Quest? initialSelectedQuest;
   final PointOfInterest? featuredMainStoryPoi;
   final String? featuredMainStoryQuestGiverName;
@@ -88,6 +93,14 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   void _focusTurnInQuest(Quest quest) {
     widget.onClose();
     widget.onFocusTurnInQuest(quest);
+  }
+
+  Character? _questReceiverCharacter(Quest quest) {
+    return widget.resolveQuestReceiverCharacter?.call(quest);
+  }
+
+  PointOfInterest? _questReceiverPoi(Quest quest) {
+    return widget.resolveQuestReceiverPoi?.call(quest);
   }
 
   void _focusNode(QuestNode node) {
@@ -474,7 +487,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               (q) =>
                   !q.isMainStory &&
                   q.turnedInAt == null &&
-                  (q.readyToTurnIn || (q.currentNode == null && q.isAccepted)),
+                  questIsAwaitingTurnIn(q),
             )
             .toList();
         final mainStoryActive = ql.quests
@@ -575,6 +588,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                     onQuestTap: (q) =>
                                         setState(() => _selectedQuest = q),
                                     onReadyQuestTap: _focusTurnInQuest,
+                                    resolveQuestReceiverCharacter:
+                                        widget.resolveQuestReceiverCharacter,
+                                    resolveQuestReceiverPoi:
+                                        widget.resolveQuestReceiverPoi,
                                   ),
                                 if (readyToTurnIn.isNotEmpty)
                                   _QuestAccordion(
@@ -591,6 +608,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                     onQuestTap: (q) =>
                                         setState(() => _selectedQuest = q),
                                     onReadyQuestTap: _focusTurnInQuest,
+                                    resolveQuestReceiverCharacter:
+                                        widget.resolveQuestReceiverCharacter,
+                                    resolveQuestReceiverPoi:
+                                        widget.resolveQuestReceiverPoi,
                                   ),
                                 if (tracked.isNotEmpty)
                                   _QuestAccordion(
@@ -607,6 +628,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                     onQuestTap: (q) =>
                                         setState(() => _selectedQuest = q),
                                     onReadyQuestTap: _focusTurnInQuest,
+                                    resolveQuestReceiverCharacter:
+                                        widget.resolveQuestReceiverCharacter,
+                                    resolveQuestReceiverPoi:
+                                        widget.resolveQuestReceiverPoi,
                                   ),
                                 ...tags.tagGroups.map((g) {
                                   final list = tagBuckets[g.id] ?? [];
@@ -628,6 +653,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                     onQuestTap: (q) =>
                                         setState(() => _selectedQuest = q),
                                     onReadyQuestTap: _focusTurnInQuest,
+                                    resolveQuestReceiverCharacter:
+                                        widget.resolveQuestReceiverCharacter,
+                                    resolveQuestReceiverPoi:
+                                        widget.resolveQuestReceiverPoi,
                                   );
                                 }),
                                 if (untagged.isNotEmpty)
@@ -645,6 +674,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                     onQuestTap: (q) =>
                                         setState(() => _selectedQuest = q),
                                     onReadyQuestTap: _focusTurnInQuest,
+                                    resolveQuestReceiverCharacter:
+                                        widget.resolveQuestReceiverCharacter,
+                                    resolveQuestReceiverPoi:
+                                        widget.resolveQuestReceiverPoi,
                                   ),
                               ],
                             )
@@ -791,6 +824,12 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
         final node = quest.currentNode;
         final poi = node?.pointOfInterest;
+        final awaitingTurnIn = questIsAwaitingTurnIn(quest);
+        final questReceiver = _questReceiverCharacter(quest);
+        final questReceiverPoi = _questReceiverPoi(quest);
+        final canFocusTurnIn =
+            awaitingTurnIn &&
+            (questReceiver != null || questReceiverPoi != null);
         final currentUserId = authProvider.user?.id ?? '';
         final seenPartyMemberIds = <String>{};
         final partyMembers = <User>[
@@ -866,7 +905,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   Text(
                     quest.turnedInAt != null
                         ? 'Completed'
-                        : quest.readyToTurnIn
+                        : awaitingTurnIn
                         ? 'Ready to turn in'
                         : quest.isAccepted
                         ? 'In progress'
@@ -998,11 +1037,26 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 ),
               const SizedBox(height: 16),
               if (node == null)
-                Text(
-                  quest.turnedInAt != null
-                      ? 'Quest turned in. Well done!'
-                      : 'Quest completed! Turn it in for rewards.',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      quest.turnedInAt != null
+                          ? 'Quest turned in. Well done!'
+                          : 'Quest completed! Turn it in for rewards.',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (quest.turnedInAt == null) ...[
+                      const SizedBox(height: 12),
+                      _QuestTurnInCard(
+                        questReceiver: questReceiver,
+                        pointOfInterest: questReceiverPoi,
+                        onTap: canFocusTurnIn
+                            ? () => _focusTurnInQuest(quest)
+                            : null,
+                      ),
+                    ],
+                  ],
                 )
               else ...[
                 Text(
@@ -1072,6 +1126,98 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           ),
         );
       },
+    );
+  }
+}
+
+class _QuestTurnInCard extends StatelessWidget {
+  const _QuestTurnInCard({
+    required this.questReceiver,
+    required this.pointOfInterest,
+    this.onTap,
+  });
+
+  final Character? questReceiver;
+  final PointOfInterest? pointOfInterest;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final receiverLabel = questTurnInReceiverLabel(questReceiver);
+    final locationLabel = questTurnInLocationLabel(
+      character: questReceiver,
+      pointOfInterest: pointOfInterest,
+    );
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8E7D0),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE7C36A)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            QuestTurnInPortrait(
+              character: questReceiver,
+              size: 48,
+              backgroundColor: const Color(0xFFFFF4E0),
+              foregroundColor: const Color(0xFF7A1823),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7A1823),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Quest Turn-In',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    questReceiver != null
+                        ? 'Return to $receiverLabel'
+                        : 'Find the quest receiver',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    pointOfInterest != null
+                        ? 'Head to $locationLabel to collect your rewards.'
+                        : 'Collect your rewards from $receiverLabel.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1257,6 +1403,8 @@ class _QuestAccordion extends StatelessWidget {
     required this.onToggle,
     required this.onQuestTap,
     this.onReadyQuestTap,
+    this.resolveQuestReceiverCharacter,
+    this.resolveQuestReceiverPoi,
   });
 
   final String title;
@@ -1266,6 +1414,8 @@ class _QuestAccordion extends StatelessWidget {
   final VoidCallback onToggle;
   final void Function(Quest) onQuestTap;
   final void Function(Quest)? onReadyQuestTap;
+  final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
+  final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
 
   @override
   Widget build(BuildContext context) {
@@ -1345,10 +1495,26 @@ class _QuestAccordion extends StatelessWidget {
                   child: Column(
                     children: quests.map((q) {
                       final node = q.currentNode;
+                      final awaitingTurnIn = questIsAwaitingTurnIn(q);
+                      final questReceiver = resolveQuestReceiverCharacter?.call(
+                        q,
+                      );
+                      final questReceiverPoi = resolveQuestReceiverPoi?.call(q);
+                      final canFocusTurnIn =
+                          awaitingTurnIn &&
+                          onReadyQuestTap != null &&
+                          (questReceiver != null || questReceiverPoi != null);
                       final objectiveSummary = questObjectiveSummary(node);
+                      final receiverLabel = questTurnInReceiverLabel(
+                        questReceiver,
+                      );
+                      final receiverLocation = questTurnInLocationLabel(
+                        character: questReceiver,
+                        pointOfInterest: questReceiverPoi,
+                      );
                       return InkWell(
                         onTap: () {
-                          if (q.readyToTurnIn && onReadyQuestTap != null) {
+                          if (canFocusTurnIn) {
                             onReadyQuestTap!(q);
                             return;
                           }
@@ -1362,7 +1528,7 @@ class _QuestAccordion extends StatelessWidget {
                           ),
                           child: Row(
                             children: [
-                              q.turnedInAt != null || q.readyToTurnIn
+                              q.turnedInAt != null || awaitingTurnIn
                                   ? Container(
                                       width: 22,
                                       height: 22,
@@ -1388,16 +1554,25 @@ class _QuestAccordion extends StatelessWidget {
                                           : Colors.grey.shade400,
                                     ),
                               const SizedBox(width: 12),
-                              QuestObjectiveIcon(
-                                node: node,
-                                discoveredPoiIds: discoveredPoiIds,
-                                size: 36,
-                                borderRadius: 6,
-                                iconColor: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface,
-                                backgroundColor: Colors.grey.shade300,
-                              ),
+                              awaitingTurnIn
+                                  ? QuestTurnInPortrait(
+                                      character: questReceiver,
+                                      size: 36,
+                                      backgroundColor: Colors.amber.shade100,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    )
+                                  : QuestObjectiveIcon(
+                                      node: node,
+                                      discoveredPoiIds: discoveredPoiIds,
+                                      size: 36,
+                                      borderRadius: 6,
+                                      iconColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      backgroundColor: Colors.grey.shade300,
+                                    ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -1440,15 +1615,28 @@ class _QuestAccordion extends StatelessWidget {
                                           ),
                                       ],
                                     ),
-                                    if (questObjectiveChallengeLabel(node) !=
-                                        null) ...[
-                                      const SizedBox(height: 6),
-                                      QuestObjectiveChallengeBadge(node: node),
-                                    ],
-                                    if (objectiveSummary.isNotEmpty) ...[
+                                    if (awaitingTurnIn) ...[
                                       const SizedBox(height: 6),
                                       Text(
-                                        objectiveSummary,
+                                        questReceiver != null
+                                            ? 'Return to $receiverLabel'
+                                            : 'Quest turn-in available',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.82),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Receive your rewards at $receiverLocation.',
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
@@ -1461,6 +1649,31 @@ class _QuestAccordion extends StatelessWidget {
                                                   .withValues(alpha: 0.72),
                                             ),
                                       ),
+                                    ] else ...[
+                                      if (questObjectiveChallengeLabel(node) !=
+                                          null) ...[
+                                        const SizedBox(height: 6),
+                                        QuestObjectiveChallengeBadge(
+                                          node: node,
+                                        ),
+                                      ],
+                                      if (objectiveSummary.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          objectiveSummary,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withValues(alpha: 0.72),
+                                              ),
+                                        ),
+                                      ],
                                     ],
                                   ],
                                 ),

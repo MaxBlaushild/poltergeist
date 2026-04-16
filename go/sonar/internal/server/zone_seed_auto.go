@@ -58,6 +58,11 @@ type zoneSeedDraftCountOverrides struct {
 	ResourceCount        *int
 }
 
+type zoneSeedCurrentContentSnapshot struct {
+	ExistingCounts             models.ZoneSeedResolvedCounts
+	RemainingRequiredPlaceTags []string
+}
+
 func normalizeZoneSeedDraftMode(mode string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(mode))
 	if normalized == "" {
@@ -65,6 +70,17 @@ func normalizeZoneSeedDraftMode(mode string) (string, error) {
 	}
 	if !models.IsValidZoneSeedMode(normalized) {
 		return "", fmt.Errorf("invalid zone seed mode: %s", mode)
+	}
+	return normalized, nil
+}
+
+func normalizeZoneSeedDraftCountMode(mode string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == "" {
+		return models.ZoneSeedCountModeAbsolute, nil
+	}
+	if !models.IsValidZoneSeedCountMode(normalized) {
+		return "", fmt.Errorf("invalid zone seed count mode: %s", mode)
 	}
 	return normalized, nil
 }
@@ -205,13 +221,16 @@ func zoneSeedApplyCountOverrides(
 
 func zoneSeedCountsToNormalizedRequest(
 	mode string,
+	countMode string,
 	counts models.ZoneSeedResolvedCounts,
 	requiredTags []string,
 	shopkeeperTags []string,
 	autoSeedAudit models.ZoneSeedAutoAudit,
+	countAudit models.ZoneSeedCountAudit,
 ) *normalizedZoneSeedDraftRequest {
 	return &normalizedZoneSeedDraftRequest{
 		SeedMode:             mode,
+		CountMode:            countMode,
 		PlaceCount:           counts.PlaceCount,
 		MonsterCount:         counts.MonsterCount,
 		BossEncounterCount:   counts.BossEncounterCount,
@@ -224,7 +243,105 @@ func zoneSeedCountsToNormalizedRequest(
 		RequiredPlaceTags:    requiredTags,
 		ShopkeeperItemTags:   shopkeeperTags,
 		AutoSeedAudit:        autoSeedAudit,
+		CountAudit:           countAudit,
 	}
+}
+
+func zoneSeedCountsFromNormalizedRequest(settings *normalizedZoneSeedDraftRequest) models.ZoneSeedResolvedCounts {
+	if settings == nil {
+		return models.ZoneSeedResolvedCounts{}
+	}
+	return models.ZoneSeedResolvedCounts{
+		PlaceCount:           settings.PlaceCount,
+		MonsterCount:         settings.MonsterCount,
+		BossEncounterCount:   settings.BossEncounterCount,
+		RaidEncounterCount:   settings.RaidEncounterCount,
+		InputEncounterCount:  settings.InputEncounterCount,
+		OptionEncounterCount: settings.OptionEncounterCount,
+		TreasureChestCount:   settings.TreasureChestCount,
+		HealingFountainCount: settings.HealingFountainCount,
+		ResourceCount:        settings.ResourceCount,
+	}
+}
+
+func zoneSeedSubtractExistingCounts(
+	target models.ZoneSeedResolvedCounts,
+	existing models.ZoneSeedResolvedCounts,
+) models.ZoneSeedResolvedCounts {
+	clamp := func(value int) int {
+		if value < 0 {
+			return 0
+		}
+		return value
+	}
+
+	return models.ZoneSeedResolvedCounts{
+		PlaceCount:           clamp(target.PlaceCount - existing.PlaceCount),
+		MonsterCount:         clamp(target.MonsterCount - existing.MonsterCount),
+		BossEncounterCount:   clamp(target.BossEncounterCount - existing.BossEncounterCount),
+		RaidEncounterCount:   clamp(target.RaidEncounterCount - existing.RaidEncounterCount),
+		InputEncounterCount:  clamp(target.InputEncounterCount - existing.InputEncounterCount),
+		OptionEncounterCount: clamp(target.OptionEncounterCount - existing.OptionEncounterCount),
+		TreasureChestCount:   clamp(target.TreasureChestCount - existing.TreasureChestCount),
+		HealingFountainCount: clamp(target.HealingFountainCount - existing.HealingFountainCount),
+		ResourceCount:        clamp(target.ResourceCount - existing.ResourceCount),
+	}
+}
+
+func zoneSeedCurrentAwareWarnings(
+	target models.ZoneSeedResolvedCounts,
+	existing models.ZoneSeedResolvedCounts,
+	queued models.ZoneSeedResolvedCounts,
+) models.StringArray {
+	type countWarning struct {
+		label    string
+		target   int
+		existing int
+		queued   int
+	}
+
+	items := []countWarning{
+		{label: "POIs", target: target.PlaceCount, existing: existing.PlaceCount, queued: queued.PlaceCount},
+		{label: "monster encounters", target: target.MonsterCount, existing: existing.MonsterCount, queued: queued.MonsterCount},
+		{label: "boss encounters", target: target.BossEncounterCount, existing: existing.BossEncounterCount, queued: queued.BossEncounterCount},
+		{label: "raid encounters", target: target.RaidEncounterCount, existing: existing.RaidEncounterCount, queued: queued.RaidEncounterCount},
+		{label: "input scenarios", target: target.InputEncounterCount, existing: existing.InputEncounterCount, queued: queued.InputEncounterCount},
+		{label: "option scenarios", target: target.OptionEncounterCount, existing: existing.OptionEncounterCount, queued: queued.OptionEncounterCount},
+		{label: "treasure chests", target: target.TreasureChestCount, existing: existing.TreasureChestCount, queued: queued.TreasureChestCount},
+		{label: "healing fountains", target: target.HealingFountainCount, existing: existing.HealingFountainCount, queued: queued.HealingFountainCount},
+		{label: "resources", target: target.ResourceCount, existing: existing.ResourceCount, queued: queued.ResourceCount},
+	}
+
+	warnings := models.StringArray{}
+	for _, item := range items {
+		if item.target <= 0 || item.existing <= 0 || item.queued == item.target {
+			continue
+		}
+		if item.queued == 0 {
+			warnings = append(
+				warnings,
+				fmt.Sprintf(
+					"Skipped new %s because the zone already has %d and the target is %d.",
+					item.label,
+					item.existing,
+					item.target,
+				),
+			)
+			continue
+		}
+		warnings = append(
+			warnings,
+			fmt.Sprintf(
+				"Reduced queued %s from %d to %d because %d already exist in the zone.",
+				item.label,
+				item.target,
+				item.queued,
+				item.existing,
+			),
+		)
+	}
+
+	return warnings
 }
 
 func zoneSeedAreaForAudit(zone *models.Zone) (float64, float64, error) {
@@ -654,6 +771,231 @@ func zoneSeedAutoPlaceMatchesAnyTag(place googlemaps.Place, tags []string) bool 
 	return false
 }
 
+func zoneSeedPointOfInterestMarkerTagHints(category models.PointOfInterestMarkerCategory) []string {
+	switch models.NormalizePointOfInterestMarkerCategory(string(category)) {
+	case models.PointOfInterestMarkerCategoryCoffeehouse:
+		return []string{"coffeehouse", "cafe", "coffee_shop", "coffee", "bakery", "espresso", "tea"}
+	case models.PointOfInterestMarkerCategoryTavern:
+		return []string{"tavern", "bar", "pub", "cocktail", "wine", "beer", "restaurant"}
+	case models.PointOfInterestMarkerCategoryEatery:
+		return []string{"eatery", "restaurant", "bakery", "dessert", "ice_cream", "food"}
+	case models.PointOfInterestMarkerCategoryMarket:
+		return []string{"market", "shopping_mall", "store", "shopping", "supermarket", "clothing_store", "florist"}
+	case models.PointOfInterestMarkerCategoryArchive:
+		return []string{"archive", "library", "book_store", "bookstore", "book"}
+	case models.PointOfInterestMarkerCategoryPark:
+		return []string{"park", "garden", "playground", "trail", "hiking", "natural_feature"}
+	case models.PointOfInterestMarkerCategoryWaterfront:
+		return []string{"waterfront", "marina", "beach", "harbor", "scenic"}
+	case models.PointOfInterestMarkerCategoryMuseum:
+		return []string{"museum", "gallery", "art_gallery", "exhibit"}
+	case models.PointOfInterestMarkerCategoryTheater:
+		return []string{"theater", "movie_theater", "cinema", "music", "entertainment"}
+	case models.PointOfInterestMarkerCategoryLandmark:
+		return []string{"landmark", "plaza", "square", "bridge", "view", "scenic"}
+	case models.PointOfInterestMarkerCategoryArena:
+		return []string{"arena", "stadium", "sports_complex", "entertainment"}
+	default:
+		return nil
+	}
+}
+
+func zoneSeedPointOfInterestMatchesTag(pointOfInterest models.PointOfInterest, tag string) bool {
+	needle := strings.ToLower(strings.TrimSpace(tag))
+	if needle == "" {
+		return false
+	}
+
+	aliases := zoneSeedAutoExpandRequiredTagAliases(needle)
+	candidates := make([]string, 0, len(pointOfInterest.Tags)+6)
+	candidates = append(candidates, zoneSeedPointOfInterestMarkerTagHints(pointOfInterest.MarkerCategory)...)
+	if pointOfInterest.GoogleMapsPlaceName != nil {
+		candidates = append(candidates, *pointOfInterest.GoogleMapsPlaceName)
+	}
+	candidates = append(candidates, pointOfInterest.Name, pointOfInterest.OriginalName)
+	for _, poiTag := range pointOfInterest.Tags {
+		candidates = append(candidates, poiTag.Value)
+	}
+
+	for _, candidate := range candidates {
+		normalizedCandidate := strings.ToLower(strings.TrimSpace(candidate))
+		if normalizedCandidate == "" {
+			continue
+		}
+		for _, alias := range aliases {
+			if normalizedCandidate == alias ||
+				strings.Contains(normalizedCandidate, alias) ||
+				strings.Contains(alias, normalizedCandidate) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func zoneSeedRemainingRequiredPlaceTags(
+	requiredTags []string,
+	pointsOfInterest []models.PointOfInterest,
+) []string {
+	if len(requiredTags) == 0 {
+		return []string{}
+	}
+
+	remaining := make([]string, 0, len(requiredTags))
+	for _, tag := range requiredTags {
+		matched := false
+		for _, pointOfInterest := range pointsOfInterest {
+			if zoneSeedPointOfInterestMatchesTag(pointOfInterest, tag) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	return remaining
+}
+
+func (s *server) zoneSeedCurrentContentSnapshot(
+	ctx context.Context,
+	zone *models.Zone,
+	requiredTags []string,
+) (zoneSeedCurrentContentSnapshot, error) {
+	if zone == nil {
+		return zoneSeedCurrentContentSnapshot{}, fmt.Errorf("zone is required")
+	}
+
+	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	encounters, err := s.dbClient.MonsterEncounter().FindByZoneIDExcludingQuestNodes(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	scenarios, err := s.dbClient.Scenario().FindByZoneIDExcludingQuestNodes(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	treasureChests, err := s.dbClient.TreasureChest().FindByZoneID(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	healingFountains, err := s.dbClient.HealingFountain().FindByZoneID(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	resources, err := s.dbClient.Resource().FindByZoneID(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
+	counts := models.ZoneSeedResolvedCounts{
+		PlaceCount:           len(pointsOfInterest),
+		TreasureChestCount:   len(treasureChests),
+		HealingFountainCount: len(healingFountains),
+		ResourceCount:        len(resources),
+	}
+
+	for _, encounter := range encounters {
+		switch encounter.EncounterType {
+		case models.MonsterEncounterTypeBoss:
+			counts.BossEncounterCount++
+		case models.MonsterEncounterTypeRaid:
+			counts.RaidEncounterCount++
+		default:
+			counts.MonsterCount++
+		}
+	}
+
+	for _, scenario := range scenarios {
+		if scenario.OpenEnded {
+			counts.InputEncounterCount++
+		} else {
+			counts.OptionEncounterCount++
+		}
+	}
+
+	return zoneSeedCurrentContentSnapshot{
+		ExistingCounts:             counts,
+		RemainingRequiredPlaceTags: zoneSeedRemainingRequiredPlaceTags(requiredTags, pointsOfInterest),
+	}, nil
+}
+
+func zoneSeedResolveCurrentAwareCounts(
+	targetCounts models.ZoneSeedResolvedCounts,
+	snapshot zoneSeedCurrentContentSnapshot,
+) (models.ZoneSeedResolvedCounts, models.ZoneSeedCountAudit) {
+	queuedCounts := zoneSeedSubtractExistingCounts(targetCounts, snapshot.ExistingCounts)
+	warnings := zoneSeedCurrentAwareWarnings(targetCounts, snapshot.ExistingCounts, queuedCounts)
+	if len(snapshot.RemainingRequiredPlaceTags) > queuedCounts.PlaceCount {
+		warnings = append(
+			warnings,
+			fmt.Sprintf(
+				"Increased queued POIs from %d to %d because %d required place tags are still unmet by existing POIs.",
+				queuedCounts.PlaceCount,
+				len(snapshot.RemainingRequiredPlaceTags),
+				len(snapshot.RemainingRequiredPlaceTags),
+			),
+		)
+		queuedCounts.PlaceCount = len(snapshot.RemainingRequiredPlaceTags)
+	}
+
+	remainingRequiredTags := append([]string{}, snapshot.RemainingRequiredPlaceTags...)
+	if queuedCounts.PlaceCount == 0 {
+		remainingRequiredTags = []string{}
+	}
+
+	return queuedCounts, models.ZoneSeedCountAudit{
+		TargetCounts:               targetCounts,
+		ExistingCounts:             snapshot.ExistingCounts,
+		QueuedCounts:               queuedCounts,
+		RemainingRequiredPlaceTags: models.StringArray(remainingRequiredTags),
+		Warnings:                   warnings,
+	}
+}
+
+func (s *server) applyZoneSeedCurrentAwareMode(
+	ctx context.Context,
+	zone *models.Zone,
+	settings *normalizedZoneSeedDraftRequest,
+) (*normalizedZoneSeedDraftRequest, error) {
+	if settings == nil {
+		return nil, fmt.Errorf("zone seed settings are required")
+	}
+	if settings.CountMode != models.ZoneSeedCountModeCurrentAware {
+		return settings, nil
+	}
+	if zone == nil {
+		return nil, fmt.Errorf("zone is required")
+	}
+
+	targetCounts := zoneSeedCountsFromNormalizedRequest(settings)
+	snapshot, err := s.zoneSeedCurrentContentSnapshot(ctx, zone, settings.RequiredPlaceTags)
+	if err != nil {
+		return nil, err
+	}
+
+	queuedCounts, countAudit := zoneSeedResolveCurrentAwareCounts(targetCounts, snapshot)
+	return zoneSeedCountsToNormalizedRequest(
+		settings.SeedMode,
+		settings.CountMode,
+		queuedCounts,
+		settings.RequiredPlaceTags,
+		settings.ShopkeeperItemTags,
+		settings.AutoSeedAudit,
+		countAudit,
+	), nil
+}
+
 func (s *server) resolveZoneSeedDraftRequest(
 	ctx context.Context,
 	zone *models.Zone,
@@ -669,6 +1011,10 @@ func (s *server) resolveZoneSeedDraftRequest(
 		if err != nil {
 			return nil, newZoneSeedDraftResolutionError(400, err)
 		}
+		settings, err = s.applyZoneSeedCurrentAwareMode(ctx, zone, settings)
+		if err != nil {
+			return nil, newZoneSeedDraftResolutionError(500, err)
+		}
 		return settings, nil
 	}
 
@@ -678,6 +1024,10 @@ func (s *server) resolveZoneSeedDraftRequest(
 
 	requiredTags := normalizeZoneSeedDraftTags(requestBody.RequiredPlaceTags)
 	shopkeeperTags := normalizeZoneSeedDraftTags(requestBody.ShopkeeperItemTags)
+	countMode, err := normalizeZoneSeedDraftCountMode(requestBody.CountMode)
+	if err != nil {
+		return nil, newZoneSeedDraftResolutionError(400, err)
+	}
 	overrides, err := zoneSeedDraftCountOverridesFromRequest(requestBody)
 	if err != nil {
 		return nil, newZoneSeedDraftResolutionError(400, err)
@@ -713,25 +1063,37 @@ func (s *server) resolveZoneSeedDraftRequest(
 		recommendedCounts.PlaceCount = eligiblePlaceCount
 	}
 
-	finalCounts := zoneSeedApplyCountOverrides(recommendedCounts, overrides)
-	if finalCounts.PlaceCount > 0 && len(requiredTags) > finalCounts.PlaceCount {
+	targetCounts := zoneSeedApplyCountOverrides(recommendedCounts, overrides)
+	if targetCounts.PlaceCount > 0 && len(requiredTags) > targetCounts.PlaceCount {
 		return nil, newZoneSeedDraftResolutionError(400, fmt.Errorf("requiredPlaceTags cannot exceed placeCount"))
 	}
-	if finalCounts.PlaceCount == 0 {
+	if targetCounts.PlaceCount == 0 {
 		requiredTags = []string{}
+	}
+
+	queuedCounts := targetCounts
+	countAudit := models.ZoneSeedCountAudit{}
+	if countMode == models.ZoneSeedCountModeCurrentAware {
+		snapshot, err := s.zoneSeedCurrentContentSnapshot(ctx, zone, requiredTags)
+		if err != nil {
+			return nil, newZoneSeedDraftResolutionError(500, fmt.Errorf("failed to inspect current zone content: %w", err))
+		}
+		queuedCounts, countAudit = zoneSeedResolveCurrentAwareCounts(targetCounts, snapshot)
 	}
 
 	return zoneSeedCountsToNormalizedRequest(
 		mode,
-		finalCounts,
+		countMode,
+		queuedCounts,
 		requiredTags,
 		shopkeeperTags,
 		models.ZoneSeedAutoAudit{
 			ZoneAreaSquareFeet: areaSquareFeet,
 			ZoneAreaAcres:      areaAcres,
 			RecommendedCounts:  recommendedCounts,
-			FinalCounts:        finalCounts,
+			FinalCounts:        targetCounts,
 			Warnings:           warnings,
 		},
+		countAudit,
 	), nil
 }

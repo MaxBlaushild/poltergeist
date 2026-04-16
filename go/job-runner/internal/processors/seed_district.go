@@ -172,6 +172,7 @@ func (p *SeedDistrictProcessor) queueZoneSeedJobsForDistrict(
 			ZoneID:               zone.ID,
 			Status:               models.ZoneSeedStatusQueued,
 			SeedMode:             models.ZoneSeedModeManual,
+			CountMode:            models.ZoneSeedCountModeAbsolute,
 			PlaceCount:           settings.PlaceCount,
 			CharacterCount:       0,
 			QuestCount:           0,

@@ -43,6 +43,7 @@ type ZoneSeedDraft = {
 };
 
 type SeedMode = 'manual' | 'auto';
+type CountMode = 'absolute' | 'current_aware';
 
 type ZoneSeedCounts = {
   placeCount: number;
@@ -68,11 +69,20 @@ type ZoneSeedAutoAudit = {
   warnings?: string[];
 };
 
+type ZoneSeedCountAudit = {
+  targetCounts?: ZoneSeedCounts;
+  existingCounts?: ZoneSeedCounts;
+  queuedCounts?: ZoneSeedCounts;
+  remainingRequiredPlaceTags?: string[];
+  warnings?: string[];
+};
+
 type ZoneSeedJob = {
   id: string;
   zoneId: string;
   status: string;
   seedMode?: SeedMode;
+  countMode?: CountMode;
   errorMessage?: string;
   placeCount: number;
   characterCount: number;
@@ -91,11 +101,13 @@ type ZoneSeedJob = {
   createdAt?: string;
   updatedAt?: string;
   autoSeedAudit?: ZoneSeedAutoAudit;
+  countAudit?: ZoneSeedCountAudit;
   draft?: ZoneSeedDraft;
 };
 
 type ZoneSeedDraftPayload = Partial<ZoneSeedCounts> & {
   seedMode?: SeedMode;
+  countMode?: CountMode;
   requiredPlaceTags: string[];
   shopkeeperItemTags: string[];
 };
@@ -606,6 +618,15 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
   `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.resourceCount} resources`;
 
+const formatCountMode = (mode?: CountMode) => {
+  switch (mode) {
+    case 'current_aware':
+      return 'current-aware';
+    default:
+      return 'exact';
+  }
+};
+
 const autoSeedEarthRadiusMeters = 6378137;
 const autoSeedSquareFeetPerSquareMeter = 10.763910416709722;
 const autoSeedSquareFeetPerAcre = 43560;
@@ -710,6 +731,7 @@ const parseCountInput = (value: string) => {
 
 const buildSeedDraftPayload = (params: {
   seedMode: SeedMode;
+  countMode: CountMode;
   manualCountInputs: SeedCountInputMap;
   autoOverrideInputs: Partial<SeedCountInputMap>;
   autoRecommendation: ZoneSeedCounts | null;
@@ -719,6 +741,7 @@ const buildSeedDraftPayload = (params: {
   if (params.seedMode === 'manual') {
     const payload: ZoneSeedDraftPayload = {
       seedMode: 'manual',
+      countMode: params.countMode,
       requiredPlaceTags: params.requiredPlaceTags,
       shopkeeperItemTags: params.shopkeeperItemTags,
     };
@@ -740,6 +763,7 @@ const buildSeedDraftPayload = (params: {
 
   const payload: ZoneSeedDraftPayload = {
     seedMode: 'auto',
+    countMode: params.countMode,
     requiredPlaceTags: params.requiredPlaceTags,
     shopkeeperItemTags: params.shopkeeperItemTags,
   };
@@ -776,6 +800,7 @@ export const ZoneSeedJobs = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [seedMode, setSeedMode] = useState<SeedMode>('manual');
+  const [countMode, setCountMode] = useState<CountMode>('absolute');
   const [manualCountInputs, setManualCountInputs] = useState<SeedCountInputMap>(
     defaultSeedCountInputs
   );
@@ -1149,6 +1174,7 @@ export const ZoneSeedJobs = () => {
     }
     const { payload, error: payloadError } = buildSeedDraftPayload({
       seedMode,
+      countMode,
       manualCountInputs,
       autoOverrideInputs,
       autoRecommendation,
@@ -1168,10 +1194,12 @@ export const ZoneSeedJobs = () => {
         payload
       );
       setJobs((prev) => [created, ...prev]);
-      const warningCount = created.autoSeedAudit?.warnings?.length ?? 0;
+      const warningCount =
+        (created.autoSeedAudit?.warnings?.length ?? 0) +
+        (created.countAudit?.warnings?.length ?? 0);
       setSuccess(
         warningCount > 0
-          ? `Draft queued successfully with ${warningCount} auto-mode note${warningCount === 1 ? '' : 's'}.`
+          ? `Draft queued successfully with ${warningCount} note${warningCount === 1 ? '' : 's'}.`
           : 'Draft queued successfully.'
       );
     } catch (err) {
@@ -1194,6 +1222,7 @@ export const ZoneSeedJobs = () => {
 
     const { payload, error: payloadError } = buildSeedDraftPayload({
       seedMode: 'manual',
+      countMode,
       manualCountInputs,
       autoOverrideInputs: {},
       autoRecommendation: null,
@@ -1454,6 +1483,40 @@ export const ZoneSeedJobs = () => {
               counts. Bulk queueing stays manual-only.
             </p>
           </div>
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-500 mb-2">
+              Count strategy
+            </label>
+            <div className="inline-flex rounded border border-gray-300 bg-gray-50 p-1">
+              <button
+                type="button"
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  countMode === 'absolute'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => setCountMode('absolute')}
+              >
+                Exact
+              </button>
+              <button
+                type="button"
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  countMode === 'current_aware'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => setCountMode('current_aware')}
+              >
+                Current-aware
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Exact mode always creates the full requested counts. Current-aware
+              mode treats the numbers as desired totals and subtracts existing
+              live zone content when the job is queued.
+            </p>
+          </div>
           {seedMode === 'auto' && (
             <div
               className={`mt-4 rounded border px-3 py-3 text-sm ${
@@ -1474,13 +1537,14 @@ export const ZoneSeedJobs = () => {
                   </div>
                   {autoFinalPreviewCounts && (
                     <div className="mt-1 text-xs text-emerald-800">
-                      Current queued counts:{' '}
+                      Current auto target counts:{' '}
                       {formatZoneSeedCounts(autoFinalPreviewCounts)}.
                     </div>
                   )}
                   <div className="mt-1 text-xs text-emerald-800">
-                    Final auto counts can still be adjusted at queue time if
-                    place availability is lower than the recommendation.
+                    {countMode === 'current_aware'
+                      ? 'Current-aware mode will subtract existing live content when the job is queued.'
+                      : 'Final auto counts can still be adjusted at queue time if place availability is lower than the recommendation.'}
                   </div>
                 </>
               ) : (
@@ -1929,6 +1993,9 @@ export const ZoneSeedJobs = () => {
                 const canDelete = canDeleteZoneSeedJob(job);
                 const finalCounts = getJobFinalCounts(job);
                 const recommendedCounts = job.autoSeedAudit?.recommendedCounts;
+                const currentAwareTargetCounts = job.countAudit?.targetCounts;
+                const currentAwareExistingCounts = job.countAudit?.existingCounts;
+                const currentAwareQueuedCounts = job.countAudit?.queuedCounts;
                 return (
                   <div
                     key={job.id}
@@ -1960,7 +2027,8 @@ export const ZoneSeedJobs = () => {
                             {formatDate(job.updatedAt)}
                           </p>
                           <p className="text-xs text-gray-500">
-                            Mode: {job.seedMode || 'manual'} | Counts:{' '}
+                            Mode: {job.seedMode || 'manual'} | Count strategy:{' '}
+                            {formatCountMode(job.countMode)} | Counts:{' '}
                             {formatZoneSeedCounts(finalCounts)},{' '}
                             {job.shopkeeperItemTags?.length ?? 0} shopkeepers
                           </p>
@@ -1974,15 +2042,48 @@ export const ZoneSeedJobs = () => {
                               {recommendedCounts
                                 ? ` | Recommended: ${formatZoneSeedCounts(recommendedCounts)}`
                                 : ''}
+                              {job.autoSeedAudit.finalCounts
+                                ? ` | ${
+                                    job.countMode === 'current_aware'
+                                      ? 'Target'
+                                      : 'Queued'
+                                  }: ${formatZoneSeedCounts(job.autoSeedAudit.finalCounts)}`
+                                : ''}
                             </p>
                           )}
+                          {job.countMode === 'current_aware' &&
+                            currentAwareTargetCounts &&
+                            currentAwareExistingCounts &&
+                            currentAwareQueuedCounts && (
+                              <p className="text-xs text-gray-500">
+                                Current-aware audit: target{' '}
+                                {formatZoneSeedCounts(currentAwareTargetCounts)}{' '}
+                                | existing{' '}
+                                {formatZoneSeedCounts(
+                                  currentAwareExistingCounts
+                                )}{' '}
+                                | queued{' '}
+                                {formatZoneSeedCounts(currentAwareQueuedCounts)}
+                              </p>
+                            )}
+                          {job.countMode === 'current_aware' &&
+                            job.countAudit?.remainingRequiredPlaceTags &&
+                            job.countAudit.remainingRequiredPlaceTags.length >
+                              0 && (
+                              <p className="text-xs text-gray-500">
+                                Remaining required tags on new POIs:{' '}
+                                {job.countAudit.remainingRequiredPlaceTags.join(
+                                  ', '
+                                )}
+                              </p>
+                            )}
                           {job.requiredPlaceTags &&
                             job.requiredPlaceTags.length > 0 && (
                               <p className="text-xs text-gray-500">
                                 Required tags:{' '}
                                 {job.requiredPlaceTags.join(', ')}
                               </p>
-                            )}
+                          )}
                           {job.shopkeeperItemTags &&
                             job.shopkeeperItemTags.length > 0 && (
                               <p className="text-xs text-gray-500">
@@ -2040,6 +2141,14 @@ export const ZoneSeedJobs = () => {
                       job.autoSeedAudit.warnings.length > 0 && (
                         <div className="mt-3 rounded border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                           {job.autoSeedAudit.warnings.join(' ')}
+                        </div>
+                      )}
+
+                    {job.countMode === 'current_aware' &&
+                      job.countAudit?.warnings &&
+                      job.countAudit.warnings.length > 0 && (
+                        <div className="mt-3 rounded border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                          {job.countAudit.warnings.join(' ')}
                         </div>
                       )}
 
@@ -2144,6 +2253,64 @@ export const ZoneSeedJobs = () => {
                             </div>
                           </div>
                           <div>
+                            {job.countMode === 'current_aware' &&
+                              job.countAudit && (
+                                <div className="mb-6">
+                                  <div className="font-semibold">
+                                    Current-aware audit
+                                  </div>
+                                  <div className="mt-2 rounded border border-sky-100 bg-sky-50 p-3 text-xs text-sky-900">
+                                    {currentAwareTargetCounts && (
+                                      <div>
+                                        Target counts:{' '}
+                                        {formatZoneSeedCounts(
+                                          currentAwareTargetCounts
+                                        )}
+                                      </div>
+                                    )}
+                                    {currentAwareExistingCounts && (
+                                      <div className="mt-1">
+                                        Existing counts:{' '}
+                                        {formatZoneSeedCounts(
+                                          currentAwareExistingCounts
+                                        )}
+                                      </div>
+                                    )}
+                                    {currentAwareQueuedCounts && (
+                                      <div className="mt-1">
+                                        Final queued counts:{' '}
+                                        {formatZoneSeedCounts(
+                                          currentAwareQueuedCounts
+                                        )}
+                                      </div>
+                                    )}
+                                    {job.countAudit.remainingRequiredPlaceTags &&
+                                      job.countAudit.remainingRequiredPlaceTags
+                                        .length > 0 && (
+                                        <div className="mt-1">
+                                          Remaining required tags on new POIs:{' '}
+                                          {job.countAudit.remainingRequiredPlaceTags.join(
+                                            ', '
+                                          )}
+                                        </div>
+                                      )}
+                                    {job.countAudit.warnings &&
+                                      job.countAudit.warnings.length > 0 && (
+                                        <div className="mt-2 space-y-1 text-sky-900">
+                                          {job.countAudit.warnings.map(
+                                            (warning, index) => (
+                                              <div
+                                                key={`${job.id}-count-warning-${index}`}
+                                              >
+                                                {warning}
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
+                                </div>
+                              )}
                             {job.seedMode === 'auto' && job.autoSeedAudit && (
                               <div className="mb-6">
                                 <div className="font-semibold">
@@ -2169,7 +2336,9 @@ export const ZoneSeedJobs = () => {
                                   )}
                                   {job.autoSeedAudit.finalCounts && (
                                     <div className="mt-1">
-                                      Final queued counts:{' '}
+                                      {job.countMode === 'current_aware'
+                                        ? 'Auto target counts: '
+                                        : 'Final queued counts: '}
                                       {formatZoneSeedCounts(
                                         job.autoSeedAudit.finalCounts
                                       )}
@@ -2233,6 +2402,9 @@ export const ZoneSeedJobs = () => {
                               <div>
                                 {job.healingFountainCount ?? 0} random healing
                                 fountains
+                              </div>
+                              <div>
+                                {job.resourceCount ?? 0} random resources
                               </div>
                               <div>
                                 {job.shopkeeperItemTags?.length ?? 0}{' '}

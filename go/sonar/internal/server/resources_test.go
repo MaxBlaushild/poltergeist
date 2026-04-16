@@ -185,3 +185,70 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 		})
 	}
 }
+
+func TestActiveResourceGatherRequirementForLevel(t *testing.T) {
+	pickaxeID := 101
+	strongPickaxeID := 202
+	requirements := []models.ResourceGatherRequirement{
+		{MinLevel: 1, MaxLevel: 10, RequiredInventoryItemID: pickaxeID},
+		{MinLevel: 11, MaxLevel: 25, RequiredInventoryItemID: strongPickaxeID},
+	}
+
+	tests := []struct {
+		name       string
+		level      int
+		expectedID int
+	}{
+		{name: "matches first band", level: 7, expectedID: pickaxeID},
+		{name: "matches second band", level: 18, expectedID: strongPickaxeID},
+		{name: "returns nil outside configured bands", level: 40, expectedID: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requirement := activeResourceGatherRequirementForLevel(requirements, tt.level)
+			if tt.expectedID == 0 {
+				if requirement != nil {
+					t.Fatalf("expected nil requirement, got %+v", requirement)
+				}
+				return
+			}
+			if requirement == nil {
+				t.Fatalf("expected requirement for level %d", tt.level)
+			}
+			if requirement.RequiredInventoryItemID != tt.expectedID {
+				t.Fatalf(
+					"requiredInventoryItemId = %d, want %d",
+					requirement.RequiredInventoryItemID,
+					tt.expectedID,
+				)
+			}
+		})
+	}
+}
+
+func TestBuildGeneratedResourceRequirementItemRequestUsesBandFloorLevel(t *testing.T) {
+	resourceType := &models.ResourceType{
+		Name: "Mining",
+		Slug: "mining",
+	}
+	band := resourceRequirementGenerationBand{
+		Label:      "journeyman",
+		MinLevel:   21,
+		MaxLevel:   40,
+		RarityTier: "Uncommon",
+		NamePrefix: "Journeyman",
+	}
+
+	request := buildGeneratedResourceRequirementItemRequest(resourceType, band)
+
+	if request.ItemLevel == nil {
+		t.Fatalf("expected generated request to include an item level")
+	}
+	if *request.ItemLevel != band.MinLevel {
+		t.Fatalf("generated item level = %d, want %d", *request.ItemLevel, band.MinLevel)
+	}
+	if request.ResourceTypeID != nil || request.ResourceType != nil {
+		t.Fatalf("generated requirement tools should not carry a resource type assignment")
+	}
+}

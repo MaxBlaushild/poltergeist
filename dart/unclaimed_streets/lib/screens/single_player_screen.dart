@@ -1965,25 +1965,94 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _focusQuestTurnIn(Quest quest) {
-    final questGiverId = quest.questGiverCharacterId;
-    if (questGiverId == null || questGiverId.isEmpty) {
-      return;
+    unawaited(_focusQuestTurnInFlow(quest));
+  }
+
+  Character? _questReceiverCharacterForQuest(Quest quest) {
+    final questGiverId = quest.questGiverCharacterId?.trim() ?? '';
+    if (questGiverId.isEmpty) return null;
+    return _characterById(questGiverId);
+  }
+
+  PointOfInterest? _questReceiverPoiForQuest(Quest quest) {
+    final character = _questReceiverCharacterForQuest(quest);
+    if (character != null) {
+      final actualPoi = _poiForCharacter(character);
+      if (actualPoi != null) return actualPoi;
     }
-    PointOfInterest? poi;
+
+    final questGiverId = quest.questGiverCharacterId?.trim() ?? '';
+    if (questGiverId.isEmpty) return null;
     for (final candidate in _knownPois()) {
-      final hasMatch = candidate.characters.any((c) => c.id == questGiverId);
-      if (hasMatch) {
-        poi = candidate;
-        break;
+      if (candidate.characters.any((member) => member.id == questGiverId)) {
+        return candidate;
       }
     }
-    if (poi == null) {
+    return null;
+  }
+
+  _MapMarkerIsolation _mapMarkerIsolationForQuestTurnIn(
+    Quest quest, {
+    Character? character,
+    PointOfInterest? poi,
+  }) {
+    final markerKeys = <String>{};
+    final resolvedCharacter =
+        character ?? _questReceiverCharacterForQuest(quest);
+    final resolvedPoi = poi ?? _questReceiverPoiForQuest(quest);
+    if (resolvedPoi != null) {
+      markerKeys.add(_mapMarkerIsolationKey('poi', resolvedPoi.id));
+    }
+    final characterId = resolvedCharacter?.id.trim() ?? '';
+    if (characterId.isNotEmpty) {
+      markerKeys.add(_mapMarkerIsolationKey('character', characterId));
+    }
+    return _MapMarkerIsolation(markerKeys: markerKeys);
+  }
+
+  Future<void> _focusQuestTurnInFlow(Quest quest) async {
+    final questReceiver = _questReceiverCharacterForQuest(quest);
+    final questReceiverPoi = _questReceiverPoiForQuest(quest);
+    final isolation = _mapMarkerIsolationForQuestTurnIn(
+      quest,
+      character: questReceiver,
+      poi: questReceiverPoi,
+    );
+
+    if (questReceiver != null) {
+      final focusLocation = _questNodeFetchCharacterLocation(questReceiver);
+      if (focusLocation != null) {
+        _flyToLocation(focusLocation.latitude, focusLocation.longitude);
+        unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
+      } else if (questReceiverPoi != null) {
+        final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
+        final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
+        _flyToLocation(lat, lng);
+        unawaited(_pulsePoi(lat, lng));
+      }
+      await _runWithMapMarkerIsolation(isolation, () async {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        await _showCharacterPanel(questReceiver);
+      });
       return;
     }
-    final lat = double.tryParse(poi.lat) ?? 0.0;
-    final lng = double.tryParse(poi.lng) ?? 0.0;
+
+    if (questReceiverPoi == null) {
+      return;
+    }
+
+    final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
+    final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
     _flyToLocation(lat, lng);
-    _pulsePoi(lat, lng);
+    unawaited(_pulsePoi(lat, lng));
+    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
+      questReceiverPoi.id,
+    );
+    await _runWithMapMarkerIsolation(
+      isolation,
+      () => _showPointOfInterestPanel(questReceiverPoi, hasDiscovered),
+    );
   }
 
   void _focusQuestNode(QuestNode node) {
@@ -9567,7 +9636,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               controller: _trackedQuestsController,
                               onFocusPoI: _focusQuestPoI,
                               onFocusNode: _focusQuestNode,
+                              onFocusTurnInQuest: _focusQuestTurnIn,
                               onOpenQuestDetails: _openQuestLogForQuest,
+                              resolveQuestReceiverCharacter:
+                                  _questReceiverCharacterForQuest,
+                              resolveQuestReceiverPoi:
+                                  _questReceiverPoiForQuest,
                               featuredMainStoryPoi: mainStoryLead?.poi,
                               featuredMainStoryQuestGiverName:
                                   mainStoryLead?.character?.name,
@@ -12416,6 +12490,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   onFocusPoI: _focusQuestPoI,
                   onFocusNode: _focusQuestNode,
                   onFocusTurnInQuest: _focusQuestTurnIn,
+                  resolveQuestReceiverCharacter:
+                      _questReceiverCharacterForQuest,
+                  resolveQuestReceiverPoi: _questReceiverPoiForQuest,
                   initialSelectedQuest: initialSelectedQuest,
                   featuredMainStoryPoi: featuredMainStoryLead?.poi,
                   featuredMainStoryQuestGiverName:

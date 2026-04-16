@@ -38,11 +38,18 @@ type resourceTypeUpsertRequest struct {
 }
 
 type resourceUpsertRequest struct {
-	ZoneID         string   `json:"zoneId"`
-	ResourceTypeID string   `json:"resourceTypeId"`
-	Quantity       *int     `json:"quantity"`
-	Latitude       *float64 `json:"latitude"`
-	Longitude      *float64 `json:"longitude"`
+	ZoneID             string                                   `json:"zoneId"`
+	ResourceTypeID     string                                   `json:"resourceTypeId"`
+	GatherRequirements []resourceGatherRequirementUpsertRequest `json:"gatherRequirements"`
+	Quantity           *int                                     `json:"quantity"`
+	Latitude           *float64                                 `json:"latitude"`
+	Longitude          *float64                                 `json:"longitude"`
+}
+
+type resourceGatherRequirementUpsertRequest struct {
+	MinLevel                *int `json:"minLevel"`
+	MaxLevel                *int `json:"maxLevel"`
+	RequiredInventoryItemID int  `json:"requiredInventoryItemId"`
 }
 
 type resourceTypeInventoryItemSyncConflict struct {
@@ -58,6 +65,36 @@ type resourceTypeInventoryItemSyncSummary struct {
 	UnmatchedCount      int                                     `json:"unmatchedCount"`
 	AmbiguousCount      int                                     `json:"ambiguousCount"`
 	AmbiguousItems      []resourceTypeInventoryItemSyncConflict `json:"ambiguousItems"`
+}
+
+type resourceRequirementGenerationBand struct {
+	Label      string
+	MinLevel   int
+	MaxLevel   int
+	RarityTier string
+	NamePrefix string
+}
+
+type resourceRequirementToolProfile struct {
+	Noun            string
+	DescriptionStem string
+}
+
+type resourceRequirementGenerationResponse struct {
+	Resource       *models.Resource       `json:"resource"`
+	CreatedItems   []models.InventoryItem `json:"createdItems"`
+	ReusedItems    []models.InventoryItem `json:"reusedItems"`
+	GeneratedCount int                    `json:"generatedCount"`
+	ReusedCount    int                    `json:"reusedCount"`
+	Message        string                 `json:"message"`
+}
+
+var defaultResourceRequirementGenerationBands = []resourceRequirementGenerationBand{
+	{Label: "starter", MinLevel: 1, MaxLevel: 20, RarityTier: "Common", NamePrefix: "Apprentice"},
+	{Label: "journeyman", MinLevel: 21, MaxLevel: 40, RarityTier: "Uncommon", NamePrefix: "Journeyman"},
+	{Label: "expert", MinLevel: 41, MaxLevel: 60, RarityTier: "Uncommon", NamePrefix: "Expert"},
+	{Label: "master", MinLevel: 61, MaxLevel: 80, RarityTier: "Epic", NamePrefix: "Masterwork"},
+	{Label: "legend", MinLevel: 81, MaxLevel: 100, RarityTier: "Mythic", NamePrefix: "Grandmaster"},
 }
 
 func normalizeResourceTypeSlug(value string) string {
@@ -86,6 +123,21 @@ func normalizeResourceTypeSlug(value string) string {
 	return strings.Trim(builder.String(), "-")
 }
 
+func humanizeNormalizedSlug(value string) string {
+	normalized := normalizeResourceTypeSlug(value)
+	if normalized == "" {
+		return ""
+	}
+	parts := strings.Split(normalized, "-")
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[index] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
+}
+
 func resourceTypeMatchKeys(resourceType models.ResourceType) []string {
 	keys := make([]string, 0, 3)
 	seen := map[string]struct{}{}
@@ -104,6 +156,154 @@ func resourceTypeMatchKeys(resourceType models.ResourceType) []string {
 		keys = append(keys, candidate)
 	}
 	return keys
+}
+
+func resourceRequirementToolProfileForType(resourceType *models.ResourceType) resourceRequirementToolProfile {
+	slug := ""
+	name := ""
+	if resourceType != nil {
+		slug = normalizeResourceTypeSlug(resourceType.Slug)
+		if slug == "" {
+			slug = normalizeResourceTypeSlug(resourceType.Name)
+		}
+		name = strings.TrimSpace(resourceType.Name)
+	}
+	switch slug {
+	case "mining":
+		return resourceRequirementToolProfile{
+			Noun:            "Pickaxe",
+			DescriptionStem: "built to crack ore seams and mineral veins",
+		}
+	case "herbalism":
+		return resourceRequirementToolProfile{
+			Noun:            "Herbalist Kit",
+			DescriptionStem: "packed for careful harvesting of roots, herbs, and blooms",
+		}
+	case "logging":
+		return resourceRequirementToolProfile{
+			Noun:            "Hatchet",
+			DescriptionStem: "balanced for felling timber and splitting tough bark",
+		}
+	case "skinning":
+		return resourceRequirementToolProfile{
+			Noun:            "Skinning Knife",
+			DescriptionStem: "sharpened for clean field dressing and hide work",
+		}
+	case "fishing":
+		return resourceRequirementToolProfile{
+			Noun:            "Fishing Rod",
+			DescriptionStem: "rigged for landing sturdy river and coastal catches",
+		}
+	default:
+		displayName := strings.TrimSpace(name)
+		if displayName == "" {
+			displayName = humanizeNormalizedSlug(slug)
+		}
+		if displayName == "" {
+			displayName = "Gathering"
+		}
+		return resourceRequirementToolProfile{
+			Noun:            fmt.Sprintf("%s Tool", displayName),
+			DescriptionStem: fmt.Sprintf("made for gathering %s nodes", strings.ToLower(displayName)),
+		}
+	}
+}
+
+func generatedResourceRequirementTags(resourceTypeSlug string, band resourceRequirementGenerationBand) []string {
+	return parseInventoryInternalTags([]string{
+		"gathering-tool",
+		"resource-requirement",
+		fmt.Sprintf("tool-for-%s", resourceTypeSlug),
+		fmt.Sprintf("resource-band-%d-%d", band.MinLevel, band.MaxLevel),
+	})
+}
+
+func inventoryItemHasNormalizedTags(item models.InventoryItem, tags []string) bool {
+	if len(tags) == 0 {
+		return true
+	}
+	itemTags := parseInventoryInternalTags([]string(item.InternalTags))
+	if len(itemTags) == 0 {
+		return false
+	}
+	tagSet := make(map[string]struct{}, len(itemTags))
+	for _, tag := range itemTags {
+		tagSet[string(tag)] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, exists := tagSet[tag]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func findExistingGeneratedResourceRequirementItem(
+	items []models.InventoryItem,
+	requiredTags []string,
+	itemLevel int,
+) *models.InventoryItem {
+	for index := range items {
+		item := &items[index]
+		if item.Archived || item.ID <= 0 {
+			continue
+		}
+		if item.ItemLevel != itemLevel {
+			continue
+		}
+		if !inventoryItemHasNormalizedTags(*item, requiredTags) {
+			continue
+		}
+		return item
+	}
+	return nil
+}
+
+func buildGeneratedResourceRequirementItemRequest(
+	resourceType *models.ResourceType,
+	band resourceRequirementGenerationBand,
+) inventoryItemUpsertRequest {
+	resourceTypeSlug := ""
+	resourceTypeName := ""
+	if resourceType != nil {
+		resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Slug)
+		if resourceTypeSlug == "" {
+			resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Name)
+		}
+		resourceTypeName = strings.TrimSpace(resourceType.Name)
+	}
+	if resourceTypeName == "" {
+		resourceTypeName = humanizeNormalizedSlug(resourceTypeSlug)
+	}
+	if resourceTypeName == "" {
+		resourceTypeName = "resource"
+	}
+
+	toolProfile := resourceRequirementToolProfileForType(resourceType)
+	itemLevel := band.MinLevel
+	name := fmt.Sprintf("%s %s", band.NamePrefix, toolProfile.Noun)
+	flavorText := fmt.Sprintf(
+		"A %s %s for adventurers entering level %d gathering.",
+		strings.ToLower(band.NamePrefix),
+		toolProfile.DescriptionStem,
+		band.MinLevel,
+	)
+	effectText := fmt.Sprintf(
+		"Required to gather %s resources for characters level %d-%d.",
+		strings.ToLower(resourceTypeName),
+		band.MinLevel,
+		band.MaxLevel,
+	)
+
+	return inventoryItemUpsertRequest{
+		Name:          name,
+		FlavorText:    flavorText,
+		EffectText:    effectText,
+		RarityTier:    band.RarityTier,
+		IsCaptureType: false,
+		ItemLevel:     &itemLevel,
+		InternalTags:  generatedResourceRequirementTags(resourceTypeSlug, band),
+	}
 }
 
 func buildResourceTypeMatchIndex(resourceTypes []models.ResourceType) map[string][]models.ResourceType {
@@ -346,6 +546,126 @@ func modestResourceExperienceReward(userLevel *models.UserLevel) int {
 		reward = 220
 	}
 	return reward
+}
+
+func activeResourceGatherRequirementForLevel(
+	requirements []models.ResourceGatherRequirement,
+	level int,
+) *models.ResourceGatherRequirement {
+	normalizedLevel := level
+	if normalizedLevel < 1 {
+		normalizedLevel = 1
+	}
+	for index := range requirements {
+		requirement := &requirements[index]
+		if requirement.MinLevel <= normalizedLevel && normalizedLevel <= requirement.MaxLevel {
+			return requirement
+		}
+	}
+	return nil
+}
+
+func resourceGatherRequirementItemName(requirement *models.ResourceGatherRequirement) string {
+	if requirement == nil {
+		return "required equipment"
+	}
+	if requirement.RequiredInventoryItem != nil {
+		name := strings.TrimSpace(requirement.RequiredInventoryItem.Name)
+		if name != "" {
+			return name
+		}
+	}
+	if requirement.RequiredInventoryItemID > 0 {
+		return fmt.Sprintf("item #%d", requirement.RequiredInventoryItemID)
+	}
+	return "required equipment"
+}
+
+func userOwnsInventoryItem(
+	ownedItems []models.OwnedInventoryItem,
+	inventoryItemID int,
+) bool {
+	if inventoryItemID <= 0 {
+		return false
+	}
+	for _, ownedItem := range ownedItems {
+		if ownedItem.InventoryItemID == inventoryItemID && ownedItem.Quantity > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *server) validateResourceGatherRequirements(
+	ctx context.Context,
+	requests []resourceGatherRequirementUpsertRequest,
+) ([]models.ResourceGatherRequirement, error) {
+	if requests == nil {
+		return nil, nil
+	}
+	if len(requests) == 0 {
+		return []models.ResourceGatherRequirement{}, nil
+	}
+
+	requirements := make([]models.ResourceGatherRequirement, 0, len(requests))
+	for index, request := range requests {
+		if request.MinLevel == nil || request.MaxLevel == nil {
+			return nil, fmt.Errorf("gatherRequirements[%d] must include minLevel and maxLevel", index)
+		}
+		if *request.MinLevel < 1 || *request.MaxLevel < 1 {
+			return nil, fmt.Errorf("gatherRequirements[%d] levels must be 1 or greater", index)
+		}
+		if *request.MaxLevel < *request.MinLevel {
+			return nil, fmt.Errorf("gatherRequirements[%d] maxLevel must be greater than or equal to minLevel", index)
+		}
+		if request.RequiredInventoryItemID <= 0 {
+			return nil, fmt.Errorf("gatherRequirements[%d] requiredInventoryItemId must be positive", index)
+		}
+
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, request.RequiredInventoryItemID)
+		if err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("gatherRequirements[%d] requiredInventoryItemId not found", index)
+			}
+			return nil, err
+		}
+		if item == nil || item.Archived {
+			return nil, fmt.Errorf("gatherRequirements[%d] requiredInventoryItemId must reference an active inventory item", index)
+		}
+
+		requirements = append(requirements, models.ResourceGatherRequirement{
+			MinLevel:                *request.MinLevel,
+			MaxLevel:                *request.MaxLevel,
+			RequiredInventoryItemID: item.ID,
+			RequiredInventoryItem:   item,
+		})
+	}
+
+	sort.Slice(requirements, func(i, j int) bool {
+		if requirements[i].MinLevel == requirements[j].MinLevel {
+			if requirements[i].MaxLevel == requirements[j].MaxLevel {
+				return requirements[i].RequiredInventoryItemID < requirements[j].RequiredInventoryItemID
+			}
+			return requirements[i].MaxLevel < requirements[j].MaxLevel
+		}
+		return requirements[i].MinLevel < requirements[j].MinLevel
+	})
+
+	for index := 1; index < len(requirements); index++ {
+		previous := requirements[index-1]
+		current := requirements[index]
+		if current.MinLevel <= previous.MaxLevel {
+			return nil, fmt.Errorf(
+				"gather requirement level bands cannot overlap (%d-%d overlaps %d-%d)",
+				previous.MinLevel,
+				previous.MaxLevel,
+				current.MinLevel,
+				current.MaxLevel,
+			)
+		}
+	}
+
+	return requirements, nil
 }
 
 func normalizedGatherRewardItemLevel(item models.InventoryItem) int {
@@ -874,14 +1194,20 @@ func (s *server) createResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	gatherRequirements, err := s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	resource := &models.Resource{
-		ZoneID:         zoneID,
-		ResourceTypeID: resourceType.ID,
-		Quantity:       *requestBody.Quantity,
-		Latitude:       *requestBody.Latitude,
-		Longitude:      *requestBody.Longitude,
-		Invalidated:    false,
+		ZoneID:             zoneID,
+		ResourceTypeID:     resourceType.ID,
+		GatherRequirements: gatherRequirements,
+		Quantity:           *requestBody.Quantity,
+		Latitude:           *requestBody.Latitude,
+		Longitude:          *requestBody.Longitude,
+		Invalidated:        false,
 	}
 	if err := s.dbClient.Resource().Create(ctx, resource); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resource: " + err.Error()})
@@ -942,6 +1268,14 @@ func (s *server) updateResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	gatherRequirements := existing.GatherRequirements
+	if requestBody.GatherRequirements != nil {
+		gatherRequirements, err = s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	quantity := existing.Quantity
 	if requestBody.Quantity != nil {
 		quantity = *requestBody.Quantity
@@ -960,12 +1294,13 @@ func (s *server) updateResource(ctx *gin.Context) {
 	}
 
 	updates := &models.Resource{
-		ZoneID:         zoneID,
-		ResourceTypeID: resourceType.ID,
-		Quantity:       quantity,
-		Latitude:       latitude,
-		Longitude:      longitude,
-		Invalidated:    existing.Invalidated,
+		ZoneID:             zoneID,
+		ResourceTypeID:     resourceType.ID,
+		GatherRequirements: gatherRequirements,
+		Quantity:           quantity,
+		Latitude:           latitude,
+		Longitude:          longitude,
+		Invalidated:        existing.Invalidated,
 	}
 	if err := s.dbClient.Resource().Update(ctx, existing.ID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource: " + err.Error()})
@@ -998,6 +1333,143 @@ func (s *server) deleteResource(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "resource deleted successfully"})
+}
+
+func (s *server) generateResourceRequirementItems(ctx *gin.Context) {
+	resourceID, err := uuid.Parse(strings.TrimSpace(ctx.Param("id")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource ID"})
+		return
+	}
+	resource, err := s.dbClient.Resource().FindByID(ctx, resourceID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if resource == nil || resource.Invalidated {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		return
+	}
+
+	resourceType := &resource.ResourceType
+	resourceTypeSlug := normalizeResourceTypeSlug(resourceType.Slug)
+	if resourceTypeSlug == "" {
+		resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Name)
+	}
+	if resourceTypeSlug == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource type is missing a usable slug"})
+		return
+	}
+
+	activeItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	createdItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
+	reusedItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
+	gatherRequirements := make([]models.ResourceGatherRequirement, 0, len(defaultResourceRequirementGenerationBands))
+
+	for _, band := range defaultResourceRequirementGenerationBands {
+		requiredTags := generatedResourceRequirementTags(resourceTypeSlug, band)
+		item := findExistingGeneratedResourceRequirementItem(activeItems, requiredTags, band.MinLevel)
+		if item == nil {
+			request := buildGeneratedResourceRequirementItemRequest(resourceType, band)
+			normalizedItem, err := s.normalizeInventoryItemUpsertRequest(ctx, request, nil)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, normalizedItem); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create inventory item: " + err.Error()})
+				return
+			}
+			if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, normalizedItem.ID, map[string]interface{}{
+				"image_generation_status": models.InventoryImageGenerationStatusQueued,
+				"image_generation_error":  "",
+			}); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue inventory item image generation: " + err.Error()})
+				return
+			}
+			if err := s.enqueueInventoryItemImageGeneration(
+				ctx,
+				normalizedItem.ID,
+				normalizedItem.Name,
+				normalizedItem.FlavorText,
+				normalizedItem.RarityTier,
+			); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue inventory item image generation: " + err.Error()})
+				return
+			}
+			item, err = s.dbClient.InventoryItem().FindInventoryItemByID(ctx, normalizedItem.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch generated inventory item: " + err.Error()})
+				return
+			}
+			if item == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "generated inventory item could not be loaded"})
+				return
+			}
+			createdItems = append(createdItems, *item)
+			activeItems = append(activeItems, *item)
+		} else {
+			reusedItems = append(reusedItems, *item)
+		}
+
+		gatherRequirements = append(gatherRequirements, models.ResourceGatherRequirement{
+			MinLevel:                band.MinLevel,
+			MaxLevel:                band.MaxLevel,
+			RequiredInventoryItemID: item.ID,
+			RequiredInventoryItem:   item,
+		})
+	}
+
+	updates := &models.Resource{
+		ZoneID:             resource.ZoneID,
+		ResourceTypeID:     resource.ResourceTypeID,
+		GatherRequirements: gatherRequirements,
+		Quantity:           resource.Quantity,
+		Latitude:           resource.Latitude,
+		Longitude:          resource.Longitude,
+		Invalidated:        resource.Invalidated,
+	}
+	if err := s.dbClient.Resource().Update(ctx, resource.ID, updates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource requirements: " + err.Error()})
+		return
+	}
+
+	updatedResource, err := s.dbClient.Resource().FindByID(ctx, resource.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated resource: " + err.Error()})
+		return
+	}
+
+	resourceName := strings.TrimSpace(resource.ResourceType.Name)
+	if resourceName == "" {
+		resourceName = humanizeNormalizedSlug(resourceTypeSlug)
+	}
+	if resourceName == "" {
+		resourceName = "resource"
+	}
+
+	ctx.JSON(http.StatusOK, resourceRequirementGenerationResponse{
+		Resource:       updatedResource,
+		CreatedItems:   createdItems,
+		ReusedItems:    reusedItems,
+		GeneratedCount: len(createdItems),
+		ReusedCount:    len(reusedItems),
+		Message: fmt.Sprintf(
+			"Generated %d required item(s) and reused %d for %s.",
+			len(createdItems),
+			len(reusedItems),
+			resourceName,
+		),
+	})
 }
 
 func (s *server) gatherResource(ctx *gin.Context) {
@@ -1054,6 +1526,32 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		return
 	}
 
+	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeRequirement := activeResourceGatherRequirementForLevel(
+		resource.GatherRequirements,
+		userLevel.Level,
+	)
+	if activeRequirement != nil {
+		ownedItems, err := s.dbClient.InventoryItem().GetUsersItems(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !userOwnsInventoryItem(ownedItems, activeRequirement.RequiredInventoryItemID) {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"requires %s to gather at your current level",
+					resourceGatherRequirementItemName(activeRequirement),
+				),
+			})
+			return
+		}
+	}
+
 	gathering := &models.UserResourceGathering{
 		UserID:     user.ID,
 		ResourceID: resource.ID,
@@ -1069,12 +1567,6 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		return
 	}
 
-	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, user.ID)
-	if err != nil {
-		_ = s.dbClient.Exec(ctx, fmt.Sprintf("DELETE FROM user_resource_gatherings WHERE id = '%s'", gathering.ID))
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 	inventoryItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		_ = s.dbClient.Exec(ctx, fmt.Sprintf("DELETE FROM user_resource_gatherings WHERE id = '%s'", gathering.ID))

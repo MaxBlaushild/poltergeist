@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/gameplay_constants.dart';
+import '../models/inventory_item.dart';
 import '../models/resource.dart';
 import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/user_level_provider.dart';
+import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
 import 'discovery_proximity_section.dart';
 import 'paper_texture.dart';
@@ -33,7 +35,24 @@ class ResourcePanel extends StatefulWidget {
 
 class _ResourcePanelState extends State<ResourcePanel> {
   bool _loading = false;
+  bool _loadingOwnedItems = false;
+  bool _ownedItemsLoaded = false;
   String? _error;
+  List<OwnedInventoryItem> _ownedItems = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOwnedItems();
+  }
+
+  @override
+  void didUpdateWidget(covariant ResourcePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resource.id != widget.resource.id) {
+      _loadOwnedItems(force: true);
+    }
+  }
 
   String _resourceTypeDisplayName() {
     final resourceTypeName = widget.resource.resourceType?.name.trim() ?? '';
@@ -86,6 +105,60 @@ class _ResourcePanelState extends State<ResourcePanel> {
   String _imageUrl() {
     final icon = widget.resource.resourceType?.mapIconUrl.trim() ?? '';
     return icon;
+  }
+
+  ResourceGatherRequirement? _activeGatherRequirement(int playerLevel) {
+    final normalizedLevel = playerLevel < 1 ? 1 : playerLevel;
+    for (final requirement in widget.resource.gatherRequirements) {
+      if (requirement.minLevel <= normalizedLevel &&
+          normalizedLevel <= requirement.maxLevel) {
+        return requirement;
+      }
+    }
+    return null;
+  }
+
+  String _requiredItemName(ResourceGatherRequirement requirement) {
+    final name = requirement.requiredInventoryItem?.name.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    if (requirement.requiredInventoryItemId > 0) {
+      return 'Item #${requirement.requiredInventoryItemId}';
+    }
+    return 'Required equipment';
+  }
+
+  bool _hasRequiredItem(ResourceGatherRequirement requirement) {
+    return _ownedItems.any(
+      (owned) =>
+          owned.inventoryItemId == requirement.requiredInventoryItemId &&
+          owned.quantity > 0,
+    );
+  }
+
+  Future<void> _loadOwnedItems({bool force = false}) async {
+    if (_loadingOwnedItems) return;
+    if (_ownedItemsLoaded && !force) return;
+    setState(() {
+      _loadingOwnedItems = true;
+    });
+    try {
+      final ownedItems = await context
+          .read<InventoryService>()
+          .getOwnedInventoryItems();
+      if (!mounted) return;
+      setState(() {
+        _ownedItems = ownedItems.where((item) => item.quantity > 0).toList();
+        _ownedItemsLoaded = true;
+        _loadingOwnedItems = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _ownedItems = const [];
+        _ownedItemsLoaded = true;
+        _loadingOwnedItems = false;
+      });
+    }
   }
 
   Map<String, dynamic> _buildRewardModalData(Map<String, dynamic> response) {
@@ -164,6 +237,15 @@ class _ResourcePanelState extends State<ResourcePanel> {
     final theme = Theme.of(context);
     final location = context.watch<LocationProvider>().location;
     final resourceTypeName = _resourceTypeDisplayName();
+    final playerLevel = context.watch<CharacterStatsProvider>().level;
+    final activeRequirement = _activeGatherRequirement(playerLevel);
+    final isRequirementMissing =
+        activeRequirement != null &&
+        _ownedItemsLoaded &&
+        !_hasRequiredItem(activeRequirement);
+    final isGatherDisabledByRequirement =
+        activeRequirement != null &&
+        (!_ownedItemsLoaded || isRequirementMissing);
     final rewardLabel = resourceTypeName.toLowerCase() == 'resource'
         ? 'random resources'
         : 'random ${resourceTypeName.toLowerCase()} resources';
@@ -303,11 +385,29 @@ class _ResourcePanelState extends State<ResourcePanel> {
                 ),
               ),
             ],
+            if (isRequirementMissing) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Required: ${_requiredItemName(activeRequirement)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: _loading ? null : _gather,
+              onPressed: (_loading || isGatherDisabledByRequirement)
+                  ? null
+                  : _gather,
               icon: const Icon(Icons.backpack_outlined),
-              label: Text(_loading ? 'Gathering...' : 'Gather'),
+              label: Text(
+                _loading
+                    ? 'Gathering...'
+                    : (_loadingOwnedItems && activeRequirement != null)
+                    ? 'Checking equipment...'
+                    : 'Gather',
+              ),
             ),
           ],
         ),

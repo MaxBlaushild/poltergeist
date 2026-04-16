@@ -101,7 +101,7 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		placeCount = 0
 	}
 
-	requiredTags := normalizeRequiredPlaceTags(job.RequiredPlaceTags)
+	requiredTags := zoneSeedJobRequiredPlaceTags(job)
 	places, err := p.findTopPlacesInZone(ctx, *zone, placeCount, requiredTags)
 	if err != nil {
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to find top places: %w", err))
@@ -1336,6 +1336,16 @@ func normalizeRequiredPlaceTags(tags []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func zoneSeedJobRequiredPlaceTags(job *models.ZoneSeedJob) []string {
+	if job == nil {
+		return nil
+	}
+	if job.CountMode == models.ZoneSeedCountModeCurrentAware {
+		return normalizeRequiredPlaceTags(job.CountAudit.RemainingRequiredPlaceTags)
+	}
+	return normalizeRequiredPlaceTags(job.RequiredPlaceTags)
 }
 
 func applyRequiredPlaceTags(

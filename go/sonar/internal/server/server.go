@@ -642,6 +642,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createResource))
 	r.PUT("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResource))
 	r.DELETE("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResource))
+	r.POST("/sonar/resources/:id/generate-requirement-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceRequirementItems))
 	r.POST("/sonar/resources/:id/gather", middleware.WithAuthentication(s.authClient, s.livenessClient, s.gatherResource))
 	r.GET("/sonar/admin/bases", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllBases))
 	r.DELETE("/sonar/admin/bases/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBase))
@@ -6110,6 +6111,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 
 type zoneSeedDraftRequest struct {
 	SeedMode             string   `json:"seedMode"`
+	CountMode            string   `json:"countMode"`
 	PlaceCount           *int     `json:"placeCount"`
 	MonsterCount         *int     `json:"monsterCount"`
 	BossEncounterCount   *int     `json:"bossEncounterCount"`
@@ -6125,6 +6127,7 @@ type zoneSeedDraftRequest struct {
 
 type normalizedZoneSeedDraftRequest struct {
 	SeedMode             string
+	CountMode            string
 	PlaceCount           int
 	MonsterCount         int
 	BossEncounterCount   int
@@ -6137,6 +6140,7 @@ type normalizedZoneSeedDraftRequest struct {
 	RequiredPlaceTags    []string
 	ShopkeeperItemTags   []string
 	AutoSeedAudit        models.ZoneSeedAutoAudit
+	CountAudit           models.ZoneSeedCountAudit
 }
 
 func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalizedZoneSeedDraftRequest, error) {
@@ -6146,6 +6150,10 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	}
 	if mode != models.ZoneSeedModeManual {
 		return nil, fmt.Errorf("auto seed mode is only supported for single-zone drafts")
+	}
+	countMode, err := normalizeZoneSeedDraftCountMode(requestBody.CountMode)
+	if err != nil {
+		return nil, err
 	}
 
 	overrides, err := zoneSeedDraftCountOverridesFromRequest(requestBody)
@@ -6166,6 +6174,7 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 
 	return &normalizedZoneSeedDraftRequest{
 		SeedMode:             mode,
+		CountMode:            countMode,
 		PlaceCount:           counts.PlaceCount,
 		MonsterCount:         counts.MonsterCount,
 		BossEncounterCount:   counts.BossEncounterCount,
@@ -6178,6 +6187,7 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 		RequiredPlaceTags:    requiredPlaceTags,
 		ShopkeeperItemTags:   shopkeeperItemTags,
 		AutoSeedAudit:        models.ZoneSeedAutoAudit{},
+		CountAudit:           models.ZoneSeedCountAudit{},
 	}, nil
 }
 
@@ -6197,6 +6207,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		ZoneID:               zoneID,
 		Status:               models.ZoneSeedStatusQueued,
 		SeedMode:             settings.SeedMode,
+		CountMode:            settings.CountMode,
 		PlaceCount:           settings.PlaceCount,
 		CharacterCount:       0,
 		QuestCount:           0,
@@ -6212,6 +6223,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
 		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
 		AutoSeedAudit:        settings.AutoSeedAudit,
+		CountAudit:           settings.CountAudit,
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 		return nil, err
@@ -6283,7 +6295,21 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 			return
 		}
 
-		job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, settings)
+		resolvedSettings := settings
+		if settings.CountMode == models.ZoneSeedCountModeCurrentAware {
+			resolvedSettings, err = s.resolveZoneSeedDraftRequest(ctx, zone, requestBody.zoneSeedDraftRequest)
+			if err != nil {
+				var resolutionErr *zoneSeedDraftResolutionError
+				if stdErrors.As(err, &resolutionErr) {
+					ctx.JSON(resolutionErr.statusCode, gin.H{"error": resolutionErr.Error()})
+					return
+				}
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, resolvedSettings)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to queue zone %s: %v", zoneID, err)})
 			return

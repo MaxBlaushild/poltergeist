@@ -1,0 +1,3 @@
+ALTER TABLE zone_seed_jobs
+ADD COLUMN IF NOT EXISTS count_mode TEXT NOT NULL DEFAULT 'absolute',
+ADD COLUMN IF NOT EXISTS count_audit JSONB NOT NULL DEFAULT '{}'::jsonb;
