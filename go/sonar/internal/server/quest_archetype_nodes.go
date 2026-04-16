@@ -23,6 +23,7 @@ type questArchetypeNodePayload struct {
 	StoryFlagKey               string                       `json:"storyFlagKey"`
 	MonsterTemplateIDs         []string                     `json:"monsterTemplateIds"`
 	MonsterIDs                 []string                     `json:"monsterIds"`
+	EncounterType              string                       `json:"encounterType"`
 	TargetLevel                *int                         `json:"targetLevel"`
 	EncounterProximityMeters   *int                         `json:"encounterProximityMeters"`
 	Difficulty                 *int                         `json:"difficulty"`
@@ -50,6 +51,7 @@ func (p questArchetypeNodePayload) hasExplicitConfig() bool {
 		p.hasStoryFlagConfig() ||
 		len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
+		strings.TrimSpace(p.EncounterType) != "" ||
 		p.TargetLevel != nil ||
 		p.EncounterProximityMeters != nil ||
 		p.hasExpositionConfig()
@@ -100,6 +102,7 @@ func (p questArchetypeNodePayload) inferredNodeType() models.QuestArchetypeNodeT
 	}
 	if len(p.MonsterTemplateIDs) > 0 ||
 		len(p.MonsterIDs) > 0 ||
+		strings.TrimSpace(p.EncounterType) != "" ||
 		p.TargetLevel != nil {
 		return models.QuestArchetypeNodeTypeMonsterEncounter
 	}
@@ -475,6 +478,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
+		node.EncounterType = models.MonsterEncounterTypeMonster
 		node.TargetLevel = 1
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
@@ -504,6 +508,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
+		node.EncounterType = models.MonsterEncounterTypeMonster
 		node.TargetLevel = 1
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
@@ -533,6 +538,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = payload.ScenarioTemplateID
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
+		node.EncounterType = models.MonsterEncounterTypeMonster
 		node.TargetLevel = 1
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
@@ -561,6 +567,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
+		node.EncounterType = models.MonsterEncounterTypeMonster
 		node.TargetLevel = 1
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
@@ -599,6 +606,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray(monsterTemplateIDs)
+		node.EncounterType = models.NormalizeMonsterEncounterType(payload.EncounterType)
 		node.TargetLevel = targetLevel
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall
@@ -626,6 +634,7 @@ func (s *server) applyQuestArchetypeNodePayload(
 		node.ScenarioTemplateID = nil
 		node.ScenarioTemplate = nil
 		node.MonsterTemplateIDs = models.StringArray{}
+		node.EncounterType = models.MonsterEncounterTypeMonster
 		node.TargetLevel = 1
 		node.EncounterRewardMode = models.RewardModeExplicit
 		node.EncounterRandomRewardSize = models.RandomRewardSizeSmall

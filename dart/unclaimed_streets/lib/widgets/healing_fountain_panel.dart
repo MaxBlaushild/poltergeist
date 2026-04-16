@@ -528,6 +528,9 @@ class _InfoChip extends StatelessWidget {
           alpha: 0.55,
         ),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

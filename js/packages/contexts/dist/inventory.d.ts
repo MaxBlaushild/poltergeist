@@ -6,6 +6,7 @@ interface InventoryContextType {
     inventoryItemError: string | null;
     setPresentedInventoryItem: (inventoryItem: InventoryItem | null) => void;
     inventoryItemsAreLoading: boolean;
+    refreshInventoryItems: () => void;
     consumeItem: (ownedInventoryItemId: string, metadata?: UseItemMetadata) => Promise<void>;
     useItemError: string | null;
     isUsingItem: boolean;
@@ -15,6 +16,7 @@ interface InventoryContextType {
     ownedInventoryItemsAreLoading: boolean;
     ownedInventoryItemsError: string | null;
     getInventoryItemById: (id: number) => InventoryItem | null;
+    refreshOwnedInventoryItems: () => void;
 }
 interface UseItemMetadata {
     targetTeamId?: string | null;

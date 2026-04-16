@@ -35,6 +35,27 @@ class _ResourcePanelState extends State<ResourcePanel> {
   bool _loading = false;
   String? _error;
 
+  String _resourceTypeDisplayName() {
+    final resourceTypeName = widget.resource.resourceType?.name.trim() ?? '';
+    if (resourceTypeName.isNotEmpty) return resourceTypeName;
+    final resourceTypeSlug = widget.resource.resourceType?.slug.trim() ?? '';
+    if (resourceTypeSlug.isNotEmpty) {
+      return resourceTypeSlug
+          .split(RegExp(r'[-_\s]+'))
+          .where((segment) => segment.isNotEmpty)
+          .map(
+            (segment) =>
+                segment[0].toUpperCase() + segment.substring(1).toLowerCase(),
+          )
+          .join(' ');
+    }
+    return 'Resource';
+  }
+
+  String _mysteriousTitle() {
+    return 'Mysterious ${_resourceTypeDisplayName()}';
+  }
+
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
     const radius = 6371e3;
     final phi1 = lat1 * math.pi / 180;
@@ -63,8 +84,6 @@ class _ResourcePanelState extends State<ResourcePanel> {
   }
 
   String _imageUrl() {
-    final inventoryImage = widget.resource.inventoryItem?.imageUrl.trim() ?? '';
-    if (inventoryImage.isNotEmpty) return inventoryImage;
     final icon = widget.resource.resourceType?.mapIconUrl.trim() ?? '';
     return icon;
   }
@@ -78,18 +97,21 @@ class _ResourcePanelState extends State<ResourcePanel> {
             .map((entry) => Map<String, dynamic>.from(entry))
             .toList() ??
         const <Map<String, dynamic>>[];
-    final inventoryItem = widget.resource.inventoryItem;
+    final primaryItem = itemsAwarded.isNotEmpty ? itemsAwarded.first : null;
+    final primaryName = primaryItem?['name']?.toString().trim() ?? '';
+    final fallbackName = _resourceTypeDisplayName();
+    final rewardName = primaryName.isNotEmpty ? primaryName : fallbackName;
 
     return {
-      'resourceName': inventoryItem?.name ?? 'Resource',
+      'resourceName': rewardName.isNotEmpty ? rewardName : 'Resource',
       'rewardExperience': rewardExperience,
       'itemsAwarded': itemsAwarded.isNotEmpty
           ? itemsAwarded
           : [
               {
-                'id': widget.resource.inventoryItemId,
-                'name': inventoryItem?.name ?? 'Resource',
-                'imageUrl': inventoryItem?.imageUrl ?? '',
+                'id': widget.resource.id,
+                'name': fallbackName,
+                'imageUrl': widget.resource.resourceType?.mapIconUrl ?? '',
                 'quantity': widget.resource.quantity,
               },
             ],
@@ -141,7 +163,10 @@ class _ResourcePanelState extends State<ResourcePanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final location = context.watch<LocationProvider>().location;
-    final resourceTypeName = widget.resource.resourceType?.name.trim() ?? '';
+    final resourceTypeName = _resourceTypeDisplayName();
+    final rewardLabel = resourceTypeName.toLowerCase() == 'resource'
+        ? 'random resources'
+        : 'random ${resourceTypeName.toLowerCase()} resources';
     final distance = location == null
         ? null
         : _distanceMeters(
@@ -162,7 +187,7 @@ class _ResourcePanelState extends State<ResourcePanel> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                widget.resource.inventoryItem?.name ?? 'Resource',
+                _mysteriousTitle(),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -197,7 +222,7 @@ class _ResourcePanelState extends State<ResourcePanel> {
           children: [
             Expanded(
               child: Text(
-                widget.resource.inventoryItem?.name ?? 'Resource',
+                resourceTypeName,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -247,7 +272,7 @@ class _ResourcePanelState extends State<ResourcePanel> {
               ),
             const SizedBox(height: 8),
             Text(
-              'Gather ${widget.resource.quantity}x ${widget.resource.inventoryItem?.name ?? 'resource'} from this node.',
+              'Gather ${widget.resource.quantity}x $rewardLabel tuned to your level.',
               style: theme.textTheme.bodyLarge,
             ),
             const SizedBox(height: 16),
@@ -258,6 +283,10 @@ class _ResourcePanelState extends State<ResourcePanel> {
                 _ResourceMetaChip(
                   icon: Icons.inventory_2_outlined,
                   label: 'Quantity ${widget.resource.quantity}',
+                ),
+                _ResourceMetaChip(
+                  icon: Icons.tune,
+                  label: 'Reward level +/- 10',
                 ),
                 _ResourceMetaChip(
                   icon: Icons.place_outlined,

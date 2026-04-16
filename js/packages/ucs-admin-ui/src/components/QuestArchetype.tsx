@@ -24,6 +24,7 @@ import {
   QuestClosurePolicy,
   QuestDebriefPolicy,
   QuestDifficultyMode,
+  QuestMonsterEncounterType,
   QuestNodeFailurePolicy,
   InventoryItem,
   Spell,
@@ -703,6 +704,121 @@ const questGenerationStatusChipClass = (status?: string | null) => {
 const formatQuestGenerationStatus = (status?: string | null) =>
   (status || 'queued').replace(/_/g, ' ');
 
+type ResolvedQuestMonsterEncounterType = 'monster' | 'boss' | 'raid';
+
+const normalizeQuestMonsterEncounterType = (
+  raw?: QuestMonsterEncounterType | string | null
+): ResolvedQuestMonsterEncounterType => {
+  switch ((raw ?? '').toString().trim().toLowerCase()) {
+    case 'boss':
+      return 'boss';
+    case 'raid':
+      return 'raid';
+    default:
+      return 'monster';
+  }
+};
+
+const questMonsterEncounterTypeRank = (
+  encounterType?: QuestMonsterEncounterType | string | null
+) => {
+  switch (normalizeQuestMonsterEncounterType(encounterType)) {
+    case 'raid':
+      return 2;
+    case 'boss':
+      return 1;
+    default:
+      return 0;
+  }
+};
+
+const strongestQuestMonsterEncounterType = (
+  ...encounterTypes: Array<
+    QuestMonsterEncounterType | string | null | undefined
+  >
+): ResolvedQuestMonsterEncounterType => {
+  let strongest: ResolvedQuestMonsterEncounterType = 'monster';
+  let strongestRank = -1;
+  encounterTypes.forEach((encounterType) => {
+    const normalized = normalizeQuestMonsterEncounterType(encounterType);
+    const rank = questMonsterEncounterTypeRank(normalized);
+    if (rank > strongestRank) {
+      strongest = normalized;
+      strongestRank = rank;
+    }
+  });
+  return strongest;
+};
+
+const deriveQuestMonsterEncounterTypeFromTemplates = (
+  monsterTemplateIds: string[] = [],
+  monsterTemplates: MonsterTemplateRecord[]
+): ResolvedQuestMonsterEncounterType =>
+  strongestQuestMonsterEncounterType(
+    ...monsterTemplateIds.map(
+      (templateId) =>
+        monsterTemplates.find((entry) => entry.id === templateId)?.monsterType
+    )
+  );
+
+const resolveQuestArchetypeNodeEncounterType = (
+  node: Pick<
+    QuestArchetypeNode,
+    'nodeType' | 'encounterType' | 'monsterTemplateIds'
+  >,
+  monsterTemplates: MonsterTemplateRecord[]
+): ResolvedQuestMonsterEncounterType => {
+  if (node.nodeType !== 'monster_encounter') {
+    return 'monster';
+  }
+  return strongestQuestMonsterEncounterType(
+    node.encounterType,
+    deriveQuestMonsterEncounterTypeFromTemplates(
+      node.monsterTemplateIds ?? [],
+      monsterTemplates
+    )
+  );
+};
+
+const questMonsterEncounterTypeLabel = (
+  encounterType: QuestMonsterEncounterType | string | null | undefined
+) => {
+  switch (normalizeQuestMonsterEncounterType(encounterType)) {
+    case 'boss':
+      return 'Boss fight';
+    case 'raid':
+      return 'Raid encounter';
+    default:
+      return 'Standard encounter';
+  }
+};
+
+const questMonsterEncounterTypeChipClass = (
+  encounterType: QuestMonsterEncounterType | string | null | undefined
+) => {
+  switch (normalizeQuestMonsterEncounterType(encounterType)) {
+    case 'boss':
+      return 'qa-chip accent';
+    case 'raid':
+      return 'qa-chip danger';
+    default:
+      return 'qa-chip muted';
+  }
+};
+
+const questMonsterEncounterTypeHelperCopy = (
+  encounterType: QuestMonsterEncounterType | string | null | undefined
+) => {
+  switch (normalizeQuestMonsterEncounterType(encounterType)) {
+    case 'boss':
+      return 'Boss scaling makes this node land like a quest climax with a tougher single-fight payoff.';
+    case 'raid':
+      return 'Raid scaling marks this node as a major group challenge and tunes the encounter to hit much harder.';
+    default:
+      return 'Standard scaling keeps this node aligned with a normal quest encounter.';
+  }
+};
+
 const questArchetypeFormHasExplicitCopy = (form: QuestArchetypeFormState) =>
   form.name.trim().length > 0 &&
   form.description.trim().length > 0 &&
@@ -729,6 +845,7 @@ type QuestArchetypeNodeEditorState = {
   failurePolicy: QuestNodeFailurePolicy;
   storyFlagKey: string;
   monsterTemplateIds: string[];
+  encounterType: ResolvedQuestMonsterEncounterType;
   targetLevel: number;
   encounterProximityMeters: number;
   expositionSource: 'inline' | 'template';
@@ -761,6 +878,7 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
   failurePolicy: 'retry',
   storyFlagKey: '',
   monsterTemplateIds: [],
+  encounterType: 'monster',
   targetLevel: 1,
   encounterProximityMeters: 100,
   expositionSource: 'inline',
@@ -779,7 +897,8 @@ const emptyNodeEditorState = (): QuestArchetypeNodeEditorState => ({
 
 const buildNodeEditorState = (
   node: QuestArchetypeNode,
-  locationArchetypes: LocationArchetype[]
+  locationArchetypes: LocationArchetype[],
+  monsterTemplates: MonsterTemplateRecord[]
 ): QuestArchetypeNodeEditorState => ({
   nodeType:
     node.nodeType === 'monster_encounter'
@@ -822,6 +941,7 @@ const buildNodeEditorState = (
     ? 'template'
     : 'character',
   monsterTemplateIds: [...(node.monsterTemplateIds ?? [])],
+  encounterType: resolveQuestArchetypeNodeEncounterType(node, monsterTemplates),
   fetchCharacterTemplateId: node.fetchCharacterTemplateId ?? '',
   targetLevel: node.targetLevel ?? 1,
   encounterProximityMeters: node.encounterProximityMeters ?? 100,
@@ -923,6 +1043,8 @@ const buildNodeDraft = (
     state.nodeType === 'monster_encounter'
       ? state.monsterTemplateIds
       : undefined,
+  encounterType:
+    state.nodeType === 'monster_encounter' ? state.encounterType : undefined,
   targetLevel:
     state.nodeType === 'monster_encounter'
       ? Number(state.targetLevel) || 1
@@ -1032,6 +1154,16 @@ const describeQuestArchetypeNode = (
     return `${scenarioLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'monster_encounter') {
+    const encounterType = resolveQuestArchetypeNodeEncounterType(
+      node,
+      monsterTemplates
+    );
+    const encounterPrefix =
+      encounterType === 'raid'
+        ? 'Raid encounter'
+        : encounterType === 'boss'
+          ? 'Boss encounter'
+          : 'Monster encounter';
     const names = (node.monsterTemplateIds ?? [])
       .map(
         (templateId) =>
@@ -1039,9 +1171,9 @@ const describeQuestArchetypeNode = (
       )
       .filter(Boolean) as string[];
     if (names.length === 0) {
-      return `Monster encounter @ ${locationLabelForNode}`;
+      return `${encounterPrefix} @ ${locationLabelForNode}`;
     }
-    const encounterLabel = `Encounter: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`;
+    const encounterLabel = `${encounterPrefix}: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`;
     return `${encounterLabel} @ ${locationLabelForNode}`;
   }
   if (node.nodeType === 'exposition') {
@@ -1411,6 +1543,41 @@ const QuestArchetypeNodeConfigFields: React.FC<
       {editor.nodeType === 'monster_encounter' ? (
         <>
           <div className="qa-field">
+            <div className="qa-label">{prefix} Encounter Scaling</div>
+            <select
+              className="qa-select"
+              value={editor.encounterType}
+              onChange={(e) =>
+                setEditor((prev) => ({
+                  ...prev,
+                  encounterType: normalizeQuestMonsterEncounterType(
+                    e.target.value
+                  ),
+                }))
+              }
+            >
+              <option value="monster">Standard Encounter</option>
+              <option value="boss">Boss Encounter</option>
+              <option value="raid">Raid Encounter</option>
+            </select>
+            <div className="qa-helper">
+              {questMonsterEncounterTypeHelperCopy(editor.encounterType)}
+            </div>
+            <div className="qa-helper">
+              Final tier:{' '}
+              {questMonsterEncounterTypeLabel(
+                strongestQuestMonsterEncounterType(
+                  editor.encounterType,
+                  deriveQuestMonsterEncounterTypeFromTemplates(
+                    editor.monsterTemplateIds,
+                    monsterTemplates
+                  )
+                )
+              )}
+              . Boss and raid templates keep their higher tier automatically.
+            </div>
+          </div>
+          <div className="qa-field">
             <div className="qa-label">{prefix} Monster Templates</div>
             <select
               className="qa-select"
@@ -1440,8 +1607,8 @@ const QuestArchetypeNodeConfigFields: React.FC<
           <div className="qa-field">
             <div className="qa-label">{prefix} Monster Level</div>
             <div className="qa-helper">
-              Monster encounter target level is configured on the quest
-              template, not per child node.
+              Base encounter level still comes from the quest template or node
+              target level. Boss and raid scaling apply on top of that base.
             </div>
           </div>
         </>
@@ -2064,7 +2231,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   );
   const [isAdding, setIsAdding] = useState(false);
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
-    buildNodeEditorState(node, locationArchetypes)
+    buildNodeEditorState(node, locationArchetypes, monsterTemplates)
   );
   const [successChildEditor, setSuccessChildEditor] =
     useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
@@ -2076,13 +2243,15 @@ const FlowNode: React.FC<FlowNodeProps> = ({
     useState<boolean>(false);
 
   useEffect(() => {
-    setNodeEditor(buildNodeEditorState(node, locationArchetypes));
+    setNodeEditor(
+      buildNodeEditorState(node, locationArchetypes, monsterTemplates)
+    );
     setSuccessChildEnabled(false);
     setFailureChildEnabled(false);
     setSuccessChildEditor(emptyNodeEditorState());
     setFailureChildEditor(emptyNodeEditorState());
     setIsAdding(false);
-  }, [locationArchetypes, node]);
+  }, [locationArchetypes, monsterTemplates, node]);
 
   return (
     <div className="qa-flow-node" style={{ borderColor }}>
@@ -2121,7 +2290,13 @@ const FlowNode: React.FC<FlowNodeProps> = ({
             <button
               className="qa-btn qa-btn-outline"
               onClick={() =>
-                setNodeEditor(buildNodeEditorState(node, locationArchetypes))
+                setNodeEditor(
+                  buildNodeEditorState(
+                    node,
+                    locationArchetypes,
+                    monsterTemplates
+                  )
+                )
               }
             >
               Reset
@@ -2545,7 +2720,7 @@ const questArchetypeNodeTypeLabel = (nodeType?: QuestArchetypeNodeType) => {
     case 'challenge':
       return 'Challenge';
     case 'monster_encounter':
-      return 'Monster';
+      return 'Monster Encounter';
     case 'scenario':
       return 'Scenario';
     case 'exposition':
@@ -2628,7 +2803,7 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   );
   const [isAdding, setIsAdding] = useState(false);
   const [nodeEditor, setNodeEditor] = useState<QuestArchetypeNodeEditorState>(
-    buildNodeEditorState(node, locationArchetypes)
+    buildNodeEditorState(node, locationArchetypes, monsterTemplates)
   );
   const [successChildEditor, setSuccessChildEditor] =
     useState<QuestArchetypeNodeEditorState>(emptyNodeEditorState());
@@ -2640,13 +2815,15 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
     useState<boolean>(false);
 
   useEffect(() => {
-    setNodeEditor(buildNodeEditorState(node, locationArchetypes));
+    setNodeEditor(
+      buildNodeEditorState(node, locationArchetypes, monsterTemplates)
+    );
     setSuccessChildEnabled(false);
     setFailureChildEnabled(false);
     setSuccessChildEditor(emptyNodeEditorState());
     setFailureChildEditor(emptyNodeEditorState());
     setIsAdding(false);
-  }, [locationArchetypes, node]);
+  }, [locationArchetypes, monsterTemplates, node]);
   const selectedChallengeTemplate = challengeTemplates.find(
     (template) => template.id === nodeEditor.challengeTemplateId
   );
@@ -2656,6 +2833,16 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
   const selectedMonsterTemplates = monsterTemplates.filter((template) =>
     nodeEditor.monsterTemplateIds.includes(template.id)
   );
+  const selectedMonsterEncounterType =
+    nodeEditor.nodeType === 'monster_encounter'
+      ? strongestQuestMonsterEncounterType(
+          nodeEditor.encounterType,
+          deriveQuestMonsterEncounterTypeFromTemplates(
+            nodeEditor.monsterTemplateIds,
+            monsterTemplates
+          )
+        )
+      : null;
   const outgoingTransitionCount = (node.challenges ?? []).reduce(
     (total, challenge) => total + challengeBranchTargets(challenge).length,
     0
@@ -2677,6 +2864,15 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             <span className="qa-chip accent">
               {outgoingTransitionCount} outgoing
             </span>
+            {selectedMonsterEncounterType ? (
+              <span
+                className={questMonsterEncounterTypeChipClass(
+                  selectedMonsterEncounterType
+                )}
+              >
+                {questMonsterEncounterTypeLabel(selectedMonsterEncounterType)}
+              </span>
+            ) : null}
             <span className="qa-chip muted">Inherits quest difficulty</span>
           </div>
         </div>
@@ -2723,7 +2919,13 @@ const QuestNodeInspector: React.FC<QuestNodeInspectorProps> = ({
             <button
               className="qa-btn qa-btn-outline"
               onClick={() =>
-                setNodeEditor(buildNodeEditorState(node, locationArchetypes))
+                setNodeEditor(
+                  buildNodeEditorState(
+                    node,
+                    locationArchetypes,
+                    monsterTemplates
+                  )
+                )
               }
             >
               Reset
@@ -3163,7 +3365,8 @@ const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
 
 const buildQuestArchetypeFormFromRecord = (
   archetype: QuestArchetype,
-  locationArchetypes: LocationArchetype[]
+  locationArchetypes: LocationArchetype[],
+  monsterTemplates: MonsterTemplateRecord[]
 ): QuestArchetypeFormState => ({
   name: archetype.name ?? '',
   description: archetype.description ?? '',
@@ -3183,7 +3386,11 @@ const buildQuestArchetypeFormFromRecord = (
     archetype.returnBonusRelationshipEffects?.debt ?? 0,
   acceptanceDialogue: archetype.acceptanceDialogue ?? [],
   imageUrl: archetype.imageUrl ?? '',
-  rootNode: buildNodeEditorState(archetype.root, locationArchetypes),
+  rootNode: buildNodeEditorState(
+    archetype.root,
+    locationArchetypes,
+    monsterTemplates
+  ),
   locationArchetypeId: archetype.root?.locationArchetypeId ?? '',
   locationArchetypeQuery:
     locationArchetypes.find(
@@ -3310,9 +3517,7 @@ const normalizeQuestArchetypeDraft = (
     returnBonusGold:
       debriefPolicy === 'none' ? 0 : Number(form.returnBonusGold) || 0,
     returnBonusExperience:
-      debriefPolicy === 'none'
-        ? 0
-        : Number(form.returnBonusExperience) || 0,
+      debriefPolicy === 'none' ? 0 : Number(form.returnBonusExperience) || 0,
     returnBonusRelationshipEffects:
       debriefPolicy === 'none'
         ? { trust: 0, respect: 0, fear: 0, debt: 0 }
@@ -4513,7 +4718,8 @@ export const QuestArchetypeComponent = () => {
                         setEditForm(
                           buildQuestArchetypeFormFromRecord(
                             selectedArchetype,
-                            locationArchetypes
+                            locationArchetypes,
+                            monsterTemplates
                           )
                         );
                       }}
@@ -6997,7 +7203,8 @@ export const QuestArchetypeComponent = () => {
                   setEditForm(
                     buildQuestArchetypeFormFromRecord(
                       created,
-                      locationArchetypes
+                      locationArchetypes,
+                      monsterTemplates
                     )
                   );
                 }
@@ -7322,7 +7529,9 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
-                <div className="qa-label">Return Bonus Relationship Effects</div>
+                <div className="qa-label">
+                  Return Bonus Relationship Effects
+                </div>
                 <div className="qa-inline-grid">
                   <input
                     type="number"
@@ -8080,7 +8289,9 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
-                <div className="qa-label">Return Bonus Relationship Effects</div>
+                <div className="qa-label">
+                  Return Bonus Relationship Effects
+                </div>
                 <div className="qa-inline-grid">
                   <input
                     type="number"

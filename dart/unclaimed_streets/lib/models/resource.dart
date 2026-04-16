@@ -1,4 +1,3 @@
-import 'inventory_item.dart';
 import 'resource_type.dart';
 
 class ResourceNode {
@@ -6,8 +5,6 @@ class ResourceNode {
   final String zoneId;
   final String resourceTypeId;
   final ResourceType? resourceType;
-  final int inventoryItemId;
-  final InventoryItem? inventoryItem;
   final int quantity;
   final double latitude;
   final double longitude;
@@ -19,8 +16,6 @@ class ResourceNode {
     required this.zoneId,
     required this.resourceTypeId,
     required this.resourceType,
-    required this.inventoryItemId,
-    required this.inventoryItem,
     required this.quantity,
     required this.latitude,
     required this.longitude,
@@ -30,17 +25,12 @@ class ResourceNode {
 
   factory ResourceNode.fromJson(Map<String, dynamic> json) {
     final rawResourceType = json['resourceType'];
-    final rawInventoryItem = json['inventoryItem'];
     return ResourceNode(
       id: json['id']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',
       resourceTypeId: json['resourceTypeId']?.toString() ?? '',
       resourceType: rawResourceType is Map<String, dynamic>
           ? ResourceType.fromJson(rawResourceType)
-          : null,
-      inventoryItemId: (json['inventoryItemId'] as num?)?.toInt() ?? 0,
-      inventoryItem: rawInventoryItem is Map<String, dynamic>
-          ? InventoryItem.fromJson(rawInventoryItem)
           : null,
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import { useZoneContext } from '@poltergeist/contexts';
 import { v4 as uuidv4 } from 'uuid';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -21,6 +21,13 @@ import * as turf from '@turf/turf';
 import * as wellknown from 'wellknown';
 import { Geometry, Polygon } from 'wkx-ts';
 import wkx from 'wkx';
+import {
+  defaultZoneFlushContentTypes,
+  formatZoneContentFlushSummary,
+  type ZoneContentFlushSummary,
+  ZoneFlushContentModal,
+  type ZoneFlushContentType,
+} from './zoneFlushContent.tsx';
 // Set Mapbox access token
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -814,7 +821,7 @@ export const Zone = () => {
     );
   }, [id, zones]);
   const resolvedZoneId = zone?.id ?? id ?? '';
-  const { pointsOfInterest, loading, error } =
+  const { pointsOfInterest, loading, error, refreshPointsOfInterest } =
     useZonePointsOfInterest(resolvedZoneId);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
@@ -828,6 +835,18 @@ export const Zone = () => {
   >([]);
   const [challenges, setChallenges] = useState<ChallengeRecord[]>([]);
   const [zoneMapPinsError, setZoneMapPinsError] = useState<string | null>(null);
+  const [flushingZoneContent, setFlushingZoneContent] = useState(false);
+  const [showFlushZoneContentModal, setShowFlushZoneContentModal] =
+    useState(false);
+  const [selectedFlushContentTypes, setSelectedFlushContentTypes] = useState<
+    ZoneFlushContentType[]
+  >(() => [...defaultZoneFlushContentTypes]);
+  const [flushZoneContentStatus, setFlushZoneContentStatus] = useState<
+    string | null
+  >(null);
+  const [flushZoneContentError, setFlushZoneContentError] = useState<
+    string | null
+  >(null);
   const {
     placeTypes,
     loading: placeTypesLoading,
@@ -935,6 +954,7 @@ export const Zone = () => {
   useEffect(() => {
     setIsEditingBoundary(false);
     setIsEditingPins(false);
+    setShowFlushZoneContentModal(false);
     setPinMoveStatus(null);
     setPinMoveError(null);
     setPinDeleteStatus(null);
@@ -944,11 +964,12 @@ export const Zone = () => {
     setDeletedPointOfInterestIds(new Set());
   }, [resolvedZoneId]);
 
-  useEffect(() => {
-    if (!resolvedZoneId) return;
+  const loadZoneMapPins = useCallback(
+    async (activeRef?: { current: boolean }) => {
+      if (!resolvedZoneId) {
+        return false;
+      }
 
-    let active = true;
-    const loadZoneMapPins = async () => {
       try {
         const [
           fetchedCharacters,
@@ -979,7 +1000,9 @@ export const Zone = () => {
             `/sonar/zones/${resolvedZoneId}/challenges`
           ),
         ]);
-        if (!active) return;
+        if (activeRef && !activeRef.current) {
+          return false;
+        }
         setCharacters(fetchedCharacters);
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
@@ -988,9 +1011,12 @@ export const Zone = () => {
         setMonsterEncounters(fetchedMonsterEncounters);
         setChallenges(fetchedChallenges);
         setZoneMapPinsError(null);
+        return true;
       } catch (error) {
         console.error('Error fetching zone map pins:', error);
-        if (!active) return;
+        if (activeRef && !activeRef.current) {
+          return false;
+        }
         setCharacters([]);
         setTreasureChests([]);
         setHealingFountains([]);
@@ -1001,20 +1027,28 @@ export const Zone = () => {
         setZoneMapPinsError(
           'Unable to load the full in-game pin set for this zone.'
         );
+        return false;
       }
-    };
+    },
+    [apiClient, resolvedZoneId]
+  );
+
+  useEffect(() => {
+    if (!resolvedZoneId) return;
+
+    const activeRef = { current: true };
 
     const fetchZoneFlavorJobs = async () => {
       try {
         const response = await apiClient.get<ZoneFlavorGenerationJob[]>(
           `/sonar/admin/zone-flavor-generation-jobs?zoneId=${resolvedZoneId}&limit=10`
         );
-        if (!active) return;
+        if (!activeRef.current) return;
         setZoneFlavorJobs(response);
         setZoneFlavorJobsError(null);
       } catch (error) {
         console.error('Error fetching zone flavor jobs:', error);
-        if (!active) return;
+        if (!activeRef.current) return;
         setZoneFlavorJobsError('Unable to load zone flavor jobs.');
       }
     };
@@ -1024,28 +1058,28 @@ export const Zone = () => {
         const response = await apiClient.get<ZoneTagGenerationJob[]>(
           `/sonar/admin/zone-tag-generation-jobs?zoneId=${resolvedZoneId}&limit=10`
         );
-        if (!active) return;
+        if (!activeRef.current) return;
         setZoneTagJobs(response);
         setZoneTagJobsError(null);
       } catch (error) {
         console.error('Error fetching zone tag jobs:', error);
-        if (!active) return;
+        if (!activeRef.current) return;
         setZoneTagJobsError('Unable to load zone tag jobs.');
       }
     };
 
-    loadZoneMapPins();
-    fetchZoneFlavorJobs();
-    fetchZoneTagJobs();
+    void loadZoneMapPins(activeRef);
+    void fetchZoneFlavorJobs();
+    void fetchZoneTagJobs();
     const interval = window.setInterval(() => {
-      fetchZoneFlavorJobs();
-      fetchZoneTagJobs();
+      void fetchZoneFlavorJobs();
+      void fetchZoneTagJobs();
     }, 5000);
     return () => {
-      active = false;
+      activeRef.current = false;
       window.clearInterval(interval);
     };
-  }, [apiClient, resolvedZoneId]);
+  }, [apiClient, loadZoneMapPins, resolvedZoneId]);
 
   useEffect(() => {
     const latestJob = zoneFlavorJobs[0];
@@ -1399,6 +1433,74 @@ export const Zone = () => {
       window.alert('Unable to save zone changes right now.');
     } finally {
       setIsSavingZone(false);
+    }
+  };
+
+  const openFlushZoneContentModal = () => {
+    setFlushZoneContentError(null);
+    setFlushZoneContentStatus(null);
+    setShowFlushZoneContentModal(true);
+  };
+
+  const closeFlushZoneContentModal = () => {
+    if (flushingZoneContent) {
+      return;
+    }
+    setShowFlushZoneContentModal(false);
+    setFlushZoneContentError(null);
+  };
+
+  const toggleFlushContentType = (contentType: ZoneFlushContentType) => {
+    setSelectedFlushContentTypes((prev) => {
+      if (prev.includes(contentType)) {
+        return prev.filter((entry) => entry !== contentType);
+      }
+      return [...prev, contentType];
+    });
+  };
+
+  const handleFlushZoneContent = async () => {
+    if (!resolvedZoneId || flushingZoneContent) {
+      return;
+    }
+    if (selectedFlushContentTypes.length === 0) {
+      setFlushZoneContentError('Choose at least one content type to flush.');
+      return;
+    }
+
+    setFlushingZoneContent(true);
+    setFlushZoneContentError(null);
+    setFlushZoneContentStatus(null);
+
+    try {
+      const summary = await apiClient.post<ZoneContentFlushSummary>(
+        `/sonar/admin/zones/${resolvedZoneId}/flush-content`,
+        {
+          contentTypes: selectedFlushContentTypes,
+        }
+      );
+
+      await Promise.all([
+        refreshZones(),
+        refreshPointsOfInterest(),
+        loadZoneMapPins(),
+      ]);
+      setDeletedPointOfInterestIds(new Set());
+      setPinLocationOverrides({});
+      setPinMoveStatus(null);
+      setPinMoveError(null);
+      setPinDeleteStatus(null);
+      setPinDeleteError(null);
+      setZoneMapPinsError(null);
+      setFlushZoneContentStatus(formatZoneContentFlushSummary(summary));
+      setShowFlushZoneContentModal(false);
+    } catch (error) {
+      console.error('Error flushing zone content:', error);
+      setFlushZoneContentError(
+        'Unable to flush the selected content right now. Try again in a moment.'
+      );
+    } finally {
+      setFlushingZoneContent(false);
     }
   };
 
@@ -1768,7 +1870,41 @@ export const Zone = () => {
         >
           {queueingZoneTags ? 'Queueing Tags...' : 'Generate Zone Tags'}
         </button>
+        <button
+          onClick={openFlushZoneContentModal}
+          disabled={flushingZoneContent}
+          className="bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 disabled:bg-amber-300"
+        >
+          {flushingZoneContent ? 'Flushing Content...' : 'Flush Zone Content'}
+        </button>
       </div>
+
+      <ZoneFlushContentModal
+        isOpen={showFlushZoneContentModal}
+        zoneCount={1}
+        selectedContentTypes={selectedFlushContentTypes}
+        onToggleContentType={toggleFlushContentType}
+        onSelectAll={() =>
+          setSelectedFlushContentTypes([...defaultZoneFlushContentTypes])
+        }
+        onClearAll={() => setSelectedFlushContentTypes([])}
+        onCancel={closeFlushZoneContentModal}
+        onConfirm={handleFlushZoneContent}
+        isSubmitting={flushingZoneContent}
+        error={flushZoneContentError}
+      />
+
+      {(flushZoneContentStatus || flushZoneContentError) && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+            flushZoneContentError
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          {flushZoneContentError ?? flushZoneContentStatus}
+        </div>
+      )}
 
       {(latestZoneFlavorJob || zoneFlavorJobsError) && (
         <div className="mb-6 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">

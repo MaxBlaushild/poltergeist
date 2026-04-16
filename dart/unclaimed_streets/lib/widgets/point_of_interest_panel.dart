@@ -1519,11 +1519,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
               const SizedBox(height: 12),
             ],
             if (!canViewNearbyContent) ...[
-              _buildProximityLockedTreatment(
-                context,
-                distanceMeters: distanceToPoi,
-                actionLabel: "view this location's details",
-              ),
+              _buildProximityLockedTreatment(context),
               const SizedBox(height: 12),
             ],
             if (canViewNearbyContent &&
@@ -1586,15 +1582,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (!canViewNearbyContent) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Scenario details unlock when you move back within ${_unlockRadiusMeters.round()} m.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     for (var i = 0; i < linkedScenarios.length; i++) ...[
                       if (i > 0) const Divider(height: 16),
@@ -1644,15 +1631,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (!canViewNearbyContent) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Challenge details unlock when you move back within ${_unlockRadiusMeters.round()} m.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     Builder(
                       builder: (context) {
@@ -1667,7 +1645,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             Text(
                               canViewNearbyContent
                                   ? challenge.question
-                                  : 'Move closer to reveal this challenge.',
+                                  : 'Challenge details are hidden while you are out of range.',
                               style: canViewNearbyContent
                                   ? Theme.of(context).textTheme.bodyMedium
                                         ?.copyWith(fontWeight: FontWeight.w600)
@@ -1754,15 +1732,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (!canViewNearbyContent) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Dialogue unlocks when you move back within ${_unlockRadiusMeters.round()} m.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     for (var i = 0; i < linkedExpositions.length; i++) ...[
                       if (i > 0) const Divider(height: 16),
@@ -1825,15 +1794,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (!canViewNearbyContent) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Monster encounters unlock when you move back within ${_unlockRadiusMeters.round()} m.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     for (var i = 0; i < linkedMonsters.length; i++) ...[
                       if (i > 0) const Divider(height: 16),
@@ -2014,27 +1974,12 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     );
   }
 
-  Widget _buildProximityLockedTreatment(
-    BuildContext context, {
-    required double? distanceMeters,
-    required String actionLabel,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Move within ${_unlockRadiusMeters.round()} m to $actionLabel.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        if (distanceMeters != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              'You are ${distanceMeters.round()} m away.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-      ],
+  Widget _buildProximityLockedTreatment(BuildContext context) {
+    return Text(
+      'Nearby details stay locked while you are out of range.',
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }

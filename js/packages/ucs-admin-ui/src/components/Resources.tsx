@@ -4,6 +4,20 @@ import { Resource, ResourceType } from '@poltergeist/types';
 
 type ResourceTypeRecord = ResourceType;
 type ResourceRecord = Resource;
+type ResourceTypeInventorySyncConflict = {
+  inventoryItemId: number;
+  inventoryItemName: string;
+  matchingResourceTypes: string[];
+};
+
+type ResourceTypeInventorySyncSummary = {
+  totalItemCount: number;
+  updatedCount: number;
+  alreadyMatchedCount: number;
+  unmatchedCount: number;
+  ambiguousCount: number;
+  ambiguousItems: ResourceTypeInventorySyncConflict[];
+};
 
 const extractApiErrorMessage = (
   error: unknown,
@@ -44,6 +58,31 @@ const slugify = (value: string) =>
 const formatCoordinates = (latitude: number, longitude: number) =>
   `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 
+const formatResourceTypeInventorySyncSummary = (
+  summary: ResourceTypeInventorySyncSummary
+) => {
+  const parts = [
+    `${summary.updatedCount} updated`,
+    `${summary.alreadyMatchedCount} already matched`,
+    `${summary.unmatchedCount} without matching tags`,
+  ];
+  if (summary.ambiguousCount > 0) {
+    parts.push(`${summary.ambiguousCount} ambiguous`);
+  }
+
+  let message = `Synced inventory item resource types: ${parts.join(', ')}.`;
+  if (summary.ambiguousItems.length > 0) {
+    message += ` Skipped ambiguous items: ${summary.ambiguousItems
+      .slice(0, 3)
+      .map(
+        (item) =>
+          `${item.inventoryItemName} (${item.matchingResourceTypes.join(', ')})`
+      )
+      .join('; ')}.`;
+  }
+  return message;
+};
+
 const emptyResourceTypeForm = () => ({
   name: '',
   slug: '',
@@ -54,7 +93,6 @@ const emptyResourceTypeForm = () => ({
 const emptyResourceForm = () => ({
   zoneId: '',
   resourceTypeId: '',
-  inventoryItemId: '',
   quantity: '1',
   latitude: '',
   longitude: '',
@@ -62,7 +100,7 @@ const emptyResourceForm = () => ({
 
 export const Resources = () => {
   const { apiClient } = useAPI();
-  const { inventoryItems } = useInventory();
+  const { refreshInventoryItems } = useInventory();
   const { zones } = useZoneContext();
   const [resourceTypes, setResourceTypes] = useState<ResourceTypeRecord[]>([]);
   const [resources, setResources] = useState<ResourceRecord[]>([]);
@@ -89,16 +127,6 @@ export const Resources = () => {
     zones.forEach((zone) => map.set(zone.id, zone.name || zone.id));
     return map;
   }, [zones]);
-
-  const filteredInventoryItems = useMemo(
-    () =>
-      inventoryItems.filter((item) =>
-        resourceForm.resourceTypeId
-          ? item.resourceTypeId === resourceForm.resourceTypeId
-          : true
-      ),
-    [inventoryItems, resourceForm.resourceTypeId]
-  );
 
   const fetchResourceTypes = useCallback(async () => {
     const response = await apiClient.get<ResourceTypeRecord[]>(
@@ -246,7 +274,7 @@ export const Resources = () => {
                 : resourceType.mapIconPrompt,
           }
         );
-        setMessage(`Queued a new map icon for ${resourceType.name}.`);
+        setMessage(`Generated a new map icon for ${resourceType.name}.`);
         await fetchResourceTypes();
       } catch (nextError) {
         console.error('Failed to generate resource type icon:', nextError);
@@ -260,6 +288,41 @@ export const Resources = () => {
     [apiClient, editingResourceTypeId, fetchResourceTypes, resourceTypeForm.mapIconPrompt]
   );
 
+  const handleSyncInventoryItemResourceTypes = useCallback(async () => {
+    if (
+      !window.confirm(
+        'Assign resource types to inventory items whose internal tags match a resource type name or slug? Existing matching assignments will be left alone.'
+      )
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const summary = await apiClient.post<ResourceTypeInventorySyncSummary>(
+        '/sonar/resource-types/sync-inventory-items',
+        {}
+      );
+      refreshInventoryItems();
+      setMessage(formatResourceTypeInventorySyncSummary(summary));
+    } catch (nextError) {
+      console.error(
+        'Failed to sync resource types onto inventory items:',
+        nextError
+      );
+      setError(
+        extractApiErrorMessage(
+          nextError,
+          'Failed to sync resource types onto inventory items.'
+        )
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [apiClient, refreshInventoryItems]);
+
   const handleSaveResource = useCallback(async () => {
     if (!resourceForm.zoneId.trim()) {
       setError('Zone is required.');
@@ -267,10 +330,6 @@ export const Resources = () => {
     }
     if (!resourceForm.resourceTypeId.trim()) {
       setError('Resource type is required.');
-      return;
-    }
-    if (!resourceForm.inventoryItemId.trim()) {
-      setError('Inventory item is required.');
       return;
     }
 
@@ -293,7 +352,6 @@ export const Resources = () => {
       const payload = {
         zoneId: resourceForm.zoneId,
         resourceTypeId: resourceForm.resourceTypeId,
-        inventoryItemId: Number(resourceForm.inventoryItemId),
         quantity,
         latitude,
         longitude,
@@ -329,7 +387,6 @@ export const Resources = () => {
     setResourceForm({
       zoneId: resource.zoneId,
       resourceTypeId: resource.resourceTypeId,
-      inventoryItemId: resource.inventoryItemId.toString(),
       quantity: resource.quantity.toString(),
       latitude: resource.latitude.toString(),
       longitude: resource.longitude.toString(),
@@ -342,7 +399,7 @@ export const Resources = () => {
     async (resource: ResourceRecord) => {
       if (
         !window.confirm(
-          `Delete the ${resource.inventoryItem?.name || 'resource'} node?`
+          `Delete this ${resource.resourceType?.name || 'resource'} node?`
         )
       ) {
         return;
@@ -404,13 +461,23 @@ export const Resources = () => {
               the map icon each resource node will use.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void fetchResourceTypes()}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700"
-          >
-            Refresh
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleSyncInventoryItemResourceTypes()}
+              className="rounded-md border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700"
+              disabled={busy || resourceTypes.length === 0}
+            >
+              Auto-Assign To Inventory Items
+            </button>
+            <button
+              type="button"
+              onClick={() => void fetchResourceTypes()}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {(message || error) && (
@@ -585,8 +652,9 @@ export const Resources = () => {
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Resources</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Place gatherable resource nodes on the map and connect them to the
-              inventory item players receive.
+              Place gatherable resource nodes on the map. Each gather grants a
+              random active inventory item of that type within about 10 item
+              levels of the player.
             </p>
           </div>
           <button
@@ -605,22 +673,27 @@ export const Resources = () => {
                 key={resource.id}
                 className="flex items-start gap-4 rounded-xl border border-slate-200 p-4"
               >
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                  <img
-                    src={
-                      resource.resourceType?.mapIconUrl ||
-                      resource.inventoryItem?.imageUrl ||
-                      ''
-                    }
-                    alt={resource.inventoryItem?.name || 'Resource'}
-                    className="h-full w-full object-contain"
-                  />
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                  {resource.resourceType?.mapIconUrl ? (
+                    <img
+                      src={resource.resourceType.mapIconUrl}
+                      alt={resource.resourceType?.name || 'Resource'}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <span className="px-2 text-center text-xs text-slate-400">
+                      No icon
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-semibold text-slate-900">
-                        {resource.inventoryItem?.name || `Item #${resource.inventoryItemId}`}
+                        {resource.resourceType?.name ||
+                          resourceTypeById.get(resource.resourceTypeId)?.name ||
+                          'Resource'}{' '}
+                        Node
                       </h3>
                       <p className="text-sm text-slate-500">
                         {resource.resourceType?.name ||
@@ -649,6 +722,9 @@ export const Resources = () => {
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
                     <span className="rounded-full bg-slate-100 px-2 py-1">
                       Qty {resource.quantity}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-1">
+                      Reward band: player level +/- 10
                     </span>
                     <span className="rounded-full bg-slate-100 px-2 py-1">
                       {formatCoordinates(resource.latitude, resource.longitude)}
@@ -712,7 +788,6 @@ export const Resources = () => {
                     setResourceForm((current) => ({
                       ...current,
                       resourceTypeId: event.target.value,
-                      inventoryItemId: '',
                     }))
                   }
                   className="w-full rounded-md border border-slate-300 px-3 py-2"
@@ -728,25 +803,13 @@ export const Resources = () => {
 
               <label className="block text-sm">
                 <span className="mb-1 block font-medium text-slate-700">
-                  Inventory Item
+                  Reward Behavior
                 </span>
-                <select
-                  value={resourceForm.inventoryItemId}
-                  onChange={(event) =>
-                    setResourceForm((current) => ({
-                      ...current,
-                      inventoryItemId: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2"
-                >
-                  <option value="">Select an inventory item</option>
-                  {filteredInventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-600">
+                  Players gather a random active inventory item with this
+                  resource type, targeting item levels within +/- 10 of their
+                  current level.
+                </div>
               </label>
 
               <div className="grid gap-3 sm:grid-cols-3">

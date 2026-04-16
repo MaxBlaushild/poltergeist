@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAPI, useAuth } from '@poltergeist/contexts';
 import { PointOfInterest } from '@poltergeist/types';
-
 
 export const useZonePointsOfInterest = (zoneId: string) => {
   const { apiClient } = useAPI();
@@ -10,26 +9,34 @@ export const useZonePointsOfInterest = (zoneId: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
+  const refreshPointsOfInterest = useCallback(async () => {
     if (!user || !zoneId) {
       setPointsOfInterest([]);
       setLoading(false);
       return;
     }
 
-    const fetchPointsOfInterest = async () => {
-      try {
-        const response = await apiClient.get<PointOfInterest[]>(`/sonar/zones/${zoneId}/pointsOfInterest`);
-        setPointsOfInterest(response);
-        setLoading(false);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to fetch points of interest'));
-        setLoading(false);
-      }
-    };
+    setLoading(true);
+    try {
+      const response = await apiClient.get<PointOfInterest[]>(
+        `/sonar/zones/${zoneId}/pointsOfInterest`
+      );
+      setPointsOfInterest(response);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err
+          : new Error('Failed to fetch points of interest')
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [apiClient, user, zoneId]);
 
-    fetchPointsOfInterest();
-  }, [user, zoneId]);
+  useEffect(() => {
+    void refreshPointsOfInterest();
+  }, [refreshPointsOfInterest]);
 
-  return { pointsOfInterest, loading, error };
+  return { pointsOfInterest, loading, error, refreshPointsOfInterest };
 };

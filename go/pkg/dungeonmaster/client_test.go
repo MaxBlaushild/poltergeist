@@ -158,3 +158,35 @@ func TestIsNonRetriableQuestGenerationError(t *testing.T) {
 		t.Fatalf("expected marked error to be classified as non-retriable")
 	}
 }
+
+func TestResolveQuestEncounterTypePreservesHigherTemplateTier(t *testing.T) {
+	if got := resolveQuestEncounterType(
+		models.MonsterEncounterTypeMonster,
+		models.MonsterEncounterTypeBoss,
+	); got != models.MonsterEncounterTypeBoss {
+		t.Fatalf("expected boss tier, got %s", got)
+	}
+
+	if got := resolveQuestEncounterType(
+		models.MonsterEncounterTypeBoss,
+		models.MonsterEncounterTypeRaid,
+	); got != models.MonsterEncounterTypeRaid {
+		t.Fatalf("expected raid tier, got %s", got)
+	}
+}
+
+func TestResolveQuestEncounterTypeAppliesAuthoredBossOrRaidScaling(t *testing.T) {
+	if got := resolveQuestEncounterType(
+		models.MonsterEncounterTypeBoss,
+		models.MonsterEncounterTypeMonster,
+	); got != models.MonsterEncounterTypeBoss {
+		t.Fatalf("expected authored boss tier, got %s", got)
+	}
+
+	if got := resolveQuestEncounterType(
+		models.MonsterEncounterTypeRaid,
+		models.MonsterEncounterTypeMonster,
+	); got != models.MonsterEncounterTypeRaid {
+		t.Fatalf("expected authored raid tier, got %s", got)
+	}
+}

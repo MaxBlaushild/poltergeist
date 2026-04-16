@@ -80,22 +80,23 @@ func (h *healingFountainHandle) Update(ctx context.Context, id uuid.UUID, update
 
 func (h *healingFountainHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("healing_fountain_id = ?", id).Delete(&models.UserHealingFountainVisit{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&models.HealingFountain{}, "id = ?", id).Error
+		return deleteHealingFountains(tx, []uuid.UUID{id})
 	})
 }
 
-func (h *healingFountainHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+func deleteHealingFountains(tx *gorm.DB, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	if err := tx.Where("healing_fountain_id IN ?", ids).Delete(&models.UserHealingFountainVisit{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("id IN ?", ids).Delete(&models.HealingFountain{}).Error
+}
+
+func (h *healingFountainHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("healing_fountain_id IN ?", ids).Delete(&models.UserHealingFountainVisit{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id IN ?", ids).Delete(&models.HealingFountain{}).Error
+		return deleteHealingFountains(tx, ids)
 	})
 }
 

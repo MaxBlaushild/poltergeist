@@ -16,9 +16,7 @@ type resourceHandle struct {
 func (h *resourceHandle) preload(db *gorm.DB) *gorm.DB {
 	return db.
 		Preload("Zone").
-		Preload("ResourceType").
-		Preload("InventoryItem").
-		Preload("InventoryItem.ResourceType")
+		Preload("ResourceType")
 }
 
 func (h *resourceHandle) Create(ctx context.Context, resource *models.Resource) error {
@@ -69,15 +67,14 @@ func (h *resourceHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		}
 	}
 	payload := map[string]interface{}{
-		"zone_id":           updates.ZoneID,
-		"resource_type_id":  updates.ResourceTypeID,
-		"inventory_item_id": updates.InventoryItemID,
-		"quantity":          updates.Quantity,
-		"latitude":          updates.Latitude,
-		"longitude":         updates.Longitude,
-		"geometry":          updates.Geometry,
-		"invalidated":       updates.Invalidated,
-		"updated_at":        updates.UpdatedAt,
+		"zone_id":          updates.ZoneID,
+		"resource_type_id": updates.ResourceTypeID,
+		"quantity":         updates.Quantity,
+		"latitude":         updates.Latitude,
+		"longitude":        updates.Longitude,
+		"geometry":         updates.Geometry,
+		"invalidated":      updates.Invalidated,
+		"updated_at":       updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).
 		Model(&models.Resource{}).

@@ -244,8 +244,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
 	r.GET("/sonar/resource-types", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourceTypes))
-	r.GET("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourceType))
 	r.POST("/sonar/resource-types", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createResourceType))
+	r.POST("/sonar/resource-types/sync-inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.syncResourceTypesToInventoryItems))
+	r.GET("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourceType))
 	r.PUT("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResourceType))
 	r.DELETE("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResourceType))
 	r.POST("/sonar/resource-types/:id/generate-map-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeMapIcon))
@@ -406,6 +407,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
 	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
 	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
+	r.POST("/sonar/admin/zones/flush-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkFlushZoneContent))
+	r.POST("/sonar/admin/zones/:id/flush-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.flushZoneContent))
 	r.POST("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createDistrictSeedJob))
 	r.GET("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJobs))
 	r.GET("/sonar/admin/district-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJob))
@@ -5414,6 +5417,91 @@ func (s *server) deleteZone(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "zone deleted successfully"})
+}
+
+type zoneFlushContentRequest struct {
+	ZoneIDs      []string  `json:"zoneIds"`
+	ContentTypes *[]string `json:"contentTypes"`
+}
+
+func parseZoneFlushContentOptions(rawContentTypes *[]string) (models.ZoneContentFlushOptions, error) {
+	if rawContentTypes == nil {
+		return models.DefaultZoneContentFlushOptions(), nil
+	}
+	if len(*rawContentTypes) == 0 {
+		return models.ZoneContentFlushOptions{}, fmt.Errorf("at least one content type is required")
+	}
+
+	contentTypes, err := models.ParseZoneContentFlushTypes(*rawContentTypes)
+	if err != nil {
+		return models.ZoneContentFlushOptions{}, err
+	}
+
+	return models.NewZoneContentFlushOptions(contentTypes), nil
+}
+
+func (s *server) flushZoneContent(ctx *gin.Context) {
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	var requestBody zoneFlushContentRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && !stdErrors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	options, err := parseZoneFlushContentOptions(requestBody.ContentTypes)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	summary, err := s.dbClient.Zone().FlushContent(ctx, []uuid.UUID{zoneID}, options)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, summary)
+}
+
+func (s *server) bulkFlushZoneContent(ctx *gin.Context) {
+	var requestBody zoneFlushContentRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(requestBody.ZoneIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one zone ID is required"})
+		return
+	}
+
+	zoneIDs := make([]uuid.UUID, 0, len(requestBody.ZoneIDs))
+	for _, rawID := range requestBody.ZoneIDs {
+		zoneID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid zone ID: %s", rawID)})
+			return
+		}
+		zoneIDs = append(zoneIDs, zoneID)
+	}
+
+	options, err := parseZoneFlushContentOptions(requestBody.ContentTypes)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	summary, err := s.dbClient.Zone().FlushContent(ctx, zoneIDs, options)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, summary)
 }
 
 func (s *server) getPlaceTypes(ctx *gin.Context) {

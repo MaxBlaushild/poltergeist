@@ -15,6 +15,7 @@ export interface QuestNodeObjective {
     type: QuestNodeObjectiveType;
     prompt: string;
     description?: string;
+    encounterType?: 'monster' | 'boss' | 'raid' | (string & {});
     imageUrl?: string;
     thumbnailUrl?: string;
     reward?: number;

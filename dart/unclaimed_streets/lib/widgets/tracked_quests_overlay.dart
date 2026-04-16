@@ -423,6 +423,9 @@ class _TrackedQuestCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          QuestObjectiveChallengeBadge(node: node),
+                          if (questObjectiveChallengeLabel(node) != null)
+                            const SizedBox(height: 6),
                           ...objectiveLines.map(
                             (line) => Padding(
                               padding: const EdgeInsets.only(bottom: 4),
@@ -502,6 +505,10 @@ class _QuestPoiTile extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                 ),
                           ),
+                          const SizedBox(height: 4),
+                          QuestObjectiveChallengeBadge(node: node),
+                          if (questObjectiveChallengeLabel(node) != null)
+                            const SizedBox(height: 4),
                           ...objectiveLines.map(
                             (line) => GestureDetector(
                               behavior: HitTestBehavior.opaque,

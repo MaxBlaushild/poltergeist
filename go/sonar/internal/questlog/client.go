@@ -36,6 +36,7 @@ type QuestNodeObjective struct {
 	Type              QuestNodeObjectiveType         `json:"type"`
 	Prompt            string                         `json:"prompt"`
 	Description       string                         `json:"description,omitempty"`
+	EncounterType     models.MonsterEncounterType    `json:"encounterType,omitempty"`
 	ImageURL          string                         `json:"imageUrl,omitempty"`
 	ThumbnailURL      string                         `json:"thumbnailUrl,omitempty"`
 	Reward            int                            `json:"reward"`
@@ -1109,6 +1110,7 @@ func buildQuestNodeObjective(
 				if strings.TrimSpace(string(submissionType)) == "" {
 					submissionType = models.DefaultQuestNodeSubmissionType()
 				}
+				encounterType := models.NormalizeMonsterEncounterType(string(encounter.EncounterType))
 				difficulty := 0
 				if len(encounter.Members) > 0 {
 					totalLevel := 0
@@ -1117,11 +1119,26 @@ func buildQuestNodeObjective(
 					}
 					difficulty = int(float64(totalLevel) / float64(len(encounter.Members)))
 				}
+				prompt := "Defeat " + name
+				description := strings.TrimSpace(encounter.Description)
+				switch encounterType {
+				case models.MonsterEncounterTypeBoss:
+					prompt = "Defeat the boss: " + name
+					if description == "" {
+						description = "This is a boss encounter and will hit harder than a standard quest fight."
+					}
+				case models.MonsterEncounterTypeRaid:
+					prompt = "Complete the raid encounter: " + name
+					if description == "" {
+						description = "This is a raid-tier encounter built to be a major group challenge."
+					}
+				}
 				return &QuestNodeObjective{
 					ID:             encounter.ID,
 					Type:           QuestNodeObjectiveTypeMonsterEncounter,
-					Prompt:         "Defeat " + name,
-					Description:    strings.TrimSpace(encounter.Description),
+					Prompt:         prompt,
+					Description:    description,
+					EncounterType:  encounterType,
 					ImageURL:       strings.TrimSpace(encounter.ImageURL),
 					ThumbnailURL:   strings.TrimSpace(encounter.ThumbnailURL),
 					SubmissionType: submissionType,
@@ -1152,11 +1169,35 @@ func buildQuestNodeObjective(
 				if strings.TrimSpace(string(submissionType)) == "" {
 					submissionType = models.DefaultQuestNodeSubmissionType()
 				}
+				encounterType := models.MonsterEncounterTypeMonster
+				if monster.Template != nil {
+					switch monster.Template.MonsterType {
+					case models.MonsterTemplateTypeBoss:
+						encounterType = models.MonsterEncounterTypeBoss
+					case models.MonsterTemplateTypeRaid:
+						encounterType = models.MonsterEncounterTypeRaid
+					}
+				}
+				prompt := "Defeat " + name
+				description := strings.TrimSpace(monster.Description)
+				switch encounterType {
+				case models.MonsterEncounterTypeBoss:
+					prompt = "Defeat the boss: " + name
+					if description == "" {
+						description = "This is a boss encounter and will hit harder than a standard quest fight."
+					}
+				case models.MonsterEncounterTypeRaid:
+					prompt = "Complete the raid encounter: " + name
+					if description == "" {
+						description = "This is a raid-tier encounter built to be a major group challenge."
+					}
+				}
 				return &QuestNodeObjective{
 					ID:             monster.ID,
 					Type:           QuestNodeObjectiveTypeMonster,
-					Prompt:         "Defeat " + name,
-					Description:    strings.TrimSpace(monster.Description),
+					Prompt:         prompt,
+					Description:    description,
+					EncounterType:  encounterType,
 					ImageURL:       strings.TrimSpace(monster.ImageURL),
 					ThumbnailURL:   strings.TrimSpace(monster.ThumbnailURL),
 					SubmissionType: submissionType,

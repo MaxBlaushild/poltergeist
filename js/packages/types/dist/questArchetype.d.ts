@@ -37,6 +37,7 @@ export interface QuestArchetypeNodeFetchRequirement {
     quantity: number;
 }
 export type QuestArchetypeNodeLocationSelectionMode = 'random' | 'closest' | 'same_as_previous';
+export type QuestMonsterEncounterType = 'monster' | 'boss' | 'raid' | (string & {});
 export interface QuestArchetypeNodeExpositionItemReward {
     inventoryItemId: number;
     quantity: number;
@@ -78,6 +79,7 @@ export interface QuestArchetypeNode {
     failurePolicy?: 'retry' | 'transition' | string | null;
     storyFlagKey?: string | null;
     monsterTemplateIds?: string[];
+    encounterType?: QuestMonsterEncounterType | null;
     targetLevel?: number | null;
     encounterProximityMeters?: number | null;
     expositionTemplate?: ExpositionTemplate | null;

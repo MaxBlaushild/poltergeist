@@ -46,7 +46,14 @@ List<String> questObjectiveLines(QuestNode? node) {
       _hasValue(node.monsterId) ||
       objectiveType == QuestNodeObjective.typeMonsterEncounter ||
       objectiveType == QuestNodeObjective.typeMonster) {
-    return const ['Defeat the current monster objective.'];
+    switch (_questEncounterType(node)) {
+      case 'boss':
+        return const ['Defeat the boss encounter.'];
+      case 'raid':
+        return const ['Complete the raid encounter.'];
+      default:
+        return const ['Defeat the current monster objective.'];
+    }
   }
   if (_hasValue(node.challengeId) ||
       objectiveType == QuestNodeObjective.typeChallenge) {
@@ -67,6 +74,17 @@ String questObjectiveSummary(QuestNode? node) {
   final lines = questObjectiveLines(node);
   if (lines.isEmpty) return '';
   return lines.join(' • ');
+}
+
+String? questObjectiveChallengeLabel(QuestNode? node) {
+  switch (_questEncounterType(node)) {
+    case 'boss':
+      return 'Boss Encounter';
+    case 'raid':
+      return 'Raid Encounter';
+    default:
+      return null;
+  }
 }
 
 bool isQuestPointOfInterestHidden(
@@ -138,6 +156,44 @@ class QuestObjectiveIcon extends StatelessWidget {
       borderRadius: borderRadius,
       iconColor: iconColor,
       backgroundColor: backgroundColor,
+    );
+  }
+}
+
+class QuestObjectiveChallengeBadge extends StatelessWidget {
+  const QuestObjectiveChallengeBadge({super.key, required this.node});
+
+  final QuestNode? node;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = questObjectiveChallengeLabel(node);
+    if (label == null) {
+      return const SizedBox.shrink();
+    }
+    final colors = _questChallengeBadgeColors(node);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: colors.background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_questChallengeIcon(node), size: 14, color: colors.foreground),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.foreground,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -230,6 +286,55 @@ String? _pointOfInterestImageUrl(PointOfInterest poi) {
 
 bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;
 
+String _questEncounterType(QuestNode? node) {
+  final encounterType =
+      node?.objective?.encounterType.trim().toLowerCase() ?? '';
+  switch (encounterType) {
+    case 'boss':
+      return 'boss';
+    case 'raid':
+      return 'raid';
+    default:
+      return 'monster';
+  }
+}
+
+IconData _questChallengeIcon(QuestNode? node) {
+  switch (_questEncounterType(node)) {
+    case 'boss':
+      return Icons.military_tech_outlined;
+    case 'raid':
+      return Icons.groups_outlined;
+    default:
+      return Icons.pets_outlined;
+  }
+}
+
+({Color background, Color border, Color foreground}) _questChallengeBadgeColors(
+  QuestNode? node,
+) {
+  switch (_questEncounterType(node)) {
+    case 'boss':
+      return (
+        background: const Color(0xFFFFF0CC),
+        border: const Color(0xFFE0A11B),
+        foreground: const Color(0xFF6A4100),
+      );
+    case 'raid':
+      return (
+        background: const Color(0xFFFFE1DE),
+        border: const Color(0xFFC53C2F),
+        foreground: const Color(0xFF7A1712),
+      );
+    default:
+      return (
+        background: const Color(0xFFE2E8F0),
+        border: const Color(0xFF94A3B8),
+        foreground: const Color(0xFF334155),
+      );
+  }
+}
+
 bool _hasFetchCharacterLocation(QuestNode? node) {
   final character = node?.fetchCharacter;
   if (character == null) return false;
@@ -264,7 +369,7 @@ IconData _objectiveIconData(QuestNode? node) {
     return Icons.forum_outlined;
   }
   if (_hasValue(node?.monsterEncounterId) || _hasValue(node?.monsterId)) {
-    return Icons.pets_outlined;
+    return _questChallengeIcon(node);
   }
   if (_hasValue(node?.challengeId)) {
     return Icons.assignment_turned_in_outlined;

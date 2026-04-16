@@ -412,7 +412,6 @@ func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, invento
 		"scenario_item_rewards",
 		"scenario_option_item_rewards",
 		"treasure_chest_items",
-		"resources",
 		"owned_inventory_items",
 		"match_inventory_item_effects",
 		"team_inventory_items",

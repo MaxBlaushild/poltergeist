@@ -1046,14 +1046,17 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: objectiveLines
-                                  .map(
-                                    (line) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(line),
-                                    ),
-                                  )
-                                  .toList(),
+                              children: [
+                                QuestObjectiveChallengeBadge(node: node),
+                                if (questObjectiveChallengeLabel(node) != null)
+                                  const SizedBox(height: 8),
+                                ...objectiveLines.map(
+                                  (line) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(line),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           if (canFocusNode) ...[
@@ -1221,8 +1224,11 @@ class _QuestPoiCard extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  QuestObjectiveChallengeBadge(node: node),
+                  if (questObjectiveChallengeLabel(node) != null)
+                    const SizedBox(height: 8),
                   if (objectiveSummary.isNotEmpty) ...[
-                    const SizedBox(height: 4),
                     Text(
                       objectiveSummary,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1434,8 +1440,13 @@ class _QuestAccordion extends StatelessWidget {
                                           ),
                                       ],
                                     ),
+                                    if (questObjectiveChallengeLabel(node) !=
+                                        null) ...[
+                                      const SizedBox(height: 6),
+                                      QuestObjectiveChallengeBadge(node: node),
+                                    ],
                                     if (objectiveSummary.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
+                                      const SizedBox(height: 6),
                                       Text(
                                         objectiveSummary,
                                         maxLines: 2,

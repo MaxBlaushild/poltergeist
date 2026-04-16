@@ -9,6 +9,7 @@ interface InventoryContextType {
   inventoryItemError: string | null;
   setPresentedInventoryItem: (inventoryItem: InventoryItem | null) => void;
   inventoryItemsAreLoading: boolean;
+  refreshInventoryItems: () => void;
   consumeItem: (ownedInventoryItemId: string, metadata?: UseItemMetadata) => Promise<SubmissionResult | undefined>;
   useItemError: string | null;
   isUsingItem: boolean;
@@ -33,6 +34,7 @@ const InventoryContext = createContext<InventoryContextType>({
   inventoryItemError: null,
   setPresentedInventoryItem: (item: InventoryItem | null) => {},
   inventoryItemsAreLoading: false,
+  refreshInventoryItems: () => {},
   consumeItem: () => Promise.resolve(undefined),
   useItemError: null,
   isUsingItem: false,
@@ -134,6 +136,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       setPresentedInventoryItem,
       presentedInventoryItem,
       inventoryItemError: error,
+      refreshInventoryItems: fetchInventoryItems,
       consumeItem,
       useItemError,
       isUsingItem,

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -143,6 +144,9 @@ const _stamenWatercolorApiKey = String.fromEnvironment(
 final String _stamenWatercolorStyle = _stamenWatercolorApiKey.isNotEmpty
     ? '$_stamenWatercolorStyleBase?api_key=$_stamenWatercolorApiKey'
     : _stamenWatercolorStyleBase;
+final Set<Factory<OneSequenceGestureRecognizer>> _mapGestureRecognizers = {
+  Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+};
 
 class SinglePlayerScreen extends StatefulWidget {
   const SinglePlayerScreen({super.key});
@@ -3782,7 +3786,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     for (final resource in content.resources) {
       add(resource.resourceType?.mapIconUrl ?? '');
-      add(resource.inventoryItem?.imageUrl ?? '');
     }
     return urls;
   }
@@ -4206,17 +4209,47 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String _resourceImageUrl(ResourceNode resource) {
     final icon = resource.resourceType?.mapIconUrl.trim() ?? '';
     if (icon.isNotEmpty) return icon;
-    final inventoryImage = resource.inventoryItem?.imageUrl.trim() ?? '';
-    if (inventoryImage.isNotEmpty) return inventoryImage;
     return _healingFountainFallbackImageUrl;
   }
 
-  String _resourceSelectionTitle(ResourceNode resource) {
-    final itemName = resource.inventoryItem?.name.trim() ?? '';
-    if (itemName.isNotEmpty) return itemName;
+  String _resourceTypeDisplayName(ResourceNode resource) {
     final resourceTypeName = resource.resourceType?.name.trim() ?? '';
     if (resourceTypeName.isNotEmpty) return resourceTypeName;
+    final resourceTypeSlug = resource.resourceType?.slug.trim() ?? '';
+    if (resourceTypeSlug.isNotEmpty) {
+      return resourceTypeSlug
+          .split(RegExp(r'[-_\s]+'))
+          .where((segment) => segment.isNotEmpty)
+          .map(
+            (segment) =>
+                segment[0].toUpperCase() + segment.substring(1).toLowerCase(),
+          )
+          .join(' ');
+    }
     return 'Resource';
+  }
+
+  String _mysteriousResourceTitle(ResourceNode resource) {
+    return 'Mysterious ${_resourceTypeDisplayName(resource)}';
+  }
+
+  bool _isResourceWithinRevealRange(ResourceNode resource) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return false;
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      resource.latitude,
+      resource.longitude,
+    );
+    return distance <= kProximityUnlockRadiusMeters;
+  }
+
+  String _resourceSelectionTitle(ResourceNode resource) {
+    if (!_isResourceWithinRevealRange(resource)) {
+      return _mysteriousResourceTitle(resource);
+    }
+    return _resourceTypeDisplayName(resource);
   }
 
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
@@ -9347,6 +9380,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               initialCameraPosition: initialPosition,
               styleString: _stamenWatercolorStyle,
               minMaxZoomPreference: const MinMaxZoomPreference(null, 16),
+              gestureRecognizers: _mapGestureRecognizers,
+              scrollGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: true,
               onMapCreated: (c) {
                 debugPrint('SinglePlayer: map created');
                 _mapController = c;
@@ -12432,8 +12470,13 @@ class _MiniInfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.55),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.55,
+        ),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

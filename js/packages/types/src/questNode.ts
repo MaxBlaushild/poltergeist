@@ -9,10 +9,7 @@ export type QuestNodeSubmissionType =
   | 'video'
   | (string & {});
 
-export type QuestNodeFailurePolicy =
-  | 'retry'
-  | 'transition'
-  | (string & {});
+export type QuestNodeFailurePolicy = 'retry' | 'transition' | (string & {});
 
 export type QuestNodeObjectiveType =
   | 'challenge'
@@ -35,6 +32,7 @@ export interface QuestNodeObjective {
   type: QuestNodeObjectiveType;
   prompt: string;
   description?: string;
+  encounterType?: 'monster' | 'boss' | 'raid' | (string & {});
   imageUrl?: string;
   thumbnailUrl?: string;
   reward?: number;

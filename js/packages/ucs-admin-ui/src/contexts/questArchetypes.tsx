@@ -8,6 +8,7 @@ import {
   LocationArchetype,
   QuestArchetypeChallenge,
   QuestArchetypeNode,
+  QuestMonsterEncounterType,
   QuestArchetypeNodeLocationSelectionMode,
   QuestArchetypeNodeType,
   QuestNodeFailurePolicy,
@@ -28,6 +29,7 @@ export type QuestArchetypeNodeDraft = {
   failurePolicy?: QuestNodeFailurePolicy | null;
   storyFlagKey?: string;
   monsterTemplateIds?: string[];
+  encounterType?: QuestMonsterEncounterType | null;
   targetLevel?: number | null;
   encounterProximityMeters?: number | null;
   expositionTemplateId?: string | null;
@@ -219,6 +221,7 @@ export const QuestArchetypesProvider = ({
       failurePolicy: draft.failurePolicy,
       storyFlagKey: draft.storyFlagKey,
       monsterTemplateIds: draft.monsterTemplateIds,
+      encounterType: draft.encounterType,
       targetLevel: draft.targetLevel,
       encounterProximityMeters: draft.encounterProximityMeters,
       expositionTemplateId: draft.expositionTemplateId,

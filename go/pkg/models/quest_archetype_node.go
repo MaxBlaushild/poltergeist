@@ -147,6 +147,7 @@ type QuestArchetypeNode struct {
 	FailurePolicy              QuestNodeFailurePolicy                  `json:"failurePolicy" gorm:"column:failure_policy;type:text;default:'retry'"`
 	StoryFlagKey               string                                  `json:"storyFlagKey,omitempty" gorm:"column:story_flag_key"`
 	MonsterTemplateIDs         StringArray                             `json:"monsterTemplateIds" gorm:"column:monster_template_ids;type:jsonb"`
+	EncounterType              MonsterEncounterType                    `json:"encounterType" gorm:"column:encounter_type;type:text;default:'monster'"`
 	TargetLevel                int                                     `json:"targetLevel" gorm:"column:target_level;default:1"`
 	EncounterRewardMode        RewardMode                              `json:"encounterRewardMode" gorm:"column:encounter_reward_mode"`
 	EncounterRandomRewardSize  RandomRewardSize                        `json:"encounterRandomRewardSize" gorm:"column:encounter_random_reward_size"`
@@ -203,6 +204,7 @@ func (q *QuestArchetypeNode) BeforeSave(tx *gorm.DB) error {
 	q.LocationSelectionMode = NormalizeQuestArchetypeNodeLocationSelectionMode(
 		string(q.LocationSelectionMode),
 	)
+	q.EncounterType = NormalizeMonsterEncounterType(string(q.EncounterType))
 	q.EncounterRewardMode = NormalizeRewardMode(string(q.EncounterRewardMode))
 	q.EncounterRandomRewardSize = NormalizeRandomRewardSize(string(q.EncounterRandomRewardSize))
 	q.ExpositionRewardMode = NormalizeRewardMode(string(q.ExpositionRewardMode))

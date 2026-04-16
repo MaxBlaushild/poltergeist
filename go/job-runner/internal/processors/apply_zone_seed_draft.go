@@ -223,6 +223,11 @@ func (p *ApplyZoneSeedDraftProcessor) ensurePointOfInterest(
 		return nil, err
 	}
 	if existing != nil {
+		if zone != nil {
+			if err := p.dbClient.Zone().AddPointOfInterestToZone(ctx, zone.ID, existing.ID); err != nil {
+				return nil, err
+			}
+		}
 		return existing, nil
 	}
 

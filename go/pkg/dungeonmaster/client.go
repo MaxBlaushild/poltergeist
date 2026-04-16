@@ -1263,14 +1263,17 @@ func (c *client) processQuestMonsterEncounterNode(
 	}
 
 	encounter := &models.MonsterEncounter{
-		ID:                 uuid.New(),
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
-		Name:               buildQuestEncounterName(sourceMonsters),
-		Description:        buildQuestEncounterDescription(sourceMonsters),
-		ImageURL:           firstNonEmptyMonsterImage(createdMonsters),
-		ThumbnailURL:       firstNonEmptyMonsterThumbnail(createdMonsters),
-		EncounterType:      deriveQuestEncounterType(sourceMonsters),
+		ID:           uuid.New(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		Name:         buildQuestEncounterName(sourceMonsters),
+		Description:  buildQuestEncounterDescription(sourceMonsters),
+		ImageURL:     firstNonEmptyMonsterImage(createdMonsters),
+		ThumbnailURL: firstNonEmptyMonsterThumbnail(createdMonsters),
+		EncounterType: resolveQuestEncounterType(
+			questArchTypeNode.EncounterType,
+			deriveQuestEncounterType(sourceMonsters),
+		),
 		Ephemeral:          false,
 		ScaleWithUserLevel: scaleWithUserLevel,
 		ZoneID:             zone.ID,
@@ -1802,6 +1805,24 @@ func deriveQuestEncounterType(monsters []models.Monster) models.MonsterEncounter
 		return models.MonsterEncounterTypeBoss
 	}
 	return models.MonsterEncounterTypeMonster
+}
+
+func resolveQuestEncounterType(
+	authored models.MonsterEncounterType,
+	derived models.MonsterEncounterType,
+) models.MonsterEncounterType {
+	authoredNormalized := models.NormalizeMonsterEncounterType(string(authored))
+	derivedNormalized := models.NormalizeMonsterEncounterType(string(derived))
+	switch {
+	case authoredNormalized == models.MonsterEncounterTypeRaid ||
+		derivedNormalized == models.MonsterEncounterTypeRaid:
+		return models.MonsterEncounterTypeRaid
+	case authoredNormalized == models.MonsterEncounterTypeBoss ||
+		derivedNormalized == models.MonsterEncounterTypeBoss:
+		return models.MonsterEncounterTypeBoss
+	default:
+		return models.MonsterEncounterTypeMonster
+	}
 }
 
 type resolvedQuestArchetypeLocationChallenge struct {

@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,12 +38,26 @@ type resourceTypeUpsertRequest struct {
 }
 
 type resourceUpsertRequest struct {
-	ZoneID          string   `json:"zoneId"`
-	ResourceTypeID  string   `json:"resourceTypeId"`
-	InventoryItemID int      `json:"inventoryItemId"`
-	Quantity        *int     `json:"quantity"`
-	Latitude        *float64 `json:"latitude"`
-	Longitude       *float64 `json:"longitude"`
+	ZoneID         string   `json:"zoneId"`
+	ResourceTypeID string   `json:"resourceTypeId"`
+	Quantity       *int     `json:"quantity"`
+	Latitude       *float64 `json:"latitude"`
+	Longitude      *float64 `json:"longitude"`
+}
+
+type resourceTypeInventoryItemSyncConflict struct {
+	InventoryItemID       int      `json:"inventoryItemId"`
+	InventoryItemName     string   `json:"inventoryItemName"`
+	MatchingResourceTypes []string `json:"matchingResourceTypes"`
+}
+
+type resourceTypeInventoryItemSyncSummary struct {
+	TotalItemCount      int                                     `json:"totalItemCount"`
+	UpdatedCount        int                                     `json:"updatedCount"`
+	AlreadyMatchedCount int                                     `json:"alreadyMatchedCount"`
+	UnmatchedCount      int                                     `json:"unmatchedCount"`
+	AmbiguousCount      int                                     `json:"ambiguousCount"`
+	AmbiguousItems      []resourceTypeInventoryItemSyncConflict `json:"ambiguousItems"`
 }
 
 func normalizeResourceTypeSlug(value string) string {
@@ -68,6 +86,75 @@ func normalizeResourceTypeSlug(value string) string {
 	return strings.Trim(builder.String(), "-")
 }
 
+func resourceTypeMatchKeys(resourceType models.ResourceType) []string {
+	keys := make([]string, 0, 3)
+	seen := map[string]struct{}{}
+	for _, candidate := range []string{
+		strings.ToLower(strings.TrimSpace(resourceType.Name)),
+		strings.ToLower(strings.TrimSpace(resourceType.Slug)),
+		normalizeResourceTypeSlug(resourceType.Name),
+	} {
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		keys = append(keys, candidate)
+	}
+	return keys
+}
+
+func buildResourceTypeMatchIndex(resourceTypes []models.ResourceType) map[string][]models.ResourceType {
+	index := make(map[string][]models.ResourceType, len(resourceTypes))
+	for _, resourceType := range resourceTypes {
+		for _, key := range resourceTypeMatchKeys(resourceType) {
+			index[key] = append(index[key], resourceType)
+		}
+	}
+	return index
+}
+
+func matchedResourceTypesForInventoryItem(
+	item models.InventoryItem,
+	resourceTypeIndex map[string][]models.ResourceType,
+) []models.ResourceType {
+	if len(resourceTypeIndex) == 0 {
+		return nil
+	}
+
+	normalizedTags := parseInventoryInternalTags([]string(item.InternalTags))
+	if len(normalizedTags) == 0 {
+		return nil
+	}
+
+	matchesByID := make(map[uuid.UUID]models.ResourceType)
+	for _, tag := range normalizedTags {
+		for _, resourceType := range resourceTypeIndex[string(tag)] {
+			matchesByID[resourceType.ID] = resourceType
+		}
+	}
+	if len(matchesByID) == 0 {
+		return nil
+	}
+
+	matches := make([]models.ResourceType, 0, len(matchesByID))
+	for _, resourceType := range matchesByID {
+		matches = append(matches, resourceType)
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		leftName := strings.ToLower(strings.TrimSpace(matches[i].Name))
+		rightName := strings.ToLower(strings.TrimSpace(matches[j].Name))
+		if leftName == rightName {
+			return strings.ToLower(strings.TrimSpace(matches[i].Slug)) <
+				strings.ToLower(strings.TrimSpace(matches[j].Slug))
+		}
+		return leftName < rightName
+	})
+	return matches
+}
+
 func defaultResourceTypeMapIconPrompt(resourceType *models.ResourceType) string {
 	name := "resource"
 	description := ""
@@ -85,6 +172,117 @@ func defaultResourceTypeMapIconPrompt(resourceType *models.ResourceType) string 
 		name,
 		description,
 	)
+}
+
+func decodeResourceTypeMapIconPayload(encoded string) ([]byte, error) {
+	trimmed := strings.TrimSpace(encoded)
+	if trimmed == "" {
+		return nil, fmt.Errorf("image payload was empty")
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return downloadResourceTypeMapIconSource(trimmed)
+	}
+
+	if strings.HasPrefix(trimmed, "[") {
+		var payload []string
+		if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
+			for _, entry := range payload {
+				if strings.TrimSpace(entry) == "" {
+					continue
+				}
+				return decodeResourceTypeMapIconPayload(entry)
+			}
+			return nil, fmt.Errorf("image payload array contained no data")
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "{") {
+		var payload struct {
+			Data []struct {
+				B64JSON string `json:"b64_json"`
+				URL     string `json:"url"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
+			for _, entry := range payload.Data {
+				if strings.TrimSpace(entry.B64JSON) != "" {
+					return decodeResourceTypeMapIconPayload(entry.B64JSON)
+				}
+				if strings.TrimSpace(entry.URL) != "" {
+					return decodeResourceTypeMapIconPayload(entry.URL)
+				}
+			}
+			return nil, fmt.Errorf("image payload object contained no data")
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "data:") {
+		if comma := strings.Index(trimmed, ","); comma != -1 {
+			trimmed = trimmed[comma+1:]
+		}
+	}
+
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(trimmed)
+		if err != nil {
+			continue
+		}
+		if len(decoded) == 0 {
+			return nil, fmt.Errorf("decoded image was empty")
+		}
+		return decoded, nil
+	}
+
+	return nil, fmt.Errorf("failed to decode image payload as base64")
+}
+
+func downloadResourceTypeMapIconSource(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("failed to download image: status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("downloaded image was empty")
+	}
+	return body, nil
+}
+
+func (s *server) uploadResourceTypeMapIcon(resourceTypeID uuid.UUID, imageBytes []byte) (string, error) {
+	if len(imageBytes) == 0 {
+		return "", fmt.Errorf("no image data provided")
+	}
+
+	imageFormat, err := util.DetectImageFormat(imageBytes)
+	if err != nil {
+		return "", err
+	}
+
+	imageExtension, err := util.GetImageExtension(imageFormat)
+	if err != nil {
+		return "", err
+	}
+
+	imageName := fmt.Sprintf(
+		"resource-types/%s-map-icon-%d.%s",
+		resourceTypeID.String(),
+		time.Now().UnixNano(),
+		imageExtension,
+	)
+	return s.awsClient.UploadImageToS3("crew-points-of-interest", imageName, imageBytes)
 }
 
 func (s *server) resolveResourceTypeReference(
@@ -148,6 +346,103 @@ func modestResourceExperienceReward(userLevel *models.UserLevel) int {
 		reward = 220
 	}
 	return reward
+}
+
+func normalizedGatherRewardItemLevel(item models.InventoryItem) int {
+	if item.ItemLevel > 0 {
+		return item.ItemLevel
+	}
+	return 1
+}
+
+func gatherRewardCandidatesForResourceType(
+	resourceTypeID uuid.UUID,
+	items []models.InventoryItem,
+) []models.InventoryItem {
+	filtered := make([]models.InventoryItem, 0, len(items))
+	for _, item := range items {
+		if item.ID <= 0 || item.Archived || item.IsCaptureType {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(item.RarityTier), "Not Droppable") {
+			continue
+		}
+		if !resourceTypeIDsMatch(&item, resourceTypeID) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		leftLevel := normalizedGatherRewardItemLevel(filtered[i])
+		rightLevel := normalizedGatherRewardItemLevel(filtered[j])
+		if leftLevel == rightLevel {
+			return filtered[i].ID < filtered[j].ID
+		}
+		return leftLevel < rightLevel
+	})
+	return filtered
+}
+
+func selectGatherRewardInventoryItem(
+	resourceTypeID uuid.UUID,
+	userLevel int,
+	items []models.InventoryItem,
+	rng *rand.Rand,
+) (*models.InventoryItem, error) {
+	candidates := gatherRewardCandidatesForResourceType(resourceTypeID, items)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no active inventory items are configured for this resource type")
+	}
+
+	targetLevel := userLevel
+	if targetLevel < 1 {
+		targetLevel = 1
+	}
+	minLevel := targetLevel - 10
+	if minLevel < 1 {
+		minLevel = 1
+	}
+	maxLevel := targetLevel + 10
+
+	inBand := make([]models.InventoryItem, 0, len(candidates))
+	closest := make([]models.InventoryItem, 0, len(candidates))
+	bestDelta := -1
+	for _, item := range candidates {
+		itemLevel := normalizedGatherRewardItemLevel(item)
+		if itemLevel >= minLevel && itemLevel <= maxLevel {
+			inBand = append(inBand, item)
+			continue
+		}
+		delta := itemLevel - targetLevel
+		if delta < 0 {
+			delta = -delta
+		}
+		if bestDelta == -1 || delta < bestDelta {
+			bestDelta = delta
+			closest = []models.InventoryItem{item}
+			continue
+		}
+		if delta == bestDelta {
+			closest = append(closest, item)
+		}
+	}
+
+	pool := inBand
+	if len(pool) == 0 {
+		pool = closest
+	}
+	if len(pool) == 0 {
+		pool = candidates
+	}
+	if len(pool) == 0 {
+		return nil, fmt.Errorf("no gather reward candidates were available")
+	}
+
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	selected := pool[rng.Intn(len(pool))]
+	return &selected, nil
 }
 
 func (s *server) getResourceTypes(ctx *gin.Context) {
@@ -355,9 +650,19 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 
 	request := deep_priest.GenerateImageRequest{Prompt: prompt}
 	deep_priest.ApplyGenerateImageDefaults(&request)
-	sourceImageURL, err := s.deepPriest.GenerateImage(request)
+	imagePayload, err := s.deepPriest.GenerateImage(request)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	imageBytes, err := decodeResourceTypeMapIconPayload(imagePayload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode generated icon: " + err.Error()})
+		return
+	}
+	mapIconURL, err := s.uploadResourceTypeMapIcon(resourceType.ID, imageBytes)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload generated icon: " + err.Error()})
 		return
 	}
 
@@ -365,7 +670,7 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 		Name:          resourceType.Name,
 		Slug:          resourceType.Slug,
 		Description:   resourceType.Description,
-		MapIconURL:    sourceImageURL,
+		MapIconURL:    mapIconURL,
 		MapIconPrompt: prompt,
 	}
 	if err := s.dbClient.ResourceType().Update(ctx, resourceType.ID, updates); err != nil {
@@ -378,6 +683,79 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, updated)
+}
+
+func (s *server) syncResourceTypesToInventoryItems(ctx *gin.Context) {
+	resourceTypes, err := s.dbClient.ResourceType().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load resource types: " + err.Error()})
+		return
+	}
+
+	inventoryItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load inventory items: " + err.Error()})
+		return
+	}
+
+	resourceTypeIndex := buildResourceTypeMatchIndex(resourceTypes)
+	summary := resourceTypeInventoryItemSyncSummary{
+		TotalItemCount: len(inventoryItems),
+		AmbiguousItems: []resourceTypeInventoryItemSyncConflict{},
+	}
+
+	for _, item := range inventoryItems {
+		matches := matchedResourceTypesForInventoryItem(item, resourceTypeIndex)
+		if len(matches) == 0 {
+			summary.UnmatchedCount++
+			continue
+		}
+
+		if item.ResourceTypeID != nil {
+			for _, match := range matches {
+				if match.ID == *item.ResourceTypeID {
+					summary.AlreadyMatchedCount++
+					goto nextItem
+				}
+			}
+		}
+
+		if len(matches) > 1 {
+			summary.AmbiguousCount++
+			if len(summary.AmbiguousItems) < 10 {
+				matchNames := make([]string, 0, len(matches))
+				for _, match := range matches {
+					name := strings.TrimSpace(match.Name)
+					if name == "" {
+						name = strings.TrimSpace(match.Slug)
+					}
+					matchNames = append(matchNames, name)
+				}
+				itemName := strings.TrimSpace(item.Name)
+				if itemName == "" {
+					itemName = fmt.Sprintf("Item #%d", item.ID)
+				}
+				summary.AmbiguousItems = append(summary.AmbiguousItems, resourceTypeInventoryItemSyncConflict{
+					InventoryItemID:       item.ID,
+					InventoryItemName:     itemName,
+					MatchingResourceTypes: matchNames,
+				})
+			}
+			continue
+		}
+
+		if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, map[string]interface{}{
+			"resource_type_id": matches[0].ID,
+		}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update inventory item resource type: " + err.Error()})
+			return
+		}
+		summary.UpdatedCount++
+
+	nextItem:
+	}
+
+	ctx.JSON(http.StatusOK, summary)
 }
 
 func (s *server) getResources(ctx *gin.Context) {
@@ -496,28 +874,14 @@ func (s *server) createResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, requestBody.InventoryItemID)
-	if err != nil {
-		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if inventoryItem == nil || !resourceTypeIDsMatch(inventoryItem, resourceTypeID) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item resource type must match the resource type"})
-		return
-	}
 
 	resource := &models.Resource{
-		ZoneID:          zoneID,
-		ResourceTypeID:  resourceType.ID,
-		InventoryItemID: inventoryItem.ID,
-		Quantity:        *requestBody.Quantity,
-		Latitude:        *requestBody.Latitude,
-		Longitude:       *requestBody.Longitude,
-		Invalidated:     false,
+		ZoneID:         zoneID,
+		ResourceTypeID: resourceType.ID,
+		Quantity:       *requestBody.Quantity,
+		Latitude:       *requestBody.Latitude,
+		Longitude:      *requestBody.Longitude,
+		Invalidated:    false,
 	}
 	if err := s.dbClient.Resource().Create(ctx, resource); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resource: " + err.Error()})
@@ -578,23 +942,6 @@ func (s *server) updateResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	inventoryItemID := existing.InventoryItemID
-	if requestBody.InventoryItemID > 0 {
-		inventoryItemID = requestBody.InventoryItemID
-	}
-	inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, inventoryItemID)
-	if err != nil {
-		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if inventoryItem == nil || !resourceTypeIDsMatch(inventoryItem, resourceType.ID) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item resource type must match the resource type"})
-		return
-	}
 	quantity := existing.Quantity
 	if requestBody.Quantity != nil {
 		quantity = *requestBody.Quantity
@@ -613,13 +960,12 @@ func (s *server) updateResource(ctx *gin.Context) {
 	}
 
 	updates := &models.Resource{
-		ZoneID:          zoneID,
-		ResourceTypeID:  resourceType.ID,
-		InventoryItemID: inventoryItem.ID,
-		Quantity:        quantity,
-		Latitude:        latitude,
-		Longitude:       longitude,
-		Invalidated:     existing.Invalidated,
+		ZoneID:         zoneID,
+		ResourceTypeID: resourceType.ID,
+		Quantity:       quantity,
+		Latitude:       latitude,
+		Longitude:      longitude,
+		Invalidated:    existing.Invalidated,
 	}
 	if err := s.dbClient.Resource().Update(ctx, existing.ID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource: " + err.Error()})
@@ -678,12 +1024,8 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		return
 	}
-	if resource.Quantity < 1 || resource.InventoryItemID <= 0 {
+	if resource.Quantity < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource is not configured for gathering"})
-		return
-	}
-	if !resourceTypeIDsMatch(&resource.InventoryItem, resource.ResourceTypeID) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource inventory item must match the resource type"})
 		return
 	}
 	hasGathered, err := s.dbClient.Resource().HasUserGathered(ctx, user.ID, resource.ID)
@@ -733,6 +1075,23 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	inventoryItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	if err != nil {
+		_ = s.dbClient.Exec(ctx, fmt.Sprintf("DELETE FROM user_resource_gatherings WHERE id = '%s'", gathering.ID))
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	selectedItem, err := selectGatherRewardInventoryItem(
+		resource.ResourceTypeID,
+		userLevel.Level,
+		inventoryItems,
+		nil,
+	)
+	if err != nil {
+		_ = s.dbClient.Exec(ctx, fmt.Sprintf("DELETE FROM user_resource_gatherings WHERE id = '%s'", gathering.ID))
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	rewardExperience := modestResourceExperienceReward(userLevel)
 	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
 		ctx,
@@ -740,7 +1099,7 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		rewardExperience,
 		0,
 		[]scenarioRewardItem{{
-			InventoryItemID: resource.InventoryItemID,
+			InventoryItemID: selectedItem.ID,
 			Quantity:        resource.Quantity,
 		}},
 		[]scenarioRewardSpell{},

@@ -91,14 +91,16 @@ type CreatePointOfInterestRequest struct {
 }
 
 func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error {
-	tx := c.db.WithContext(ctx).Begin()
-	if err := tx.Error; err != nil {
-		return err
+	return c.DeleteByIDs(ctx, []uuid.UUID{id})
+}
+
+func deletePointsOfInterest(tx *gorm.DB, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
 	}
 
 	runDelete := func(query string, args ...interface{}) error {
 		if err := tx.Exec(query, args...).Error; err != nil {
-			tx.Rollback()
 			return err
 		}
 		return nil
@@ -108,13 +110,13 @@ func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error 
 	if err := runDelete(
 		`DELETE FROM point_of_interest_children
 		WHERE point_of_interest_group_member_id IN (
-			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id = ?
+			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id IN (?)
 		) OR next_point_of_interest_group_member_id IN (
-			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id = ?
+			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id IN (?)
 		) OR point_of_interest_challenge_id IN (
-			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id = ?
+			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id IN (?)
 		)`,
-		id, id, id,
+		ids, ids, ids,
 	); err != nil {
 		return err
 	}
@@ -122,43 +124,53 @@ func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error 
 	if err := runDelete(
 		`DELETE FROM point_of_interest_challenge_submissions
 		WHERE point_of_interest_challenge_id IN (
-			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id = ?
+			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id IN (?)
 		)`,
-		id,
+		ids,
 	); err != nil {
 		return err
 	}
 
 	// Direct POI references.
-	if err := runDelete("DELETE FROM point_of_interest_activities WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_activities WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM match_points_of_interest WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM match_points_of_interest WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM neighboring_points_of_interest WHERE point_of_interest_one_id = ? OR point_of_interest_two_id = ?", id, id); err != nil {
+	if err := runDelete(
+		"DELETE FROM neighboring_points_of_interest WHERE point_of_interest_one_id IN (?) OR point_of_interest_two_id IN (?)",
+		ids,
+		ids,
+	); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM point_of_interest_teams WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_teams WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM point_of_interest_challenges WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_challenges WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM point_of_interest_discoveries WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_discoveries WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM point_of_interest_group_members WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_group_members WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM point_of_interest_zones WHERE point_of_interest_id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM point_of_interest_zones WHERE point_of_interest_id IN (?)", ids); err != nil {
 		return err
 	}
-	if err := runDelete("DELETE FROM points_of_interest WHERE id = ?", id); err != nil {
+	if err := runDelete("DELETE FROM points_of_interest WHERE id IN (?)", ids); err != nil {
 		return err
 	}
 
-	return tx.Commit().Error
+	return nil
+}
+
+func (c *pointOfInterestHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deletePointsOfInterest(tx, ids)
+	})
 }
 
 func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error {

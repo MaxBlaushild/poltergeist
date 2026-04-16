@@ -109,32 +109,29 @@ func (h *treasureChestHandle) Update(ctx context.Context, id uuid.UUID, updates 
 
 func (h *treasureChestHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// This table does not currently use ON DELETE CASCADE for chest FK.
-		if err := tx.Where("treasure_chest_id = ?", id).
-			Delete(&models.UserTreasureChestOpening{}).Error; err != nil {
-			return err
-		}
-
-		// Items are cascade deleted by FK from treasure_chest_items.
-		return tx.Delete(&models.TreasureChest{}, "id = ?", id).Error
+		return deleteTreasureChests(tx, []uuid.UUID{id})
 	})
 }
 
-func (h *treasureChestHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+func deleteTreasureChests(tx *gorm.DB, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil
 	}
 
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clear user-opened status rows first to satisfy FK constraints.
-		if err := tx.Where("treasure_chest_id IN ?", ids).
-			Delete(&models.UserTreasureChestOpening{}).Error; err != nil {
-			return err
-		}
+	// Clear user-opened status rows first to satisfy FK constraints.
+	if err := tx.Where("treasure_chest_id IN ?", ids).
+		Delete(&models.UserTreasureChestOpening{}).Error; err != nil {
+		return err
+	}
 
-		// Items are cascade deleted by FK from treasure_chest_items.
-		return tx.Where("id IN ?", ids).
-			Delete(&models.TreasureChest{}).Error
+	// Items are cascade deleted by FK from treasure_chest_items.
+	return tx.Where("id IN ?", ids).
+		Delete(&models.TreasureChest{}).Error
+}
+
+func (h *treasureChestHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return deleteTreasureChests(tx, ids)
 	})
 }
 

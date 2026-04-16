@@ -74,9 +74,7 @@ class _MonsterPanelState extends State<MonsterPanel> {
           children: [
             Expanded(
               child: Text(
-                mysteryState
-                    ? 'Mysterious Encounter'
-                    : widget.encounter.name,
+                mysteryState ? 'Mysterious Encounter' : widget.encounter.name,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -208,6 +206,9 @@ class _InfoChip extends StatelessWidget {
           alpha: 0.55,
         ),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

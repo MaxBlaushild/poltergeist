@@ -11,6 +11,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
+import {
+  defaultZoneFlushContentTypes,
+  formatZoneContentFlushSummary,
+  type ZoneContentFlushSummary,
+  ZoneFlushContentModal,
+  type ZoneFlushContentType,
+} from './zoneFlushContent.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -799,9 +806,25 @@ export const Zones = () => {
   const [importing, setImporting] = useState(false);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [deletingZoneId, setDeletingZoneId] = useState<string | null>(null);
+  const [flushingZoneId, setFlushingZoneId] = useState<string | null>(null);
+  const [bulkFlushingZones, setBulkFlushingZones] = useState(false);
+  const [showFlushZonesModal, setShowFlushZonesModal] = useState(false);
+  const [pendingFlushZoneIds, setPendingFlushZoneIds] = useState<string[]>([]);
+  const [pendingFlushMode, setPendingFlushMode] = useState<'single' | 'bulk'>(
+    'bulk'
+  );
+  const [selectedFlushContentTypes, setSelectedFlushContentTypes] = useState<
+    ZoneFlushContentType[]
+  >(() => [...defaultZoneFlushContentTypes]);
+  const [selectedZoneIds, setSelectedZoneIds] = useState<Set<string>>(
+    new Set()
+  );
   const [zoneSummaries, setZoneSummaries] = useState<ZoneAdminSummary[]>([]);
   const [zoneSummariesLoading, setZoneSummariesLoading] = useState(false);
   const [zoneSummariesError, setZoneSummariesError] = useState<string | null>(
+    null
+  );
+  const [zoneActionMessage, setZoneActionMessage] = useState<string | null>(
     null
   );
   const [zoneSearchQuery, setZoneSearchQuery] = useState('');
@@ -947,6 +970,17 @@ export const Zones = () => {
       );
     });
   }, [zoneSearchQuery, zoneSort, zoneSummaries]);
+
+  const filteredZoneIds = useMemo(
+    () => filteredZoneSummaries.map((zone) => zone.id),
+    [filteredZoneSummaries]
+  );
+
+  const selectedFilteredZoneCount = useMemo(
+    () =>
+      filteredZoneIds.filter((zoneId) => selectedZoneIds.has(zoneId)).length,
+    [filteredZoneIds, selectedZoneIds]
+  );
 
   const openCreateZoneModal = () => {
     setCreateMapCenter(
@@ -1143,6 +1177,18 @@ export const Zones = () => {
     });
   }, [fetchZoneSummaries, importJobs, refreshZones]);
 
+  useEffect(() => {
+    setSelectedZoneIds((prev) => {
+      const next = new Set(
+        Array.from(prev).filter((zoneId) => zoneSummaryByID.has(zoneId))
+      );
+      if (next.size === prev.size) {
+        return prev;
+      }
+      return next;
+    });
+  }, [zoneSummaryByID]);
+
   const handleDeleteZone = async (zoneID: string) => {
     const confirmed = window.confirm(
       'Delete this zone and its zone-level content? This cannot be undone.'
@@ -1162,6 +1208,113 @@ export const Zones = () => {
     } finally {
       setDeletingZoneId(null);
     }
+  };
+
+  const toggleZoneSelection = (zoneID: string) => {
+    setSelectedZoneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(zoneID)) {
+        next.delete(zoneID);
+      } else {
+        next.add(zoneID);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFilteredZones = () => {
+    setSelectedZoneIds(new Set(filteredZoneIds));
+  };
+
+  const clearSelectedZones = () => {
+    setSelectedZoneIds(new Set());
+  };
+
+  const openFlushZonesModal = (
+    zoneIDs: string[],
+    mode: 'single' | 'bulk'
+  ) => {
+    if (zoneIDs.length === 0) {
+      return;
+    }
+    setZoneActionMessage(null);
+    setZoneSummariesError(null);
+    setPendingFlushZoneIds(zoneIDs);
+    setPendingFlushMode(mode);
+    setShowFlushZonesModal(true);
+  };
+
+  const closeFlushZonesModal = () => {
+    if (flushingZoneId || bulkFlushingZones) {
+      return;
+    }
+    setShowFlushZonesModal(false);
+    setPendingFlushZoneIds([]);
+    setZoneSummariesError(null);
+  };
+
+  const toggleFlushContentType = (contentType: ZoneFlushContentType) => {
+    setSelectedFlushContentTypes((prev) => {
+      if (prev.includes(contentType)) {
+        return prev.filter((entry) => entry !== contentType);
+      }
+      return [...prev, contentType];
+    });
+  };
+
+  const handleFlushZones = async (zoneIDs: string[], mode: 'single' | 'bulk') => {
+    if (zoneIDs.length === 0) {
+      return;
+    }
+    if (selectedFlushContentTypes.length === 0) {
+      setZoneSummariesError('Choose at least one content type to flush.');
+      return;
+    }
+
+    setZoneActionMessage(null);
+    setZoneSummariesError(null);
+    if (mode === 'single') {
+      setFlushingZoneId(zoneIDs[0]);
+    } else {
+      setBulkFlushingZones(true);
+    }
+
+    try {
+      const summary = await apiClient.post<ZoneContentFlushSummary>(
+        '/sonar/admin/zones/flush-content',
+        {
+          zoneIds: zoneIDs,
+          contentTypes: selectedFlushContentTypes,
+        }
+      );
+      await refreshZones();
+      await fetchZoneSummaries();
+      setSelectedZoneIds((prev) => {
+        const next = new Set(prev);
+        zoneIDs.forEach((zoneId) => next.delete(zoneId));
+        return next;
+      });
+      setZoneActionMessage(formatZoneContentFlushSummary(summary));
+      setPendingFlushZoneIds([]);
+      setShowFlushZonesModal(false);
+    } catch (error) {
+      console.error('Failed to flush zone content', error);
+      setZoneSummariesError('Failed to flush the selected zone content.');
+    } finally {
+      if (mode === 'single') {
+        setFlushingZoneId(null);
+      } else {
+        setBulkFlushingZones(false);
+      }
+    }
+  };
+
+  const handleFlushZone = async (zoneID: string) => {
+    openFlushZonesModal([zoneID], 'single');
+  };
+
+  const handleFlushSelectedZones = async () => {
+    openFlushZonesModal(Array.from(selectedZoneIds), 'bulk');
   };
 
   useEffect(() => {
@@ -1648,9 +1801,65 @@ export const Zones = () => {
           </div>
         </div>
 
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-800">
+              Bulk Cleanup
+            </div>
+            <div className="mt-1 text-sm text-slate-500">
+              {selectedZoneIds.size} selected overall, {selectedFilteredZoneCount}{' '}
+              in the current filter.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={selectAllFilteredZones}
+              disabled={filteredZoneIds.length === 0}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:opacity-60"
+            >
+              Select Filtered
+            </button>
+            <button
+              onClick={clearSelectedZones}
+              disabled={selectedZoneIds.size === 0}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white disabled:opacity-60"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => void handleFlushSelectedZones()}
+              disabled={selectedZoneIds.size === 0 || bulkFlushingZones}
+              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-amber-300"
+            >
+              {bulkFlushingZones ? 'Flushing Zones...' : 'Flush Selected Content'}
+            </button>
+          </div>
+        </div>
+
+        <ZoneFlushContentModal
+          isOpen={showFlushZonesModal}
+          zoneCount={pendingFlushZoneIds.length}
+          selectedContentTypes={selectedFlushContentTypes}
+          onToggleContentType={toggleFlushContentType}
+          onSelectAll={() =>
+            setSelectedFlushContentTypes([...defaultZoneFlushContentTypes])
+          }
+          onClearAll={() => setSelectedFlushContentTypes([])}
+          onCancel={closeFlushZonesModal}
+          onConfirm={() => void handleFlushZones(pendingFlushZoneIds, pendingFlushMode)}
+          isSubmitting={Boolean(flushingZoneId) || bulkFlushingZones}
+          error={zoneSummariesError}
+        />
+
         {zoneSummariesError && (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {zoneSummariesError}
+          </div>
+        )}
+
+        {zoneActionMessage && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {zoneActionMessage}
           </div>
         )}
 
@@ -1700,14 +1909,24 @@ export const Zones = () => {
                   className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">
-                        {zone.name}
-                      </h3>
-                      <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                        {zone.importMetroName
-                          ? `Imported from ${zone.importMetroName}`
-                          : 'Manual zone'}
+                    <div className="flex items-start gap-3">
+                      <label className="mt-1 flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedZoneIds.has(zone.id)}
+                          onChange={() => toggleZoneSelection(zone.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        />
+                      </label>
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900">
+                          {zone.name}
+                        </h3>
+                        <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                          {zone.importMetroName
+                            ? `Imported from ${zone.importMetroName}`
+                            : 'Manual zone'}
+                        </div>
                       </div>
                     </div>
                     <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
@@ -1801,6 +2020,15 @@ export const Zones = () => {
                       className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                       View Zone
+                    </button>
+                    <button
+                      onClick={() => void handleFlushZone(zone.id)}
+                      disabled={flushingZoneId === zone.id}
+                      className="rounded-md border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                    >
+                      {flushingZoneId === zone.id
+                        ? 'Flushing...'
+                        : 'Flush Content'}
                     </button>
                     <button
                       onClick={() => void handleDeleteZone(zone.id)}

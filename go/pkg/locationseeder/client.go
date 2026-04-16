@@ -457,6 +457,10 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 		}
 		if existingPointOfInterest != nil {
 			log.Printf("Point of interest %s has already been imported", place.Name)
+			if err := c.dbClient.Zone().AddPointOfInterestToZone(ctx, zone.ID, existingPointOfInterest.ID); err != nil {
+				log.Printf("Error reattaching point of interest %s to zone %s: %v", place.Name, zone.ID, err)
+				return nil, err
+			}
 			pointsOfInterest = append(pointsOfInterest, existingPointOfInterest)
 			continue
 		}

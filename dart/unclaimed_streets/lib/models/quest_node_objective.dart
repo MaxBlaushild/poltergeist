@@ -42,6 +42,7 @@ class QuestNodeObjective {
   final String type;
   final String prompt;
   final String description;
+  final String encounterType;
   final String imageUrl;
   final String thumbnailUrl;
   final int reward;
@@ -59,6 +60,7 @@ class QuestNodeObjective {
     required this.type,
     required this.prompt,
     this.description = '',
+    this.encounterType = '',
     this.imageUrl = '',
     this.thumbnailUrl = '',
     this.reward = 0,
@@ -78,6 +80,10 @@ class QuestNodeObjective {
       type: json['type'] as String? ?? '',
       prompt: json['prompt'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      encounterType:
+          (json['encounterType']?.toString().trim().isNotEmpty ?? false)
+          ? json['encounterType']!.toString().trim().toLowerCase()
+          : '',
       imageUrl: json['imageUrl'] as String? ?? '',
       thumbnailUrl: json['thumbnailUrl'] as String? ?? '',
       reward: (json['reward'] as num?)?.toInt() ?? 0,
@@ -110,4 +116,8 @@ class QuestNodeObjective {
           const [],
     );
   }
+
+  bool get isBossEncounter => encounterType == 'boss';
+
+  bool get isRaidEncounter => encounterType == 'raid';
 }

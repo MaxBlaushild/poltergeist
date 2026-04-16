@@ -720,6 +720,7 @@ type ZoneHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 	Delete(ctx context.Context, zoneID uuid.UUID) error
 	DeleteByImportID(ctx context.Context, importID uuid.UUID) (int, error)
+	FlushContent(ctx context.Context, zoneIDs []uuid.UUID, options models.ZoneContentFlushOptions) (*models.ZoneContentFlushSummary, error)
 	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error

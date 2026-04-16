@@ -151,15 +151,6 @@ class BasePanel extends StatelessWidget {
                   : 'You are too far away to enter this base right now.',
               style: theme.textTheme.bodyMedium,
             ),
-            if (location != null && !withinRange) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Move within ${kProximityUnlockRadiusMeters.round()} m of the base pin to open base management.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
             if (withinRange && onOpenBaseManagement != null) ...[
               const SizedBox(height: 20),
               SizedBox(
@@ -193,6 +184,9 @@ class _InfoChip extends StatelessWidget {
           alpha: 0.55,
         ),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
