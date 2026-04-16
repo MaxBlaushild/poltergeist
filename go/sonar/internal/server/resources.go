@@ -30,11 +30,12 @@ type resourceWithUserStatus struct {
 }
 
 type resourceTypeUpsertRequest struct {
-	Name          string  `json:"name"`
-	Slug          *string `json:"slug"`
-	Description   string  `json:"description"`
-	MapIconURL    string  `json:"mapIconUrl"`
-	MapIconPrompt string  `json:"mapIconPrompt"`
+	Name               string                                   `json:"name"`
+	Slug               *string                                  `json:"slug"`
+	Description        string                                   `json:"description"`
+	MapIconURL         string                                   `json:"mapIconUrl"`
+	MapIconPrompt      string                                   `json:"mapIconPrompt"`
+	GatherRequirements []resourceGatherRequirementUpsertRequest `json:"gatherRequirements"`
 }
 
 type resourceUpsertRequest struct {
@@ -87,6 +88,17 @@ type resourceRequirementGenerationResponse struct {
 	GeneratedCount int                    `json:"generatedCount"`
 	ReusedCount    int                    `json:"reusedCount"`
 	Message        string                 `json:"message"`
+}
+
+type resourceTypeRequirementGenerationResponse struct {
+	ResourceType         *models.ResourceType   `json:"resourceType"`
+	UpdatedResources     []models.Resource      `json:"updatedResources"`
+	CreatedItems         []models.InventoryItem `json:"createdItems"`
+	ReusedItems          []models.InventoryItem `json:"reusedItems"`
+	UpdatedResourceCount int                    `json:"updatedResourceCount"`
+	GeneratedCount       int                    `json:"generatedCount"`
+	ReusedCount          int                    `json:"reusedCount"`
+	Message              string                 `json:"message"`
 }
 
 var defaultResourceRequirementGenerationBands = []resourceRequirementGenerationBand{
@@ -259,6 +271,39 @@ func findExistingGeneratedResourceRequirementItem(
 	return nil
 }
 
+func resourceNameForDisplay(resourceType *models.ResourceType) string {
+	if resourceType == nil {
+		return "resource"
+	}
+	resourceName := strings.TrimSpace(resourceType.Name)
+	if resourceName == "" {
+		resourceName = humanizeNormalizedSlug(resourceType.Slug)
+	}
+	if resourceName == "" {
+		resourceName = "resource"
+	}
+	return resourceName
+}
+
+func resourceTypeWithGatherRequirementsUpdate(
+	resourceType *models.ResourceType,
+	gatherRequirements []models.ResourceGatherRequirement,
+) *models.ResourceType {
+	if resourceType == nil {
+		return &models.ResourceType{
+			GatherRequirements: gatherRequirements,
+		}
+	}
+	return &models.ResourceType{
+		Name:               resourceType.Name,
+		Slug:               resourceType.Slug,
+		Description:        resourceType.Description,
+		MapIconURL:         resourceType.MapIconURL,
+		MapIconPrompt:      resourceType.MapIconPrompt,
+		GatherRequirements: gatherRequirements,
+	}
+}
+
 func buildGeneratedResourceRequirementItemRequest(
 	resourceType *models.ResourceType,
 	band resourceRequirementGenerationBand,
@@ -304,6 +349,114 @@ func buildGeneratedResourceRequirementItemRequest(
 		ItemLevel:     &itemLevel,
 		InternalTags:  generatedResourceRequirementTags(resourceTypeSlug, band),
 	}
+}
+
+func (s *server) buildGeneratedResourceGatherRequirements(
+	ctx *gin.Context,
+	resourceType *models.ResourceType,
+) ([]models.InventoryItem, []models.InventoryItem, []models.ResourceGatherRequirement, error) {
+	resourceTypeSlug := ""
+	if resourceType != nil {
+		resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Slug)
+		if resourceTypeSlug == "" {
+			resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Name)
+		}
+	}
+	if resourceTypeSlug == "" {
+		return nil, nil, nil, fmt.Errorf("resource type is missing a usable slug")
+	}
+
+	activeItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	createdItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
+	reusedItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
+	gatherRequirements := make([]models.ResourceGatherRequirement, 0, len(defaultResourceRequirementGenerationBands))
+
+	for _, band := range defaultResourceRequirementGenerationBands {
+		requiredTags := generatedResourceRequirementTags(resourceTypeSlug, band)
+		item := findExistingGeneratedResourceRequirementItem(activeItems, requiredTags, band.MinLevel)
+		if item == nil {
+			request := buildGeneratedResourceRequirementItemRequest(resourceType, band)
+			normalizedItem, err := s.normalizeInventoryItemUpsertRequest(ctx, request, nil)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, normalizedItem); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to create inventory item: %w", err)
+			}
+			if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, normalizedItem.ID, map[string]interface{}{
+				"image_generation_status": models.InventoryImageGenerationStatusQueued,
+				"image_generation_error":  "",
+			}); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to queue inventory item image generation: %w", err)
+			}
+			if err := s.enqueueInventoryItemImageGeneration(
+				ctx,
+				normalizedItem.ID,
+				normalizedItem.Name,
+				normalizedItem.FlavorText,
+				normalizedItem.RarityTier,
+			); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to queue inventory item image generation: %w", err)
+			}
+			item, err = s.dbClient.InventoryItem().FindInventoryItemByID(ctx, normalizedItem.ID)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to fetch generated inventory item: %w", err)
+			}
+			if item == nil {
+				return nil, nil, nil, fmt.Errorf("generated inventory item could not be loaded")
+			}
+			createdItems = append(createdItems, *item)
+			activeItems = append(activeItems, *item)
+		} else {
+			reusedItems = append(reusedItems, *item)
+		}
+
+		gatherRequirements = append(gatherRequirements, models.ResourceGatherRequirement{
+			MinLevel:                band.MinLevel,
+			MaxLevel:                band.MaxLevel,
+			RequiredInventoryItemID: item.ID,
+			RequiredInventoryItem:   item,
+		})
+	}
+
+	return createdItems, reusedItems, gatherRequirements, nil
+}
+
+func (s *server) updateResourceTypeGatherRequirements(
+	ctx *gin.Context,
+	resourceType *models.ResourceType,
+	gatherRequirements []models.ResourceGatherRequirement,
+) (*models.ResourceType, error) {
+	if resourceType == nil {
+		return nil, fmt.Errorf("resource type is required")
+	}
+	updates := resourceTypeWithGatherRequirementsUpdate(resourceType, gatherRequirements)
+	if err := s.dbClient.ResourceType().Update(ctx, resourceType.ID, updates); err != nil {
+		return nil, err
+	}
+	return s.dbClient.ResourceType().FindByID(ctx, resourceType.ID)
+}
+
+func (s *server) findResourcesForType(
+	ctx *gin.Context,
+	resourceTypeID uuid.UUID,
+) ([]models.Resource, error) {
+	allResources, err := s.dbClient.Resource().FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]models.Resource, 0)
+	for _, resource := range allResources {
+		if resource.Invalidated || resource.ResourceTypeID != resourceTypeID {
+			continue
+		}
+		filtered = append(filtered, resource)
+	}
+	return filtered, nil
 }
 
 func buildResourceTypeMatchIndex(resourceTypes []models.ResourceType) map[string][]models.ResourceType {
@@ -822,13 +975,19 @@ func (s *server) createResourceType(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource type slug already exists"})
 		return
 	}
+	gatherRequirements, err := s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	resourceType := &models.ResourceType{
-		Name:          name,
-		Slug:          slug,
-		Description:   strings.TrimSpace(requestBody.Description),
-		MapIconURL:    strings.TrimSpace(requestBody.MapIconURL),
-		MapIconPrompt: strings.TrimSpace(requestBody.MapIconPrompt),
+		Name:               name,
+		Slug:               slug,
+		Description:        strings.TrimSpace(requestBody.Description),
+		MapIconURL:         strings.TrimSpace(requestBody.MapIconURL),
+		MapIconPrompt:      strings.TrimSpace(requestBody.MapIconPrompt),
+		GatherRequirements: gatherRequirements,
 	}
 	if err := s.dbClient.ResourceType().Create(ctx, resourceType); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resource type: " + err.Error()})
@@ -886,13 +1045,22 @@ func (s *server) updateResourceType(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource type slug already exists"})
 		return
 	}
+	gatherRequirements := existing.GatherRequirements
+	if requestBody.GatherRequirements != nil {
+		gatherRequirements, err = s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	updates := &models.ResourceType{
-		Name:          name,
-		Slug:          slug,
-		Description:   strings.TrimSpace(requestBody.Description),
-		MapIconURL:    strings.TrimSpace(requestBody.MapIconURL),
-		MapIconPrompt: strings.TrimSpace(requestBody.MapIconPrompt),
+		Name:               name,
+		Slug:               slug,
+		Description:        strings.TrimSpace(requestBody.Description),
+		MapIconURL:         strings.TrimSpace(requestBody.MapIconURL),
+		MapIconPrompt:      strings.TrimSpace(requestBody.MapIconPrompt),
+		GatherRequirements: gatherRequirements,
 	}
 	if updates.Description == "" {
 		updates.Description = existing.Description
@@ -987,11 +1155,12 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 	}
 
 	updates := &models.ResourceType{
-		Name:          resourceType.Name,
-		Slug:          resourceType.Slug,
-		Description:   resourceType.Description,
-		MapIconURL:    mapIconURL,
-		MapIconPrompt: prompt,
+		Name:               resourceType.Name,
+		Slug:               resourceType.Slug,
+		Description:        resourceType.Description,
+		MapIconURL:         mapIconURL,
+		MapIconPrompt:      prompt,
+		GatherRequirements: resourceType.GatherRequirements,
 	}
 	if err := s.dbClient.ResourceType().Update(ctx, resourceType.ID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource type icon: " + err.Error()})
@@ -1003,6 +1172,61 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, updated)
+}
+
+func (s *server) generateResourceTypeRequirementItems(ctx *gin.Context) {
+	resourceTypeID, err := uuid.Parse(strings.TrimSpace(ctx.Param("id")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource type ID"})
+		return
+	}
+	resourceType, err := s.dbClient.ResourceType().FindByID(ctx, resourceTypeID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "resource type not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	createdItems, reusedItems, gatherRequirements, err := s.buildGeneratedResourceGatherRequirements(ctx, resourceType)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "usable slug") {
+			statusCode = http.StatusBadRequest
+		}
+		ctx.JSON(statusCode, gin.H{"error": err.Error()})
+		return
+	}
+	updatedResourceType, err := s.updateResourceTypeGatherRequirements(ctx, resourceType, gatherRequirements)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource type requirements: " + err.Error()})
+		return
+	}
+	updatedResources, err := s.findResourcesForType(ctx, resourceType.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated resources: " + err.Error()})
+		return
+	}
+
+	resourceName := resourceNameForDisplay(resourceType)
+	ctx.JSON(http.StatusOK, resourceTypeRequirementGenerationResponse{
+		ResourceType:         updatedResourceType,
+		UpdatedResources:     updatedResources,
+		CreatedItems:         createdItems,
+		ReusedItems:          reusedItems,
+		UpdatedResourceCount: len(updatedResources),
+		GeneratedCount:       len(createdItems),
+		ReusedCount:          len(reusedItems),
+		Message: fmt.Sprintf(
+			"Generated %d required item(s), reused %d, and applied the default bands to %d %s node(s).",
+			len(createdItems),
+			len(reusedItems),
+			len(updatedResources),
+			strings.ToLower(resourceName),
+		),
+	})
 }
 
 func (s *server) syncResourceTypesToInventoryItems(ctx *gin.Context) {
@@ -1194,20 +1418,26 @@ func (s *server) createResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	gatherRequirements, err := s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	if requestBody.GatherRequirements != nil {
+		gatherRequirements, err := s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		resourceType, err = s.updateResourceTypeGatherRequirements(ctx, resourceType, gatherRequirements)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource type requirements: " + err.Error()})
+			return
+		}
 	}
 
 	resource := &models.Resource{
-		ZoneID:             zoneID,
-		ResourceTypeID:     resourceType.ID,
-		GatherRequirements: gatherRequirements,
-		Quantity:           *requestBody.Quantity,
-		Latitude:           *requestBody.Latitude,
-		Longitude:          *requestBody.Longitude,
-		Invalidated:        false,
+		ZoneID:         zoneID,
+		ResourceTypeID: resourceType.ID,
+		Quantity:       *requestBody.Quantity,
+		Latitude:       *requestBody.Latitude,
+		Longitude:      *requestBody.Longitude,
+		Invalidated:    false,
 	}
 	if err := s.dbClient.Resource().Create(ctx, resource); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create resource: " + err.Error()})
@@ -1268,11 +1498,15 @@ func (s *server) updateResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	gatherRequirements := existing.GatherRequirements
 	if requestBody.GatherRequirements != nil {
-		gatherRequirements, err = s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
+		gatherRequirements, err := s.validateResourceGatherRequirements(ctx, requestBody.GatherRequirements)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		resourceType, err = s.updateResourceTypeGatherRequirements(ctx, resourceType, gatherRequirements)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource type requirements: " + err.Error()})
 			return
 		}
 	}
@@ -1294,13 +1528,12 @@ func (s *server) updateResource(ctx *gin.Context) {
 	}
 
 	updates := &models.Resource{
-		ZoneID:             zoneID,
-		ResourceTypeID:     resourceType.ID,
-		GatherRequirements: gatherRequirements,
-		Quantity:           quantity,
-		Latitude:           latitude,
-		Longitude:          longitude,
-		Invalidated:        existing.Invalidated,
+		ZoneID:         zoneID,
+		ResourceTypeID: resourceType.ID,
+		Quantity:       quantity,
+		Latitude:       latitude,
+		Longitude:      longitude,
+		Invalidated:    existing.Invalidated,
 	}
 	if err := s.dbClient.Resource().Update(ctx, existing.ID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource: " + err.Error()})
@@ -1356,90 +1589,17 @@ func (s *server) generateResourceRequirementItems(ctx *gin.Context) {
 	}
 
 	resourceType := &resource.ResourceType
-	resourceTypeSlug := normalizeResourceTypeSlug(resourceType.Slug)
-	if resourceTypeSlug == "" {
-		resourceTypeSlug = normalizeResourceTypeSlug(resourceType.Name)
-	}
-	if resourceTypeSlug == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource type is missing a usable slug"})
-		return
-	}
-
-	activeItems, err := s.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	createdItems, reusedItems, gatherRequirements, err := s.buildGeneratedResourceGatherRequirements(ctx, resourceType)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "usable slug") {
+			statusCode = http.StatusBadRequest
+		}
+		ctx.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
-
-	createdItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
-	reusedItems := make([]models.InventoryItem, 0, len(defaultResourceRequirementGenerationBands))
-	gatherRequirements := make([]models.ResourceGatherRequirement, 0, len(defaultResourceRequirementGenerationBands))
-
-	for _, band := range defaultResourceRequirementGenerationBands {
-		requiredTags := generatedResourceRequirementTags(resourceTypeSlug, band)
-		item := findExistingGeneratedResourceRequirementItem(activeItems, requiredTags, band.MinLevel)
-		if item == nil {
-			request := buildGeneratedResourceRequirementItemRequest(resourceType, band)
-			normalizedItem, err := s.normalizeInventoryItemUpsertRequest(ctx, request, nil)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, normalizedItem); err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create inventory item: " + err.Error()})
-				return
-			}
-			if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, normalizedItem.ID, map[string]interface{}{
-				"image_generation_status": models.InventoryImageGenerationStatusQueued,
-				"image_generation_error":  "",
-			}); err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue inventory item image generation: " + err.Error()})
-				return
-			}
-			if err := s.enqueueInventoryItemImageGeneration(
-				ctx,
-				normalizedItem.ID,
-				normalizedItem.Name,
-				normalizedItem.FlavorText,
-				normalizedItem.RarityTier,
-			); err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue inventory item image generation: " + err.Error()})
-				return
-			}
-			item, err = s.dbClient.InventoryItem().FindInventoryItemByID(ctx, normalizedItem.ID)
-			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch generated inventory item: " + err.Error()})
-				return
-			}
-			if item == nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "generated inventory item could not be loaded"})
-				return
-			}
-			createdItems = append(createdItems, *item)
-			activeItems = append(activeItems, *item)
-		} else {
-			reusedItems = append(reusedItems, *item)
-		}
-
-		gatherRequirements = append(gatherRequirements, models.ResourceGatherRequirement{
-			MinLevel:                band.MinLevel,
-			MaxLevel:                band.MaxLevel,
-			RequiredInventoryItemID: item.ID,
-			RequiredInventoryItem:   item,
-		})
-	}
-
-	updates := &models.Resource{
-		ZoneID:             resource.ZoneID,
-		ResourceTypeID:     resource.ResourceTypeID,
-		GatherRequirements: gatherRequirements,
-		Quantity:           resource.Quantity,
-		Latitude:           resource.Latitude,
-		Longitude:          resource.Longitude,
-		Invalidated:        resource.Invalidated,
-	}
-	if err := s.dbClient.Resource().Update(ctx, resource.ID, updates); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource requirements: " + err.Error()})
+	if _, err := s.updateResourceTypeGatherRequirements(ctx, resourceType, gatherRequirements); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update resource type requirements: " + err.Error()})
 		return
 	}
 
@@ -1449,13 +1609,7 @@ func (s *server) generateResourceRequirementItems(ctx *gin.Context) {
 		return
 	}
 
-	resourceName := strings.TrimSpace(resource.ResourceType.Name)
-	if resourceName == "" {
-		resourceName = humanizeNormalizedSlug(resourceTypeSlug)
-	}
-	if resourceName == "" {
-		resourceName = "resource"
-	}
+	resourceName := resourceNameForDisplay(resourceType)
 
 	ctx.JSON(http.StatusOK, resourceRequirementGenerationResponse{
 		Resource:       updatedResource,
@@ -1464,7 +1618,7 @@ func (s *server) generateResourceRequirementItems(ctx *gin.Context) {
 		GeneratedCount: len(createdItems),
 		ReusedCount:    len(reusedItems),
 		Message: fmt.Sprintf(
-			"Generated %d required item(s) and reused %d for %s.",
+			"Generated %d required item(s) and reused %d for %s. All nodes of this type now inherit those bands.",
 			len(createdItems),
 			len(reusedItems),
 			resourceName,

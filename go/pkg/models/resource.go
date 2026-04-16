@@ -16,7 +16,7 @@ type Resource struct {
 	Zone               Zone                        `json:"zone"`
 	ResourceTypeID     uuid.UUID                   `json:"resourceTypeId" gorm:"column:resource_type_id"`
 	ResourceType       ResourceType                `json:"resourceType"`
-	GatherRequirements []ResourceGatherRequirement `json:"gatherRequirements,omitempty" gorm:"foreignKey:ResourceID"`
+	GatherRequirements []ResourceGatherRequirement `json:"gatherRequirements,omitempty" gorm:"-"`
 	Quantity           int                         `json:"quantity"`
 	Latitude           float64                     `json:"latitude"`
 	Longitude          float64                     `json:"longitude"`

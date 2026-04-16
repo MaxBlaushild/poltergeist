@@ -61,7 +61,11 @@ class ResourceNode {
 
   factory ResourceNode.fromJson(Map<String, dynamic> json) {
     final rawResourceType = json['resourceType'];
-    final rawGatherRequirements = json['gatherRequirements'];
+    final rawGatherRequirements =
+        json['gatherRequirements'] ??
+        (rawResourceType is Map<String, dynamic>
+            ? rawResourceType['gatherRequirements']
+            : null);
     return ResourceNode(
       id: json['id']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',

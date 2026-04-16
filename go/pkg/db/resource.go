@@ -17,10 +17,26 @@ func (h *resourceHandle) preload(db *gorm.DB) *gorm.DB {
 	return db.
 		Preload("Zone").
 		Preload("ResourceType").
-		Preload("GatherRequirements", func(db *gorm.DB) *gorm.DB {
+		Preload("ResourceType.GatherRequirements", func(db *gorm.DB) *gorm.DB {
 			return db.Order("min_level ASC, max_level ASC, required_inventory_item_id ASC")
 		}).
-		Preload("GatherRequirements.RequiredInventoryItem")
+		Preload("ResourceType.GatherRequirements.RequiredInventoryItem")
+}
+
+func attachInheritedGatherRequirements(resource *models.Resource) {
+	if resource == nil {
+		return
+	}
+	resource.GatherRequirements = append(
+		[]models.ResourceGatherRequirement{},
+		resource.ResourceType.GatherRequirements...,
+	)
+}
+
+func attachInheritedGatherRequirementsForSlice(resources []models.Resource) {
+	for index := range resources {
+		attachInheritedGatherRequirements(&resources[index])
+	}
 }
 
 func (h *resourceHandle) Create(ctx context.Context, resource *models.Resource) error {
@@ -30,14 +46,7 @@ func (h *resourceHandle) Create(ctx context.Context, resource *models.Resource) 
 	if err := resource.SetGeometry(resource.Latitude, resource.Longitude); err != nil {
 		return err
 	}
-	requirements := resource.GatherRequirements
-	resource.GatherRequirements = nil
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Omit("GatherRequirements").Create(resource).Error; err != nil {
-			return err
-		}
-		return syncResourceGatherRequirementsTx(tx, resource.ID, requirements)
-	})
+	return h.db.WithContext(ctx).Create(resource).Error
 }
 
 func (h *resourceHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Resource, error) {
@@ -45,6 +54,7 @@ func (h *resourceHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Re
 	if err := h.preload(h.db.WithContext(ctx)).First(&resource, id).Error; err != nil {
 		return nil, err
 	}
+	attachInheritedGatherRequirements(&resource)
 	return &resource, nil
 }
 
@@ -55,6 +65,7 @@ func (h *resourceHandle) FindAll(ctx context.Context) ([]models.Resource, error)
 		Find(&resources).Error; err != nil {
 		return nil, err
 	}
+	attachInheritedGatherRequirementsForSlice(resources)
 	return resources, nil
 }
 
@@ -66,6 +77,7 @@ func (h *resourceHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]
 		Find(&resources).Error; err != nil {
 		return nil, err
 	}
+	attachInheritedGatherRequirementsForSlice(resources)
 	return resources, nil
 }
 
@@ -87,16 +99,10 @@ func (h *resourceHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"invalidated":      updates.Invalidated,
 		"updated_at":       updates.UpdatedAt,
 	}
-	requirements := updates.GatherRequirements
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.
-			Model(&models.Resource{}).
-			Where("id = ?", id).
-			Updates(payload).Error; err != nil {
-			return err
-		}
-		return syncResourceGatherRequirementsTx(tx, id, requirements)
-	})
+	return h.db.WithContext(ctx).
+		Model(&models.Resource{}).
+		Where("id = ?", id).
+		Updates(payload).Error
 }
 
 func (h *resourceHandle) Delete(ctx context.Context, id uuid.UUID) error {
@@ -146,6 +152,7 @@ func (h *resourceHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid
 		Find(&resources).Error; err != nil {
 		return nil, nil, err
 	}
+	attachInheritedGatherRequirementsForSlice(resources)
 	gatheredMap := make(map[uuid.UUID]bool)
 	if userID != nil {
 		var gatherRows []models.UserResourceGathering
@@ -169,6 +176,7 @@ func (h *resourceHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 		Find(&resources).Error; err != nil {
 		return nil, nil, err
 	}
+	attachInheritedGatherRequirementsForSlice(resources)
 	gatheredMap := make(map[uuid.UUID]bool)
 	if userID != nil {
 		var gatherRows []models.UserResourceGathering
@@ -182,33 +190,4 @@ func (h *resourceHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 		}
 	}
 	return resources, gatheredMap, nil
-}
-
-func syncResourceGatherRequirementsTx(
-	tx *gorm.DB,
-	resourceID uuid.UUID,
-	requirements []models.ResourceGatherRequirement,
-) error {
-	if err := tx.Where("resource_id = ?", resourceID).Delete(&models.ResourceGatherRequirement{}).Error; err != nil {
-		return err
-	}
-	if len(requirements) == 0 {
-		return nil
-	}
-
-	now := time.Now()
-	records := make([]models.ResourceGatherRequirement, 0, len(requirements))
-	for _, requirement := range requirements {
-		records = append(records, models.ResourceGatherRequirement{
-			ID:                      uuid.New(),
-			CreatedAt:               now,
-			UpdatedAt:               now,
-			ResourceID:              resourceID,
-			MinLevel:                requirement.MinLevel,
-			MaxLevel:                requirement.MaxLevel,
-			RequiredInventoryItemID: requirement.RequiredInventoryItemID,
-		})
-	}
-
-	return tx.Create(&records).Error
 }

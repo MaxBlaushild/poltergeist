@@ -4,6 +4,7 @@ import type { ResourceType } from './resourceType';
 export type ResourceGatherRequirement = {
   id?: string;
   resourceId?: string;
+  resourceTypeId?: string;
   minLevel: number;
   maxLevel: number;
   requiredInventoryItemId: number;

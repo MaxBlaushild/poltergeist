@@ -250,6 +250,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResourceType))
 	r.DELETE("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResourceType))
 	r.POST("/sonar/resource-types/:id/generate-map-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeMapIcon))
+	r.POST("/sonar/resource-types/:id/generate-requirement-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeRequirementItems))
 	r.POST("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItemSuggestionJob))
 	r.GET("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJobs))
 	r.GET("/sonar/inventory-item-suggestion-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJob))
