@@ -231,6 +231,7 @@ type GenerateSpellsBulkTaskPayload struct {
 	JobID        uuid.UUID              `json:"jobId"`
 	Source       string                 `json:"source"`
 	AbilityType  string                 `json:"abilityType"`
+	GenreID      uuid.UUID              `json:"genreId"`
 	TotalCount   int                    `json:"totalCount"`
 	TargetLevel  *int                   `json:"targetLevel,omitempty"`
 	EffectCounts *SpellBulkEffectCounts `json:"effectCounts,omitempty"`
@@ -243,6 +244,7 @@ type GenerateSpellProgressionFromPromptTaskPayload struct {
 	JobID       uuid.UUID `json:"jobId"`
 	Prompt      string    `json:"prompt"`
 	AbilityType string    `json:"abilityType"`
+	GenreID     uuid.UUID `json:"genreId"`
 }
 
 type RebalanceSpellDamageTaskPayload struct {
@@ -255,6 +257,7 @@ type SpellBulkStatus struct {
 	Status       string                 `json:"status"`
 	Source       string                 `json:"source"`
 	AbilityType  string                 `json:"abilityType"`
+	GenreID      uuid.UUID              `json:"genreId"`
 	TotalCount   int                    `json:"totalCount"`
 	CreatedCount int                    `json:"createdCount"`
 	TargetLevel  *int                   `json:"targetLevel,omitempty"`
@@ -273,6 +276,7 @@ type SpellProgressionPromptStatus struct {
 	Status          string      `json:"status"`
 	Prompt          string      `json:"prompt"`
 	AbilityType     string      `json:"abilityType"`
+	GenreID         uuid.UUID   `json:"genreId"`
 	CreatedCount    int         `json:"createdCount"`
 	ProgressionID   *uuid.UUID  `json:"progressionId,omitempty"`
 	SeedSpellID     *uuid.UUID  `json:"seedSpellId,omitempty"`

@@ -62,20 +62,27 @@ func (p *GenerateSpellIconProcessor) ProcessTask(ctx context.Context, task *asyn
 		return fmt.Errorf("failed to update spell status: %w", err)
 	}
 
-	school := strings.TrimSpace(payload.SchoolOfMagic)
+	school := strings.TrimSpace(spell.SchoolOfMagic)
 	if school == "" {
 		school = "Arcane"
 	}
-	description := strings.TrimSpace(payload.Description)
+	description := strings.TrimSpace(spell.Description)
 	if description == "" {
 		description = "A signature magical technique"
 	}
-	effectText := strings.TrimSpace(payload.EffectText)
+	effectText := strings.TrimSpace(spell.EffectText)
 	if effectText == "" {
 		effectText = "Mystic energy effect"
 	}
 
-	prompt := fmt.Sprintf(spellIconPromptTemplate, payload.Name, school, description, effectText)
+	prompt := spellIconPrompt(
+		strings.TrimSpace(spell.Name),
+		description,
+		school,
+		effectText,
+		spell.AbilityType,
+		spell.Genre,
+	)
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
 	}

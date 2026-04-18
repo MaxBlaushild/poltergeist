@@ -37,6 +37,7 @@ var inventoryProgressionBands = []inventoryProgressionBand{
 type inventoryItemUpsertRequest struct {
 	Name                                     string                         `json:"name"`
 	Archived                                 *bool                          `json:"archived"`
+	GenreID                                  string                         `json:"genreId"`
 	ImageURL                                 string                         `json:"imageUrl"`
 	FlavorText                               string                         `json:"flavorText"`
 	EffectText                               string                         `json:"effectText"`
@@ -106,6 +107,7 @@ type inventoryItemUpsertRequest struct {
 
 type inventoryItemSuggestionJobRequest struct {
 	Count        int      `json:"count"`
+	GenreID      string   `json:"genreId"`
 	ThemePrompt  string   `json:"themePrompt"`
 	Categories   []string `json:"categories"`
 	RarityTiers  []string `json:"rarityTiers"`
@@ -143,11 +145,18 @@ func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
 	if maxLevel < minLevel {
 		maxLevel = minLevel
 	}
+	genre, err := s.resolveZoneGenre(ctx, body.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.InventoryItemSuggestionJob{
 		ID:           uuid.New(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
+		GenreID:      genre.ID,
+		Genre:        genre,
 		Status:       models.InventoryItemSuggestionJobStatusQueued,
 		Count:        body.Count,
 		ThemePrompt:  strings.TrimSpace(body.ThemePrompt),
@@ -319,6 +328,8 @@ func (s *server) generateInventoryItemProgressionDrafts(ctx *gin.Context) {
 		ID:           uuid.New(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
+		GenreID:      sourceItem.GenreID,
+		Genre:        sourceItem.Genre,
 		Status:       models.InventoryItemSuggestionJobStatusCompleted,
 		Count:        maxInt(0, len(inventoryProgressionBands)-1),
 		ThemePrompt:  fmt.Sprintf("Progression of %s", sourceItem.Name),
@@ -550,12 +561,17 @@ func clearGeneratedInventoryUnlockLocksStrength(item *models.InventoryItem) {
 
 func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inventoryItemUpsertRequest {
 	var resourceTypeID *string
+	var genreID string
 	if item.ResourceTypeID != nil {
 		resourceTypeID = stringPtr(item.ResourceTypeID.String())
+	}
+	if item.GenreID != uuid.Nil {
+		genreID = item.GenreID.String()
 	}
 	clearGeneratedInventoryUnlockLocksStrength(&item)
 	return inventoryItemUpsertRequest{
 		Name:                                     item.Name,
+		GenreID:                                  genreID,
 		ImageURL:                                 item.ImageURL,
 		FlavorText:                               item.FlavorText,
 		EffectText:                               item.EffectText,
@@ -978,6 +994,20 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 	if requestBody.RarityTier == "" {
 		return nil, fmt.Errorf("rarityTier is required")
 	}
+	genreID := uuid.Nil
+	var genre *models.ZoneGenre
+	if existingItem != nil {
+		genreID = existingItem.GenreID
+		genre = existingItem.Genre
+	}
+	if strings.TrimSpace(requestBody.GenreID) != "" || genreID == uuid.Nil {
+		resolvedGenre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+		if err != nil {
+			return nil, err
+		}
+		genreID = resolvedGenre.ID
+		genre = resolvedGenre
+	}
 
 	itemLevel := 1
 	if existingItem != nil && existingItem.ItemLevel > 0 {
@@ -1110,6 +1140,8 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 	item := &models.InventoryItem{
 		Archived:                                 archived,
 		Name:                                     requestBody.Name,
+		GenreID:                                  genreID,
+		Genre:                                    genre,
 		ImageURL:                                 requestBody.ImageURL,
 		FlavorText:                               requestBody.FlavorText,
 		EffectText:                               requestBody.EffectText,

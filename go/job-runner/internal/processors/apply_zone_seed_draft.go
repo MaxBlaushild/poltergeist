@@ -231,7 +231,7 @@ func (p *ApplyZoneSeedDraftProcessor) ensurePointOfInterest(
 		return existing, nil
 	}
 
-	poi, err := p.locationSeeder.ImportPlace(ctx, placeID, *zone)
+	poi, err := p.locationSeeder.ImportPlace(ctx, placeID, *zone, nil)
 	if err != nil {
 		return nil, err
 	}

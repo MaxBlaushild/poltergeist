@@ -448,6 +448,8 @@ func (s *server) cloneMainStoryDistrictRunCharacters(
 			ImageGenerationStatus: models.CharacterImageGenerationStatusNone,
 		}
 		if sourceCharacter != nil {
+			character.GenreID = sourceCharacter.GenreID
+			character.Genre = sourceCharacter.Genre
 			character.MapIconURL = sourceCharacter.MapIconURL
 			character.DialogueImageURL = sourceCharacter.DialogueImageURL
 			character.ThumbnailURL = sourceCharacter.ThumbnailURL

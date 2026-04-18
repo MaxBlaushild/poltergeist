@@ -98,6 +98,8 @@ type Spell struct {
 	IconURL               string                  `json:"iconUrl" gorm:"column:icon_url"`
 	ImageGenerationStatus string                  `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError  *string                 `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	GenreID               uuid.UUID               `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                 *ZoneGenre              `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	AbilityType           SpellAbilityType        `json:"abilityType" gorm:"column:ability_type"`
 	AbilityLevel          int                     `json:"abilityLevel" gorm:"column:ability_level"`
 	CooldownTurns         int                     `json:"cooldownTurns" gorm:"column:cooldown_turns"`

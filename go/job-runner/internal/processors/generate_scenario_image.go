@@ -12,6 +12,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/hibiken/asynq"
 )
@@ -73,11 +74,7 @@ func (p *GenerateScenarioImageProcessor) ProcessTask(ctx context.Context, task *
 		zoneName = strings.TrimSpace(scenario.Zone.Name)
 	}
 
-	prompt := fmt.Sprintf(
-		scenarioImagePromptTemplate,
-		truncate(strings.TrimSpace(scenario.Prompt), 650),
-		truncate(zoneName, 120),
-	)
+	prompt := buildScenarioImagePrompt(scenario, zoneName)
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
 	}
@@ -123,4 +120,23 @@ func (p *GenerateScenarioImageProcessor) uploadScenarioImage(ctx context.Context
 
 	imageName := fmt.Sprintf("scenarios/%s-%d.%s", scenarioID, time.Now().UnixNano(), imageExtension)
 	return p.awsClient.UploadImageToS3("crew-points-of-interest", imageName, imageBytes)
+}
+
+func buildScenarioImagePrompt(
+	scenario *models.Scenario,
+	zoneName string,
+) string {
+	base := fmt.Sprintf(
+		scenarioImagePromptTemplate,
+		truncate(strings.TrimSpace(scenario.Prompt), 650),
+		truncate(zoneName, 120),
+	)
+	if scenario == nil || isBaselineFantasyScenarioGenre(scenario.Genre) {
+		return base
+	}
+	direction := scenarioGenreImageDirection(scenario.Genre)
+	if direction == "" {
+		return base
+	}
+	return strings.TrimSpace(base + "\n\nGenre direction: " + direction)
 }

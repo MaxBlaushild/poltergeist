@@ -1,3 +1,4 @@
+import type { ZoneGenre } from './zone';
 export type SpellEffectType = 'deal_damage' | 'deal_damage_all_enemies' | 'restore_life_party_member' | 'restore_life_all_party_members' | 'revive_party_member' | 'revive_all_downed_party_members' | 'apply_beneficial_statuses' | 'apply_detrimental_statuses' | 'apply_detrimental_statuses_all_enemies' | 'remove_detrimental_statuses' | string;
 export type DamageAffinity = 'physical' | 'piercing' | 'slashing' | 'bludgeoning' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
 export interface SpellStatusTemplate {
@@ -70,6 +71,8 @@ export interface Spell {
     name: string;
     description: string;
     iconUrl: string;
+    genreId: string;
+    genre?: ZoneGenre | null;
     abilityType?: 'spell' | 'technique' | string;
     abilityLevel?: number;
     cooldownTurns?: number;

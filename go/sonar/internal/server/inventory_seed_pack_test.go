@@ -3,10 +3,13 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestInventoryCoreSeedPackRequestsAreUniqueAndLarge(t *testing.T) {
-	requests := inventoryCoreSeedPackRequests()
+	genreID := uuid.NewString()
+	requests := inventoryCoreSeedPackRequests(genreID)
 	if len(requests) < 250 {
 		t.Fatalf("expected a large inventory seed pack, got %d items", len(requests))
 	}
@@ -29,6 +32,9 @@ func TestInventoryCoreSeedPackRequestsAreUniqueAndLarge(t *testing.T) {
 			t.Fatalf("duplicate inventory seed name %q", name)
 		}
 		seen[lower] = struct{}{}
+		if strings.TrimSpace(seed.Request.GenreID) != genreID {
+			t.Fatalf("expected seed item %q to carry genre %q, got %q", name, genreID, seed.Request.GenreID)
+		}
 
 		switch seed.Category {
 		case "equipment":
@@ -101,10 +107,14 @@ func TestInventorySeedSetRequestsCoverAllSlots(t *testing.T) {
 }
 
 func TestSeededUtilityRequestsUseSupportedMechanics(t *testing.T) {
+	genreID := uuid.NewString()
 	for _, spec := range inventorySeedUtilitySpecs() {
-		request := seededUtilityRequest(spec)
+		request := seededUtilityRequest(spec, genreID)
 		if request.EquipSlot != nil {
 			t.Fatalf("utility item %q should not be equippable", request.Name)
+		}
+		if strings.TrimSpace(request.GenreID) != genreID {
+			t.Fatalf("utility item %q should carry genre %q, got %q", request.Name, genreID, request.GenreID)
 		}
 		if request.ConsumeCreateBase && request.UnlockLocksStrength != nil {
 			t.Fatalf("utility item %q should not be both a base deed and a lock tool", request.Name)

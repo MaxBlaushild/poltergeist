@@ -1,4 +1,5 @@
 import type { ResourceType } from './resourceType';
+import type { ZoneGenre } from './zone';
 export type InventoryConsumeStatus = {
     name: string;
     description: string;
@@ -49,6 +50,8 @@ export type InventoryItem = {
     id: number;
     archived?: boolean;
     name: string;
+    genreId: string;
+    genre?: ZoneGenre | null;
     imageUrl: string;
     flavorText: string;
     effectText: string;

@@ -1,5 +1,6 @@
 import type { DialogueMessage } from './characterAction';
 import { CharacterLocation } from './characterLocation';
+import type { ZoneGenre } from './zone';
 export interface CharacterStoryVariant {
     id?: string;
     createdAt?: Date;
@@ -15,6 +16,8 @@ export interface Character {
     updatedAt: Date;
     name: string;
     description: string;
+    genreId: string;
+    genre?: ZoneGenre | null;
     internalTags?: string[];
     mapIconUrl: string;
     dialogueImageUrl: string;

@@ -16,6 +16,12 @@ type inventoryItemHandler struct {
 	db *gorm.DB
 }
 
+func (h *inventoryItemHandler) preloadBase(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).
+		Preload("ResourceType").
+		Preload("Genre")
+}
+
 func (h *inventoryItemHandler) GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error) {
 	var items []models.OwnedInventoryItem
 
@@ -258,14 +264,18 @@ func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *mo
 		if item.InternalTags == nil {
 			item.InternalTags = models.StringArray{}
 		}
+		resolvedGenreID, err := resolveInventoryItemGenreID(ctx, h.db, item)
+		if err != nil {
+			return err
+		}
+		item.GenreID = resolvedGenreID
 	}
 	return h.db.WithContext(ctx).Create(item).Error
 }
 
 func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error) {
 	var item models.InventoryItem
-	result := h.db.WithContext(ctx).
-		Preload("ResourceType").
+	result := h.preloadBase(ctx).
 		Where("id = ?", id).
 		First(&item)
 	if result.Error != nil {
@@ -276,9 +286,7 @@ func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, id int
 
 func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
 	var items []models.InventoryItem
-	result := h.db.WithContext(ctx).
-		Preload("ResourceType").
-		Find(&items)
+	result := h.preloadBase(ctx).Find(&items)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -287,8 +295,7 @@ func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]mod
 
 func (h *inventoryItemHandler) FindAllActiveInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
 	var items []models.InventoryItem
-	result := h.db.WithContext(ctx).
-		Preload("ResourceType").
+	result := h.preloadBase(ctx).
 		Where("archived = ?", false).
 		Find(&items)
 	if result.Error != nil {

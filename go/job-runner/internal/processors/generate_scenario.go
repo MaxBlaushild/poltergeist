@@ -13,6 +13,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
 
@@ -250,11 +251,17 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 	if zone == nil {
 		return fmt.Errorf("zone not found")
 	}
+	genre, err := loadScenarioGenre(ctx, p.dbClient, job.GenreID, job.Genre)
+	if err != nil {
+		return fmt.Errorf("failed to load scenario genre: %w", err)
+	}
 
 	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
 
 	scenario := &models.Scenario{
 		ZoneID:              job.ZoneID,
+		GenreID:             genre.ID,
+		Genre:               genre,
 		Latitude:            lat,
 		Longitude:           lng,
 		ImageURL:            scenarioPlaceholderImageURL,
@@ -282,17 +289,17 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		zoneDescription = "No description available."
 	}
 	varianceSalt := buildScenarioVarianceSalt(job, zoneName)
-	recentScenarioAvoidance := p.buildRecentScenarioAvoidance(ctx, job, 6)
+	recentScenarioAvoidance := p.buildRecentScenarioAvoidance(ctx, job, genre, 6)
 
 	if job.OpenEnded {
-		prompt := fmt.Sprintf(
-			openEndedScenarioGenerationPromptTemplate,
+		prompt := buildOpenEndedScenarioGenerationPrompt(
 			zoneName,
 			zoneDescription,
 			lat,
 			lng,
 			varianceSalt,
 			recentScenarioAvoidance,
+			genre,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -308,14 +315,14 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		scenario.RewardExperience = clampInt(generated.RewardExperience, 0, 120)
 		scenario.RewardGold = clampInt(generated.RewardGold, 0, 120)
 	} else {
-		prompt := fmt.Sprintf(
-			choiceScenarioGenerationPromptTemplate,
+		prompt := buildChoiceScenarioGenerationPrompt(
 			zoneName,
 			zoneDescription,
 			lat,
 			lng,
 			varianceSalt,
 			recentScenarioAvoidance,
+			genre,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -435,6 +442,7 @@ func buildAllowedItemsPrompt(items []models.InventoryItem) string {
 func (p *GenerateScenarioProcessor) buildRecentScenarioAvoidance(
 	ctx context.Context,
 	job *models.ScenarioGenerationJob,
+	genre *models.ZoneGenre,
 	limit int,
 ) string {
 	if job == nil || limit <= 0 {
@@ -452,6 +460,9 @@ func (p *GenerateScenarioProcessor) buildRecentScenarioAvoidance(
 
 	lines := make([]string, 0, limit)
 	for _, scenario := range scenarios {
+		if genre != nil && genre.ID != uuid.Nil && scenario.GenreID != uuid.Nil && scenario.GenreID != genre.ID {
+			continue
+		}
 		prompt := strings.TrimSpace(scenario.Prompt)
 		if prompt == "" {
 			continue
@@ -469,6 +480,54 @@ func (p *GenerateScenarioProcessor) buildRecentScenarioAvoidance(
 		return "- none"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func buildOpenEndedScenarioGenerationPrompt(
+	zoneName string,
+	zoneDescription string,
+	latitude float64,
+	longitude float64,
+	varianceSalt string,
+	recentScenarioAvoidance string,
+	genre *models.ZoneGenre,
+) string {
+	base := fmt.Sprintf(
+		openEndedScenarioGenerationPromptTemplate,
+		zoneName,
+		zoneDescription,
+		latitude,
+		longitude,
+		varianceSalt,
+		recentScenarioAvoidance,
+	)
+	if isBaselineFantasyScenarioGenre(genre) {
+		return base
+	}
+	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+}
+
+func buildChoiceScenarioGenerationPrompt(
+	zoneName string,
+	zoneDescription string,
+	latitude float64,
+	longitude float64,
+	varianceSalt string,
+	recentScenarioAvoidance string,
+	genre *models.ZoneGenre,
+) string {
+	base := fmt.Sprintf(
+		choiceScenarioGenerationPromptTemplate,
+		zoneName,
+		zoneDescription,
+		latitude,
+		longitude,
+		varianceSalt,
+		recentScenarioAvoidance,
+	)
+	if isBaselineFantasyScenarioGenre(genre) {
+		return base
+	}
+	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
 }
 
 func buildScenarioVarianceSalt(job *models.ScenarioGenerationJob, zoneName string) string {

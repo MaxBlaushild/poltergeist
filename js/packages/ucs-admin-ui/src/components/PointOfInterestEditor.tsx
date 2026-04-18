@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAPI, useMediaContext, useZoneContext } from '@poltergeist/contexts';
-import { Character, PointOfInterest } from '@poltergeist/types';
+import { Character, PointOfInterest, ZoneGenre } from '@poltergeist/types';
 
 const buildCharacterPayload = (character: Character, pointOfInterestId: string | null) => {
   return {
@@ -20,6 +20,7 @@ export const PointOfInterestEditor = () => {
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
 
   const [pointOfInterest, setPointOfInterest] = useState<PointOfInterest | null>(null);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string>('');
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
@@ -32,6 +33,7 @@ export const PointOfInterestEditor = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const [formData, setFormData] = useState({
+    genreId: '',
     name: '',
     description: '',
     clue: '',
@@ -42,6 +44,12 @@ export const PointOfInterestEditor = () => {
     googleMapsPlaceId: '',
     unlockTier: '' as string,
   });
+  const defaultGenreId = useMemo(() => {
+    const fantasyGenre = genres.find(
+      (genre) => genre.name.trim().toLowerCase() === 'fantasy'
+    );
+    return fantasyGenre?.id ?? genres[0]?.id ?? '';
+  }, [genres]);
 
   const formatGenerationStatus = (status?: string) => {
     switch (status) {
@@ -83,6 +91,7 @@ export const PointOfInterestEditor = () => {
         }
         setPointOfInterest(selected);
         setFormData({
+          genreId: selected.genreId ?? selected.genre?.id ?? '',
           name: selected.name ?? '',
           description: selected.description ?? '',
           clue: selected.clue ?? '',
@@ -98,6 +107,17 @@ export const PointOfInterestEditor = () => {
         setError('Failed to load point of interest.');
       } finally {
         setLoading(false);
+      }
+    };
+
+    const fetchGenres = async () => {
+      try {
+        const response = await apiClient.get<ZoneGenre[]>(
+          '/sonar/zone-genres?includeInactive=true'
+        );
+        setGenres(response);
+      } catch (err) {
+        console.error('Error fetching genres:', err);
       }
     };
 
@@ -122,9 +142,19 @@ export const PointOfInterestEditor = () => {
     };
 
     fetchPointOfInterest();
+    fetchGenres();
     fetchCharacters();
     fetchZoneForPoint();
   }, [apiClient, id]);
+
+  useEffect(() => {
+    if (!defaultGenreId) {
+      return;
+    }
+    setFormData((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+  }, [defaultGenreId]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -172,6 +202,7 @@ export const PointOfInterestEditor = () => {
       }
 
       await apiClient.patch(`/sonar/pointsOfInterest/${id}`, {
+        genreId: formData.genreId,
         name: formData.name,
         description: formData.description,
         clue: formData.clue,
@@ -184,6 +215,25 @@ export const PointOfInterestEditor = () => {
       });
 
       setFormData(prev => ({ ...prev, imageURL: imageUrl }));
+      setPointOfInterest((prev) => {
+        if (!prev) return prev;
+        const genre = genres.find((entry) => entry.id === formData.genreId) ?? null;
+        return {
+          ...prev,
+          genreId: formData.genreId,
+          genre,
+          name: formData.name,
+          description: formData.description,
+          clue: formData.clue,
+          lat: formData.lat,
+          lng: formData.lng,
+          imageURL: imageUrl,
+          originalName: formData.originalName,
+          googleMapsPlaceId: formData.googleMapsPlaceId,
+          unlockTier:
+            formData.unlockTier === '' ? null : Number(formData.unlockTier),
+        };
+      });
       setImageFile(null);
       setImagePreview(null);
     } catch (err) {
@@ -301,6 +351,21 @@ export const PointOfInterestEditor = () => {
               onChange={(e) => handleInputChange('originalName', e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+            <select
+              value={formData.genreId}
+              onChange={(e) => handleInputChange('genreId', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">Select genre</option>
+              {genres.map((genre) => (
+                <option key={genre.id} value={genre.id}>
+                  {genre.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>

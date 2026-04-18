@@ -640,6 +640,19 @@ func parseOptionalArchivedFilter(raw string) (*bool, error) {
 	}
 }
 
+func parseOptionalGenreIDFilter(raw string) (*uuid.UUID, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "all":
+		return nil, nil
+	}
+
+	genreID, err := uuid.Parse(strings.TrimSpace(raw))
+	if err != nil || genreID == uuid.Nil {
+		return nil, errors.New("genreId must be a valid UUID")
+	}
+	return &genreID, nil
+}
+
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
 	if battle == nil {
 		return nil
@@ -1908,6 +1921,11 @@ func (s *server) getAdminMonsterTemplates(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	genreID, err := parseOptionalGenreIDFilter(ctx.Query("genreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	page := parseAdminMonsterListPage(ctx)
 	pageSize := parseAdminMonsterListPageSize(ctx)
@@ -1916,6 +1934,7 @@ func (s *server) getAdminMonsterTemplates(ctx *gin.Context) {
 		PageSize:    pageSize,
 		Query:       ctx.Query("query"),
 		ZoneQuery:   ctx.Query("zoneQuery"),
+		GenreID:     genreID,
 		Archived:    archived,
 		MonsterType: ctx.Query("monsterType"),
 	})
@@ -3117,11 +3136,17 @@ func (s *server) getAdminMonsters(ctx *gin.Context) {
 
 	page := parseAdminMonsterListPage(ctx)
 	pageSize := parseAdminMonsterListPageSize(ctx)
+	genreID, err := parseOptionalGenreIDFilter(ctx.Query("genreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	result, err := s.dbClient.Monster().ListAdmin(ctx, db.MonsterAdminListParams{
 		Page:      page,
 		PageSize:  pageSize,
 		Query:     ctx.Query("query"),
 		ZoneQuery: ctx.Query("zoneQuery"),
+		GenreID:   genreID,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -3182,11 +3207,17 @@ func (s *server) getAdminMonsterEncounters(ctx *gin.Context) {
 
 	page := parseAdminMonsterListPage(ctx)
 	pageSize := parseAdminMonsterListPageSize(ctx)
+	genreID, err := parseOptionalGenreIDFilter(ctx.Query("genreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	result, err := s.dbClient.MonsterEncounter().ListAdmin(ctx, db.MonsterEncounterAdminListParams{
 		Page:      page,
 		PageSize:  pageSize,
 		Query:     ctx.Query("query"),
 		ZoneQuery: ctx.Query("zoneQuery"),
+		GenreID:   genreID,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

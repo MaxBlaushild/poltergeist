@@ -84,10 +84,11 @@ func TestImportPlaceWithReuseReturnsExistingPointOfInterest(t *testing.T) {
 		ctx,
 		"  place-123  ",
 		models.Zone{ID: zoneID},
+		nil,
 		poiFinder,
 		zoneAttacher,
 		googleFinder,
-		func(context.Context, googlemaps.Place, *models.Zone) (*models.PointOfInterest, error) {
+		func(context.Context, googlemaps.Place, *models.Zone, *models.ZoneGenre) (*models.PointOfInterest, error) {
 			generated = true
 			return nil, nil
 		},
@@ -133,16 +134,20 @@ func TestImportPlaceWithReuseGeneratesPointOfInterestWhenMissing(t *testing.T) {
 		ctx,
 		"place-456",
 		models.Zone{ID: zoneID},
+		nil,
 		poiFinder,
 		zoneAttacher,
 		googleFinder,
-		func(_ context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error) {
+		func(_ context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (*models.PointOfInterest, error) {
 			generated = true
 			if place.ID != googlePlace.ID {
 				t.Fatalf("expected place ID %q, got %q", googlePlace.ID, place.ID)
 			}
 			if zone == nil || zone.ID != zoneID {
 				t.Fatalf("expected generator to receive zone %s", zoneID)
+			}
+			if genre != nil {
+				t.Fatalf("expected nil genre for default import flow")
 			}
 			return generatedPOI, nil
 		},
@@ -175,10 +180,11 @@ func TestImportPlaceWithReuseRejectsBlankPlaceID(t *testing.T) {
 		ctx,
 		"   ",
 		models.Zone{ID: uuid.New()},
+		nil,
 		poiFinder,
 		zoneAttacher,
 		googleFinder,
-		func(context.Context, googlemaps.Place, *models.Zone) (*models.PointOfInterest, error) {
+		func(context.Context, googlemaps.Place, *models.Zone, *models.ZoneGenre) (*models.PointOfInterest, error) {
 			generated = true
 			return nil, nil
 		},

@@ -38,6 +38,7 @@ type spellUpsertRequest struct {
 	Name          string               `json:"name"`
 	Description   string               `json:"description"`
 	IconURL       string               `json:"iconUrl"`
+	GenreID       string               `json:"genreId"`
 	AbilityType   string               `json:"abilityType"`
 	AbilityLevel  *int                 `json:"abilityLevel"`
 	CooldownTurns int                  `json:"cooldownTurns"`
@@ -61,6 +62,7 @@ type castSpellHealResult struct {
 
 type bulkGenerateSpellsRequest struct {
 	Count        int                         `json:"count"`
+	GenreID      string                      `json:"genreId"`
 	AbilityType  string                      `json:"abilityType"`
 	TargetLevel  *int                        `json:"targetLevel"`
 	EffectCounts *jobs.SpellBulkEffectCounts `json:"effectCounts"`
@@ -71,6 +73,7 @@ type bulkGenerateSpellsRequest struct {
 type spellProgressionFromPromptRequest struct {
 	Prompt      string `json:"prompt"`
 	AbilityType string `json:"abilityType"`
+	GenreID     string `json:"genreId"`
 }
 
 type rebalanceSpellDamageRequest struct {
@@ -95,7 +98,8 @@ type generatedSpellProgressionVariantFlavor struct {
 }
 
 const generateAbilitiesPromptTemplate = `
-You are designing %d original %s for a fantasy action RPG.
+You are designing %d original %s for a %s action RPG.
+%s
 
 Avoid these existing %s names:
 %s
@@ -124,7 +128,8 @@ Respond as:
 `
 
 const generateSpellProgressionVariantFlavorTemplate = `
-You are designing missing level-band variants for a fantasy RPG %s progression.
+You are designing missing level-band variants for a %s RPG %s progression.
+%s
 
 Seed ability:
 - Name: %s
@@ -368,7 +373,9 @@ func (s *server) generateSpellProgressionVariantFlavors(
 
 	prompt := fmt.Sprintf(
 		generateSpellProgressionVariantFlavorTemplate,
+		spellGenrePromptLabel(seed.Genre),
 		abilityLabel,
+		spellAbilityGenreInstructionBlock(seed.Genre, abilityType),
 		strings.TrimSpace(seed.Name),
 		strings.TrimSpace(seed.SchoolOfMagic),
 		strings.TrimSpace(seed.Description),
@@ -598,6 +605,7 @@ func buildBulkSpellSpecsFromSeeds(
 func (s *server) generateAbilitySpecsWithLLM(
 	count int,
 	abilityType models.SpellAbilityType,
+	genre *models.ZoneGenre,
 	usedNames map[string]struct{},
 	existingNames []string,
 ) ([]jobs.SpellCreationSpec, error) {
@@ -626,6 +634,8 @@ func (s *server) generateAbilitySpecsWithLLM(
 			generateAbilitiesPromptTemplate,
 			remaining,
 			abilityLabel,
+			spellGenrePromptLabel(genre),
+			spellAbilityGenreInstructionBlock(genre, abilityType),
 			abilityLabel,
 			formatAbilityNamesForPrompt(denyList),
 			remaining,
@@ -667,6 +677,7 @@ func (s *server) generateAbilitySpecsWithLLM(
 func (s *server) buildBulkAbilitySpecs(
 	count int,
 	abilityType models.SpellAbilityType,
+	genre *models.ZoneGenre,
 	usedNames map[string]struct{},
 	existingNames []string,
 ) ([]jobs.SpellCreationSpec, string, error) {
@@ -677,7 +688,13 @@ func (s *server) buildBulkAbilitySpecs(
 	specs := make([]jobs.SpellCreationSpec, 0, count)
 	source := "seed_generated"
 	if s.deepPriest != nil {
-		aiSpecs, err := s.generateAbilitySpecsWithLLM(count, abilityType, usedNames, existingNames)
+		aiSpecs, err := s.generateAbilitySpecsWithLLM(
+			count,
+			abilityType,
+			genre,
+			usedNames,
+			existingNames,
+		)
 		if err == nil && len(aiSpecs) > 0 {
 			specs = append(specs, aiSpecs...)
 			source = "ai_generated"
@@ -862,6 +879,11 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	existingSpells, err := s.dbClient.Spell().FindAll(ctx)
 	if err != nil {
@@ -882,7 +904,13 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		usedNames[strings.ToLower(name)] = struct{}{}
 	}
 
-	spellSpecs, source, err := s.buildBulkAbilitySpecs(requestBody.Count, abilityType, usedNames, existingNames)
+	spellSpecs, source, err := s.buildBulkAbilitySpecs(
+		requestBody.Count,
+		abilityType,
+		genre,
+		usedNames,
+		existingNames,
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -902,6 +930,7 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		Status:       jobs.SpellBulkStatusQueued,
 		Source:       source,
 		AbilityType:  string(abilityType),
+		GenreID:      genre.ID,
 		TotalCount:   len(spellSpecs),
 		CreatedCount: 0,
 		TargetLevel:  targetLevel,
@@ -919,6 +948,7 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		JobID:        jobID,
 		Source:       source,
 		AbilityType:  string(abilityType),
+		GenreID:      genre.ID,
 		TotalCount:   len(spellSpecs),
 		TargetLevel:  targetLevel,
 		EffectCounts: effectCounts,
@@ -947,6 +977,7 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		"status":       status.Status,
 		"source":       status.Source,
 		"abilityType":  status.AbilityType,
+		"genreId":      status.GenreID,
 		"totalCount":   status.TotalCount,
 		"createdCount": status.CreatedCount,
 		"targetLevel":  status.TargetLevel,
@@ -1029,6 +1060,11 @@ func (s *server) queueSpellProgressionFromPromptWithType(
 		})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	abilityType := models.SpellAbilityTypeSpell
 	if forcedType != nil {
@@ -1048,6 +1084,7 @@ func (s *server) queueSpellProgressionFromPromptWithType(
 		Status:       jobs.SpellProgressionPromptStatusQueued,
 		Prompt:       prompt,
 		AbilityType:  string(abilityType),
+		GenreID:      genre.ID,
 		CreatedCount: 0,
 		QueuedAt:     &queuedAt,
 		UpdatedAt:    queuedAt,
@@ -1061,6 +1098,7 @@ func (s *server) queueSpellProgressionFromPromptWithType(
 		JobID:       jobID,
 		Prompt:      prompt,
 		AbilityType: string(abilityType),
+		GenreID:     genre.ID,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1302,10 +1340,23 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 	return effects, nil
 }
 
-func (s *server) parseSpellUpsertRequest(body spellUpsertRequest, defaultAbilityLevel int) (*models.Spell, error) {
+func (s *server) parseSpellUpsertRequest(
+	ctx context.Context,
+	body spellUpsertRequest,
+	defaultAbilityLevel int,
+	existing *models.Spell,
+) (*models.Spell, error) {
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
+	}
+	rawGenreID := strings.TrimSpace(body.GenreID)
+	if rawGenreID == "" && existing != nil && existing.GenreID != uuid.Nil {
+		rawGenreID = existing.GenreID.String()
+	}
+	genre, err := s.resolveZoneGenre(ctx, rawGenreID)
+	if err != nil {
+		return nil, err
 	}
 	rawAbilityType := strings.TrimSpace(strings.ToLower(body.AbilityType))
 	abilityType := models.SpellAbilityTypeSpell
@@ -1352,6 +1403,8 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest, defaultAbility
 		Description:           strings.TrimSpace(body.Description),
 		IconURL:               strings.TrimSpace(body.IconURL),
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
+		GenreID:               genre.ID,
+		Genre:                 genre,
 		AbilityType:           abilityType,
 		AbilityLevel:          abilityLevel,
 		CooldownTurns:         cooldownTurns,
@@ -2293,6 +2346,8 @@ func buildSpellProgressionVariant(
 		IconURL:               "",
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
+		GenreID:               seed.GenreID,
+		Genre:                 seed.Genre,
 		AbilityType:           abilityType,
 		AbilityLevel:          targetLevel,
 		CooldownTurns:         cooldownTurns,
@@ -2460,7 +2515,7 @@ func (s *server) createSpellWithBoundRequest(ctx *gin.Context, requestBody spell
 		return
 	}
 
-	spell, err := s.parseSpellUpsertRequest(requestBody, 1)
+	spell, err := s.parseSpellUpsertRequest(ctx, requestBody, 1, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -2496,7 +2551,7 @@ func (s *server) updateSpellWithBoundRequest(
 	if existingSpell != nil && existingSpell.AbilityLevel > 0 {
 		defaultAbilityLevel = existingSpell.AbilityLevel
 	}
-	spell, err := s.parseSpellUpsertRequest(requestBody, defaultAbilityLevel)
+	spell, err := s.parseSpellUpsertRequest(ctx, requestBody, defaultAbilityLevel, existingSpell)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -2506,6 +2561,7 @@ func (s *server) updateSpellWithBoundRequest(
 		"name":           spell.Name,
 		"description":    spell.Description,
 		"icon_url":       spell.IconURL,
+		"genre_id":       spell.GenreID,
 		"ability_type":   spell.AbilityType,
 		"ability_level":  spell.AbilityLevel,
 		"cooldown_turns": spell.CooldownTurns,

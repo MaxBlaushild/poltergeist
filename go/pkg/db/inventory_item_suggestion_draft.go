@@ -13,7 +13,9 @@ type inventoryItemSuggestionDraftHandle struct {
 }
 
 func (h *inventoryItemSuggestionDraftHandle) preloadBase(ctx context.Context) *gorm.DB {
-	return h.db.WithContext(ctx).Preload("InventoryItem")
+	return h.db.WithContext(ctx).
+		Preload("InventoryItem").
+		Preload("InventoryItem.Genre")
 }
 
 func (h *inventoryItemSuggestionDraftHandle) Create(ctx context.Context, draft *models.InventoryItemSuggestionDraft) error {

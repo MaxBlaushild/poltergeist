@@ -1,9 +1,12 @@
 import { InventoryItem } from './inventoryItem';
+import type { ZoneGenre } from './zone';
 
 export interface InventoryItemSuggestionJob {
   id: string;
   createdAt: string;
   updatedAt: string;
+  genreId: string;
+  genre?: ZoneGenre | null;
   status: string;
   count: number;
   themePrompt: string;

@@ -11,6 +11,7 @@ func TestCharacterTemplateDataInstantiateClonesSourceCharacter(t *testing.T) {
 	dialogueCharacterID := uuid.New()
 	errMessage := "  generation failed  "
 	source := &Character{
+		GenreID:          uuid.New(),
 		Name:             "  Mire Seer  ",
 		Description:      "  Keeps watch over the crossing.  ",
 		InternalTags:     StringArray{"guide", "tutorial"},
@@ -59,6 +60,9 @@ func TestCharacterTemplateDataInstantiateClonesSourceCharacter(t *testing.T) {
 	}
 	if generated.Description != "Keeps watch over the crossing." {
 		t.Fatalf("expected trimmed description, got %q", generated.Description)
+	}
+	if generated.GenreID != source.GenreID {
+		t.Fatalf("expected genre id to be copied, got %s", generated.GenreID)
 	}
 	if len(generated.InternalTags) != 2 || generated.InternalTags[0] != "generated" || generated.InternalTags[1] != "tutorial" {
 		t.Fatalf("expected override internal tags, got %+v", generated.InternalTags)

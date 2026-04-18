@@ -6,6 +6,7 @@ import {
   Rarity,
   ResourceType,
   Spell,
+  ZoneGenre,
 } from '@poltergeist/types';
 import React, {
   useCallback,
@@ -237,6 +238,7 @@ const recipeMaterialSignalTokensByStation: Record<
 
 type InventorySuggestionFormState = {
   count: string;
+  genreId: string;
   themePrompt: string;
   categoriesText: string;
   rarityTiersText: string;
@@ -250,6 +252,7 @@ type InventorySuggestionFormState = {
 };
 
 type InventoryItemFilters = {
+  genre: string;
   rarity: string;
   resourceType: string;
   equipSlot: string;
@@ -501,6 +504,7 @@ const parseCommaValues = (value: string): string[] =>
   );
 
 const emptyInventoryItemFilters = (): InventoryItemFilters => ({
+  genre: '',
   rarity: '',
   resourceType: '',
   equipSlot: '',
@@ -540,8 +544,11 @@ const renderSuggestionFacetLabel = (
   return `${label}: ${values.join(', ')}`;
 };
 
-const emptyInventorySuggestionForm = (): InventorySuggestionFormState => ({
+const emptyInventorySuggestionForm = (
+  genreId = ''
+): InventorySuggestionFormState => ({
   count: '12',
+  genreId,
   themePrompt: '',
   categoriesText: 'equippable, consumable, material',
   rarityTiersText: 'Common, Uncommon, Epic',
@@ -553,6 +560,16 @@ const emptyInventorySuggestionForm = (): InventorySuggestionFormState => ({
   minItemLevel: '1',
   maxItemLevel: '40',
 });
+
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasyGenre = genres.find(
+    (genre) => genre.name?.trim().toLowerCase() === 'fantasy'
+  );
+  return fantasyGenre?.id ?? genres[0]?.id ?? '';
+};
+
+const formatGenreLabel = (genre?: ZoneGenre | null): string =>
+  genre?.name?.trim() || 'Unknown Genre';
 
 const isSuggestionJobPending = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
@@ -1125,6 +1142,7 @@ export const InventoryItems = () => {
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
   const [items, setItems] = useState<InventoryItemRecord[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [itemTab, setItemTab] = useState<'active' | 'archived'>('active');
   const [spells, setSpells] = useState<Spell[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1171,6 +1189,7 @@ export const InventoryItems = () => {
   const [bulkSetMajorStat, setBulkSetMajorStat] = useState('strength');
   const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
   const [bulkSetRarityTier, setBulkSetRarityTier] = useState('auto');
+  const [bulkSetGenreId, setBulkSetGenreId] = useState('');
   const [bulkSetGenerationBusy, setBulkSetGenerationBusy] = useState(false);
   const [setFamilyCount, setSetFamilyCount] = useState('6');
   const [setFamilyLevelMin, setSetFamilyLevelMin] = useState('10');
@@ -1209,7 +1228,9 @@ export const InventoryItems = () => {
     setSetFamilyAvoidExistingThemeOverlap,
   ] = useState(true);
   const [setFamilyQueueImages, setSetFamilyQueueImages] = useState(true);
+  const [setFamilyGenreId, setSetFamilyGenreId] = useState('');
   const [setFamilyGenerationBusy, setSetFamilyGenerationBusy] = useState(false);
+  const [seedPackGenreId, setSeedPackGenreId] = useState('');
   const [seedPackBusy, setSeedPackBusy] = useState(false);
   const [queueMissingImagesBusy, setQueueMissingImagesBusy] = useState(false);
   const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] =
@@ -1284,6 +1305,7 @@ export const InventoryItems = () => {
 
   const [formData, setFormData] = useState({
     name: '',
+    genreId: '',
     imageUrl: '',
     flavorText: '',
     effectText: '',
@@ -1349,6 +1371,7 @@ export const InventoryItems = () => {
 
   const [generationData, setGenerationData] = useState({
     name: '',
+    genreId: '',
     description: '',
     rarityTier: 'Common' as string,
     equipSlot: '',
@@ -1442,6 +1465,19 @@ export const InventoryItems = () => {
     });
     return map;
   }, [resourceTypes]);
+
+  const genreNameByID = useMemo(() => {
+    const map = new Map<string, string>();
+    genres.forEach((genre) => {
+      map.set(genre.id, genre.name);
+    });
+    return map;
+  }, [genres]);
+
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
 
   const recipeBuilderMaterialsByKind = useMemo<
     Record<InventoryRecipeKind, RecipeBuilderMaterialOption[]>
@@ -1586,6 +1622,18 @@ export const InventoryItems = () => {
     }
   }, [apiClient]);
 
+  const fetchGenres = useCallback(async () => {
+    try {
+      const response = await apiClient.get<ZoneGenre[]>(
+        '/sonar/zone-genres?includeInactive=true'
+      );
+      setGenres(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching genres:', error);
+      setGenres([]);
+    }
+  }, [apiClient]);
+
   const fetchSpells = useCallback(async () => {
     try {
       const response = await apiClient.get<Spell[]>('/sonar/spells');
@@ -1656,11 +1704,36 @@ export const InventoryItems = () => {
   );
 
   useEffect(() => {
+    void fetchGenres();
     void fetchResourceTypes();
     void fetchItems();
     void fetchSpells();
     void fetchSuggestionJobs();
-  }, [fetchItems, fetchResourceTypes, fetchSpells, fetchSuggestionJobs]);
+  }, [
+    fetchGenres,
+    fetchItems,
+    fetchResourceTypes,
+    fetchSpells,
+    fetchSuggestionJobs,
+  ]);
+
+  useEffect(() => {
+    if (!defaultGenreId) {
+      return;
+    }
+    setFormData((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+    setGenerationData((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+    setSuggestionForm((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+    setBulkSetGenreId((prev) => prev || defaultGenreId);
+    setSetFamilyGenreId((prev) => prev || defaultGenreId);
+    setSeedPackGenreId((prev) => prev || defaultGenreId);
+  }, [defaultGenreId]);
 
   useEffect(() => {
     const hasPending = items.some((item) =>
@@ -1730,6 +1803,7 @@ export const InventoryItems = () => {
         '/sonar/inventory-item-suggestion-jobs',
         {
           count: Math.max(1, parseInt(suggestionForm.count, 10) || 1),
+          genreId: suggestionForm.genreId.trim(),
           themePrompt: suggestionForm.themePrompt.trim(),
           categories: parseCommaValues(suggestionForm.categoriesText),
           rarityTiers: parseCommaValues(suggestionForm.rarityTiersText),
@@ -1850,6 +1924,7 @@ export const InventoryItems = () => {
   const resetForm = () => {
     setFormData({
       name: '',
+      genreId: defaultGenreId,
       imageUrl: '',
       flavorText: '',
       effectText: '',
@@ -1936,6 +2011,7 @@ export const InventoryItems = () => {
   const resetGenerationForm = () => {
     setGenerationData({
       name: '',
+      genreId: defaultGenreId,
       description: '',
       rarityTier: 'Common',
       equipSlot: '',
@@ -2601,6 +2677,7 @@ export const InventoryItems = () => {
     next.resourceTypeId =
       normalizedResourceTypeId === '' ? undefined : normalizedResourceTypeId;
     next.resourceType = undefined;
+    next.genre = undefined;
 
     if (!isHandEquipSlot(next.equipSlot ?? '')) {
       return { ...next, ...clearHandFields() };
@@ -2714,6 +2791,7 @@ export const InventoryItems = () => {
         '/sonar/inventory-items/generate',
         {
           name: normalized.name,
+          genreId: normalized.genreId,
           description: normalized.description,
           rarityTier: normalized.rarityTier,
           equipSlot: normalized.equipSlot,
@@ -3054,6 +3132,7 @@ export const InventoryItems = () => {
         '/sonar/inventory-items/generate-equippable-set',
         {
           targetLevel,
+          genreId: bulkSetGenreId || undefined,
           majorStat: bulkSetMajorStat,
           minorStat: bulkSetMinorStat,
           rarityTier:
@@ -3118,6 +3197,7 @@ export const InventoryItems = () => {
         '/sonar/inventory-items/generate-set-families',
         {
           count,
+          genreId: setFamilyGenreId || undefined,
           levelMin,
           levelMax,
           rarityTiers: Array.from(setFamilyRarityTiers),
@@ -3165,7 +3245,9 @@ export const InventoryItems = () => {
     try {
       const response = await apiClient.post<InventorySeedPackResponse>(
         '/sonar/inventory-items/seed-pack',
-        {}
+        {
+          genreId: seedPackGenreId || undefined,
+        }
       );
       await fetchItems();
       alert(
@@ -3265,6 +3347,7 @@ export const InventoryItems = () => {
         : 'alchemyRecipes';
     setFormData({
       name: item.name,
+      genreId: item.genreId ?? item.genre?.id ?? defaultGenreId,
       imageUrl: item.imageUrl,
       flavorText: item.flavorText,
       effectText: item.effectText,
@@ -4278,6 +4361,8 @@ export const InventoryItems = () => {
       const haystack = [
         item.id?.toString(),
         item.name,
+        item.genre?.name,
+        genreNameByID.get(item.genreId ?? ''),
         item.flavorText,
         item.effectText,
         item.imageUrl,
@@ -4333,6 +4418,8 @@ export const InventoryItems = () => {
 
       if (query && !haystack.includes(query)) return false;
 
+      if (filters.genre && (item.genreId ?? item.genre?.id ?? '') !== filters.genre)
+        return false;
       if (filters.rarity && item.rarityTier !== filters.rarity) return false;
       if (
         filters.resourceType &&
@@ -4513,6 +4600,7 @@ export const InventoryItems = () => {
     craftingGraph.relationshipsByItemId,
     craftingRecipesForRelationship,
     spellNamesByID,
+    genreNameByID,
   ]);
 
   const visibleCraftingRecipes = useMemo(() => {
@@ -4760,13 +4848,26 @@ export const InventoryItems = () => {
               >
                 Generate Inventory Item
               </button>
-              <button
-                className="bg-violet-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-                onClick={() => void handleSeedCorePack()}
-                disabled={seedPackBusy}
-              >
-                {seedPackBusy ? 'Seeding Core Pack...' : 'Seed Core Pack'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={seedPackGenreId}
+                  onChange={(event) => setSeedPackGenreId(event.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  {genres.map((genre) => (
+                    <option key={`seed-pack-genre-${genre.id}`} value={genre.id}>
+                      {formatGenreLabel(genre)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="bg-violet-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  onClick={() => void handleSeedCorePack()}
+                  disabled={seedPackBusy}
+                >
+                  {seedPackBusy ? 'Seeding Core Pack...' : 'Seed Core Pack'}
+                </button>
+              </div>
               <button
                 className="bg-amber-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
                 onClick={() => void handleQueueMissingImages()}
@@ -4813,7 +4914,7 @@ export const InventoryItems = () => {
           <div className="mb-2 text-sm font-semibold text-gray-800">
             Generate Full Equippable Set
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
             <div>
               <label className="mb-1 block text-xs text-gray-600">
                 Target Level
@@ -4855,6 +4956,20 @@ export const InventoryItems = () => {
                 {itemSetStatOptions.map((option) => (
                   <option key={`minor-${option.value}`} value={option.value}>
                     {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-600">Genre</label>
+              <select
+                value={bulkSetGenreId}
+                onChange={(e) => setBulkSetGenreId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm"
+              >
+                {genres.map((genre) => (
+                  <option key={`bulk-set-genre-${genre.id}`} value={genre.id}>
+                    {formatGenreLabel(genre)}
                   </option>
                 ))}
               </select>
@@ -4925,7 +5040,7 @@ export const InventoryItems = () => {
               <div className="mb-3 text-sm font-semibold text-slate-800">
                 Identity
               </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
                     Family Count
@@ -4968,6 +5083,22 @@ export const InventoryItems = () => {
                     }
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                   />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Genre
+                  </label>
+                  <select
+                    value={setFamilyGenreId}
+                    onChange={(event) => setSetFamilyGenreId(event.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {genres.map((genre) => (
+                      <option key={`family-genre-${genre.id}`} value={genre.id}>
+                        {formatGenreLabel(genre)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -5345,6 +5476,27 @@ export const InventoryItems = () => {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Genre
+                  </label>
+                  <select
+                    value={suggestionForm.genreId}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        genreId: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {genres.map((genre) => (
+                      <option key={`suggestion-genre-${genre.id}`} value={genre.id}>
+                        {formatGenreLabel(genre)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
                     Level Band
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -5519,7 +5671,7 @@ export const InventoryItems = () => {
                 <button
                   type="button"
                   onClick={() =>
-                    setSuggestionForm(emptyInventorySuggestionForm())
+                    setSuggestionForm(emptyInventorySuggestionForm(defaultGenreId))
                   }
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
                 >
@@ -5579,7 +5731,12 @@ export const InventoryItems = () => {
                         </span>
                       </div>
                       <div className="mt-2 text-xs text-slate-500">
-                        {job.createdCount}/{job.count} drafts · levels{' '}
+                        Genre:{' '}
+                        {formatGenreLabel(
+                          job.genre ??
+                            genres.find((genre) => genre.id === job.genreId)
+                        )}{' '}
+                        · {job.createdCount}/{job.count} drafts · levels{' '}
                         {job.minItemLevel}-{job.maxItemLevel}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
@@ -5622,6 +5779,14 @@ export const InventoryItems = () => {
                 {selectedSuggestionJob && (
                   <div className="space-y-1 text-xs text-slate-500">
                     <div>
+                      Genre:{' '}
+                      {formatGenreLabel(
+                        selectedSuggestionJob.genre ??
+                          genres.find(
+                            (genre) => genre.id === selectedSuggestionJob.genreId
+                          )
+                      )}{' '}
+                      ·{' '}
                       {selectedSuggestionJob.createdCount} draft
                       {selectedSuggestionJob.createdCount === 1
                         ? ''
@@ -5689,6 +5854,15 @@ export const InventoryItems = () => {
                         </span>
                         <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
                           Lv {draft.itemLevel}
+                        </span>
+                        <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                          {formatGenreLabel(
+                            draft.payload.item.genre ??
+                              genres.find(
+                                (genre) =>
+                                  genre.id === draft.payload.item.genreId
+                              )
+                          )}
                         </span>
                         {draft.equipSlot && (
                           <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
@@ -5854,6 +6028,20 @@ export const InventoryItems = () => {
                     Quick filters
                   </summary>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <select
+                      value={filters.genre}
+                      onChange={(e) =>
+                        setFilters({ ...filters, genre: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All genres</option>
+                      {genres.map((genre) => (
+                        <option key={`genre-filter-${genre.id}`} value={genre.id}>
+                          {formatGenreLabel(genre)}
+                        </option>
+                      ))}
+                    </select>
                     <select
                       value={filters.rarity}
                       onChange={(e) =>
@@ -6722,6 +6910,13 @@ export const InventoryItems = () => {
                       <p style={{ margin: '5px 0', color: '#666' }}>
                         Rarity: {item.rarityTier}
                       </p>
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Genre:{' '}
+                        {formatGenreLabel(
+                          item.genre ??
+                            genres.find((genre) => genre.id === item.genreId)
+                        )}
+                      </p>
                       {(item.resourceType || item.resourceTypeId) && (
                         <p style={{ margin: '5px 0', color: '#666' }}>
                           Resource Type:{' '}
@@ -7100,6 +7295,30 @@ export const InventoryItems = () => {
                 <option value={Rarity.Epic}>Epic</option>
                 <option value={Rarity.Mythic}>Mythic</option>
                 <option value="Not Droppable">Not Droppable</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Genre *:
+              </label>
+              <select
+                value={formData.genreId}
+                onChange={(e) =>
+                  setFormData({ ...formData, genreId: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                {genres.map((genre) => (
+                  <option key={`item-form-genre-${genre.id}`} value={genre.id}>
+                    {formatGenreLabel(genre)}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -9152,6 +9371,36 @@ export const InventoryItems = () => {
                 <option value={Rarity.Epic}>Epic</option>
                 <option value={Rarity.Mythic}>Mythic</option>
                 <option value="Not Droppable">Not Droppable</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Genre *:
+              </label>
+              <select
+                value={generationData.genreId}
+                onChange={(e) =>
+                  setGenerationData({
+                    ...generationData,
+                    genreId: e.target.value,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                {genres.map((genre) => (
+                  <option
+                    key={`item-generation-genre-${genre.id}`}
+                    value={genre.id}
+                  >
+                    {formatGenreLabel(genre)}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -13,16 +13,26 @@ type scenarioGenerationJobHandle struct {
 }
 
 func (h *scenarioGenerationJobHandle) Create(ctx context.Context, job *models.ScenarioGenerationJob) error {
+	resolvedGenreID, err := resolveScenarioGenerationJobGenreID(ctx, h.db, job)
+	if err != nil {
+		return err
+	}
+	job.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Create(job).Error
 }
 
 func (h *scenarioGenerationJobHandle) Update(ctx context.Context, job *models.ScenarioGenerationJob) error {
+	resolvedGenreID, err := resolveScenarioGenerationJobGenreID(ctx, h.db, job)
+	if err != nil {
+		return err
+	}
+	job.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Save(job).Error
 }
 
 func (h *scenarioGenerationJobHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioGenerationJob, error) {
 	var job models.ScenarioGenerationJob
-	if err := h.db.WithContext(ctx).First(&job, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("Genre").First(&job, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -33,7 +43,7 @@ func (h *scenarioGenerationJobHandle) FindByID(ctx context.Context, id uuid.UUID
 
 func (h *scenarioGenerationJobHandle) FindRecent(ctx context.Context, limit int) ([]models.ScenarioGenerationJob, error) {
 	var jobs []models.ScenarioGenerationJob
-	q := h.db.WithContext(ctx).Order("created_at DESC")
+	q := h.db.WithContext(ctx).Preload("Genre").Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -45,7 +55,7 @@ func (h *scenarioGenerationJobHandle) FindRecent(ctx context.Context, limit int)
 
 func (h *scenarioGenerationJobHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ScenarioGenerationJob, error) {
 	var jobs []models.ScenarioGenerationJob
-	q := h.db.WithContext(ctx).Where("zone_id = ?", zoneID).Order("created_at DESC")
+	q := h.db.WithContext(ctx).Preload("Genre").Where("zone_id = ?", zoneID).Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}

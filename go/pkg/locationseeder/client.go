@@ -37,7 +37,7 @@ type googlePlaceFinder interface {
 	FindPlaceByID(id string) (*googlemaps.Place, error)
 }
 
-type FantasyPointOfInterest struct {
+type GeneratedPointOfInterest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Clue        string `json:"clue"`
@@ -45,11 +45,11 @@ type FantasyPointOfInterest struct {
 }
 
 type Client interface {
-	GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error)
-	SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error)
+	GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (*models.PointOfInterest, error)
+	SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32, genre *models.ZoneGenre) ([]*models.PointOfInterest, error)
 	RefreshPointOfInterestImage(ctx context.Context, poi *models.PointOfInterest) error
 	RefreshPointOfInterest(ctx context.Context, poi *models.PointOfInterest) error
-	ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error)
+	ImportPlace(ctx context.Context, placeID string, zone models.Zone, genre *models.ZoneGenre) (*models.PointOfInterest, error)
 }
 
 func NewClient(
@@ -110,10 +110,11 @@ func importPlaceWithReuse(
 	ctx context.Context,
 	placeID string,
 	zone models.Zone,
+	genre *models.ZoneGenre,
 	pointOfInterestFinder pointOfInterestPlaceFinder,
 	zoneAttacher pointOfInterestZoneAttacher,
 	googlemapsClient googlePlaceFinder,
-	generatePointOfInterest func(context.Context, googlemaps.Place, *models.Zone) (*models.PointOfInterest, error),
+	generatePointOfInterest func(context.Context, googlemaps.Place, *models.Zone, *models.ZoneGenre) (*models.PointOfInterest, error),
 ) (*models.PointOfInterest, error) {
 	normalizedPlaceID := strings.TrimSpace(placeID)
 	if normalizedPlaceID == "" {
@@ -140,7 +141,7 @@ func importPlaceWithReuse(
 		return nil, fmt.Errorf("place details not found")
 	}
 
-	poi, err := generatePointOfInterest(ctx, *place, &zone)
+	poi, err := generatePointOfInterest(ctx, *place, &zone, genre)
 	if err != nil {
 		log.Printf("Error generating point of interest: %v", err)
 		return nil, err
@@ -149,11 +150,12 @@ func importPlaceWithReuse(
 	return poi, nil
 }
 
-func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error) {
+func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone, genre *models.ZoneGenre) (*models.PointOfInterest, error) {
 	return importPlaceWithReuse(
 		ctx,
 		placeID,
 		zone,
+		genre,
 		c.dbClient.PointOfInterest(),
 		c.dbClient.Zone(),
 		c.googlemapsClient,
@@ -179,26 +181,33 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 		return err
 	}
 
-	fantasyPointOfInterest, err := c.generateFantasyTheming(*place, zone)
+	genre, err := c.resolvePointOfInterestGenre(ctx, poi.Genre, poi.GenreID)
 	if err != nil {
-		log.Printf("Error generating fantasy theming: %v", err)
+		log.Printf("Error resolving point of interest genre: %v", err)
 		return err
 	}
 
-	imageUrl, err := c.generateFantasyImage(ctx, *place, zone)
+	generatedPointOfInterest, err := c.generatePointOfInterestTheming(*place, zone, genre)
 	if err != nil {
-		log.Printf("Error generating fantasy image: %v", err)
+		log.Printf("Error generating point of interest theming: %v", err)
+		return err
+	}
+
+	imageUrl, err := c.generatePointOfInterestImage(ctx, *place, zone, genre)
+	if err != nil {
+		log.Printf("Error generating point of interest image: %v", err)
 		return err
 	}
 
 	if err := c.dbClient.PointOfInterest().Update(ctx, poi.ID, &models.PointOfInterest{
-		Name:                  fantasyPointOfInterest.Name,
-		Description:           fantasyPointOfInterest.Description,
-		Clue:                  fantasyPointOfInterest.Clue,
+		Name:                  generatedPointOfInterest.Name,
+		Description:           generatedPointOfInterest.Description,
+		Clue:                  generatedPointOfInterest.Clue,
 		ImageUrl:              imageUrl,
 		ThumbnailURL:          poi.ThumbnailURL,
 		ImageGenerationStatus: poi.ImageGenerationStatus,
 		ImageGenerationError:  poi.ImageGenerationError,
+		GenreID:               genre.ID,
 		OriginalName:          place.DisplayName.Text,
 		GoogleMapsPlaceID:     poi.GoogleMapsPlaceID,
 		GoogleMapsPlaceName: func() *string {
@@ -269,9 +278,15 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 		return fmt.Errorf("place not found")
 	}
 
-	imageUrl, err := c.generateFantasyImage(ctx, *place, zone)
+	genre, err := c.resolvePointOfInterestGenre(ctx, poi.Genre, poi.GenreID)
 	if err != nil {
-		log.Printf("Error generating fantasy image: %v", err)
+		log.Printf("Error resolving point of interest genre: %v", err)
+		return err
+	}
+
+	imageUrl, err := c.generatePointOfInterestImage(ctx, *place, zone, genre)
+	if err != nil {
+		log.Printf("Error generating point of interest image: %v", err)
 		return err
 	}
 
@@ -510,7 +525,7 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 	return placesInZone, nil
 }
 
-func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error) {
+func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32, genre *models.ZoneGenre) ([]*models.PointOfInterest, error) {
 	log.Printf("Starting to seed points of interest for zone %s with included types %v and excluded types %v", zone.Name, includedTypes, excludedTypes)
 
 	randomPoint := zone.GetRandomPoint()
@@ -545,7 +560,7 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 			continue
 		}
 
-		poi, err := c.GeneratePointOfInterest(ctx, place, &zone)
+		poi, err := c.GeneratePointOfInterest(ctx, place, &zone, genre)
 		if err != nil {
 			log.Printf("Error generating point of interest for place %s: %v", place.Name, err)
 			return nil, err
@@ -557,7 +572,7 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 	return pointsOfInterest, nil
 }
 
-func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error) {
+func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (*models.PointOfInterest, error) {
 	placeDetails, err := c.googlemapsClient.FindPlaceByID(place.ID)
 	if err != nil {
 		log.Printf("Error getting place details: %v", err)
@@ -573,27 +588,34 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 
 	log.Printf("Starting to generate point of interest for place: %s", place.Name)
 
-	fantasyPointOfInterest, err := c.generateFantasyTheming(place, zone)
+	resolvedGenre, err := c.resolvePointOfInterestGenre(ctx, genre, uuid.Nil)
 	if err != nil {
-		log.Printf("Error generating fantasy theming: %v", err)
+		log.Printf("Error resolving point of interest genre: %v", err)
 		return nil, err
 	}
-	log.Printf("Generated fantasy theming with name: %s", fantasyPointOfInterest.Name)
 
-	imageUrl, err := c.generateFantasyImage(ctx, place, zone)
+	generatedPointOfInterest, err := c.generatePointOfInterestTheming(place, zone, resolvedGenre)
 	if err != nil {
-		log.Printf("Error generating fantasy image: %v", err)
+		log.Printf("Error generating point of interest theming: %v", err)
 		return nil, err
 	}
-	log.Printf("Generated fantasy image URL: %s", imageUrl)
+	log.Printf("Generated point of interest theming with name: %s", generatedPointOfInterest.Name)
+
+	imageUrl, err := c.generatePointOfInterestImage(ctx, place, zone, resolvedGenre)
+	if err != nil {
+		log.Printf("Error generating point of interest image: %v", err)
+		return nil, err
+	}
+	log.Printf("Generated point of interest image URL: %s", imageUrl)
 
 	poi := &models.PointOfInterest{
 		ID:                uuid.New(),
-		Name:              fantasyPointOfInterest.Name,
+		Name:              generatedPointOfInterest.Name,
 		OriginalName:      place.DisplayName.Text,
-		Description:       fantasyPointOfInterest.Description,
-		Clue:              fantasyPointOfInterest.Clue,
+		Description:       generatedPointOfInterest.Description,
+		Clue:              generatedPointOfInterest.Clue,
 		ImageUrl:          imageUrl,
+		GenreID:           resolvedGenre.ID,
 		MarkerCategory:    pointOfInterestMarkerCategoryForPlace(place),
 		GoogleMapsPlaceID: &place.ID,
 		GoogleMapsPlaceName: func() *string {

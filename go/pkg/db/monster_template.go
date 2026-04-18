@@ -100,6 +100,10 @@ func (h *monsterTemplateHandle) adminListBaseQuery(
 			Where("LOWER(zones.name) LIKE ?", zoneSearchTerm)
 	}
 
+	if params.GenreID != nil && *params.GenreID != uuid.Nil {
+		query = query.Where("monster_templates.genre_id = ?", *params.GenreID)
+	}
+
 	switch normalizedType := strings.TrimSpace(strings.ToLower(params.MonsterType)); normalizedType {
 	case "", "all":
 	default:

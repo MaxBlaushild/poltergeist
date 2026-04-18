@@ -19,6 +19,11 @@ type scenarioTemplateAdminListRow struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
+func (h *scenarioTemplateHandle) preloadBase(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).
+		Preload("Genre")
+}
+
 func (h *scenarioTemplateHandle) Create(ctx context.Context, template *models.ScenarioTemplate) error {
 	if template == nil {
 		return nil
@@ -26,12 +31,17 @@ func (h *scenarioTemplateHandle) Create(ctx context.Context, template *models.Sc
 	template.ID = uuid.New()
 	template.CreatedAt = time.Now()
 	template.UpdatedAt = template.CreatedAt
+	resolvedGenreID, err := resolveScenarioTemplateGenreID(ctx, h.db, template)
+	if err != nil {
+		return err
+	}
+	template.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Create(template).Error
 }
 
 func (h *scenarioTemplateHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplate, error) {
 	var template models.ScenarioTemplate
-	if err := h.db.WithContext(ctx).First(&template, "id = ?", id).Error; err != nil {
+	if err := h.preloadBase(ctx).First(&template, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -42,15 +52,26 @@ func (h *scenarioTemplateHandle) FindByID(ctx context.Context, id uuid.UUID) (*m
 
 func (h *scenarioTemplateHandle) FindAll(ctx context.Context) ([]models.ScenarioTemplate, error) {
 	var templates []models.ScenarioTemplate
-	if err := h.db.WithContext(ctx).Order("created_at DESC").Find(&templates).Error; err != nil {
+	if err := h.preloadBase(ctx).Order("created_at DESC").Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	return templates, nil
 }
 
 func (h *scenarioTemplateHandle) FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplate, error) {
+	return h.findRecentWithGenre(ctx, nil, limit)
+}
+
+func (h *scenarioTemplateHandle) FindRecentByGenre(ctx context.Context, genreID uuid.UUID, limit int) ([]models.ScenarioTemplate, error) {
+	return h.findRecentWithGenre(ctx, &genreID, limit)
+}
+
+func (h *scenarioTemplateHandle) findRecentWithGenre(ctx context.Context, genreID *uuid.UUID, limit int) ([]models.ScenarioTemplate, error) {
 	var templates []models.ScenarioTemplate
-	q := h.db.WithContext(ctx).Order("created_at DESC")
+	q := h.preloadBase(ctx).Order("created_at DESC")
+	if genreID != nil && *genreID != uuid.Nil {
+		q = q.Where("genre_id = ?", *genreID)
+	}
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -76,6 +97,10 @@ func (h *scenarioTemplateHandle) adminListBaseQuery(
 			searchTerm,
 			searchTerm,
 		)
+	}
+
+	if params.GenreID != nil && *params.GenreID != uuid.Nil {
+		query = query.Where("scenario_templates.genre_id = ?", *params.GenreID)
 	}
 
 	return query
@@ -108,7 +133,7 @@ func (h *scenarioTemplateHandle) ListAdmin(
 	templates := make([]models.ScenarioTemplate, 0, len(ids))
 	if len(ids) > 0 {
 		loaded := []models.ScenarioTemplate{}
-		if err := h.db.WithContext(ctx).
+		if err := h.preloadBase(ctx).
 			Where("id IN ?", ids).
 			Find(&loaded).Error; err != nil {
 			return nil, err
@@ -136,7 +161,13 @@ func (h *scenarioTemplateHandle) Update(ctx context.Context, id uuid.UUID, updat
 		return nil
 	}
 	updates.UpdatedAt = time.Now()
+	resolvedGenreID, err := resolveScenarioTemplateGenreIDForUpdate(ctx, h.db, id, updates)
+	if err != nil {
+		return err
+	}
+	updates.GenreID = resolvedGenreID
 	payload := map[string]interface{}{
+		"genre_id":                     updates.GenreID,
 		"prompt":                       updates.Prompt,
 		"image_url":                    updates.ImageURL,
 		"thumbnail_url":                updates.ThumbnailURL,

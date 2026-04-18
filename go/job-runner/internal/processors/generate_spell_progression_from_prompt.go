@@ -20,7 +20,8 @@ import (
 )
 
 const spellProgressionFromPromptSpellTemplate = `
-You are designing ONE fantasy RPG spell concept from a creator brief.
+You are designing ONE %s RPG spell concept from a creator brief.
+%s
 
 Creator brief:
 %s
@@ -45,7 +46,8 @@ Rules:
 `
 
 const spellProgressionFromPromptTechniqueTemplate = `
-You are designing ONE fantasy RPG combat technique concept from a creator brief.
+You are designing ONE %s RPG combat technique concept from a creator brief.
+%s
 
 Creator brief:
 %s
@@ -156,13 +158,22 @@ func (p *GenerateSpellProgressionFromPromptProcessor) ProcessTask(
 		Status:       jobs.SpellProgressionPromptStatusInProgress,
 		Prompt:       prompt,
 		AbilityType:  string(abilityType),
+		GenreID:      payload.GenreID,
 		CreatedCount: 0,
 		StartedAt:    &now,
 		UpdatedAt:    now,
 	}
 	p.setSpellProgressionPromptStatus(ctx, statusKey, status)
 
-	result, err := p.generateSpellProgressionFromPrompt(ctx, prompt, abilityType)
+	genre, err := loadSpellGenre(ctx, p.dbClient, payload.GenreID)
+	if err != nil {
+		p.failSpellProgressionPromptStatus(ctx, statusKey, status, err)
+		return err
+	}
+	status.GenreID = genre.ID
+	p.setSpellProgressionPromptStatus(ctx, statusKey, status)
+
+	result, err := p.generateSpellProgressionFromPrompt(ctx, prompt, abilityType, genre)
 	if err != nil {
 		p.failSpellProgressionPromptStatus(ctx, statusKey, status, err)
 		return err
@@ -184,6 +195,7 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 	ctx context.Context,
 	prompt string,
 	abilityType models.SpellAbilityType,
+	genre *models.ZoneGenre,
 ) (*spellProgressionFromPromptResult, error) {
 	existingSpells, err := p.dbClient.Spell().FindAll(ctx)
 	if err != nil {
@@ -198,7 +210,7 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 		usedNames[key] = struct{}{}
 	}
 
-	seedSpec, preferredEffectType, err := p.buildSeedSpec(ctx, prompt, abilityType)
+	seedSpec, preferredEffectType, err := p.buildSeedSpec(ctx, prompt, abilityType, genre)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build seed spell spec: %w", err)
 	}
@@ -257,6 +269,8 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 		IconURL:               "",
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
+		GenreID:               genre.ID,
+		Genre:                 genre,
 		AbilityType:           abilityType,
 		AbilityLevel:          normalizePromptAbilityLevel(seedSpec.AbilityLevel),
 		EffectText:            seedEffectText,
@@ -315,6 +329,7 @@ func (p *GenerateSpellProgressionFromPromptProcessor) buildSeedSpec(
 	ctx context.Context,
 	prompt string,
 	abilityType models.SpellAbilityType,
+	genre *models.ZoneGenre,
 ) (jobs.SpellCreationSpec, models.SpellEffectType, error) {
 	fallback := fallbackSpellSpecFromPrompt(prompt, abilityType)
 	if p.deepPriestClient == nil {
@@ -326,7 +341,12 @@ func (p *GenerateSpellProgressionFromPromptProcessor) buildSeedSpec(
 		promptTemplate = spellProgressionFromPromptTechniqueTemplate
 	}
 	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{
-		Question: fmt.Sprintf(promptTemplate, prompt),
+		Question: fmt.Sprintf(
+			promptTemplate,
+			spellGenrePromptLabel(genre),
+			spellAbilityGenreInstructionBlock(genre, abilityType),
+			prompt,
+		),
 	})
 	if err != nil {
 		return fallback, fallbackPreferredEffectType(prompt), nil
@@ -1411,6 +1431,8 @@ func buildPromptSpellProgressionVariant(
 		IconURL:               "",
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
+		GenreID:               seed.GenreID,
+		Genre:                 seed.Genre,
 		AbilityType:           abilityType,
 		AbilityLevel:          targetLevel,
 		EffectText:            buildPromptSpellProgressionEffectText(effects),

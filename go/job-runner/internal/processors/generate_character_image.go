@@ -66,11 +66,15 @@ func (p *GenerateCharacterImageProcessor) ProcessTask(ctx context.Context, task 
 		return fmt.Errorf("failed to update character status: %w", err)
 	}
 
+	name := strings.TrimSpace(payload.Name)
+	if name == "" {
+		name = strings.TrimSpace(character.Name)
+	}
 	description := strings.TrimSpace(payload.Description)
 	if description == "" {
-		description = "A memorable fantasy hero"
+		description = strings.TrimSpace(character.Description)
 	}
-	prompt := fmt.Sprintf(characterPromptTemplate, payload.Name, description)
+	prompt := characterImagePrompt(name, description, character.Genre)
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
 	}

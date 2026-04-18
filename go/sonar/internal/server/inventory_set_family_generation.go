@@ -14,6 +14,7 @@ import (
 
 type inventorySetFamilyGenerationRequest struct {
 	Count                     int      `json:"count"`
+	GenreID                   string   `json:"genreId"`
 	LevelMin                  int      `json:"levelMin"`
 	LevelMax                  int      `json:"levelMax"`
 	RarityTiers               []string `json:"rarityTiers"`
@@ -95,6 +96,11 @@ func (s *server) generateInventorySetFamilies(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, normalized.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
 	if err != nil {
@@ -129,6 +135,7 @@ func (s *server) generateInventorySetFamilies(ctx *gin.Context) {
 			}
 			continue
 		}
+		candidate.Config.GenreID = genre.ID.String()
 
 		response, createdCount, err := s.createInventorySetFamily(ctx, candidate.Config, candidate.Slots, normalized.QueueImages, existingKeys)
 		if err != nil {

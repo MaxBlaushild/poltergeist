@@ -64,11 +64,19 @@ func (p *GenerateInventoryItemImageProcessor) ProcessTask(ctx context.Context, t
 		return fmt.Errorf("failed to update inventory item status: %w", err)
 	}
 
+	name := strings.TrimSpace(payload.Name)
+	if name == "" {
+		name = strings.TrimSpace(item.Name)
+	}
 	description := strings.TrimSpace(payload.Description)
 	if description == "" {
-		description = "A unique fantasy item"
+		description = strings.TrimSpace(item.FlavorText)
 	}
-	prompt := fmt.Sprintf(inventoryItemPromptTemplate, payload.Name, description, payload.RarityTier)
+	rarityTier := strings.TrimSpace(payload.RarityTier)
+	if rarityTier == "" {
+		rarityTier = strings.TrimSpace(item.RarityTier)
+	}
+	prompt := inventoryItemImagePrompt(name, description, rarityTier, item.Genre)
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
 	}

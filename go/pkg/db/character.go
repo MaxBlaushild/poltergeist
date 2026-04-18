@@ -12,15 +12,27 @@ type characterHandler struct {
 	db *gorm.DB
 }
 
+func (h *characterHandler) preloadBase(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).
+		Preload("Genre").
+		Preload("PointOfInterest").
+		Preload("Locations")
+}
+
 func (h *characterHandler) Create(ctx context.Context, character *models.Character) error {
+	if character != nil {
+		resolvedGenreID, err := resolveCharacterGenreID(ctx, h.db, character)
+		if err != nil {
+			return err
+		}
+		character.GenreID = resolvedGenreID
+	}
 	return h.db.WithContext(ctx).Create(character).Error
 }
 
 func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error) {
 	var character models.Character
-	if err := h.db.WithContext(ctx).
-		Preload("PointOfInterest").
-		Preload("Locations").
+	if err := h.preloadBase(ctx).
 		First(&character, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -32,9 +44,7 @@ func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.
 
 func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, error) {
 	var characters []*models.Character
-	if err := h.db.WithContext(ctx).
-		Preload("PointOfInterest").
-		Preload("Locations").
+	if err := h.preloadBase(ctx).
 		Find(&characters).Error; err != nil {
 		return nil, err
 	}
@@ -43,9 +53,7 @@ func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, er
 
 func (h *characterHandler) FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) ([]*models.Character, error) {
 	var characters []*models.Character
-	if err := h.db.WithContext(ctx).
-		Preload("PointOfInterest").
-		Preload("Locations").
+	if err := h.preloadBase(ctx).
 		Where("point_of_interest_id = ?", pointOfInterestID).
 		Find(&characters).Error; err != nil {
 		return nil, err

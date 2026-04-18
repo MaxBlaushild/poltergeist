@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI } from '@poltergeist/contexts';
-import { Spell, SpellEffect, SpellStatusTemplate } from '@poltergeist/types';
+import {
+  Spell,
+  SpellEffect,
+  SpellStatusTemplate,
+  ZoneGenre,
+} from '@poltergeist/types';
 
 type SpellStatusTemplateForm = {
   name: string;
@@ -56,6 +61,7 @@ type SpellFormState = {
   name: string;
   description: string;
   iconUrl: string;
+  genreId: string;
   abilityType: 'spell' | 'technique';
   abilityLevel: string;
   cooldownTurns: string;
@@ -70,6 +76,7 @@ type BulkAbilityStatus = {
   status: string;
   source?: string;
   abilityType?: string;
+  genreId?: string;
   targetLevel?: number;
   totalCount: number;
   createdCount: number;
@@ -86,6 +93,7 @@ type PromptSpellProgressionStatus = {
   status: string;
   prompt: string;
   abilityType?: string;
+  genreId?: string;
   createdCount: number;
   progressionId?: string;
   seedSpellId?: string;
@@ -292,10 +300,11 @@ const emptyEffect = (): SpellEffectForm => ({
   effectData: '',
 });
 
-const emptyForm = (): SpellFormState => ({
+const emptyForm = (genreId = ''): SpellFormState => ({
   name: '',
   description: '',
   iconUrl: '',
+  genreId,
   abilityType: 'spell',
   abilityLevel: '1',
   cooldownTurns: '0',
@@ -317,6 +326,17 @@ const abilityRoutePrefixFromSpell = (spell: Spell) =>
   spell.abilityType === 'technique' ? '/sonar/techniques' : '/sonar/spells';
 
 const DEFAULT_BULK_ABILITY_COUNT = '8';
+
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasyGenre = genres.find((genre) =>
+    genre.name?.trim().toLowerCase() === 'fantasy'
+  );
+  if (fantasyGenre) {
+    return fantasyGenre.id;
+  }
+  const activeGenre = genres.find((genre) => genre.active);
+  return activeGenre?.id ?? genres[0]?.id ?? '';
+};
 
 const buildSuggestedBulkEffectCounts = (
   total: number
@@ -523,7 +543,7 @@ const normalizeStatusTemplateFormForEffectType = (
     : template.positive,
 });
 
-const formFromSpell = (spell: Spell): SpellFormState => {
+const formFromSpell = (spell: Spell, fallbackGenreId = ''): SpellFormState => {
   const effects =
     spell.effects?.length > 0
       ? spell.effects.map((effect) => {
@@ -634,6 +654,7 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     name: spell.name ?? '',
     description: spell.description ?? '',
     iconUrl: spell.iconUrl ?? '',
+    genreId: spell.genreId ?? spell.genre?.id ?? fallbackGenreId,
     abilityType: spell.abilityType === 'technique' ? 'technique' : 'spell',
     abilityLevel: String(Math.max(1, spell.abilityLevel ?? 1)),
     cooldownTurns: String(
@@ -686,6 +707,7 @@ const payloadFromForm = (form: SpellFormState) => {
     name: form.name.trim(),
     description: form.description.trim(),
     iconUrl: form.iconUrl.trim(),
+    genreId: form.genreId.trim(),
     abilityType: form.abilityType,
     abilityLevel: Math.max(1, parseIntSafe(form.abilityLevel, 1)),
     cooldownTurns:
@@ -705,12 +727,14 @@ export const Spells = () => {
 
   const [loading, setLoading] = useState(true);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [generatingIconSpellId, setGeneratingIconSpellId] = useState<
     string | null
   >(null);
   const [generatingProgressionSpellId, setGeneratingProgressionSpellId] =
     useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [genreFilter, setGenreFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [listViewMode, setListViewMode] =
     useState<AbilityListViewMode>('abilities');
@@ -740,11 +764,13 @@ export const Spells = () => {
   const [bulkAbilityType, setBulkAbilityType] = useState<'spell' | 'technique'>(
     'spell'
   );
+  const [bulkAbilityGenreId, setBulkAbilityGenreId] = useState('');
   const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
   const [seedPackBusy, setSeedPackBusy] = useState(false);
   const [seedPackAbilityType, setSeedPackAbilityType] = useState<
     'spell' | 'technique' | null
   >(null);
+  const [seedPackGenreId, setSeedPackGenreId] = useState('');
   const [bulkAbilityJob, setBulkAbilityJob] =
     useState<BulkAbilityStatus | null>(null);
   const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
@@ -760,6 +786,7 @@ export const Spells = () => {
   const [progressionPrompt, setProgressionPrompt] = useState('');
   const [progressionPromptAbilityType, setProgressionPromptAbilityType] =
     useState<'spell' | 'technique'>('spell');
+  const [progressionPromptGenreId, setProgressionPromptGenreId] = useState('');
   const [progressionPromptBusy, setProgressionPromptBusy] = useState(false);
   const [progressionPromptError, setProgressionPromptError] = useState<
     string | null
@@ -791,9 +818,25 @@ export const Spells = () => {
     [apiClient]
   );
 
+  const loadGenres = useCallback(async () => {
+    try {
+      const response = await apiClient.get<ZoneGenre[]>(
+        '/sonar/zone-genres?includeInactive=true'
+      );
+      setGenres(Array.isArray(response) ? response : []);
+    } catch (err) {
+      console.error('Failed to load ability genres', err);
+      setGenres([]);
+    }
+  }, [apiClient]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadGenres();
+  }, [loadGenres]);
 
   useEffect(() => {
     setSelectedAbilityIds((prev) =>
@@ -814,18 +857,50 @@ export const Spells = () => {
     return () => clearInterval(interval);
   }, [spells, load]);
 
+  const genreNameById = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const genre of genres) {
+      if (!genre.id) continue;
+      next.set(genre.id, genre.name?.trim() || 'Unknown Genre');
+    }
+    return next;
+  }, [genres]);
+
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
+
+  useEffect(() => {
+    if (!defaultGenreId) {
+      return;
+    }
+    setForm((prev) => (prev.genreId ? prev : { ...prev, genreId: defaultGenreId }));
+    setBulkAbilityGenreId((prev) => prev || defaultGenreId);
+    setSeedPackGenreId((prev) => prev || defaultGenreId);
+    setProgressionPromptGenreId((prev) => prev || defaultGenreId);
+  }, [defaultGenreId]);
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return spells;
     return spells.filter((spell) => {
-      return (
+      const spellGenreId = spell.genreId ?? spell.genre?.id ?? '';
+      const spellGenreName =
+        spell.genre?.name ?? genreNameById.get(spellGenreId) ?? '';
+      const matchesSearch =
+        !query ||
         spell.name.toLowerCase().includes(query) ||
         (spell.abilityType ?? 'spell').toLowerCase().includes(query) ||
         spell.schoolOfMagic.toLowerCase().includes(query) ||
-        spell.effectText.toLowerCase().includes(query)
+        spell.effectText.toLowerCase().includes(query) ||
+        spellGenreName.toLowerCase().includes(query);
+      const matchesGenre =
+        !genreFilter || spellGenreId === genreFilter;
+      return (
+        matchesSearch && matchesGenre
       );
     });
-  }, [search, spells]);
+  }, [genreFilter, genreNameById, search, spells]);
 
   const filteredAbilityIds = useMemo(
     () => filtered.map((spell) => spell.id),
@@ -923,20 +998,20 @@ export const Spells = () => {
 
   const openCreate = () => {
     setEditingSpell(null);
-    setForm(emptyForm());
+    setForm(emptyForm(defaultGenreId));
     setShowModal(true);
   };
 
   const openEdit = (spell: Spell) => {
     setEditingSpell(spell);
-    setForm(formFromSpell(spell));
+    setForm(formFromSpell(spell, defaultGenreId));
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditingSpell(null);
-    setForm(emptyForm());
+    setForm(emptyForm(defaultGenreId));
   };
 
   const addEffect = () => {
@@ -1016,8 +1091,8 @@ export const Spells = () => {
   const save = async () => {
     try {
       const payload = payloadFromForm(form);
-      if (!payload.name || !payload.schoolOfMagic) {
-        alert('Name and school of magic are required.');
+      if (!payload.name || !payload.schoolOfMagic || !payload.genreId) {
+        alert('Name, genre, and school of magic are required.');
         return;
       }
 
@@ -1312,6 +1387,11 @@ export const Spells = () => {
 
   const handleGenerateProgressionFromPrompt = async () => {
     const trimmedPrompt = progressionPrompt.trim();
+    const genreId = progressionPromptGenreId.trim();
+    if (!genreId) {
+      setProgressionPromptError('Select a genre first.');
+      return;
+    }
     if (trimmedPrompt.length < 12) {
       setProgressionPromptError('Prompt must be at least 12 characters.');
       return;
@@ -1334,7 +1414,7 @@ export const Spells = () => {
           : '/sonar/spells/progression-generate';
       const response = await apiClient.post<PromptSpellProgressionStatus>(
         path,
-        { prompt: trimmedPrompt, abilityType }
+        { prompt: trimmedPrompt, abilityType, genreId }
       );
       const resolvedType = (
         response.abilityType === 'technique' ? 'technique' : abilityType
@@ -1366,6 +1446,11 @@ export const Spells = () => {
 
   const handleBulkGenerateAbilities = async () => {
     const count = Number.parseInt(bulkAbilityCount, 10);
+    const genreId = bulkAbilityGenreId.trim();
+    if (!genreId) {
+      setBulkAbilityError('Select a genre first.');
+      return;
+    }
     if (!Number.isFinite(count) || count < 1 || count > 100) {
       setBulkAbilityError('Count must be between 1 and 100.');
       return;
@@ -1397,6 +1482,7 @@ export const Spells = () => {
           : '/sonar/spells/bulk-generate';
       const response = await apiClient.post<BulkAbilityStatus>(path, {
         count,
+        genreId,
         abilityType: bulkAbilityType,
         targetLevel,
         effectCounts,
@@ -1427,6 +1513,11 @@ export const Spells = () => {
   };
 
   const handleSeedAbilityPack = async (abilityType: 'spell' | 'technique') => {
+    const genreId = seedPackGenreId.trim();
+    if (!genreId) {
+      setBulkAbilityError('Select a genre first.');
+      return;
+    }
     try {
       setSeedPackBusy(true);
       setSeedPackAbilityType(abilityType);
@@ -1438,7 +1529,9 @@ export const Spells = () => {
         abilityType === 'technique'
           ? '/sonar/techniques/seed-pack'
           : '/sonar/spells/seed-pack';
-      const response = await apiClient.post<SeedAbilityPackResponse>(path, {});
+      const response = await apiClient.post<SeedAbilityPackResponse>(path, {
+        genreId,
+      });
       setBulkAbilityMessage(
         `Seeded ${abilityType === 'technique' ? 'technique' : 'spell'} pack: ${response.processedCount} processed (${response.createdCount} created, ${response.updatedCount} updated).`
       );
@@ -1585,6 +1678,38 @@ export const Spells = () => {
                 >
                   <option value="spell">Spells</option>
                   <option value="technique">Techniques</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-600">
+                Bulk Genre
+                <select
+                  className="mt-1 min-w-40 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  value={bulkAbilityGenreId}
+                  onChange={(e) => setBulkAbilityGenreId(e.target.value)}
+                >
+                  <option value="">Select Genre</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
+                      {genre.active ? '' : ' (Inactive)'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-gray-600">
+                Seed Genre
+                <select
+                  className="mt-1 min-w-40 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  value={seedPackGenreId}
+                  onChange={(e) => setSeedPackGenreId(e.target.value)}
+                >
+                  <option value="">Select Genre</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
+                      {genre.active ? '' : ' (Inactive)'}
+                    </option>
+                  ))}
                 </select>
               </label>
               <button
@@ -1749,6 +1874,13 @@ export const Spells = () => {
                   ? 'Technique'
                   : 'Spell'}
               </span>
+              {bulkAbilityJob.genreId ? (
+                <span>
+                  Genre:{' '}
+                  {genreNameById.get(bulkAbilityJob.genreId) ??
+                    'Unknown Genre'}
+                </span>
+              ) : null}
               {typeof bulkAbilityJob.targetLevel === 'number' ? (
                 <span>Target Level: {bulkAbilityJob.targetLevel}</span>
               ) : null}
@@ -1771,22 +1903,41 @@ export const Spells = () => {
               for spells or techniques.
             </p>
             <div className="mt-2">
-              <label className="text-xs text-gray-600">
-                Ability Type
-                <select
-                  className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
-                  value={progressionPromptAbilityType}
-                  onChange={(e) =>
-                    setProgressionPromptAbilityType(
-                      e.target.value === 'technique' ? 'technique' : 'spell'
-                    )
-                  }
-                  disabled={progressionPromptBusy}
-                >
-                  <option value="spell">Spell</option>
-                  <option value="technique">Technique</option>
-                </select>
-              </label>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs text-gray-600">
+                  Ability Type
+                  <select
+                    className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    value={progressionPromptAbilityType}
+                    onChange={(e) =>
+                      setProgressionPromptAbilityType(
+                        e.target.value === 'technique' ? 'technique' : 'spell'
+                      )
+                    }
+                    disabled={progressionPromptBusy}
+                  >
+                    <option value="spell">Spell</option>
+                    <option value="technique">Technique</option>
+                  </select>
+                </label>
+                <label className="text-xs text-gray-600">
+                  Genre
+                  <select
+                    className="mt-1 min-w-40 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    value={progressionPromptGenreId}
+                    onChange={(e) => setProgressionPromptGenreId(e.target.value)}
+                    disabled={progressionPromptBusy}
+                  >
+                    <option value="">Select Genre</option>
+                    {genres.map((genre) => (
+                      <option key={genre.id} value={genre.id}>
+                        {genre.name}
+                        {genre.active ? '' : ' (Inactive)'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
             <textarea
               className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
@@ -1816,6 +1967,13 @@ export const Spells = () => {
                   {progressionPromptJob.abilityType === 'technique'
                     ? 'Technique'
                     : 'Spell'}{' '}
+                  {progressionPromptJob.genreId
+                    ? `· ${
+                        genreNameById.get(progressionPromptJob.genreId) ??
+                        'Unknown Genre'
+                      } `
+                    : ''}
+                  {' '}
                   · {progressionPromptJob.status.replace('_', ' ')}
                 </span>
               ) : null}
@@ -1842,12 +2000,30 @@ export const Spells = () => {
         </div>
 
         <div className="qa-card mb-6">
-          <input
-            className="block w-full border border-gray-300 rounded-md p-2"
-            placeholder="Search by name, type, school, or effect text..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <input
+              className="block min-w-[280px] flex-1 rounded-md border border-gray-300 p-2"
+              placeholder="Search by name, type, genre, school, or effect text..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <label className="text-xs text-gray-600">
+              Genre Filter
+              <select
+                className="mt-1 min-w-40 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                value={genreFilter}
+                onChange={(e) => setGenreFilter(e.target.value)}
+              >
+                <option value="">All Genres</option>
+                {genres.map((genre) => (
+                  <option key={genre.id} value={genre.id}>
+                    {genre.name}
+                    {genre.active ? '' : ' (Inactive)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               className="qa-btn qa-btn-secondary"
@@ -1986,6 +2162,13 @@ export const Spells = () => {
                             ? 'Technique Progression'
                             : 'Spell Progression'}{' '}
                           · {group.spells.length} abilities
+                          {leadSpell
+                            ? ` · ${
+                                leadSpell.genre?.name ??
+                                genreNameById.get(leadSpell.genreId ?? '') ??
+                                'Unknown Genre'
+                              }`
+                            : ''}
                         </div>
                         <div className="mt-1 text-xs text-gray-500">
                           Levels:{' '}
@@ -2030,7 +2213,13 @@ export const Spells = () => {
                                     ? `${spell.schoolOfMagic} · Lvl ${Math.max(
                                         1,
                                         spell.abilityLevel ?? 1
-                                      )} · Technique${
+                                      )} · ${
+                                        spell.genre?.name ??
+                                        genreNameById.get(
+                                          spell.genreId ?? ''
+                                        ) ??
+                                        'Unknown Genre'
+                                      } · Technique${
                                         (spell.cooldownTurns ?? 0) > 0
                                           ? ` · Cooldown ${spell.cooldownTurns}t`
                                           : ''
@@ -2038,7 +2227,13 @@ export const Spells = () => {
                                     : `${spell.schoolOfMagic} · Lvl ${Math.max(
                                         1,
                                         spell.abilityLevel ?? 1
-                                      )} · Mana ${spell.manaCost}`}
+                                      )} · ${
+                                        spell.genre?.name ??
+                                        genreNameById.get(
+                                          spell.genreId ?? ''
+                                        ) ??
+                                        'Unknown Genre'
+                                      } · Mana ${spell.manaCost}`}
                                 </div>
                                 <div className="mt-1 text-xs text-gray-500">
                                   Level Band{' '}
@@ -2165,7 +2360,11 @@ export const Spells = () => {
                               ? `${spell.schoolOfMagic} · Lvl ${Math.max(
                                   1,
                                   spell.abilityLevel ?? 1
-                                )} · Technique${
+                                )} · ${
+                                  spell.genre?.name ??
+                                  genreNameById.get(spell.genreId ?? '') ??
+                                  'Unknown Genre'
+                                } · Technique${
                                   (spell.cooldownTurns ?? 0) > 0
                                     ? ` · Cooldown ${spell.cooldownTurns}t`
                                     : ''
@@ -2173,7 +2372,11 @@ export const Spells = () => {
                               : `${spell.schoolOfMagic} · Lvl ${Math.max(
                                   1,
                                   spell.abilityLevel ?? 1
-                                )} · Mana ${spell.manaCost}`}
+                                )} · ${
+                                  spell.genre?.name ??
+                                  genreNameById.get(spell.genreId ?? '') ??
+                                  'Unknown Genre'
+                                } · Mana ${spell.manaCost}`}
                           </div>
                           <div className="mt-1 text-xs text-gray-500">
                             Icon Status:{' '}
@@ -2242,8 +2445,26 @@ export const Spells = () => {
                       <div className="text-lg font-semibold">{spell.name}</div>
                       <div className="text-sm text-gray-600">
                         {(spell.abilityType ?? 'spell') === 'technique'
-                          ? `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Technique${(spell.cooldownTurns ?? 0) > 0 ? ` · Cooldown ${spell.cooldownTurns}t` : ''}`
-                          : `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Mana ${spell.manaCost}`}
+                          ? `${spell.schoolOfMagic} · Lvl ${Math.max(
+                              1,
+                              spell.abilityLevel ?? 1
+                            )} · ${
+                              spell.genre?.name ??
+                              genreNameById.get(spell.genreId ?? '') ??
+                              'Unknown Genre'
+                            } · Technique${
+                              (spell.cooldownTurns ?? 0) > 0
+                                ? ` · Cooldown ${spell.cooldownTurns}t`
+                                : ''
+                            }`
+                          : `${spell.schoolOfMagic} · Lvl ${Math.max(
+                              1,
+                              spell.abilityLevel ?? 1
+                            )} · ${
+                              spell.genre?.name ??
+                              genreNameById.get(spell.genreId ?? '') ??
+                              'Unknown Genre'
+                            } · Mana ${spell.manaCost}`}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
                         Icon Status:{' '}
@@ -2389,6 +2610,27 @@ export const Spells = () => {
                         }))
                       }
                     />
+                  </label>
+                  <label className="text-sm">
+                    Genre
+                    <select
+                      className="w-full border rounded-md p-2"
+                      value={form.genreId}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          genreId: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Select Genre</option>
+                      {genres.map((genre) => (
+                        <option key={genre.id} value={genre.id}>
+                          {genre.name}
+                          {genre.active ? '' : ' (Inactive)'}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label className="text-sm">
                     Icon URL

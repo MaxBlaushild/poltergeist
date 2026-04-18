@@ -11,6 +11,7 @@ import {
   Character,
   CharacterLocation,
   TreasureChest,
+  ZoneGenre,
 } from '@poltergeist/types';
 import { useQuestArchtypes } from '../hooks/useQuestArchtypes.ts';
 import { useAPI } from '@poltergeist/contexts';
@@ -865,12 +866,15 @@ export const Zone = () => {
     error: questArchtypesError,
   } = useQuestArchtypes();
   const [numPlaces, setNumPlaces] = useState(1);
+  const [poiGenres, setPoiGenres] = useState<ZoneGenre[]>([]);
+  const [generatedPoiGenreId, setGeneratedPoiGenreId] = useState('');
   const [address, setAddress] = useState('');
   const [showPlaces, setShowPlaces] = useState(false);
   const timeoutRef = React.useRef<number>();
   const [query, setQuery] = useState('');
   const [shouldShowImage, setShouldShowImage] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importPoiGenreId, setImportPoiGenreId] = useState('');
   const [importedPlaces, setImportedPlaces] = useState<string[]>([]);
   const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
   const [selectedQuestArchtype, setSelectedQuestArchtype] = useState<
@@ -926,6 +930,12 @@ export const Zone = () => {
     importPointOfInterest,
     generateQuest,
   } = useGeneratePointsOfInterest(resolvedZoneId);
+  const defaultPoiGenreId = useMemo(() => {
+    const fantasyGenre = poiGenres.find(
+      (genre) => genre.name.trim().toLowerCase() === 'fantasy'
+    );
+    return fantasyGenre?.id ?? poiGenres[0]?.id ?? '';
+  }, [poiGenres]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -950,6 +960,29 @@ export const Zone = () => {
     setDescription(zone?.description || '');
     setInternalTagsInput((zone?.internalTags ?? []).join(', '));
   }, [zone?.name, zone?.description, zone?.internalTags]);
+
+  useEffect(() => {
+    const loadPoiGenres = async () => {
+      try {
+        const response = await apiClient.get<ZoneGenre[]>(
+          '/sonar/zone-genres?includeInactive=true'
+        );
+        setPoiGenres(response);
+      } catch (error) {
+        console.error('Error loading POI genres:', error);
+      }
+    };
+
+    void loadPoiGenres();
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (!defaultPoiGenreId) {
+      return;
+    }
+    setGeneratedPoiGenreId((prev) => prev || defaultPoiGenreId);
+    setImportPoiGenreId((prev) => prev || defaultPoiGenreId);
+  }, [defaultPoiGenreId]);
 
   useEffect(() => {
     setIsEditingBoundary(false);
@@ -1363,7 +1396,7 @@ export const Zone = () => {
     if (!resolvedZoneId) {
       return;
     }
-    importPointOfInterest(candidate.place_id, resolvedZoneId);
+    importPointOfInterest(candidate.place_id, resolvedZoneId, importPoiGenreId);
   };
 
   const handleGenerateQuest = async () => {
@@ -2364,6 +2397,27 @@ export const Zone = () => {
             <div className="space-y-4">
               <div>
                 <label
+                  htmlFor="importGenre"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Genre
+                </label>
+                <select
+                  id="importGenre"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  value={importPoiGenreId}
+                  onChange={(e) => setImportPoiGenreId(e.target.value)}
+                >
+                  <option value="">Select genre</option>
+                  {poiGenres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
                   htmlFor="importText"
                   className="block text-sm font-medium text-gray-700 mb-1"
                 >
@@ -2588,6 +2642,25 @@ export const Zone = () => {
                       )
                     }
                   />
+                  <label
+                    htmlFor="poiGenre"
+                    className="block text-sm font-medium text-gray-700 mb-1 mt-3"
+                  >
+                    Genre
+                  </label>
+                  <select
+                    id="poiGenre"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    value={generatedPoiGenreId}
+                    onChange={(e) => setGeneratedPoiGenreId(e.target.value)}
+                  >
+                    <option value="">Select genre</option>
+                    {poiGenres.map((genre) => (
+                      <option key={genre.id} value={genre.id}>
+                        {genre.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {generatePointsOfInterestError && (
@@ -2613,7 +2686,8 @@ export const Zone = () => {
                           resolvedZoneId,
                           selectedIncludedPlaceTypes,
                           selectedExcludedPlaceTypes,
-                          numPlaces
+                          numPlaces,
+                          generatedPoiGenreId
                         );
                         setIsGenerating(false);
                       }

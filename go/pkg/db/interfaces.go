@@ -457,6 +457,7 @@ type ScenarioTemplateHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplate, error)
 	FindAll(ctx context.Context) ([]models.ScenarioTemplate, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplate, error)
+	FindRecentByGenre(ctx context.Context, genreID uuid.UUID, limit int) ([]models.ScenarioTemplate, error)
 	ListAdmin(ctx context.Context, params ScenarioTemplateAdminListParams) (*ScenarioTemplateAdminListResult, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.ScenarioTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -466,6 +467,7 @@ type ScenarioTemplateAdminListParams struct {
 	Page     int
 	PageSize int
 	Query    string
+	GenreID  *uuid.UUID
 }
 
 type ScenarioTemplateAdminListResult struct {
@@ -1458,6 +1460,7 @@ type ScenarioAdminListParams struct {
 	PageSize  int
 	Query     string
 	ZoneQuery string
+	GenreID   *uuid.UUID
 }
 
 type ScenarioAdminListResult struct {
@@ -1516,6 +1519,7 @@ type MonsterTemplateAdminListParams struct {
 	PageSize    int
 	Query       string
 	ZoneQuery   string
+	GenreID     *uuid.UUID
 	Archived    *bool
 	MonsterType string
 }
@@ -1532,6 +1536,7 @@ type MonsterAdminListParams struct {
 	PageSize  int
 	Query     string
 	ZoneQuery string
+	GenreID   *uuid.UUID
 }
 
 type MonsterAdminListResult struct {
@@ -1544,6 +1549,7 @@ type MonsterEncounterAdminListParams struct {
 	PageSize  int
 	Query     string
 	ZoneQuery string
+	GenreID   *uuid.UUID
 }
 
 type MonsterEncounterAdminListResult struct {

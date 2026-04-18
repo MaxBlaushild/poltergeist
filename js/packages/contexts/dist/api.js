@@ -1,5 +1,5 @@
 import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useMemo, useCallback, } from 'react';
+import { createContext, useContext, useMemo, useRef, useCallback, } from 'react';
 import APIClient from '@poltergeist/api-client';
 import { useLocation } from './location';
 const APIContext = createContext({
@@ -11,16 +11,15 @@ const getApiUrl = () => {
 export const APIProvider = ({ children }) => {
     const baseURL = getApiUrl();
     const { location } = useLocation();
-    // Create stable getLocation function that always returns current location
-    const getLocation = useCallback(() => {
-        return location;
-    }, [location]); // Include location in dependencies
-    // Recreate apiClient when location changes
+    const locationRef = useRef(location);
+    locationRef.current = location;
+    // Keep the API client stable while still reading the latest location header.
+    const getLocation = useCallback(() => locationRef.current, []);
     const apiClient = useMemo(() => {
-        const client = new APIClient(baseURL, getLocation);
-        return client;
-    }, [baseURL, getLocation, location]);
-    return (_jsx(APIContext.Provider, Object.assign({ value: { apiClient } }, { children: children })));
+        return new APIClient(baseURL, getLocation);
+    }, [baseURL, getLocation]);
+    const value = useMemo(() => ({ apiClient }), [apiClient]);
+    return (_jsx(APIContext.Provider, Object.assign({ value: value }, { children: children })));
 };
 export const useAPI = () => {
     const context = useContext(APIContext);

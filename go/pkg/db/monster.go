@@ -124,6 +124,10 @@ func (h *monsterHandle) adminListBaseQuery(
 		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", zoneSearchTerm)
 	}
 
+	if params.GenreID != nil && *params.GenreID != uuid.Nil {
+		query = query.Where("monsters.genre_id = ?", *params.GenreID)
+	}
+
 	return query
 }
 

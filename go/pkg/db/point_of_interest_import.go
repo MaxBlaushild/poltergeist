@@ -12,17 +12,31 @@ type pointOfInterestImportHandle struct {
 	db *gorm.DB
 }
 
+func (h *pointOfInterestImportHandle) preloadBase(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).Preload("Genre")
+}
+
 func (h *pointOfInterestImportHandle) Create(ctx context.Context, item *models.PointOfInterestImport) error {
+	resolvedGenreID, err := resolvePointOfInterestImportGenreID(ctx, h.db, item)
+	if err != nil {
+		return err
+	}
+	item.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Create(item).Error
 }
 
 func (h *pointOfInterestImportHandle) Update(ctx context.Context, item *models.PointOfInterestImport) error {
+	resolvedGenreID, err := resolvePointOfInterestImportGenreID(ctx, h.db, item)
+	if err != nil {
+		return err
+	}
+	item.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Save(item).Error
 }
 
 func (h *pointOfInterestImportHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestImport, error) {
 	var item models.PointOfInterestImport
-	if err := h.db.WithContext(ctx).First(&item, "id = ?", id).Error; err != nil {
+	if err := h.preloadBase(ctx).First(&item, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -33,7 +47,7 @@ func (h *pointOfInterestImportHandle) FindByID(ctx context.Context, id uuid.UUID
 
 func (h *pointOfInterestImportHandle) FindRecent(ctx context.Context, limit int) ([]models.PointOfInterestImport, error) {
 	var items []models.PointOfInterestImport
-	q := h.db.WithContext(ctx).Order("created_at DESC")
+	q := h.preloadBase(ctx).Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -45,7 +59,7 @@ func (h *pointOfInterestImportHandle) FindRecent(ctx context.Context, limit int)
 
 func (h *pointOfInterestImportHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.PointOfInterestImport, error) {
 	var items []models.PointOfInterestImport
-	q := h.db.WithContext(ctx).Where("zone_id = ?", zoneID).Order("created_at DESC")
+	q := h.preloadBase(ctx).Where("zone_id = ?", zoneID).Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}

@@ -1,3 +1,5 @@
+import type { ZoneGenre } from './zone';
+
 export type SpellEffectType =
   | 'deal_damage'
   | 'deal_damage_all_enemies'
@@ -99,6 +101,8 @@ export interface Spell {
   name: string;
   description: string;
   iconUrl: string;
+  genreId: string;
+  genre?: ZoneGenre | null;
   abilityType?: 'spell' | 'technique' | string;
   abilityLevel?: number;
   cooldownTurns?: number;

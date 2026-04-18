@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *server) resolveMonsterGenre(
+func (s *server) resolveZoneGenre(
 	ctx context.Context,
 	rawGenreID string,
 ) (*models.ZoneGenre, error) {
@@ -60,6 +60,13 @@ func (s *server) resolveMonsterGenre(
 		return nil, err
 	}
 	return genre, nil
+}
+
+func (s *server) resolveMonsterGenre(
+	ctx context.Context,
+	rawGenreID string,
+) (*models.ZoneGenre, error) {
+	return s.resolveZoneGenre(ctx, rawGenreID)
 }
 
 func isBaselineFantasyMonsterGenre(genre *models.ZoneGenre) bool {

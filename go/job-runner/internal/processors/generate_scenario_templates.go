@@ -159,6 +159,10 @@ func (p *GenerateScenarioTemplatesProcessor) ProcessTask(ctx context.Context, ta
 }
 
 func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx context.Context, job *models.ScenarioTemplateGenerationJob) error {
+	genre, err := loadScenarioGenre(ctx, p.dbClient, job.GenreID, job.Genre)
+	if err != nil {
+		return fmt.Errorf("failed to load scenario template genre: %w", err)
+	}
 	inventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load inventory items: %w", err)
@@ -168,16 +172,15 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 		allowedItemIDs[item.ID] = struct{}{}
 	}
 	allowedItemsPrompt := buildAllowedItemsPrompt(inventoryItems)
-	recentAvoidance := p.buildRecentScenarioTemplateAvoidance(ctx, 12)
+	recentAvoidance := p.buildRecentScenarioTemplateAvoidance(ctx, genre, 12)
 
 	createdCount := 0
 	if job.OpenEnded {
-		prompt := fmt.Sprintf(
-			openEndedScenarioTemplatePromptTemplate,
+		prompt := buildOpenEndedScenarioTemplatePrompt(
 			job.Count,
 			recentAvoidance,
-			job.Count,
 			allowedItemsPrompt,
+			genre,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -189,6 +192,8 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 		}
 		for _, spec := range generated.Templates {
 			template := &models.ScenarioTemplate{
+				GenreID:                  genre.ID,
+				Genre:                    genre,
 				Prompt:                   sanitizeScenarioPrompt(spec.Prompt),
 				ScaleWithUserLevel:       false,
 				RewardMode:               models.RewardModeExplicit,
@@ -220,12 +225,11 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 			createdCount++
 		}
 	} else {
-		prompt := fmt.Sprintf(
-			choiceScenarioTemplatePromptTemplate,
+		prompt := buildChoiceScenarioTemplatePrompt(
 			job.Count,
 			recentAvoidance,
-			job.Count,
 			allowedItemsPrompt,
+			genre,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -241,6 +245,8 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 				options = append(options, fallbackScenarioOption())
 			}
 			template := &models.ScenarioTemplate{
+				GenreID:                  genre.ID,
+				Genre:                    genre,
 				Prompt:                   sanitizeScenarioPrompt(spec.Prompt),
 				ScaleWithUserLevel:       false,
 				RewardMode:               models.RewardModeRandom,
@@ -288,8 +294,24 @@ func (p *GenerateScenarioTemplatesProcessor) failScenarioTemplateGenerationJob(c
 	return err
 }
 
-func (p *GenerateScenarioTemplatesProcessor) buildRecentScenarioTemplateAvoidance(ctx context.Context, limit int) string {
-	templates, err := p.dbClient.ScenarioTemplate().FindRecent(ctx, limit)
+func (p *GenerateScenarioTemplatesProcessor) buildRecentScenarioTemplateAvoidance(
+	ctx context.Context,
+	genre *models.ZoneGenre,
+	limit int,
+) string {
+	var (
+		templates []models.ScenarioTemplate
+		err       error
+	)
+	if genre != nil && genre.ID != uuid.Nil {
+		templates, err = p.dbClient.ScenarioTemplate().FindRecentByGenre(
+			ctx,
+			genre.ID,
+			limit,
+		)
+	} else {
+		templates, err = p.dbClient.ScenarioTemplate().FindRecent(ctx, limit)
+	}
 	if err != nil || len(templates) == 0 {
 		return "- none"
 	}
@@ -308,6 +330,44 @@ func (p *GenerateScenarioTemplatesProcessor) buildRecentScenarioTemplateAvoidanc
 		return "- none"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func buildOpenEndedScenarioTemplatePrompt(
+	count int,
+	recentAvoidance string,
+	allowedItemsPrompt string,
+	genre *models.ZoneGenre,
+) string {
+	base := fmt.Sprintf(
+		openEndedScenarioTemplatePromptTemplate,
+		count,
+		recentAvoidance,
+		count,
+		allowedItemsPrompt,
+	)
+	if isBaselineFantasyScenarioGenre(genre) {
+		return base
+	}
+	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+}
+
+func buildChoiceScenarioTemplatePrompt(
+	count int,
+	recentAvoidance string,
+	allowedItemsPrompt string,
+	genre *models.ZoneGenre,
+) string {
+	base := fmt.Sprintf(
+		choiceScenarioTemplatePromptTemplate,
+		count,
+		recentAvoidance,
+		count,
+		allowedItemsPrompt,
+	)
+	if isBaselineFantasyScenarioGenre(genre) {
+		return base
+	}
+	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
 }
 
 func scenarioItemRewardsToTemplateRewards(rewards []models.ScenarioItemReward) models.ScenarioTemplateRewards {

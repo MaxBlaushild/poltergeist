@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"strings"
 
@@ -36,7 +37,20 @@ func (s *server) seedCombatAbilityPack(ctx *gin.Context, abilityType models.Spel
 		return
 	}
 
-	requests := combatAbilitySeedPackRequests(abilityType)
+	var requestBody struct {
+		GenreID string `json:"genreId"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	requests := combatAbilitySeedPackRequests(abilityType, genre.ID.String())
 	existingSpells, err := s.dbClient.Spell().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -61,7 +75,7 @@ func (s *server) seedCombatAbilityPack(ctx *gin.Context, abilityType models.Spel
 	}
 
 	for _, request := range requests {
-		spell, err := s.parseSpellUpsertRequest(request, 1)
+		spell, err := s.parseSpellUpsertRequest(ctx, request, 1, nil)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -81,6 +95,7 @@ func (s *server) seedCombatAbilityPack(ctx *gin.Context, abilityType models.Spel
 				"name":                    spell.Name,
 				"description":             spell.Description,
 				"icon_url":                spell.IconURL,
+				"genre_id":                spell.GenreID,
 				"ability_type":            spell.AbilityType,
 				"ability_level":           spell.AbilityLevel,
 				"cooldown_turns":          spell.CooldownTurns,
@@ -137,127 +152,128 @@ func seededAbilityKey(name string, abilityType models.SpellAbilityType) string {
 	return string(abilityType) + "|" + trimmed
 }
 
-func combatAbilitySeedPackRequests(abilityType models.SpellAbilityType) []spellUpsertRequest {
+func combatAbilitySeedPackRequests(abilityType models.SpellAbilityType, genreID string) []spellUpsertRequest {
 	if abilityType == models.SpellAbilityTypeTechnique {
-		return combatTechniqueSeedPackRequests()
+		return combatTechniqueSeedPackRequests(genreID)
 	}
-	return combatSpellSeedPackRequests()
+	return combatSpellSeedPackRequests(genreID)
 }
 
-func combatSpellSeedPackRequests() []spellUpsertRequest {
+func combatSpellSeedPackRequests(genreID string) []spellUpsertRequest {
 	return []spellUpsertRequest{
-		seededSpell("Ember Bolt", 5, 0, 16, "Pyromancy", "Fire a compact lance of flame into one foe.", "Deal 50 fire damage to one enemy.", []spellEffectPayload{
+		seededSpell(genreID, "Ember Bolt", 5, 0, 16, "Pyromancy", "Fire a compact lance of flame into one foe.", "Deal 50 fire damage to one enemy.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 50, 1, "fire"),
 		}),
-		seededSpell("Frost Needle", 7, 0, 18, "Cryomancy", "Drive a shard of winter into an enemy and slow their reaction speed.", "Deal 70 ice damage and apply Chilled.", []spellEffectPayload{
+		seededSpell(genreID, "Frost Needle", 7, 0, 18, "Cryomancy", "Drive a shard of winter into an enemy and slow their reaction speed.", "Deal 70 ice damage and apply Chilled.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 70, 1, "ice"),
 			singleDetrimentalStatusEffect(statusChilled(2, 45)),
 		}),
-		seededSpell("Venom Dart", 8, 0, 20, "Toxicology", "Sink a poisoned bolt into a target and let the toxin work.", "Deal 80 poison damage and apply Poisoned.", []spellEffectPayload{
+		seededSpell(genreID, "Venom Dart", 8, 0, 20, "Toxicology", "Sink a poisoned bolt into a target and let the toxin work.", "Deal 80 poison damage and apply Poisoned.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 80, 1, "poison"),
 			singleDetrimentalStatusEffect(statusPoisoned(6, 60)),
 		}),
-		seededSpell("Arcane Lance", 10, 0, 22, "Arcane", "Loose a stable spear of raw arcane force.", "Deal 100 arcane damage to one enemy.", []spellEffectPayload{
+		seededSpell(genreID, "Arcane Lance", 10, 0, 22, "Arcane", "Loose a stable spear of raw arcane force.", "Deal 100 arcane damage to one enemy.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 100, 1, "arcane"),
 		}),
-		seededSpell("Radiant Spear", 12, 0, 24, "Radiance", "A focused shaft of light strikes with clean holy force.", "Deal 120 holy damage to one enemy.", []spellEffectPayload{
+		seededSpell(genreID, "Radiant Spear", 12, 0, 24, "Radiance", "A focused shaft of light strikes with clean holy force.", "Deal 120 holy damage to one enemy.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 120, 1, "holy"),
 		}),
-		seededSpell("Shadow Brand", 14, 0, 24, "Umbramancy", "Brand a foe with enervating shadow.", "Deal 140 shadow damage and apply Weakened.", []spellEffectPayload{
+		seededSpell(genreID, "Shadow Brand", 14, 0, 24, "Umbramancy", "Brand a foe with enervating shadow.", "Deal 140 shadow damage and apply Weakened.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 140, 1, "shadow"),
 			singleDetrimentalStatusEffect(statusWeakened(3, 45)),
 		}),
-		seededSpell("Cinder Rain", 16, 1, 36, "Pyromancy", "A shower of embers scorches every enemy on the field.", "Deal 96 fire damage to all enemies.", []spellEffectPayload{
+		seededSpell(genreID, "Cinder Rain", 16, 1, 36, "Pyromancy", "A shower of embers scorches every enemy on the field.", "Deal 96 fire damage to all enemies.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamageAllEnemies, 96, 1, "fire"),
 		}),
-		seededSpell("Static Bloom", 18, 1, 40, "Stormcalling", "A burst of living static lashes out across the enemy line.", "Deal 108 lightning damage to all enemies.", []spellEffectPayload{
+		seededSpell(genreID, "Static Bloom", 18, 1, 40, "Stormcalling", "A burst of living static lashes out across the enemy line.", "Deal 108 lightning damage to all enemies.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamageAllEnemies, 108, 1, "lightning"),
 		}),
-		seededSpell("Winter Veil", 20, 2, 36, "Cryomancy", "A freezing curtain settles over the battlefield and steals momentum.", "Deal 120 ice damage to all enemies and apply Chilled.", []spellEffectPayload{
+		seededSpell(genreID, "Winter Veil", 20, 2, 36, "Cryomancy", "A freezing curtain settles over the battlefield and steals momentum.", "Deal 120 ice damage to all enemies and apply Chilled.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamageAllEnemies, 120, 1, "ice"),
 			allDetrimentalStatusEffect(statusChilled(2, 45)),
 		}),
-		seededSpell("Mend Wounds", 6, 0, 16, "Restoration", "Restore a meaningful chunk of vitality to one ally.", "Restore 28 health to one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Mend Wounds", 6, 0, 16, "Restoration", "Restore a meaningful chunk of vitality to one ally.", "Restore 28 health to one ally.", []spellEffectPayload{
 			healEffect(models.SpellEffectTypeRestoreLifePartyMember, 28),
 		}),
-		seededSpell("Renewing Surge", 15, 2, 32, "Restoration", "A wash of curative energy restores the whole party.", "Restore 18 health to all allies.", []spellEffectPayload{
+		seededSpell(genreID, "Renewing Surge", 15, 2, 32, "Restoration", "A wash of curative energy restores the whole party.", "Restore 18 health to all allies.", []spellEffectPayload{
 			healEffect(models.SpellEffectTypeRestoreLifeAllParty, 18),
 		}),
-		seededSpell("Second Breath", 18, 2, 40, "Restoration", "Call a fallen ally back into the fight.", "Revive one ally with 35 health.", []spellEffectPayload{
+		seededSpell(genreID, "Second Breath", 18, 2, 40, "Restoration", "Call a fallen ally back into the fight.", "Revive one ally with 35 health.", []spellEffectPayload{
 			healEffect(models.SpellEffectTypeRevivePartyMember, 35),
 		}),
-		seededSpell("Phoenix Oath", 35, 5, 72, "Radiance", "A rare vow of fire and light rekindles every fallen companion.", "Revive all downed allies with 25 health.", []spellEffectPayload{
+		seededSpell(genreID, "Phoenix Oath", 35, 5, 72, "Radiance", "A rare vow of fire and light rekindles every fallen companion.", "Revive all downed allies with 25 health.", []spellEffectPayload{
 			healEffect(models.SpellEffectTypeReviveAllDownedParty, 25),
 		}),
-		seededSpell("Bastion Ward", 10, 1, 20, "Abjuration", "Wrap one ally in a stout defensive ward.", "Apply Guarded to one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Bastion Ward", 10, 1, 20, "Abjuration", "Wrap one ally in a stout defensive ward.", "Apply Guarded to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusGuarded(4, 60)),
 		}),
-		seededSpell("Fleet Invocation", 12, 1, 20, "Windcraft", "Sharpen an ally's reflexes with a gust of quickening force.", "Apply Quickened to one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Fleet Invocation", 12, 1, 20, "Windcraft", "Sharpen an ally's reflexes with a gust of quickening force.", "Apply Quickened to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusQuickened(4, 60)),
 		}),
-		seededSpell("Meditative Current", 14, 1, 24, "Mysticism", "A calm current of focus restores magical rhythm.", "Apply Clarity to one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Meditative Current", 14, 1, 24, "Mysticism", "A calm current of focus restores magical rhythm.", "Apply Clarity to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusClarity(6, 60)),
 		}),
-		seededSpell("Regrowth Prayer", 16, 1, 28, "Verdancy", "Invite living magic to slowly mend an ally's wounds.", "Apply Regenerating to one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Regrowth Prayer", 16, 1, 28, "Verdancy", "Invite living magic to slowly mend an ally's wounds.", "Apply Regenerating to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusRegenerating(8, 60)),
 		}),
-		seededSpell("Hex of Frailty", 11, 1, 20, "Hexcraft", "Sap an enemy's sturdiness with a brittle curse.", "Apply Sundered to one enemy.", []spellEffectPayload{
+		seededSpell(genreID, "Hex of Frailty", 11, 1, 20, "Hexcraft", "Sap an enemy's sturdiness with a brittle curse.", "Apply Sundered to one enemy.", []spellEffectPayload{
 			singleDetrimentalStatusEffect(statusSundered(4, 45)),
 		}),
-		seededSpell("Shock Sigil", 13, 1, 24, "Stormcalling", "A crackling sigil scrambles the target's concentration.", "Deal 130 lightning damage and apply Shocked.", []spellEffectPayload{
+		seededSpell(genreID, "Shock Sigil", 13, 1, 24, "Stormcalling", "A crackling sigil scrambles the target's concentration.", "Deal 130 lightning damage and apply Shocked.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 130, 1, "lightning"),
 			singleDetrimentalStatusEffect(statusShocked(3, 45)),
 		}),
-		seededSpell("Purge", 12, 1, 18, "Purification", "Strip away hostile lingering effects from one ally.", "Remove common detrimental statuses from one ally.", []spellEffectPayload{
+		seededSpell(genreID, "Purge", 12, 1, 18, "Purification", "Strip away hostile lingering effects from one ally.", "Remove common detrimental statuses from one ally.", []spellEffectPayload{
 			removeStatusesEffect("Burning", "Poisoned", "Chilled", "Shocked", "Weakened", "Sundered", "Off-Balance"),
 		}),
 	}
 }
 
-func combatTechniqueSeedPackRequests() []spellUpsertRequest {
+func combatTechniqueSeedPackRequests(genreID string) []spellUpsertRequest {
 	return []spellUpsertRequest{
-		seededTechnique("Precise Thrust", 3, 0, "Martial", "Drive a narrow opening strike through a target's guard.", "Deal 24 piercing damage to one enemy.", []spellEffectPayload{
+		seededTechnique(genreID, "Precise Thrust", 3, 0, "Martial", "Drive a narrow opening strike through a target's guard.", "Deal 24 piercing damage to one enemy.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 24, 1, "piercing"),
 		}),
-		seededTechnique("Hamstring Cut", 7, 1, "Martial", "Slice low and rob an enemy of mobility.", "Deal 56 slashing damage and apply Off-Balance.", []spellEffectPayload{
+		seededTechnique(genreID, "Hamstring Cut", 7, 1, "Martial", "Slice low and rob an enemy of mobility.", "Deal 56 slashing damage and apply Off-Balance.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 56, 1, "slashing"),
 			singleDetrimentalStatusEffect(statusOffBalance(2, 45)),
 		}),
-		seededTechnique("Shield Bash", 9, 1, "Martial", "Crash a shield into an enemy and knock the strength out of them.", "Deal 72 bludgeoning damage and apply Weakened.", []spellEffectPayload{
+		seededTechnique(genreID, "Shield Bash", 9, 1, "Martial", "Crash a shield into an enemy and knock the strength out of them.", "Deal 72 bludgeoning damage and apply Weakened.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 72, 1, "bludgeoning"),
 			singleDetrimentalStatusEffect(statusWeakened(2, 45)),
 		}),
-		seededTechnique("Whirlwind Sweep", 14, 2, "Martial", "A spinning cut catches every nearby foe.", "Deal 70 slashing damage to all enemies.", []spellEffectPayload{
+		seededTechnique(genreID, "Whirlwind Sweep", 14, 2, "Martial", "A spinning cut catches every nearby foe.", "Deal 70 slashing damage to all enemies.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamageAllEnemies, 70, 1, "slashing"),
 		}),
-		seededTechnique("Rally Stance", 8, 1, "Martial", "Adopt a commanding stance that bolsters a comrade.", "Apply Blessed to one ally.", []spellEffectPayload{
+		seededTechnique(genreID, "Rally Stance", 8, 1, "Martial", "Adopt a commanding stance that bolsters a comrade.", "Apply Blessed to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusBlessed(2, 2, 60)),
 		}),
-		seededTechnique("Iron Guard", 10, 1, "Martial", "Set a defensive line and harden an ally's posture.", "Apply Guarded to one ally.", []spellEffectPayload{
+		seededTechnique(genreID, "Iron Guard", 10, 1, "Martial", "Set a defensive line and harden an ally's posture.", "Apply Guarded to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusGuarded(3, 60)),
 		}),
-		seededTechnique("First Aid", 6, 1, "Martial", "Use a practiced battlefield treatment to patch an ally up.", "Restore 18 health to one ally.", []spellEffectPayload{
+		seededTechnique(genreID, "First Aid", 6, 1, "Martial", "Use a practiced battlefield treatment to patch an ally up.", "Restore 18 health to one ally.", []spellEffectPayload{
 			healEffect(models.SpellEffectTypeRestoreLifePartyMember, 18),
 		}),
-		seededTechnique("Adrenal Surge", 12, 1, "Martial", "Drive an ally into a sharper, faster combat rhythm.", "Apply Quickened to one ally.", []spellEffectPayload{
+		seededTechnique(genreID, "Adrenal Surge", 12, 1, "Martial", "Drive an ally into a sharper, faster combat rhythm.", "Apply Quickened to one ally.", []spellEffectPayload{
 			beneficialStatusEffect(statusQuickened(3, 60)),
 		}),
-		seededTechnique("Expose Weakness", 13, 1, "Martial", "Read the target's defense and tear it open.", "Apply Sundered to one enemy.", []spellEffectPayload{
+		seededTechnique(genreID, "Expose Weakness", 13, 1, "Martial", "Read the target's defense and tear it open.", "Apply Sundered to one enemy.", []spellEffectPayload{
 			singleDetrimentalStatusEffect(statusSundered(3, 45)),
 		}),
-		seededTechnique("Shake It Off", 10, 1, "Martial", "Force the body back under control and shrug off hindrances.", "Remove common detrimental statuses from one ally.", []spellEffectPayload{
+		seededTechnique(genreID, "Shake It Off", 10, 1, "Martial", "Force the body back under control and shrug off hindrances.", "Remove common detrimental statuses from one ally.", []spellEffectPayload{
 			removeStatusesEffect("Burning", "Poisoned", "Chilled", "Shocked", "Weakened", "Sundered", "Off-Balance"),
 		}),
-		seededTechnique("Execution Flurry", 18, 2, "Martial", "A disciplined burst of chained strikes punishes a single foe.", "Deal 48 slashing damage to one enemy 3 times.", []spellEffectPayload{
+		seededTechnique(genreID, "Execution Flurry", 18, 2, "Martial", "A disciplined burst of chained strikes punishes a single foe.", "Deal 48 slashing damage to one enemy 3 times.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamage, 48, 3, "slashing"),
 		}),
-		seededTechnique("Overrun", 25, 3, "Martial", "Drive through the enemy line with a crushing advance.", "Deal 63 bludgeoning damage to all enemies 2 times.", []spellEffectPayload{
+		seededTechnique(genreID, "Overrun", 25, 3, "Martial", "Drive through the enemy line with a crushing advance.", "Deal 63 bludgeoning damage to all enemies 2 times.", []spellEffectPayload{
 			damageEffect(models.SpellEffectTypeDealDamageAllEnemies, 63, 2, "bludgeoning"),
 		}),
 	}
 }
 
 func seededSpell(
+	genreID string,
 	name string,
 	level int,
 	cooldownTurns int,
@@ -271,6 +287,7 @@ func seededSpell(
 	return spellUpsertRequest{
 		Name:          name,
 		Description:   description,
+		GenreID:       strings.TrimSpace(genreID),
 		AbilityType:   string(models.SpellAbilityTypeSpell),
 		AbilityLevel:  &levelCopy,
 		CooldownTurns: cooldownTurns,
@@ -282,6 +299,7 @@ func seededSpell(
 }
 
 func seededTechnique(
+	genreID string,
 	name string,
 	level int,
 	cooldownTurns int,
@@ -294,6 +312,7 @@ func seededTechnique(
 	return spellUpsertRequest{
 		Name:          name,
 		Description:   description,
+		GenreID:       strings.TrimSpace(genreID),
 		AbilityType:   string(models.SpellAbilityTypeTechnique),
 		AbilityLevel:  &levelCopy,
 		CooldownTurns: cooldownTurns,

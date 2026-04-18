@@ -18,6 +18,8 @@ type Scenario struct {
 	OwnerUser                 *User                          `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
 	PointOfInterestID         *uuid.UUID                     `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
 	PointOfInterest           *PointOfInterest               `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
+	GenreID                   uuid.UUID                      `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                     *ZoneGenre                     `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Latitude                  float64                        `json:"latitude"`
 	Longitude                 float64                        `json:"longitude"`
 	Geometry                  string                         `json:"geometry" gorm:"type:geometry(Point,4326)"`

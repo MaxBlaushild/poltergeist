@@ -161,7 +161,7 @@ export const ZoneGenres = () => {
     async (genre: ZoneGenre) => {
       if (
         !window.confirm(
-          `Delete ${genre.name}? This will remove its zone score rows and may fail if monsters or templates still use it.`
+          `Delete ${genre.name}? This will remove its zone score rows and may fail if monsters, scenarios, characters, or templates still use it.`
         )
       ) {
         return;
@@ -196,9 +196,10 @@ export const ZoneGenres = () => {
         <div>
           <h1 className="text-2xl font-bold">Zone Genres</h1>
           <p className="mt-2 max-w-3xl text-sm text-gray-600">
-            Manage the shared genres used by the Chaos Engine Room and monster
-            generation. Prompt seeds steer how AI-generated monsters should feel
-            for each genre.
+            Manage the shared genres used by the Chaos Engine Room, monster
+            generation, scenario generation, character portraits, and other
+            shared content systems. Prompt seeds steer how AI-generated content
+            should feel for each genre.
           </p>
         </div>
         <button

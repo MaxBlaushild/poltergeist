@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,6 +25,7 @@ type paginatedScenarioTemplateResponse struct {
 }
 
 type scenarioTemplateUpsertRequest struct {
+	GenreID                   string                         `json:"genreId"`
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl"`
 	ThumbnailURL              string                         `json:"thumbnailUrl"`
@@ -55,11 +57,16 @@ type scenarioTemplateUpsertRequest struct {
 }
 
 type scenarioTemplateGenerationJobRequest struct {
-	Count     int  `json:"count"`
-	OpenEnded bool `json:"openEnded"`
+	Count     int    `json:"count"`
+	OpenEnded bool   `json:"openEnded"`
+	GenreID   string `json:"genreId"`
 }
 
-func (s *server) parseScenarioTemplateUpsertRequest(body scenarioTemplateUpsertRequest) (*models.ScenarioTemplate, error) {
+func (s *server) parseScenarioTemplateUpsertRequest(
+	ctx context.Context,
+	body scenarioTemplateUpsertRequest,
+	existing *models.ScenarioTemplate,
+) (*models.ScenarioTemplate, error) {
 	prompt := strings.TrimSpace(body.Prompt)
 	if len(prompt) > 1200 {
 		prompt = strings.TrimSpace(prompt[:1200])
@@ -251,6 +258,15 @@ func (s *server) parseScenarioTemplateUpsertRequest(body scenarioTemplateUpsertR
 	}
 	spellRewards := scenarioSpellPayloadsToTemplateRewards(body.SpellRewards)
 
+	rawGenreID := strings.TrimSpace(body.GenreID)
+	if rawGenreID == "" && existing != nil && existing.GenreID != uuid.Nil {
+		rawGenreID = existing.GenreID.String()
+	}
+	genre, err := s.resolveZoneGenre(ctx, rawGenreID)
+	if err != nil {
+		return nil, err
+	}
+
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
 		if body.RewardExperience > 0 || body.RewardGold > 0 || len(itemRewards) > 0 || len(itemChoiceRewards) > 0 || len(spellRewards) > 0 || scenarioOptionsHaveExplicitRewards(body.Options) {
@@ -259,6 +275,8 @@ func (s *server) parseScenarioTemplateUpsertRequest(body scenarioTemplateUpsertR
 	}
 
 	return &models.ScenarioTemplate{
+		GenreID:                   genre.ID,
+		Genre:                     genre,
 		Prompt:                    prompt,
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
@@ -333,10 +351,16 @@ func (s *server) getAdminScenarioTemplates(ctx *gin.Context) {
 
 	page := parseAdminMonsterListPage(ctx)
 	pageSize := parseAdminMonsterListPageSize(ctx)
+	genreID, err := parseOptionalGenreIDFilter(ctx.Query("genreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	result, err := s.dbClient.ScenarioTemplate().ListAdmin(ctx, db.ScenarioTemplateAdminListParams{
 		Page:     page,
 		PageSize: pageSize,
 		Query:    ctx.Query("query"),
+		GenreID:  genreID,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -375,7 +399,7 @@ func (s *server) createScenarioTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := s.parseScenarioTemplateUpsertRequest(body)
+	template, err := s.parseScenarioTemplateUpsertRequest(ctx, body, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -412,7 +436,7 @@ func (s *server) updateScenarioTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := s.parseScenarioTemplateUpsertRequest(body)
+	template, err := s.parseScenarioTemplateUpsertRequest(ctx, body, existing)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -455,11 +479,18 @@ func (s *server) createScenarioTemplateGenerationJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, body.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.ScenarioTemplateGenerationJob{
 		ID:           uuid.New(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
+		GenreID:      genre.ID,
+		Genre:        genre,
 		Status:       models.ScenarioTemplateGenerationStatusQueued,
 		Count:        body.Count,
 		OpenEnded:    body.OpenEnded,

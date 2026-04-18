@@ -11,6 +11,7 @@ import (
 )
 
 type characterTemplateUpsertRequest struct {
+	GenreID          string                         `json:"genreId"`
 	Name             string                         `json:"name"`
 	Description      string                         `json:"description"`
 	InternalTags     []string                       `json:"internalTags"`
@@ -20,12 +21,22 @@ type characterTemplateUpsertRequest struct {
 	ThumbnailURL     string                         `json:"thumbnailUrl"`
 }
 
-func parseCharacterTemplateUpsertRequest(
+func (s *server) parseCharacterTemplateUpsertRequest(
+	ctx *gin.Context,
 	body characterTemplateUpsertRequest,
+	existing *models.CharacterTemplate,
 ) (*models.CharacterTemplate, error) {
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
+	}
+	rawGenreID := strings.TrimSpace(body.GenreID)
+	if rawGenreID == "" && existing != nil && existing.GenreID != uuid.Nil {
+		rawGenreID = existing.GenreID.String()
+	}
+	genre, err := s.resolveZoneGenre(ctx, rawGenreID)
+	if err != nil {
+		return nil, err
 	}
 	dialogueImageURL := strings.TrimSpace(body.DialogueImageURL)
 	thumbnailURL := strings.TrimSpace(body.ThumbnailURL)
@@ -40,6 +51,8 @@ func parseCharacterTemplateUpsertRequest(
 		MapIconURL:       strings.TrimSpace(body.MapIconURL),
 		DialogueImageURL: dialogueImageURL,
 		ThumbnailURL:     thumbnailURL,
+		GenreID:          genre.ID,
+		Genre:            genre,
 		ImageGenerationStatus: func() string {
 			if dialogueImageURL != "" {
 				return models.CharacterImageGenerationStatusComplete
@@ -94,7 +107,7 @@ func (s *server) createCharacterTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := parseCharacterTemplateUpsertRequest(body)
+	template, err := s.parseCharacterTemplateUpsertRequest(ctx, body, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -135,7 +148,7 @@ func (s *server) updateCharacterTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := parseCharacterTemplateUpsertRequest(body)
+	template, err := s.parseCharacterTemplateUpsertRequest(ctx, body, existing)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAPI } from '@poltergeist/contexts';
 import type { InventoryItem } from '@poltergeist/types';
 
@@ -31,6 +31,8 @@ type StaticThumbnailResponse = {
 type BaseStructureLevelVisual = {
   id?: string | null;
   level: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   imageUrl?: string;
   thumbnailUrl?: string;
   imageGenerationStatus?: string;
@@ -117,6 +119,28 @@ const staticStatusClassName = (status?: string) => {
     default:
       return 'bg-slate-500';
   }
+};
+
+const baseRoomGenerationStaleThresholdMs = 10 * 60 * 1000;
+
+const isPendingGenerationStatus = (status?: string) =>
+  ['queued', 'in_progress'].includes((status || '').toLowerCase());
+
+const isStalePendingGeneration = (
+  status?: string,
+  updatedAt?: string | null
+) => {
+  if (!isPendingGenerationStatus(status)) {
+    return false;
+  }
+  if (!updatedAt) {
+    return false;
+  }
+  const parsed = Date.parse(updatedAt);
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+  return Date.now() - parsed >= baseRoomGenerationStaleThresholdMs;
 };
 
 const formatDate = (value?: string) => {
@@ -213,6 +237,30 @@ const secondaryOwnerLabel = (record: BaseRecord) => {
 
 const grassTileKey = (gridX: number, gridY: number) => `${gridX}:${gridY}`;
 
+const grassTileMapsEqual = (
+  left: Record<string, BaseGrassTileStatus>,
+  right: Record<string, BaseGrassTileStatus>
+) => {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+  return leftKeys.every((key) => {
+    const leftTile = left[key];
+    const rightTile = right[key];
+    return (
+      Boolean(rightTile) &&
+      leftTile.status === rightTile.status &&
+      leftTile.exists === rightTile.exists &&
+      leftTile.thumbnailUrl === rightTile.thumbnailUrl &&
+      leftTile.requestedAt === rightTile.requestedAt &&
+      leftTile.lastModified === rightTile.lastModified &&
+      leftTile.prompt === rightTile.prompt
+    );
+  });
+};
+
 const defaultGrassPromptForCell = (gridX: number, gridY: number) =>
   `${defaultBaseGrassPrompt} Subtle variation for base grid coordinate (${gridX},${gridY}), so neighboring tiles feel related but not identical.`;
 
@@ -269,6 +317,7 @@ export const Bases = () => {
   const { apiClient } = useAPI();
   const [records, setRecords] = useState<BaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingBases, setRefreshingBases] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [iconPrompt, setIconPrompt] = useState(defaultBaseIconPrompt);
@@ -305,6 +354,7 @@ export const Bases = () => {
   const [baseMessage, setBaseMessage] = useState<string | null>(null);
   const [structures, setStructures] = useState<BaseStructureDefinition[]>([]);
   const [structureLoading, setStructureLoading] = useState(true);
+  const [refreshingStructures, setRefreshingStructures] = useState(false);
   const [generatingRoomImageKey, setGeneratingRoomImageKey] = useState<
     string | null
   >(null);
@@ -330,6 +380,23 @@ export const Bases = () => {
   const [chaosEngineConfigDrafts, setChaosEngineConfigDrafts] = useState<
     Record<string, ChaosEngineConfigDraft>
   >({});
+  const iconStatusSnapshotRef = useRef({
+    iconUrl,
+    iconStatus,
+    iconExists,
+    iconRequestedAt,
+    iconLastModified,
+  });
+  const grassTilesByKeyRef = useRef(grassTilesByKey);
+
+  iconStatusSnapshotRef.current = {
+    iconUrl,
+    iconStatus,
+    iconExists,
+    iconRequestedAt,
+    iconLastModified,
+  };
+  grassTilesByKeyRef.current = grassTilesByKey;
 
   const updateHearthRecoveryDraft = useCallback(
     (
@@ -348,39 +415,67 @@ export const Bases = () => {
     []
   );
 
-  const fetchBases = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await apiClient.get<BaseRecord[]>('/sonar/admin/bases');
-      setRecords(Array.isArray(response) ? response : []);
-    } catch (err) {
-      console.error('Failed to load bases', err);
-      setError('Failed to load bases.');
-    } finally {
-      setLoading(false);
-    }
-  }, [apiClient]);
+  const fetchBases = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      try {
+        if (background) {
+          setRefreshingBases(true);
+        } else {
+          setLoading(true);
+        }
+        setError(null);
+        const response = await apiClient.get<BaseRecord[]>('/sonar/admin/bases');
+        setRecords(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Failed to load bases', err);
+        setError('Failed to load bases.');
+      } finally {
+        if (background) {
+          setRefreshingBases(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [apiClient]
+  );
 
   const refreshIconStatus = useCallback(
-    async (showMessage = false) => {
+    async (showMessage = false, forcePreviewRefresh = false) => {
       try {
         setIconStatusLoading(true);
         setIconError(null);
         const response = await apiClient.get<StaticThumbnailResponse>(
           '/sonar/admin/thumbnails/base/status'
         );
-        const url = (response?.thumbnailUrl || '').trim();
-        if (url) {
-          setIconUrl(url);
+        const nextIconUrl = (response?.thumbnailUrl || '').trim();
+        const nextIconStatus =
+          (response?.status || 'unknown').trim() || 'unknown';
+        const nextIconExists = Boolean(response?.exists);
+        const nextIconRequestedAt = response?.requestedAt
+          ? response.requestedAt
+          : null;
+        const nextIconLastModified = response?.lastModified
+          ? response.lastModified
+          : null;
+        const currentIconStatus = iconStatusSnapshotRef.current;
+        const shouldRefreshPreview =
+          forcePreviewRefresh ||
+          nextIconUrl !== currentIconStatus.iconUrl ||
+          nextIconStatus !== currentIconStatus.iconStatus ||
+          nextIconExists !== currentIconStatus.iconExists ||
+          nextIconRequestedAt !== currentIconStatus.iconRequestedAt ||
+          nextIconLastModified !== currentIconStatus.iconLastModified;
+        if (nextIconUrl) {
+          setIconUrl(nextIconUrl);
         }
-        setIconStatus((response?.status || 'unknown').trim() || 'unknown');
-        setIconExists(Boolean(response?.exists));
-        setIconRequestedAt(response?.requestedAt ? response.requestedAt : null);
-        setIconLastModified(
-          response?.lastModified ? response.lastModified : null
-        );
-        setIconPreviewNonce(Date.now());
+        setIconStatus(nextIconStatus);
+        setIconExists(nextIconExists);
+        setIconRequestedAt(nextIconRequestedAt);
+        setIconLastModified(nextIconLastModified);
+        if (shouldRefreshPreview) {
+          setIconPreviewNonce(Date.now());
+        }
         if (showMessage) {
           setIconMessage('Base icon status refreshed.');
         }
@@ -410,7 +505,7 @@ export const Bases = () => {
       setIconMessage(null);
       await apiClient.post('/sonar/admin/thumbnails/base', { prompt });
       setIconMessage('Base icon queued for generation.');
-      await refreshIconStatus();
+      await refreshIconStatus(false, true);
     } catch (err) {
       console.error('Failed to generate base icon', err);
       const message =
@@ -428,7 +523,7 @@ export const Bases = () => {
       setIconMessage(null);
       await apiClient.delete('/sonar/admin/thumbnails/base');
       setIconMessage('Base icon deleted.');
-      await refreshIconStatus();
+      await refreshIconStatus(false, true);
     } catch (err) {
       console.error('Failed to delete base icon', err);
       const message =
@@ -440,7 +535,7 @@ export const Bases = () => {
   }, [apiClient, refreshIconStatus]);
 
   const refreshGrassStatus = useCallback(
-    async (showMessage = false) => {
+    async (showMessage = false, forcePreviewRefresh = false) => {
       try {
         setGrassStatusLoading(true);
         setGrassError(null);
@@ -452,8 +547,16 @@ export const Bases = () => {
         tiles.forEach((tile) => {
           next[grassTileKey(tile.gridX, tile.gridY)] = tile;
         });
-        setGrassTilesByKey(next);
-        setGrassPreviewNonce(Date.now());
+        const grassTilesChanged = !grassTileMapsEqual(
+          grassTilesByKeyRef.current,
+          next
+        );
+        if (grassTilesChanged) {
+          setGrassTilesByKey(next);
+        }
+        if (forcePreviewRefresh || grassTilesChanged) {
+          setGrassPreviewNonce(Date.now());
+        }
         if (showMessage) {
           setGrassMessage('Base grass tiles refreshed.');
         }
@@ -523,7 +626,7 @@ export const Bases = () => {
             `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} queued, ${failedCount} failed.`
           );
         }
-        await refreshGrassStatus();
+        await refreshGrassStatus(false, true);
       } catch (err) {
         console.error('Failed to generate base grass tile', err);
         const message =
@@ -595,7 +698,7 @@ export const Bases = () => {
             `${successCount} grass ${successCount === 1 ? 'tile' : 'tiles'} deleted, ${failedCount} failed.`
           );
         }
-        await refreshGrassStatus();
+        await refreshGrassStatus(false, true);
       } catch (err) {
         console.error('Failed to delete base grass tile', err);
         const message =
@@ -639,22 +742,33 @@ export const Bases = () => {
     [apiClient]
   );
 
-  const fetchStructures = useCallback(async () => {
-    try {
-      setStructureLoading(true);
-      const response = await apiClient.get<{
-        structures?: BaseStructureDefinition[];
-      }>('/sonar/admin/base-structures');
-      setStructures(
-        Array.isArray(response?.structures) ? response.structures : []
-      );
-    } catch (err) {
-      console.error('Failed to load base structures', err);
-      setError('Failed to load base structures.');
-    } finally {
-      setStructureLoading(false);
-    }
-  }, [apiClient]);
+  const fetchStructures = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      try {
+        if (background) {
+          setRefreshingStructures(true);
+        } else {
+          setStructureLoading(true);
+        }
+        const response = await apiClient.get<{
+          structures?: BaseStructureDefinition[];
+        }>('/sonar/admin/base-structures');
+        setStructures(
+          Array.isArray(response?.structures) ? response.structures : []
+        );
+      } catch (err) {
+        console.error('Failed to load base structures', err);
+        setError('Failed to load base structures.');
+      } finally {
+        if (background) {
+          setRefreshingStructures(false);
+        } else {
+          setStructureLoading(false);
+        }
+      }
+    },
+    [apiClient]
+  );
 
   const fetchInventoryItems = useCallback(async () => {
     try {
@@ -1183,7 +1297,7 @@ export const Bases = () => {
       return;
     }
     const interval = window.setInterval(() => {
-      void refreshIconStatus();
+      void refreshIconStatus(false, false);
     }, 4000);
     return () => window.clearInterval(interval);
   }, [iconStatus, refreshIconStatus]);
@@ -1196,7 +1310,7 @@ export const Bases = () => {
       return;
     }
     const interval = window.setInterval(() => {
-      void refreshGrassStatus();
+      void refreshGrassStatus(false, false);
     }, 4000);
     return () => window.clearInterval(interval);
   }, [grassTilesByKey, refreshGrassStatus]);
@@ -1217,11 +1331,10 @@ export const Bases = () => {
       return;
     }
     const interval = window.setInterval(() => {
-      void fetchBases();
-      void fetchStructures();
+      void fetchStructures({ background: true });
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [fetchBases, fetchStructures, structures]);
+  }, [fetchStructures, structures]);
 
   if (loading) {
     return <div className="m-10">Loading bases...</div>;
@@ -1253,10 +1366,11 @@ export const Bases = () => {
         <h1 className="text-2xl font-bold">Bases</h1>
         <button
           type="button"
-          onClick={() => void fetchBases()}
-          className="rounded bg-blue-600 px-3 py-2 text-white hover:bg-blue-700"
+          onClick={() => void fetchBases({ background: true })}
+          disabled={refreshingBases}
+          className="rounded bg-blue-600 px-3 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Refresh Bases
+          {refreshingBases ? 'Refreshing...' : 'Refresh Bases'}
         </button>
       </div>
 
@@ -1290,7 +1404,7 @@ export const Bases = () => {
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => void refreshIconStatus(true)}
+            onClick={() => void refreshIconStatus(true, true)}
             disabled={iconStatusLoading}
             className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -1368,7 +1482,7 @@ export const Bases = () => {
           </div>
           <button
             type="button"
-            onClick={() => void refreshGrassStatus(true)}
+            onClick={() => void refreshGrassStatus(true, true)}
             disabled={grassStatusLoading}
             className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -1675,15 +1789,17 @@ export const Bases = () => {
           </div>
           <button
             type="button"
-            onClick={() => void fetchStructures()}
-            disabled={structureLoading}
+            onClick={() => void fetchStructures({ background: true })}
+            disabled={structureLoading || refreshingStructures}
             className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {structureLoading ? 'Refreshing...' : 'Refresh Rooms'}
+            {structureLoading || refreshingStructures
+              ? 'Refreshing...'
+              : 'Refresh Rooms'}
           </button>
         </div>
 
-        {structureLoading ? (
+        {structureLoading && structures.length === 0 ? (
           <div className="mt-4 text-sm text-gray-500">
             Loading room images...
           </div>
@@ -1942,11 +2058,19 @@ export const Bases = () => {
                       visual.topDownImageUrl?.trim() ||
                       '';
                     const visualKey = `${structure.id}:${visual.level}`;
-                    const isPending = ['queued', 'in_progress'].includes(
-                      (visual.imageGenerationStatus || '').toLowerCase()
+                    const isPending = isPendingGenerationStatus(
+                      visual.imageGenerationStatus
                     );
-                    const isTopDownPending = ['queued', 'in_progress'].includes(
-                      (visual.topDownImageGenerationStatus || '').toLowerCase()
+                    const isTopDownPending = isPendingGenerationStatus(
+                      visual.topDownImageGenerationStatus
+                    );
+                    const isCardViewStale = isStalePendingGeneration(
+                      visual.imageGenerationStatus,
+                      visual.updatedAt
+                    );
+                    const isTopDownViewStale = isStalePendingGeneration(
+                      visual.topDownImageGenerationStatus,
+                      visual.updatedAt
                     );
                     return (
                       <div
@@ -2007,6 +2131,12 @@ export const Bases = () => {
                                 {visual.imageGenerationError}
                               </p>
                             ) : null}
+                            {isCardViewStale ? (
+                              <p className="mt-3 text-xs text-amber-700">
+                                This status looks stale. You can retry the card
+                                view generation.
+                              </p>
+                            ) : null}
                             <div className="mt-3 flex justify-end">
                               <button
                                 type="button"
@@ -2018,13 +2148,15 @@ export const Bases = () => {
                                 }
                                 disabled={
                                   generatingRoomImageKey === visualKey ||
-                                  isPending
+                                  (isPending && !isCardViewStale)
                                 }
                                 className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {generatingRoomImageKey === visualKey
                                   ? 'Queueing...'
-                                  : 'Generate Card View'}
+                                  : isCardViewStale
+                                    ? 'Retry Card View'
+                                    : 'Generate Card View'}
                               </button>
                             </div>
                           </div>
@@ -2071,6 +2203,12 @@ export const Bases = () => {
                                 {visual.topDownImageGenerationError}
                               </p>
                             ) : null}
+                            {isTopDownViewStale ? (
+                              <p className="mt-3 text-xs text-amber-700">
+                                This status looks stale. You can retry the
+                                top-down view generation.
+                              </p>
+                            ) : null}
                             <div className="mt-3 flex justify-end">
                               <button
                                 type="button"
@@ -2082,13 +2220,15 @@ export const Bases = () => {
                                 }
                                 disabled={
                                   generatingTopDownRoomImageKey === visualKey ||
-                                  isTopDownPending
+                                  (isTopDownPending && !isTopDownViewStale)
                                 }
                                 className="rounded bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {generatingTopDownRoomImageKey === visualKey
                                   ? 'Queueing...'
-                                  : 'Generate Top-Down'}
+                                  : isTopDownViewStale
+                                    ? 'Retry Top-Down'
+                                    : 'Generate Top-Down'}
                               </button>
                             </div>
                           </div>

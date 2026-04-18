@@ -126,6 +126,8 @@ type ScenarioTemplate struct {
 	ID                        uuid.UUID                      `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt                 time.Time                      `json:"createdAt"`
 	UpdatedAt                 time.Time                      `json:"updatedAt"`
+	GenreID                   uuid.UUID                      `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                     *ZoneGenre                     `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL              string                         `json:"thumbnailUrl" gorm:"column:thumbnail_url"`

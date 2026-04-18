@@ -751,6 +751,8 @@ func (c *client) processQuestScenarioNode(
 		UpdatedAt:                 time.Now(),
 		ZoneID:                    zone.ID,
 		PointOfInterestID:         optionalPointOfInterestID(pointOfInterest),
+		GenreID:                   template.GenreID,
+		Genre:                     template.Genre,
 		Latitude:                  currentAnchor.Latitude,
 		Longitude:                 currentAnchor.Longitude,
 		Prompt:                    strings.TrimSpace(template.Prompt),
@@ -1589,6 +1591,7 @@ func (c *client) resolveQuestNodePointOfInterest(
 		locationArchetype.IncludedTypes,
 		locationArchetype.ExcludedTypes,
 		searchCount,
+		nil,
 	)
 	if err != nil {
 		log.Printf(
@@ -1626,6 +1629,7 @@ func (c *client) resolveQuestNodePointOfInterest(
 			locationArchetype.IncludedTypes,
 			locationArchetype.ExcludedTypes,
 			fallbackCount,
+			nil,
 		)
 		if err != nil {
 			log.Printf(

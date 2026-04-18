@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { PointOfInterest, Spell } from '@poltergeist/types';
+import { PointOfInterest, Spell, ZoneGenre } from '@poltergeist/types';
 import { useSearchParams } from 'react-router-dom';
 import {
   MaterialRewardsEditor,
@@ -98,6 +98,8 @@ type ScenarioOption = {
 type ScenarioRecord = {
   id: string;
   zoneId: string;
+  genreId: string;
+  genre?: ZoneGenre;
   pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
@@ -137,6 +139,7 @@ type ScenarioRecord = {
 
 type ScenarioFormState = {
   zoneId: string;
+  genreId: string;
   pointOfInterestId: string;
   latitude: string;
   longitude: string;
@@ -175,6 +178,8 @@ type ScenarioFormState = {
 type ScenarioGenerationJob = {
   id: string;
   zoneId: string;
+  genreId: string;
+  genre?: ZoneGenre;
   status: string;
   openEnded: boolean;
   latitude?: number | null;
@@ -187,6 +192,7 @@ type ScenarioGenerationJob = {
 
 type ScenarioGenerationFormState = {
   zoneId: string;
+  genreId: string;
   openEnded: boolean;
   includeLocation: boolean;
   latitude: string;
@@ -388,6 +394,7 @@ const emptyOption = (): ScenarioOption => ({
 
 const emptyFormState = (): ScenarioFormState => ({
   zoneId: '',
+  genreId: '',
   pointOfInterestId: '',
   latitude: '',
   longitude: '',
@@ -425,11 +432,22 @@ const emptyFormState = (): ScenarioFormState => ({
 
 const emptyGenerationFormState = (): ScenarioGenerationFormState => ({
   zoneId: '',
+  genreId: '',
   openEnded: false,
   includeLocation: false,
   latitude: '',
   longitude: '',
 });
+
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasy = genres.find(
+    (genre) => (genre.name || '').trim().toLowerCase() === 'fantasy'
+  );
+  return fantasy?.id ?? genres[0]?.id ?? '';
+};
+
+const formatGenreLabel = (genre?: ZoneGenre | null): string =>
+  genre?.name?.trim() || 'Fantasy';
 
 const recurrenceOptions = [
   { value: '', label: 'No Recurrence' },
@@ -660,6 +678,7 @@ export const Scenarios = () => {
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [zonePointOfInterestMap, setZonePointOfInterestMap] = useState<
     Record<string, PointOfInterestOption[]>
   >({});
@@ -670,6 +689,7 @@ export const Scenarios = () => {
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
   const [query, setQuery] = useState('');
   const [zoneQuery, setZoneQuery] = useState('');
+  const [genreFilter, setGenreFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -718,6 +738,10 @@ export const Scenarios = () => {
   );
   const deferredQuery = useDeferredValue(query);
   const deferredZoneQuery = useDeferredValue(zoneQuery);
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -820,6 +844,7 @@ export const Scenarios = () => {
           pageSize: scenarioListPageSize,
           query: deferredQuery.trim(),
           zoneQuery: deferredZoneQuery.trim(),
+          genreId: genreFilter === 'all' ? '' : genreFilter,
         }
       );
       setRecords(Array.isArray(response?.items) ? response.items : []);
@@ -830,7 +855,7 @@ export const Scenarios = () => {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, deferredQuery, deferredZoneQuery, page]);
+  }, [apiClient, deferredQuery, deferredZoneQuery, genreFilter, page]);
 
   const refreshScenarioById = useCallback(
     async (scenarioId: string) => {
@@ -851,7 +876,7 @@ export const Scenarios = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [query, zoneQuery]);
+  }, [genreFilter, query, zoneQuery]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(total / scenarioListPageSize));
@@ -873,6 +898,26 @@ export const Scenarios = () => {
       }
     };
     void loadSpells();
+    return () => {
+      active = false;
+    };
+  }, [apiClient]);
+
+  useEffect(() => {
+    let active = true;
+    const loadGenres = async () => {
+      try {
+        const response = await apiClient.get<ZoneGenre[]>(
+          '/sonar/zone-genres?includeInactive=true'
+        );
+        if (!active) return;
+        setGenres(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Error loading scenario genres:', err);
+        if (active) setGenres([]);
+      }
+    };
+    void loadGenres();
     return () => {
       active = false;
     };
@@ -906,6 +951,14 @@ export const Scenarios = () => {
       setGenerationForm((prev) => ({ ...prev, zoneId: zones[0].id }));
     }
   }, [generationForm.zoneId, zones]);
+
+  useEffect(() => {
+    if (!generationForm.genreId && defaultGenreId) {
+      setGenerationForm((prev) =>
+        prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+      );
+    }
+  }, [defaultGenreId, generationForm.genreId]);
 
   const selectedGenerationZone = useMemo(
     () => zones.find((zone) => zone.id === generationForm.zoneId),
@@ -994,11 +1047,13 @@ export const Scenarios = () => {
     }
     const payload: {
       zoneId: string;
+      genreId: string;
       openEnded: boolean;
       latitude?: number;
       longitude?: number;
     } = {
       zoneId: generationForm.zoneId,
+      genreId: generationForm.genreId.trim(),
       openEnded: generationForm.openEnded,
     };
 
@@ -1298,6 +1353,15 @@ export const Scenarios = () => {
   }, [form.zoneId, loadPointsOfInterestForZone, showModal]);
 
   useEffect(() => {
+    if (!showModal) return;
+    if (!form.genreId && defaultGenreId) {
+      setForm((prev) =>
+        prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+      );
+    }
+  }, [defaultGenreId, form.genreId, showModal]);
+
+  useEffect(() => {
     if (!records.length) return;
     const zoneIds = Array.from(new Set(records.map((record) => record.zoneId)));
     zoneIds.forEach((zoneId) => {
@@ -1317,6 +1381,7 @@ export const Scenarios = () => {
     setEditingId(record.id);
     setForm({
       zoneId: record.zoneId,
+      genreId: record.genreId ?? record.genre?.id ?? '',
       pointOfInterestId: record.pointOfInterestId ?? '',
       latitude: record.latitude.toString(),
       longitude: record.longitude.toString(),
@@ -1502,6 +1567,7 @@ export const Scenarios = () => {
 
     return {
       zoneId: form.zoneId,
+      genreId: form.genreId.trim(),
       pointOfInterestId: form.pointOfInterestId.trim(),
       latitude: parseFloatValue(form.latitude),
       longitude: parseFloatValue(form.longitude),
@@ -3000,7 +3066,7 @@ export const Scenarios = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <label className="text-sm">
             Zone
             <div className="relative">
@@ -3055,6 +3121,30 @@ export const Scenarios = () => {
                 </div>
               ) : null}
             </div>
+          </label>
+          <label className="text-sm">
+            Genre
+            <select
+              value={generationForm.genreId}
+              onChange={(e) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  genreId: e.target.value,
+                }))
+              }
+              className="w-full border rounded-md p-2"
+            >
+              {genres.length === 0 ? (
+                <option value="">Fantasy</option>
+              ) : (
+                genres.map((genre) => (
+                  <option key={`generation-genre-${genre.id}`} value={genre.id}>
+                    {formatGenreLabel(genre)}
+                    {genre.active === false ? ' (inactive)' : ''}
+                  </option>
+                ))
+              )}
+            </select>
           </label>
           <label className="text-sm">
             Scenario Type
@@ -3205,6 +3295,13 @@ export const Scenarios = () => {
                   </div>
                   <div className="text-gray-700">Zone: {zoneName}</div>
                   <div className="text-gray-700">
+                    Genre:{' '}
+                    {formatGenreLabel(
+                      job.genre ??
+                        genres.find((genre) => genre.id === job.genreId)
+                    )}
+                  </div>
+                  <div className="text-gray-700">
                     Location:{' '}
                     {typeof job.latitude === 'number' &&
                     typeof job.longitude === 'number'
@@ -3263,6 +3360,19 @@ export const Scenarios = () => {
             onChange={(e) => setZoneQuery(e.target.value)}
             className="w-full max-w-sm p-2 border rounded-md"
           />
+          <select
+            value={genreFilter}
+            onChange={(e) => setGenreFilter(e.target.value)}
+            className="w-full max-w-xs p-2 border rounded-md"
+            aria-label="Filter scenarios by genre"
+          >
+            <option value="all">All Genres</option>
+            {genres.map((genre) => (
+              <option key={`scenario-filter-${genre.id}`} value={genre.id}>
+                {formatGenreLabel(genre)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -3327,6 +3437,13 @@ export const Scenarios = () => {
                 {record.openEnded ? 'Open-Ended' : 'Choice'} Scenario
               </div>
               <div className="text-sm text-gray-700 mb-1">Zone: {zoneName}</div>
+              <div className="text-sm text-gray-700 mb-1">
+                Genre:{' '}
+                {formatGenreLabel(
+                  record.genre ??
+                    genres.find((genre) => genre.id === record.genreId)
+                )}
+              </div>
               <div className="text-sm text-gray-700 mb-1">
                 Location:{' '}
                 {record.pointOfInterestId
@@ -3437,6 +3554,30 @@ export const Scenarios = () => {
                       {zone.name}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Genre
+                <select
+                  value={form.genreId}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      genreId: e.target.value,
+                    }))
+                  }
+                  className="w-full border rounded-md p-2"
+                >
+                  {genres.length === 0 ? (
+                    <option value="">Fantasy</option>
+                  ) : (
+                    genres.map((genre) => (
+                      <option key={`scenario-genre-${genre.id}`} value={genre.id}>
+                        {formatGenreLabel(genre)}
+                        {genre.active === false ? ' (inactive)' : ''}
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
               <label className="text-sm">

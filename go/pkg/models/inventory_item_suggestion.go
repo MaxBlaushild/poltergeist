@@ -53,6 +53,8 @@ type InventoryItemSuggestionJob struct {
 	ID           uuid.UUID   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt    time.Time   `json:"createdAt"`
 	UpdatedAt    time.Time   `json:"updatedAt"`
+	GenreID      uuid.UUID   `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre        *ZoneGenre  `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Status       string      `json:"status"`
 	Count        int         `json:"count"`
 	ThemePrompt  string      `json:"themePrompt" gorm:"column:theme_prompt"`

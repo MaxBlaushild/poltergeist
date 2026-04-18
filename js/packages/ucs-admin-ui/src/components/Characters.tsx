@@ -6,8 +6,9 @@ import {
   CharacterAction,
   DialogueMessage,
   Quest,
+  ZoneGenre,
 } from '@poltergeist/types';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
@@ -267,6 +268,16 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasyGenre = genres.find(
+    (genre) => genre.name?.trim().toLowerCase() === 'fantasy'
+  );
+  return fantasyGenre?.id ?? genres[0]?.id ?? '';
+};
+
+const formatGenreLabel = (genre?: ZoneGenre | null): string =>
+  genre?.name?.trim() || 'Unknown Genre';
+
 const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
   locations,
   onAddLocation,
@@ -439,12 +450,14 @@ export const Characters = () => {
   const { zoneQuestArchetypes, updateZoneQuestArchetype } =
     useQuestArchetypes();
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [filteredCharacters, setFilteredCharacters] = useState<Character[]>([]);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(
     new Set()
   );
   const [bulkDeletingCharacters, setBulkDeletingCharacters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [genreFilter, setGenreFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
   const [showGenerateCharacter, setShowGenerateCharacter] = useState(false);
@@ -483,6 +496,7 @@ export const Characters = () => {
   const [locationsError, setLocationsError] = useState<string | null>(null);
   const [generationData, setGenerationData] = useState({
     name: '',
+    genreId: '',
     description: '',
   });
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -551,10 +565,22 @@ export const Characters = () => {
       }));
   }, [availablePointsOfInterest]);
 
+  const genreNameById = useMemo(() => {
+    const next = new Map<string, string>();
+    genres.forEach((genre) => next.set(genre.id, genre.name));
+    return next;
+  }, [genres]);
+
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    genreId: '',
     internalTagsInput: '',
     storyVariants: [] as CharacterStoryVariantForm[],
     mapIconUrl: '',
@@ -564,9 +590,22 @@ export const Characters = () => {
   });
 
   useEffect(() => {
+    fetchGenres();
     fetchCharacters();
     fetchPointsOfInterest();
   }, []);
+
+  useEffect(() => {
+    if (!defaultGenreId) {
+      return;
+    }
+    setFormData((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+    setGenerationData((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+  }, [defaultGenreId]);
 
   useEffect(() => {
     const hasPending = characters.some((character) =>
@@ -589,6 +628,18 @@ export const Characters = () => {
       setAvailablePointsOfInterest(response);
     } catch (error) {
       console.error('Error fetching points of interest:', error);
+    }
+  };
+
+  const fetchGenres = async () => {
+    try {
+      const response = await apiClient.get<ZoneGenre[]>(
+        '/sonar/zone-genres?includeInactive=true'
+      );
+      setGenres(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching character genres:', error);
+      setGenres([]);
     }
   };
 
@@ -695,22 +746,32 @@ export const Characters = () => {
   }, [apiClient, refreshUndiscoveredCharacterIconStatus]);
 
   useEffect(() => {
-    if (searchQuery === '') {
+    if (searchQuery === '' && genreFilter === '') {
       setFilteredCharacters(characters);
     } else {
       const filtered = characters.filter(
-        (character) =>
-          character.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          character.description
-            ?.toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          (character.internalTags ?? []).some((tag) =>
-            tag.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+        (character) => {
+          const matchesSearch =
+            searchQuery === '' ||
+            character.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            character.description
+              ?.toLowerCase()
+              .includes(searchQuery.toLowerCase()) ||
+            (character.internalTags ?? []).some((tag) =>
+              tag.toLowerCase().includes(searchQuery.toLowerCase())
+            ) ||
+            (character.genre?.name ?? genreNameById.get(character.genreId ?? ''))
+              ?.toLowerCase()
+              .includes(searchQuery.toLowerCase());
+          const matchesGenre =
+            genreFilter === '' ||
+            (character.genreId ?? character.genre?.id ?? '') === genreFilter;
+          return matchesSearch && matchesGenre;
+        }
       );
       setFilteredCharacters(filtered);
     }
-  }, [searchQuery, characters]);
+  }, [searchQuery, genreFilter, characters, genreNameById]);
 
   useEffect(() => {
     setSelectedCharacterIds((prev) => {
@@ -962,6 +1023,7 @@ export const Characters = () => {
     setFormData({
       name: '',
       description: '',
+      genreId: defaultGenreId,
       internalTagsInput: '',
       storyVariants: [],
       mapIconUrl: '',
@@ -978,6 +1040,7 @@ export const Characters = () => {
   const resetGenerationForm = () => {
     setGenerationData({
       name: '',
+      genreId: defaultGenreId,
       description: '',
     });
     setGenerationError(null);
@@ -987,6 +1050,7 @@ export const Characters = () => {
     return {
       name: formData.name,
       description: formData.description,
+      genreId: formData.genreId,
       mapIconUrl: formData.mapIconUrl,
       dialogueImageUrl: formData.dialogueImageUrl,
       thumbnailUrl: formData.thumbnailUrl,
@@ -1127,6 +1191,7 @@ export const Characters = () => {
         '/sonar/characters/generate',
         {
           name,
+          genreId: generationData.genreId,
           description,
         }
       );
@@ -1283,6 +1348,7 @@ export const Characters = () => {
       setFormData({
         name: character.name,
         description: character.description,
+        genreId: character.genreId ?? character.genre?.id ?? defaultGenreId,
         internalTagsInput: (character.internalTags ?? []).join(', '),
         storyVariants: (character.storyVariants ?? []).map((variant) =>
           buildCharacterStoryVariantForm(variant)
@@ -1307,7 +1373,7 @@ export const Characters = () => {
           .map((zoneQuestArchetype) => zoneQuestArchetype.id)
       );
     },
-    [zoneQuestArchetypes]
+    [defaultGenreId, zoneQuestArchetypes]
   );
 
   useEffect(() => {
@@ -1565,13 +1631,33 @@ export const Characters = () => {
 
       {/* Search */}
       <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search characters..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full p-2 border rounded-md"
-        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 240px',
+            gap: '12px',
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Search characters..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full p-2 border rounded-md"
+          />
+          <select
+            value={genreFilter}
+            onChange={(e) => setGenreFilter(e.target.value)}
+            className="w-full p-2 border rounded-md"
+          >
+            <option value="">All genres</option>
+            {genres.map((genre) => (
+              <option key={`character-genre-filter-${genre.id}`} value={genre.id}>
+                {formatGenreLabel(genre)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div
@@ -1658,6 +1744,13 @@ export const Characters = () => {
 
             <p style={{ margin: '5px 0', color: '#666' }}>
               Description: {character.description || 'No description'}
+            </p>
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Genre:{' '}
+              {formatGenreLabel(
+                character.genre ??
+                  genres.find((genre) => genre.id === character.genreId)
+              )}
             </p>
             <p style={{ margin: '5px 0', color: '#666' }}>
               Internal Tags:{' '}
@@ -1814,6 +1907,30 @@ export const Characters = () => {
                   minHeight: '60px',
                 }}
               />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Genre:
+              </label>
+              <select
+                value={formData.genreId}
+                onChange={(e) =>
+                  setFormData({ ...formData, genreId: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                {genres.map((genre) => (
+                  <option key={`character-form-genre-${genre.id}`} value={genre.id}>
+                    {formatGenreLabel(genre)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={{ marginBottom: '15px' }}>
@@ -2421,6 +2538,36 @@ export const Characters = () => {
                   minHeight: '80px',
                 }}
               />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Genre:
+              </label>
+              <select
+                value={generationData.genreId}
+                onChange={(e) =>
+                  setGenerationData({
+                    ...generationData,
+                    genreId: e.target.value,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                {genres.map((genre) => (
+                  <option
+                    key={`character-generation-genre-${genre.id}`}
+                    value={genre.id}
+                  >
+                    {formatGenreLabel(genre)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {generationError ? (

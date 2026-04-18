@@ -1,6 +1,7 @@
 import { PointOfInterestChallenge } from './pointOfInterestChallenge';
 import { PointOfInterestChallengeSubmission } from './pointOfInterestChallengeSubmission';
 import { Tag } from './tag';
+import { ZoneGenre } from './zone';
 export type PointOfInterestRewardMode = 'explicit' | 'random';
 export type PointOfInterestRandomRewardSize = 'small' | 'medium' | 'large';
 export interface PointOfInterestMaterialReward {
@@ -44,6 +45,8 @@ export interface PointOfInterest {
     imageGenerationError?: string | null;
     description: string;
     pointOfInterestChallenges: PointOfInterestChallenge[];
+    genreId: string;
+    genre?: ZoneGenre | null;
     tags: Tag[];
     googleMapsPlaceId: string;
     googleMapsPlaceName?: string | null;

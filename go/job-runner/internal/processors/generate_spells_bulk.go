@@ -64,6 +64,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		Status:       jobs.SpellBulkStatusInProgress,
 		Source:       strings.TrimSpace(payload.Source),
 		AbilityType:  abilityType,
+		GenreID:      payload.GenreID,
 		TotalCount:   payload.TotalCount,
 		CreatedCount: 0,
 		TargetLevel:  payload.TargetLevel,
@@ -156,6 +157,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		spell := &models.Spell{
 			Name:                  name,
 			Description:           description,
+			GenreID:               payload.GenreID,
 			AbilityType:           models.SpellAbilityType(abilityType),
 			EffectText:            effectText,
 			SchoolOfMagic:         schoolOfMagic,

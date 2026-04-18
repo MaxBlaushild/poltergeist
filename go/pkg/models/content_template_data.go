@@ -14,6 +14,8 @@ type CharacterTemplateData struct {
 	MapIconURL            string
 	DialogueImageURL      string
 	ThumbnailURL          string
+	GenreID               uuid.UUID
+	Genre                 *ZoneGenre
 	StoryVariants         CharacterStoryVariants
 	ImageGenerationStatus string
 	ImageGenerationError  *string
@@ -40,6 +42,8 @@ func CharacterTemplateDataFromCharacter(source *Character) CharacterTemplateData
 		MapIconURL:            strings.TrimSpace(source.MapIconURL),
 		DialogueImageURL:      strings.TrimSpace(source.DialogueImageURL),
 		ThumbnailURL:          strings.TrimSpace(source.ThumbnailURL),
+		GenreID:               source.GenreID,
+		Genre:                 source.Genre,
 		StoryVariants:         cloneCharacterStoryVariants(source.StoryVariants),
 		ImageGenerationStatus: strings.TrimSpace(source.ImageGenerationStatus),
 		ImageGenerationError:  cloneOptionalTrimmedString(source.ImageGenerationError),
@@ -57,6 +61,8 @@ func CharacterTemplateDataFromCharacterTemplate(source *CharacterTemplate) Chara
 		MapIconURL:            strings.TrimSpace(source.MapIconURL),
 		DialogueImageURL:      strings.TrimSpace(source.DialogueImageURL),
 		ThumbnailURL:          strings.TrimSpace(source.ThumbnailURL),
+		GenreID:               source.GenreID,
+		Genre:                 source.Genre,
 		StoryVariants:         cloneCharacterStoryVariants(source.StoryVariants),
 		ImageGenerationStatus: strings.TrimSpace(source.ImageGenerationStatus),
 		ImageGenerationError:  cloneOptionalTrimmedString(source.ImageGenerationError),
@@ -90,6 +96,8 @@ func (t CharacterTemplateData) Instantiate(options CharacterTemplateInstanceOpti
 		MapIconURL:            strings.TrimSpace(t.MapIconURL),
 		DialogueImageURL:      strings.TrimSpace(t.DialogueImageURL),
 		ThumbnailURL:          strings.TrimSpace(t.ThumbnailURL),
+		GenreID:               t.GenreID,
+		Genre:                 t.Genre,
 		OwnerUserID:           options.OwnerUserID,
 		Ephemeral:             options.Ephemeral,
 		StoryVariants:         cloneCharacterStoryVariants(t.StoryVariants),

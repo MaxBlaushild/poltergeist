@@ -29,6 +29,7 @@ type inventorySeedPackRequest struct {
 
 type inventorySeedSetConfig struct {
 	Theme                        string
+	GenreID                      string
 	TargetLevel                  int
 	RarityTier                   string
 	MajorStat                    string
@@ -68,7 +69,20 @@ func (s *server) seedInventoryCorePack(ctx *gin.Context) {
 		return
 	}
 
-	requests := inventoryCoreSeedPackRequests()
+	var requestBody struct {
+		GenreID string `json:"genreId"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	requests := inventoryCoreSeedPackRequests(genre.ID.String())
 	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -164,6 +178,7 @@ func inventoryItemUpdatesFromModel(
 	updates := map[string]interface{}{
 		"archived":                                       item.Archived,
 		"name":                                           item.Name,
+		"genre_id":                                       item.GenreID,
 		"image_url":                                      item.ImageURL,
 		"flavor_text":                                    item.FlavorText,
 		"effect_text":                                    item.EffectText,
@@ -236,21 +251,22 @@ func inventoryItemUpdatesFromModel(
 	return updates
 }
 
-func inventoryCoreSeedPackRequests() []inventorySeedPackRequest {
+func inventoryCoreSeedPackRequests(genreID string) []inventorySeedPackRequest {
 	requests := make([]inventorySeedPackRequest, 0, 320)
 	for _, config := range inventorySeedSetConfigs() {
+		config.GenreID = strings.TrimSpace(genreID)
 		requests = append(requests, buildInventorySeedSetRequests(config)...)
 	}
 	for _, spec := range inventorySeedMaterialSpecs() {
 		requests = append(requests, inventorySeedPackRequest{
 			Category: "material",
-			Request:  seededMaterialRequest(spec),
+			Request:  seededMaterialRequest(spec, genreID),
 		})
 	}
 	for _, spec := range inventorySeedUtilitySpecs() {
 		requests = append(requests, inventorySeedPackRequest{
 			Category: "utility",
-			Request:  seededUtilityRequest(spec),
+			Request:  seededUtilityRequest(spec, genreID),
 		})
 	}
 	return requests
@@ -647,6 +663,7 @@ func buildInventorySeedSetRequests(config inventorySeedSetConfig) []inventorySee
 
 		request := inventoryItemUpsertRequest{
 			Name:            name,
+			GenreID:         strings.TrimSpace(config.GenreID),
 			FlavorText:      inventorySetFlavorText(config.Theme, slot, handCategory),
 			EffectText:      "",
 			RarityTier:      config.RarityTier,
@@ -921,10 +938,11 @@ func slugifyInventorySeedTheme(input string) string {
 	return strings.Join(parts, "_")
 }
 
-func seededMaterialRequest(spec inventorySeedMaterialSpec) inventoryItemUpsertRequest {
+func seededMaterialRequest(spec inventorySeedMaterialSpec, genreID string) inventoryItemUpsertRequest {
 	level := maxInt(spec.ItemLevel, 1)
 	return inventoryItemUpsertRequest{
 		Name:       spec.Name,
+		GenreID:    strings.TrimSpace(genreID),
 		FlavorText: spec.FlavorText,
 		EffectText: spec.EffectText,
 		RarityTier: spec.RarityTier,
@@ -937,10 +955,11 @@ func seededMaterialRequest(spec inventorySeedMaterialSpec) inventoryItemUpsertRe
 	}
 }
 
-func seededUtilityRequest(spec inventorySeedUtilitySpec) inventoryItemUpsertRequest {
+func seededUtilityRequest(spec inventorySeedUtilitySpec, genreID string) inventoryItemUpsertRequest {
 	level := maxInt(spec.ItemLevel, 1)
 	return inventoryItemUpsertRequest{
 		Name:                spec.Name,
+		GenreID:             strings.TrimSpace(genreID),
 		FlavorText:          spec.FlavorText,
 		EffectText:          spec.EffectText,
 		RarityTier:          spec.RarityTier,

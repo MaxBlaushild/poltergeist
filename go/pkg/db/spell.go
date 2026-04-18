@@ -16,6 +16,13 @@ type spellHandler struct {
 }
 
 func (h *spellHandler) Create(ctx context.Context, spell *models.Spell) error {
+	if spell != nil {
+		resolvedGenreID, err := resolveSpellGenreID(ctx, h.db, spell)
+		if err != nil {
+			return err
+		}
+		spell.GenreID = resolvedGenreID
+	}
 	now := time.Now()
 	if spell.ID == uuid.Nil {
 		spell.ID = uuid.New()
@@ -42,6 +49,7 @@ func (h *spellHandler) Create(ctx context.Context, spell *models.Spell) error {
 func (h *spellHandler) FindByID(ctx context.Context, spellID uuid.UUID) (*models.Spell, error) {
 	var spell models.Spell
 	if err := h.db.WithContext(ctx).
+		Preload("Genre").
 		Preload("ProgressionLinks").
 		Preload("ProgressionLinks.Progression").
 		Where("id = ?", spellID).
@@ -54,6 +62,7 @@ func (h *spellHandler) FindByID(ctx context.Context, spellID uuid.UUID) (*models
 func (h *spellHandler) FindAll(ctx context.Context) ([]models.Spell, error) {
 	var spells []models.Spell
 	if err := h.db.WithContext(ctx).
+		Preload("Genre").
 		Preload("ProgressionLinks").
 		Preload("ProgressionLinks.Progression").
 		Order("name ASC").
@@ -98,6 +107,7 @@ func (h *spellHandler) FindProgressionByID(ctx context.Context, progressionID uu
 	if err := h.db.WithContext(ctx).
 		Preload("Members").
 		Preload("Members.Spell").
+		Preload("Members.Spell.Genre").
 		Where("id = ?", progressionID).
 		First(&progression).Error; err != nil {
 		return nil, err
@@ -120,6 +130,7 @@ func (h *spellHandler) FindProgressionBySpellID(ctx context.Context, spellID uui
 	if err := h.db.WithContext(ctx).
 		Preload("Members").
 		Preload("Members.Spell").
+		Preload("Members.Spell.Genre").
 		Where("id = ?", link.ProgressionID).
 		First(&progression).Error; err != nil {
 		return nil, err
@@ -131,6 +142,7 @@ func (h *spellHandler) FindProgressionMembers(ctx context.Context, progressionID
 	var members []models.SpellProgressionSpell
 	if err := h.db.WithContext(ctx).
 		Preload("Spell").
+		Preload("Spell.Genre").
 		Where("progression_id = ?", progressionID).
 		Order("level_band ASC").
 		Find(&members).Error; err != nil {

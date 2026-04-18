@@ -18,6 +18,7 @@ import (
 
 const inventoryItemSuggestionPromptTemplate = `
 You are designing draft inventory items for Unclaimed Streets, an urban fantasy MMORPG.
+%s
 
 Generate exactly %d item drafts.
 
@@ -202,6 +203,7 @@ func (p *GenerateInventoryItemSuggestionsProcessor) generateDrafts(
 
 	prompt := fmt.Sprintf(
 		inventoryItemSuggestionPromptTemplate,
+		inventoryItemSuggestionGenreInstructionBlock(job.Genre),
 		maxInt(1, job.Count),
 		quotedOrNone(strings.TrimSpace(job.ThemePrompt)),
 		renderTagList(job.Categories),
@@ -324,6 +326,8 @@ func sanitizeInventoryItemSuggestionDraft(
 	item.ImageGenerationStatus = models.InventoryImageGenerationStatusNone
 	item.ImageGenerationError = nil
 	item.UnlockLocksStrength = nil
+	item.GenreID = job.GenreID
+	item.Genre = job.Genre
 
 	item.Name = strings.TrimSpace(item.Name)
 	if item.Name == "" {

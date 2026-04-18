@@ -1,13 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAPI, useMediaContext, useTagContext, useZoneContext } from '@poltergeist/contexts';
 import { useCandidates, usePointOfInterestGroups } from '@poltergeist/hooks';
-import { Candidate, PointOfInterest as PointOfInterestType, Tag } from '@poltergeist/types';
+import {
+  Candidate,
+  PointOfInterest as PointOfInterestType,
+  Tag,
+  ZoneGenre,
+} from '@poltergeist/types';
 
 type PointOfInterestImport = {
   id: string;
   placeId: string;
   zoneId: string;
+  genreId: string;
+  genre?: ZoneGenre | null;
   status: string;
   errorMessage?: string | null;
   pointOfInterestId?: string | null;
@@ -100,10 +107,12 @@ export const PointOfInterest = () => {
   const { pointOfInterestGroups } = usePointOfInterestGroups();
 
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterestType[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nameQuery, setNameQuery] = useState('');
   const [selectedZoneId, setSelectedZoneId] = useState('');
+  const [selectedGenreId, setSelectedGenreId] = useState('all');
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -148,6 +157,7 @@ export const PointOfInterest = () => {
     string | null
   >(null);
   const [createForm, setCreateForm] = useState({
+    genreId: '',
     name: '',
     description: '',
     clue: '',
@@ -163,16 +173,30 @@ export const PointOfInterest = () => {
   const [importQuery, setImportQuery] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [importZoneId, setImportZoneId] = useState('');
+  const [importGenreId, setImportGenreId] = useState('');
   const { candidates } = useCandidates(importQuery);
   const [importJobs, setImportJobs] = useState<PointOfInterestImport[]>([]);
   const [importPolling, setImportPolling] = useState(false);
   const [importToasts, setImportToasts] = useState<string[]>([]);
-  const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
+  const [, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set());
   const [deletingPointId, setDeletingPointId] = useState<string | null>(null);
   const [bulkDeletingPoints, setBulkDeletingPoints] = useState(false);
 
   const allTags = useMemo(() => flattenTags(tagGroups), [tagGroups]);
+  const defaultGenreId = useMemo(() => {
+    const fantasyGenre = genres.find(
+      (genre) => genre.name.trim().toLowerCase() === 'fantasy'
+    );
+    return fantasyGenre?.id ?? genres[0]?.id ?? '';
+  }, [genres]);
+  const genreNameById = useMemo(
+    () =>
+      new Map(
+        genres.map((genre) => [genre.id, genre.name])
+      ),
+    [genres]
+  );
   const orderedPoiMarkerCategoryStates = useMemo(
     () =>
       poiMarkerCategoryOrder
@@ -182,7 +206,7 @@ export const PointOfInterest = () => {
         ),
     [poiMarkerCategoryOrder, poiMarkerCategoryStates]
   );
-  const fetchPointsOfInterest = async () => {
+  const fetchPointsOfInterest = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -197,11 +221,36 @@ export const PointOfInterest = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiClient, selectedZoneId]);
 
   useEffect(() => {
     fetchPointsOfInterest();
-  }, [apiClient, selectedZoneId]);
+  }, [fetchPointsOfInterest]);
+
+  useEffect(() => {
+    const fetchGenres = async () => {
+      try {
+        const response = await apiClient.get<ZoneGenre[]>(
+          '/sonar/zone-genres?includeInactive=true'
+        );
+        setGenres(response);
+      } catch (err) {
+        console.error('Error fetching genres:', err);
+      }
+    };
+
+    void fetchGenres();
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (!defaultGenreId) {
+      return;
+    }
+    setCreateForm((prev) =>
+      prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+    );
+    setImportGenreId((prev) => prev || defaultGenreId);
+  }, [defaultGenreId]);
 
   const toggleTag = (tagId: string) => {
     setSelectedTagIds(prev => {
@@ -230,6 +279,11 @@ export const PointOfInterest = () => {
         return false;
       }
 
+      const pointGenreId = point.genreId ?? point.genre?.id ?? '';
+      if (selectedGenreId !== 'all' && pointGenreId !== selectedGenreId) {
+        return false;
+      }
+
       if (selectedTags.length === 0) {
         return true;
       }
@@ -237,7 +291,7 @@ export const PointOfInterest = () => {
       const pointTagIds = point.tags?.map(tag => tag.id) ?? [];
       return selectedTags.every(tagId => pointTagIds.includes(tagId));
     });
-  }, [pointsOfInterest, nameQuery, selectedTagIds]);
+  }, [pointsOfInterest, nameQuery, selectedGenreId, selectedTagIds]);
 
   const allFilteredPointsSelected = useMemo(() => {
     if (filteredPoints.length === 0) return false;
@@ -246,6 +300,7 @@ export const PointOfInterest = () => {
 
   const resetCreateForm = () => {
     setCreateForm({
+      genreId: defaultGenreId,
       name: '',
       description: '',
       clue: '',
@@ -264,6 +319,7 @@ export const PointOfInterest = () => {
     setImportQuery('');
     setSelectedCandidate(null);
     setImportZoneId('');
+    setImportGenreId(defaultGenreId);
     setImportError(null);
   };
 
@@ -706,6 +762,10 @@ export const PointOfInterest = () => {
       setCreateError('Please select a point of interest group.');
       return;
     }
+    if (!createForm.genreId) {
+      setCreateError('Please select a genre.');
+      return;
+    }
     if (!createForm.name || !createForm.description || !createForm.clue) {
       setCreateError('Name, description, and clue are required.');
       return;
@@ -730,6 +790,7 @@ export const PointOfInterest = () => {
       }
 
       await apiClient.post(`/sonar/pointsOfInterest/group/${createForm.groupId}`, {
+        genreId: createForm.genreId,
         name: createForm.name,
         description: createForm.description,
         latitude: createForm.lat,
@@ -758,10 +819,15 @@ export const PointOfInterest = () => {
       setImportError('Please select a zone.');
       return;
     }
+    if (!importGenreId) {
+      setImportError('Please select a genre.');
+      return;
+    }
     try {
       const importItem = await apiClient.post<PointOfInterestImport>('/sonar/pointOfInterest/import', {
         placeID: selectedCandidate.place_id,
         zoneID: importZoneId,
+        genreId: importGenreId,
       });
       setImportJobs((prev) => [importItem, ...prev]);
       setImportPolling(true);
@@ -771,11 +837,16 @@ export const PointOfInterest = () => {
     }
   };
 
-  const handleRetryImport = async (placeId: string, zoneId: string) => {
+  const handleRetryImport = async (
+    placeId: string,
+    zoneId: string,
+    genreId: string
+  ) => {
     try {
       const importItem = await apiClient.post<PointOfInterestImport>('/sonar/pointOfInterest/import', {
         placeID: placeId,
         zoneID: zoneId,
+        genreId,
       });
       setImportJobs((prev) => [importItem, ...prev]);
       setImportPolling(true);
@@ -785,7 +856,7 @@ export const PointOfInterest = () => {
     }
   };
 
-  const fetchImportJobs = async (zoneId?: string) => {
+  const fetchImportJobs = useCallback(async (zoneId?: string) => {
     try {
       const url = zoneId ? `/sonar/pointOfInterest/imports?zoneId=${zoneId}` : '/sonar/pointOfInterest/imports';
       const response = await apiClient.get<PointOfInterestImport[]>(url);
@@ -798,12 +869,12 @@ export const PointOfInterest = () => {
     } catch (err) {
       console.error('Error fetching import status:', err);
     }
-  };
+  }, [apiClient, fetchPointsOfInterest]);
 
   useEffect(() => {
     if (!showImportModal) return;
     fetchImportJobs(importZoneId || undefined);
-  }, [showImportModal, importZoneId]);
+  }, [fetchImportJobs, importZoneId, showImportModal]);
 
   useEffect(() => {
     if (!importPolling) return;
@@ -811,7 +882,7 @@ export const PointOfInterest = () => {
       fetchImportJobs(importZoneId || undefined);
     }, 3000);
     return () => clearInterval(interval);
-  }, [importPolling, importZoneId]);
+  }, [fetchImportJobs, importPolling, importZoneId]);
 
   useEffect(() => {
     if (importJobs.length === 0) return;
@@ -980,7 +1051,7 @@ export const PointOfInterest = () => {
       <div className="flex flex-col gap-2 mb-6">
         <h1 className="text-3xl font-bold">Points of Interest</h1>
         <p className="text-gray-600">
-          Search by name and filter by zone or tags.
+          Search by name and filter by zone, genre, or tags.
         </p>
       </div>
 
@@ -1249,7 +1320,7 @@ export const PointOfInterest = () => {
 
         {filtersOpen && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium text-gray-700">Search</label>
                 <input
@@ -1272,6 +1343,22 @@ export const PointOfInterest = () => {
                   {zones.map(zone => (
                     <option key={zone.id} value={zone.id}>
                       {zone.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-700">Genre</label>
+                <select
+                  className="border border-gray-300 rounded-md px-3 py-2"
+                  value={selectedGenreId}
+                  onChange={(e) => setSelectedGenreId(e.target.value)}
+                >
+                  <option value="all">All genres</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
                     </option>
                   ))}
                 </select>
@@ -1402,6 +1489,11 @@ export const PointOfInterest = () => {
                     />
                   )}
                   <h2 className="text-xl font-semibold mb-1">{point.name}</h2>
+                  <p className="text-xs font-medium uppercase tracking-wide text-blue-700 mb-2">
+                    {point.genre?.name ??
+                      genreNameById.get(point.genreId ?? '') ??
+                      'Unknown genre'}
+                  </p>
                   {point.originalName && (
                     <p className="text-sm text-gray-500 mb-2">{point.originalName}</p>
                   )}
@@ -1456,6 +1548,23 @@ export const PointOfInterest = () => {
                   {(pointOfInterestGroups ?? []).map(group => (
                     <option key={group.id} value={group.id}>
                       {group.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  value={createForm.genreId}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, genreId: e.target.value })
+                  }
+                >
+                  <option value="">Select a genre</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
                     </option>
                   ))}
                 </select>
@@ -1585,6 +1694,22 @@ export const PointOfInterest = () => {
             </div>
 
             <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+              <select
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                value={importGenreId}
+                onChange={(e) => setImportGenreId(e.target.value)}
+              >
+                <option value="">Select a genre</option>
+                {genres.map((genre) => (
+                  <option key={genre.id} value={genre.id}>
+                    {genre.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Search Google Maps</label>
               <input
                 type="text"
@@ -1633,6 +1758,12 @@ export const PointOfInterest = () => {
                   <div key={job.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-xs">
                     <div>
                       <div className="font-medium">{job.placeId}</div>
+                      <div className="text-gray-500">
+                        Genre:{' '}
+                        {job.genre?.name ??
+                          genreNameById.get(job.genreId) ??
+                          'Unknown'}
+                      </div>
                       {job.errorMessage && (
                         <div className="text-red-600">{job.errorMessage}</div>
                       )}
@@ -1643,7 +1774,9 @@ export const PointOfInterest = () => {
                         <button
                           type="button"
                           className="rounded-md border border-gray-300 px-2 py-1 text-[10px] text-gray-700"
-                          onClick={() => handleRetryImport(job.placeId, job.zoneId)}
+                          onClick={() =>
+                            handleRetryImport(job.placeId, job.zoneId, job.genreId)
+                          }
                         >
                           Retry
                         </button>

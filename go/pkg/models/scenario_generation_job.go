@@ -18,6 +18,8 @@ type ScenarioGenerationJob struct {
 	CreatedAt           time.Time  `json:"createdAt"`
 	UpdatedAt           time.Time  `json:"updatedAt"`
 	ZoneID              uuid.UUID  `json:"zoneId" gorm:"type:uuid"`
+	GenreID             uuid.UUID  `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre               *ZoneGenre `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Status              string     `json:"status"`
 	OpenEnded           bool       `json:"openEnded" gorm:"column:open_ended"`
 	ScaleWithUserLevel  bool       `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`

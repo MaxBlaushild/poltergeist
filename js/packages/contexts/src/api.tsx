@@ -1,9 +1,8 @@
 import React, {
   createContext,
   useContext,
-  useState,
-  useEffect,
   useMemo,
+  useRef,
   useCallback,
   ReactNode,
 } from 'react';
@@ -29,21 +28,21 @@ const getApiUrl = () => {
 export const APIProvider: React.FC<APIProviderProps> = ({ children }) => {
   const baseURL = getApiUrl();
   const { location } = useLocation();
-  
-  // Create stable getLocation function that always returns current location
-  const getLocation = useCallback(() => {
-    return location;
-  }, [location]); // Include location in dependencies
-  
-  
-  // Recreate apiClient when location changes
+  const locationRef = useRef(location);
+
+  locationRef.current = location;
+
+  // Keep the API client stable while still reading the latest location header.
+  const getLocation = useCallback(() => locationRef.current, []);
+
   const apiClient = useMemo(() => {
-    const client = new APIClient(baseURL, getLocation);
-    return client;
-  }, [baseURL, getLocation, location]);
+    return new APIClient(baseURL, getLocation);
+  }, [baseURL, getLocation]);
+
+  const value = useMemo(() => ({ apiClient }), [apiClient]);
 
   return (
-    <APIContext.Provider value={{ apiClient }}>{children}</APIContext.Provider>
+    <APIContext.Provider value={value}>{children}</APIContext.Provider>
   );
 };
 

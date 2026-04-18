@@ -615,6 +615,7 @@ func (p *SeedDistrictProcessor) ensureDistrictSeedAnchorPOI(
 			questArchetype.Root.LocationArchetype.IncludedTypes,
 			questArchetype.Root.LocationArchetype.ExcludedTypes,
 			1,
+			nil,
 		)
 		if err == nil && len(pois) > 0 {
 			return pois[0], nil

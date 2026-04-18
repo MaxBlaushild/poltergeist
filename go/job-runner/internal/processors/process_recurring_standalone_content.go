@@ -150,6 +150,8 @@ func (p *ProcessRecurringStandaloneContentProcessor) processScenario(
 		UpdatedAt:                 now,
 		ZoneID:                    scenario.ZoneID,
 		PointOfInterestID:         scenario.PointOfInterestID,
+		GenreID:                   scenario.GenreID,
+		Genre:                     scenario.Genre,
 		Latitude:                  scenario.Latitude,
 		Longitude:                 scenario.Longitude,
 		Prompt:                    scenario.Prompt,

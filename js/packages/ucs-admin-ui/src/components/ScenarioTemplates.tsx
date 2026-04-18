@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
-import { Spell } from '@poltergeist/types';
+import { Spell, ZoneGenre } from '@poltergeist/types';
 
 type ScenarioFailureDrainType = 'none' | 'flat' | 'percent';
 type ScenarioFailurePenaltyMode = 'shared' | 'individual';
@@ -14,6 +14,8 @@ type ScenarioSuccessRewardMode = 'shared' | 'individual';
 
 type ScenarioTemplateRecord = {
   id: string;
+  genreId: string;
+  genre?: ZoneGenre;
   prompt: string;
   imageUrl: string;
   thumbnailUrl: string;
@@ -48,6 +50,8 @@ type ScenarioTemplateRecord = {
 
 type ScenarioTemplateGenerationJob = {
   id: string;
+  genreId: string;
+  genre?: ZoneGenre;
   status: string;
   count: number;
   openEnded: boolean;
@@ -58,6 +62,7 @@ type ScenarioTemplateGenerationJob = {
 };
 
 type ScenarioTemplateFormState = {
+  genreId: string;
   prompt: string;
   imageUrl: string;
   thumbnailUrl: string;
@@ -90,6 +95,7 @@ type ScenarioTemplateFormState = {
 
 type ScenarioTemplateGenerationFormState = {
   count: string;
+  genreId: string;
   openEnded: boolean;
 };
 
@@ -150,6 +156,7 @@ const PaginationControls = ({
 };
 
 const emptyFormState = (): ScenarioTemplateFormState => ({
+  genreId: '',
   prompt: '',
   imageUrl: '',
   thumbnailUrl: '',
@@ -182,8 +189,19 @@ const emptyFormState = (): ScenarioTemplateFormState => ({
 
 const emptyGenerationForm = (): ScenarioTemplateGenerationFormState => ({
   count: '6',
+  genreId: '',
   openEnded: false,
 });
+
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasy = genres.find(
+    (genre) => (genre.name || '').trim().toLowerCase() === 'fantasy'
+  );
+  return fantasy?.id ?? genres[0]?.id ?? '';
+};
+
+const formatGenreLabel = (genre?: ZoneGenre | null): string =>
+  genre?.name?.trim() || 'Fantasy';
 
 const prettyJson = (value: unknown): string =>
   JSON.stringify(value ?? [], null, 2);
@@ -203,6 +221,7 @@ const formatDate = (value?: string | null): string => {
 const formFromRecord = (
   record: ScenarioTemplateRecord
 ): ScenarioTemplateFormState => ({
+  genreId: record.genreId ?? record.genre?.id ?? '',
   prompt: record.prompt ?? '',
   imageUrl: record.imageUrl ?? '',
   thumbnailUrl: record.thumbnailUrl ?? '',
@@ -263,6 +282,7 @@ const parseJsonField = <T,>(label: string, value: string): T => {
 };
 
 const buildPayloadFromForm = (form: ScenarioTemplateFormState) => ({
+  genreId: form.genreId.trim(),
   prompt: form.prompt,
   imageUrl: form.imageUrl,
   thumbnailUrl: form.thumbnailUrl,
@@ -322,10 +342,12 @@ export const ScenarioTemplates = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [records, setRecords] = useState<ScenarioTemplateRecord[]>([]);
   const [jobs, setJobs] = useState<ScenarioTemplateGenerationJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [genreFilter, setGenreFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -336,24 +358,30 @@ export const ScenarioTemplates = () => {
   const [generationForm, setGenerationForm] =
     useState<ScenarioTemplateGenerationFormState>(emptyGenerationForm());
   const deferredQuery = useDeferredValue(query);
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
 
   const load = useCallback(
     async (suppressLoading = false) => {
       try {
         if (!suppressLoading) setLoading(true);
-        const [templateResp, jobResp, spellResp] = await Promise.all([
+        const [templateResp, jobResp, spellResp, genreResp] = await Promise.all([
           apiClient.get<PaginatedResponse<ScenarioTemplateRecord>>(
             '/sonar/admin/scenario-templates',
             {
               page,
               pageSize: scenarioTemplateListPageSize,
               query: deferredQuery.trim(),
+              genreId: genreFilter === 'all' ? '' : genreFilter,
             }
           ),
           apiClient.get<ScenarioTemplateGenerationJob[]>(
             '/sonar/admin/scenario-template-generation-jobs?limit=20'
           ),
           apiClient.get<Spell[]>('/sonar/spells'),
+          apiClient.get<ZoneGenre[]>('/sonar/zone-genres?includeInactive=true'),
         ]);
         setRecords(
           Array.isArray(templateResp?.items) ? templateResp.items : []
@@ -361,6 +389,7 @@ export const ScenarioTemplates = () => {
         setTotal(templateResp?.total ?? 0);
         setJobs(Array.isArray(jobResp) ? jobResp : []);
         setSpells(Array.isArray(spellResp) ? spellResp : []);
+        setGenres(Array.isArray(genreResp) ? genreResp : []);
       } catch (error) {
         console.error('Failed to load scenario templates', error);
         alert('Failed to load scenario templates.');
@@ -368,7 +397,7 @@ export const ScenarioTemplates = () => {
         if (!suppressLoading) setLoading(false);
       }
     },
-    [apiClient, deferredQuery, page]
+    [apiClient, deferredQuery, genreFilter, page]
   );
 
   useEffect(() => {
@@ -377,7 +406,7 @@ export const ScenarioTemplates = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [genreFilter, query]);
 
   useEffect(() => {
     const totalPages = Math.max(
@@ -433,6 +462,23 @@ export const ScenarioTemplates = () => {
     setShowModal(false);
   };
 
+  useEffect(() => {
+    if (!generationForm.genreId && defaultGenreId) {
+      setGenerationForm((prev) =>
+        prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+      );
+    }
+  }, [defaultGenreId, generationForm.genreId]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!form.genreId && defaultGenreId) {
+      setForm((prev) =>
+        prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+      );
+    }
+  }, [defaultGenreId, form.genreId, showModal]);
+
   const save = async () => {
     try {
       setSaving(true);
@@ -483,6 +529,7 @@ export const ScenarioTemplates = () => {
       setGenerating(true);
       await apiClient.post('/sonar/admin/scenario-template-generation-jobs', {
         count,
+        genreId: generationForm.genreId.trim(),
         openEnded: generationForm.openEnded,
       });
       await load(true);
@@ -535,6 +582,30 @@ export const ScenarioTemplates = () => {
               className="mt-1 w-full rounded border p-2"
             />
           </label>
+          <label className="block text-sm">
+            Genre
+            <select
+              value={generationForm.genreId}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  genreId: event.target.value,
+                }))
+              }
+              className="mt-1 w-full rounded border p-2"
+            >
+              {genres.length === 0 ? (
+                <option value="">Fantasy</option>
+              ) : (
+                genres.map((genre) => (
+                  <option key={`template-generation-${genre.id}`} value={genre.id}>
+                    {formatGenreLabel(genre)}
+                    {genre.active === false ? ' (inactive)' : ''}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
           <label className="flex items-center gap-2 text-sm mt-6">
             <input
               type="checkbox"
@@ -579,7 +650,11 @@ export const ScenarioTemplates = () => {
                       {job.count}
                     </div>
                     <div className="text-gray-500">
-                      Created {job.createdCount} • queued{' '}
+                      {formatGenreLabel(
+                        job.genre ??
+                          genres.find((genre) => genre.id === job.genreId)
+                      )}{' '}
+                      • Created {job.createdCount} • queued{' '}
                       {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (
@@ -601,7 +676,7 @@ export const ScenarioTemplates = () => {
       </section>
 
       <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap gap-3">
           <input
             type="text"
             value={query}
@@ -609,6 +684,19 @@ export const ScenarioTemplates = () => {
             placeholder="Search by prompt or ID..."
             className="w-full max-w-xl rounded border p-2"
           />
+          <select
+            value={genreFilter}
+            onChange={(event) => setGenreFilter(event.target.value)}
+            className="w-full max-w-xs rounded border p-2"
+            aria-label="Filter scenario templates by genre"
+          >
+            <option value="all">All Genres</option>
+            {genres.map((genre) => (
+              <option key={`template-filter-${genre.id}`} value={genre.id}>
+                {formatGenreLabel(genre)}
+              </option>
+            ))}
+          </select>
         </div>
         {loading ? (
           <p className="text-sm text-gray-500">Loading templates...</p>
@@ -621,6 +709,12 @@ export const ScenarioTemplates = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
                     <div className="text-sm text-gray-500">
+                      Genre:{' '}
+                      {formatGenreLabel(
+                        record.genre ??
+                          genres.find((genre) => genre.id === record.genreId)
+                      )}{' '}
+                      •{' '}
                       {record.openEnded ? 'Open ended' : 'Choice based'} •
                       difficulty {record.difficulty}
                     </div>
@@ -679,6 +773,30 @@ export const ScenarioTemplates = () => {
               </button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
+              <label className="block text-sm">
+                Genre
+                <select
+                  value={form.genreId}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      genreId: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded border p-2"
+                >
+                  {genres.length === 0 ? (
+                    <option value="">Fantasy</option>
+                  ) : (
+                    genres.map((genre) => (
+                      <option key={`template-genre-${genre.id}`} value={genre.id}>
+                        {formatGenreLabel(genre)}
+                        {genre.active === false ? ' (inactive)' : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
               <label className="block text-sm md:col-span-2">
                 Prompt
                 <textarea

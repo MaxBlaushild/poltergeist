@@ -1069,6 +1069,7 @@ export const Monsters = () => {
   const [bulkTemplateType, setBulkTemplateType] =
     useState<MonsterTemplateType>('monster');
   const [bulkTemplateGenreId, setBulkTemplateGenreId] = useState('');
+  const [genreFilter, setGenreFilter] = useState('all');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<
     'all' | MonsterTemplateType
   >('all');
@@ -1168,6 +1169,7 @@ export const Monsters = () => {
               pageSize: monsterListPageSize,
               query: deferredQuery.trim(),
               zoneQuery: deferredZoneQuery.trim(),
+              genreId: genreFilter === 'all' ? '' : genreFilter,
               archived: templateTab === 'archived',
               monsterType:
                 templateTypeFilter === 'all' ? '' : templateTypeFilter,
@@ -1180,6 +1182,7 @@ export const Monsters = () => {
               pageSize: monsterListPageSize,
               query: deferredQuery.trim(),
               zoneQuery: deferredZoneQuery.trim(),
+              genreId: genreFilter === 'all' ? '' : genreFilter,
             }
           ),
           apiClient.get<PaginatedResponse<MonsterEncounterRecord>>(
@@ -1189,6 +1192,7 @@ export const Monsters = () => {
               pageSize: monsterListPageSize,
               query: deferredQuery.trim(),
               zoneQuery: deferredZoneQuery.trim(),
+              genreId: genreFilter === 'all' ? '' : genreFilter,
             }
           ),
         ]);
@@ -1219,6 +1223,7 @@ export const Monsters = () => {
       deferredQuery,
       deferredZoneQuery,
       encounterPage,
+      genreFilter,
       monsterPage,
       templatePage,
       templateTab,
@@ -1271,7 +1276,7 @@ export const Monsters = () => {
     setTemplatePage(1);
     setMonsterPage(1);
     setEncounterPage(1);
-  }, [query, zoneQuery]);
+  }, [genreFilter, query, zoneQuery]);
 
   useEffect(() => {
     setTemplatePage(1);
@@ -3128,6 +3133,19 @@ export const Monsters = () => {
               {monsterTemplateTypeOptions.map((option) => (
                 <option key={`filter-${option.value}`} value={option.value}>
                   {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="rounded-md border border-gray-300 p-2"
+              value={genreFilter}
+              onChange={(event) => setGenreFilter(event.target.value)}
+              aria-label="Filter monsters by genre"
+            >
+              <option value="all">All Genres</option>
+              {genres.map((genre) => (
+                <option key={`filter-genre-${genre.id}`} value={genre.id}>
+                  {formatGenreLabel(genre)}
                 </option>
               ))}
             </select>

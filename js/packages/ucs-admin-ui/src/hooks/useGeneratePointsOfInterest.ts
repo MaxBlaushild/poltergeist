@@ -6,10 +6,21 @@ export const useGeneratePointsOfInterest = (zoneId: string) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const generatePointsOfInterest = async (zoneId: string, includedPlaceTypes: string[], excludedPlaceTypes: string[], numberOfPlaces: number) => {
+  const generatePointsOfInterest = async (
+    zoneId: string,
+    includedPlaceTypes: string[],
+    excludedPlaceTypes: string[],
+    numberOfPlaces: number,
+    genreId?: string
+  ) => {
     try {
       setLoading(true);
-      await apiClient.post(`/sonar/zones/${zoneId}/pointsOfInterest`, { includedPlaceTypes, excludedPlaceTypes, numberOfPlaces });
+      await apiClient.post(`/sonar/zones/${zoneId}/pointsOfInterest`, {
+        includedTypes: includedPlaceTypes,
+        excludedTypes: excludedPlaceTypes,
+        numberOfPlaces,
+        genreId,
+      });
       setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to generate points of interest'));
@@ -39,10 +50,18 @@ export const useGeneratePointsOfInterest = (zoneId: string) => {
     }
   };
 
-  const importPointOfInterest = async (placeID: string, zoneID: string) => {
+  const importPointOfInterest = async (
+    placeID: string,
+    zoneID: string,
+    genreId?: string
+  ) => {
     try {
       setLoading(true);
-      await apiClient.post(`/sonar/pointOfInterest/import`, { placeID, zoneID });
+      await apiClient.post(`/sonar/pointOfInterest/import`, {
+        placeID,
+        zoneID,
+        genreId,
+      });
       setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to import point of interest'));

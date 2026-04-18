@@ -27,8 +27,10 @@ func (h *monsterEncounterHandle) preloadBase(ctx context.Context) *gorm.DB {
 			return db.Order("slot ASC").Order("created_at ASC")
 		}).
 		Preload("Members.Monster").
+		Preload("Members.Monster.Genre").
 		Preload("Members.Monster.Zone").
 		Preload("Members.Monster.Template").
+		Preload("Members.Monster.Template.Genre").
 		Preload("Members.Monster.Template.Spells").
 		Preload("Members.Monster.Template.Spells.Spell").
 		Preload("Members.Monster.Template.Progressions").
@@ -113,6 +115,10 @@ func (h *monsterEncounterHandle) adminListBaseQuery(
 	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
 		zoneSearchTerm := "%" + normalizedZoneQuery + "%"
 		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", zoneSearchTerm)
+	}
+
+	if params.GenreID != nil && *params.GenreID != uuid.Nil {
+		query = query.Where("member_monsters.genre_id = ?", *params.GenreID)
 	}
 
 	return query

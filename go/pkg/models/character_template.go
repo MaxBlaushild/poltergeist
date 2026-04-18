@@ -18,6 +18,8 @@ type CharacterTemplate struct {
 	MapIconURL            string                 `json:"mapIconUrl" gorm:"column:map_icon_url"`
 	DialogueImageURL      string                 `json:"dialogueImageUrl" gorm:"column:dialogue_image_url"`
 	ThumbnailURL          string                 `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	GenreID               uuid.UUID              `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                 *ZoneGenre             `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	StoryVariants         CharacterStoryVariants `json:"storyVariants" gorm:"column:story_variants;type:jsonb;default:'[]'"`
 	ImageGenerationStatus string                 `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError  *string                `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`

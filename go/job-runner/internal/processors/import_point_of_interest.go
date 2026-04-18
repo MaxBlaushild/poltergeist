@@ -65,7 +65,7 @@ func (p *ImportPointOfInterestProcessor) ProcessTask(ctx context.Context, t *asy
 		return nil
 	}
 
-	poi, err := p.locationSeeder.ImportPlace(ctx, importItem.PlaceID, *zone)
+	poi, err := p.locationSeeder.ImportPlace(ctx, importItem.PlaceID, *zone, importItem.Genre)
 	if err != nil {
 		msg := err.Error()
 		importItem.Status = "failed"

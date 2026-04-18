@@ -5374,6 +5374,7 @@ func (s *server) importPointOfInterest(ctx *gin.Context) {
 	var requestBody struct {
 		PlaceID string    `json:"placeID"`
 		ZoneID  uuid.UUID `json:"zoneID"`
+		GenreID string    `json:"genreId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -5384,6 +5385,11 @@ func (s *server) importPointOfInterest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeID and zoneID are required"})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	importItem := &models.PointOfInterestImport{
 		ID:        uuid.New(),
@@ -5391,6 +5397,8 @@ func (s *server) importPointOfInterest(ctx *gin.Context) {
 		UpdatedAt: time.Now(),
 		PlaceID:   requestBody.PlaceID,
 		ZoneID:    requestBody.ZoneID,
+		GenreID:   genre.ID,
+		Genre:     genre,
 		Status:    "queued",
 	}
 	if err := s.dbClient.PointOfInterestImport().Create(ctx, importItem); err != nil {
@@ -5605,13 +5613,19 @@ func (s *server) generatePointsOfInterestForZone(ctx *gin.Context) {
 		IncludedTypes  []googlemaps.PlaceType `json:"includedTypes"`
 		ExcludedTypes  []googlemaps.PlaceType `json:"excludedTypes"`
 		NumberOfPlaces int32                  `json:"numberOfPlaces"`
+		GenreID        string                 `json:"genreId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	pointsOfInterest, err := s.locationSeeder.SeedPointsOfInterest(ctx, *zone, requestBody.IncludedTypes, requestBody.ExcludedTypes, requestBody.NumberOfPlaces)
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	pointsOfInterest, err := s.locationSeeder.SeedPointsOfInterest(ctx, *zone, requestBody.IncludedTypes, requestBody.ExcludedTypes, requestBody.NumberOfPlaces, genre)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -6889,12 +6903,19 @@ func (s *server) createScenarioGenerationJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found"})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.ScenarioGenerationJob{
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		ZoneID:    zoneID,
+		GenreID:   genre.ID,
+		Genre:     genre,
 		Status:    models.ScenarioGenerationStatusQueued,
 		OpenEnded: requestBody.OpenEnded,
 		Latitude:  requestBody.Latitude,
@@ -7635,6 +7656,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
+		GenreID           string                       `json:"genreId"`
 		Name              string                       `binding:"required" json:"name"`
 		Description       string                       `binding:"required" json:"description"`
 		Lat               string                       `binding:"required" json:"lat"`
@@ -7675,6 +7697,11 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "point of interest not found"})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	rewardConfig, err := s.parsePointOfInterestRewardConfig(ctx, pointOfInterestRewardConfigRequest{
 		RewardMode:       requestBody.RewardMode,
 		RandomRewardSize: requestBody.RandomRewardSize,
@@ -7703,6 +7730,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		Clue:                  requestBody.Clue,
 		ImageUrl:              requestBody.ImageUrl,
 		ThumbnailURL:          existingPoi.ThumbnailURL,
+		GenreID:               genre.ID,
 		OriginalName:          requestBody.OriginalName,
 		GoogleMapsPlaceID:     googleMapsPlaceID,
 		GoogleMapsPlaceName:   existingPoi.GoogleMapsPlaceName,
@@ -8041,6 +8069,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 	}
 
 	var request struct {
+		GenreID          string                       `json:"genreId"`
 		Name             string                       `binding:"required" json:"name"`
 		Description      string                       `binding:"required" json:"description"`
 		Latitude         string                       `binding:"required" json:"latitude"`
@@ -8067,6 +8096,11 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, request.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	rewardConfig, err := s.parsePointOfInterestRewardConfig(ctx, pointOfInterestRewardConfigRequest{
 		RewardMode:       request.RewardMode,
 		RandomRewardSize: request.RandomRewardSize,
@@ -8088,6 +8122,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		Lng:              request.Longitude,
 		ImageUrl:         request.ImageUrl,
 		Clue:             request.Clue,
+		GenreID:          genre.ID,
 		UnlockTier:       request.UnlockTier,
 		RewardMode:       rewardConfig.RewardMode,
 		RandomRewardSize: rewardConfig.RandomRewardSize,
@@ -9382,6 +9417,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 func (s *server) generateInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
 		Name             string  `json:"name" binding:"required"`
+		GenreID          string  `json:"genreId"`
 		Description      string  `json:"description"`
 		RarityTier       string  `json:"rarityTier" binding:"required"`
 		ItemLevel        *int    `json:"itemLevel"`
@@ -9401,6 +9437,11 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 	}
 	if itemLevel < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
+		return
+	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -9440,6 +9481,8 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 
 	item := &models.InventoryItem{
 		Name:                    requestBody.Name,
+		GenreID:                 genre.ID,
+		Genre:                   genre,
 		FlavorText:              requestBody.Description,
 		RarityTier:              requestBody.RarityTier,
 		IsCaptureType:           false,
@@ -9556,6 +9599,8 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 
 		item := &models.InventoryItem{
 			Name:                    name,
+			GenreID:                 sourceItem.GenreID,
+			Genre:                   sourceItem.Genre,
 			FlavorText:              inventorySetFlavorText(setTheme, slot, handCategory),
 			EffectText:              "",
 			RarityTier:              sourceItem.RarityTier,
@@ -9893,6 +9938,7 @@ func inventorySetAllEquippableSlots() []string {
 func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 	var requestBody struct {
 		TargetLevel int    `json:"targetLevel" binding:"required"`
+		GenreID     string `json:"genreId"`
 		MajorStat   string `json:"majorStat" binding:"required"`
 		MinorStat   string `json:"minorStat" binding:"required"`
 		RarityTier  string `json:"rarityTier"`
@@ -9931,6 +9977,11 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 	if rarity == "" {
 		rarity = inventorySetRarityForTargetLevel(requestBody.TargetLevel)
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	setTheme := strings.TrimSpace(requestBody.SetTheme)
 	if setTheme == "" {
@@ -9941,6 +9992,8 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 
 	sourceItem := &models.InventoryItem{
 		Name:                    fmt.Sprintf("%s Core", setTheme),
+		GenreID:                 genre.ID,
+		Genre:                   genre,
 		RarityTier:              rarity,
 		IsCaptureType:           false,
 		UnlockTier:              intPtr(requestBody.TargetLevel),
@@ -9984,6 +10037,8 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 
 		item := &models.InventoryItem{
 			Name:                    name,
+			GenreID:                 genre.ID,
+			Genre:                   genre,
 			FlavorText:              inventorySetFlavorText(setTheme, slot, handCategory),
 			EffectText:              "",
 			RarityTier:              rarity,
@@ -10153,6 +10208,8 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 
 		item := &models.InventoryItem{
 			Name:                                     itemName,
+			GenreID:                                  sourceItem.GenreID,
+			Genre:                                    sourceItem.Genre,
 			ImageURL:                                 "",
 			FlavorText:                               buildConsumableQualityFlavorText(baseName, quality),
 			EffectText:                               buildConsumableQualityEffectText(baseName, quality, consumeHealthDelta, consumeManaDelta, consumeRevivePartyMemberHealth, consumeReviveAllDownedPartyMembersHealth, statusesToAdd, sourceItem.ConsumeStatusesToRemove),
@@ -11146,6 +11203,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"flavor_text":                                    item.FlavorText,
 		"effect_text":                                    item.EffectText,
 		"rarity_tier":                                    item.RarityTier,
+		"genre_id":                                       item.GenreID,
 		"resource_type_id":                               item.ResourceTypeID,
 		"is_capture_type":                                item.IsCaptureType,
 		"buy_price":                                      item.BuyPrice,
@@ -14757,6 +14815,7 @@ func (s *server) getCharacterLocations(ctx *gin.Context) {
 func (s *server) createCharacter(ctx *gin.Context) {
 	var requestBody struct {
 		Name              string                         `json:"name" binding:"required"`
+		GenreID           string                         `json:"genreId"`
 		Description       string                         `json:"description"`
 		InternalTags      []string                       `json:"internalTags"`
 		StoryVariants     []models.CharacterStoryVariant `json:"storyVariants"`
@@ -14782,9 +14841,16 @@ func (s *server) createCharacter(ctx *gin.Context) {
 			return
 		}
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	character := &models.Character{
 		Name:              requestBody.Name,
+		GenreID:           genre.ID,
+		Genre:             genre,
 		Description:       requestBody.Description,
 		InternalTags:      parseCharacterInternalTags(requestBody.InternalTags),
 		StoryVariants:     normalizeCharacterStoryVariants(requestBody.StoryVariants),
@@ -14815,6 +14881,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 func (s *server) generateCharacter(ctx *gin.Context) {
 	var requestBody struct {
 		Name        string `json:"name" binding:"required"`
+		GenreID     string `json:"genreId"`
 		Description string `json:"description"`
 	}
 
@@ -14822,8 +14889,15 @@ func (s *server) generateCharacter(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	genre, err := s.resolveZoneGenre(ctx, requestBody.GenreID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	character := &models.Character{
+		GenreID:               genre.ID,
+		Genre:                 genre,
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
 		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
@@ -14963,6 +15037,21 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 			return
 		}
 		updates["description"] = value
+	}
+	if raw, exists := requestBody["genreId"]; exists {
+		rawGenreID := ""
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &rawGenreID); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid genreId"})
+				return
+			}
+		}
+		genre, err := s.resolveZoneGenre(ctx, rawGenreID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["genre_id"] = genre.ID
 	}
 	if raw, exists := requestBody["mapIconUrl"]; exists {
 		var value string
@@ -16761,6 +16850,7 @@ type scenarioFailureStatusPayload struct {
 type scenarioUpsertRequest struct {
 	ZoneID                    string                         `json:"zoneId"`
 	PointOfInterestID         string                         `json:"pointOfInterestId"`
+	GenreID                   string                         `json:"genreId"`
 	Latitude                  float64                        `json:"latitude"`
 	Longitude                 float64                        `json:"longitude"`
 	Prompt                    string                         `json:"prompt"`
@@ -16798,6 +16888,7 @@ type scenarioUpsertRequest struct {
 
 type scenarioGenerationJobRequest struct {
 	ZoneID    string   `json:"zoneId"`
+	GenreID   string   `json:"genreId"`
 	OpenEnded bool     `json:"openEnded"`
 	Latitude  *float64 `json:"latitude"`
 	Longitude *float64 `json:"longitude"`
@@ -17714,7 +17805,7 @@ func (s *server) applyScenarioSuccessReward(
 	return applied, nil
 }
 
-func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUpsertRequest) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, []models.ScenarioSpellReward, []models.ScenarioItemChoiceReward, error) {
+func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUpsertRequest, existing *models.Scenario) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, []models.ScenarioSpellReward, []models.ScenarioItemChoiceReward, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("invalid zone ID")
@@ -17745,6 +17836,14 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	}
 	if body.RewardExperience < 0 || body.RewardGold < 0 {
 		return nil, nil, nil, nil, nil, fmt.Errorf("reward values must be zero or greater")
+	}
+	rawGenreID := strings.TrimSpace(body.GenreID)
+	if rawGenreID == "" && existing != nil && existing.GenreID != uuid.Nil {
+		rawGenreID = existing.GenreID.String()
+	}
+	genre, err := s.resolveZoneGenre(ctx, rawGenreID)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
 	}
 	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
 	if err != nil {
@@ -17848,6 +17947,8 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	scenario := &models.Scenario{
 		ZoneID:                    zoneID,
 		PointOfInterestID:         resolvedPointOfInterestID,
+		GenreID:                   genre.ID,
+		Genre:                     genre,
 		Latitude:                  resolvedLatitude,
 		Longitude:                 resolvedLongitude,
 		Prompt:                    strings.TrimSpace(body.Prompt),
@@ -18378,11 +18479,17 @@ func (s *server) getAdminScenarios(ctx *gin.Context) {
 
 	page := parseAdminMonsterListPage(ctx)
 	pageSize := parseAdminMonsterListPageSize(ctx)
+	genreID, err := parseOptionalGenreIDFilter(ctx.Query("genreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	result, err := s.dbClient.Scenario().ListAdmin(ctx, db.ScenarioAdminListParams{
 		Page:      page,
 		PageSize:  pageSize,
 		Query:     ctx.Query("query"),
 		ZoneQuery: ctx.Query("zoneQuery"),
+		GenreID:   genreID,
 	}, &user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -18512,7 +18619,7 @@ func (s *server) createScenario(ctx *gin.Context) {
 		return
 	}
 
-	scenario, options, scenarioRewards, scenarioSpellRewards, scenarioItemChoiceRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody)
+	scenario, options, scenarioRewards, scenarioSpellRewards, scenarioItemChoiceRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -18589,7 +18696,7 @@ func (s *server) updateScenario(ctx *gin.Context) {
 		return
 	}
 
-	scenario, options, scenarioRewards, scenarioSpellRewards, scenarioItemChoiceRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody)
+	scenario, options, scenarioRewards, scenarioSpellRewards, scenarioItemChoiceRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody, existing)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

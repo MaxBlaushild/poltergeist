@@ -18,6 +18,7 @@ type pointOfInterestHandle struct {
 func (c *pointOfInterestHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return c.db.WithContext(ctx).
 		Preload("Characters").
+		Preload("Genre").
 		Preload("Tags").
 		Preload("PointOfInterestChallenges").
 		Preload("ItemRewards").
@@ -302,6 +303,11 @@ func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uu
 }
 
 func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest models.PointOfInterest) error {
+	resolvedGenreID, err := resolvePointOfInterestGenreID(ctx, c.db, &pointOfInterest)
+	if err != nil {
+		return err
+	}
+	pointOfInterest.GenreID = resolvedGenreID
 	if err := pointOfInterest.SetGeometry(pointOfInterest.Lat, pointOfInterest.Lng); err != nil {
 		return err
 	}
@@ -314,6 +320,11 @@ func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInter
 	pointOfInterest.ID = uuid.New()
 	pointOfInterest.CreatedAt = time.Now()
 	pointOfInterest.UpdatedAt = time.Now()
+	resolvedGenreID, err := resolvePointOfInterestGenreID(ctx, c.db, pointOfInterest)
+	if err != nil {
+		return err
+	}
+	pointOfInterest.GenreID = resolvedGenreID
 	normalizePointOfInterest(pointOfInterest)
 
 	if err := c.db.WithContext(ctx).Create(&pointOfInterest).Error; err != nil {
@@ -376,6 +387,11 @@ func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uu
 	}
 	updates.ID = pointOfInterestID
 	updates.UpdatedAt = time.Now()
+	resolvedGenreID, err := resolvePointOfInterestGenreIDForUpdate(ctx, c.db, pointOfInterestID, updates)
+	if err != nil {
+		return err
+	}
+	updates.GenreID = resolvedGenreID
 	if err := updates.SetGeometry(updates.Lat, updates.Lng); err != nil {
 		return err
 	}
@@ -397,6 +413,7 @@ func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uu
 		"marker_category":         updates.MarkerCategory,
 		"story_variants":          updates.StoryVariants,
 		"geometry":                updates.Geometry,
+		"genre_id":                updates.GenreID,
 		"reward_mode":             updates.RewardMode,
 		"random_reward_size":      updates.RandomRewardSize,
 		"reward_experience":       updates.RewardExperience,

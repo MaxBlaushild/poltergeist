@@ -138,6 +138,7 @@ func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
 		Preload("PointOfInterest").
+		Preload("Genre").
 		Preload("Options").
 		Preload("Options.ItemRewards").
 		Preload("Options.ItemRewards.InventoryItem").
@@ -164,6 +165,11 @@ func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) 
 	if scenario.InternalTags == nil {
 		scenario.InternalTags = models.StringArray{}
 	}
+	resolvedGenreID, err := resolveScenarioGenreID(ctx, h.db, scenario)
+	if err != nil {
+		return err
+	}
+	scenario.GenreID = resolvedGenreID
 	scenario.RequiredStoryFlags = normalizeJSONStringArray(scenario.RequiredStoryFlags)
 	normalizeScenarioFailurePenaltyDefaults(scenario)
 	if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
@@ -226,6 +232,10 @@ func (h *scenarioHandle) adminListBaseQuery(
 	if normalizedZoneQuery := strings.TrimSpace(strings.ToLower(params.ZoneQuery)); normalizedZoneQuery != "" {
 		searchTerm := "%" + normalizedZoneQuery + "%"
 		query = query.Where("LOWER(COALESCE(zones.name, '')) LIKE ?", searchTerm)
+	}
+
+	if params.GenreID != nil && *params.GenreID != uuid.Nil {
+		query = query.Where("scenarios.genre_id = ?", *params.GenreID)
 	}
 
 	return query
@@ -325,6 +335,11 @@ func (h *scenarioHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zo
 func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	resolvedGenreID, err := resolveScenarioGenreIDForUpdate(ctx, h.db, id, updates)
+	if err != nil {
+		return err
+	}
+	updates.GenreID = resolvedGenreID
 	normalizeScenarioFailurePenaltyDefaults(updates)
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
@@ -333,6 +348,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 	payload := map[string]interface{}{
 		"zone_id":                      updates.ZoneID,
 		"point_of_interest_id":         updates.PointOfInterestID,
+		"genre_id":                     updates.GenreID,
 		"latitude":                     updates.Latitude,
 		"longitude":                    updates.Longitude,
 		"geometry":                     updates.Geometry,
