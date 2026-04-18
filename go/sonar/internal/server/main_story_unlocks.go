@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -71,6 +72,10 @@ func (s *server) materializeMainStoryUnlockedScenario(
 	if err != nil {
 		return err
 	}
+	imageURL, thumbnailURL, shouldGenerateImage := models.ResolveScenarioArtURLs(
+		"",
+		"",
+	)
 
 	scenario := &models.Scenario{
 		ZoneID:             zone.ID,
@@ -86,13 +91,27 @@ func (s *server) materializeMainStoryUnlockedScenario(
 			),
 			append([]string{"main_story_unlock", "main_story_scenario"}, []string(spec.InternalTags)...)...,
 		)),
+		ImageURL:           imageURL,
+		ThumbnailURL:       thumbnailURL,
 		ScaleWithUserLevel: true,
 		RewardMode:         models.RewardModeRandom,
 		RandomRewardSize:   models.RandomRewardSizeSmall,
 		Difficulty:         max(1, spec.Difficulty),
 		OpenEnded:          true,
 	}
-	return s.dbClient.Scenario().Create(ctx, scenario)
+	if err := s.dbClient.Scenario().Create(ctx, scenario); err != nil {
+		return err
+	}
+	if shouldGenerateImage {
+		if err := s.enqueueScenarioImageGenerationTask(scenario.ID); err != nil {
+			log.Printf(
+				"materializeMainStoryUnlockedScenario: failed to queue scenario image generation for %s: %v",
+				scenario.ID,
+				err,
+			)
+		}
+	}
+	return nil
 }
 
 func (s *server) materializeMainStoryUnlockedChallenge(
@@ -239,6 +258,8 @@ func (s *server) materializeMainStoryUnlockedEncounter(
 			ImageURL:              strings.TrimSpace(template.ImageURL),
 			ThumbnailURL:          strings.TrimSpace(template.ThumbnailURL),
 			ZoneID:                zone.ID,
+			GenreID:               template.GenreID,
+			Genre:                 template.Genre,
 			Latitude:              latitude,
 			Longitude:             longitude,
 			TemplateID:            &templateID,

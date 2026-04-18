@@ -64,6 +64,8 @@ type client struct {
 	tagHandle                            *tagHandle
 	tagGroupHandle                       *tagGroupHandle
 	zoneHandle                           *zoneHandler
+	zoneGenreHandle                      *zoneGenreHandler
+	zoneGenreScoreHandle                 *zoneGenreScoreHandler
 	locationArchetypeHandle              *locationArchetypeHandle
 	questArchetypeHandle                 *questArchetypeHandle
 	questArchetypeSuggestionJobHandle    *questArchetypeSuggestionJobHandle
@@ -244,6 +246,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		tagHandle:                            &tagHandle{db: db},
 		tagGroupHandle:                       &tagGroupHandle{db: db},
 		zoneHandle:                           &zoneHandler{db: db},
+		zoneGenreHandle:                      &zoneGenreHandler{db: db},
+		zoneGenreScoreHandle:                 &zoneGenreScoreHandler{db: db},
 		locationArchetypeHandle:              &locationArchetypeHandle{db: db},
 		questArchetypeHandle:                 &questArchetypeHandle{db: db},
 		questArchetypeSuggestionJobHandle:    &questArchetypeSuggestionJobHandle{db: db},
@@ -536,6 +540,14 @@ func (c *client) QuestArchetypeSpellReward() QuestArchetypeSpellRewardHandle {
 
 func (c *client) Zone() ZoneHandle {
 	return c.zoneHandle
+}
+
+func (c *client) ZoneGenre() ZoneGenreHandle {
+	return c.zoneGenreHandle
+}
+
+func (c *client) ZoneGenreScore() ZoneGenreScoreHandle {
+	return c.zoneGenreScoreHandle
 }
 
 func (c *client) Tag() TagHandle {

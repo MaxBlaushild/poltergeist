@@ -307,6 +307,7 @@ type GenerateMonsterTemplateImageTaskPayload struct {
 
 type MonsterTemplateCreationSpec struct {
 	MonsterType      string `json:"monsterType"`
+	GenreID          string `json:"genreId,omitempty"`
 	Name             string `json:"name"`
 	Description      string `json:"description"`
 	BaseStrength     int    `json:"baseStrength"`

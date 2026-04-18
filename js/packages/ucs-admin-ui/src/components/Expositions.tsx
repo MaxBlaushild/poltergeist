@@ -442,14 +442,12 @@ export const Expositions: React.FC = () => {
         ? normalizeMaterialRewards(form.materialRewards)
         : [],
     itemRewards:
-      form.rewardMode === 'explicit'
-        ? form.itemRewards
-            .filter((reward) => reward.inventoryItemId)
-            .map((reward) => ({
-              inventoryItemId: Number.parseInt(reward.inventoryItemId, 10) || 0,
-              quantity: parsePositiveInt(String(reward.quantity), 1),
-            }))
-        : [],
+      form.itemRewards
+        .filter((reward) => reward.inventoryItemId)
+        .map((reward) => ({
+          inventoryItemId: Number.parseInt(reward.inventoryItemId, 10) || 0,
+          quantity: parsePositiveInt(String(reward.quantity), 1),
+        })),
     spellRewards:
       form.rewardMode === 'explicit'
         ? form.spellRewards
@@ -1069,28 +1067,34 @@ export const Expositions: React.FC = () => {
           ) : null}
 
           {form.rewardMode === 'random' ? (
-            <label className="block text-sm">
-              Random Reward Size
-              <select
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                value={form.randomRewardSize}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    randomRewardSize:
-                      event.target.value === 'large'
-                        ? 'large'
-                        : event.target.value === 'medium'
-                          ? 'medium'
-                          : 'small',
-                  }))
-                }
-              >
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
-              </select>
-            </label>
+            <div className="space-y-3">
+              <label className="block text-sm">
+                Random Reward Size
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  value={form.randomRewardSize}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      randomRewardSize:
+                        event.target.value === 'large'
+                          ? 'large'
+                          : event.target.value === 'medium'
+                            ? 'medium'
+                            : 'small',
+                    }))
+                  }
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+              <div className="text-xs text-slate-500">
+                Random rewards still grant scaled XP and gold. Guaranteed items
+                below are awarded too; materials and spells stay explicit-only.
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="grid gap-4 lg:grid-cols-2">
@@ -1133,111 +1137,6 @@ export const Expositions: React.FC = () => {
                 }
                 title="Material Rewards"
               />
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Item Rewards</label>
-                  <button
-                    type="button"
-                    className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900"
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        itemRewards: [
-                          ...prev.itemRewards,
-                          { inventoryItemId: '', quantity: 1 },
-                        ],
-                      }))
-                    }
-                  >
-                    Add Item
-                  </button>
-                </div>
-                {form.itemRewards.length === 0 ? (
-                  <div className="rounded border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-500">
-                    No item rewards configured.
-                  </div>
-                ) : (
-                  form.itemRewards.map((reward, index) => (
-                    <div
-                      key={`item-${index}`}
-                      className="grid gap-3 rounded border border-slate-300 bg-white p-3 md:grid-cols-[minmax(0,1fr)_120px_auto]"
-                    >
-                      <label className="block text-sm">
-                        Item
-                        <select
-                          className="mt-1 w-full rounded border border-slate-300 bg-white p-2"
-                          value={reward.inventoryItemId}
-                          onChange={(event) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              itemRewards: prev.itemRewards.map(
-                                (entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? {
-                                        ...entry,
-                                        inventoryItemId: event.target.value,
-                                      }
-                                    : entry
-                              ),
-                            }))
-                          }
-                        >
-                          <option value="">Select an item</option>
-                          {inventoryItems.map((item: InventoryItem) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="block text-sm">
-                        Quantity
-                        <input
-                          className="mt-1 w-full rounded border border-slate-300 bg-white p-2"
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={reward.quantity}
-                          onChange={(event) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              itemRewards: prev.itemRewards.map(
-                                (entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? {
-                                        ...entry,
-                                        quantity: parsePositiveInt(
-                                          event.target.value,
-                                          1
-                                        ),
-                                      }
-                                    : entry
-                              ),
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          className="rounded border border-red-300 bg-white px-3 py-2 text-sm text-red-700"
-                          onClick={() =>
-                            setForm((prev) => ({
-                              ...prev,
-                              itemRewards: prev.itemRewards.filter(
-                                (_, entryIndex) => entryIndex !== index
-                              ),
-                            }))
-                          }
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -1312,6 +1211,113 @@ export const Expositions: React.FC = () => {
               </div>
             </div>
           )}
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Guaranteed Item Rewards
+              </label>
+              <button
+                type="button"
+                className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900"
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    itemRewards: [
+                      ...prev.itemRewards,
+                      { inventoryItemId: '', quantity: 1 },
+                    ],
+                  }))
+                }
+              >
+                Add Item
+              </button>
+            </div>
+            {form.itemRewards.length === 0 ? (
+              <div className="rounded border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-500">
+                No guaranteed item rewards configured.
+              </div>
+            ) : (
+              form.itemRewards.map((reward, index) => (
+                <div
+                  key={`item-${index}`}
+                  className="grid gap-3 rounded border border-slate-300 bg-white p-3 md:grid-cols-[minmax(0,1fr)_120px_auto]"
+                >
+                  <label className="block text-sm">
+                    Item
+                    <select
+                      className="mt-1 w-full rounded border border-slate-300 bg-white p-2"
+                      value={reward.inventoryItemId}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          itemRewards: prev.itemRewards.map(
+                            (entry, entryIndex) =>
+                              entryIndex === index
+                                ? {
+                                    ...entry,
+                                    inventoryItemId: event.target.value,
+                                  }
+                                : entry
+                          ),
+                        }))
+                      }
+                    >
+                      <option value="">Select an item</option>
+                      {inventoryItems.map((item: InventoryItem) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm">
+                    Quantity
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 bg-white p-2"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={reward.quantity}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          itemRewards: prev.itemRewards.map(
+                            (entry, entryIndex) =>
+                              entryIndex === index
+                                ? {
+                                    ...entry,
+                                    quantity: parsePositiveInt(
+                                      event.target.value,
+                                      1
+                                    ),
+                                  }
+                                : entry
+                          ),
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      className="rounded border border-red-300 bg-white px-3 py-2 text-sm text-red-700"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          itemRewards: prev.itemRewards.filter(
+                            (_, entryIndex) => entryIndex !== index
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </section>
       </div>
     </div>

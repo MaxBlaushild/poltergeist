@@ -541,11 +541,19 @@ func normalizeInventorySuggestionEquipSlots(input []string) models.StringArray {
 	return out
 }
 
+func clearGeneratedInventoryUnlockLocksStrength(item *models.InventoryItem) {
+	if item == nil {
+		return
+	}
+	item.UnlockLocksStrength = nil
+}
+
 func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inventoryItemUpsertRequest {
 	var resourceTypeID *string
 	if item.ResourceTypeID != nil {
 		resourceTypeID = stringPtr(item.ResourceTypeID.String())
 	}
+	clearGeneratedInventoryUnlockLocksStrength(&item)
 	return inventoryItemUpsertRequest{
 		Name:                                     item.Name,
 		ImageURL:                                 item.ImageURL,
@@ -556,7 +564,7 @@ func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inven
 		IsCaptureType:                            item.IsCaptureType,
 		BuyPrice:                                 item.BuyPrice,
 		UnlockTier:                               item.UnlockTier,
-		UnlockLocksStrength:                      item.UnlockLocksStrength,
+		UnlockLocksStrength:                      nil,
 		ItemLevel:                                intPtr(item.ItemLevel),
 		EquipSlot:                                item.EquipSlot,
 		StrengthMod:                              item.StrengthMod,
@@ -642,7 +650,7 @@ func (s *server) buildInventoryProgressionDraftItem(
 		sourceBuyPrice = *item.BuyPrice
 	}
 	item.BuyPrice = intPtr(scalePositiveValue(sourceBuyPrice, ratio, 0, 1000000))
-	item.UnlockLocksStrength = scaleOptionalInt(item.UnlockLocksStrength, ratio, 1, 100)
+	clearGeneratedInventoryUnlockLocksStrength(&item)
 	item.StrengthMod = scaleSignedValue(item.StrengthMod, ratio)
 	item.DexterityMod = scaleSignedValue(item.DexterityMod, ratio)
 	item.ConstitutionMod = scaleSignedValue(item.ConstitutionMod, ratio)

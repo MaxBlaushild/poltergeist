@@ -87,6 +87,7 @@ class BaseStructureDefinitionData {
     required this.maxLevel,
     required this.sortOrder,
     required this.effectType,
+    required this.effectConfig,
     required this.prereqConfig,
     required this.levelCosts,
     required this.levelVisuals,
@@ -99,6 +100,7 @@ class BaseStructureDefinitionData {
   final int maxLevel;
   final int sortOrder;
   final String effectType;
+  final Map<String, dynamic> effectConfig;
   final Map<String, dynamic> prereqConfig;
   final List<BaseStructureCostData> levelCosts;
   final List<BaseStructureLevelVisualData> levelVisuals;
@@ -116,6 +118,7 @@ class BaseStructureDefinitionData {
               .toList()
         : const <BaseStructureCostData>[];
     final rawVisuals = json['levelVisuals'];
+    final rawEffectConfig = json['effectConfig'];
     final rawPrereq = json['prereqConfig'];
     return BaseStructureDefinitionData(
       key: json['key']?.toString() ?? '',
@@ -125,6 +128,11 @@ class BaseStructureDefinitionData {
       maxLevel: (json['maxLevel'] as num?)?.toInt() ?? 1,
       sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
       effectType: json['effectType']?.toString() ?? '',
+      effectConfig: rawEffectConfig is Map<String, dynamic>
+          ? rawEffectConfig
+          : rawEffectConfig is Map
+          ? Map<String, dynamic>.from(rawEffectConfig)
+          : const <String, dynamic>{},
       prereqConfig: rawPrereq is Map<String, dynamic>
           ? rawPrereq
           : rawPrereq is Map

@@ -133,6 +133,32 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     return value[0].toUpperCase() + value.substring(1);
   }
 
+  List<_GenrePreviewEntry> _genreScoresPreview() {
+    final selectedZone = context.read<ZoneProvider>().selectedZone;
+    final scores = selectedZone?.genreScores ?? const [];
+    if (scores.isEmpty) {
+      return const <_GenrePreviewEntry>[];
+    }
+    final sorted =
+        scores
+            .map((entry) => _GenrePreviewEntry(entry.genre.name, entry.score))
+            .toList(growable: false)
+          ..sort((left, right) {
+            final scoreCompare = right.score.compareTo(left.score);
+            if (scoreCompare != 0) {
+              return scoreCompare;
+            }
+            return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+          });
+    final hasNonZero = sorted.any((entry) => entry.score > 0);
+    return hasNonZero
+        ? sorted
+              .where((entry) => entry.score > 0)
+              .take(4)
+              .toList(growable: false)
+        : sorted.take(4).toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ZoneProvider>(
@@ -148,6 +174,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final subTextStyle = theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurface,
         );
+        final genreScoresPreview = _genreScoresPreview();
         final expandUpwards = widget.expandUpwards;
         final expandedHeight = widget.expandedHeight;
         const collapsedHeight = 40.0;
@@ -203,7 +230,8 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                               ? _reputation!.reputationOnLevel /
                                     _reputation!.reputationToNextLevel
                               : 0.0,
-                          backgroundColor: theme.colorScheme.surfaceVariant,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
                           valueColor: AlwaysStoppedAnimation<Color>(
                             theme.colorScheme.primary,
                           ),
@@ -215,6 +243,51 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                       const SizedBox(height: 8),
                     if (selectedZone?.description != null) ...[
                       Text(selectedZone!.description!, style: subTextStyle),
+                    ],
+                    if (selectedZone?.genreScores.isNotEmpty == true) ...[
+                      const SizedBox(height: 10),
+                      Text('Genres', style: textStyle?.copyWith(fontSize: 13)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          ...genreScoresPreview.map(
+                            (entry) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${entry.name} ${entry.score}',
+                                style: subTextStyle,
+                              ),
+                            ),
+                          ),
+                          if ((selectedZone?.genreScores.length ?? 0) >
+                              genreScoresPreview.length)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '+${(selectedZone?.genreScores.length ?? 0) - genreScoresPreview.length} more',
+                                style: subTextStyle,
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ],
                 ),
@@ -293,4 +366,11 @@ class ZoneWidgetController {
   void open() => _setOpen?.call(true);
   void close() => _setOpen?.call(false);
   void toggle() => _setOpen?.call(!isOpen);
+}
+
+class _GenrePreviewEntry {
+  const _GenrePreviewEntry(this.name, this.score);
+
+  final String name;
+  final int score;
 }

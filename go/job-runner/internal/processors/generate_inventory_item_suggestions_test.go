@@ -47,3 +47,24 @@ func TestSanitizeInventoryItemSuggestionDraftClearsLinkedFieldsAndInfersCategory
 		t.Fatalf("expected warning about linked fields")
 	}
 }
+
+func TestSanitizeInventoryItemSuggestionDraftClearsUnlockLocksStrength(t *testing.T) {
+	job := &models.InventoryItemSuggestionJob{
+		MinItemLevel: 1,
+		MaxItemLevel: 10,
+	}
+	spec := inventoryItemSuggestionDraftPayload{
+		Item: models.InventoryItem{
+			Name:                "Latchspike",
+			UnlockLocksStrength: intPtr(55),
+		},
+	}
+
+	draft := sanitizeInventoryItemSuggestionDraft(spec, job, map[string]struct{}{}, map[string]struct{}{})
+	if draft.Payload.Item.UnlockLocksStrength != nil {
+		t.Fatalf("expected unlock locks strength to be cleared, got %v", *draft.Payload.Item.UnlockLocksStrength)
+	}
+	if draft.Category != "material" {
+		t.Fatalf("expected cleared draft to fall back to material category, got %q", draft.Category)
+	}
+}

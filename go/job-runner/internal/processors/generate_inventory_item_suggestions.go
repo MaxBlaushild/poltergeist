@@ -119,6 +119,7 @@ Rules:
 - If benefit tags are requested, strongly prefer items whose gameplay effects clearly match those requested benefits.
 - If status names are requested, strongly prefer consumables or utility items that actually apply those statuses.
 - Do not invent recipe links, taught recipe IDs, or spell IDs in this generator version. Leave consumeSpellIds, consumeTeachRecipeIds, alchemyRecipes, and workshopRecipes empty.
+- Do not set unlockLocksStrength in generated drafts. Leave lock-unlocking behavior empty unless it is added manually later.
 - Equippable drafts should have coherent stats for their slot and fantasy.
 - Consumables should create clear, concrete gameplay effects.
 - Materials should still feel desirable and specific, not generic vendor trash.
@@ -322,6 +323,7 @@ func sanitizeInventoryItemSuggestionDraft(
 	item.ImageURL = ""
 	item.ImageGenerationStatus = models.InventoryImageGenerationStatusNone
 	item.ImageGenerationError = nil
+	item.UnlockLocksStrength = nil
 
 	item.Name = strings.TrimSpace(item.Name)
 	if item.Name == "" {

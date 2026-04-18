@@ -689,6 +689,20 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 	itemGrants := []models.RandomRewardItemGrant{}
 	itemByID := map[int]models.InventoryItem{}
 	spellRewardIDs := []uuid.UUID{}
+	guaranteedItemGrants := []models.RandomRewardItemGrant{}
+
+	for _, reward := range quest.ItemRewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		if reward.InventoryItem.ID != 0 {
+			itemByID[reward.InventoryItemID] = reward.InventoryItem
+		}
+		guaranteedItemGrants = append(guaranteedItemGrants, models.RandomRewardItemGrant{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
 
 	if rewardMode == models.RewardModeRandom {
 		userLevel, err := c.db.UserLevel().FindOrCreateForUser(ctx, userID)
@@ -710,7 +724,10 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		)
 		goldAwarded = plan.Gold
 		experienceAwarded = plan.Experience
-		itemGrants = append(itemGrants, plan.ItemGrants...)
+		itemGrants = models.MergeRandomRewardItemGrants(
+			plan.ItemGrants,
+			guaranteedItemGrants,
+		)
 	} else {
 		goldAwarded = quest.Gold
 		if goldAwarded < 0 {
@@ -720,18 +737,7 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		if experienceAwarded < 0 {
 			experienceAwarded = 0
 		}
-		for _, reward := range quest.ItemRewards {
-			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
-				continue
-			}
-			if reward.InventoryItem.ID != 0 {
-				itemByID[reward.InventoryItemID] = reward.InventoryItem
-			}
-			itemGrants = append(itemGrants, models.RandomRewardItemGrant{
-				InventoryItemID: reward.InventoryItemID,
-				Quantity:        reward.Quantity,
-			})
-		}
+		itemGrants = models.MergeRandomRewardItemGrants(guaranteedItemGrants)
 		for _, reward := range quest.SpellRewards {
 			if reward.SpellID == uuid.Nil {
 				continue

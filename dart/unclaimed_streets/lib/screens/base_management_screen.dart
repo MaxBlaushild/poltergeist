@@ -6,8 +6,13 @@ import 'package:provider/provider.dart';
 
 import '../models/base.dart';
 import '../models/base_progression.dart';
+import '../models/inventory_item.dart';
+import '../models/zone.dart';
 import '../providers/character_stats_provider.dart';
+import '../providers/zone_provider.dart';
 import '../services/base_service.dart';
+import '../services/inventory_service.dart';
+import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
 import '../widgets/inventory_requirement_chip.dart';
 
@@ -1817,6 +1822,15 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
   bool _loadingCrafting = false;
   String? _craftingError;
   String? _craftingRecipeId;
+  List<Zone> _chaosZones = const [];
+  List<ZoneGenre> _chaosGenres = const [];
+  List<InventoryItem> _chaosInventoryItems = const [];
+  List<OwnedInventoryItem> _chaosOwnedItems = const [];
+  bool _loadingChaosEngine = false;
+  String? _chaosEngineError;
+  bool _usingChaosEngine = false;
+  String? _selectedChaosZoneId;
+  String? _selectedChaosGenreId;
 
   String? get _craftingStation {
     switch (widget.structure.structureKey) {
@@ -1829,11 +1843,67 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     }
   }
 
+  bool get _isChaosEngineRoom =>
+      widget.structure.structureKey == 'chaos_engine';
+
+  int? get _chaosEngineRequiredInventoryItemId {
+    final raw = widget.definition.effectConfig['requiredInventoryItemId'];
+    if (raw is num) {
+      final value = raw.toInt();
+      return value > 0 ? value : null;
+    }
+    if (raw is String) {
+      final value = int.tryParse(raw.trim());
+      return value != null && value > 0 ? value : null;
+    }
+    return null;
+  }
+
+  InventoryItem? get _chaosEngineRequiredInventoryItem {
+    final requiredInventoryItemId = _chaosEngineRequiredInventoryItemId;
+    if (requiredInventoryItemId == null) {
+      return null;
+    }
+    for (final item in _chaosInventoryItems) {
+      if (item.id == requiredInventoryItemId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  int get _chaosEngineOwnedQuantity {
+    final requiredInventoryItemId = _chaosEngineRequiredInventoryItemId;
+    if (requiredInventoryItemId == null) {
+      return 0;
+    }
+    for (final item in _chaosOwnedItems) {
+      if (item.inventoryItemId == requiredInventoryItemId) {
+        return item.quantity;
+      }
+    }
+    return 0;
+  }
+
+  Zone? get _selectedChaosZone {
+    final zoneId = _selectedChaosZoneId;
+    if (zoneId == null || zoneId.isEmpty) {
+      return null;
+    }
+    for (final zone in _chaosZones) {
+      if (zone.id == zoneId) {
+        return zone;
+      }
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
     _syncCooldownTicker();
     _loadCraftingIfNeeded();
+    _loadChaosEngineIfNeeded();
   }
 
   @override
@@ -1849,6 +1919,7 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
         widget.structure.level != oldWidget.structure.level ||
         widget.canManage != oldWidget.canManage) {
       _loadCraftingIfNeeded(force: true);
+      _loadChaosEngineIfNeeded(force: true);
     }
   }
 
@@ -1916,6 +1987,88 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     }
   }
 
+  Future<void> _loadChaosEngineIfNeeded({bool force = false}) async {
+    if (!_isChaosEngineRoom || !widget.canManage) {
+      if (!mounted) return;
+      setState(() {
+        _chaosZones = const [];
+        _chaosGenres = const [];
+        _chaosInventoryItems = const [];
+        _chaosOwnedItems = const [];
+        _loadingChaosEngine = false;
+        _chaosEngineError = null;
+      });
+      return;
+    }
+    if (!force &&
+        (_loadingChaosEngine ||
+            _chaosZones.isNotEmpty ||
+            _chaosGenres.isNotEmpty ||
+            _chaosInventoryItems.isNotEmpty)) {
+      return;
+    }
+
+    setState(() {
+      _loadingChaosEngine = true;
+      _chaosEngineError = null;
+    });
+    try {
+      final results = await Future.wait([
+        context.read<PoiService>().getZones(),
+        context.read<BaseService>().getZoneGenres(),
+        context.read<InventoryService>().getInventoryItems(preferCache: true),
+        context.read<InventoryService>().getOwnedInventoryItems(
+          preferCache: true,
+        ),
+      ]);
+
+      final zones = List<Zone>.from(results[0] as List<Zone>)
+        ..sort(
+          (left, right) =>
+              left.name.toLowerCase().compareTo(right.name.toLowerCase()),
+        );
+      final genres = List<ZoneGenre>.from(results[1] as List<ZoneGenre>)
+        ..sort((left, right) {
+          final sortCompare = left.sortOrder.compareTo(right.sortOrder);
+          if (sortCompare != 0) {
+            return sortCompare;
+          }
+          return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+        });
+      final inventoryItems = List<InventoryItem>.from(
+        results[2] as List<InventoryItem>,
+      );
+      final ownedItems = List<OwnedInventoryItem>.from(
+        results[3] as List<OwnedInventoryItem>,
+      );
+
+      final nextZoneId = zones.any((zone) => zone.id == _selectedChaosZoneId)
+          ? _selectedChaosZoneId
+          : (zones.isNotEmpty ? zones.first.id : null);
+      final nextGenreId =
+          genres.any((genre) => genre.id == _selectedChaosGenreId)
+          ? _selectedChaosGenreId
+          : (genres.isNotEmpty ? genres.first.id : null);
+
+      if (!mounted) return;
+      setState(() {
+        _chaosZones = zones;
+        _chaosGenres = genres;
+        _chaosInventoryItems = inventoryItems;
+        _chaosOwnedItems = ownedItems;
+        _selectedChaosZoneId = nextZoneId;
+        _selectedChaosGenreId = nextGenreId;
+        _loadingChaosEngine = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingChaosEngine = false;
+        _chaosEngineError = e.toString();
+      });
+    }
+  }
+
   Future<void> _craftRecipe(BaseCraftingRecipeData recipe) async {
     final station = _craftingStation;
     if (station == null || _craftingRecipeId != null) return;
@@ -1955,6 +2108,90 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
           _craftingRecipeId = null;
         });
       }
+    }
+  }
+
+  Future<void> _useChaosEngine() async {
+    final zoneId = _selectedChaosZoneId;
+    final genreId = _selectedChaosGenreId;
+    if (_usingChaosEngine || zoneId == null || genreId == null) {
+      return;
+    }
+    final zoneProvider = context.read<ZoneProvider>();
+    final inventoryService = context.read<InventoryService>();
+
+    setState(() {
+      _usingChaosEngine = true;
+      _chaosEngineError = null;
+    });
+    try {
+      final response = await context.read<BaseService>().useChaosEngine(
+        zoneId: zoneId,
+        genreId: genreId,
+      );
+      final rawZone = response['zone'];
+      Zone? updatedZone;
+      if (rawZone is Map<String, dynamic>) {
+        updatedZone = Zone.fromJson(rawZone);
+      } else if (rawZone is Map) {
+        updatedZone = Zone.fromJson(Map<String, dynamic>.from(rawZone));
+      }
+
+      late final List<Zone> nextZones;
+      if (updatedZone == null) {
+        nextZones = _chaosZones;
+      } else {
+        final resolvedUpdatedZone = updatedZone;
+        nextZones = _chaosZones
+            .map(
+              (zone) => zone.id == resolvedUpdatedZone.id
+                  ? resolvedUpdatedZone
+                  : zone,
+            )
+            .toList(growable: false);
+      }
+      zoneProvider.setZones(nextZones);
+
+      final refreshedOwnedItems = await inventoryService
+          .refreshOwnedInventoryItems();
+
+      if (!mounted) return;
+      setState(() {
+        _chaosZones = nextZones;
+        if (refreshedOwnedItems != null) {
+          _chaosOwnedItems = refreshedOwnedItems;
+        }
+        _usingChaosEngine = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            response['message']?.toString() ?? 'Chaos Engine activated.',
+          ),
+        ),
+      );
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      final message = responseData is Map
+          ? responseData['error']?.toString()
+          : error.message;
+      if (!mounted) return;
+      setState(() {
+        _usingChaosEngine = false;
+        _chaosEngineError = message ?? 'Failed to activate the Chaos Engine.';
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_chaosEngineError!)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _usingChaosEngine = false;
+        _chaosEngineError = e.toString();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_chaosEngineError!)));
     }
   }
 
@@ -2161,6 +2398,188 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     );
   }
 
+  List<ZoneGenreScore> _sortedZoneGenreScores(Zone? zone) {
+    if (zone == null || zone.genreScores.isEmpty) {
+      return const <ZoneGenreScore>[];
+    }
+    final sorted = List<ZoneGenreScore>.from(zone.genreScores);
+    sorted.sort((left, right) {
+      final scoreCompare = right.score.compareTo(left.score);
+      if (scoreCompare != 0) {
+        return scoreCompare;
+      }
+      final sortCompare = left.genre.sortOrder.compareTo(right.genre.sortOrder);
+      if (sortCompare != 0) {
+        return sortCompare;
+      }
+      return left.genre.name.toLowerCase().compareTo(
+        right.genre.name.toLowerCase(),
+      );
+    });
+    return sorted;
+  }
+
+  Widget _buildChaosEnginePanel(BuildContext context) {
+    final theme = Theme.of(context);
+    if (!widget.canManage) {
+      return const SizedBox.shrink();
+    }
+    if (_loadingChaosEngine) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_chaosEngineError != null) {
+      return Text(
+        _chaosEngineError!,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      );
+    }
+
+    final requiredItem = _chaosEngineRequiredInventoryItem;
+    final selectedZone = _selectedChaosZone;
+    final sortedScores = _sortedZoneGenreScores(selectedZone);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Chaos Engine',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (requiredItem == null)
+            Text(
+              'This room has not been configured with a fuel item yet.',
+              style: theme.textTheme.bodyMedium,
+            )
+          else ...[
+            Text(
+              'Fuel item: ${requiredItem.name}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Owned: $_chaosEngineOwnedQuantity',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey('chaos-zone-${_selectedChaosZoneId ?? ''}'),
+              initialValue: _selectedChaosZoneId,
+              decoration: const InputDecoration(
+                labelText: 'Target Zone',
+                border: OutlineInputBorder(),
+              ),
+              items: _chaosZones
+                  .map(
+                    (zone) => DropdownMenuItem<String>(
+                      value: zone.id,
+                      child: Text(zone.name),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                setState(() {
+                  _selectedChaosZoneId = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey('chaos-genre-${_selectedChaosGenreId ?? ''}'),
+              initialValue: _selectedChaosGenreId,
+              decoration: const InputDecoration(
+                labelText: 'Genre to Increase',
+                border: OutlineInputBorder(),
+              ),
+              items: _chaosGenres
+                  .map(
+                    (genre) => DropdownMenuItem<String>(
+                      value: genre.id,
+                      child: Text(genre.name),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                setState(() {
+                  _selectedChaosGenreId = value;
+                });
+              },
+            ),
+            if (selectedZone != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Current zone genre scores',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (sortedScores.isEmpty)
+                Text(
+                  'No genre alignment yet.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: sortedScores
+                      .map(
+                        (score) => Chip(
+                          label: Text('${score.genre.name} ${score.score}'),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonal(
+                onPressed:
+                    _usingChaosEngine ||
+                        _selectedChaosZoneId == null ||
+                        _selectedChaosGenreId == null ||
+                        _chaosEngineOwnedQuantity <= 0
+                    ? null
+                    : _useChaosEngine,
+                child: _usingChaosEngine
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _chaosEngineOwnedQuantity > 0
+                            ? 'Spend 1 Item to Shift the Zone'
+                            : 'Need Fuel Item',
+                      ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -2298,6 +2717,10 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                   ],
                 ),
               ),
+            ],
+            if (_isChaosEngineRoom && widget.canManage) ...[
+              const SizedBox(height: 16),
+              _buildChaosEnginePanel(context),
             ],
             if (_craftingStation != null && widget.canManage) ...[
               const SizedBox(height: 16),

@@ -2390,16 +2390,14 @@ export const Quests = () => {
             ? normalizeMaterialRewards(questForm.materialRewards)
             : [],
         itemRewards:
-          questForm.rewardMode === 'explicit'
-            ? questForm.itemRewards
-                .map((reward) => ({
-                  inventoryItemId: Number(reward.inventoryItemId) || 0,
-                  quantity: Number(reward.quantity) || 0,
-                }))
-                .filter(
-                  (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-                )
-            : [],
+          questForm.itemRewards
+            .map((reward) => ({
+              inventoryItemId: Number(reward.inventoryItemId) || 0,
+              quantity: Number(reward.quantity) || 0,
+            }))
+            .filter(
+              (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
+            ),
         spellRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.spellRewards
@@ -2461,16 +2459,14 @@ export const Quests = () => {
             ? normalizeMaterialRewards(questForm.materialRewards)
             : [],
         itemRewards:
-          questForm.rewardMode === 'explicit'
-            ? questForm.itemRewards
-                .map((reward) => ({
-                  inventoryItemId: Number(reward.inventoryItemId) || 0,
-                  quantity: Number(reward.quantity) || 0,
-                }))
-                .filter(
-                  (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-                )
-            : [],
+          questForm.itemRewards
+            .map((reward) => ({
+              inventoryItemId: Number(reward.inventoryItemId) || 0,
+              quantity: Number(reward.quantity) || 0,
+            }))
+            .filter(
+              (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
+            ),
         spellRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.spellRewards
@@ -3947,8 +3943,9 @@ export const Quests = () => {
               </div>
               {questForm.rewardMode === 'random' && (
                 <div className="md:col-span-2 text-xs text-gray-500">
-                  Random rewards ignore explicit gold/material/item/spell
-                  fields.
+                  Random rewards still grant scaled XP and gold. Guaranteed
+                  items below are awarded too; materials and spells stay
+                  explicit-only.
                 </div>
               )}
               <div className="md:col-span-2">
@@ -3963,20 +3960,19 @@ export const Quests = () => {
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-sm font-medium text-gray-700">
-                    Item Rewards
+                    Guaranteed Item Rewards
                   </label>
                   <button
                     type="button"
                     className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
                     onClick={handleAddQuestReward}
-                    disabled={questForm.rewardMode !== 'explicit'}
                   >
                     Add Item Reward
                   </button>
                 </div>
                 {questForm.itemRewards.length === 0 ? (
                   <div className="mt-2 text-xs text-gray-500">
-                    No item rewards yet.
+                    No guaranteed item rewards yet.
                   </div>
                 ) : (
                   <div className="mt-2 space-y-2">
@@ -3988,7 +3984,6 @@ export const Quests = () => {
                         <select
                           className="block w-full border border-gray-300 rounded-md p-2"
                           value={reward.inventoryItemId}
-                          disabled={questForm.rewardMode !== 'explicit'}
                           onChange={(e) =>
                             handleUpdateQuestReward(index, {
                               inventoryItemId: e.target.value,
@@ -4007,7 +4002,6 @@ export const Quests = () => {
                           className="block w-full border border-gray-300 rounded-md p-2"
                           min={1}
                           value={reward.quantity}
-                          disabled={questForm.rewardMode !== 'explicit'}
                           onChange={(e) =>
                             handleUpdateQuestReward(index, {
                               quantity: Number(e.target.value),
@@ -4017,7 +4011,6 @@ export const Quests = () => {
                         <button
                           type="button"
                           className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                          disabled={questForm.rewardMode !== 'explicit'}
                           onClick={() => handleRemoveQuestReward(index)}
                         >
                           Remove
@@ -4858,8 +4851,9 @@ export const Quests = () => {
                     </div>
                     {questForm.rewardMode === 'random' && (
                       <div className="md:col-span-2 text-xs text-gray-500">
-                        Random rewards ignore explicit gold/material/item/spell
-                        fields.
+                        Random rewards still grant scaled XP and gold.
+                        Guaranteed items below are awarded too; materials and
+                        spells stay explicit-only.
                       </div>
                     )}
                     <div className="md:col-span-2">
@@ -4874,7 +4868,7 @@ export const Quests = () => {
                     <div className="md:col-span-2">
                       <div className="flex items-center justify-between">
                         <label className="block text-sm font-medium text-gray-700">
-                          Item Rewards
+                          Guaranteed Item Rewards
                         </label>
                         <button
                           type="button"
@@ -4886,7 +4880,7 @@ export const Quests = () => {
                       </div>
                       {questForm.itemRewards.length === 0 ? (
                         <div className="mt-2 text-xs text-gray-500">
-                          No item rewards yet.
+                          No guaranteed item rewards yet.
                         </div>
                       ) : (
                         <div className="mt-2 space-y-2">

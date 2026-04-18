@@ -1,5 +1,21 @@
 import { Point } from './point';
 
+export type ZoneGenre = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+  promptSeed?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ZoneGenreScore = {
+  genreId: string;
+  genre: ZoneGenre;
+  score: number;
+};
+
 export type Zone = {
   id: string;
   name: string;
@@ -16,6 +32,7 @@ export type Zone = {
     longitude: number;
   }[];
   points: Point[];
+  genreScores?: ZoneGenreScore[];
 };
 
 export type ZoneAdminSummary = {

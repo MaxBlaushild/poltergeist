@@ -4,9 +4,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/paulmach/orb"
 )
+
+type zoneSeedAutoTestGoogleMapsClient struct {
+	places []googlemaps.Place
+}
+
+func (c zoneSeedAutoTestGoogleMapsClient) FindPlaces(query googlemaps.PlaceQuery) ([]googlemaps.Place, error) {
+	return append([]googlemaps.Place{}, c.places...), nil
+}
+
+func (c zoneSeedAutoTestGoogleMapsClient) FindPlaceByID(id string) (*googlemaps.Place, error) {
+	return nil, nil
+}
+
+func (c zoneSeedAutoTestGoogleMapsClient) FindCandidatesByQuery(query string) ([]googlemaps.Candidate, error) {
+	return nil, nil
+}
 
 func TestZoneSeedInferAutoCountsAppliesMinimumFloors(t *testing.T) {
 	counts, warnings := zoneSeedInferAutoCounts(0, nil)
@@ -47,9 +64,9 @@ func TestZoneSeedAreaForAuditRejectsMissingBoundary(t *testing.T) {
 func TestZoneSeedAreaForAuditReturnsAreaForPolygon(t *testing.T) {
 	polygon := orb.Polygon{{
 		{-73.99, 40.75},
-		{-73.99, 40.751},
-		{-73.989, 40.751},
-		{-73.989, 40.75},
+		{-73.99, 40.76},
+		{-73.98, 40.76},
+		{-73.98, 40.75},
 		{-73.99, 40.75},
 	}}
 	zone := &models.Zone{
@@ -164,5 +181,65 @@ func TestZoneSeedRemainingRequiredPlaceTagsUsesExistingPOIs(t *testing.T) {
 
 	if len(remaining) != 1 || remaining[0] != "park" {
 		t.Fatalf("expected only park to remain unmet, got %v", remaining)
+	}
+}
+
+func TestZoneSeedAutoPlaceSearchAttemptLimitScalesWithDesiredCount(t *testing.T) {
+	if got := zoneSeedAutoPlaceSearchAttemptLimit(3, false); got != 6 {
+		t.Fatalf("expected minimum attempt floor of 6, got %d", got)
+	}
+	if got := zoneSeedAutoPlaceSearchAttemptLimit(14, false); got != 14 {
+		t.Fatalf("expected desired count to increase attempts, got %d", got)
+	}
+	if got := zoneSeedAutoPlaceSearchAttemptLimit(40, true); got != 18 {
+		t.Fatalf("expected attempts to clamp at 18, got %d", got)
+	}
+}
+
+func TestResolveZoneSeedDraftRequestSkipsRecommendationCapWhenPlaceCountOverridden(t *testing.T) {
+	ratingCount := int32(120)
+	places := make([]googlemaps.Place, 0, 8)
+	for i := 0; i < 8; i++ {
+		place := googlemaps.Place{
+			ID:                     strings.Join([]string{"place", string(rune('a' + i))}, "-"),
+			DisplayName:            googlemaps.LocalizedText{Text: "Cafe"},
+			PrimaryType:            "cafe",
+			PrimaryTypeDisplayName: googlemaps.LocalizedText{Text: "Cafe"},
+			Types:                  []string{"cafe"},
+			Rating:                 4.6,
+			UserRatingCount:        &ratingCount,
+		}
+		place.Location.Latitude = 40.7504 + float64(i)*0.00001
+		place.Location.Longitude = -73.9896 + float64(i)*0.00001
+		places = append(places, place)
+	}
+
+	polygon := orb.Polygon{{
+		{-73.99, 40.75},
+		{-73.99, 40.751},
+		{-73.989, 40.751},
+		{-73.989, 40.75},
+		{-73.99, 40.75},
+	}}
+	zone := &models.Zone{Polygon: &polygon}
+	override := 15
+	s := &server{
+		googlemapsClient: zoneSeedAutoTestGoogleMapsClient{places: places},
+	}
+
+	settings, err := s.resolveZoneSeedDraftRequest(nil, zone, zoneSeedDraftRequest{
+		SeedMode:   models.ZoneSeedModeAuto,
+		PlaceCount: &override,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if settings.PlaceCount != 15 {
+		t.Fatalf("expected override to remain 15, got %d", settings.PlaceCount)
+	}
+	for _, warning := range settings.AutoSeedAudit.Warnings {
+		if strings.Contains(warning, "Capped POI recommendation") {
+			t.Fatalf("expected no cap warning when place count is explicitly overridden, got %v", settings.AutoSeedAudit.Warnings)
+		}
 	}
 }

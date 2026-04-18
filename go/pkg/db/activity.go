@@ -14,8 +14,22 @@ type activityHandle struct {
 }
 
 func (h *activityHandle) GetFeed(ctx context.Context, userID uuid.UUID) ([]models.Activity, error) {
+	return h.GetFeedPage(ctx, userID, 0, 0)
+}
+
+func (h *activityHandle) GetFeedPage(ctx context.Context, userID uuid.UUID, limit int, offset int) ([]models.Activity, error) {
 	var activities []models.Activity
-	if err := h.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at DESC").Find(&activities).Error; err != nil {
+	query := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Order("id DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	if err := query.Find(&activities).Error; err != nil {
 		return nil, err
 	}
 	return activities, nil

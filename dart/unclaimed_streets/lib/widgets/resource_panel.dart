@@ -283,13 +283,23 @@ class _ResourcePanelState extends State<ResourcePanel> {
         ),
         body: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          child: DiscoveryProximitySection(
-            subjectLabel: 'resource',
-            unlockRadiusMeters: kProximityUnlockRadiusMeters,
-            distanceMeters: distance,
-            hasProximityAccess: withinRange,
-            liveWithinRange: withinRange,
-            locationUnavailableText: 'Enable location to see distance.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DiscoveryProximitySection(
+                subjectLabel: 'resource',
+                unlockRadiusMeters: kProximityUnlockRadiusMeters,
+                distanceMeters: distance,
+                hasProximityAccess: withinRange,
+                liveWithinRange: withinRange,
+                locationUnavailableText: 'Enable location to see distance.',
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'This resource will remain mysterious until you are close enough to inspect it.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
           ),
         ),
       );
@@ -397,6 +407,11 @@ class _ResourcePanelState extends State<ResourcePanel> {
             ],
             const SizedBox(height: 20),
             FilledButton.icon(
+              style: FilledButton.styleFrom(
+                disabledBackgroundColor:
+                    theme.colorScheme.surfaceContainerHighest,
+                disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
+              ),
               onPressed: (_loading || isGatherDisabledByRequirement)
                   ? null
                   : _gather,

@@ -149,6 +149,17 @@ class PoiService {
         .toList();
   }
 
+  Future<HealingFountain?> getHealingFountainById(String fountainId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/healing-fountains/$fountainId',
+      );
+      return HealingFountain.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Scenario?> getScenarioById(String scenarioId) async {
     try {
       final data = await _api.get<Map<String, dynamic>>(

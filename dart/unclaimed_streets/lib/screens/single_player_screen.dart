@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
+import '../models/activity_feed.dart';
 import '../models/base.dart';
 import '../models/exposition.dart';
 import '../models/healing_fountain.dart';
@@ -108,12 +109,18 @@ const _legacyMysteryImageUrl =
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
 const _discoveredCharactersPrefsKeyPrefix =
     'single_player_discovered_characters';
-const _mapThumbnailVersion = 'v12';
+const _mapThumbnailVersion = 'v13';
 const _standardMarkerThumbnailSize = 0.75;
 const _baseMarkerSizeScale = 0.75;
 const int _monsterBattleDefeatHealthFloorPercent = 30;
 const int _monsterBattleDefeatManaFloorPercent = 25;
 const int _monsterBattleDefeatStatusDurationMinutes = 15;
+const _questPulseCoreColor = '#f7d46f';
+const _questPulseMistColor = '#fff1c3';
+const _questPulseRingColor = '#f1bb47';
+const _discoveryPulseCoreColor = '#f6d98c';
+const _discoveryPulseMistColor = '#fff5d7';
+const _discoveryPulseRingColor = '#f5c542';
 
 int _monsterBattleDefeatResourceFloor(int maxResource, int floorPercent) {
   if (maxResource <= 0) return 0;
@@ -179,6 +186,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Set<String> _mapImageIds = <String>{};
   int _poiMarkerGeneration = 0;
   List<Symbol> _questPoiHighlightSymbols = [];
+  List<Circle> _questPoiHighlightCircles = [];
+  final Set<String> _activePulseKeys = <String>{};
   List<Symbol> _characterSymbols = [];
   final Map<String, List<Symbol>> _characterSymbolsById = {};
   List<Symbol> _chestSymbols = [];
@@ -249,14 +258,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   QuestLogProvider? _questLogProvider;
   MapFocusProvider? _mapFocusProvider;
   CompletedTaskProvider? _completedTaskProvider;
+  ActivityFeedProvider? _activityFeedProvider;
   BasePlacementProvider? _basePlacementProvider;
   Map<String, dynamic>? _lastHandledCompletionModal;
+  final Set<String> _handledLevelUpActivityIds = <String>{};
+  bool _levelUpActivityDrainScheduled = false;
+  String _lastAuthenticatedUserId = '';
   Timer? _questGlowTimer;
   bool _isQuestGlowPulsing = false;
   Timer? _questPoiPulseTimer;
   String? _questLogRequestedZoneId;
   bool _questLogRefreshInFlight = false;
   bool _questAvailabilityRefreshInFlight = false;
+  bool _manualRefreshInFlight = false;
   int _skipQuestLogMapRefreshCount = 0;
   DateTime? _lastQuestLogRefreshAt;
   bool _questLogNeedsOverlayApply = false;
@@ -269,6 +283,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _challengeRefreshSequence = Future<void>.value();
   Future<void> _zoneBoundaryRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
+  Set<String> _lastTrackedQuestIds = <String>{};
   DateTime? _lastFeatureTapAt;
   Point<double>? _lastFeatureTapPoint;
   Set<String> _lastQuestTurnInCharacterIds = <String>{};
@@ -351,12 +366,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _mapFocusProvider?.addListener(_onMapFocusRequest);
       _completedTaskProvider = context.read<CompletedTaskProvider>();
       _completedTaskProvider?.addListener(_onCompletedTaskModalChanged);
+      _activityFeedProvider = context.read<ActivityFeedProvider>();
+      _activityFeedProvider?.addListener(_onActivityFeedChanged);
       _basePlacementProvider = context.read<BasePlacementProvider>();
       _basePlacementProvider?.addListener(_onBasePlacementRequested);
+      _lastAuthenticatedUserId =
+          context.read<AuthProvider>().user?.id.trim() ?? '';
       context.read<TutorialReplayProvider>().addListener(
         _onTutorialReplayRequested,
       );
       _onCompletedTaskModalChanged();
+      _onActivityFeedChanged();
       _updateSelectedZoneFromLocation();
       _requestQuestLogIfReady();
       context.read<ActivityFeedProvider>().refresh();
@@ -401,6 +421,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _completedTaskProvider?.removeListener(_onCompletedTaskModalChanged);
     } catch (_) {}
     try {
+      _activityFeedProvider?.removeListener(_onActivityFeedChanged);
+    } catch (_) {}
+    try {
       _basePlacementProvider?.removeListener(_onBasePlacementRequested);
     } catch (_) {}
     try {
@@ -441,6 +464,87 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _maybeShowTutorialDialogues();
   }
 
+  void _onActivityFeedChanged() {
+    if (!mounted || _levelUpActivityDrainScheduled) return;
+    _levelUpActivityDrainScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _levelUpActivityDrainScheduled = false;
+      if (!mounted) return;
+      unawaited(_drainPendingLevelUpActivities());
+    });
+  }
+
+  Future<void> _drainPendingLevelUpActivities() async {
+    final feed = _activityFeedProvider;
+    final completedTaskProvider = _completedTaskProvider;
+    if (feed == null || completedTaskProvider == null) return;
+
+    final levelUpActivities =
+        feed.activities
+            .where(
+              (activity) =>
+                  activity.activityType == 'level_up' && !activity.seen,
+            )
+            .toList(growable: false)
+          ..sort(_compareActivityChronology);
+    final activityIdsToMarkSeen = <String>[];
+
+    for (final activity in levelUpActivities) {
+      final activityId = activity.id.trim();
+      if (activityId.isEmpty || !_handledLevelUpActivityIds.add(activityId)) {
+        continue;
+      }
+
+      final newLevel = _parseLevelUpActivityInt(activity.data['newLevel']);
+      if (newLevel <= 0) continue;
+
+      final previousLevel = _parseLevelUpActivityInt(
+        activity.data['previousLevel'],
+      );
+      final explicitLevelsGained = _parseLevelUpActivityInt(
+        activity.data['levelsGained'],
+      );
+      final levelsGained = explicitLevelsGained > 0
+          ? explicitLevelsGained
+          : (previousLevel > 0 && newLevel > previousLevel
+                ? newLevel - previousLevel
+                : 1);
+
+      completedTaskProvider.queueLevelUpModal(
+        newLevel: newLevel,
+        previousLevel: previousLevel > 0 ? previousLevel : null,
+        levelsGained: levelsGained,
+      );
+
+      if (!activity.seen) {
+        activityIdsToMarkSeen.add(activityId);
+      }
+    }
+
+    if (activityIdsToMarkSeen.isEmpty) return;
+    try {
+      await feed.markAsSeen(activityIdsToMarkSeen);
+    } catch (_) {
+      // Feed cleanup should never block level-up presentation.
+    }
+  }
+
+  int _compareActivityChronology(ActivityFeed a, ActivityFeed b) {
+    final aTime = DateTime.tryParse(a.createdAt);
+    final bTime = DateTime.tryParse(b.createdAt);
+    if (aTime != null && bTime != null) {
+      return aTime.compareTo(bTime);
+    }
+    if (aTime != null) return -1;
+    if (bTime != null) return 1;
+    return a.createdAt.compareTo(b.createdAt);
+  }
+
+  int _parseLevelUpActivityInt(dynamic raw) {
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString().trim() ?? '') ?? 0;
+  }
+
   void _refreshScenarioVisibilityForLocationChange() {
     if (_styleLoaded && _mapController != null && _markersAdded) {
       _scenarioVisibilityRefreshPending = false;
@@ -471,6 +575,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _onAuthChanged() {
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
+    final userId = auth.user?.id.trim() ?? '';
+    if (userId != _lastAuthenticatedUserId) {
+      _lastAuthenticatedUserId = userId;
+      _handledLevelUpActivityIds.clear();
+      _completedTaskProvider?.reset();
+    }
     if (auth.loading || !auth.isAuthenticated) {
       return;
     }
@@ -1167,12 +1277,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     final questLog = context.read<QuestLogProvider>();
     final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+    final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
     final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
-    final polygonHash = _hashQuestPolygons(questLog.currentNodePolygons);
+    final trackedQuestIds = questLog.trackedQuestIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final trackedPolygons = _trackedQuestCurrentNodePolygons(questLog);
+    final polygonHash = _hashQuestPolygons(trackedPolygons);
     debugPrint(
-      'SinglePlayer: quest overlay check poiIds=${questPoiIds.length} polys=${questLog.currentNodePolygons.length}',
+      'SinglePlayer: quest overlay check poiIds=${questPoiIds.length} trackedPoiIds=${trackedQuestPoiIds.length} polys=${trackedPolygons.length}',
     );
     final poiChanged = !_setEquals(_lastQuestPoiIds, questPoiIds);
+    final trackedIdsChanged = !_setEquals(
+      _lastTrackedQuestIds,
+      trackedQuestIds,
+    );
     final turnInCharactersChanged = !_setEquals(
       _lastQuestTurnInCharacterIds,
       turnInCharacterIds,
@@ -1188,10 +1308,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       turnInCharacterIds,
     );
     _lastQuestPoiIds = questPoiIds;
+    _lastTrackedQuestIds = trackedQuestIds;
     _lastQuestTurnInCharacterIds = turnInCharacterIds;
     _lastQuestPolygonHash = polygonHash;
     if (poiChanged && newlyAddedPoiIds.isNotEmpty) {
-      for (final poiId in newlyAddedPoiIds) {
+      for (final poiId in newlyAddedPoiIds.intersection(trackedQuestPoiIds)) {
         unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: true));
         final poi = _pois.firstWhere(
           (p) => p.id == poiId,
@@ -1208,6 +1329,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: false));
       }
     }
+    if (trackedIdsChanged) {
+      for (final poiId in questPoiIds) {
+        unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: true));
+      }
+      for (final characterId in turnInCharacterIds) {
+        final character = _characterById(characterId);
+        if (character == null) continue;
+        unawaited(_updateCharacterSymbolForState(character));
+      }
+      unawaited(_refreshScenarioSymbols());
+      unawaited(_refreshExpositionSymbols());
+      unawaited(_refreshMonsterSymbols());
+      unawaited(_refreshChallengeSymbols());
+    }
     if (turnInCharactersChanged) {
       final changedCharacterIds = <String>{
         ...newlyAddedTurnInCharacterIds,
@@ -1221,7 +1356,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (polyChanged) {
       unawaited(_addQuestPolygons());
-      for (final poly in questLog.currentNodePolygons) {
+      for (final poly in trackedPolygons) {
         unawaited(_pulsePolygon(poly));
       }
     }
@@ -1301,15 +1436,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Set<String> _currentQuestPoiIdsForFilter(QuestLogProvider questLog) {
     final ids = questLog.currentNodePoiIds.toSet();
-    final knownPois = _knownPois().toList(growable: false);
-    if (knownPois.isEmpty) return ids;
-    final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
-    if (turnInCharacterIds.isEmpty) return ids;
-    for (final poi in knownPois) {
-      if (poi.characters.any((ch) => turnInCharacterIds.contains(ch.id))) {
-        ids.add(poi.id);
-      }
-    }
+    ids.addAll(_currentQuestTurnInPoiIds(questLog));
     return ids;
   }
 
@@ -1436,6 +1563,83 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return contentIds.contains(poi.id);
   }
 
+  Iterable<Quest> _trackedAcceptedQuests(QuestLogProvider questLog) sync* {
+    final trackedIds = questLog.trackedQuestIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (trackedIds.isEmpty) return;
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted || !trackedIds.contains(quest.id)) continue;
+      yield quest;
+    }
+  }
+
+  Set<String> _trackedQuestTurnInCharacterIds(QuestLogProvider questLog) {
+    final ids = <String>{};
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      if (quest.readyToTurnIn && quest.questGiverCharacterId != null) {
+        ids.add(quest.questGiverCharacterId!);
+      }
+      final currentNode = quest.currentNode;
+      final fetchCharacterId = currentNode?.fetchCharacterId?.trim() ?? '';
+      if (!quest.readyToTurnIn && fetchCharacterId.isNotEmpty) {
+        ids.add(fetchCharacterId);
+      }
+    }
+    return ids;
+  }
+
+  Set<String> _trackedQuestTurnInPoiIds(QuestLogProvider questLog) {
+    final ids = <String>{};
+    final turnInCharacterIds = _trackedQuestTurnInCharacterIds(questLog);
+    for (final characterId in turnInCharacterIds) {
+      final character = _characterById(characterId);
+      if (character == null) continue;
+      final poi = _poiForCharacter(character);
+      final poiId = poi?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      if (!quest.readyToTurnIn) continue;
+      final poi = _questReceiverPoiForQuest(quest);
+      final poiId = poi?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    return ids;
+  }
+
+  Set<String> _trackedQuestPoiIdsForPulse(QuestLogProvider questLog) {
+    final ids = <String>{};
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      if (quest.readyToTurnIn) continue;
+      final poiId = quest.currentNode?.pointOfInterest?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    ids.addAll(_trackedQuestTurnInPoiIds(questLog));
+    return ids;
+  }
+
+  List<List<QuestNodePolygonPoint>> _trackedQuestCurrentNodePolygons(
+    QuestLogProvider questLog,
+  ) {
+    return _trackedAcceptedQuests(questLog)
+        .where((quest) => !quest.readyToTurnIn)
+        .map(
+          (quest) =>
+              quest.currentNode?.polygon ?? const <QuestNodePolygonPoint>[],
+        )
+        .where((polygon) => polygon.isNotEmpty)
+        .map((polygon) => List<QuestNodePolygonPoint>.from(polygon))
+        .toList();
+  }
+
   Set<String> _currentQuestTurnInCharacterIds(QuestLogProvider questLog) {
     final ids = <String>{};
     for (final quest in questLog.quests) {
@@ -1444,7 +1648,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       final currentNode = quest.currentNode;
       final fetchCharacterId = currentNode?.fetchCharacterId?.trim() ?? '';
-      if (quest.isAccepted && fetchCharacterId.isNotEmpty) {
+      if (quest.isAccepted &&
+          !quest.readyToTurnIn &&
+          fetchCharacterId.isNotEmpty) {
         ids.add(fetchCharacterId);
       }
     }
@@ -1453,10 +1659,34 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Set<String> _currentMainStoryQuestPoiIds(QuestLogProvider questLog) {
     return questLog.quests
-        .where((q) => q.isAccepted && q.isMainStory)
+        .where((q) => q.isAccepted && q.isMainStory && !q.readyToTurnIn)
         .map((q) => q.currentNode?.pointOfInterest?.id ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
+  }
+
+  Set<String> _currentQuestTurnInPoiIds(QuestLogProvider questLog) {
+    final ids = <String>{};
+    final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
+    for (final characterId in turnInCharacterIds) {
+      final character = _characterById(characterId);
+      if (character == null) continue;
+      final poi = _poiForCharacter(character);
+      final poiId = poi?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      if (!quest.readyToTurnIn) continue;
+      final poi = _questReceiverPoiForQuest(quest);
+      final poiId = poi?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    return ids;
   }
 
   Set<String> _currentMainStoryTurnInCharacterIds(QuestLogProvider questLog) {
@@ -1471,9 +1701,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         .toSet();
   }
 
+  Set<String> _currentMainStoryTurnInPoiIds(QuestLogProvider questLog) {
+    final ids = <String>{};
+    for (final quest in questLog.quests) {
+      if (!quest.isMainStory || !quest.readyToTurnIn) continue;
+      final poi = _questReceiverPoiForQuest(quest);
+      final poiId = poi?.id.trim() ?? '';
+      if (poiId.isNotEmpty) {
+        ids.add(poiId);
+      }
+    }
+    return ids;
+  }
+
   bool _poiHasMainStoryAccent(PointOfInterest poi, QuestLogProvider questLog) {
     return poi.hasAvailableMainStoryQuest ||
-        _currentMainStoryQuestPoiIds(questLog).contains(poi.id);
+        _currentMainStoryQuestPoiIds(questLog).contains(poi.id) ||
+        _currentMainStoryTurnInPoiIds(questLog).contains(poi.id);
   }
 
   bool _characterHasMainStoryAccent(
@@ -1899,6 +2143,44 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
   }
 
+  Future<void> _refreshMapContent() async {
+    if (_manualRefreshInFlight) {
+      return;
+    }
+    final discoveriesProvider = context.read<DiscoveriesProvider>();
+    final activityFeedProvider = context.read<ActivityFeedProvider>();
+    final partyProvider = context.read<PartyProvider>();
+    setState(() {
+      _manualRefreshInFlight = true;
+    });
+    try {
+      _updateSelectedZoneFromLocation();
+      _requestQuestLogIfReady(force: true);
+      await _loadAll();
+      await _loadTreasureChestsForSelectedZone(
+        forceRefreshZonePins: true,
+        forceRefreshZoneBaseContent: true,
+      );
+      await _loadBases();
+      unawaited(
+        _runBestEffortRefresh('discoveries', discoveriesProvider.refresh()),
+      );
+      unawaited(
+        _runBestEffortRefresh('activity feed', activityFeedProvider.refresh()),
+      );
+      unawaited(_runBestEffortRefresh('party', partyProvider.fetchParty()));
+      unawaited(
+        _loadTutorialStatus(force: true, preserveCompletedReveal: true),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _manualRefreshInFlight = false;
+        });
+      }
+    }
+  }
+
   void _flyToLocation(double lat, double lng) {
     final c = _mapController;
     if (c == null ||
@@ -1920,7 +2202,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _focusQuestPoI(PointOfInterest poi) async {
     final lat = double.tryParse(poi.lat) ?? 0.0;
     final lng = double.tryParse(poi.lng) ?? 0.0;
+    final changedZone = _selectZoneForPoiIfDifferent(poi);
     _flyToLocation(lat, lng);
+    unawaited(_pulsePoi(lat, lng));
+    if (changedZone) return;
     final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
       poi.id,
     );
@@ -1968,13 +2253,81 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(_focusQuestTurnInFlow(quest));
   }
 
+  bool _selectZoneForQuestNodeIfDifferent(QuestNode node) {
+    final poi = node.pointOfInterest;
+    if (poi != null) {
+      return _selectZoneForPoiIfDifferent(poi);
+    }
+
+    final fetchCharacter = _questNodeFetchCharacter(node);
+    if (fetchCharacter != null) {
+      final location = _questNodeFetchCharacterLocation(fetchCharacter);
+      if (location != null) {
+        return _selectZoneForCoordinatesIfDifferent(
+          location.latitude,
+          location.longitude,
+        );
+      }
+    }
+
+    final scenarioId = node.scenarioId?.trim() ?? '';
+    if (scenarioId.isNotEmpty) {
+      final scenario = _scenarioById(scenarioId);
+      if (scenario != null) {
+        return _selectZoneByIdIfDifferent(scenario.zoneId);
+      }
+    }
+
+    final expositionId = node.expositionId?.trim() ?? '';
+    if (expositionId.isNotEmpty) {
+      final exposition = _expositionById(expositionId);
+      if (exposition != null) {
+        return _selectZoneByIdIfDifferent(exposition.zoneId);
+      }
+    }
+
+    final encounterId = node.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isNotEmpty) {
+      final encounter = _monsterById(encounterId);
+      if (encounter != null) {
+        return _selectZoneByIdIfDifferent(encounter.zoneId);
+      }
+    }
+
+    final monsterId = node.monsterId?.trim() ?? '';
+    if (monsterId.isNotEmpty) {
+      final encounter = _monsterEncounterByMemberMonsterId(monsterId);
+      if (encounter != null) {
+        return _selectZoneByIdIfDifferent(encounter.zoneId);
+      }
+    }
+
+    final challengeId = node.challengeId?.trim() ?? '';
+    if (challengeId.isNotEmpty) {
+      final challenge = _challengeById(challengeId);
+      if (challenge != null) {
+        return _selectZoneByIdIfDifferent(challenge.zoneId);
+      }
+    }
+
+    return false;
+  }
+
   Character? _questReceiverCharacterForQuest(Quest quest) {
+    final embeddedQuestGiver = quest.questGiverCharacter;
+    if (embeddedQuestGiver != null && embeddedQuestGiver.id.trim().isNotEmpty) {
+      return embeddedQuestGiver;
+    }
     final questGiverId = quest.questGiverCharacterId?.trim() ?? '';
     if (questGiverId.isEmpty) return null;
     return _characterById(questGiverId);
   }
 
   PointOfInterest? _questReceiverPoiForQuest(Quest quest) {
+    final embeddedQuestGiverPoi = quest.questGiverPointOfInterest;
+    if (embeddedQuestGiverPoi != null && embeddedQuestGiverPoi.id.isNotEmpty) {
+      return embeddedQuestGiverPoi;
+    }
     final character = _questReceiverCharacterForQuest(quest);
     if (character != null) {
       final actualPoi = _poiForCharacter(character);
@@ -1991,36 +2344,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
-  _MapMarkerIsolation _mapMarkerIsolationForQuestTurnIn(
-    Quest quest, {
-    Character? character,
-    PointOfInterest? poi,
-  }) {
-    final markerKeys = <String>{};
-    final resolvedCharacter =
-        character ?? _questReceiverCharacterForQuest(quest);
-    final resolvedPoi = poi ?? _questReceiverPoiForQuest(quest);
-    if (resolvedPoi != null) {
-      markerKeys.add(_mapMarkerIsolationKey('poi', resolvedPoi.id));
-    }
-    final characterId = resolvedCharacter?.id.trim() ?? '';
-    if (characterId.isNotEmpty) {
-      markerKeys.add(_mapMarkerIsolationKey('character', characterId));
-    }
-    return _MapMarkerIsolation(markerKeys: markerKeys);
-  }
-
   Future<void> _focusQuestTurnInFlow(Quest quest) async {
     final questReceiver = _questReceiverCharacterForQuest(quest);
     final questReceiverPoi = _questReceiverPoiForQuest(quest);
-    final isolation = _mapMarkerIsolationForQuestTurnIn(
-      quest,
-      character: questReceiver,
-      poi: questReceiverPoi,
-    );
 
     if (questReceiver != null) {
       final focusLocation = _questNodeFetchCharacterLocation(questReceiver);
+      if (focusLocation != null) {
+        _selectZoneForCoordinatesIfDifferent(
+          focusLocation.latitude,
+          focusLocation.longitude,
+        );
+      } else if (questReceiverPoi != null) {
+        _selectZoneForPoiIfDifferent(questReceiverPoi);
+      }
       if (focusLocation != null) {
         _flyToLocation(focusLocation.latitude, focusLocation.longitude);
         unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
@@ -2030,11 +2367,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _flyToLocation(lat, lng);
         unawaited(_pulsePoi(lat, lng));
       }
-      await _runWithMapMarkerIsolation(isolation, () async {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        if (!mounted) return;
-        await _showCharacterPanel(questReceiver);
-      });
       return;
     }
 
@@ -2044,18 +2376,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
     final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
+    _selectZoneForPoiIfDifferent(questReceiverPoi);
     _flyToLocation(lat, lng);
     unawaited(_pulsePoi(lat, lng));
-    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
-      questReceiverPoi.id,
-    );
-    await _runWithMapMarkerIsolation(
-      isolation,
-      () => _showPointOfInterestPanel(questReceiverPoi, hasDiscovered),
-    );
   }
 
   void _focusQuestNode(QuestNode node) {
+    _selectZoneForQuestNodeIfDifferent(node);
     final poi = node.pointOfInterest;
     if (poi != null) {
       final lat = double.tryParse(poi.lat) ?? 0.0;
@@ -2464,46 +2791,159 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return LatLng(latSum / count, lngSum / count);
   }
 
-  Future<void> _pulsePoi(double lat, double lng) async {
+  String _pulseKeyForCoordinates(String namespace, double lat, double lng) {
+    return '$namespace:${_coordinateKey(lat, lng) ?? '$lat,$lng'}';
+  }
+
+  double _lerpDouble(double start, double end, double t) {
+    return start + ((end - start) * t);
+  }
+
+  Future<void> _animateFeatheredPulse(
+    double lat,
+    double lng, {
+    required String pulseKey,
+    required String coreColor,
+    required String mistColor,
+    required String ringColor,
+    required double coreStartRadius,
+    required double coreEndRadius,
+    required double mistStartRadius,
+    required double mistEndRadius,
+    required double ringStartRadius,
+    required double ringEndRadius,
+    required double maxCoreOpacity,
+    required double maxMistOpacity,
+    required double maxRingOpacity,
+    required double initialStrokeWidth,
+    required int steps,
+    required Duration frameDelay,
+  }) async {
     final c = _mapController;
-    if (c == null) return;
-    try {
-      final circle = await c.addCircle(
-        CircleOptions(
-          geometry: LatLng(lat, lng),
-          circleRadius: 36,
-          circleColor: '#f5c542',
-          circleOpacity: 0.35,
-          circleStrokeWidth: 3,
-          circleStrokeColor: '#f5c542',
-        ),
+    if (c == null || !_styleLoaded) return;
+    if (!_activePulseKeys.add(pulseKey)) return;
+
+    Circle? coreCircle;
+    Circle? mistCircle;
+    Circle? ringCircle;
+    final geometry = LatLng(lat, lng);
+
+    CircleOptions coreOptions(double progress) {
+      final eased = Curves.easeOutCubic.transform(progress);
+      final fade = 1.0 - Curves.easeInCubic.transform(progress);
+      return CircleOptions(
+        geometry: geometry,
+        circleRadius: _lerpDouble(coreStartRadius, coreEndRadius, eased),
+        circleColor: coreColor,
+        circleOpacity: maxCoreOpacity * fade,
       );
-      await Future.delayed(const Duration(milliseconds: 500));
-      try {
-        await c.removeCircle(circle);
-      } catch (_) {}
-    } catch (_) {}
+    }
+
+    CircleOptions mistOptions(double progress) {
+      final eased = Curves.easeOutQuart.transform(progress);
+      final bloom = (math.sin(progress * math.pi) * 1.08).clamp(0.0, 1.0);
+      return CircleOptions(
+        geometry: geometry,
+        circleRadius: _lerpDouble(mistStartRadius, mistEndRadius, eased),
+        circleColor: mistColor,
+        circleOpacity: maxMistOpacity * bloom,
+      );
+    }
+
+    CircleOptions ringOptions(double progress) {
+      final eased = Curves.easeOutQuart.transform(progress);
+      final fade = 1.0 - Curves.easeOutCubic.transform(progress);
+      final strokeWidth = _lerpDouble(
+        initialStrokeWidth,
+        0.6,
+        Curves.easeOut.transform(progress),
+      );
+      return CircleOptions(
+        geometry: geometry,
+        circleRadius: _lerpDouble(ringStartRadius, ringEndRadius, eased),
+        circleColor: ringColor,
+        circleOpacity: maxRingOpacity * fade,
+        circleStrokeWidth: strokeWidth,
+        circleStrokeColor: ringColor,
+      );
+    }
+
+    try {
+      coreCircle = await c.addCircle(coreOptions(0.0));
+      mistCircle = await c.addCircle(mistOptions(0.0));
+      ringCircle = await c.addCircle(ringOptions(0.0));
+      final animatedCoreCircle = coreCircle;
+      final animatedMistCircle = mistCircle;
+      final animatedRingCircle = ringCircle;
+
+      for (var step = 1; step <= steps; step++) {
+        final progress = step / steps;
+        await Future.wait([
+          c.updateCircle(animatedCoreCircle, coreOptions(progress)),
+          c.updateCircle(animatedMistCircle, mistOptions(progress)),
+          c.updateCircle(animatedRingCircle, ringOptions(progress)),
+        ]);
+        if (step < steps) {
+          await Future.delayed(frameDelay);
+        }
+      }
+    } catch (_) {
+      // Best-effort pulse only.
+    } finally {
+      for (final circle in [coreCircle, mistCircle, ringCircle]) {
+        if (circle == null) continue;
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+      }
+      _activePulseKeys.remove(pulseKey);
+    }
+  }
+
+  Future<void> _pulsePoi(double lat, double lng) async {
+    await _animateFeatheredPulse(
+      lat,
+      lng,
+      pulseKey: _pulseKeyForCoordinates('poi', lat, lng),
+      coreColor: _questPulseCoreColor,
+      mistColor: _questPulseMistColor,
+      ringColor: _questPulseRingColor,
+      coreStartRadius: 8,
+      coreEndRadius: 26,
+      mistStartRadius: 18,
+      mistEndRadius: 52,
+      ringStartRadius: 14,
+      ringEndRadius: 58,
+      maxCoreOpacity: 0.18,
+      maxMistOpacity: 0.16,
+      maxRingOpacity: 0.22,
+      initialStrokeWidth: 2.6,
+      steps: 14,
+      frameDelay: const Duration(milliseconds: 55),
+    );
   }
 
   Future<void> _pulseDiscoveredPoi(double lat, double lng) async {
-    final c = _mapController;
-    if (c == null) return;
-    try {
-      final circle = await c.addCircle(
-        CircleOptions(
-          geometry: LatLng(lat, lng),
-          circleRadius: 24,
-          circleColor: '#f5c542',
-          circleOpacity: 0.25,
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#f5c542',
-        ),
-      );
-      await Future.delayed(const Duration(milliseconds: 350));
-      try {
-        await c.removeCircle(circle);
-      } catch (_) {}
-    } catch (_) {}
+    await _animateFeatheredPulse(
+      lat,
+      lng,
+      pulseKey: _pulseKeyForCoordinates('discovery', lat, lng),
+      coreColor: _discoveryPulseCoreColor,
+      mistColor: _discoveryPulseMistColor,
+      ringColor: _discoveryPulseRingColor,
+      coreStartRadius: 6,
+      coreEndRadius: 18,
+      mistStartRadius: 12,
+      mistEndRadius: 32,
+      ringStartRadius: 10,
+      ringEndRadius: 36,
+      maxCoreOpacity: 0.14,
+      maxMistOpacity: 0.12,
+      maxRingOpacity: 0.18,
+      initialStrokeWidth: 2.0,
+      steps: 10,
+      frameDelay: const Duration(milliseconds: 50),
+    );
   }
 
   Future<void> _pulsePolygon(List<QuestNodePolygonPoint> polygon) async {
@@ -4268,6 +4708,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
+  void _syncHealingFountainState(HealingFountain updatedFountain) {
+    final normalizedZoneId = updatedFountain.zoneId.trim();
+    final cached = normalizedZoneId.isEmpty
+        ? null
+        : _zoneBaseContentCache[normalizedZoneId];
+    if (cached != null) {
+      final hasMatch = cached.content.healingFountains.any(
+        (item) => item.id == updatedFountain.id,
+      );
+      if (hasMatch) {
+        _zoneBaseContentCache[normalizedZoneId] = _ZoneBaseContentCacheEntry(
+          content: _ZoneBaseContent(
+            treasureChests: cached.content.treasureChests,
+            healingFountains: cached.content.healingFountains
+                .map(
+                  (item) =>
+                      item.id == updatedFountain.id ? updatedFountain : item,
+                )
+                .toList(growable: false),
+            resources: cached.content.resources,
+            scenarios: cached.content.scenarios,
+            expositions: cached.content.expositions,
+            monsters: cached.content.monsters,
+            challenges: cached.content.challenges,
+          ),
+          fetchedAt: cached.fetchedAt,
+          lastAccessedAt: cached.lastAccessedAt,
+        );
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _healingFountains = _healingFountains
+          .map((item) => item.id == updatedFountain.id ? updatedFountain : item)
+          .toList(growable: false);
+    });
+  }
+
   ResourceNode? _resourceById(String id) {
     for (final resource in _resources) {
       if (resource.id == id) return resource;
@@ -4360,25 +4839,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  Future<String?> _ensureScenarioVisibleThumbnail(
-    MapLibreMapController c,
-    Scenario scenario,
-  ) async {
-    final source = scenario.thumbnailUrl.isNotEmpty
-        ? scenario.thumbnailUrl
-        : scenario.imageUrl;
-    if (source.isEmpty) return null;
-
-    final imageBytes = await loadPoiThumbnail(source);
-    if (imageBytes == null) return null;
-
-    final imageId = 'scenario_${scenario.id}_$_mapThumbnailVersion';
-    try {
-      await c.addImage(imageId, imageBytes);
-    } catch (_) {}
-    return imageId;
-  }
-
   Future<void> _refreshScenarioSymbols() {
     _scenarioRefreshSequence = _scenarioRefreshSequence.then((_) async {
       try {
@@ -4443,6 +4903,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (duplicateOrOrphanCircles.isNotEmpty) {
       for (final circle in duplicateOrOrphanCircles) {
+        _setQuestCircleHighlight(circle, false);
         try {
           await c.removeCircle(circle);
         } catch (_) {}
@@ -4464,6 +4925,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     for (final entry in _scenarioCircleById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestCircleHighlight(entry.value, false);
         try {
           await c.removeCircle(entry.value);
         } catch (_) {}
@@ -4479,16 +4941,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioMysteryThumbnailAdded;
 
     for (final scenario in visibleScenarios) {
-      final mystery = _isScenarioMystery(scenario);
+      // Keep scenario pins undiscovered on the map even after proximity unlocks
+      // the scenario panel content.
+      const mystery = true;
       final isCurrentQuestScenario = _isCurrentQuestScenario(scenario.id);
       final isTutorialScenario = _isTutorialFocusedScenarioId(scenario.id);
-      final shouldPulseLikeQuest = isCurrentQuestScenario || isTutorialScenario;
+      final shouldShowQuestState = isCurrentQuestScenario || isTutorialScenario;
+      final shouldAnimateQuest =
+          _isTrackedQuestScenario(scenario.id) || isTutorialScenario;
       final existingSymbol = _scenarioSymbolById[scenario.id];
       final existingCircle = _scenarioCircleById[scenario.id];
       final needsRefresh =
           _scenarioCircleMystery[scenario.id] != mystery ||
           existingSymbol == null ||
-          _scenarioQuestObjective[scenario.id] != shouldPulseLikeQuest;
+          _scenarioQuestObjective[scenario.id] != shouldAnimateQuest;
 
       if (canUseImages) {
         if (needsRefresh) {
@@ -4501,26 +4967,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             _scenarioSymbolById.remove(scenario.id);
           }
           if (existingCircle != null) {
+            _setQuestCircleHighlight(existingCircle, false);
             try {
               await c.removeCircle(existingCircle);
             } catch (_) {}
             _scenarioCircles.remove(existingCircle);
             _scenarioCircleById.remove(scenario.id);
           }
-          var imageId = 'scenario_mystery_thumbnail_$_mapThumbnailVersion';
-          if (!mystery) {
-            final visibleImageId = await _ensureScenarioVisibleThumbnail(
-              c,
-              scenario,
-            );
-            if (visibleImageId != null) {
-              imageId = visibleImageId;
-            }
-          }
           final symbol = await c.addSymbol(
             SymbolOptions(
               geometry: LatLng(scenario.latitude, scenario.longitude),
-              iconImage: imageId,
+              iconImage: 'scenario_mystery_thumbnail_$_mapThumbnailVersion',
               iconSize: 0.74,
               iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: _transparentMapHaloColor,
@@ -4532,9 +4989,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           if (!mounted) return;
           _scenarioSymbols.add(symbol);
           _scenarioSymbolById[scenario.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldPulseLikeQuest);
+          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
           _scenarioCircleMystery[scenario.id] = mystery;
-          _scenarioQuestObjective[scenario.id] = shouldPulseLikeQuest;
+          _scenarioQuestObjective[scenario.id] = shouldAnimateQuest;
+        } else {
+          _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
         }
         continue;
       }
@@ -4549,8 +5008,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       if (existingCircle == null ||
           _scenarioCircleMystery[scenario.id] != mystery ||
-          _scenarioQuestObjective[scenario.id] != isCurrentQuestScenario) {
+          _scenarioQuestObjective[scenario.id] != shouldAnimateQuest) {
         if (existingCircle != null) {
+          _setQuestCircleHighlight(existingCircle, false);
           try {
             await c.removeCircle(existingCircle);
           } catch (_) {}
@@ -4562,9 +5022,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             geometry: LatLng(scenario.latitude, scenario.longitude),
             circleRadius: 23,
             circleOpacity: _mapMarkerStartingOpacity(1.0),
-            circleColor: shouldPulseLikeQuest
-                ? '#e1b12c'
-                : (mystery ? '#5a5560' : '#4f8cff'),
+            circleColor: shouldShowQuestState ? '#e1b12c' : '#5a5560',
             circleStrokeWidth: 2,
             circleStrokeColor: '#ffffff',
           ),
@@ -4574,7 +5032,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioCircles.add(circle);
         _scenarioCircleById[scenario.id] = circle;
         _scenarioCircleMystery[scenario.id] = mystery;
-        _scenarioQuestObjective[scenario.id] = shouldPulseLikeQuest;
+        _scenarioQuestObjective[scenario.id] = shouldAnimateQuest;
+        _setQuestCircleHighlight(circle, shouldAnimateQuest);
+      } else {
+        _setQuestCircleHighlight(existingCircle, shouldAnimateQuest);
       }
     }
     await _applyMapMarkerIsolationIfNeeded();
@@ -4666,6 +5127,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (duplicateOrOrphanCircles.isNotEmpty) {
       for (final circle in duplicateOrOrphanCircles) {
+        _setQuestCircleHighlight(circle, false);
         try {
           await c.removeCircle(circle);
         } catch (_) {}
@@ -4689,6 +5151,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     for (final entry in _expositionCircleById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestCircleHighlight(entry.value, false);
         try {
           await c.removeCircle(entry.value);
         } catch (_) {}
@@ -4704,11 +5167,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     for (final exposition in visibleExpositions) {
       final isCurrentQuestExposition = _isCurrentQuestExposition(exposition.id);
+      final shouldAnimateQuest = _isTrackedQuestExposition(exposition.id);
       final existingSymbol = _expositionSymbolById[exposition.id];
       final existingCircle = _expositionCircleById[exposition.id];
       final needsRefresh =
           existingSymbol == null ||
-          _expositionQuestObjective[exposition.id] != isCurrentQuestExposition;
+          _expositionQuestObjective[exposition.id] != shouldAnimateQuest;
 
       if (canUseImages) {
         if (needsRefresh) {
@@ -4721,6 +5185,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             _expositionSymbolById.remove(exposition.id);
           }
           if (existingCircle != null) {
+            _setQuestCircleHighlight(existingCircle, false);
             try {
               await c.removeCircle(existingCircle);
             } catch (_) {}
@@ -4743,8 +5208,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           if (!mounted) return;
           _expositionSymbols.add(symbol);
           _expositionSymbolById[exposition.id] = symbol;
-          _setQuestPoiHighlight(symbol, isCurrentQuestExposition);
-          _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
+          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+          _expositionQuestObjective[exposition.id] = shouldAnimateQuest;
+        } else {
+          _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
         }
         continue;
       }
@@ -4758,9 +5225,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _expositionSymbolById.remove(exposition.id);
       }
       if (existingCircle == null ||
-          _expositionQuestObjective[exposition.id] !=
-              isCurrentQuestExposition) {
+          _expositionQuestObjective[exposition.id] != shouldAnimateQuest) {
         if (existingCircle != null) {
+          _setQuestCircleHighlight(existingCircle, false);
           try {
             await c.removeCircle(existingCircle);
           } catch (_) {}
@@ -4781,7 +5248,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _expositionCircles.add(circle);
         _expositionCircleById[exposition.id] = circle;
-        _expositionQuestObjective[exposition.id] = isCurrentQuestExposition;
+        _expositionQuestObjective[exposition.id] = shouldAnimateQuest;
+        _setQuestCircleHighlight(circle, shouldAnimateQuest);
+      } else {
+        _setQuestCircleHighlight(existingCircle, shouldAnimateQuest);
       }
     }
     await _applyMapMarkerIsolationIfNeeded();
@@ -4884,6 +5354,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (duplicateOrOrphanCircles.isNotEmpty) {
       for (final circle in duplicateOrOrphanCircles) {
+        _setQuestCircleHighlight(circle, false);
         try {
           await c.removeCircle(circle);
         } catch (_) {}
@@ -4904,6 +5375,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     for (final entry in _monsterCircleById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestCircleHighlight(entry.value, false);
         try {
           await c.removeCircle(entry.value);
         } catch (_) {}
@@ -4917,7 +5389,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final isTutorialMonster = _isTutorialFocusedMonsterEncounterId(
         monster.id,
       );
-      final shouldPulseLikeQuest = isCurrentQuestMonster || isTutorialMonster;
+      final shouldShowQuestState = isCurrentQuestMonster || isTutorialMonster;
+      final shouldAnimateQuest =
+          _isTrackedQuestMonster(monster.id) || isTutorialMonster;
       final mystery = _isMonsterMystery(monster);
       String? symbolImageId;
       if (mystery) {
@@ -4949,6 +5423,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (symbolImageId != null) {
         final existingCircle = _monsterCircleById[monster.id];
         if (existingCircle != null) {
+          _setQuestCircleHighlight(existingCircle, false);
           try {
             await c.removeCircle(existingCircle);
           } catch (_) {}
@@ -4967,14 +5442,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               iconHaloColor: _transparentMapHaloColor,
               iconHaloWidth: 0.0,
               iconAnchor: 'center',
-              zIndex: shouldPulseLikeQuest ? 4 : 2,
+              zIndex: shouldShowQuestState ? 4 : 2,
             ),
             {'type': 'monster', 'id': monster.id},
           );
           if (!mounted) return;
           _monsterSymbols.add(symbol);
           _monsterSymbolById[monster.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldPulseLikeQuest);
+          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
         } else {
           try {
             await c.updateSymbol(
@@ -4985,10 +5460,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 iconOpacity: _mapMarkerStartingOpacity(1.0),
                 iconHaloColor: _transparentMapHaloColor,
                 iconHaloWidth: 0.0,
-                zIndex: shouldPulseLikeQuest ? 4 : 2,
+                zIndex: shouldShowQuestState ? 4 : 2,
               ),
             );
-            _setQuestPoiHighlight(existingSymbol, shouldPulseLikeQuest);
+            _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
           } catch (_) {}
         }
         continue;
@@ -5006,6 +5481,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
       final existingCircle = _monsterCircleById[monster.id];
       if (existingCircle != null) {
+        _setQuestCircleHighlight(existingCircle, false);
         try {
           await c.removeCircle(existingCircle);
         } catch (_) {}
@@ -5017,7 +5493,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           geometry: LatLng(monster.latitude, monster.longitude),
           circleRadius: 24,
           circleOpacity: _mapMarkerStartingOpacity(1.0),
-          circleColor: shouldPulseLikeQuest
+          circleColor: shouldShowQuestState
               ? '#e1b12c'
               : (mystery ? '#5a5560' : _monsterEncounterMarkerColor(monster)),
           circleStrokeWidth: 2,
@@ -5028,6 +5504,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (!mounted) return;
       _monsterCircles.add(circle);
       _monsterCircleById[monster.id] = circle;
+      _setQuestCircleHighlight(circle, shouldAnimateQuest);
     }
     await _applyMapMarkerIsolationIfNeeded();
   }
@@ -5036,6 +5513,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     for (final quest in questLog.quests) {
       if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node?.scenarioId == scenarioId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _doesQuestNodeTargetMonster(QuestNode? node, String monsterId) {
+    if (node?.monsterEncounterId == monsterId) {
+      return true;
+    }
+    if (node?.monsterId == monsterId) {
+      return true;
+    }
+    if ((node?.monsterId ?? '').isNotEmpty) {
+      final encounter = _monsterEncounterByMemberMonsterId(node!.monsterId!);
+      if (encounter != null && encounter.id == monsterId) {
+        return true;
+      }
+    }
+    if ((node?.monsterEncounterId ?? '').isNotEmpty) {
+      final encounterId = node!.monsterEncounterId!;
+      final encounter = _monsterById(encounterId);
+      if (encounter != null) {
+        final hasMemberMatch =
+            encounter.monsters.any((m) => m.id == monsterId) ||
+            encounter.members.any((m) => m.monster.id == monsterId);
+        if (hasMemberMatch) {
+          return true;
+        }
+      }
+    }
+    return (node?.monsterId ?? '').isNotEmpty && monsterId == node!.monsterId;
+  }
+
+  bool _isTrackedQuestScenario(String scenarioId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in _trackedAcceptedQuests(questLog)) {
       final node = quest.currentNode;
       if (node?.scenarioId == scenarioId) {
         return true;
@@ -5056,36 +5572,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return false;
   }
 
+  bool _isTrackedQuestExposition(String expositionId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      final node = quest.currentNode;
+      if (node?.expositionId == expositionId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool _isCurrentQuestMonster(String monsterId) {
     final questLog = context.read<QuestLogProvider>();
     for (final quest in questLog.quests) {
       if (!quest.isAccepted) continue;
-      final node = quest.currentNode;
-      if (node?.monsterEncounterId == monsterId) {
+      if (_doesQuestNodeTargetMonster(quest.currentNode, monsterId)) {
         return true;
       }
-      if (node?.monsterId == monsterId) {
-        return true;
-      }
-      if ((node?.monsterId ?? '').isNotEmpty) {
-        final encounter = _monsterEncounterByMemberMonsterId(node!.monsterId!);
-        if (encounter != null && encounter.id == monsterId) {
-          return true;
-        }
-      }
-      if ((node?.monsterEncounterId ?? '').isNotEmpty) {
-        final encounterId = node!.monsterEncounterId!;
-        final encounter = _monsterById(encounterId);
-        if (encounter != null) {
-          final hasMemberMatch =
-              encounter.monsters.any((m) => m.id == monsterId) ||
-              encounter.members.any((m) => m.monster.id == monsterId);
-          if (hasMemberMatch) {
-            return true;
-          }
-        }
-      }
-      if ((node?.monsterId ?? '').isNotEmpty && monsterId == node!.monsterId) {
+    }
+    return false;
+  }
+
+  bool _isTrackedQuestMonster(String monsterId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      if (_doesQuestNodeTargetMonster(quest.currentNode, monsterId)) {
         return true;
       }
     }
@@ -5104,9 +5616,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return false;
   }
 
+  bool _isTrackedQuestChallenge(String challengeId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in _trackedAcceptedQuests(questLog)) {
+      final node = quest.currentNode;
+      if (node?.challengeId == challengeId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool _isCurrentQuestTurnInCharacter(String characterId) {
     final questLog = context.read<QuestLogProvider>();
     return _currentQuestTurnInCharacterIds(questLog).contains(characterId);
+  }
+
+  bool _isTrackedQuestTurnInCharacter(String characterId) {
+    final questLog = context.read<QuestLogProvider>();
+    return _trackedQuestTurnInCharacterIds(questLog).contains(characterId);
   }
 
   Future<void> _loadChallengeMysteryThumbnail(MapLibreMapController c) async {
@@ -5184,6 +5712,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     if (duplicateOrOrphanSymbols.isNotEmpty) {
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _setQuestPoiHighlight(symbol, false);
+      }
       try {
         await c.removeSymbols(duplicateOrOrphanSymbols);
       } catch (_) {}
@@ -5206,6 +5737,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (duplicateOrOrphanCircles.isNotEmpty) {
       for (final circle in duplicateOrOrphanCircles) {
+        _setQuestCircleHighlight(circle, false);
         try {
           await c.removeCircle(circle);
         } catch (_) {}
@@ -5231,6 +5763,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final desiredIds = pointChallenges.map((challenge) => challenge.id).toSet();
     for (final entry in _challengeSymbolById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestPoiHighlight(entry.value, false);
         try {
           await c.removeSymbols([entry.value]);
         } catch (_) {}
@@ -5240,6 +5773,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     for (final entry in _challengeCircleById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestCircleHighlight(entry.value, false);
         try {
           await c.removeCircle(entry.value);
         } catch (_) {}
@@ -5250,6 +5784,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     for (final challenge in pointChallenges) {
       final isCurrentQuestChallenge = _isCurrentQuestChallenge(challenge.id);
+      final shouldAnimateQuest = _isTrackedQuestChallenge(challenge.id);
       final mystery = _isChallengeMystery(challenge);
       String? symbolImageId;
 
@@ -5267,6 +5802,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (symbolImageId != null) {
         final existingCircle = _challengeCircleById[challenge.id];
         if (existingCircle != null) {
+          _setQuestCircleHighlight(existingCircle, false);
           try {
             await c.removeCircle(existingCircle);
           } catch (_) {}
@@ -5291,6 +5827,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           if (!mounted) return;
           _challengeSymbols.add(symbol);
           _challengeSymbolById[challenge.id] = symbol;
+          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
         } else {
           try {
             await c.updateSymbol(
@@ -5303,6 +5840,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 iconHaloWidth: 0.0,
               ),
             );
+            _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
           } catch (_) {}
         }
         continue;
@@ -5310,6 +5848,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
       final existingSymbol = _challengeSymbolById[challenge.id];
       if (existingSymbol != null) {
+        _setQuestPoiHighlight(existingSymbol, false);
         try {
           await c.removeSymbols([existingSymbol]);
         } catch (_) {}
@@ -5336,6 +5875,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _challengeCircles.add(circle);
         _challengeCircleById[challenge.id] = circle;
+        _setQuestCircleHighlight(circle, shouldAnimateQuest);
       } else {
         try {
           await c.updateCircle(
@@ -5346,6 +5886,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               circleColor: circleColor,
             ),
           );
+          _setQuestCircleHighlight(existingCircle, shouldAnimateQuest);
         } catch (_) {}
       }
     }
@@ -5536,6 +6077,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final type = data['type']?.toString();
     final idStr = data['id']?.toString();
     if (type == null || idStr == null || idStr.isEmpty) return;
+    if (!_isAnnotationTapEnabled(type, idStr)) return;
 
     _registerFeatureTap(point);
 
@@ -5578,6 +6120,121 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final dx = point.x - lastPoint.x;
     final dy = point.y - lastPoint.y;
     return math.sqrt(dx * dx + dy * dy) <= 8;
+  }
+
+  bool _isZoneScopedContentVisibleForSelectedZone(String zoneId) {
+    final normalizedZoneId = zoneId.trim();
+    if (normalizedZoneId.isEmpty) return false;
+    final selectedZoneId =
+        context.read<ZoneProvider>().selectedZone?.id.trim() ?? '';
+    if (selectedZoneId.isNotEmpty) {
+      return selectedZoneId == normalizedZoneId;
+    }
+    if (_zones.isEmpty) return false;
+    return _zones.first.id == normalizedZoneId;
+  }
+
+  bool _poiMatchesActiveTagFilter(PointOfInterest poi) {
+    final filters = context.read<QuestFilterProvider>();
+    final tags = context.read<TagsProvider>();
+    if (!filters.enableTagFilter || tags.selectedTagIds.isEmpty) {
+      return true;
+    }
+
+    final selectedTagIds = tags.selectedTagIds;
+    final selectedTagNames = tags.tags
+        .where((tag) => selectedTagIds.contains(tag.id))
+        .map((tag) => tag.name.toLowerCase())
+        .toSet();
+    return poi.tags.any(
+      (tag) =>
+          selectedTagIds.contains(tag.id) ||
+          (tag.name.isNotEmpty &&
+              selectedTagNames.contains(tag.name.toLowerCase())),
+    );
+  }
+
+  bool _isPoiMarkerInteractable(PointOfInterest poi) {
+    if (_shouldSuppressNormalMapPinsForTutorial) return false;
+    if (!_isPoiInSelectedZone(poi)) return false;
+    if (!_poiMatchesActiveTagFilter(poi)) return false;
+
+    final questLog = context.read<QuestLogProvider>();
+    final discoveries = context.read<DiscoveriesProvider>();
+    final isQuestCurrent = _currentQuestPoiIdsForFilter(
+      questLog,
+    ).contains(poi.id);
+    final undiscovered = !discoveries.hasDiscovered(poi.id);
+    return _poiMarkerOpacity(
+          poi,
+          isQuestCurrent: isQuestCurrent,
+          undiscovered: undiscovered,
+          mapContentPoiIds: _buildPoiIdsWithMapContent(),
+        ) >
+        0.05;
+  }
+
+  bool _isAnnotationTapEnabled(String type, String id) {
+    if (id.isEmpty) return false;
+    if (type == 'zone') return true;
+    if (_pinBatchRevealInProgress) return false;
+    if (_tutorialNormalPinsRevealInProgress && !_isTutorialMapFocusActive) {
+      return false;
+    }
+
+    final normalizedType = type == 'poiBorder' ? 'poi' : type;
+    if (!_isMapMarkerIsolationVisible(normalizedType, id)) {
+      return false;
+    }
+
+    switch (normalizedType) {
+      case 'poi':
+        final poi = _poiById(id);
+        return poi != null && _isPoiMarkerInteractable(poi);
+      case 'character':
+        final character = _characterById(id);
+        return character != null &&
+            _visibleCharacterPoints(character).isNotEmpty;
+      case 'chest':
+        final chest = _treasureChestById(id);
+        return chest != null &&
+            chest.openedByUser != true &&
+            _isZoneScopedContentVisibleForSelectedZone(chest.zoneId);
+      case 'healingFountain':
+        final fountain = _healingFountainById(id);
+        return fountain != null &&
+            _isZoneScopedContentVisibleForSelectedZone(fountain.zoneId);
+      case 'resource':
+        final resource = _resourceById(id);
+        return resource != null &&
+            !resource.gatheredByUser &&
+            _isZoneScopedContentVisibleForSelectedZone(resource.zoneId);
+      case 'base':
+        return _baseById(id) != null;
+      case 'scenario':
+        final scenario = _scenarioById(id);
+        return scenario != null &&
+            !_isScenarioRepresentedByPoi(scenario) &&
+            _isZoneScopedContentVisibleForSelectedZone(scenario.zoneId);
+      case 'exposition':
+        final exposition = _expositionById(id);
+        return exposition != null &&
+            !_isExpositionRepresentedByPoi(exposition) &&
+            _isZoneScopedContentVisibleForSelectedZone(exposition.zoneId);
+      case 'monster':
+        final monster = _monsterById(id);
+        return monster != null &&
+            !_isMonsterRepresentedByPoi(monster) &&
+            _isZoneScopedContentVisibleForSelectedZone(monster.zoneId);
+      case 'challenge':
+        final challenge = _challengeById(id);
+        return challenge != null &&
+            !_isChallengeRepresentedByPoi(challenge) &&
+            !_usesDedicatedQuestChallengeUi(challenge) &&
+            _isZoneScopedContentVisibleForSelectedZone(challenge.zoneId);
+      default:
+        return false;
+    }
   }
 
   bool _isSelectablePinType(String type) {
@@ -5640,7 +6297,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             id.isEmpty ||
             !_isSelectablePinType(type) ||
             geometry == null ||
-            opacity <= 0.05) {
+            opacity <= 0.05 ||
+            !_isAnnotationTapEnabled(type, id)) {
           continue;
         }
         annotations.add(
@@ -5667,7 +6325,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             id.isEmpty ||
             !_isSelectablePinType(type) ||
             geometry == null ||
-            opacity <= 0.05) {
+            opacity <= 0.05 ||
+            !_isAnnotationTapEnabled(type, id)) {
           continue;
         }
         annotations.add(
@@ -6184,6 +6843,41 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _selectZone(zone);
   }
 
+  bool _selectZoneIfDifferent(Zone? zone) {
+    final targetZoneId = zone?.id.trim() ?? '';
+    if (targetZoneId.isEmpty) return false;
+    final currentZoneId = _effectiveSelectedZone()?.id.trim() ?? '';
+    if (currentZoneId == targetZoneId) return false;
+    _selectZone(zone);
+    return true;
+  }
+
+  bool _selectZoneByIdIfDifferent(String? zoneId) {
+    final normalizedZoneId = zoneId?.trim() ?? '';
+    if (normalizedZoneId.isEmpty) return false;
+    final zone = _zones.firstWhere(
+      (z) => z.id == normalizedZoneId,
+      orElse: () => const Zone(id: '', name: '', latitude: 0, longitude: 0),
+    );
+    if (zone.id.isEmpty) return false;
+    return _selectZoneIfDifferent(zone);
+  }
+
+  bool _selectZoneForCoordinatesIfDifferent(double lat, double lng) {
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+      return false;
+    }
+    final zone = context.read<ZoneProvider>().findZoneAtCoordinate(lat, lng);
+    return _selectZoneIfDifferent(zone);
+  }
+
+  bool _selectZoneForPoiIfDifferent(PointOfInterest poi) {
+    final lat = double.tryParse(poi.lat);
+    final lng = double.tryParse(poi.lng);
+    if (lat == null || lng == null) return false;
+    return _selectZoneForCoordinatesIfDifferent(lat, lng);
+  }
+
   void _handleMapClick(Point<double> point, LatLng coordinates) {
     if (_isPlacingBase) {
       setState(() {
@@ -6404,6 +7098,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     try {
       final questLog = context.read<QuestLogProvider>();
       final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+      final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
       final filters = context.read<QuestFilterProvider>();
       final tags = context.read<TagsProvider>();
       final tagFilterActive =
@@ -6427,13 +7122,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _poiSymbols.clear();
       }
       _poiSymbolById.clear();
-      if (_questPoiHighlightSymbols.isNotEmpty) {
-        try {
-          await c.removeSymbols(_questPoiHighlightSymbols);
-        } catch (_) {}
-        if (!mounted) return;
-        _questPoiHighlightSymbols.clear();
-      }
+      _questPoiHighlightSymbols.clear();
+      _questPoiHighlightCircles.clear();
       _questPoiPulseTimer?.cancel();
       _questPoiPulseTimer = null;
       if (_characterSymbols.isNotEmpty) {
@@ -6668,8 +7358,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final undiscovered = !useRealImage;
         final isQuestCurrent = questPoiIds.contains(poi.id);
         final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
-        final shouldPulseLikeQuest =
-            isQuestCurrent || poi.hasAvailableMainStoryQuest;
+        final shouldPulseLikeQuest = trackedQuestPoiIds.contains(poi.id);
         final hasMapContent = _poiHasMapContent(
           poi,
           isQuestCurrent: isQuestCurrent,
@@ -6749,7 +7438,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
                 iconAnchor: 'center',
-                zIndex: 2,
+                zIndex: isQuestCurrent ? 4 : 2,
               ),
               data: {'type': 'poi', 'id': poi.id, 'name': poi.name},
             ),
@@ -6809,9 +7498,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final hasQuestAvailable = ch.hasAvailableQuest;
         final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
         final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
-        final shouldPulseLikeQuest =
-            shouldUseTurnInHalo || ch.hasAvailableMainStoryQuest;
-        final useAccentMarker = hasQuestAvailable || hasMainStoryAccent;
+        final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+        final useAccentMarker =
+            hasQuestAvailable || shouldUseTurnInHalo || hasMainStoryAccent;
         Uint8List? markerBytes;
         String? markerId;
         if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
@@ -7016,6 +7705,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (c == null || !_styleLoaded) return;
       final questLog = context.read<QuestLogProvider>();
       final currentQuestPoiIds = _currentQuestPoiIdsForFilter(questLog);
+      final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
       final mapContentPoiIds = _buildPoiIdsWithMapContent();
       await Future.wait(
         results.map(
@@ -7024,6 +7714,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             markerGeneration,
             result,
             currentQuestPoiIds,
+            trackedQuestPoiIds,
             mapContentPoiIds,
           ),
         ),
@@ -7037,6 +7728,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     int markerGeneration,
     _PoiImageUpdateResult result,
     Set<String> currentQuestPoiIds,
+    Set<String> trackedQuestPoiIds,
     Set<String> mapContentPoiIds,
   ) async {
     final bytes = result.bytes;
@@ -7045,8 +7737,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted || markerGeneration != _poiMarkerGeneration) return;
 
     final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
-    final shouldPulseLikeQuest =
-        isQuestCurrentNow || result.update.poi.hasAvailableMainStoryQuest;
+    final shouldPulseLikeQuest = trackedQuestPoiIds.contains(
+      result.update.poi.id,
+    );
     final hasMapContentNow = _poiHasMapContent(
       result.update.poi,
       isQuestCurrent: isQuestCurrentNow,
@@ -7083,7 +7776,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               ),
             ),
             iconAnchor: 'center',
-            zIndex: 2,
+            zIndex: isQuestCurrentNow ? 4 : 2,
           ),
           {
             'type': 'poi',
@@ -7118,7 +7811,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ),
           ),
           iconAnchor: 'center',
-          zIndex: 2,
+          zIndex: isQuestCurrentNow ? 4 : 2,
         ),
       );
       _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
@@ -8010,7 +8703,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     final questLog = context.read<QuestLogProvider>();
-    final polygons = questLog.currentNodePolygons;
+    final polygons = _trackedQuestCurrentNodePolygons(questLog);
     if (polygons.isEmpty) return;
 
     final options = <LineOptions>[];
@@ -8055,6 +8748,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _setQuestPoiHighlight(Symbol sym, bool enabled) {
     _questPoiHighlightSymbols.remove(sym);
+    if (enabled) {
+      _questPoiHighlightSymbols.add(sym);
+    }
+    _ensureQuestPoiPulseTimer();
+  }
+
+  void _setQuestCircleHighlight(Circle circle, bool enabled) {
+    _questPoiHighlightCircles.remove(circle);
+    if (enabled) {
+      _questPoiHighlightCircles.add(circle);
+    }
     _ensureQuestPoiPulseTimer();
   }
 
@@ -8140,9 +8844,47 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _ensureQuestPoiPulseTimer() {
-    _questPoiHighlightSymbols.clear();
-    _questPoiPulseTimer?.cancel();
-    _questPoiPulseTimer = null;
+    _questPoiHighlightSymbols.removeWhere((symbol) {
+      final geometry = symbol.options.geometry;
+      final opacity = symbol.options.iconOpacity ?? 1.0;
+      return geometry == null || opacity <= 0.05;
+    });
+    _questPoiHighlightCircles.removeWhere((circle) {
+      final geometry = circle.options.geometry;
+      final opacity = circle.options.circleOpacity ?? 1.0;
+      return geometry == null || opacity <= 0.05;
+    });
+    if (_questPoiHighlightSymbols.isEmpty &&
+        _questPoiHighlightCircles.isEmpty) {
+      _questPoiPulseTimer?.cancel();
+      _questPoiPulseTimer = null;
+      return;
+    }
+    if (_questPoiPulseTimer != null) return;
+
+    Future<void> pulseTrackedAnnotations() async {
+      final symbolSnapshot = List<Symbol>.from(_questPoiHighlightSymbols);
+      for (final symbol in symbolSnapshot) {
+        final geometry = symbol.options.geometry;
+        final opacity = symbol.options.iconOpacity ?? 1.0;
+        if (geometry == null || opacity <= 0.05) continue;
+        unawaited(_pulsePoi(geometry.latitude, geometry.longitude));
+      }
+      final circleSnapshot = List<Circle>.from(_questPoiHighlightCircles);
+      for (final circle in circleSnapshot) {
+        final geometry = circle.options.geometry;
+        final opacity = circle.options.circleOpacity ?? 1.0;
+        if (geometry == null || opacity <= 0.05) continue;
+        unawaited(_pulsePoi(geometry.latitude, geometry.longitude));
+      }
+    }
+
+    unawaited(pulseTrackedAnnotations());
+    _questPoiPulseTimer = Timer.periodic(const Duration(milliseconds: 1800), (
+      _,
+    ) {
+      unawaited(pulseTrackedAnnotations());
+    });
   }
 
   Future<void> _updatePoiSymbolForQuestState(
@@ -8180,8 +8922,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     final useRealImage = discoveries.hasDiscovered(poi.id);
     final undiscovered = !useRealImage;
-    final shouldPulseLikeQuest =
-        isQuestCurrent || poi.hasAvailableMainStoryQuest;
+    final shouldPulseLikeQuest = _trackedQuestPoiIdsForPulse(
+      questLog,
+    ).contains(poi.id);
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
     final hasMapContent = _poiHasMapContent(
       poi,
@@ -8285,7 +9028,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               mapContentPoiIds: mapContentPoiIds,
             ),
             iconAnchor: 'center',
-            zIndex: 2,
+            zIndex: isQuestCurrent ? 4 : 2,
           ),
           {'type': 'poi', 'id': poi.id, 'name': poi.name},
         );
@@ -8313,7 +9056,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             mapContentPoiIds: mapContentPoiIds,
           ),
           iconAnchor: 'center',
-          zIndex: 2,
+          zIndex: isQuestCurrent ? 4 : 2,
         ),
       );
       _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
@@ -8432,9 +9175,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
     final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
-    final shouldPulseLikeQuest =
-        shouldUseTurnInHalo || ch.hasAvailableMainStoryQuest;
-    final useAccentMarker = hasQuestAvailable || hasMainStoryAccent;
+    final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+    final useAccentMarker =
+        hasQuestAvailable || shouldUseTurnInHalo || hasMainStoryAccent;
     Uint8List? imageBytes;
     String? imageId;
     if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
@@ -9602,6 +10345,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   _OverlayButton(
+                                    icon: Icons.refresh,
+                                    onTap: _refreshMapContent,
+                                    isBusy: _manualRefreshInFlight,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _OverlayButton(
                                     icon: Icons.my_location,
                                     onTap: _centerOnUserLocation,
                                   ),
@@ -10471,7 +11220,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     await removeSymbols(_poiSymbols);
     _poiSymbolById.clear();
-    await removeSymbols(_questPoiHighlightSymbols);
+    _questPoiHighlightSymbols.clear();
+    _questPoiHighlightCircles.clear();
     _questPoiPulseTimer?.cancel();
     _questPoiPulseTimer = null;
     await removeSymbols(_characterSymbols);
@@ -10795,21 +11545,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => HealingFountainPanel(
         fountain: fountain,
         onClose: () => Navigator.of(context).pop(),
+        onStatusChanged: (updatedFountain) {
+          if (!mounted) return;
+          _syncHealingFountainState(updatedFountain);
+          unawaited(_refreshHealingFountainSymbols());
+        },
         onUnlocked: (unlockedFountain) async {
           final zoneProvider = context.read<ZoneProvider>();
           if (!mounted) return;
-          setState(() {
-            _healingFountains = _healingFountains
-                .map(
-                  (item) => item.id == fountain.id
-                      ? item.copyWith(
-                          discovered: true,
-                          thumbnailUrl: unlockedFountain.thumbnailUrl,
-                        )
-                      : item,
-                )
-                .toList(growable: false);
-          });
+          final currentFountain = _healingFountainById(fountain.id) ?? fountain;
+          _syncHealingFountainState(
+            currentFountain.copyWith(
+              discovered: true,
+              thumbnailUrl: unlockedFountain.thumbnailUrl,
+            ),
+          );
           await _refreshHealingFountainSymbols();
           _invalidateZoneBaseContent(fountain.zoneId);
           final selectedZoneId = zoneProvider.selectedZone?.id;
@@ -10825,24 +11575,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final nextAvailableAt = DateTime.tryParse(
             result['nextAvailableAt']?.toString() ?? '',
           )?.toLocal();
+          final currentFountain = _healingFountainById(fountain.id) ?? fountain;
 
-          setState(() {
-            _healingFountains = _healingFountains
-                .map(
-                  (item) => item.id == fountain.id
-                      ? item.copyWith(
-                          availableNow: false,
-                          lastUsedAt: lastUsedAt,
-                          nextAvailableAt: nextAvailableAt,
-                          cooldownSecondsRemaining:
-                              (result['cooldownSecondsRemaining'] as num?)
-                                  ?.toInt() ??
-                              0,
-                        )
-                      : item,
-                )
-                .toList(growable: false);
-          });
+          _syncHealingFountainState(
+            currentFountain.copyWith(
+              availableNow: false,
+              lastUsedAt: lastUsedAt,
+              nextAvailableAt: nextAvailableAt,
+              cooldownSecondsRemaining:
+                  (result['cooldownSecondsRemaining'] as num?)?.toInt() ?? 0,
+            ),
+          );
 
           unawaited(_refreshHealingFountainSymbols());
           unawaited(
@@ -12571,10 +13314,15 @@ class _MiniInfoChip extends StatelessWidget {
 }
 
 class _OverlayButton extends StatelessWidget {
-  const _OverlayButton({required this.icon, required this.onTap});
+  const _OverlayButton({
+    required this.icon,
+    required this.onTap,
+    this.isBusy = false,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -12588,11 +13336,20 @@ class _OverlayButton extends StatelessWidget {
         side: BorderSide(color: borderColor),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: isBusy ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Icon(icon, size: 24, color: theme.colorScheme.onSurface),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: isBusy
+                ? CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: theme.colorScheme.onSurface,
+                  )
+                : Icon(icon, size: 24, color: theme.colorScheme.onSurface),
+          ),
         ),
       ),
     );

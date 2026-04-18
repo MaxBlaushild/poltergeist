@@ -1609,7 +1609,7 @@ export const Scenarios = () => {
               .filter((reward) => reward.spellId.length > 0),
           })),
       itemRewards:
-        form.openEnded && form.rewardMode === 'explicit'
+        form.rewardMode === 'random' || form.openEnded
           ? form.itemRewards
           : [],
       spellRewards:
@@ -3747,76 +3747,36 @@ export const Scenarios = () => {
             </div>
             {form.rewardMode === 'random' ? (
               <div className="text-xs text-gray-500 mb-4">
-                Random rewards ignore explicit XP, gold, item, and spell
-                rewards.
+                Random rewards still grant scaled XP and gold. Guaranteed
+                items below are awarded too; material and spell rewards stay
+                explicit-only.
               </div>
             ) : null}
 
-            {form.openEnded ? (
+            {!form.openEnded && form.rewardMode === 'random' ? (
               <div className="border rounded-md p-3 mb-4">
-                <div className="font-medium mb-2">Scenario Rewards</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                  <label className="text-sm">
-                    Reward Experience
-                    <input
-                      value={form.rewardExperience}
-                      disabled={form.rewardMode !== 'explicit'}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          rewardExperience: e.target.value,
-                        }))
-                      }
-                      className="w-full border rounded-md p-2"
-                      type="number"
-                      min={0}
-                    />
-                  </label>
-                  <label className="text-sm">
-                    Reward Gold
-                    <input
-                      value={form.rewardGold}
-                      disabled={form.rewardMode !== 'explicit'}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          rewardGold: e.target.value,
-                        }))
-                      }
-                      className="w-full border rounded-md p-2"
-                      type="number"
-                      min={0}
-                    />
-                  </label>
-                </div>
-                <div className="mb-4">
-                  <MaterialRewardsEditor
-                    value={form.materialRewards}
-                    onChange={(materialRewards) =>
-                      setForm((prev) => ({ ...prev, materialRewards }))
-                    }
-                    disabled={form.rewardMode !== 'explicit'}
-                  />
-                </div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-medium">Item Rewards</div>
+                  <div className="font-medium">Guaranteed Item Rewards</div>
                   <button
                     className="bg-green-600 text-white px-3 py-1 rounded-md"
                     type="button"
-                    disabled={form.rewardMode !== 'explicit'}
                     onClick={addScenarioItemReward}
                   >
                     Add Item
                   </button>
                 </div>
+                {form.itemRewards.length === 0 ? (
+                  <div className="text-sm text-gray-500 mb-2">
+                    No guaranteed item rewards yet.
+                  </div>
+                ) : null}
                 {form.itemRewards.map((reward, index) => (
                   <div
-                    key={index}
+                    key={`shared-random-item-${index}`}
                     className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2"
                   >
                     <select
                       value={reward.inventoryItemId}
-                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         updateScenarioItemReward(index, {
                           inventoryItemId: parseIntValue(e.target.value, 0),
@@ -3833,7 +3793,6 @@ export const Scenarios = () => {
                     </select>
                     <input
                       value={reward.quantity}
-                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         updateScenarioItemReward(index, {
                           quantity: parseIntValue(e.target.value, 1),
@@ -3846,7 +3805,110 @@ export const Scenarios = () => {
                     <button
                       type="button"
                       className="bg-red-500 text-white px-3 py-1 rounded-md"
-                      disabled={form.rewardMode !== 'explicit'}
+                      onClick={() => removeScenarioItemReward(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {form.openEnded ? (
+              <div className="border rounded-md p-3 mb-4">
+                <div className="font-medium mb-2">Scenario Rewards</div>
+                {form.openEnded ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                      <label className="text-sm">
+                        Reward Experience
+                        <input
+                          value={form.rewardExperience}
+                          disabled={form.rewardMode !== 'explicit'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              rewardExperience: e.target.value,
+                            }))
+                          }
+                          className="w-full border rounded-md p-2"
+                          type="number"
+                          min={0}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        Reward Gold
+                        <input
+                          value={form.rewardGold}
+                          disabled={form.rewardMode !== 'explicit'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              rewardGold: e.target.value,
+                            }))
+                          }
+                          className="w-full border rounded-md p-2"
+                          type="number"
+                          min={0}
+                        />
+                      </label>
+                    </div>
+                    <div className="mb-4">
+                      <MaterialRewardsEditor
+                        value={form.materialRewards}
+                        onChange={(materialRewards) =>
+                          setForm((prev) => ({ ...prev, materialRewards }))
+                        }
+                        disabled={form.rewardMode !== 'explicit'}
+                      />
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-medium">Guaranteed Item Rewards</div>
+                  <button
+                    className="bg-green-600 text-white px-3 py-1 rounded-md"
+                    type="button"
+                    onClick={addScenarioItemReward}
+                  >
+                    Add Item
+                  </button>
+                </div>
+                {form.itemRewards.map((reward, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2"
+                  >
+                    <select
+                      value={reward.inventoryItemId}
+                      onChange={(e) =>
+                        updateScenarioItemReward(index, {
+                          inventoryItemId: parseIntValue(e.target.value, 0),
+                        })
+                      }
+                      className="border rounded-md p-2"
+                    >
+                      <option value={0}>Select item</option>
+                      {inventoryItems.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={reward.quantity}
+                      onChange={(e) =>
+                        updateScenarioItemReward(index, {
+                          quantity: parseIntValue(e.target.value, 1),
+                        })
+                      }
+                      className="border rounded-md p-2"
+                      type="number"
+                      min={1}
+                    />
+                    <button
+                      type="button"
+                      className="bg-red-500 text-white px-3 py-1 rounded-md"
                       onClick={() => removeScenarioItemReward(index)}
                     >
                       Remove

@@ -16,6 +16,7 @@ type monsterTemplateHandle struct {
 
 func (h *monsterTemplateHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
+		Preload("Genre").
 		Preload("Spells").
 		Preload("Spells.Spell").
 		Preload("Progressions").
@@ -36,6 +37,11 @@ func (h *monsterTemplateHandle) Create(ctx context.Context, template *models.Mon
 	}
 	template.UpdatedAt = now
 	template.MonsterType = models.NormalizeMonsterTemplateType(string(template.MonsterType))
+	resolvedGenreID, err := resolveMonsterTemplateGenreID(ctx, h.db, template)
+	if err != nil {
+		return err
+	}
+	template.GenreID = resolvedGenreID
 	return h.db.WithContext(ctx).Create(template).Error
 }
 
@@ -187,9 +193,15 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
 	updates.MonsterType = models.NormalizeMonsterTemplateType(string(updates.MonsterType))
+	resolvedGenreID, err := resolveMonsterTemplateGenreID(ctx, h.db, updates)
+	if err != nil {
+		return err
+	}
+	updates.GenreID = resolvedGenreID
 	payload := map[string]interface{}{
 		"archived":                         updates.Archived,
 		"monster_type":                     updates.MonsterType,
+		"genre_id":                         updates.GenreID,
 		"name":                             updates.Name,
 		"description":                      updates.Description,
 		"image_url":                        updates.ImageURL,

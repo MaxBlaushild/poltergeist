@@ -87,37 +87,39 @@ type QuestSpellReward struct {
 }
 
 type Quest struct {
-	ID                       uuid.UUID                 `json:"id"`
-	Name                     string                    `json:"name"`
-	Description              string                    `json:"description"`
-	Category                 string                    `json:"category"`
-	IsTutorial               bool                      `json:"isTutorial,omitempty"`
-	AcceptanceDialogue       []models.DialogueMessage  `json:"acceptanceDialogue,omitempty"`
-	ImageUrl                 string                    `json:"imageUrl"`
-	RewardMode               models.RewardMode         `json:"rewardMode"`
-	RandomRewardSize         models.RandomRewardSize   `json:"randomRewardSize"`
-	Gold                     int                       `json:"gold"`
-	ItemRewards              []QuestItemReward         `json:"itemRewards"`
-	SpellRewards             []QuestSpellReward        `json:"spellRewards"`
-	QuestGiverCharacterID    *uuid.UUID                `json:"questGiverCharacterId,omitempty"`
-	MainStoryPreviousQuestID *uuid.UUID                `json:"mainStoryPreviousQuestId,omitempty"`
-	MainStoryNextQuestID     *uuid.UUID                `json:"mainStoryNextQuestId,omitempty"`
-	RecurringQuestID         *uuid.UUID                `json:"recurringQuestId,omitempty"`
-	ClosurePolicy            models.QuestClosurePolicy `json:"closurePolicy"`
-	DebriefPolicy            models.QuestDebriefPolicy `json:"debriefPolicy"`
-	IsAccepted               bool                      `json:"isAccepted"`
-	ObjectivesCompletedAt    *time.Time                `json:"objectivesCompletedAt,omitempty"`
-	ClosedAt                 *time.Time                `json:"closedAt,omitempty"`
-	ClosureMethod            models.QuestClosureMethod `json:"closureMethod,omitempty"`
-	DebriefPending           bool                      `json:"debriefPending"`
-	DebriefedAt              *time.Time                `json:"debriefedAt,omitempty"`
-	TurnedInAt               *time.Time                `json:"turnedInAt,omitempty"`
-	CompletionCount          int                       `json:"completionCount,omitempty"`
-	ReadyToClose             bool                      `json:"readyToClose"`
-	ReadyToTurnIn            bool                      `json:"readyToTurnIn"`
-	CanCloseRemotely         bool                      `json:"canCloseRemotely"`
-	CanDebriefNow            bool                      `json:"canDebriefNow"`
-	CurrentNode              *QuestNode                `json:"currentNode,omitempty"`
+	ID                        uuid.UUID                 `json:"id"`
+	Name                      string                    `json:"name"`
+	Description               string                    `json:"description"`
+	Category                  string                    `json:"category"`
+	IsTutorial                bool                      `json:"isTutorial,omitempty"`
+	AcceptanceDialogue        []models.DialogueMessage  `json:"acceptanceDialogue,omitempty"`
+	ImageUrl                  string                    `json:"imageUrl"`
+	RewardMode                models.RewardMode         `json:"rewardMode"`
+	RandomRewardSize          models.RandomRewardSize   `json:"randomRewardSize"`
+	Gold                      int                       `json:"gold"`
+	ItemRewards               []QuestItemReward         `json:"itemRewards"`
+	SpellRewards              []QuestSpellReward        `json:"spellRewards"`
+	QuestGiverCharacterID     *uuid.UUID                `json:"questGiverCharacterId,omitempty"`
+	QuestGiverCharacter       *models.Character         `json:"questGiverCharacter,omitempty"`
+	QuestGiverPointOfInterest *models.PointOfInterest   `json:"questGiverPointOfInterest,omitempty"`
+	MainStoryPreviousQuestID  *uuid.UUID                `json:"mainStoryPreviousQuestId,omitempty"`
+	MainStoryNextQuestID      *uuid.UUID                `json:"mainStoryNextQuestId,omitempty"`
+	RecurringQuestID          *uuid.UUID                `json:"recurringQuestId,omitempty"`
+	ClosurePolicy             models.QuestClosurePolicy `json:"closurePolicy"`
+	DebriefPolicy             models.QuestDebriefPolicy `json:"debriefPolicy"`
+	IsAccepted                bool                      `json:"isAccepted"`
+	ObjectivesCompletedAt     *time.Time                `json:"objectivesCompletedAt,omitempty"`
+	ClosedAt                  *time.Time                `json:"closedAt,omitempty"`
+	ClosureMethod             models.QuestClosureMethod `json:"closureMethod,omitempty"`
+	DebriefPending            bool                      `json:"debriefPending"`
+	DebriefedAt               *time.Time                `json:"debriefedAt,omitempty"`
+	TurnedInAt                *time.Time                `json:"turnedInAt,omitempty"`
+	CompletionCount           int                       `json:"completionCount,omitempty"`
+	ReadyToClose              bool                      `json:"readyToClose"`
+	ReadyToTurnIn             bool                      `json:"readyToTurnIn"`
+	CanCloseRemotely          bool                      `json:"canCloseRemotely"`
+	CanDebriefNow             bool                      `json:"canDebriefNow"`
+	CurrentNode               *QuestNode                `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -327,7 +329,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 	trackedAccepted := make([]uuid.UUID, 0, len(trackedQuestIDs))
 	trackedAcceptedSet := make(map[uuid.UUID]struct{}, len(trackedQuestIDs))
 	for _, questID := range trackedQuestIDs {
-		if acc, ok := acceptanceByQuest[questID]; ok && acc.TurnedInAt == nil {
+		if acc, ok := acceptanceByQuest[questID]; ok && !acc.IsTurnedIn() {
 			trackedAccepted = append(trackedAccepted, questID)
 			trackedAcceptedSet[questID] = struct{}{}
 		}
@@ -398,6 +400,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			seriesID = *quest.RecurringQuestID
 		}
 		seriesIDCopy := seriesID
+		turnedInAt := acceptance.EffectiveDebriefedAt()
 		entry := Quest{
 			ID:                       quest.ID,
 			Name:                     quest.Name,
@@ -422,9 +425,9 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			ClosureMethod:            models.NormalizeQuestClosureMethod(string(acceptance.ClosureMethod)),
 			DebriefPending:           acceptance.IsDebriefPending(),
 			DebriefedAt:              acceptance.EffectiveDebriefedAt(),
-			TurnedInAt:               acceptance.TurnedInAt,
+			TurnedInAt:               turnedInAt,
 			ReadyToClose:             accepted && acceptance.EffectiveClosedAt() == nil && allCompleted,
-			ReadyToTurnIn: accepted && acceptance.TurnedInAt == nil &&
+			ReadyToTurnIn: accepted && !acceptance.IsTurnedIn() &&
 				((acceptance.EffectiveClosedAt() == nil && allCompleted) || acceptance.IsDebriefPending()),
 			CanCloseRemotely: quest.ClosurePolicyNormalized() != models.QuestClosurePolicyInPerson &&
 				accepted &&
@@ -433,7 +436,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			CanDebriefNow: acceptance.IsDebriefPending(),
 			CurrentNode:   currentNode,
 		}
-		if acceptance.TurnedInAt != nil {
+		if acceptance.IsTurnedIn() {
 			completedCounts[seriesID]++
 			existing, ok := completedBySeries[seriesID]
 			if !ok || (existing.TurnedInAt != nil && entry.TurnedInAt != nil && entry.TurnedInAt.After(*existing.TurnedInAt)) {

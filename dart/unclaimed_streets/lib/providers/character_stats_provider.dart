@@ -35,7 +35,8 @@ class CharacterStatsProvider with ChangeNotifier {
   String? _userId;
   bool _loading = false;
   CharacterStats? _stats;
-  bool _refreshing = false;
+  Future<void>? _inFlightRefresh;
+  String? _inFlightRefreshUserId;
   Set<String> _knownLevelUpIds = {};
 
   CharacterStatsProvider(this._service);
@@ -85,9 +86,11 @@ class CharacterStatsProvider with ChangeNotifier {
     if (newUserId == _userId) return;
     _userId = newUserId;
     _stats = null;
+    _loading = false;
+    _inFlightRefresh = null;
+    _inFlightRefreshUserId = null;
     _knownLevelUpIds = {};
     if (newUserId == null) {
-      _loading = false;
       notifyListeners();
       return;
     }
@@ -103,8 +106,24 @@ class CharacterStatsProvider with ChangeNotifier {
   }
 
   Future<void> refresh({bool force = false, bool silent = false}) async {
-    if (_refreshing || _userId == null) return;
-    _refreshing = true;
+    final userId = _userId;
+    if (userId == null) return;
+    final existingRefresh = _inFlightRefresh;
+    if (existingRefresh != null && _inFlightRefreshUserId == userId) {
+      if (!force) {
+        return existingRefresh;
+      }
+      await existingRefresh;
+      return refresh(silent: silent);
+    }
+
+    final refreshFuture = _performRefresh(userId, silent: silent);
+    _inFlightRefresh = refreshFuture;
+    _inFlightRefreshUserId = userId;
+    return refreshFuture;
+  }
+
+  Future<void> _performRefresh(String userId, {required bool silent}) async {
     if (!silent && !_loading) {
       _loading = true;
       notifyListeners();
@@ -112,18 +131,20 @@ class CharacterStatsProvider with ChangeNotifier {
 
     try {
       final stats = await _service.getStats();
-      if (stats != null) {
+      if (_userId == userId && stats != null) {
         _stats = stats;
         if (silent) {
           notifyListeners();
         }
       }
     } finally {
-      if (!silent) {
-        _loading = false;
+      if (_inFlightRefreshUserId == userId) {
+        _inFlightRefresh = null;
+        _inFlightRefreshUserId = null;
       }
-      _refreshing = false;
-      if (!silent) {
+      final isStillCurrentUser = _userId == userId;
+      if (isStillCurrentUser && !silent) {
+        _loading = false;
         notifyListeners();
       }
     }

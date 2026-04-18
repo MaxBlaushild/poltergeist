@@ -16,6 +16,7 @@ import '../services/quest_log_service.dart';
 List<PointOfInterest> getMapPointsOfInterest(List<Quest> quests) {
   final out = <PointOfInterest>[];
   for (final quest in quests) {
+    if (quest.readyToTurnIn) continue;
     final node = quest.currentNode;
     if (node?.pointOfInterest != null) {
       out.add(node!.pointOfInterest!);
@@ -26,6 +27,7 @@ List<PointOfInterest> getMapPointsOfInterest(List<Quest> quests) {
 
 /// All POI IDs in a quest's current node (for tracking focus).
 List<String> getAllPointsOfInterestIdsForQuest(Quest quest) {
+  if (quest.readyToTurnIn) return [];
   final node = quest.currentNode;
   if (node?.pointOfInterest == null) return [];
   return [node!.pointOfInterest!.id];
@@ -135,7 +137,7 @@ class QuestLogProvider with ChangeNotifier {
           .expand((q) => getAllPointsOfInterestIdsForQuest(q))
           .toList();
       _currentNodePolygons = log.quests
-          .where((q) => q.isAccepted)
+          .where((q) => q.isAccepted && !q.readyToTurnIn)
           .map((q) => q.currentNode?.polygon ?? const <QuestNodePolygonPoint>[])
           .where((poly) => poly.isNotEmpty)
           .map((poly) => List<QuestNodePolygonPoint>.from(poly))

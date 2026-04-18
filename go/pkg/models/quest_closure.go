@@ -131,6 +131,10 @@ func (q *QuestAcceptanceV2) EffectiveDebriefedAt() *time.Time {
 	return nil
 }
 
+func (q *QuestAcceptanceV2) IsTurnedIn() bool {
+	return q.EffectiveDebriefedAt() != nil
+}
+
 func (q *QuestAcceptanceV2) IsClosed() bool {
 	return q.EffectiveClosedAt() != nil
 }

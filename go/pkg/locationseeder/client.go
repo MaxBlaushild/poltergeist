@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
@@ -22,6 +23,18 @@ type client struct {
 	dbClient         db.DbClient
 	deepPriest       deep_priest.DeepPriest
 	awsClient        aws.AWSClient
+}
+
+type pointOfInterestPlaceFinder interface {
+	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)
+}
+
+type pointOfInterestZoneAttacher interface {
+	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
+}
+
+type googlePlaceFinder interface {
+	FindPlaceByID(id string) (*googlemaps.Place, error)
 }
 
 type FantasyPointOfInterest struct {
@@ -67,20 +80,85 @@ func pointOfInterestMarkerCategoryForPlace(place googlemaps.Place) models.PointO
 	)
 }
 
-func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error) {
-	place, err := c.googlemapsClient.FindPlaceByID(placeID)
+func reuseExistingPointOfInterestForPlace(
+	ctx context.Context,
+	placeID string,
+	zone models.Zone,
+	pointOfInterestFinder pointOfInterestPlaceFinder,
+	zoneAttacher pointOfInterestZoneAttacher,
+) (*models.PointOfInterest, error) {
+	normalizedPlaceID := strings.TrimSpace(placeID)
+	if normalizedPlaceID == "" {
+		return nil, nil
+	}
+
+	existingPointOfInterest, err := pointOfInterestFinder.FindByGoogleMapsPlaceID(ctx, normalizedPlaceID)
+	if err != nil {
+		return nil, err
+	}
+	if existingPointOfInterest == nil {
+		return nil, nil
+	}
+
+	if err := zoneAttacher.AddPointOfInterestToZone(ctx, zone.ID, existingPointOfInterest.ID); err != nil {
+		return nil, err
+	}
+	return existingPointOfInterest, nil
+}
+
+func importPlaceWithReuse(
+	ctx context.Context,
+	placeID string,
+	zone models.Zone,
+	pointOfInterestFinder pointOfInterestPlaceFinder,
+	zoneAttacher pointOfInterestZoneAttacher,
+	googlemapsClient googlePlaceFinder,
+	generatePointOfInterest func(context.Context, googlemaps.Place, *models.Zone) (*models.PointOfInterest, error),
+) (*models.PointOfInterest, error) {
+	normalizedPlaceID := strings.TrimSpace(placeID)
+	if normalizedPlaceID == "" {
+		return nil, fmt.Errorf("place ID is required")
+	}
+
+	existingPointOfInterest, err := reuseExistingPointOfInterestForPlace(
+		ctx,
+		normalizedPlaceID,
+		zone,
+		pointOfInterestFinder,
+		zoneAttacher,
+	)
+	if err != nil || existingPointOfInterest != nil {
+		return existingPointOfInterest, err
+	}
+
+	place, err := googlemapsClient.FindPlaceByID(normalizedPlaceID)
 	if err != nil {
 		log.Printf("Error finding place by ID: %v", err)
 		return nil, err
 	}
+	if place == nil {
+		return nil, fmt.Errorf("place details not found")
+	}
 
-	poi, err := c.GeneratePointOfInterest(ctx, *place, &zone)
+	poi, err := generatePointOfInterest(ctx, *place, &zone)
 	if err != nil {
 		log.Printf("Error generating point of interest: %v", err)
 		return nil, err
 	}
 
 	return poi, nil
+}
+
+func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error) {
+	return importPlaceWithReuse(
+		ctx,
+		placeID,
+		zone,
+		c.dbClient.PointOfInterest(),
+		c.dbClient.Zone(),
+		c.googlemapsClient,
+		c.GeneratePointOfInterest,
+	)
 }
 
 func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOfInterest) error {
@@ -450,17 +528,19 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 	for i, place := range places {
 		log.Printf("Generating point of interest %d/%d for place: %s", i+1, len(places), place.Name)
 
-		existingPointOfInterest, err := c.dbClient.PointOfInterest().FindByGoogleMapsPlaceID(ctx, place.ID)
+		existingPointOfInterest, err := reuseExistingPointOfInterestForPlace(
+			ctx,
+			place.ID,
+			zone,
+			c.dbClient.PointOfInterest(),
+			c.dbClient.Zone(),
+		)
 		if err != nil {
 			log.Printf("Error checking if point of interest has been imported: %v", err)
 			return nil, err
 		}
 		if existingPointOfInterest != nil {
 			log.Printf("Point of interest %s has already been imported", place.Name)
-			if err := c.dbClient.Zone().AddPointOfInterestToZone(ctx, zone.ID, existingPointOfInterest.ID); err != nil {
-				log.Printf("Error reattaching point of interest %s to zone %s: %v", place.Name, zone.ID, err)
-				return nil, err
-			}
 			pointsOfInterest = append(pointsOfInterest, existingPointOfInterest)
 			continue
 		}

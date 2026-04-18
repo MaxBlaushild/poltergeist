@@ -1132,6 +1132,8 @@ func buildTutorialMonsterEncounter(
 			OwnerUserID:                 &ownerUserID,
 			Ephemeral:                   true,
 			ZoneID:                      zoneID,
+			GenreID:                     source.GenreID,
+			Genre:                       source.Genre,
 			Latitude:                    latitude,
 			Longitude:                   longitude,
 			TemplateID:                  source.TemplateID,

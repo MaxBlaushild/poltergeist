@@ -22,6 +22,8 @@ type Monster struct {
 	Ephemeral                   bool                `json:"ephemeral" gorm:"column:ephemeral"`
 	ZoneID                      uuid.UUID           `json:"zoneId" gorm:"column:zone_id"`
 	Zone                        Zone                `json:"zone"`
+	GenreID                     uuid.UUID           `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                       *ZoneGenre          `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Latitude                    float64             `json:"latitude"`
 	Longitude                   float64             `json:"longitude"`
 	Geometry                    string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
@@ -50,6 +52,8 @@ type MonsterTemplate struct {
 	UpdatedAt                     time.Time                    `json:"updatedAt"`
 	Archived                      bool                         `json:"archived" gorm:"column:archived;default:false"`
 	MonsterType                   MonsterTemplateType          `json:"monsterType" gorm:"column:monster_type"`
+	GenreID                       uuid.UUID                    `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre                         *ZoneGenre                   `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Name                          string                       `json:"name"`
 	Description                   string                       `json:"description"`
 	ImageURL                      string                       `json:"imageUrl" gorm:"column:image_url"`

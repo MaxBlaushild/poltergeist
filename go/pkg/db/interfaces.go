@@ -61,6 +61,8 @@ type DbClient interface {
 	Tag() TagHandle
 	TagGroup() TagGroupHandle
 	Zone() ZoneHandle
+	ZoneGenre() ZoneGenreHandle
+	ZoneGenreScore() ZoneGenreScoreHandle
 	LocationArchetype() LocationArchetypeHandle
 	QuestArchetype() QuestArchetypeHandle
 	QuestArchetypeSuggestionJob() QuestArchetypeSuggestionJobHandle
@@ -729,6 +731,22 @@ type ZoneHandle interface {
 	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error)
 }
 
+type ZoneGenreHandle interface {
+	Create(ctx context.Context, genre *models.ZoneGenre) error
+	FindAll(ctx context.Context, includeInactive bool) ([]models.ZoneGenre, error)
+	FindActive(ctx context.Context) ([]models.ZoneGenre, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneGenre, error)
+	FindByName(ctx context.Context, name string) (*models.ZoneGenre, error)
+	Update(ctx context.Context, genre *models.ZoneGenre) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ZoneGenreScoreHandle interface {
+	FindByZoneIDs(ctx context.Context, zoneIDs []uuid.UUID, includeInactiveGenres bool) ([]models.ZoneGenreScore, error)
+	Increment(ctx context.Context, zoneID uuid.UUID, genreID uuid.UUID, delta int) (*models.ZoneGenreScore, error)
+	ConsumeUserItemAndIncrement(ctx context.Context, userID uuid.UUID, inventoryItemID int, zoneID uuid.UUID, genreID uuid.UUID, delta int) (*models.ZoneGenreScore, error)
+}
+
 type LocationArchetypeHandle interface {
 	Create(ctx context.Context, locationArchetype *models.LocationArchetype) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.LocationArchetype, error)
@@ -1140,6 +1158,7 @@ type PartyInviteHandle interface {
 
 type ActivityHandle interface {
 	GetFeed(ctx context.Context, userID uuid.UUID) ([]models.Activity, error)
+	GetFeedPage(ctx context.Context, userID uuid.UUID, limit int, offset int) ([]models.Activity, error)
 	MarkAsSeen(ctx context.Context, activityIDs []uuid.UUID) error
 	CreateActivity(ctx context.Context, activity models.Activity) error
 	CreateActivitiesForPartyMembers(ctx context.Context, partyID *uuid.UUID, userID *uuid.UUID, activityType models.ActivityType, data []byte) error

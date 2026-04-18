@@ -525,6 +525,17 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
   }
 
+  Quest? _completedQuestForAction(CharacterAction action) {
+    final questId = action.questId;
+    if (questId == null || questId.isEmpty) return null;
+    final quests = context.read<QuestLogProvider>().completedQuests;
+    try {
+      return quests.firstWhere((q) => q.id == questId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   bool get _hasCharacterLocation {
     return _questGiverCoordinates.isNotEmpty;
   }
@@ -992,8 +1003,8 @@ class _CharacterPanelState extends State<CharacterPanel> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        height: 172,
+                      child: AspectRatio(
+                        aspectRatio: 1,
                         child: Image.network(
                           imageUrl,
                           fit: BoxFit.cover,
@@ -1047,6 +1058,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                   children: [
                     ...questActions.map((action) {
                       final quest = _questForAction(action);
+                      final completedQuest = _completedQuestForAction(action);
                       final questReadyToTurnIn = _questReadyToTurnIn(action);
                       if (questReadyToTurnIn != null) {
                         final turnInPrefix = questReadyToTurnIn.isMainStory
@@ -1066,6 +1078,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
                               ? null
                               : () => _handleTurnIn(questReadyToTurnIn, action),
                         );
+                      }
+                      if (completedQuest?.isMainStory == true) {
+                        return const SizedBox.shrink();
                       }
                       if (quest?.isAccepted == true) {
                         return const SizedBox.shrink();

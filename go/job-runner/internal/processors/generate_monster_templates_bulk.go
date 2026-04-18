@@ -103,6 +103,15 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 			ImageGenerationStatus: models.MonsterTemplateImageGenerationStatusNone,
 			ImageGenerationError:  &emptyError,
 		}
+		if trimmedGenreID := strings.TrimSpace(spec.GenreID); trimmedGenreID != "" {
+			genreID, err := uuid.Parse(trimmedGenreID)
+			if err != nil || genreID == uuid.Nil {
+				err = fmt.Errorf("invalid genre ID on monster template spec %d", index+1)
+				p.markFailed(ctx, statusKey, status, err)
+				return err
+			}
+			template.GenreID = genreID
+		}
 		if template.Name == "" {
 			template.Name = fmt.Sprintf("Monster Template %d", index+1)
 		}

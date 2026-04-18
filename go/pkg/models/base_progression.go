@@ -53,6 +53,7 @@ const (
 	BaseStructureEffectCraftUnlock     BaseStructureEffectType = "craft_unlock"
 	BaseStructureEffectDailyChoiceBuff BaseStructureEffectType = "daily_choice_buff"
 	BaseStructureEffectRewardBias      BaseStructureEffectType = "reward_bias"
+	BaseStructureEffectZoneGenre       BaseStructureEffectType = "zone_genre"
 )
 
 const (

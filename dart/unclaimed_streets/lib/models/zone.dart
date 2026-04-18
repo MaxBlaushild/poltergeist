@@ -1,5 +1,59 @@
 import 'dart:math' as math;
 
+class ZoneGenre {
+  final String id;
+  final String name;
+  final int sortOrder;
+  final bool active;
+
+  const ZoneGenre({
+    required this.id,
+    required this.name,
+    required this.sortOrder,
+    required this.active,
+  });
+
+  factory ZoneGenre.fromJson(Map<String, dynamic> json) {
+    return ZoneGenre(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+      active: json['active'] != false,
+    );
+  }
+}
+
+class ZoneGenreScore {
+  final String genreId;
+  final ZoneGenre genre;
+  final int score;
+
+  const ZoneGenreScore({
+    required this.genreId,
+    required this.genre,
+    required this.score,
+  });
+
+  factory ZoneGenreScore.fromJson(Map<String, dynamic> json) {
+    final rawGenre = json['genre'];
+    final genre = rawGenre is Map<String, dynamic>
+        ? ZoneGenre.fromJson(rawGenre)
+        : rawGenre is Map
+        ? ZoneGenre.fromJson(Map<String, dynamic>.from(rawGenre))
+        : ZoneGenre(
+            id: json['genreId']?.toString() ?? '',
+            name: '',
+            sortOrder: 0,
+            active: true,
+          );
+    return ZoneGenreScore(
+      genreId: json['genreId']?.toString() ?? genre.id,
+      genre: genre,
+      score: (json['score'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class Zone {
   final String id;
   final String name;
@@ -9,6 +63,7 @@ class Zone {
   final String? boundary; // WKT string format
   final List<LatLngCoords>? boundaryCoords;
   final List<LatLngCoords>? points;
+  final List<ZoneGenreScore> genreScores;
 
   const Zone({
     required this.id,
@@ -19,6 +74,7 @@ class Zone {
     this.boundary,
     this.boundaryCoords,
     this.points,
+    this.genreScores = const [],
   });
 
   factory Zone.fromJson(Map<String, dynamic> json) {
@@ -37,13 +93,26 @@ class Zone {
           ?.map((e) => LatLngCoords.fromJsonSafe(e as Map<String, dynamic>))
           .whereType<LatLngCoords>()
           .toList(),
+      genreScores:
+          (json['genreScores'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map(
+                (entry) =>
+                    ZoneGenreScore.fromJson(Map<String, dynamic>.from(entry)),
+              )
+              .toList(growable: false) ??
+          const <ZoneGenreScore>[],
     );
   }
 
   /// Ordered ring (lat/lng) for polygon outline. Uses points, boundaryCoords, or parsed boundary WKT. Null if none.
   List<LatLngCoords>? get ring {
-    if (points != null && points!.isNotEmpty) return _orderPointsByAngle(points!);
-    if (boundaryCoords != null && boundaryCoords!.isNotEmpty) return boundaryCoords;
+    if (points != null && points!.isNotEmpty) {
+      return _orderPointsByAngle(points!);
+    }
+    if (boundaryCoords != null && boundaryCoords!.isNotEmpty) {
+      return boundaryCoords;
+    }
     final coords = _parseBoundaryWkt(boundary);
     if (coords != null && coords.isNotEmpty) return coords;
     return null;
@@ -52,7 +121,10 @@ class Zone {
   /// Parse POLYGON((lng lat, lng lat, ...)) WKT into [LatLngCoords] (lat, lng).
   static List<LatLngCoords>? _parseBoundaryWkt(String? wkt) {
     if (wkt == null || wkt.isEmpty) return null;
-    final match = RegExp(r'POLYGON\s*\(\s*\(\s*(.+?)\s*\)\s*\)', caseSensitive: false).firstMatch(wkt);
+    final match = RegExp(
+      r'POLYGON\s*\(\s*\(\s*(.+?)\s*\)\s*\)',
+      caseSensitive: false,
+    ).firstMatch(wkt);
     if (match == null) return null;
     final parts = match.group(1)!.split(',');
     final coords = <LatLngCoords>[];
@@ -61,7 +133,9 @@ class Zone {
       if (nums.length >= 2) {
         final lng = double.tryParse(nums[0]);
         final lat = double.tryParse(nums[1]);
-        if (lng != null && lat != null) coords.add(LatLngCoords(latitude: lat, longitude: lng));
+        if (lng != null && lat != null) {
+          coords.add(LatLngCoords(latitude: lat, longitude: lng));
+        }
       }
     }
     return coords.isEmpty ? null : coords;
@@ -79,8 +153,14 @@ class Zone {
     final centerLng = sumLng / points.length;
     final ordered = List<LatLngCoords>.from(points);
     ordered.sort((a, b) {
-      final angleA = math.atan2(a.latitude - centerLat, a.longitude - centerLng);
-      final angleB = math.atan2(b.latitude - centerLat, b.longitude - centerLng);
+      final angleA = math.atan2(
+        a.latitude - centerLat,
+        a.longitude - centerLng,
+      );
+      final angleB = math.atan2(
+        b.latitude - centerLat,
+        b.longitude - centerLng,
+      );
       return angleA.compareTo(angleB);
     });
     return ordered;

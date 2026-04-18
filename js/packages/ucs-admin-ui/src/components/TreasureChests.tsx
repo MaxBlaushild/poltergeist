@@ -352,7 +352,7 @@ export const TreasureChests = () => {
           formData.rewardMode === 'explicit'
             ? normalizeMaterialRewards(formData.materialRewards)
             : [],
-        items: formData.rewardMode === 'explicit' ? formData.items : [],
+        items: formData.items,
       };
 
       const newChest = await apiClient.post<TreasureChest>(
@@ -396,11 +396,10 @@ export const TreasureChests = () => {
         submitData.materialRewards = normalizeMaterialRewards(
           formData.materialRewards
         );
-        submitData.items = formData.items;
       } else {
         submitData.materialRewards = [];
-        submitData.items = [];
       }
+      submitData.items = formData.items;
 
       const updatedChest = await apiClient.put<TreasureChest>(
         `/sonar/treasure-chests/${editingChest.id}`,
@@ -1094,7 +1093,13 @@ export const TreasureChests = () => {
               <p style={{ margin: '5px 0', color: '#666' }}>
                 Reward mode: {chest.rewardMode || 'random'}
                 {chest.rewardMode === 'random'
-                  ? ` (${chest.randomRewardSize || 'small'})`
+                  ? ` (${chest.randomRewardSize || 'small'})${
+                      chest.items && chest.items.length > 0
+                        ? ` + ${chest.items.length} guaranteed item reward${
+                            chest.items.length === 1 ? '' : 's'
+                          }`
+                        : ''
+                    }`
                   : ''}
               </p>
 
@@ -1121,9 +1126,7 @@ export const TreasureChests = () => {
                   </p>
                 )}
 
-              {chest.rewardMode === 'explicit' &&
-                chest.items &&
-                chest.items.length > 0 && (
+              {chest.items && chest.items.length > 0 && (
                   <div style={{ marginTop: '10px' }}>
                     <strong style={{ color: '#666' }}>Items:</strong>
                     <ul
@@ -1485,90 +1488,93 @@ export const TreasureChests = () => {
               </div>
             )}
 
-            {formData.rewardMode === 'explicit' && (
-              <div style={{ marginBottom: '15px' }}>
+            <div style={{ marginBottom: '15px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '10px',
+                }}
+              >
+                <label style={{ display: 'block' }}>Guaranteed Items:</label>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="bg-green-500 text-white px-3 py-1 rounded-md text-sm"
+                >
+                  Add Item
+                </button>
+              </div>
+              {formData.rewardMode === 'random' && (
+                <div style={{ marginBottom: '10px', fontSize: '12px', color: '#666' }}>
+                  Random chests still roll their scaled reward. Items listed here are guaranteed too.
+                </div>
+              )}
+              {formData.items.map((item, index) => (
                 <div
+                  key={index}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    gap: '10px',
                     marginBottom: '10px',
+                    padding: '10px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
                   }}
                 >
-                  <label style={{ display: 'block' }}>Items:</label>
-                  <button
-                    type="button"
-                    onClick={addItem}
-                    className="bg-green-500 text-white px-3 py-1 rounded-md text-sm"
-                  >
-                    Add Item
-                  </button>
-                </div>
-                {formData.items.map((item, index) => (
-                  <div
-                    key={index}
+                  <select
+                    value={item.inventoryItemId}
+                    onChange={(e) =>
+                      updateItem(
+                        index,
+                        'inventoryItemId',
+                        parseInt(e.target.value, 10)
+                      )
+                    }
                     style={{
-                      display: 'flex',
-                      gap: '10px',
-                      marginBottom: '10px',
-                      padding: '10px',
+                      flex: 1,
+                      padding: '8px',
                       border: '1px solid #ccc',
                       borderRadius: '4px',
                     }}
                   >
-                    <select
-                      value={item.inventoryItemId}
-                      onChange={(e) =>
-                        updateItem(
-                          index,
-                          'inventoryItemId',
-                          parseInt(e.target.value, 10)
-                        )
-                      }
-                      style={{
-                        flex: 1,
-                        padding: '8px',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      <option value="0">Select item</option>
-                      {inventoryItems.map((invItem) => (
-                        <option key={invItem.id} value={invItem.id}>
-                          {invItem.name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(e) =>
-                        updateItem(
-                          index,
-                          'quantity',
-                          parseInt(e.target.value, 10)
-                        )
-                      }
-                      placeholder="Qty"
-                      style={{
-                        width: '80px',
-                        padding: '8px',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeItem(index)}
-                      className="bg-red-500 text-white px-3 py-1 rounded-md"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    <option value="0">Select item</option>
+                    {inventoryItems.map((invItem) => (
+                      <option key={invItem.id} value={invItem.id}>
+                        {invItem.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(e) =>
+                      updateItem(
+                        index,
+                        'quantity',
+                        parseInt(e.target.value, 10)
+                      )
+                    }
+                    placeholder="Qty"
+                    style={{
+                      width: '80px',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    className="bg-red-500 text-white px-3 py-1 rounded-md"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
 
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <button

@@ -12,6 +12,14 @@ class ZoneProvider extends ChangeNotifier {
 
   void setZones(List<Zone> zones) {
     _zones = zones;
+    if (_selectedZone != null) {
+      for (final zone in zones) {
+        if (zone.id == _selectedZone!.id) {
+          _selectedZone = zone;
+          break;
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -63,7 +71,8 @@ class ZoneProvider extends ChangeNotifier {
       final xj = polygon[j].longitude;
       final yj = polygon[j].latitude;
 
-      final intersect = ((yi > lat) != (yj > lat)) &&
+      final intersect =
+          ((yi > lat) != (yj > lat)) &&
           (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
       j = i;

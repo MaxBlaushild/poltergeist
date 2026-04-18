@@ -22,6 +22,10 @@ import (
 const (
 	monsterBattlePartyInviteRadiusMeters = 50.0
 	monsterBattleInviteTTL               = 1 * time.Minute
+	monsterBattleLowHealthHealThreshold  = 0.45
+	monsterBattleBossEmergencyHealRatio  = 0.22
+	monsterBattleBossHealLockTurns       = 2
+	monsterBattleBossMaxHealPercent      = 18
 )
 
 type monsterBattleParticipantSummary struct {
@@ -913,6 +917,86 @@ func monsterAbilityHealingForCombat(spell *models.Spell) int {
 	return total
 }
 
+func monsterAbilityHasHealing(spell *models.Spell) bool {
+	return monsterAbilityHealingForCombat(spell) > 0
+}
+
+func monsterUsesBossHealingRules(monster *models.Monster) bool {
+	if monster == nil || monster.Template == nil {
+		return false
+	}
+	switch models.NormalizeMonsterTemplateType(string(monster.Template.MonsterType)) {
+	case models.MonsterTemplateTypeBoss, models.MonsterTemplateTypeRaid:
+		return true
+	default:
+		return false
+	}
+}
+
+func bestMonsterHealingAbility(abilities []models.Spell) *models.Spell {
+	if len(abilities) == 0 {
+		return nil
+	}
+	best := abilities[0]
+	bestHealing := monsterAbilityHealingForCombat(&best)
+	for _, ability := range abilities[1:] {
+		healing := monsterAbilityHealingForCombat(&ability)
+		if healing > bestHealing {
+			best = ability
+			bestHealing = healing
+		}
+	}
+	return &best
+}
+
+func adjustedMonsterAbilityHealingForCombat(
+	monster *models.Monster,
+	battle *models.MonsterBattle,
+	spell *models.Spell,
+	maxHealth int,
+) int {
+	healAmount := monsterAbilityHealingForCombat(spell)
+	if healAmount <= 0 {
+		return 0
+	}
+	if monsterUsesBossHealingRules(monster) && maxHealth > 0 {
+		perCastCap := maxInt(1, (maxHealth*monsterBattleBossMaxHealPercent)/100)
+		healAmount = min(healAmount, perCastCap)
+	}
+	if battle == nil {
+		return healAmount
+	}
+	return min(healAmount, maxInt(0, battle.MonsterHealthDeficit))
+}
+
+func applyMonsterHealingLockout(
+	monster *models.Monster,
+	cooldowns models.MonsterBattleAbilityCooldowns,
+	now time.Time,
+) models.MonsterBattleAbilityCooldowns {
+	if !monsterUsesBossHealingRules(monster) {
+		return cooldowns
+	}
+	expiresAt := cooldownExpiresAtFromTurns(monsterBattleBossHealLockTurns, now)
+	if expiresAt == nil {
+		return cooldowns
+	}
+	if cooldowns == nil {
+		cooldowns = models.MonsterBattleAbilityCooldowns{}
+	}
+	for _, ability := range monsterCombatAbilities(monster) {
+		if !monsterAbilityHasHealing(&ability) {
+			continue
+		}
+		abilityID := ability.ID.String()
+		if current, exists := cooldowns[abilityID]; exists && current.After(*expiresAt) {
+			continue
+		}
+		cooldowns[abilityID] = *expiresAt
+	}
+	return cooldowns
+}
+
 func monsterCombatAbilities(monster *models.Monster) []models.Spell {
 	if monster == nil {
 		return []models.Spell{}
@@ -933,7 +1017,8 @@ func chooseMonsterBattleAbility(
 		return nil
 	}
 
-	support := make([]models.Spell, 0, len(abilities))
+	healingSupport := make([]models.Spell, 0, len(abilities))
+	utilitySupport := make([]models.Spell, 0, len(abilities))
 	offense := make([]models.Spell, 0, len(abilities))
 	cooldowns := models.MonsterBattleAbilityCooldowns{}
 	if battle != nil {
@@ -948,7 +1033,11 @@ func chooseMonsterBattleAbility(
 			continue
 		}
 		if monsterAbilityHasSupport(&ability) {
-			support = append(support, ability)
+			if monsterAbilityHasHealing(&ability) {
+				healingSupport = append(healingSupport, ability)
+			} else {
+				utilitySupport = append(utilitySupport, ability)
+			}
 		}
 		if monsterAbilityHasOffense(&ability) {
 			offense = append(offense, ability)
@@ -959,17 +1048,16 @@ func chooseMonsterBattleAbility(
 	if maxHealth > 0 {
 		healthRatio = float64(currentHealth) / float64(maxHealth)
 	}
-	if healthRatio <= 0.45 && len(support) > 0 {
-		best := support[0]
-		bestHealing := monsterAbilityHealingForCombat(&best)
-		for _, ability := range support[1:] {
-			healing := monsterAbilityHealingForCombat(&ability)
-			if healing > bestHealing {
-				best = ability
-				bestHealing = healing
+	if monsterUsesBossHealingRules(monster) {
+		if healthRatio <= monsterBattleBossEmergencyHealRatio {
+			if best := bestMonsterHealingAbility(healingSupport); best != nil {
+				return best
 			}
 		}
-		return &best
+	} else if healthRatio <= monsterBattleLowHealthHealThreshold {
+		if best := bestMonsterHealingAbility(healingSupport); best != nil {
+			return best
+		}
 	}
 
 	if len(offense) > 0 && rand.Intn(100) < 55 {
@@ -985,13 +1073,22 @@ func chooseMonsterBattleAbility(
 		return &best
 	}
 
-	if len(support) > 0 && len(offense) == 0 {
-		best := support[0]
+	if len(utilitySupport) > 0 && len(offense) == 0 {
+		best := utilitySupport[rand.Intn(len(utilitySupport))]
 		return &best
 	}
 	if len(offense) > 0 {
 		best := offense[rand.Intn(len(offense))]
 		return &best
+	}
+	if len(utilitySupport) > 0 {
+		best := utilitySupport[rand.Intn(len(utilitySupport))]
+		return &best
+	}
+	if !monsterUsesBossHealingRules(monster) {
+		if best := bestMonsterHealingAbility(healingSupport); best != nil {
+			return best
+		}
 	}
 	return nil
 }
@@ -1308,6 +1405,12 @@ func (s *server) executeMonsterBattleAction(
 		ability.CooldownTurns,
 	)
 
+	healAmount := adjustedMonsterAbilityHealingForCombat(
+		monster,
+		battle,
+		ability,
+		maxMonsterHealth,
+	)
 	if normalizeSpellAbilityType(string(ability.AbilityType)) != models.SpellAbilityTypeTechnique &&
 		ability.ManaCost > 0 {
 		battle.MonsterManaDeficit += ability.ManaCost
@@ -1323,6 +1426,9 @@ func (s *server) executeMonsterBattleAction(
 		if expiresAt := cooldownExpiresAtFromTurns(ability.CooldownTurns, now); expiresAt != nil {
 			cooldowns[ability.ID.String()] = *expiresAt
 		}
+	}
+	if healAmount > 0 {
+		cooldowns = applyMonsterHealingLockout(monster, cooldowns, now)
 	}
 	battle.MonsterAbilityCooldowns = cooldowns
 	if err := s.dbClient.MonsterBattle().UpdateMonsterCombatState(
@@ -1380,7 +1486,6 @@ func (s *server) executeMonsterBattleAction(
 		summary.Damage = maxAppliedDamage
 	}
 
-	healAmount := monsterAbilityHealingForCombat(ability)
 	if healAmount > 0 {
 		if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, -healAmount); err != nil {
 			return nil, nil, err

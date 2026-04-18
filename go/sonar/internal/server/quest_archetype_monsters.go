@@ -260,6 +260,13 @@ func (s *server) createQuestSpecificMonsterTemplates(
 			Spells:                []models.MonsterTemplateSpell{},
 			Progressions:          []models.MonsterTemplateProgression{},
 		}
+		if trimmedGenreID := strings.TrimSpace(spec.GenreID); trimmedGenreID != "" {
+			genreID, err := uuid.Parse(trimmedGenreID)
+			if err != nil || genreID == uuid.Nil {
+				return nil, fmt.Errorf("failed to parse generated monster genre: %s", trimmedGenreID)
+			}
+			template.GenreID = genreID
+		}
 		if err := s.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
 			return nil, fmt.Errorf("failed to create quest-specific monster template: %w", err)
 		}
@@ -323,7 +330,12 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 	}
 
 	if remaining := request.Count - len(specs); remaining > 0 {
-		fallback := buildBulkMonsterTemplateSpecsFromSeeds(remaining, usedNames, request.MonsterType)
+		fallback := buildBulkMonsterTemplateSpecsFromSeeds(
+			remaining,
+			usedNames,
+			request.MonsterType,
+			nil,
+		)
 		specs = append(specs, fallback...)
 	}
 	if len(specs) == 0 {

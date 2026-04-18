@@ -90,7 +90,7 @@ Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['main_story_v8|$url'];
+  return _thumbnailCache['main_story_v10|$url'];
 }
 
 Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
@@ -104,7 +104,7 @@ Uint8List? peekPoiCategoryThumbnailWithQuestMarker(PoiMarkerCategory category) {
 Uint8List? peekPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  return _thumbnailCache['poi_category_main_story_v2|${category.wireValue}'];
+  return _thumbnailCache['poi_category_main_story_v4|${category.wireValue}'];
 }
 
 /// Fetches the POI image (or placeholder), resizes to a square, applies
@@ -149,15 +149,11 @@ Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
 Future<Uint8List?> loadPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_main_story_v2|${category.wireValue}';
+  final cacheKey = 'poi_category_main_story_v4|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
-    final generated = await _loadGeneratedPoiCategoryThumbnail(
-      category,
-      addMainStoryFrame: true,
-    );
+    final generated = await _loadGeneratedPoiCategoryThumbnail(category);
     if (generated != null) return generated;
     final image = _buildPoiCategoryThumbnail(category);
-    _drawMainStoryFrame(image);
     return Uint8List.fromList(img.encodePng(image));
   });
 }
@@ -167,9 +163,8 @@ String _poiCategoryPlaceholderUrl(PoiMarkerCategory category) {
 }
 
 Future<Uint8List?> _loadGeneratedPoiCategoryThumbnail(
-  PoiMarkerCategory category, {
-  bool addMainStoryFrame = false,
-}) async {
+  PoiMarkerCategory category,
+) async {
   final bytes = await _loadSourceCached(_poiCategoryPlaceholderUrl(category));
   if (bytes == null) return null;
   final decoded = img.decodeImage(bytes);
@@ -179,9 +174,6 @@ Future<Uint8List?> _loadGeneratedPoiCategoryThumbnail(
     size: _thumbnailSize,
     antialias: true,
   );
-  if (addMainStoryFrame) {
-    _drawMainStoryFrame(square);
-  }
   return Uint8List.fromList(img.encodePng(square));
 }
 
@@ -711,14 +703,13 @@ Future<Uint8List?> loadPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'main_story_v8|$url';
+  final cacheKey = 'main_story_v10|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final square = _buildTransparentRoundedThumbnail(decoded);
-    _drawMainStoryFrame(square);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
@@ -766,26 +757,139 @@ bool _isInsideRoundedRect(int x, int y, int width, int height) {
   return dx * dx + dy * dy <= _cornerRadius * _cornerRadius;
 }
 
-void _drawMainStoryFrame(img.Image image) {
+void drawMainStoryCrest(img.Image image) {
+  final bounds = _findOpaqueBounds(image) ?? _fallbackOpaqueBounds(image);
+  final outline = img.ColorRgba8(87, 24, 35, 255);
   final ruby = img.ColorRgba8(130, 16, 28, 255);
   final gold = img.ColorRgba8(255, 219, 125, 255);
-  final outer = math.max(4, (_thumbnailSize * 0.028).round());
-  final inner = math.max(2, (_thumbnailSize * 0.014).round());
-  final max = _thumbnailSize - 1;
+  final outerRadius = math.max(14, math.min(21, (bounds.width * 0.12).round()));
+  final ringInset = math.max(2, outerRadius ~/ 4);
+  final sealInset = math.max(4, outerRadius ~/ 3);
+  final overlap = math.max(4, outerRadius ~/ 3);
+  final centerX = bounds.centerX.round().clamp(
+    outerRadius + 4,
+    image.width - outerRadius - 5,
+  );
+  final centerY = (bounds.top - outerRadius + overlap)
+      .clamp(outerRadius + 4, image.height - outerRadius - 5)
+      .toInt();
+  final sealBottom = centerY + outerRadius;
+  final anchorBottom = math.min(
+    image.height - 1,
+    math.max(bounds.top + (overlap ~/ 2), sealBottom),
+  );
+  final connectorHalfWidth = math.max(4, outerRadius ~/ 3);
 
-  for (var i = 0; i < outer; i++) {
-    img.drawRect(image, x1: i, y1: i, x2: max - i, y2: max - i, color: ruby);
+  _fillTriangle(
+    image,
+    x1: centerX - connectorHalfWidth,
+    y1: sealBottom - 1,
+    x2: centerX + connectorHalfWidth,
+    y2: sealBottom - 1,
+    x3: centerX,
+    y3: anchorBottom,
+    color: outline,
+  );
+  _fillTriangle(
+    image,
+    x1: centerX - (connectorHalfWidth - 1),
+    y1: sealBottom,
+    x2: centerX + (connectorHalfWidth - 1),
+    y2: sealBottom,
+    x3: centerX,
+    y3: math.max(sealBottom + 1, anchorBottom - 1),
+    color: gold,
+  );
+  _fillTriangle(
+    image,
+    x1: centerX - math.max(2, connectorHalfWidth - 3),
+    y1: sealBottom + 1,
+    x2: centerX + math.max(2, connectorHalfWidth - 3),
+    y2: sealBottom + 1,
+    x3: centerX,
+    y3: math.max(sealBottom + 2, anchorBottom - 2),
+    color: ruby,
+  );
+
+  _fillCircle(image, centerX, centerY, outerRadius, outline);
+  _fillCircle(image, centerX, centerY, outerRadius - 2, gold);
+  _fillCircle(image, centerX, centerY, outerRadius - ringInset, ruby);
+  _fillDiamond(
+    image,
+    centerX,
+    centerY + 1,
+    math.max(4, outerRadius - sealInset),
+    gold,
+  );
+  _fillDiamond(
+    image,
+    centerX,
+    centerY + 1,
+    math.max(2, outerRadius - sealInset - 4),
+    ruby,
+  );
+  _fillCircle(image, centerX, centerY + 1, math.max(2, outerRadius ~/ 5), gold);
+}
+
+class _OpaqueBounds {
+  const _OpaqueBounds({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final int left;
+  final int top;
+  final int right;
+  final int bottom;
+
+  int get width => right - left + 1;
+  double get centerX => (left + right) / 2;
+}
+
+_OpaqueBounds? _findOpaqueBounds(img.Image image, {int alphaThreshold = 24}) {
+  var left = image.width;
+  var top = image.height;
+  var right = -1;
+  var bottom = -1;
+
+  for (var y = 0; y < image.height; y++) {
+    for (var x = 0; x < image.width; x++) {
+      if (_pixelAlpha(image, x, y) <= alphaThreshold) {
+        continue;
+      }
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
   }
-  for (var i = 0; i < inner; i++) {
-    img.drawRect(
-      image,
-      x1: outer + i,
-      y1: outer + i,
-      x2: max - (outer + i),
-      y2: max - (outer + i),
-      color: gold,
-    );
+
+  if (right < left || bottom < top) {
+    return null;
   }
+  return _OpaqueBounds(left: left, top: top, right: right, bottom: bottom);
+}
+
+_OpaqueBounds _fallbackOpaqueBounds(img.Image image) {
+  final horizontalInset = math.max(20, (image.width * 0.2).round());
+  final topInset = math.max(18, (image.height * 0.18).round());
+  final bottomInset = math.max(24, (image.height * 0.16).round());
+  return _OpaqueBounds(
+    left: horizontalInset,
+    top: topInset,
+    right: image.width - horizontalInset - 1,
+    bottom: image.height - bottomInset - 1,
+  );
+}
+
+int _pixelAlpha(img.Image image, int x, int y) {
+  final pixel = image.getPixel(x, y);
+  if (image.numChannels < 4) {
+    return pixel.maxChannelValue.toInt();
+  }
+  return pixel.a.round();
 }
 
 void _fillDiamond(

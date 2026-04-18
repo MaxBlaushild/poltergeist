@@ -10,7 +10,7 @@ type ResourceGatherRequirement struct {
 	ID                      uuid.UUID      `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt               time.Time      `json:"createdAt"`
 	UpdatedAt               time.Time      `json:"updatedAt"`
-	ResourceID              *uuid.UUID     `json:"resourceId,omitempty" gorm:"column:resource_id"`
+	ResourceID              *uuid.UUID     `json:"resourceId,omitempty" gorm:"-"`
 	ResourceTypeID          *uuid.UUID     `json:"resourceTypeId,omitempty" gorm:"column:resource_type_id"`
 	MinLevel                int            `json:"minLevel" gorm:"column:min_level"`
 	MaxLevel                int            `json:"maxLevel" gorm:"column:max_level"`

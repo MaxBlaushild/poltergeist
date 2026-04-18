@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 class CompletedTaskProvider with ChangeNotifier {
   Map<String, dynamic>? _currentModal;
   final List<Map<String, dynamic>> _queuedModals = [];
+  int _highestQueuedLevelUp = 0;
 
   Map<String, dynamic>? get currentModal => _currentModal;
 
@@ -35,6 +36,10 @@ class CompletedTaskProvider with ChangeNotifier {
     int? previousLevel,
     int levelsGained = 1,
   }) {
+    if (newLevel <= 0 || newLevel <= _highestQueuedLevelUp) {
+      return;
+    }
+    _highestQueuedLevelUp = newLevel;
     showModal(
       'levelUp',
       data: {
@@ -43,6 +48,19 @@ class CompletedTaskProvider with ChangeNotifier {
         'levelsGained': levelsGained,
       },
     );
+  }
+
+  void reset() {
+    final hadState =
+        _currentModal != null ||
+        _queuedModals.isNotEmpty ||
+        _highestQueuedLevelUp != 0;
+    _currentModal = null;
+    _queuedModals.clear();
+    _highestQueuedLevelUp = 0;
+    if (hadState) {
+      notifyListeners();
+    }
   }
 
   void clearModal() {

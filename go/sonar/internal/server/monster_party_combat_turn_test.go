@@ -98,6 +98,74 @@ func TestChooseMonsterBattleAbilityPrefersSupportWhenLowHealth(t *testing.T) {
 	}
 }
 
+func TestChooseMonsterBattleAbilityBossDelaysHealingUntilEmergency(t *testing.T) {
+	heal := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 30},
+		},
+	}
+	damage := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Bolt",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 8, Hits: 1},
+		},
+	}
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: heal},
+				{Spell: damage},
+			},
+		},
+	}
+
+	chosen := chooseMonsterBattleAbility(monster, nil, 25, 100, 999, time.Now())
+	if chosen == nil || chosen.Name != "Bolt" {
+		t.Fatalf("expected boss above emergency threshold to stay offensive, got %+v", chosen)
+	}
+}
+
+func TestChooseMonsterBattleAbilityBossPrefersHealingAtEmergency(t *testing.T) {
+	heal := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 30},
+		},
+	}
+	damage := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Bolt",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 8, Hits: 1},
+		},
+	}
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: heal},
+				{Spell: damage},
+			},
+		},
+	}
+
+	chosen := chooseMonsterBattleAbility(monster, nil, 20, 100, 999, time.Now())
+	if chosen == nil || chosen.Name != "Recover" {
+		t.Fatalf("expected boss at emergency health to heal, got %+v", chosen)
+	}
+}
+
 func TestChooseMonsterBattleAbilitySkipsUnaffordableSpell(t *testing.T) {
 	spell := models.Spell{
 		ID:          uuid.New(),
@@ -170,6 +238,81 @@ func TestChooseMonsterBattleAbilitySkipsCoolingDownAbility(t *testing.T) {
 	chosen := chooseMonsterBattleAbility(monster, battle, 90, 100, 999, now)
 	if chosen == nil || chosen.Name != "Jab" {
 		t.Fatalf("expected non-cooling-down ability to be chosen, got %+v", chosen)
+	}
+}
+
+func TestAdjustedMonsterAbilityHealingForCombatCapsBossHealing(t *testing.T) {
+	heal := &models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 120},
+		},
+	}
+	monster := &models.Monster{
+		Level: 20,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+		},
+	}
+	battle := &models.MonsterBattle{
+		MonsterHealthDeficit: 200,
+	}
+
+	got := adjustedMonsterAbilityHealingForCombat(monster, battle, heal, 300)
+	if got != 54 {
+		t.Fatalf("expected boss heal cap of 54, got %d", got)
+	}
+}
+
+func TestApplyMonsterHealingLockoutAddsSharedCooldownToBossHeals(t *testing.T) {
+	now := time.Now()
+	healOne := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 20},
+		},
+	}
+	healTwo := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Renew",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifeAllParty, Amount: 12},
+		},
+	}
+	damage := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Bolt",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 10, Hits: 1},
+		},
+	}
+	monster := &models.Monster{
+		Level: 15,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: healOne},
+				{Spell: healTwo},
+				{Spell: damage},
+			},
+		},
+	}
+
+	cooldowns := applyMonsterHealingLockout(monster, models.MonsterBattleAbilityCooldowns{}, now)
+	if turns := monsterCooldownTurnsRemaining(cooldowns, healOne.ID.String(), now); turns != monsterBattleBossHealLockTurns {
+		t.Fatalf("expected first healing spell to be locked for %d turns, got %d", monsterBattleBossHealLockTurns, turns)
+	}
+	if turns := monsterCooldownTurnsRemaining(cooldowns, healTwo.ID.String(), now); turns != monsterBattleBossHealLockTurns {
+		t.Fatalf("expected second healing spell to be locked for %d turns, got %d", monsterBattleBossHealLockTurns, turns)
+	}
+	if turns := monsterCooldownTurnsRemaining(cooldowns, damage.ID.String(), now); turns != 0 {
+		t.Fatalf("expected offensive spell to remain usable, got cooldown=%d", turns)
 	}
 }
 

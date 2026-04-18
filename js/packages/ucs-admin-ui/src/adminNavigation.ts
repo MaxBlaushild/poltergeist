@@ -27,6 +27,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Manage zone boundaries, map data, and zone-level content.',
       },
       {
+        id: 'zone-genres',
+        label: 'Zone Genres',
+        path: '/zone-genres',
+        description:
+          'Define the shared genre axes that zones can gain through Chaos Engine activity.',
+      },
+      {
         id: 'districts',
         label: 'Districts',
         path: '/districts',

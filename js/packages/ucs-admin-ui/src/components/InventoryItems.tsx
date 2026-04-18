@@ -16,6 +16,15 @@ import React, {
 } from 'react';
 import { useUsers } from '../hooks/useUsers.ts';
 import { useSearchParams } from 'react-router-dom';
+import {
+  buildCraftingGraph,
+  compareCraftingRecipes,
+  matchesCraftingRecipeQuery,
+  summarizeCraftingRecipe,
+  type CraftingItemRelationship,
+  type CraftingRecipeReference,
+  type CraftingStationKey,
+} from './inventoryCrafting.ts';
 
 type SelectOption = {
   value: string;
@@ -71,6 +80,8 @@ type InventoryRecipeDraft = {
   ingredients: InventoryRecipeIngredientDraft[];
 };
 
+type InventoryRecipeKind = 'alchemyRecipes' | 'workshopRecipes';
+
 type InventoryItemRecord = InventoryItem & {
   consumeHealthDelta?: number;
   consumeManaDelta?: number;
@@ -83,6 +94,27 @@ type InventoryItemRecord = InventoryItem & {
   consumeTeachRecipeIds?: string[];
   alchemyRecipes?: InventoryRecipeDraft[];
   workshopRecipes?: InventoryRecipeDraft[];
+};
+
+type RecipeBuilderConfig = {
+  station: CraftingStationKey;
+  label: string;
+  accentClass: string;
+  accentColor: string;
+  borderColor: string;
+  surfaceColor: string;
+};
+
+type RecipeBuilderMaterialOption = {
+  itemId: number;
+  itemName: string;
+  itemLevel: number;
+  rarityTier: string;
+  resourceTypeLabel: string;
+  showByDefault: boolean;
+  stationUsageCount: number;
+  signalTags: string[];
+  searchText: string;
 };
 
 type ResourceTypeRecord = ResourceType;
@@ -134,6 +166,75 @@ type QueueMissingInventoryImagesResponse = {
 
 type BulkTagAction = 'none' | 'replace' | 'add' | 'remove' | 'clear';
 
+const inventoryRecipeKinds: InventoryRecipeKind[] = [
+  'alchemyRecipes',
+  'workshopRecipes',
+];
+
+const recipeBuilderConfigByKind: Record<
+  InventoryRecipeKind,
+  RecipeBuilderConfig
+> = {
+  alchemyRecipes: {
+    station: 'alchemy',
+    label: 'Alchemy',
+    accentClass: 'bg-emerald-600',
+    accentColor: '#059669',
+    borderColor: '#a7f3d0',
+    surfaceColor: '#ecfdf5',
+  },
+  workshopRecipes: {
+    station: 'workshop',
+    label: 'Workshop',
+    accentClass: 'bg-orange-600',
+    accentColor: '#c2410c',
+    borderColor: '#fdba74',
+    surfaceColor: '#fff7ed',
+  },
+};
+
+const recipeMaterialSignalTokensByStation: Record<
+  CraftingStationKey,
+  string[]
+> = {
+  alchemy: [
+    'alchemy',
+    'alchem',
+    'potion',
+    'elixir',
+    'tonic',
+    'reagent',
+    'herb',
+    'phial',
+    'essence',
+    'powder',
+    'dust',
+    'fungus',
+    'mushroom',
+    'bloom',
+    'petal',
+  ],
+  workshop: [
+    'workshop',
+    'smith',
+    'metal',
+    'ore',
+    'ingot',
+    'wood',
+    'timber',
+    'heartwood',
+    'lumber',
+    'gear',
+    'component',
+    'tool',
+    'leather',
+    'cloth',
+    'fabric',
+    'mechanism',
+    'hardware',
+  ],
+};
+
 type InventorySuggestionFormState = {
   count: string;
   themePrompt: string;
@@ -147,6 +248,40 @@ type InventorySuggestionFormState = {
   minItemLevel: string;
   maxItemLevel: string;
 };
+
+type InventoryItemFilters = {
+  rarity: string;
+  resourceType: string;
+  equipSlot: string;
+  imageStatus: string;
+  captureType: string;
+  equippable: string;
+  minId: string;
+  maxId: string;
+  minBuyPrice: string;
+  maxBuyPrice: string;
+  minUnlockTier: string;
+  maxUnlockTier: string;
+  minStrength: string;
+  maxStrength: string;
+  minDexterity: string;
+  maxDexterity: string;
+  minConstitution: string;
+  maxConstitution: string;
+  minIntelligence: string;
+  maxIntelligence: string;
+  minWisdom: string;
+  maxWisdom: string;
+  minCharisma: string;
+  maxCharisma: string;
+  craftingRole: string;
+  craftingStation: string;
+  craftingVisibility: string;
+  craftingTier: string;
+  craftingWarning: string;
+};
+
+type InventoryPageMode = 'items' | 'crafting' | 'generators' | 'drafts';
 
 const emptyConsumeStatus = (): InventoryConsumeStatus => ({
   name: '',
@@ -365,6 +500,38 @@ const parseCommaValues = (value: string): string[] =>
     )
   );
 
+const emptyInventoryItemFilters = (): InventoryItemFilters => ({
+  rarity: '',
+  resourceType: '',
+  equipSlot: '',
+  imageStatus: '',
+  captureType: '',
+  equippable: '',
+  minId: '',
+  maxId: '',
+  minBuyPrice: '',
+  maxBuyPrice: '',
+  minUnlockTier: '',
+  maxUnlockTier: '',
+  minStrength: '',
+  maxStrength: '',
+  minDexterity: '',
+  maxDexterity: '',
+  minConstitution: '',
+  maxConstitution: '',
+  minIntelligence: '',
+  maxIntelligence: '',
+  minWisdom: '',
+  maxWisdom: '',
+  minCharisma: '',
+  maxCharisma: '',
+  craftingRole: '',
+  craftingStation: '',
+  craftingVisibility: '',
+  craftingTier: '',
+  craftingWarning: '',
+});
+
 const renderSuggestionFacetLabel = (
   label: string,
   values?: string[] | null
@@ -432,14 +599,58 @@ const applyBulkTagAction = (
   }
 };
 
-const formatInventoryResourceType = (
-  value?: ResourceType | string | null
-) => {
+const formatInventoryResourceType = (value?: ResourceType | string | null) => {
   if (!value) return '';
   if (typeof value === 'string') {
     return value.trim();
   }
   return value.name?.trim() || value.slug?.trim() || '';
+};
+
+const getRecipeBuilderTargetKey = (
+  kind: InventoryRecipeKind,
+  recipeIndex?: number
+) => (recipeIndex === undefined ? `${kind}:new` : `${kind}:${recipeIndex}`);
+
+const extractRecipeBuilderMaterialID = (
+  event: React.DragEvent<HTMLElement>
+): number | null => {
+  const payload =
+    event.dataTransfer.getData('application/x-poltergeist-inventory-item') ||
+    event.dataTransfer.getData('text/plain');
+  if (!payload) return null;
+
+  try {
+    const parsed = JSON.parse(payload) as { itemId?: number };
+    if (Number.isFinite(parsed?.itemId) && Number(parsed.itemId) > 0) {
+      return Number(parsed.itemId);
+    }
+  } catch {
+    const parsedNumber = Number(payload);
+    if (Number.isFinite(parsedNumber) && parsedNumber > 0) {
+      return parsedNumber;
+    }
+  }
+
+  return null;
+};
+
+const getRecipeBuilderSignalTags = (
+  item: InventoryItemRecord,
+  station: CraftingStationKey,
+  resourceTypeLabel: string
+) => {
+  const signals = [item.name, resourceTypeLabel, ...(item.internalTags ?? [])]
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value !== '');
+
+  return Array.from(
+    new Set(
+      recipeMaterialSignalTokensByStation[station].filter((token) =>
+        signals.some((value) => value.includes(token))
+      )
+    )
+  );
 };
 
 const rarityRank: Record<string, number> = {
@@ -824,6 +1035,34 @@ const consumeSummary = (
   return details;
 };
 
+const craftingRelationshipSummary = (
+  relationship?: CraftingItemRelationship | null
+) => {
+  if (!relationship) return [];
+  const details: string[] = [];
+  if (relationship.producedRecipes.length > 0) {
+    details.push(
+      `Crafts: ${relationship.producedRecipes.map((recipe) => summarizeCraftingRecipe(recipe)).join('; ')}`
+    );
+  }
+  if (relationship.ingredientInRecipes.length > 0) {
+    details.push(
+      `Ingredient in ${relationship.ingredientInRecipes.length} recipe${relationship.ingredientInRecipes.length === 1 ? '' : 's'}`
+    );
+  }
+  if (relationship.teachesRecipes.length > 0) {
+    details.push(
+      `Teaches ${relationship.teachesRecipes.length} recipe${relationship.teachesRecipes.length === 1 ? '' : 's'}`
+    );
+  }
+  if (relationship.taughtByItemIds.length > 0) {
+    details.push(
+      `Taught by ${relationship.taughtByItemIds.length} item${relationship.taughtByItemIds.length === 1 ? '' : 's'}`
+    );
+  }
+  return details;
+};
+
 const hasConsumableEffects = (item: InventoryItemRecord) => {
   if ((item.consumeHealthDelta ?? 0) !== 0) return true;
   if ((item.consumeManaDelta ?? 0) !== 0) return true;
@@ -905,6 +1144,8 @@ export const InventoryItems = () => {
   );
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkEditBusy, setBulkEditBusy] = useState(false);
+  const [bulkResetUnlockLocksBusy, setBulkResetUnlockLocksBusy] =
+    useState(false);
   const [bulkBuyPriceInput, setBulkBuyPriceInput] = useState('');
   const [bulkTagsInput, setBulkTagsInput] = useState('');
   const [bulkTagAction, setBulkTagAction] = useState<BulkTagAction>('none');
@@ -976,6 +1217,30 @@ export const InventoryItems = () => {
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showFilters, setShowFilters] = useState(false);
+  const [pageMode, setPageMode] = useState<InventoryPageMode>('items');
+  const [activeRecipeBuilderKind, setActiveRecipeBuilderKind] =
+    useState<InventoryRecipeKind>('alchemyRecipes');
+  const [recipeBuilderSearchByKind, setRecipeBuilderSearchByKind] = useState<
+    Record<InventoryRecipeKind, string>
+  >({
+    alchemyRecipes: '',
+    workshopRecipes: '',
+  });
+  const [recipeBuilderIncludeAllByKind, setRecipeBuilderIncludeAllByKind] =
+    useState<Record<InventoryRecipeKind, boolean>>({
+      alchemyRecipes: false,
+      workshopRecipes: false,
+    });
+  const [
+    recipeBuilderSelectedRecipeByKind,
+    setRecipeBuilderSelectedRecipeByKind,
+  ] = useState<Record<InventoryRecipeKind, number>>({
+    alchemyRecipes: 0,
+    workshopRecipes: 0,
+  });
+  const [activeRecipeDropTarget, setActiveRecipeDropTarget] = useState<
+    string | null
+  >(null);
   const [suggestionForm, setSuggestionForm] =
     useState<InventorySuggestionFormState>(emptyInventorySuggestionForm);
   const [suggestionJobs, setSuggestionJobs] = useState<
@@ -996,46 +1261,26 @@ export const InventoryItems = () => {
   >(null);
   const [resourceTypes, setResourceTypes] = useState<ResourceTypeRecord[]>([]);
   const deepLinkedItemId = searchParams.get('id')?.trim() ?? '';
-  const replaceDeepLinkedItemId = useCallback((itemId?: number | string | null) => {
-    const normalizedItemId = String(itemId ?? '').trim();
-    const currentItemId = searchParams.get('id')?.trim() ?? '';
-    if (normalizedItemId === currentItemId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (normalizedItemId) {
-      next.set('id', normalizedItemId);
-    } else {
-      next.delete('id');
-    }
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
-  const [filters, setFilters] = useState({
-    rarity: '',
-    resourceType: '',
-    equipSlot: '',
-    imageStatus: '',
-    captureType: '',
-    equippable: '',
-    minId: '',
-    maxId: '',
-    minBuyPrice: '',
-    maxBuyPrice: '',
-    minUnlockTier: '',
-    maxUnlockTier: '',
-    minStrength: '',
-    maxStrength: '',
-    minDexterity: '',
-    maxDexterity: '',
-    minConstitution: '',
-    maxConstitution: '',
-    minIntelligence: '',
-    maxIntelligence: '',
-    minWisdom: '',
-    maxWisdom: '',
-    minCharisma: '',
-    maxCharisma: '',
-  });
+  const replaceDeepLinkedItemId = useCallback(
+    (itemId?: number | string | null) => {
+      const normalizedItemId = String(itemId ?? '').trim();
+      const currentItemId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedItemId === currentItemId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedItemId) {
+        next.set('id', normalizedItemId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+  const [filters, setFilters] = useState<InventoryItemFilters>(
+    emptyInventoryItemFilters
+  );
 
   const [formData, setFormData] = useState({
     name: '',
@@ -1124,15 +1369,12 @@ export const InventoryItems = () => {
     });
   }, [users]);
 
-  const itemOptions = useMemo(() => {
-    return items
-      .filter((item) => !editingItem || item.id !== editingItem.id)
-      .map((item) => ({
-        value: String(item.id),
-        label: item.name,
-        secondary: `ID ${item.id}`,
-      }));
-  }, [editingItem, items]);
+  const itemById = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items]
+  );
+
+  const craftingGraph = useMemo(() => buildCraftingGraph(items), [items]);
 
   const recipeOptions = useMemo(() => {
     const options = items.flatMap((item) => {
@@ -1200,6 +1442,124 @@ export const InventoryItems = () => {
     });
     return map;
   }, [resourceTypes]);
+
+  const recipeBuilderMaterialsByKind = useMemo<
+    Record<InventoryRecipeKind, RecipeBuilderMaterialOption[]>
+  >(() => {
+    const ingredientUsageByStation: Record<
+      CraftingStationKey,
+      Map<number, number>
+    > = {
+      alchemy: new Map<number, number>(),
+      workshop: new Map<number, number>(),
+    };
+
+    craftingGraph.recipes.forEach((recipe) => {
+      recipe.ingredientEntries.forEach((entry) => {
+        const currentCount =
+          ingredientUsageByStation[recipe.station].get(entry.itemId) ?? 0;
+        ingredientUsageByStation[recipe.station].set(
+          entry.itemId,
+          currentCount + 1
+        );
+      });
+    });
+
+    return inventoryRecipeKinds.reduce(
+      (catalog, kind) => {
+        const station = recipeBuilderConfigByKind[kind].station;
+        const options = items
+          .filter((item) => !item.archived)
+          .filter((item) => !editingItem || item.id !== editingItem.id)
+          .map((item) => {
+            const resourceTypeLabel =
+              formatInventoryResourceType(item.resourceType) ||
+              resourceTypeNameByID.get(item.resourceTypeId ?? '') ||
+              '';
+            const signalTags = getRecipeBuilderSignalTags(
+              item,
+              station,
+              resourceTypeLabel
+            );
+            const stationUsageCount =
+              ingredientUsageByStation[station].get(item.id) ?? 0;
+            const searchText = [
+              item.name,
+              resourceTypeLabel,
+              item.rarityTier,
+              item.itemLevel ? `tier ${item.itemLevel}` : '',
+              ...(item.internalTags ?? []),
+            ]
+              .join(' ')
+              .trim()
+              .toLowerCase();
+
+            return {
+              itemId: item.id,
+              itemName: item.name,
+              itemLevel: item.itemLevel ?? 1,
+              rarityTier: item.rarityTier ?? '',
+              resourceTypeLabel,
+              showByDefault: stationUsageCount > 0 || signalTags.length > 0,
+              stationUsageCount,
+              signalTags,
+              searchText,
+            };
+          })
+          .sort((left, right) => {
+            if (left.showByDefault !== right.showByDefault) {
+              return Number(right.showByDefault) - Number(left.showByDefault);
+            }
+            if (left.stationUsageCount !== right.stationUsageCount) {
+              return right.stationUsageCount - left.stationUsageCount;
+            }
+            return left.itemName.localeCompare(right.itemName, undefined, {
+              sensitivity: 'base',
+            });
+          });
+
+        catalog[kind] = options;
+        return catalog;
+      },
+      {
+        alchemyRecipes: [],
+        workshopRecipes: [],
+      } as Record<InventoryRecipeKind, RecipeBuilderMaterialOption[]>
+    );
+  }, [craftingGraph.recipes, editingItem, items, resourceTypeNameByID]);
+
+  const visibleRecipeBuilderMaterialsByKind = useMemo<
+    Record<InventoryRecipeKind, RecipeBuilderMaterialOption[]>
+  >(
+    () =>
+      inventoryRecipeKinds.reduce(
+        (catalog, kind) => {
+          const query = recipeBuilderSearchByKind[kind].trim().toLowerCase();
+          const includeAll = recipeBuilderIncludeAllByKind[kind];
+          catalog[kind] = recipeBuilderMaterialsByKind[kind].filter(
+            (option) => {
+              if (!includeAll && !option.showByDefault) {
+                return false;
+              }
+              if (!query) {
+                return true;
+              }
+              return option.searchText.includes(query);
+            }
+          );
+          return catalog;
+        },
+        {
+          alchemyRecipes: [],
+          workshopRecipes: [],
+        } as Record<InventoryRecipeKind, RecipeBuilderMaterialOption[]>
+      ),
+    [
+      recipeBuilderIncludeAllByKind,
+      recipeBuilderMaterialsByKind,
+      recipeBuilderSearchByKind,
+    ]
+  );
 
   const fetchItems = useCallback(async () => {
     try {
@@ -1551,6 +1911,20 @@ export const InventoryItems = () => {
       workshopRecipes: [],
       internalTags: [],
     });
+    setActiveRecipeBuilderKind('alchemyRecipes');
+    setRecipeBuilderSearchByKind({
+      alchemyRecipes: '',
+      workshopRecipes: '',
+    });
+    setRecipeBuilderIncludeAllByKind({
+      alchemyRecipes: false,
+      workshopRecipes: false,
+    });
+    setRecipeBuilderSelectedRecipeByKind({
+      alchemyRecipes: 0,
+      workshopRecipes: 0,
+    });
+    setActiveRecipeDropTarget(null);
     setInternalTagsInput('');
     setImageFile(null);
     setImagePreview(null);
@@ -1870,15 +2244,20 @@ export const InventoryItems = () => {
     }));
   };
 
-  const addRecipe = (kind: 'alchemyRecipes' | 'workshopRecipes') => {
+  const addRecipe = (kind: InventoryRecipeKind) => {
+    const nextRecipeIndex = formData[kind].length;
     setFormData((prev) => ({
       ...prev,
       [kind]: [...prev[kind], emptyRecipe()],
     }));
+    setRecipeBuilderSelectedRecipeByKind((prev) => ({
+      ...prev,
+      [kind]: nextRecipeIndex,
+    }));
   };
 
   const updateRecipe = (
-    kind: 'alchemyRecipes' | 'workshopRecipes',
+    kind: InventoryRecipeKind,
     index: number,
     next: Partial<InventoryRecipeDraft>
   ) => {
@@ -1889,35 +2268,23 @@ export const InventoryItems = () => {
     });
   };
 
-  const removeRecipe = (
-    kind: 'alchemyRecipes' | 'workshopRecipes',
-    index: number
-  ) => {
+  const removeRecipe = (kind: InventoryRecipeKind, index: number) => {
+    const nextLength = Math.max(formData[kind].length - 1, 0);
     setFormData((prev) => ({
       ...prev,
       [kind]: prev[kind].filter((_, i) => i !== index),
     }));
-  };
-
-  const addRecipeIngredient = (
-    kind: 'alchemyRecipes' | 'workshopRecipes',
-    recipeIndex: number
-  ) => {
-    setFormData((prev) => {
-      const recipes = [...prev[kind]];
-      recipes[recipeIndex] = {
-        ...recipes[recipeIndex],
-        ingredients: [
-          ...recipes[recipeIndex].ingredients,
-          emptyRecipeIngredient(),
-        ],
-      };
-      return { ...prev, [kind]: recipes };
-    });
+    setRecipeBuilderSelectedRecipeByKind((prev) => ({
+      ...prev,
+      [kind]:
+        nextLength === 0
+          ? 0
+          : Math.max(0, Math.min(prev[kind], nextLength - 1)),
+    }));
   };
 
   const updateRecipeIngredient = (
-    kind: 'alchemyRecipes' | 'workshopRecipes',
+    kind: InventoryRecipeKind,
     recipeIndex: number,
     ingredientIndex: number,
     next: Partial<InventoryRecipeIngredientDraft>
@@ -1939,7 +2306,7 @@ export const InventoryItems = () => {
   };
 
   const removeRecipeIngredient = (
-    kind: 'alchemyRecipes' | 'workshopRecipes',
+    kind: InventoryRecipeKind,
     recipeIndex: number,
     ingredientIndex: number
   ) => {
@@ -1956,6 +2323,107 @@ export const InventoryItems = () => {
       };
       return { ...prev, [kind]: recipes };
     });
+  };
+
+  const addMaterialToRecipe = (
+    kind: InventoryRecipeKind,
+    itemId: number,
+    recipeIndex?: number
+  ) => {
+    const fallbackRecipeIndex = formData[kind].length;
+    const requestedRecipeIndex =
+      recipeIndex !== undefined &&
+      recipeIndex >= 0 &&
+      recipeIndex < formData[kind].length
+        ? recipeIndex
+        : fallbackRecipeIndex;
+
+    setFormData((prev) => {
+      const recipes = [...prev[kind]];
+      const targetRecipeIndex =
+        recipeIndex !== undefined &&
+        recipeIndex >= 0 &&
+        recipeIndex < recipes.length
+          ? recipeIndex
+          : recipes.length;
+      if (!recipes[targetRecipeIndex]) {
+        recipes.push(emptyRecipe());
+      }
+      const recipe = normalizeRecipe(recipes[targetRecipeIndex]);
+      const ingredients = recipe.ingredients.filter(
+        (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+      );
+      const existingIngredientIndex = ingredients.findIndex(
+        (ingredient) => ingredient.itemId === itemId
+      );
+
+      if (existingIngredientIndex >= 0) {
+        ingredients[existingIngredientIndex] = {
+          ...ingredients[existingIngredientIndex],
+          quantity: ingredients[existingIngredientIndex].quantity + 1,
+        };
+      } else {
+        ingredients.push({
+          itemId,
+          quantity: 1,
+        });
+      }
+
+      recipes[targetRecipeIndex] = {
+        ...recipe,
+        ingredients,
+      };
+      return { ...prev, [kind]: recipes };
+    });
+
+    setRecipeBuilderSelectedRecipeByKind((prev) => ({
+      ...prev,
+      [kind]: requestedRecipeIndex,
+    }));
+  };
+
+  const handleRecipeMaterialDragStart = (
+    event: React.DragEvent<HTMLDivElement>,
+    itemId: number
+  ) => {
+    const payload = JSON.stringify({ itemId });
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData(
+      'application/x-poltergeist-inventory-item',
+      payload
+    );
+    event.dataTransfer.setData('text/plain', payload);
+  };
+
+  const handleRecipeDropZoneDragOver = (
+    event: React.DragEvent<HTMLElement>,
+    targetKey: string
+  ) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    if (activeRecipeDropTarget !== targetKey) {
+      setActiveRecipeDropTarget(targetKey);
+    }
+  };
+
+  const handleRecipeDropZoneDragLeave = (targetKey: string) => {
+    setActiveRecipeDropTarget((current) =>
+      current === targetKey ? null : current
+    );
+  };
+
+  const handleRecipeMaterialDrop = (
+    event: React.DragEvent<HTMLElement>,
+    kind: InventoryRecipeKind,
+    recipeIndex?: number
+  ) => {
+    event.preventDefault();
+    const droppedItemID = extractRecipeBuilderMaterialID(event);
+    setActiveRecipeDropTarget(null);
+    if (!droppedItemID) {
+      return;
+    }
+    addMaterialToRecipe(kind, droppedItemID, recipeIndex);
   };
 
   const handleEquipSlotChange = (slot: string) => {
@@ -2353,6 +2821,18 @@ export const InventoryItems = () => {
     });
   };
 
+  const replaceSelectedItems = (itemIDs: number[]) => {
+    setSelectedItemIDs(new Set(itemIDs));
+  };
+
+  const addSelectedItems = (itemIDs: number[]) => {
+    setSelectedItemIDs((prev) => {
+      const next = new Set(prev);
+      itemIDs.forEach((itemID) => next.add(itemID));
+      return next;
+    });
+  };
+
   const confirmBulkDelete = async () => {
     const ids = Array.from(selectedItemIDs);
     if (ids.length === 0) return;
@@ -2467,6 +2947,36 @@ export const InventoryItems = () => {
       alert('Error bulk updating inventory items.');
     } finally {
       setBulkEditBusy(false);
+    }
+  };
+
+  const handleBulkResetUnlockLocksStrength = async () => {
+    const selectedItems = items.filter((item) => selectedItemIDs.has(item.id));
+    if (selectedItems.length === 0) return;
+
+    setBulkResetUnlockLocksBusy(true);
+    try {
+      const updatedItems = await Promise.all(
+        selectedItems.map((item) =>
+          apiClient.put<InventoryItemRecord>(
+            `/sonar/inventory-items/${item.id}`,
+            buildItemSubmitData(item, {
+              unlockLocksStrength: undefined,
+            })
+          )
+        )
+      );
+
+      const updatedByID = new Map(updatedItems.map((item) => [item.id, item]));
+      setItems((prev) => prev.map((item) => updatedByID.get(item.id) ?? item));
+      alert(
+        `Cleared Unlock Locks Strength for ${updatedItems.length} item(s).`
+      );
+    } catch (error) {
+      console.error('Error resetting unlock locks strength:', error);
+      alert('Error resetting Unlock Locks Strength.');
+    } finally {
+      setBulkResetUnlockLocksBusy(false);
     }
   };
 
@@ -2748,6 +3258,11 @@ export const InventoryItems = () => {
 
   const handleEditItem = (item: InventoryItemRecord) => {
     setEditingItem(item);
+    const defaultRecipeKind: InventoryRecipeKind =
+      (item.workshopRecipes?.length ?? 0) > 0 &&
+      (item.alchemyRecipes?.length ?? 0) === 0
+        ? 'workshopRecipes'
+        : 'alchemyRecipes';
     setFormData({
       name: item.name,
       imageUrl: item.imageUrl,
@@ -2818,6 +3333,20 @@ export const InventoryItems = () => {
       ),
       internalTags: [...(item.internalTags ?? [])],
     });
+    setActiveRecipeBuilderKind(defaultRecipeKind);
+    setRecipeBuilderSearchByKind({
+      alchemyRecipes: '',
+      workshopRecipes: '',
+    });
+    setRecipeBuilderIncludeAllByKind({
+      alchemyRecipes: false,
+      workshopRecipes: false,
+    });
+    setRecipeBuilderSelectedRecipeByKind({
+      alchemyRecipes: 0,
+      workshopRecipes: 0,
+    });
+    setActiveRecipeDropTarget(null);
     setInternalTagsInput((item.internalTags ?? []).join(', '));
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -2876,12 +3405,21 @@ export const InventoryItems = () => {
     replaceDeepLinkedItemId(editingItem?.id ?? null);
   }, [editingItem, replaceDeepLinkedItemId]);
 
-  const renderRecipeEditor = (
-    label: string,
-    kind: 'alchemyRecipes' | 'workshopRecipes',
-    accentClass: string
-  ) => {
+  const renderRecipeEditor = (kind: InventoryRecipeKind) => {
+    const config = recipeBuilderConfigByKind[kind];
     const recipes = formData[kind];
+    const visibleMaterials = visibleRecipeBuilderMaterialsByKind[kind];
+    const selectedRecipeIndex =
+      recipes.length === 0
+        ? 0
+        : Math.min(recipeBuilderSelectedRecipeByKind[kind], recipes.length - 1);
+    const selectedRecipe = recipes[selectedRecipeIndex] ?? null;
+    const materialSearch = recipeBuilderSearchByKind[kind];
+    const includeAllMaterials = recipeBuilderIncludeAllByKind[kind];
+    const recommendedMaterialCount = recipeBuilderMaterialsByKind[kind].filter(
+      (option) => option.showByDefault
+    ).length;
+
     return (
       <div style={{ marginBottom: '12px' }}>
         <div
@@ -2889,302 +3427,740 @@ export const InventoryItems = () => {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '8px',
+            gap: '12px',
+            marginBottom: '10px',
+            flexWrap: 'wrap',
           }}
         >
-          <label style={{ fontSize: '13px', fontWeight: 600 }}>{label}</label>
+          <div>
+            <label style={{ fontSize: '13px', fontWeight: 600 }}>
+              {config.label} Recipe Builder
+            </label>
+            <div
+              style={{ color: '#64748b', fontSize: '12px', marginTop: '2px' }}
+            >
+              {recipes.length} recipe{recipes.length === 1 ? '' : 's'} on this
+              item
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => addRecipe(kind)}
-            className={`${accentClass} text-white px-2 py-1 rounded-md text-xs`}
+            className={`${config.accentClass} text-white px-3 py-1.5 rounded-md text-xs`}
           >
             Add Recipe
           </button>
         </div>
-        {recipes.length === 0 && (
-          <small style={{ color: '#666', fontSize: '12px' }}>
-            No recipes configured.
-          </small>
-        )}
-        {recipes.map((recipe, recipeIndex) => (
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '16px',
+            alignItems: 'start',
+          }}
+        >
           <div
-            key={`${kind}-${recipe.id || recipeIndex}`}
             style={{
-              border: '1px solid #e5e7eb',
-              borderRadius: '8px',
-              padding: '12px',
-              marginBottom: '10px',
+              border: `1px solid ${config.borderColor}`,
+              borderRadius: '12px',
+              padding: '14px',
+              backgroundColor: config.surfaceColor,
             }}
           >
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 gap: '8px',
                 marginBottom: '10px',
               }}
             >
               <div>
-                <label
-                  style={{
-                    display: 'block',
-                    marginBottom: '4px',
-                    fontSize: '12px',
-                  }}
-                >
-                  Tier
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={recipe.tier}
-                  onChange={(e) =>
-                    updateRecipe(kind, recipeIndex, {
-                      tier: parseInt(e.target.value, 10) || 1,
-                    })
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                  }}
-                />
-              </div>
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    marginBottom: '4px',
-                    fontSize: '12px',
-                  }}
-                >
-                  Visibility
-                </label>
-                <select
-                  value={recipe.isPublic ? 'public' : 'private'}
-                  onChange={(e) =>
-                    updateRecipe(kind, recipeIndex, {
-                      isPublic: e.target.value === 'public',
-                    })
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    marginBottom: '4px',
-                    fontSize: '12px',
-                  }}
-                >
-                  Recipe ID
-                </label>
-                <input
-                  type="text"
-                  value={recipe.id}
-                  onChange={(e) =>
-                    updateRecipe(kind, recipeIndex, { id: e.target.value })
-                  }
-                  placeholder="Auto-generated if blank"
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: '10px',
-                  marginTop: '10px',
-                }}
-              >
-                {damageBonusFieldOptions.map(({ key, label }) => (
-                  <div key={key}>
-                    <label
-                      style={{
-                        display: 'block',
-                        marginBottom: '4px',
-                        fontSize: '12px',
-                      }}
-                    >
-                      {label}
-                    </label>
-                    <input
-                      type="number"
-                      value={formData[key]}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          [key]: parseInt(e.target.value, 10) || 0,
-                        })
-                      }
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: '10px',
-                  marginTop: '10px',
-                }}
-              >
-                {resistanceFieldOptions.map(({ key, label }) => (
-                  <div key={key}>
-                    <label
-                      style={{
-                        display: 'block',
-                        marginBottom: '4px',
-                        fontSize: '12px',
-                      }}
-                    >
-                      {label}
-                    </label>
-                    <input
-                      type="number"
-                      value={formData[key]}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          [key]: parseInt(e.target.value, 10) || 0,
-                        })
-                      }
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '8px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '8px',
-                }}
-              >
-                <label style={{ fontSize: '12px', fontWeight: 600 }}>
-                  Ingredients
-                </label>
-                <button
-                  type="button"
-                  onClick={() => addRecipeIngredient(kind, recipeIndex)}
-                  className="bg-slate-700 text-white px-2 py-1 rounded-md text-xs"
-                >
-                  Add Ingredient
-                </button>
-              </div>
-              {recipe.ingredients.map((ingredient, ingredientIndex) => (
                 <div
-                  key={`${kind}-${recipeIndex}-ingredient-${ingredientIndex}`}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) 120px 86px',
-                    gap: '8px',
-                    marginBottom: '8px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#0f172a',
                   }}
                 >
-                  <select
-                    value={
-                      ingredient.itemId > 0 ? String(ingredient.itemId) : ''
-                    }
-                    onChange={(e) =>
-                      updateRecipeIngredient(
-                        kind,
-                        recipeIndex,
-                        ingredientIndex,
-                        {
-                          itemId: parseInt(e.target.value, 10) || 0,
-                        }
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '6px',
-                      border: '1px solid #ccc',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    <option value="">Select ingredient item</option>
-                    {itemOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min="1"
-                    value={ingredient.quantity}
-                    onChange={(e) =>
-                      updateRecipeIngredient(
-                        kind,
-                        recipeIndex,
-                        ingredientIndex,
-                        {
-                          quantity: parseInt(e.target.value, 10) || 1,
-                        }
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '6px',
-                      border: '1px solid #ccc',
-                      borderRadius: '4px',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
-                    onClick={() =>
-                      removeRecipeIngredient(kind, recipeIndex, ingredientIndex)
-                    }
-                  >
-                    Remove
-                  </button>
+                  Materials
                 </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>
+                  {includeAllMaterials
+                    ? `${visibleMaterials.length} visible of ${recipeBuilderMaterialsByKind[kind].length} items`
+                    : `${visibleMaterials.length} recommended for ${config.label.toLowerCase()}`}
+                </div>
+              </div>
               <button
                 type="button"
-                className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
-                onClick={() => removeRecipe(kind, recipeIndex)}
+                onClick={() =>
+                  setRecipeBuilderIncludeAllByKind((prev) => ({
+                    ...prev,
+                    [kind]: !prev[kind],
+                  }))
+                }
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '999px',
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                }}
               >
-                Remove Recipe
+                {includeAllMaterials ? 'Recommended only' : 'Show all items'}
               </button>
             </div>
+
+            <input
+              type="text"
+              value={materialSearch}
+              onChange={(event) =>
+                setRecipeBuilderSearchByKind((prev) => ({
+                  ...prev,
+                  [kind]: event.target.value,
+                }))
+              }
+              placeholder={`Search ${config.label.toLowerCase()} materials`}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                marginBottom: '10px',
+              }}
+            />
+
+            <small
+              style={{
+                color: '#64748b',
+                fontSize: '12px',
+                display: 'block',
+                marginBottom: '10px',
+                lineHeight: 1.5,
+              }}
+            >
+              Drag a material into a recipe card, or use Add to send it to{' '}
+              {selectedRecipe
+                ? `Recipe ${selectedRecipeIndex + 1}`
+                : 'a new recipe'}
+              . Recommended materials come from known ingredients and crafting
+              tags.
+            </small>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                maxHeight: '520px',
+                overflowY: 'auto',
+                paddingRight: '2px',
+              }}
+            >
+              {visibleMaterials.length === 0 && (
+                <div
+                  style={{
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '14px',
+                    backgroundColor: '#fff',
+                    color: '#64748b',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {includeAllMaterials || materialSearch.trim()
+                    ? 'No materials match the current filter.'
+                    : `No recommended ${config.label.toLowerCase()} materials found yet.`}
+                  {!includeAllMaterials &&
+                    !materialSearch.trim() &&
+                    recommendedMaterialCount === 0 && (
+                      <div style={{ marginTop: '8px' }}>
+                        Toggle Show all items to browse the full inventory.
+                      </div>
+                    )}
+                </div>
+              )}
+
+              {visibleMaterials.map((material) => {
+                const quickAddTargetIndex = selectedRecipe
+                  ? selectedRecipeIndex
+                  : undefined;
+                const materialMeta = [
+                  material.resourceTypeLabel,
+                  material.rarityTier,
+                  `Lvl ${material.itemLevel}`,
+                ].filter(Boolean);
+
+                return (
+                  <div
+                    key={`${kind}-material-${material.itemId}`}
+                    draggable
+                    onDragStart={(event) =>
+                      handleRecipeMaterialDragStart(event, material.itemId)
+                    }
+                    onDragEnd={() => setActiveRecipeDropTarget(null)}
+                    style={{
+                      border: '1px solid #dbe4ee',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      backgroundColor: '#fff',
+                      cursor: 'grab',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: '#0f172a',
+                            marginBottom: '2px',
+                          }}
+                        >
+                          {material.itemName}
+                        </div>
+                        {materialMeta.length > 0 && (
+                          <div style={{ color: '#64748b', fontSize: '12px' }}>
+                            {materialMeta.join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          addMaterialToRecipe(
+                            kind,
+                            material.itemId,
+                            quickAddTargetIndex
+                          )
+                        }
+                        style={{
+                          border: `1px solid ${config.borderColor}`,
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          backgroundColor: config.surfaceColor,
+                          color: config.accentColor,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {selectedRecipe ? 'Add' : 'New'}
+                      </button>
+                    </div>
+
+                    {(material.stationUsageCount > 0 ||
+                      material.signalTags.length > 0) && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        {material.stationUsageCount > 0 && (
+                          <span
+                            style={{
+                              backgroundColor: config.surfaceColor,
+                              border: `1px solid ${config.borderColor}`,
+                              borderRadius: '999px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              color: config.accentColor,
+                            }}
+                          >
+                            Used in {material.stationUsageCount} recipe
+                            {material.stationUsageCount === 1 ? '' : 's'}
+                          </span>
+                        )}
+                        {material.signalTags.slice(0, 2).map((tag) => (
+                          <span
+                            key={`${kind}-material-${material.itemId}-${tag}`}
+                            style={{
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '999px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              color: '#475569',
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        ))}
+
+          <div>
+            <div
+              onDragOver={(event) =>
+                handleRecipeDropZoneDragOver(
+                  event,
+                  getRecipeBuilderTargetKey(kind)
+                )
+              }
+              onDragLeave={() =>
+                handleRecipeDropZoneDragLeave(getRecipeBuilderTargetKey(kind))
+              }
+              onDrop={(event) => handleRecipeMaterialDrop(event, kind)}
+              style={{
+                border:
+                  activeRecipeDropTarget === getRecipeBuilderTargetKey(kind)
+                    ? `2px solid ${config.accentColor}`
+                    : `1px dashed ${config.borderColor}`,
+                borderRadius: '12px',
+                padding: '14px',
+                backgroundColor:
+                  activeRecipeDropTarget === getRecipeBuilderTargetKey(kind)
+                    ? '#fff'
+                    : config.surfaceColor,
+                marginBottom: '12px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  marginBottom: '4px',
+                }}
+              >
+                New {config.label} Recipe
+              </div>
+              <div
+                style={{ color: '#64748b', fontSize: '12px', lineHeight: 1.5 }}
+              >
+                Drop a material here to create another recipe, or use the Add
+                Recipe button to start with a blank card.
+              </div>
+            </div>
+
+            {recipes.length === 0 && (
+              <div
+                style={{
+                  border: '1px dashed #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '18px',
+                  textAlign: 'center',
+                  color: '#64748b',
+                  fontSize: '13px',
+                  backgroundColor: '#fff',
+                }}
+              >
+                No {config.label.toLowerCase()} recipes yet. Drop a material
+                into the zone above or create a blank recipe to begin.
+              </div>
+            )}
+
+            {recipes.map((recipe, recipeIndex) => {
+              const validIngredients = recipe.ingredients.filter(
+                (ingredient) => ingredient.itemId > 0 && ingredient.quantity > 0
+              );
+              const recipeTargetKey = getRecipeBuilderTargetKey(
+                kind,
+                recipeIndex
+              );
+              const isSelectedRecipe = selectedRecipeIndex === recipeIndex;
+              const isDropTarget = activeRecipeDropTarget === recipeTargetKey;
+
+              return (
+                <div
+                  key={`${kind}-${recipe.id || recipeIndex}`}
+                  onClick={() =>
+                    setRecipeBuilderSelectedRecipeByKind((prev) => ({
+                      ...prev,
+                      [kind]: recipeIndex,
+                    }))
+                  }
+                  style={{
+                    border: isSelectedRecipe
+                      ? `2px solid ${config.accentColor}`
+                      : isDropTarget
+                        ? `2px solid ${config.borderColor}`
+                        : '1px solid #e5e7eb',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    marginBottom: '12px',
+                    backgroundColor: '#fff',
+                    boxShadow: isSelectedRecipe
+                      ? `0 0 0 3px ${config.surfaceColor}`
+                      : 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      marginBottom: '12px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                        }}
+                      >
+                        Recipe {recipeIndex + 1}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: '12px' }}>
+                        {validIngredients.length} ingredient
+                        {validIngredients.length === 1 ? '' : 's'}
+                        {isSelectedRecipe
+                          ? ' selected for quick add'
+                          : ' - click card to target Add buttons'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeRecipe(kind, recipeIndex);
+                      }}
+                    >
+                      Remove Recipe
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        'repeat(auto-fit, minmax(160px, 1fr))',
+                      gap: '8px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Tier
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={recipe.tier}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          updateRecipe(kind, recipeIndex, {
+                            tier: parseInt(event.target.value, 10) || 1,
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '6px',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Visibility
+                      </label>
+                      <select
+                        value={recipe.isPublic ? 'public' : 'private'}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          updateRecipe(kind, recipeIndex, {
+                            isPublic: event.target.value === 'public',
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Recipe ID
+                      </label>
+                      <input
+                        type="text"
+                        value={recipe.id}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          updateRecipe(kind, recipeIndex, {
+                            id: event.target.value,
+                          })
+                        }
+                        placeholder="Auto-generated if blank"
+                        style={{
+                          width: '100%',
+                          padding: '6px',
+                          border: '1px solid #ccc',
+                          borderRadius: '6px',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    onDragOver={(event) =>
+                      handleRecipeDropZoneDragOver(event, recipeTargetKey)
+                    }
+                    onDragLeave={() =>
+                      handleRecipeDropZoneDragLeave(recipeTargetKey)
+                    }
+                    onDrop={(event) =>
+                      handleRecipeMaterialDrop(event, kind, recipeIndex)
+                    }
+                    style={{
+                      border: isDropTarget
+                        ? `2px solid ${config.accentColor}`
+                        : `1px dashed ${config.borderColor}`,
+                      borderRadius: '10px',
+                      padding: '12px',
+                      backgroundColor: isDropTarget
+                        ? config.surfaceColor
+                        : '#f8fafc',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      Ingredient Drop Zone
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: '12px' }}>
+                      Drop materials here to add them to this recipe. Dropping a
+                      material already in the recipe increases its quantity.
+                    </div>
+                  </div>
+
+                  {validIngredients.length === 0 && (
+                    <div
+                      style={{
+                        color: '#64748b',
+                        fontSize: '12px',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      No materials yet. Drag from the shelf to build this
+                      recipe.
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                    }}
+                  >
+                    {validIngredients.map((ingredient, ingredientIndex) => {
+                      const ingredientItem = itemById.get(ingredient.itemId);
+                      const ingredientResourceType =
+                        formatInventoryResourceType(
+                          ingredientItem?.resourceType
+                        ) ||
+                        resourceTypeNameByID.get(
+                          ingredientItem?.resourceTypeId ?? ''
+                        ) ||
+                        '';
+                      const ingredientMeta = [
+                        ingredientResourceType,
+                        ingredientItem?.rarityTier,
+                        ingredientItem?.itemLevel
+                          ? `Lvl ${ingredientItem.itemLevel}`
+                          : '',
+                      ].filter(Boolean);
+
+                      return (
+                        <div
+                          key={`${kind}-${recipeIndex}-ingredient-${ingredient.itemId}`}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                            gap: '8px',
+                            alignItems: 'center',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            backgroundColor: '#fff',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: '#0f172a',
+                                marginBottom: '2px',
+                              }}
+                            >
+                              {ingredientItem?.name ??
+                                `Item ${ingredient.itemId}`}
+                            </div>
+                            {ingredientMeta.length > 0 && (
+                              <div
+                                style={{ color: '#64748b', fontSize: '12px' }}
+                              >
+                                {ingredientMeta.join(' · ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                updateRecipeIngredient(
+                                  kind,
+                                  recipeIndex,
+                                  ingredientIndex,
+                                  {
+                                    quantity: Math.max(
+                                      1,
+                                      ingredient.quantity - 1
+                                    ),
+                                  }
+                                );
+                              }}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                width: '28px',
+                                height: '28px',
+                                backgroundColor: '#fff',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={ingredient.quantity}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) =>
+                                updateRecipeIngredient(
+                                  kind,
+                                  recipeIndex,
+                                  ingredientIndex,
+                                  {
+                                    quantity:
+                                      parseInt(event.target.value, 10) || 1,
+                                  }
+                                )
+                              }
+                              style={{
+                                width: '72px',
+                                padding: '6px',
+                                border: '1px solid #ccc',
+                                borderRadius: '8px',
+                                textAlign: 'center',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                updateRecipeIngredient(
+                                  kind,
+                                  recipeIndex,
+                                  ingredientIndex,
+                                  {
+                                    quantity: ingredient.quantity + 1,
+                                  }
+                                );
+                              }}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                width: '28px',
+                                height: '28px',
+                                backgroundColor: '#fff',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeRecipeIngredient(
+                                kind,
+                                recipeIndex,
+                                ingredientIndex
+                              );
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     );
   };
@@ -3263,11 +4239,41 @@ export const InventoryItems = () => {
     return Object.values(filters).filter((value) => value !== '').length;
   }, [filters]);
 
+  const craftingRecipesForRelationship = useCallback(
+    (relationship?: CraftingItemRelationship | null) => {
+      if (!relationship) return [] as CraftingRecipeReference[];
+
+      const scopedRecipes =
+        filters.craftingRole === 'result'
+          ? relationship.producedRecipes
+          : filters.craftingRole === 'ingredient'
+            ? relationship.ingredientInRecipes
+            : filters.craftingRole === 'teacher'
+              ? relationship.teachesRecipes
+              : filters.craftingRole === 'orphaned_private'
+                ? relationship.orphanedPrivateRecipes
+                : [
+                    ...relationship.producedRecipes,
+                    ...relationship.ingredientInRecipes,
+                    ...relationship.teachesRecipes,
+                  ];
+
+      return Array.from(
+        new Map(scopedRecipes.map((recipe) => [recipe.key, recipe])).values()
+      ).sort(compareCraftingRecipes);
+    },
+    [filters.craftingRole]
+  );
+
   const visibleItems = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
       if (itemTab === 'active' && item.archived) return false;
       if (itemTab === 'archived' && !item.archived) return false;
+
+      const relationship = craftingGraph.relationshipsByItemId.get(item.id);
+      const relevantCraftingRecipes =
+        craftingRecipesForRelationship(relationship);
 
       const haystack = [
         item.id?.toString(),
@@ -3303,6 +4309,22 @@ export const InventoryItems = () => {
         item.consumeStatusesToRemove?.join(' '),
         item.consumeSpellIds
           ?.map((spellID) => spellNamesByID.get(spellID) ?? spellID)
+          .join(' '),
+        item.consumeTeachRecipeIds?.join(' '),
+        relevantCraftingRecipes
+          .map((recipe) =>
+            [
+              recipe.stationLabel,
+              recipe.id,
+              recipe.resultItemName,
+              recipe.isPublic ? 'public' : 'private',
+              recipe.missingTeacher ? 'missing teacher' : '',
+              recipe.ingredientEntries
+                .map((entry) => `${entry.itemName} ${entry.quantity}`)
+                .join(' '),
+              recipe.teacherEntries.map((entry) => entry.itemName).join(' '),
+            ].join(' ')
+          )
           .join(' '),
       ]
         .filter(Boolean)
@@ -3397,6 +4419,56 @@ export const InventoryItems = () => {
       )
         return false;
 
+      if (
+        filters.craftingRole &&
+        relevantCraftingRecipes.length === 0 &&
+        filters.craftingRole !== 'orphaned_private'
+      )
+        return false;
+      if (
+        filters.craftingRole === 'orphaned_private' &&
+        (relationship?.orphanedPrivateRecipes.length ?? 0) === 0
+      )
+        return false;
+      if (
+        filters.craftingStation &&
+        !relevantCraftingRecipes.some(
+          (recipe) => recipe.station === filters.craftingStation
+        )
+      )
+        return false;
+      if (
+        filters.craftingVisibility === 'public' &&
+        !relevantCraftingRecipes.some((recipe) => recipe.isPublic)
+      )
+        return false;
+      if (
+        filters.craftingVisibility === 'private' &&
+        !relevantCraftingRecipes.some((recipe) => !recipe.isPublic)
+      )
+        return false;
+      if (filters.craftingTier) {
+        const craftingTier = numericValue(filters.craftingTier);
+        if (
+          craftingTier === undefined ||
+          !relevantCraftingRecipes.some(
+            (recipe) => recipe.tier === craftingTier
+          )
+        ) {
+          return false;
+        }
+      }
+      if (
+        filters.craftingWarning === 'missing_teacher' &&
+        !relevantCraftingRecipes.some((recipe) => recipe.missingTeacher)
+      )
+        return false;
+      if (
+        filters.craftingWarning === 'archived_dependency' &&
+        !relevantCraftingRecipes.some((recipe) => recipe.archivedDependency)
+      )
+        return false;
+
       return true;
     });
 
@@ -3438,8 +4510,107 @@ export const InventoryItems = () => {
     filters,
     sortField,
     sortDirection,
+    craftingGraph.relationshipsByItemId,
+    craftingRecipesForRelationship,
     spellNamesByID,
   ]);
+
+  const visibleCraftingRecipes = useMemo(() => {
+    const craftingTier = numericValue(filters.craftingTier);
+    return craftingGraph.recipes
+      .filter((recipe) => {
+        if (itemTab === 'active' && recipe.resultItemArchived) return false;
+        if (itemTab === 'archived' && !recipe.resultItemArchived) return false;
+        if (
+          filters.craftingRole === 'orphaned_private' &&
+          !recipe.missingTeacher
+        ) {
+          return false;
+        }
+        if (
+          filters.craftingStation &&
+          recipe.station !== filters.craftingStation
+        ) {
+          return false;
+        }
+        if (filters.craftingVisibility === 'public' && !recipe.isPublic) {
+          return false;
+        }
+        if (filters.craftingVisibility === 'private' && recipe.isPublic) {
+          return false;
+        }
+        if (craftingTier !== undefined && recipe.tier !== craftingTier) {
+          return false;
+        }
+        if (
+          filters.craftingWarning === 'missing_teacher' &&
+          !recipe.missingTeacher
+        ) {
+          return false;
+        }
+        if (
+          filters.craftingWarning === 'archived_dependency' &&
+          !recipe.archivedDependency
+        ) {
+          return false;
+        }
+        return matchesCraftingRecipeQuery(recipe, searchQuery);
+      })
+      .sort(compareCraftingRecipes);
+  }, [
+    craftingGraph.recipes,
+    itemTab,
+    filters.craftingRole,
+    filters.craftingStation,
+    filters.craftingVisibility,
+    filters.craftingTier,
+    filters.craftingWarning,
+    searchQuery,
+  ]);
+
+  const visibleCraftingResultIDs = useMemo(
+    () =>
+      Array.from(
+        new Set(visibleCraftingRecipes.map((recipe) => recipe.resultItemId))
+      ),
+    [visibleCraftingRecipes]
+  );
+  const visibleCraftingIngredientIDs = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          visibleCraftingRecipes.flatMap((recipe) => recipe.ingredientItemIds)
+        )
+      ),
+    [visibleCraftingRecipes]
+  );
+  const visibleCraftingTeacherIDs = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          visibleCraftingRecipes.flatMap((recipe) => recipe.teacherItemIds)
+        )
+      ),
+    [visibleCraftingRecipes]
+  );
+  const visibleOrphanedPrivateResultIDs = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          visibleCraftingRecipes
+            .filter((recipe) => recipe.missingTeacher)
+            .map((recipe) => recipe.resultItemId)
+        )
+      ),
+    [visibleCraftingRecipes]
+  );
+  const editingItemCraftingRelationship = useMemo(
+    () =>
+      editingItem
+        ? craftingGraph.relationshipsByItemId.get(editingItem.id) ?? null
+        : null,
+    [craftingGraph.relationshipsByItemId, editingItem]
+  );
 
   const activeItemCount = useMemo(
     () => items.filter((item) => !item.archived).length,
@@ -3474,6 +4645,35 @@ export const InventoryItems = () => {
   const allVisibleSelected =
     visibleItems.length > 0 && selectedVisibleCount === visibleItems.length;
   const hasSelectedItems = selectedItemIDs.size > 0;
+  const showCatalogWorkspace = pageMode === 'items' || pageMode === 'crafting';
+  const modeSummaries: Record<
+    InventoryPageMode,
+    { label: string; description: string; badge?: string }
+  > = {
+    items: {
+      label: 'Items',
+      description:
+        'Browse the inventory catalog, inspect linked crafting data, and run bulk edits on selected items.',
+      badge: `${visibleItems.length}`,
+    },
+    crafting: {
+      label: 'Crafting',
+      description:
+        'Review recipe networks, select result or ingredient groups, and resolve missing-teacher gaps.',
+      badge: `${visibleCraftingRecipes.length}`,
+    },
+    generators: {
+      label: 'Generators',
+      description:
+        'Use structured tools for set families, seeded content, image queues, and one-off item generation.',
+    },
+    drafts: {
+      label: 'Drafts',
+      description:
+        'Queue AI-assisted draft batches, review candidates, and convert only the keepers.',
+      badge: `${suggestionJobs.length}`,
+    },
+  };
 
   if (loading) {
     return <div className="m-10">Loading inventory items...</div>;
@@ -3481,1701 +4681,2261 @@ export const InventoryItems = () => {
 
   return (
     <div className="m-10">
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h1 className="text-2xl font-bold">Inventory Items</h1>
+      <div className="mb-6 flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Inventory Items</h1>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              {modeSummaries[pageMode].description}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={`px-4 py-2 rounded-md border ${
+                itemTab === 'active'
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-300'
+              }`}
+              onClick={() => setItemTab('active')}
+            >
+              Active ({activeItemCount})
+            </button>
+            <button
+              className={`px-4 py-2 rounded-md border ${
+                itemTab === 'archived'
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-300'
+              }`}
+              onClick={() => setItemTab('archived')}
+            >
+              Archived ({archivedItemCount})
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+            {(Object.keys(modeSummaries) as InventoryPageMode[]).map((mode) => {
+              const summary = modeSummaries[mode];
+              const active = pageMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setPageMode(mode)}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    active
+                      ? 'border-slate-900 bg-white shadow-sm'
+                      : 'border-transparent bg-transparent hover:border-slate-300 hover:bg-white/80'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">
+                      {summary.label}
+                    </span>
+                    {summary.badge && (
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                        {summary.badge}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-2">
-          <button
-            className={`px-4 py-2 rounded-md border ${
-              itemTab === 'active'
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-white text-slate-700 border-slate-300'
-            }`}
-            onClick={() => setItemTab('active')}
-          >
-            Active ({activeItemCount})
-          </button>
-          <button
-            className={`px-4 py-2 rounded-md border ${
-              itemTab === 'archived'
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-white text-slate-700 border-slate-300'
-            }`}
-            onClick={() => setItemTab('archived')}
-          >
-            Archived ({archivedItemCount})
-          </button>
           <button
             className="bg-blue-500 text-white px-4 py-2 rounded-md"
             onClick={() => setShowCreateItem(true)}
           >
             Create Inventory Item
           </button>
-          <button
-            className="bg-green-600 text-white px-4 py-2 rounded-md"
-            onClick={() => setShowGenerateItem(true)}
-          >
-            Generate Inventory Item
-          </button>
-          <button
-            className="bg-violet-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-            onClick={() => void handleSeedCorePack()}
-            disabled={seedPackBusy}
-          >
-            {seedPackBusy ? 'Seeding Core Pack...' : 'Seed Core Pack'}
-          </button>
-          <button
-            className="bg-amber-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-            onClick={() => void handleQueueMissingImages()}
-            disabled={queueMissingImagesBusy || missingImageCount === 0}
-          >
-            {queueMissingImagesBusy
-              ? 'Queueing Images...'
-              : `Queue Missing Images (${missingImageCount})`}
-          </button>
-          <button
-            className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-            onClick={() =>
-              void handleSetItemsArchived(
-                Array.from(selectedItemIDs),
-                itemTab === 'active'
-              )
-            }
-            disabled={!hasSelectedItems}
-          >
-            {itemTab === 'active'
-              ? `Archive Selected (${selectedItemIDs.size})`
-              : `Restore Selected (${selectedItemIDs.size})`}
-          </button>
-          <button
-            className="bg-red-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-            onClick={() => setShowBulkDeleteConfirm(true)}
-            disabled={!hasSelectedItems || bulkDeleteBusy}
-          >
-            {bulkDeleteBusy
-              ? 'Deleting...'
-              : `Delete Selected (${selectedItemIDs.size})`}
-          </button>
+          {pageMode === 'generators' && (
+            <>
+              <button
+                className="bg-green-600 text-white px-4 py-2 rounded-md"
+                onClick={() => setShowGenerateItem(true)}
+              >
+                Generate Inventory Item
+              </button>
+              <button
+                className="bg-violet-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                onClick={() => void handleSeedCorePack()}
+                disabled={seedPackBusy}
+              >
+                {seedPackBusy ? 'Seeding Core Pack...' : 'Seed Core Pack'}
+              </button>
+              <button
+                className="bg-amber-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                onClick={() => void handleQueueMissingImages()}
+                disabled={queueMissingImagesBusy || missingImageCount === 0}
+              >
+                {queueMissingImagesBusy
+                  ? 'Queueing Images...'
+                  : `Queue Missing Images (${missingImageCount})`}
+              </button>
+            </>
+          )}
+          {(pageMode === 'items' || pageMode === 'crafting') && (
+            <>
+              <button
+                className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                onClick={() =>
+                  void handleSetItemsArchived(
+                    Array.from(selectedItemIDs),
+                    itemTab === 'active'
+                  )
+                }
+                disabled={!hasSelectedItems}
+              >
+                {itemTab === 'active'
+                  ? `Archive Selected (${selectedItemIDs.size})`
+                  : `Restore Selected (${selectedItemIDs.size})`}
+              </button>
+              <button
+                className="bg-red-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                onClick={() => setShowBulkDeleteConfirm(true)}
+                disabled={!hasSelectedItems || bulkDeleteBusy}
+              >
+                {bulkDeleteBusy
+                  ? 'Deleting...'
+                  : `Delete Selected (${selectedItemIDs.size})`}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
-        <div className="mb-2 text-sm font-semibold text-gray-800">
-          Generate Full Equippable Set
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">
-              Target Level
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={bulkSetTargetLevel}
-              onChange={(e) => setBulkSetTargetLevel(e.target.value)}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm"
-            />
+      {pageMode === 'generators' && (
+        <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
+          <div className="mb-2 text-sm font-semibold text-gray-800">
+            Generate Full Equippable Set
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">
-              Major Stat
-            </label>
-            <select
-              value={bulkSetMajorStat}
-              onChange={(e) => setBulkSetMajorStat(e.target.value)}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm"
-            >
-              {itemSetStatOptions.map((option) => (
-                <option key={`major-${option.value}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">
-              Minor Stat
-            </label>
-            <select
-              value={bulkSetMinorStat}
-              onChange={(e) => setBulkSetMinorStat(e.target.value)}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm"
-            >
-              {itemSetStatOptions.map((option) => (
-                <option key={`minor-${option.value}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Rarity</label>
-            <select
-              value={bulkSetRarityTier}
-              onChange={(e) => setBulkSetRarityTier(e.target.value)}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm"
-            >
-              {itemSetRarityOptions.map((option) => (
-                <option
-                  key={`bulk-set-rarity-${option.value}`}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={handleGenerateSetFromStats}
-              disabled={bulkSetGenerationBusy}
-              className="w-full rounded-md bg-violet-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {bulkSetGenerationBusy
-                ? 'Generating Set...'
-                : 'Generate Full Set'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
-        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
-              Equipment Families
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              Generate more seeded-style set families
-            </div>
-            <p className="mt-1 max-w-3xl text-sm text-slate-600">
-              This uses the same slot scaling and affinity identity logic as the
-              core equipment seed pack, but lets you steer the level bands,
-              profiles, stats, affinities, and naming lane.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleGenerateSetFamilies}
-            disabled={setFamilyGenerationBusy}
-            className="rounded-md bg-emerald-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-          >
-            {setFamilyGenerationBusy
-              ? 'Generating Families...'
-              : 'Generate Set Families'}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
-            <div className="mb-3 text-sm font-semibold text-slate-800">
-              Identity
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Family Count
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={40}
-                  value={setFamilyCount}
-                  onChange={(event) => setSetFamilyCount(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Level Min
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={setFamilyLevelMin}
-                  onChange={(event) => setSetFamilyLevelMin(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Level Max
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={setFamilyLevelMax}
-                  onChange={(event) => setSetFamilyLevelMax(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                Theme Seeds
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+            <div>
+              <label className="mb-1 block text-xs text-gray-600">
+                Target Level
               </label>
               <input
-                type="text"
-                value={setFamilyThemesInput}
-                onChange={(event) =>
-                  setSetFamilyThemesInput(event.target.value)
-                }
-                placeholder="storm knight, fungal court, cathedral hunter"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="number"
+                min={1}
+                max={100}
+                value={bulkSetTargetLevel}
+                onChange={(e) => setBulkSetTargetLevel(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm"
               />
             </div>
-
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Slot Scope
-                </label>
-                <select
-                  value={setFamilySlotScope}
-                  onChange={(event) =>
-                    setSetFamilySlotScope(event.target.value)
-                  }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                >
-                  {inventorySetSlotScopeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Power Bias
-                </label>
-                <select
-                  value={setFamilyPowerBias}
-                  onChange={(event) =>
-                    setSetFamilyPowerBias(event.target.value)
-                  }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                >
-                  {inventorySetPowerBiasOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Naming Style
-                </label>
-                <select
-                  value={setFamilyNamingStyle}
-                  onChange={(event) =>
-                    setSetFamilyNamingStyle(event.target.value)
-                  }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                >
-                  {inventorySetNamingStyleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Required Internal Tags
-                </label>
-                <input
-                  type="text"
-                  value={setFamilyRequiredTagsInput}
-                  onChange={(event) =>
-                    setSetFamilyRequiredTagsInput(event.target.value)
-                  }
-                  placeholder="frontline, cathedral, occult"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Forbidden Tags
-                </label>
-                <input
-                  type="text"
-                  value={setFamilyForbiddenTagsInput}
-                  onChange={(event) =>
-                    setSetFamilyForbiddenTagsInput(event.target.value)
-                  }
-                  placeholder="street, nautical"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
-              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={setFamilyAllowHybridAffinities}
-                  onChange={(event) =>
-                    setSetFamilyAllowHybridAffinities(event.target.checked)
-                  }
-                />
-                Allow hybrid affinities
+            <div>
+              <label className="mb-1 block text-xs text-gray-600">
+                Major Stat
               </label>
-              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={setFamilyAvoidExistingThemeOverlap}
-                  onChange={(event) =>
-                    setSetFamilyAvoidExistingThemeOverlap(event.target.checked)
-                  }
-                />
-                Avoid theme overlap
-              </label>
-              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={setFamilyQueueImages}
-                  onChange={(event) =>
-                    setSetFamilyQueueImages(event.target.checked)
-                  }
-                />
-                Queue image generation
-              </label>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
-            <div className="mb-3 text-sm font-semibold text-slate-800">
-              Mechanics
-            </div>
-
-            <div className="mb-3">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                Rarity Tiers
-              </div>
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {itemSetRarityOptions
-                  .filter((option) => option.value !== 'auto')
-                  .map((option) => (
-                    <label
-                      key={`family-rarity-${option.value}`}
-                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={setFamilyRarityTiers.has(option.value)}
-                        onChange={(event) =>
-                          setSetFamilyRarityTiers((current) =>
-                            toggleStringSetValue(
-                              current,
-                              option.value,
-                              event.target.checked
-                            )
-                          )
-                        }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-              </div>
-            </div>
-
-            <div className="mb-3">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                Profiles
-              </div>
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {inventorySetProfileOptions.map((option) => (
-                  <label
-                    key={`family-profile-${option.value}`}
-                    className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={setFamilyProfiles.has(option.value)}
-                      onChange={(event) =>
-                        setSetFamilyProfiles((current) =>
-                          toggleStringSetValue(
-                            current,
-                            option.value,
-                            event.target.checked
-                          )
-                        )
-                      }
-                    />
+              <select
+                value={bulkSetMajorStat}
+                onChange={(e) => setBulkSetMajorStat(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm"
+              >
+                {itemSetStatOptions.map((option) => (
+                  <option key={`major-${option.value}`} value={option.value}>
                     {option.label}
-                  </label>
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
-
-            <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Major Stats
-                </div>
-                <div className="space-y-2">
-                  {itemSetStatOptions.map((option) => (
-                    <label
-                      key={`family-major-${option.value}`}
-                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={setFamilyMajorStats.has(option.value)}
-                        onChange={(event) =>
-                          setSetFamilyMajorStats((current) =>
-                            toggleStringSetValue(
-                              current,
-                              option.value,
-                              event.target.checked
-                            )
-                          )
-                        }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Minor Stats
-                </div>
-                <div className="space-y-2">
-                  {itemSetStatOptions.map((option) => (
-                    <label
-                      key={`family-minor-${option.value}`}
-                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={setFamilyMinorStats.has(option.value)}
-                        onChange={(event) =>
-                          setSetFamilyMinorStats((current) =>
-                            toggleStringSetValue(
-                              current,
-                              option.value,
-                              event.target.checked
-                            )
-                          )
-                        }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Damage Affinities
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {damageAffinityOptions.map((option) => (
-                    <label
-                      key={`family-damage-${option.value}`}
-                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={setFamilyDamageAffinities.has(option.value)}
-                        onChange={(event) =>
-                          setSetFamilyDamageAffinities((current) =>
-                            toggleStringSetValue(
-                              current,
-                              option.value,
-                              event.target.checked
-                            )
-                          )
-                        }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Resistance Affinities
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {damageAffinityOptions.map((option) => (
-                    <label
-                      key={`family-resistance-${option.value}`}
-                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={setFamilyResistanceAffinities.has(
-                          option.value
-                        )}
-                        onChange={(event) =>
-                          setSetFamilyResistanceAffinities((current) =>
-                            toggleStringSetValue(
-                              current,
-                              option.value,
-                              event.target.checked
-                            )
-                          )
-                        }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
-        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
-              Draft Generator
-            </div>
-            <div className="mt-1 text-lg font-semibold text-slate-900">
-              Agent-first inventory ideation
-            </div>
-            <p className="mt-1 max-w-3xl text-sm text-slate-600">
-              Queue batches of draft items, review the generated concepts, and
-              convert only the ones that feel worth keeping.
-            </p>
-          </div>
-          <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-600">
-            Recent jobs: {suggestionJobs.length}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
-            <div className="mb-3 text-sm font-semibold text-slate-800">
-              Queue Draft Batch
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Batch Size
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={suggestionForm.count}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      count: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Level Band
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    value={suggestionForm.minItemLevel}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        minItemLevel: event.target.value,
-                      }))
-                    }
-                    placeholder="Min"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={suggestionForm.maxItemLevel}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        maxItemLevel: event.target.value,
-                      }))
-                    }
-                    placeholder="Max"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Theme Prompt
-                </label>
-                <textarea
-                  rows={4}
-                  value={suggestionForm.themePrompt}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      themePrompt: event.target.value,
-                    }))
-                  }
-                  placeholder="Low-level occult street gear, scavenger kits, and odd consumables for night exploration."
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Categories
-                </label>
-                <input
-                  value={suggestionForm.categoriesText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      categoriesText: event.target.value,
-                    }))
-                  }
-                  placeholder="equippable, consumable, material"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Rarity Tiers
-                </label>
-                <input
-                  value={suggestionForm.rarityTiersText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      rarityTiersText: event.target.value,
-                    }))
-                  }
-                  placeholder="Common, Uncommon, Epic"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Equip Slots
-                </label>
-                <input
-                  value={suggestionForm.equipSlotsText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      equipSlotsText: event.target.value,
-                    }))
-                  }
-                  placeholder="hat, necklace, dominant_hand"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Stat Tags
-                </label>
-                <input
-                  value={suggestionForm.statTagsText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      statTagsText: event.target.value,
-                    }))
-                  }
-                  placeholder="strength, intelligence, wisdom"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Benefit Tags
-                </label>
-                <input
-                  value={suggestionForm.benefitTagsText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      benefitTagsText: event.target.value,
-                    }))
-                  }
-                  placeholder="healing, mana, fire damage, resistances"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Status Names
-                </label>
-                <input
-                  value={suggestionForm.statusNamesText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      statusNamesText: event.target.value,
-                    }))
-                  }
-                  placeholder="Blessed, Guarded, Regenerating"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Internal Tags
-                </label>
-                <input
-                  value={suggestionForm.internalTagsText}
-                  onChange={(event) =>
-                    setSuggestionForm((current) => ({
-                      ...current,
-                      internalTagsText: event.target.value,
-                    }))
-                  }
-                  placeholder="occult, scavenger, downtown"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void handleQueueSuggestionJob()}
-                disabled={queueingSuggestionJob}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            <div>
+              <label className="mb-1 block text-xs text-gray-600">
+                Minor Stat
+              </label>
+              <select
+                value={bulkSetMinorStat}
+                onChange={(e) => setBulkSetMinorStat(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm"
               >
-                {queueingSuggestionJob ? 'Queueing...' : 'Queue Draft Job'}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setSuggestionForm(emptyInventorySuggestionForm())
-                }
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
+                {itemSetStatOptions.map((option) => (
+                  <option key={`minor-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-600">Rarity</label>
+              <select
+                value={bulkSetRarityTier}
+                onChange={(e) => setBulkSetRarityTier(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm"
               >
-                Reset
-              </button>
-            </div>
-
-            {suggestionError && (
-              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {suggestionError}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-slate-800">
-                Recent Draft Jobs
-              </div>
-              {loadingSuggestionJobs && (
-                <div className="text-xs text-slate-500">Refreshing...</div>
-              )}
-            </div>
-            <div className="space-y-2">
-              {suggestionJobs.length === 0 && !loadingSuggestionJobs && (
-                <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
-                  No draft jobs yet.
-                </div>
-              )}
-              {suggestionJobs.map((job) => {
-                const selected = job.id === selectedSuggestionJobId;
-                return (
-                  <button
-                    key={job.id}
-                    type="button"
-                    onClick={() => setSelectedSuggestionJobId(job.id)}
-                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${
-                      selected
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-200 bg-slate-50 hover:border-slate-300'
-                    }`}
+                {itemSetRarityOptions.map((option) => (
+                  <option
+                    key={`bulk-set-rarity-${option.value}`}
+                    value={option.value}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-medium text-slate-900">
-                        {job.themePrompt?.trim() || 'Untitled draft job'}
-                      </div>
-                      <span
-                        className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                          job.status === 'completed'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : job.status === 'failed'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-amber-100 text-amber-700'
-                        }`}
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={handleGenerateSetFromStats}
+                disabled={bulkSetGenerationBusy}
+                className="w-full rounded-md bg-violet-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {bulkSetGenerationBusy
+                  ? 'Generating Set...'
+                  : 'Generate Full Set'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pageMode === 'generators' && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+                Equipment Families
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                Generate more seeded-style set families
+              </div>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                This uses the same slot scaling and affinity identity logic as
+                the core equipment seed pack, but lets you steer the level
+                bands, profiles, stats, affinities, and naming lane.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerateSetFamilies}
+              disabled={setFamilyGenerationBusy}
+              className="rounded-md bg-emerald-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {setFamilyGenerationBusy
+                ? 'Generating Families...'
+                : 'Generate Set Families'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                Identity
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Family Count
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={setFamilyCount}
+                    onChange={(event) => setSetFamilyCount(event.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Level Min
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={setFamilyLevelMin}
+                    onChange={(event) =>
+                      setSetFamilyLevelMin(event.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Level Max
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={setFamilyLevelMax}
+                    onChange={(event) =>
+                      setSetFamilyLevelMax(event.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Theme Seeds
+                </label>
+                <input
+                  type="text"
+                  value={setFamilyThemesInput}
+                  onChange={(event) =>
+                    setSetFamilyThemesInput(event.target.value)
+                  }
+                  placeholder="storm knight, fungal court, cathedral hunter"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Slot Scope
+                  </label>
+                  <select
+                    value={setFamilySlotScope}
+                    onChange={(event) =>
+                      setSetFamilySlotScope(event.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {inventorySetSlotScopeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Power Bias
+                  </label>
+                  <select
+                    value={setFamilyPowerBias}
+                    onChange={(event) =>
+                      setSetFamilyPowerBias(event.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {inventorySetPowerBiasOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Naming Style
+                  </label>
+                  <select
+                    value={setFamilyNamingStyle}
+                    onChange={(event) =>
+                      setSetFamilyNamingStyle(event.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {inventorySetNamingStyleOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Required Internal Tags
+                  </label>
+                  <input
+                    type="text"
+                    value={setFamilyRequiredTagsInput}
+                    onChange={(event) =>
+                      setSetFamilyRequiredTagsInput(event.target.value)
+                    }
+                    placeholder="frontline, cathedral, occult"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Forbidden Tags
+                  </label>
+                  <input
+                    type="text"
+                    value={setFamilyForbiddenTagsInput}
+                    onChange={(event) =>
+                      setSetFamilyForbiddenTagsInput(event.target.value)
+                    }
+                    placeholder="street, nautical"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={setFamilyAllowHybridAffinities}
+                    onChange={(event) =>
+                      setSetFamilyAllowHybridAffinities(event.target.checked)
+                    }
+                  />
+                  Allow hybrid affinities
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={setFamilyAvoidExistingThemeOverlap}
+                    onChange={(event) =>
+                      setSetFamilyAvoidExistingThemeOverlap(
+                        event.target.checked
+                      )
+                    }
+                  />
+                  Avoid theme overlap
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={setFamilyQueueImages}
+                    onChange={(event) =>
+                      setSetFamilyQueueImages(event.target.checked)
+                    }
+                  />
+                  Queue image generation
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/80 bg-white p-4 shadow-sm">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                Mechanics
+              </div>
+
+              <div className="mb-3">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Rarity Tiers
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  {itemSetRarityOptions
+                    .filter((option) => option.value !== 'auto')
+                    .map((option) => (
+                      <label
+                        key={`family-rarity-${option.value}`}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
                       >
-                        {job.status.replace(/_/g, ' ')}
-                      </span>
+                        <input
+                          type="checkbox"
+                          checked={setFamilyRarityTiers.has(option.value)}
+                          onChange={(event) =>
+                            setSetFamilyRarityTiers((current) =>
+                              toggleStringSetValue(
+                                current,
+                                option.value,
+                                event.target.checked
+                              )
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Profiles
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  {inventorySetProfileOptions.map((option) => (
+                    <label
+                      key={`family-profile-${option.value}`}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={setFamilyProfiles.has(option.value)}
+                        onChange={(event) =>
+                          setSetFamilyProfiles((current) =>
+                            toggleStringSetValue(
+                              current,
+                              option.value,
+                              event.target.checked
+                            )
+                          )
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Major Stats
+                  </div>
+                  <div className="space-y-2">
+                    {itemSetStatOptions.map((option) => (
+                      <label
+                        key={`family-major-${option.value}`}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={setFamilyMajorStats.has(option.value)}
+                          onChange={(event) =>
+                            setSetFamilyMajorStats((current) =>
+                              toggleStringSetValue(
+                                current,
+                                option.value,
+                                event.target.checked
+                              )
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Minor Stats
+                  </div>
+                  <div className="space-y-2">
+                    {itemSetStatOptions.map((option) => (
+                      <label
+                        key={`family-minor-${option.value}`}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={setFamilyMinorStats.has(option.value)}
+                          onChange={(event) =>
+                            setSetFamilyMinorStats((current) =>
+                              toggleStringSetValue(
+                                current,
+                                option.value,
+                                event.target.checked
+                              )
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Damage Affinities
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {damageAffinityOptions.map((option) => (
+                      <label
+                        key={`family-damage-${option.value}`}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={setFamilyDamageAffinities.has(option.value)}
+                          onChange={(event) =>
+                            setSetFamilyDamageAffinities((current) =>
+                              toggleStringSetValue(
+                                current,
+                                option.value,
+                                event.target.checked
+                              )
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Resistance Affinities
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {damageAffinityOptions.map((option) => (
+                      <label
+                        key={`family-resistance-${option.value}`}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={setFamilyResistanceAffinities.has(
+                            option.value
+                          )}
+                          onChange={(event) =>
+                            setSetFamilyResistanceAffinities((current) =>
+                              toggleStringSetValue(
+                                current,
+                                option.value,
+                                event.target.checked
+                              )
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pageMode === 'drafts' && (
+        <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
+                Draft Generator
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                Agent-first inventory ideation
+              </div>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Queue batches of draft items, review the generated concepts, and
+                convert only the ones that feel worth keeping.
+              </p>
+            </div>
+            <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-600">
+              Recent jobs: {suggestionJobs.length}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                Queue Draft Batch
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={suggestionForm.count}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        count: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Level Band
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={suggestionForm.minItemLevel}
+                      onChange={(event) =>
+                        setSuggestionForm((current) => ({
+                          ...current,
+                          minItemLevel: event.target.value,
+                        }))
+                      }
+                      placeholder="Min"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={suggestionForm.maxItemLevel}
+                      onChange={(event) =>
+                        setSuggestionForm((current) => ({
+                          ...current,
+                          maxItemLevel: event.target.value,
+                        }))
+                      }
+                      placeholder="Max"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Theme Prompt
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={suggestionForm.themePrompt}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        themePrompt: event.target.value,
+                      }))
+                    }
+                    placeholder="Low-level occult street gear, scavenger kits, and odd consumables for night exploration."
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Categories
+                  </label>
+                  <input
+                    value={suggestionForm.categoriesText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        categoriesText: event.target.value,
+                      }))
+                    }
+                    placeholder="equippable, consumable, material"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Rarity Tiers
+                  </label>
+                  <input
+                    value={suggestionForm.rarityTiersText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        rarityTiersText: event.target.value,
+                      }))
+                    }
+                    placeholder="Common, Uncommon, Epic"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Equip Slots
+                  </label>
+                  <input
+                    value={suggestionForm.equipSlotsText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        equipSlotsText: event.target.value,
+                      }))
+                    }
+                    placeholder="hat, necklace, dominant_hand"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Stat Tags
+                  </label>
+                  <input
+                    value={suggestionForm.statTagsText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        statTagsText: event.target.value,
+                      }))
+                    }
+                    placeholder="strength, intelligence, wisdom"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Benefit Tags
+                  </label>
+                  <input
+                    value={suggestionForm.benefitTagsText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        benefitTagsText: event.target.value,
+                      }))
+                    }
+                    placeholder="healing, mana, fire damage, resistances"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Status Names
+                  </label>
+                  <input
+                    value={suggestionForm.statusNamesText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        statusNamesText: event.target.value,
+                      }))
+                    }
+                    placeholder="Blessed, Guarded, Regenerating"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Internal Tags
+                  </label>
+                  <input
+                    value={suggestionForm.internalTagsText}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        internalTagsText: event.target.value,
+                      }))
+                    }
+                    placeholder="occult, scavenger, downtown"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleQueueSuggestionJob()}
+                  disabled={queueingSuggestionJob}
+                  className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {queueingSuggestionJob ? 'Queueing...' : 'Queue Draft Job'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSuggestionForm(emptyInventorySuggestionForm())
+                  }
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
+                >
+                  Reset
+                </button>
+              </div>
+
+              {suggestionError && (
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {suggestionError}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-slate-800">
+                  Recent Draft Jobs
+                </div>
+                {loadingSuggestionJobs && (
+                  <div className="text-xs text-slate-500">Refreshing...</div>
+                )}
+              </div>
+              <div className="space-y-2">
+                {suggestionJobs.length === 0 && !loadingSuggestionJobs && (
+                  <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+                    No draft jobs yet.
+                  </div>
+                )}
+                {suggestionJobs.map((job) => {
+                  const selected = job.id === selectedSuggestionJobId;
+                  return (
+                    <button
+                      key={job.id}
+                      type="button"
+                      onClick={() => setSelectedSuggestionJobId(job.id)}
+                      className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                        selected
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium text-slate-900">
+                          {job.themePrompt?.trim() || 'Untitled draft job'}
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                            job.status === 'completed'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : job.status === 'failed'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {job.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        {job.createdCount}/{job.count} drafts · levels{' '}
+                        {job.minItemLevel}-{job.maxItemLevel}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        {[
+                          renderSuggestionFacetLabel('stats', job.statTags),
+                          renderSuggestionFacetLabel(
+                            'benefits',
+                            job.benefitTags
+                          ),
+                          renderSuggestionFacetLabel(
+                            'statuses',
+                            job.statusNames
+                          ),
+                        ]
+                          .filter((entry): entry is string => Boolean(entry))
+                          .map((entry) => (
+                            <span
+                              key={`${job.id}-${entry}`}
+                              className="rounded-full bg-white/80 px-2 py-1"
+                            >
+                              {entry}
+                            </span>
+                          ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-white/70 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">
+                  {selectedSuggestionJob
+                    ? `Drafts for ${selectedSuggestionJob.themePrompt || 'selected job'}`
+                    : 'Generated Drafts'}
+                </div>
+                {selectedSuggestionJob && (
+                  <div className="space-y-1 text-xs text-slate-500">
+                    <div>
+                      {selectedSuggestionJob.createdCount} draft
+                      {selectedSuggestionJob.createdCount === 1
+                        ? ''
+                        : 's'} ·{' '}
+                      {selectedSuggestionJob.categories.join(', ') ||
+                        'all categories'}
                     </div>
-                    <div className="mt-2 text-xs text-slate-500">
-                      {job.createdCount}/{job.count} drafts · levels{' '}
-                      {job.minItemLevel}-{job.maxItemLevel}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    <div className="flex flex-wrap gap-2">
                       {[
-                        renderSuggestionFacetLabel('stats', job.statTags),
-                        renderSuggestionFacetLabel('benefits', job.benefitTags),
-                        renderSuggestionFacetLabel('statuses', job.statusNames),
+                        renderSuggestionFacetLabel(
+                          'Stat focus',
+                          selectedSuggestionJob.statTags
+                        ),
+                        renderSuggestionFacetLabel(
+                          'Benefit focus',
+                          selectedSuggestionJob.benefitTags
+                        ),
+                        renderSuggestionFacetLabel(
+                          'Statuses',
+                          selectedSuggestionJob.statusNames
+                        ),
                       ]
                         .filter((entry): entry is string => Boolean(entry))
                         .map((entry) => (
                           <span
-                            key={`${job.id}-${entry}`}
-                            className="rounded-full bg-white/80 px-2 py-1"
+                            key={`${selectedSuggestionJob.id}-${entry}`}
+                            className="rounded-full bg-slate-100 px-2 py-1 text-slate-600"
                           >
                             {entry}
                           </span>
                         ))}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-lg border border-white/70 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-800">
-                {selectedSuggestionJob
-                  ? `Drafts for ${selectedSuggestionJob.themePrompt || 'selected job'}`
-                  : 'Generated Drafts'}
+                  </div>
+                )}
               </div>
-              {selectedSuggestionJob && (
-                <div className="space-y-1 text-xs text-slate-500">
-                  <div>
-                    {selectedSuggestionJob.createdCount} draft
-                    {selectedSuggestionJob.createdCount === 1 ? '' : 's'} ·{' '}
-                    {selectedSuggestionJob.categories.join(', ') ||
-                      'all categories'}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      renderSuggestionFacetLabel(
-                        'Stat focus',
-                        selectedSuggestionJob.statTags
-                      ),
-                      renderSuggestionFacetLabel(
-                        'Benefit focus',
-                        selectedSuggestionJob.benefitTags
-                      ),
-                      renderSuggestionFacetLabel(
-                        'Statuses',
-                        selectedSuggestionJob.statusNames
-                      ),
-                    ]
-                      .filter((entry): entry is string => Boolean(entry))
-                      .map((entry) => (
-                        <span
-                          key={`${selectedSuggestionJob.id}-${entry}`}
-                          className="rounded-full bg-slate-100 px-2 py-1 text-slate-600"
-                        >
-                          {entry}
-                        </span>
-                      ))}
-                  </div>
-                </div>
+              {loadingSuggestionDrafts && (
+                <div className="text-xs text-slate-500">Loading drafts...</div>
               )}
             </div>
-            {loadingSuggestionDrafts && (
-              <div className="text-xs text-slate-500">Loading drafts...</div>
-            )}
-          </div>
 
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {suggestionDrafts.length === 0 && !loadingSuggestionDrafts && (
-              <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
-                {selectedSuggestionJob
-                  ? 'This job has not produced any drafts yet.'
-                  : 'Select a draft job to review its generated items.'}
-              </div>
-            )}
-            {suggestionDrafts.map((draft) => (
-              <div
-                key={draft.id}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-lg font-semibold text-slate-900">
-                      {draft.name}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                        {draft.category}
-                      </span>
-                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                        {draft.rarityTier}
-                      </span>
-                      <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                        Lv {draft.itemLevel}
-                      </span>
-                      {draft.equipSlot && (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {suggestionDrafts.length === 0 && !loadingSuggestionDrafts && (
+                <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
+                  {selectedSuggestionJob
+                    ? 'This job has not produced any drafts yet.'
+                    : 'Select a draft job to review its generated items.'}
+                </div>
+              )}
+              {suggestionDrafts.map((draft) => (
+                <div
+                  key={draft.id}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-semibold text-slate-900">
+                        {draft.name}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs">
                         <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                          {draft.equipSlot}
+                          {draft.category}
                         </span>
-                      )}
+                        <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                          {draft.rarityTier}
+                        </span>
+                        <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                          Lv {draft.itemLevel}
+                        </span>
+                        {draft.equipSlot && (
+                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                            {draft.equipSlot}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    <span
+                      className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                        draft.status === 'converted'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-indigo-100 text-indigo-700'
+                      }`}
+                    >
+                      {draft.status}
+                    </span>
                   </div>
-                  <span
-                    className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                      draft.status === 'converted'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-indigo-100 text-indigo-700'
-                    }`}
-                  >
-                    {draft.status}
-                  </span>
+
+                  <p className="mt-3 text-sm text-slate-700">
+                    {draft.whyItFits}
+                  </p>
+                  {draft.payload.item.effectText && (
+                    <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-slate-700">
+                      <span className="font-medium text-slate-900">
+                        Effect:
+                      </span>{' '}
+                      {draft.payload.item.effectText}
+                    </div>
+                  )}
+                  {draft.payload.item.flavorText && (
+                    <div className="mt-3 text-sm text-slate-600">
+                      {draft.payload.item.flavorText}
+                    </div>
+                  )}
+                  {(draft.internalTags?.length ?? 0) > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {draft.internalTags.map((tag) => (
+                        <span
+                          key={`${draft.id}-${tag}`}
+                          className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(draft.warnings?.length ?? 0) > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {draft.warnings.join(' ')}
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleConvertSuggestionDraft(draft.id)
+                      }
+                      disabled={
+                        draft.status === 'converted' ||
+                        convertingSuggestionDraftId === draft.id
+                      }
+                      className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {draft.status === 'converted'
+                        ? 'Converted'
+                        : convertingSuggestionDraftId === draft.id
+                          ? 'Converting...'
+                          : 'Convert to Item'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteSuggestionDraft(draft.id)}
+                      disabled={
+                        draft.status === 'converted' ||
+                        deletingSuggestionDraftId === draft.id
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    >
+                      {deletingSuggestionDraftId === draft.id
+                        ? 'Deleting...'
+                        : 'Delete Draft'}
+                    </button>
+                  </div>
                 </div>
-
-                <p className="mt-3 text-sm text-slate-700">{draft.whyItFits}</p>
-                {draft.payload.item.effectText && (
-                  <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-                    <span className="font-medium text-slate-900">Effect:</span>{' '}
-                    {draft.payload.item.effectText}
-                  </div>
-                )}
-                {draft.payload.item.flavorText && (
-                  <div className="mt-3 text-sm text-slate-600">
-                    {draft.payload.item.flavorText}
-                  </div>
-                )}
-                {(draft.internalTags?.length ?? 0) > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {draft.internalTags.map((tag) => (
-                      <span
-                        key={`${draft.id}-${tag}`}
-                        className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(draft.warnings?.length ?? 0) > 0 && (
-                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    {draft.warnings.join(' ')}
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleConvertSuggestionDraft(draft.id)}
-                    disabled={
-                      draft.status === 'converted' ||
-                      convertingSuggestionDraftId === draft.id
-                    }
-                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {draft.status === 'converted'
-                      ? 'Converted'
-                      : convertingSuggestionDraftId === draft.id
-                        ? 'Converting...'
-                        : 'Convert to Item'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteSuggestionDraft(draft.id)}
-                    disabled={
-                      draft.status === 'converted' ||
-                      deletingSuggestionDraftId === draft.id
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  >
-                    {deletingSuggestionDraftId === draft.id
-                      ? 'Deleting...'
-                      : 'Delete Draft'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Search + Sort */}
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Search inventory items..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full p-2 border rounded-md"
-          />
-        </div>
-        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
-          <select
-            value={sortField}
-            onChange={(e) => setSortField(e.target.value)}
-            className="w-full p-2 border rounded-md md:w-56"
-          >
-            {sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                Sort: {option.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() =>
-              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-            }
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-44"
-          >
-            Direction: {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-36"
-          >
-            {showFilters ? 'Hide filters' : 'Show filters'}
-            {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-          </button>
-        </div>
-      </div>
-
-      {showFilters && (
-        <div className="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-gray-700">
-              Filters
-              {activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
+              ))}
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                setFilters({
-                  rarity: '',
-                  resourceType: '',
-                  equipSlot: '',
-                  imageStatus: '',
-                  captureType: '',
-                  equippable: '',
-                  minId: '',
-                  maxId: '',
-                  minBuyPrice: '',
-                  maxBuyPrice: '',
-                  minUnlockTier: '',
-                  maxUnlockTier: '',
-                  minStrength: '',
-                  maxStrength: '',
-                  minDexterity: '',
-                  maxDexterity: '',
-                  minConstitution: '',
-                  maxConstitution: '',
-                  minIntelligence: '',
-                  maxIntelligence: '',
-                  minWisdom: '',
-                  maxWisdom: '',
-                  minCharisma: '',
-                  maxCharisma: '',
-                })
-              }
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
-            >
-              Clear filters
-            </button>
-          </div>
-          <div className="space-y-3">
-            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
-              <summary className="cursor-pointer text-sm font-medium text-gray-700">
-                Quick filters
-              </summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <select
-                  value={filters.rarity}
-                  onChange={(e) =>
-                    setFilters({ ...filters, rarity: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All rarities</option>
-                  <option value={Rarity.Common}>Common</option>
-                  <option value={Rarity.Uncommon}>Uncommon</option>
-                  <option value={Rarity.Epic}>Epic</option>
-                  <option value={Rarity.Mythic}>Mythic</option>
-                  <option value={Rarity.NotDroppable}>Not Droppable</option>
-                </select>
-                <select
-                  value={filters.resourceType}
-                  onChange={(e) =>
-                    setFilters({ ...filters, resourceType: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All resource types</option>
-                  {resourceTypeOptions.map((option) => (
-                    <option key={`resource-filter-${option.value}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={filters.equipSlot}
-                  onChange={(e) =>
-                    setFilters({ ...filters, equipSlot: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All equip slots</option>
-                  {equipSlotOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={filters.equippable}
-                  onChange={(e) =>
-                    setFilters({ ...filters, equippable: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All items</option>
-                  <option value="yes">Equippable</option>
-                  <option value="no">Not equippable</option>
-                </select>
-                <select
-                  value={filters.captureType}
-                  onChange={(e) =>
-                    setFilters({ ...filters, captureType: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All capture types</option>
-                  <option value="yes">Capture items</option>
-                  <option value="no">Non-capture</option>
-                </select>
-                <select
-                  value={filters.imageStatus}
-                  onChange={(e) =>
-                    setFilters({ ...filters, imageStatus: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="">All image statuses</option>
-                  <option value="queued">Queued</option>
-                  <option value="in_progress">Generating</option>
-                  <option value="complete">Complete</option>
-                  <option value="failed">Failed</option>
-                  <option value="none">Not requested</option>
-                </select>
-              </div>
-            </details>
-            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
-              <summary className="cursor-pointer text-sm font-medium text-gray-700">
-                IDs & values
-              </summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <input
-                  type="number"
-                  placeholder="Min ID"
-                  value={filters.minId}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minId: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max ID"
-                  value={filters.maxId}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxId: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min buy price"
-                  value={filters.minBuyPrice}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minBuyPrice: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max buy price"
-                  value={filters.maxBuyPrice}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxBuyPrice: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min unlock tier"
-                  value={filters.minUnlockTier}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minUnlockTier: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max unlock tier"
-                  value={filters.maxUnlockTier}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxUnlockTier: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-              </div>
-            </details>
-            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
-              <summary className="cursor-pointer text-sm font-medium text-gray-700">
-                Stat bonuses
-              </summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6">
-                <input
-                  type="number"
-                  placeholder="Min STR"
-                  value={filters.minStrength}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minStrength: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max STR"
-                  value={filters.maxStrength}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxStrength: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min DEX"
-                  value={filters.minDexterity}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minDexterity: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max DEX"
-                  value={filters.maxDexterity}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxDexterity: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min CON"
-                  value={filters.minConstitution}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minConstitution: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max CON"
-                  value={filters.maxConstitution}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxConstitution: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min INT"
-                  value={filters.minIntelligence}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minIntelligence: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max INT"
-                  value={filters.maxIntelligence}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxIntelligence: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min WIS"
-                  value={filters.minWisdom}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minWisdom: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max WIS"
-                  value={filters.maxWisdom}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxWisdom: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Min CHA"
-                  value={filters.minCharisma}
-                  onChange={(e) =>
-                    setFilters({ ...filters, minCharisma: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-                <input
-                  type="number"
-                  placeholder="Max CHA"
-                  value={filters.maxCharisma}
-                  onChange={(e) =>
-                    setFilters({ ...filters, maxCharisma: e.target.value })
-                  }
-                  className="w-full p-2 border rounded-md"
-                />
-              </div>
-            </details>
           </div>
         </div>
       )}
 
-      <div className="mb-4 flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 md:flex-row md:items-center md:justify-between">
-        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={allVisibleSelected}
-            onChange={(e) =>
-              toggleSelectAllVisible(e.target.checked, visibleItemIDs)
-            }
-            className="h-4 w-4 cursor-pointer"
-          />
-          Select all visible ({visibleItems.length})
-        </label>
-        <span className="text-sm text-gray-700">
-          {selectedItemIDs.size} selected
-        </span>
-      </div>
-
-      <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4">
-        <div className="mb-2 text-sm font-semibold text-amber-950">
-          Bulk Edit Selected Items
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">
-              Set Buy Price
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={bulkBuyPriceInput}
-              onChange={(e) => setBulkBuyPriceInput(e.target.value)}
-              placeholder="Leave blank to keep"
-              disabled={bulkEditBusy || !hasSelectedItems}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">
-              Tag Action
-            </label>
-            <select
-              value={bulkTagAction}
-              onChange={(e) =>
-                setBulkTagAction(e.target.value as BulkTagAction)
-              }
-              disabled={bulkEditBusy || !hasSelectedItems}
-              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
-            >
-              <option value="none">No tag changes</option>
-              <option value="replace">Replace tags</option>
-              <option value="add">Add tags</option>
-              <option value="remove">Remove tags</option>
-              <option value="clear">Clear all tags</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-600">Tags</label>
-            <input
-              type="text"
-              value={bulkTagsInput}
-              onChange={(e) => setBulkTagsInput(e.target.value)}
-              placeholder="comma,separated,tags"
-              disabled={
-                bulkEditBusy ||
-                !hasSelectedItems ||
-                bulkTagAction === 'none' ||
-                bulkTagAction === 'clear'
-              }
-              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={handleBulkEditSelected}
-              disabled={!hasSelectedItems || bulkEditBusy}
-              className="w-full rounded-md bg-amber-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {bulkEditBusy
-                ? 'Applying...'
-                : `Apply to ${selectedItemIDs.size} selected`}
-            </button>
-          </div>
-        </div>
-        <p className="mt-2 text-xs text-gray-600">
-          Leave buy price blank to keep current values. Tags are normalized to
-          lowercase.
-        </p>
-      </div>
-
-      {/* Items Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: '20px',
-          padding: '20px',
-        }}
-      >
-        {visibleItems.map((item) => (
-          <div
-            key={item.id}
-            style={{
-              padding: '20px',
-              border: '1px solid #ccc',
-              borderRadius: '8px',
-              backgroundColor: '#fff',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: '12px',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 15px 0',
-                  color: '#333',
-                }}
-              >
-                {item.name}
-              </h2>
+      {showCatalogWorkspace && (
+        <>
+          {/* Search + Sort */}
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="flex-1">
               <input
-                type="checkbox"
-                checked={selectedItemIDs.has(item.id)}
-                onChange={(e) => toggleItemSelection(item.id, e.target.checked)}
-                style={{ width: 18, height: 18, cursor: 'pointer' }}
-                aria-label={`Select ${item.name}`}
+                type="text"
+                placeholder={
+                  pageMode === 'crafting'
+                    ? 'Search recipes, ingredients, teachers...'
+                    : 'Search inventory items, recipes, ingredients...'
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full p-2 border rounded-md"
               />
             </div>
-
-            <p style={{ margin: '5px 0', color: '#666' }}>ID: {item.id}</p>
-
-            <p
-              style={{
-                margin: '5px 0',
-                color: item.archived ? '#92400e' : '#166534',
-              }}
-            >
-              Status: {item.archived ? 'Archived' : 'Active'}
-            </p>
-
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Image Status: {formatGenerationStatus(item.imageGenerationStatus)}
-            </p>
-            {item.imageGenerationStatus === 'failed' &&
-              item.imageGenerationError && (
-                <p
-                  style={{
-                    margin: '5px 0',
-                    color: '#b91c1c',
-                    fontSize: '12px',
-                  }}
-                >
-                  Error: {item.imageGenerationError}
-                </p>
-              )}
-
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Rarity: {item.rarityTier}
-            </p>
-            {(item.resourceType || item.resourceTypeId) && (
-              <p style={{ margin: '5px 0', color: '#666' }}>
-                Resource Type:{' '}
-                {formatInventoryResourceType(item.resourceType) ||
-                  resourceTypeNameByID.get(item.resourceTypeId ?? '') ||
-                  'Unknown'}
-              </p>
-            )}
-
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Item Level: {item.itemLevel ?? 1}
-            </p>
-
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Capture Type: {item.isCaptureType ? 'Yes' : 'No'}
-            </p>
-
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Equip Slot: {equipSlotLabel(item.equipSlot)}
-            </p>
-            {handCombatSummary(item).map((line) => (
-              <p
-                key={`${item.id}-${line}`}
-                style={{ margin: '5px 0', color: '#666' }}
+            <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                className="w-full p-2 border rounded-md md:w-56"
               >
-                {line}
-              </p>
-            ))}
-            {consumeSummary(item, spellNamesByID).map((line) => (
-              <p
-                key={`${item.id}-consume-${line}`}
-                style={{ margin: '5px 0', color: '#666' }}
-              >
-                {line}
-              </p>
-            ))}
-            {(item.internalTags?.length ?? 0) > 0 && (
-              <p style={{ margin: '5px 0', color: '#666' }}>
-                Internal Tags: {item.internalTags?.join(', ')}
-              </p>
-            )}
-
-            {statModSummary(item) && (
-              <p style={{ margin: '5px 0', color: '#666' }}>
-                Stat Mods: {statModSummary(item)}
-              </p>
-            )}
-
-            {item.buyPrice !== undefined && item.buyPrice !== null && (
-              <p style={{ margin: '5px 0', color: '#666' }}>
-                Buy Price: {item.buyPrice} gold
-              </p>
-            )}
-
-            {item.imageUrl && (
-              <img
-                src={item.imageUrl}
-                alt={item.name}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: 120,
-                  borderRadius: 4,
-                  marginTop: '10px',
-                }}
-              />
-            )}
-
-            <p style={{ margin: '10px 0', color: '#666', fontSize: '14px' }}>
-              <strong>Flavor:</strong> {item.flavorText || '—'}
-            </p>
-
-            <p style={{ margin: '10px 0', color: '#666', fontSize: '14px' }}>
-              <strong>Effect:</strong> {item.effectText || '—'}
-            </p>
-
-            <div style={{ marginTop: '15px' }}>
+                {sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    Sort: {option.label}
+                  </option>
+                ))}
+              </select>
               <button
-                onClick={() => handleEditItem(item)}
-                className="bg-blue-500 text-white px-4 py-2 rounded-md mr-2"
-              >
-                Edit
-              </button>
-              <button
+                type="button"
                 onClick={() =>
-                  void handleSetItemsArchived([item.id], !item.archived)
+                  setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
                 }
-                className="bg-slate-700 text-white px-4 py-2 rounded-md mr-2"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-44"
               >
-                {item.archived ? 'Restore' : 'Archive'}
-              </button>
-              {isOutfitName(item.name) && (
-                <button
-                  onClick={() => {
-                    setUseOutfitItem(item);
-                    setUseOutfitUser('');
-                    setUseOutfitSelfieUrl('');
-                    setUseOutfitStatus(null);
-                    setUseOutfitStatusKind(null);
-                  }}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md mr-2"
-                >
-                  Use Outfit
-                </button>
-              )}
-              <button
-                onClick={() => handleRegenerateImage(item)}
-                className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
-                disabled={['queued', 'in_progress'].includes(
-                  item.imageGenerationStatus || ''
-                )}
-              >
-                Regenerate Image
-              </button>
-              {canGenerateConsumableQualities(item) && (
-                <button
-                  onClick={() => handleGenerateConsumableQualities(item)}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                  disabled={consumableGenerationBusyIds.has(item.id)}
-                >
-                  {consumableGenerationBusyIds.has(item.id)
-                    ? 'Generating Qualities...'
-                    : 'Generate Qualities'}
-                </button>
-              )}
-              {item.equipSlot && (
-                <button
-                  onClick={() => handleGenerateSet(item)}
-                  className="bg-violet-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                  disabled={setGenerationBusyIds.has(item.id)}
-                >
-                  {setGenerationBusyIds.has(item.id)
-                    ? 'Generating Set...'
-                    : 'Generate Set'}
-                </button>
-              )}
-              <button
-                onClick={() => void handleGenerateProgressionDrafts(item)}
-                className="bg-indigo-700 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                disabled={progressionGenerationBusyIds.has(item.id)}
-              >
-                {progressionGenerationBusyIds.has(item.id)
-                  ? 'Generating Progression...'
-                  : 'Generate Progression'}
+                Direction:{' '}
+                {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
               </button>
               <button
-                onClick={() => handleDeleteItem(item)}
-                className="bg-red-500 text-white px-4 py-2 rounded-md"
+                type="button"
+                onClick={() => setShowFilters(!showFilters)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-36"
               >
-                Delete
+                {showFilters ? 'Hide filters' : 'Show filters'}
+                {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
               </button>
             </div>
           </div>
-        ))}
-      </div>
+
+          {showFilters && (
+            <div className="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-gray-700">
+                  Filters
+                  {activeFilterCount > 0
+                    ? ` (${activeFilterCount} active)`
+                    : ''}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFilters(emptyInventoryItemFilters())}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                >
+                  Clear filters
+                </button>
+              </div>
+              <div className="space-y-3">
+                <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                    Quick filters
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <select
+                      value={filters.rarity}
+                      onChange={(e) =>
+                        setFilters({ ...filters, rarity: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All rarities</option>
+                      <option value={Rarity.Common}>Common</option>
+                      <option value={Rarity.Uncommon}>Uncommon</option>
+                      <option value={Rarity.Epic}>Epic</option>
+                      <option value={Rarity.Mythic}>Mythic</option>
+                      <option value={Rarity.NotDroppable}>Not Droppable</option>
+                    </select>
+                    <select
+                      value={filters.resourceType}
+                      onChange={(e) =>
+                        setFilters({ ...filters, resourceType: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All resource types</option>
+                      {resourceTypeOptions.map((option) => (
+                        <option
+                          key={`resource-filter-${option.value}`}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={filters.equipSlot}
+                      onChange={(e) =>
+                        setFilters({ ...filters, equipSlot: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All equip slots</option>
+                      {equipSlotOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={filters.equippable}
+                      onChange={(e) =>
+                        setFilters({ ...filters, equippable: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All items</option>
+                      <option value="yes">Equippable</option>
+                      <option value="no">Not equippable</option>
+                    </select>
+                    <select
+                      value={filters.captureType}
+                      onChange={(e) =>
+                        setFilters({ ...filters, captureType: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All capture types</option>
+                      <option value="yes">Capture items</option>
+                      <option value="no">Non-capture</option>
+                    </select>
+                    <select
+                      value={filters.imageStatus}
+                      onChange={(e) =>
+                        setFilters({ ...filters, imageStatus: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">All image statuses</option>
+                      <option value="queued">Queued</option>
+                      <option value="in_progress">Generating</option>
+                      <option value="complete">Complete</option>
+                      <option value="failed">Failed</option>
+                      <option value="none">Not requested</option>
+                    </select>
+                  </div>
+                </details>
+                <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                    Crafting
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-5">
+                    <select
+                      value={filters.craftingRole}
+                      onChange={(e) =>
+                        setFilters({ ...filters, craftingRole: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">Any crafting role</option>
+                      <option value="result">Craftable result</option>
+                      <option value="ingredient">Used as ingredient</option>
+                      <option value="teacher">Teaches recipes</option>
+                      <option value="orphaned_private">
+                        Private result missing teacher
+                      </option>
+                    </select>
+                    <select
+                      value={filters.craftingStation}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          craftingStation: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">Any station</option>
+                      <option value="alchemy">Alchemy</option>
+                      <option value="workshop">Workshop</option>
+                    </select>
+                    <select
+                      value={filters.craftingVisibility}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          craftingVisibility: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">Any visibility</option>
+                      <option value="public">Public recipes</option>
+                      <option value="private">Private recipes</option>
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Recipe tier"
+                      value={filters.craftingTier}
+                      onChange={(e) =>
+                        setFilters({ ...filters, craftingTier: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <select
+                      value={filters.craftingWarning}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          craftingWarning: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">No warning filter</option>
+                      <option value="missing_teacher">
+                        Missing private recipe teacher
+                      </option>
+                      <option value="archived_dependency">
+                        Archived ingredient or teacher
+                      </option>
+                    </select>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500">
+                    These filters work with the crafting catalog below and also
+                    trim the main item list by recipe role, station, tier, and
+                    authoring issues.
+                  </p>
+                </details>
+                <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                    IDs & values
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <input
+                      type="number"
+                      placeholder="Min ID"
+                      value={filters.minId}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minId: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max ID"
+                      value={filters.maxId}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxId: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min buy price"
+                      value={filters.minBuyPrice}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minBuyPrice: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max buy price"
+                      value={filters.maxBuyPrice}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxBuyPrice: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min unlock tier"
+                      value={filters.minUnlockTier}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          minUnlockTier: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max unlock tier"
+                      value={filters.maxUnlockTier}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          maxUnlockTier: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                  </div>
+                </details>
+                <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                    Stat bonuses
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6">
+                    <input
+                      type="number"
+                      placeholder="Min STR"
+                      value={filters.minStrength}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minStrength: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max STR"
+                      value={filters.maxStrength}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxStrength: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min DEX"
+                      value={filters.minDexterity}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minDexterity: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max DEX"
+                      value={filters.maxDexterity}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxDexterity: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min CON"
+                      value={filters.minConstitution}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          minConstitution: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max CON"
+                      value={filters.maxConstitution}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          maxConstitution: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min INT"
+                      value={filters.minIntelligence}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          minIntelligence: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max INT"
+                      value={filters.maxIntelligence}
+                      onChange={(e) =>
+                        setFilters({
+                          ...filters,
+                          maxIntelligence: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min WIS"
+                      value={filters.minWisdom}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minWisdom: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max WIS"
+                      value={filters.maxWisdom}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxWisdom: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Min CHA"
+                      value={filters.minCharisma}
+                      onChange={(e) =>
+                        setFilters({ ...filters, minCharisma: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max CHA"
+                      value={filters.maxCharisma}
+                      onChange={(e) =>
+                        setFilters({ ...filters, maxCharisma: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md"
+                    />
+                  </div>
+                </details>
+              </div>
+            </div>
+          )}
+
+          {pageMode === 'crafting' && craftingGraph.recipeCounts.total > 0 && (
+            <div className="mb-6 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-emerald-950">
+                    Crafting Catalog
+                  </div>
+                  <p className="mt-1 text-xs text-emerald-900/80">
+                    Review recipes as a system instead of one item at a time.
+                    The buttons below let you jump straight into bulk tagging or
+                    cleanup passes.
+                  </p>
+                </div>
+                <div className="text-xs text-emerald-900/80">
+                  Showing {visibleCraftingRecipes.length} of{' '}
+                  {craftingGraph.recipeCounts.total} recipes
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-emerald-950">
+                <span className="rounded-full bg-white px-3 py-1">
+                  Alchemy: {craftingGraph.recipeCounts.byStation.alchemy}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  Workshop: {craftingGraph.recipeCounts.byStation.workshop}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  Missing teachers: {craftingGraph.recipeCounts.missingTeacher}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  Archived dependencies:{' '}
+                  {craftingGraph.recipeCounts.archivedDependency}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => replaceSelectedItems(visibleCraftingResultIDs)}
+                  disabled={visibleCraftingResultIDs.length === 0}
+                  className="rounded-md bg-emerald-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Select Results ({visibleCraftingResultIDs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    replaceSelectedItems(visibleCraftingIngredientIDs)
+                  }
+                  disabled={visibleCraftingIngredientIDs.length === 0}
+                  className="rounded-md bg-orange-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Select Ingredients ({visibleCraftingIngredientIDs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    replaceSelectedItems(visibleCraftingTeacherIDs)
+                  }
+                  disabled={visibleCraftingTeacherIDs.length === 0}
+                  className="rounded-md bg-amber-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Select Teachers ({visibleCraftingTeacherIDs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    replaceSelectedItems(visibleOrphanedPrivateResultIDs)
+                  }
+                  disabled={visibleOrphanedPrivateResultIDs.length === 0}
+                  className="rounded-md bg-rose-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Select Missing Teachers (
+                  {visibleOrphanedPrivateResultIDs.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addSelectedItems(visibleCraftingIngredientIDs)}
+                  disabled={visibleCraftingIngredientIDs.length === 0}
+                  className="rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-950 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  Add Ingredients To Selection
+                </button>
+              </div>
+
+              <div className="mt-4 max-h-[420px] space-y-3 overflow-auto pr-1">
+                {visibleCraftingRecipes.length === 0 && (
+                  <div className="rounded-md border border-dashed border-emerald-300 bg-white px-3 py-5 text-sm text-emerald-900/70">
+                    No recipes match the current search and crafting filters.
+                  </div>
+                )}
+                {visibleCraftingRecipes.map((recipe) => (
+                  <div
+                    key={recipe.key}
+                    className="rounded-md border border-emerald-100 bg-white p-3"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const resultItem = itemById.get(
+                                recipe.resultItemId
+                              );
+                              if (resultItem) {
+                                handleEditItem(resultItem);
+                              }
+                            }}
+                            className="text-left text-sm font-semibold text-emerald-900 hover:underline"
+                          >
+                            {recipe.resultItemName}
+                          </button>
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+                            {recipe.stationLabel}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                            T{recipe.tier}{' '}
+                            {recipe.isPublic ? 'Public' : 'Private'}
+                          </span>
+                          {recipe.missingTeacher && (
+                            <span className="rounded-full bg-rose-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                              Missing teacher
+                            </span>
+                          )}
+                          {recipe.archivedDependency && (
+                            <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                              Archived dependency
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {recipe.id
+                            ? `Recipe ID: ${recipe.id}`
+                            : 'Recipe ID auto-generated'}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            replaceSelectedItems(
+                              Array.from(
+                                new Set([
+                                  recipe.resultItemId,
+                                  ...recipe.ingredientItemIds,
+                                  ...recipe.teacherItemIds,
+                                ])
+                              )
+                            )
+                          }
+                          className="rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-950"
+                        >
+                          Select Network
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const resultItem = itemById.get(
+                              recipe.resultItemId
+                            );
+                            if (resultItem) {
+                              handleEditItem(resultItem);
+                            }
+                          }}
+                          className="rounded-md bg-emerald-700 px-3 py-2 text-sm text-white"
+                        >
+                          Edit Result
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-sm text-slate-700">
+                      <span className="font-medium text-slate-900">
+                        Ingredients:
+                      </span>{' '}
+                      {recipe.ingredientEntries.length === 0 ? (
+                        <span>None</span>
+                      ) : (
+                        recipe.ingredientEntries.map((entry, index) => (
+                          <React.Fragment
+                            key={`${recipe.key}-ingredient-${entry.itemId}`}
+                          >
+                            {index > 0 ? ', ' : null}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ingredientItem = itemById.get(
+                                  entry.itemId
+                                );
+                                if (ingredientItem) {
+                                  handleEditItem(ingredientItem);
+                                }
+                              }}
+                              className={`text-left ${
+                                entry.archived
+                                  ? 'text-amber-700 underline decoration-dotted'
+                                  : 'text-slate-700 underline decoration-dotted'
+                              }`}
+                            >
+                              {entry.itemName} x{entry.quantity}
+                            </button>
+                          </React.Fragment>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="mt-2 text-sm text-slate-700">
+                      <span className="font-medium text-slate-900">
+                        Taught by:
+                      </span>{' '}
+                      {recipe.isPublic ? (
+                        <span>Public unlock</span>
+                      ) : recipe.teacherEntries.length === 0 ? (
+                        <span className="text-rose-700">
+                          No teaching item linked yet
+                        </span>
+                      ) : (
+                        recipe.teacherEntries.map((entry, index) => (
+                          <React.Fragment
+                            key={`${recipe.key}-teacher-${entry.itemId}`}
+                          >
+                            {index > 0 ? ', ' : null}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const teacherItem = itemById.get(entry.itemId);
+                                if (teacherItem) {
+                                  handleEditItem(teacherItem);
+                                }
+                              }}
+                              className={`text-left ${
+                                entry.archived
+                                  ? 'text-amber-700 underline decoration-dotted'
+                                  : 'text-slate-700 underline decoration-dotted'
+                              }`}
+                            >
+                              {entry.itemName}
+                            </button>
+                          </React.Fragment>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pageMode === 'crafting' &&
+            craftingGraph.recipeCounts.total === 0 && (
+              <div className="mb-6 rounded-md border border-dashed border-emerald-300 bg-emerald-50 p-6 text-sm text-emerald-900/80">
+                No crafting recipes are configured yet. Once items start
+                defining alchemy or workshop recipes, they’ll show up here as a
+                browsable system.
+              </div>
+            )}
+
+          <div className="mb-4 flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 md:flex-row md:items-center md:justify-between">
+            {pageMode === 'items' ? (
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={(e) =>
+                    toggleSelectAllVisible(e.target.checked, visibleItemIDs)
+                  }
+                  className="h-4 w-4 cursor-pointer"
+                />
+                Select all visible ({visibleItems.length})
+              </label>
+            ) : (
+              <div className="text-sm text-gray-700">
+                Use the crafting catalog actions above to select result,
+                ingredient, or teacher groups for bulk edits.
+              </div>
+            )}
+            <span className="text-sm text-gray-700">
+              {selectedItemIDs.size} selected
+            </span>
+          </div>
+
+          <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+            <div className="mb-2 text-sm font-semibold text-amber-950">
+              Bulk Edit Selected Items
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">
+                  Set Buy Price
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={bulkBuyPriceInput}
+                  onChange={(e) => setBulkBuyPriceInput(e.target.value)}
+                  placeholder="Leave blank to keep"
+                  disabled={
+                    bulkEditBusy ||
+                    bulkResetUnlockLocksBusy ||
+                    !hasSelectedItems
+                  }
+                  className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">
+                  Tag Action
+                </label>
+                <select
+                  value={bulkTagAction}
+                  onChange={(e) =>
+                    setBulkTagAction(e.target.value as BulkTagAction)
+                  }
+                  disabled={
+                    bulkEditBusy ||
+                    bulkResetUnlockLocksBusy ||
+                    !hasSelectedItems
+                  }
+                  className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                >
+                  <option value="none">No tag changes</option>
+                  <option value="replace">Replace tags</option>
+                  <option value="add">Add tags</option>
+                  <option value="remove">Remove tags</option>
+                  <option value="clear">Clear all tags</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">Tags</label>
+                <input
+                  type="text"
+                  value={bulkTagsInput}
+                  onChange={(e) => setBulkTagsInput(e.target.value)}
+                  placeholder="comma,separated,tags"
+                  disabled={
+                    bulkEditBusy ||
+                    bulkResetUnlockLocksBusy ||
+                    !hasSelectedItems ||
+                    bulkTagAction === 'none' ||
+                    bulkTagAction === 'clear'
+                  }
+                  className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={handleBulkEditSelected}
+                  disabled={
+                    !hasSelectedItems ||
+                    bulkEditBusy ||
+                    bulkResetUnlockLocksBusy
+                  }
+                  className="w-full rounded-md bg-amber-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {bulkEditBusy
+                    ? 'Applying...'
+                    : `Apply to ${selectedItemIDs.size} selected`}
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={handleBulkResetUnlockLocksStrength}
+                disabled={
+                  !hasSelectedItems || bulkEditBusy || bulkResetUnlockLocksBusy
+                }
+                className="rounded-md bg-slate-700 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {bulkResetUnlockLocksBusy
+                  ? 'Resetting Unlock Strength...'
+                  : `Reset Unlock Locks Strength (${selectedItemIDs.size})`}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              Leave buy price blank to keep current values. Tags are normalized
+              to lowercase. Reset Unlock Locks Strength clears the field on
+              selected items so they no longer unlock locks by default.
+            </p>
+          </div>
+
+          {pageMode === 'items' && (
+            <>
+              {/* Items Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                  gap: '20px',
+                  padding: '20px',
+                }}
+              >
+                {visibleItems.map((item) => {
+                  const craftingRelationship =
+                    craftingGraph.relationshipsByItemId.get(item.id) ?? null;
+                  const taughtByNames = (
+                    craftingRelationship?.taughtByItemIds ?? []
+                  )
+                    .map(
+                      (itemId) => itemById.get(itemId)?.name ?? `Item ${itemId}`
+                    )
+                    .join(', ');
+                  const relatedCraftingNetworkItemIds = Array.from(
+                    new Set([
+                      item.id,
+                      ...(craftingRelationship?.producedRecipes.flatMap(
+                        (recipe) => [
+                          recipe.resultItemId,
+                          ...recipe.ingredientItemIds,
+                          ...recipe.teacherItemIds,
+                        ]
+                      ) ?? []),
+                      ...(craftingRelationship?.ingredientInRecipes.flatMap(
+                        (recipe) => [
+                          recipe.resultItemId,
+                          ...recipe.ingredientItemIds,
+                          ...recipe.teacherItemIds,
+                        ]
+                      ) ?? []),
+                      ...(craftingRelationship?.teachesRecipes.flatMap(
+                        (recipe) => [
+                          recipe.resultItemId,
+                          ...recipe.ingredientItemIds,
+                          ...recipe.teacherItemIds,
+                        ]
+                      ) ?? []),
+                      ...(craftingRelationship?.taughtByItemIds ?? []),
+                    ])
+                  );
+
+                  return (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: '20px',
+                        border: '1px solid #ccc',
+                        borderRadius: '8px',
+                        backgroundColor: '#fff',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: '12px',
+                        }}
+                      >
+                        <h2
+                          style={{
+                            margin: '0 0 15px 0',
+                            color: '#333',
+                          }}
+                        >
+                          {item.name}
+                        </h2>
+                        <input
+                          type="checkbox"
+                          checked={selectedItemIDs.has(item.id)}
+                          onChange={(e) =>
+                            toggleItemSelection(item.id, e.target.checked)
+                          }
+                          style={{ width: 18, height: 18, cursor: 'pointer' }}
+                          aria-label={`Select ${item.name}`}
+                        />
+                      </div>
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        ID: {item.id}
+                      </p>
+
+                      <p
+                        style={{
+                          margin: '5px 0',
+                          color: item.archived ? '#92400e' : '#166534',
+                        }}
+                      >
+                        Status: {item.archived ? 'Archived' : 'Active'}
+                      </p>
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Image Status:{' '}
+                        {formatGenerationStatus(item.imageGenerationStatus)}
+                      </p>
+                      {item.imageGenerationStatus === 'failed' &&
+                        item.imageGenerationError && (
+                          <p
+                            style={{
+                              margin: '5px 0',
+                              color: '#b91c1c',
+                              fontSize: '12px',
+                            }}
+                          >
+                            Error: {item.imageGenerationError}
+                          </p>
+                        )}
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Rarity: {item.rarityTier}
+                      </p>
+                      {(item.resourceType || item.resourceTypeId) && (
+                        <p style={{ margin: '5px 0', color: '#666' }}>
+                          Resource Type:{' '}
+                          {formatInventoryResourceType(item.resourceType) ||
+                            resourceTypeNameByID.get(
+                              item.resourceTypeId ?? ''
+                            ) ||
+                            'Unknown'}
+                        </p>
+                      )}
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Item Level: {item.itemLevel ?? 1}
+                      </p>
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Capture Type: {item.isCaptureType ? 'Yes' : 'No'}
+                      </p>
+
+                      <p style={{ margin: '5px 0', color: '#666' }}>
+                        Equip Slot: {equipSlotLabel(item.equipSlot)}
+                      </p>
+                      {handCombatSummary(item).map((line) => (
+                        <p
+                          key={`${item.id}-${line}`}
+                          style={{ margin: '5px 0', color: '#666' }}
+                        >
+                          {line}
+                        </p>
+                      ))}
+                      {consumeSummary(item, spellNamesByID).map((line) => (
+                        <p
+                          key={`${item.id}-consume-${line}`}
+                          style={{ margin: '5px 0', color: '#666' }}
+                        >
+                          {line}
+                        </p>
+                      ))}
+                      {craftingRelationshipSummary(craftingRelationship).map(
+                        (line) => (
+                          <p
+                            key={`${item.id}-crafting-${line}`}
+                            style={{ margin: '5px 0', color: '#666' }}
+                          >
+                            {line}
+                          </p>
+                        )
+                      )}
+                      {!!taughtByNames && (
+                        <p style={{ margin: '5px 0', color: '#666' }}>
+                          Taught By: {taughtByNames}
+                        </p>
+                      )}
+                      {(craftingRelationship?.orphanedPrivateRecipes.length ??
+                        0) > 0 && (
+                        <p style={{ margin: '5px 0', color: '#b91c1c' }}>
+                          Warning: private recipe is missing a teaching item.
+                        </p>
+                      )}
+                      {(item.internalTags?.length ?? 0) > 0 && (
+                        <p style={{ margin: '5px 0', color: '#666' }}>
+                          Internal Tags: {item.internalTags?.join(', ')}
+                        </p>
+                      )}
+
+                      {statModSummary(item) && (
+                        <p style={{ margin: '5px 0', color: '#666' }}>
+                          Stat Mods: {statModSummary(item)}
+                        </p>
+                      )}
+
+                      {item.buyPrice !== undefined &&
+                        item.buyPrice !== null && (
+                          <p style={{ margin: '5px 0', color: '#666' }}>
+                            Buy Price: {item.buyPrice} gold
+                          </p>
+                        )}
+
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          style={{
+                            maxWidth: '100%',
+                            maxHeight: 120,
+                            borderRadius: 4,
+                            marginTop: '10px',
+                          }}
+                        />
+                      )}
+
+                      <p
+                        style={{
+                          margin: '10px 0',
+                          color: '#666',
+                          fontSize: '14px',
+                        }}
+                      >
+                        <strong>Flavor:</strong> {item.flavorText || '—'}
+                      </p>
+
+                      <p
+                        style={{
+                          margin: '10px 0',
+                          color: '#666',
+                          fontSize: '14px',
+                        }}
+                      >
+                        <strong>Effect:</strong> {item.effectText || '—'}
+                      </p>
+
+                      <div style={{ marginTop: '15px' }}>
+                        <button
+                          onClick={() => handleEditItem(item)}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-md mr-2"
+                        >
+                          Edit
+                        </button>
+                        {relatedCraftingNetworkItemIds.length > 1 && (
+                          <button
+                            onClick={() =>
+                              replaceSelectedItems(
+                                relatedCraftingNetworkItemIds
+                              )
+                            }
+                            className="bg-emerald-700 text-white px-4 py-2 rounded-md mr-2"
+                          >
+                            Select Crafting Links
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            void handleSetItemsArchived(
+                              [item.id],
+                              !item.archived
+                            )
+                          }
+                          className="bg-slate-700 text-white px-4 py-2 rounded-md mr-2"
+                        >
+                          {item.archived ? 'Restore' : 'Archive'}
+                        </button>
+                        {isOutfitName(item.name) && (
+                          <button
+                            onClick={() => {
+                              setUseOutfitItem(item);
+                              setUseOutfitUser('');
+                              setUseOutfitSelfieUrl('');
+                              setUseOutfitStatus(null);
+                              setUseOutfitStatusKind(null);
+                            }}
+                            className="bg-indigo-600 text-white px-4 py-2 rounded-md mr-2"
+                          >
+                            Use Outfit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRegenerateImage(item)}
+                          className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
+                          disabled={['queued', 'in_progress'].includes(
+                            item.imageGenerationStatus || ''
+                          )}
+                        >
+                          Regenerate Image
+                        </button>
+                        {canGenerateConsumableQualities(item) && (
+                          <button
+                            onClick={() =>
+                              handleGenerateConsumableQualities(item)
+                            }
+                            className="bg-orange-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            disabled={consumableGenerationBusyIds.has(item.id)}
+                          >
+                            {consumableGenerationBusyIds.has(item.id)
+                              ? 'Generating Qualities...'
+                              : 'Generate Qualities'}
+                          </button>
+                        )}
+                        {item.equipSlot && (
+                          <button
+                            onClick={() => handleGenerateSet(item)}
+                            className="bg-violet-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            disabled={setGenerationBusyIds.has(item.id)}
+                          >
+                            {setGenerationBusyIds.has(item.id)
+                              ? 'Generating Set...'
+                              : 'Generate Set'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            void handleGenerateProgressionDrafts(item)
+                          }
+                          className="bg-indigo-700 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          disabled={progressionGenerationBusyIds.has(item.id)}
+                        >
+                          {progressionGenerationBusyIds.has(item.id)
+                            ? 'Generating Progression...'
+                            : 'Generate Progression'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(item)}
+                          className="bg-red-500 text-white px-4 py-2 rounded-md"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {/* Create/Edit Item Modal */}
       {(showCreateItem || editingItem) && (
@@ -5361,7 +7121,10 @@ export const InventoryItems = () => {
               >
                 <option value="">None</option>
                 {resourceTypeOptions.map((option) => (
-                  <option key={`resource-type-${option.value}`} value={option.value}>
+                  <option
+                    key={`resource-type-${option.value}`}
+                    value={option.value}
+                  >
                     {option.label}
                   </option>
                 ))}
@@ -6685,6 +8448,236 @@ export const InventoryItems = () => {
               </div>
             </div>
 
+            {editingItem && (
+              <div
+                style={{
+                  marginBottom: '15px',
+                  padding: '12px',
+                  border: '1px solid #d1fae5',
+                  borderRadius: '6px',
+                  backgroundColor: '#f0fdf4',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Crafting Relationships
+                </label>
+                {!editingItemCraftingRelationship ||
+                (editingItemCraftingRelationship.producedRecipes.length === 0 &&
+                  editingItemCraftingRelationship.ingredientInRecipes.length ===
+                    0 &&
+                  editingItemCraftingRelationship.teachesRecipes.length === 0 &&
+                  editingItemCraftingRelationship.taughtByItemIds.length ===
+                    0) ? (
+                  <small style={{ color: '#666', fontSize: '12px' }}>
+                    This item is not linked into the crafting system yet.
+                  </small>
+                ) : (
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {editingItemCraftingRelationship.producedRecipes.length >
+                      0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            marginBottom: '4px',
+                          }}
+                        >
+                          This item crafts into
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px',
+                          }}
+                        >
+                          {editingItemCraftingRelationship.producedRecipes.map(
+                            (recipe) => (
+                              <span
+                                key={`edit-produced-${recipe.key}`}
+                                style={{
+                                  backgroundColor: '#dcfce7',
+                                  borderRadius: '999px',
+                                  padding: '4px 8px',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                {summarizeCraftingRecipe(recipe)}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingItemCraftingRelationship.ingredientInRecipes
+                      .length > 0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Used as ingredient in
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px',
+                          }}
+                        >
+                          {editingItemCraftingRelationship.ingredientInRecipes.map(
+                            (recipe) => (
+                              <button
+                                key={`edit-ingredient-${recipe.key}`}
+                                type="button"
+                                onClick={() => {
+                                  const resultItem = itemById.get(
+                                    recipe.resultItemId
+                                  );
+                                  if (resultItem) {
+                                    handleEditItem(resultItem);
+                                  }
+                                }}
+                                style={{
+                                  backgroundColor: '#fff',
+                                  border: '1px solid #bbf7d0',
+                                  borderRadius: '999px',
+                                  padding: '4px 8px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {recipe.resultItemName} (
+                                {summarizeCraftingRecipe(recipe)})
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingItemCraftingRelationship.teachesRecipes.length >
+                      0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Teaches
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px',
+                          }}
+                        >
+                          {editingItemCraftingRelationship.teachesRecipes.map(
+                            (recipe) => (
+                              <button
+                                key={`edit-teaches-${recipe.key}`}
+                                type="button"
+                                onClick={() => {
+                                  const resultItem = itemById.get(
+                                    recipe.resultItemId
+                                  );
+                                  if (resultItem) {
+                                    handleEditItem(resultItem);
+                                  }
+                                }}
+                                style={{
+                                  backgroundColor: '#fff',
+                                  border: '1px solid #fde68a',
+                                  borderRadius: '999px',
+                                  padding: '4px 8px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {recipe.resultItemName} (
+                                {summarizeCraftingRecipe(recipe)})
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingItemCraftingRelationship.taughtByItemIds.length >
+                      0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Taught by
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px',
+                          }}
+                        >
+                          {editingItemCraftingRelationship.taughtByItemIds.map(
+                            (itemId) => {
+                              const teacherItem = itemById.get(itemId);
+                              return (
+                                <button
+                                  key={`edit-taught-by-${itemId}`}
+                                  type="button"
+                                  onClick={() => {
+                                    if (teacherItem) {
+                                      handleEditItem(teacherItem);
+                                    }
+                                  }}
+                                  style={{
+                                    backgroundColor: '#fff',
+                                    border: '1px solid #bfdbfe',
+                                    borderRadius: '999px',
+                                    padding: '4px 8px',
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {teacherItem?.name ?? `Item ${itemId}`}
+                                </button>
+                              );
+                            }
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingItemCraftingRelationship.orphanedPrivateRecipes
+                      .length > 0 && (
+                      <div style={{ color: '#b91c1c', fontSize: '12px' }}>
+                        Warning: one or more private recipes on this item still
+                        need a teaching item.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
               style={{
                 marginBottom: '15px',
@@ -6714,16 +8707,46 @@ export const InventoryItems = () => {
                 Private recipes must be learned from an item first.
               </small>
 
-              {renderRecipeEditor(
-                'Alchemy Recipes',
-                'alchemyRecipes',
-                'bg-emerald-600'
-              )}
-              {renderRecipeEditor(
-                'Workshop Recipes',
-                'workshopRecipes',
-                'bg-orange-600'
-              )}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  marginBottom: '12px',
+                }}
+              >
+                {inventoryRecipeKinds.map((kind) => {
+                  const config = recipeBuilderConfigByKind[kind];
+                  const isActive = activeRecipeBuilderKind === kind;
+                  const recipeCount = formData[kind].length;
+
+                  return (
+                    <button
+                      key={`recipe-builder-tab-${kind}`}
+                      type="button"
+                      onClick={() => setActiveRecipeBuilderKind(kind)}
+                      style={{
+                        border: isActive
+                          ? `2px solid ${config.accentColor}`
+                          : '1px solid #d1d5db',
+                        borderRadius: '999px',
+                        padding: '8px 12px',
+                        backgroundColor: isActive
+                          ? config.surfaceColor
+                          : '#fff',
+                        color: isActive ? config.accentColor : '#334155',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {config.label} ({recipeCount})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {renderRecipeEditor(activeRecipeBuilderKind)}
             </div>
 
             <div style={{ marginBottom: '15px' }}>

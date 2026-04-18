@@ -1816,10 +1816,13 @@ const QuestArchetypeNodeConfigFields: React.FC<
                     />
                   </div>
                   <div className="qa-field">
-                    <div className="qa-label">{prefix} Item Rewards</div>
+                    <div className="qa-label">
+                      {prefix} Guaranteed Item Rewards
+                    </div>
                     {editor.expositionItemRewards.length === 0 ? (
                       <div className="qa-empty">
-                        No item rewards configured for this exposition.
+                        No guaranteed item rewards configured for this
+                        exposition.
                       </div>
                     ) : (
                       <div className="qa-stack">
@@ -1916,7 +1919,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
                         }))
                       }
                     >
-                      Add Item Reward
+                      Add Guaranteed Item
                     </button>
                   </div>
                   <div className="qa-field">
@@ -1999,6 +2002,118 @@ const QuestArchetypeNodeConfigFields: React.FC<
                     </button>
                   </div>
                 </>
+              ) : null}
+              {editor.expositionRewardMode === 'random' ? (
+                <div className="qa-field">
+                  <div className="qa-label">
+                    {prefix} Guaranteed Item Rewards
+                  </div>
+                  <div className="qa-helper">
+                    Guaranteed items stack with the random reward bundle.
+                  </div>
+                  {editor.expositionItemRewards.length === 0 ? (
+                    <div className="qa-empty">
+                      No guaranteed item rewards configured for this
+                      exposition.
+                    </div>
+                  ) : (
+                    <div className="qa-stack">
+                      {editor.expositionItemRewards.map((reward, index) => (
+                        <div
+                          key={`${prefix}-random-exposition-item-${index}`}
+                          className="qa-inline"
+                          style={{ alignItems: 'flex-end' }}
+                        >
+                          <label className="qa-field" style={{ flex: 1 }}>
+                            <div className="qa-label">Inventory Item</div>
+                            <select
+                              className="qa-select"
+                              value={reward.inventoryItemId}
+                              onChange={(e) =>
+                                setEditor((prev) => ({
+                                  ...prev,
+                                  expositionItemRewards:
+                                    prev.expositionItemRewards.map(
+                                      (entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              inventoryItemId: e.target.value,
+                                            }
+                                          : entry
+                                    ),
+                                }))
+                              }
+                            >
+                              <option value="">Select an item</option>
+                              {inventoryItems.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name || item.id}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="qa-field" style={{ width: 120 }}>
+                            <div className="qa-label">Quantity</div>
+                            <input
+                              type="number"
+                              min={1}
+                              className="qa-input"
+                              value={reward.quantity}
+                              onChange={(e) =>
+                                setEditor((prev) => ({
+                                  ...prev,
+                                  expositionItemRewards:
+                                    prev.expositionItemRewards.map(
+                                      (entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              quantity:
+                                                parseInt(e.target.value) || 1,
+                                            }
+                                          : entry
+                                    ),
+                                }))
+                              }
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="qa-btn qa-btn-ghost"
+                            onClick={() =>
+                              setEditor((prev) => ({
+                                ...prev,
+                                expositionItemRewards:
+                                  prev.expositionItemRewards.filter(
+                                    (_, entryIndex) => entryIndex !== index
+                                  ),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-outline"
+                    style={{ marginTop: 12 }}
+                    onClick={() =>
+                      setEditor((prev) => ({
+                        ...prev,
+                        expositionItemRewards: [
+                          ...prev.expositionItemRewards,
+                          { inventoryItemId: '', quantity: 1 },
+                        ],
+                      }))
+                    }
+                  >
+                    Add Guaranteed Item
+                  </button>
+                </div>
               ) : null}
             </>
           ) : null}
@@ -3555,17 +3670,12 @@ const normalizeQuestArchetypeDraft = (
     setStoryFlags,
     clearStoryFlags,
     questGiverRelationshipEffects,
-    itemRewards:
-      rewardMode === 'explicit'
-        ? form.itemRewards
-            .map((reward) => ({
-              inventoryItemId: Number(reward.inventoryItemId) || 0,
-              quantity: Number(reward.quantity) || 0,
-            }))
-            .filter(
-              (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-            )
-        : [],
+    itemRewards: form.itemRewards
+      .map((reward) => ({
+        inventoryItemId: Number(reward.inventoryItemId) || 0,
+        quantity: Number(reward.quantity) || 0,
+      }))
+      .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
     spellRewards:
       rewardMode === 'explicit'
         ? form.spellRewards.filter((reward) => reward.spellId.trim().length > 0)
@@ -7837,9 +7947,16 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Item Rewards</div>
+                <div className="qa-label">Guaranteed Item Rewards</div>
+                {createForm.rewardMode === 'random' ? (
+                  <div className="qa-helper">
+                    Guaranteed items stack with the random reward bundle.
+                  </div>
+                ) : null}
                 {createForm.itemRewards.length === 0 ? (
-                  <div className="qa-empty">No item rewards yet.</div>
+                  <div className="qa-empty">
+                    No guaranteed item rewards yet.
+                  </div>
                 ) : (
                   <div className="qa-form-grid">
                     {createForm.itemRewards.map((reward, index) => (
@@ -7850,7 +7967,6 @@ export const QuestArchetypeComponent = () => {
                         <select
                           className="qa-select"
                           value={reward.inventoryItemId}
-                          disabled={createForm.rewardMode !== 'explicit'}
                           onChange={(e) =>
                             setCreateForm((prev) => ({
                               ...prev,
@@ -7877,7 +7993,6 @@ export const QuestArchetypeComponent = () => {
                           type="number"
                           min={1}
                           className="qa-input"
-                          disabled={createForm.rewardMode !== 'explicit'}
                           value={reward.quantity}
                           onChange={(e) =>
                             setCreateForm((prev) => ({
@@ -7925,7 +8040,7 @@ export const QuestArchetypeComponent = () => {
                     }))
                   }
                 >
-                  Add Item Reward
+                  Add Guaranteed Item
                 </button>
               </div>
               <div className="qa-field">
@@ -8563,9 +8678,16 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
-                <div className="qa-label">Item Rewards</div>
+                <div className="qa-label">Guaranteed Item Rewards</div>
+                {editForm.rewardMode === 'random' ? (
+                  <div className="qa-helper">
+                    Guaranteed items stack with the random reward bundle.
+                  </div>
+                ) : null}
                 {editForm.itemRewards.length === 0 ? (
-                  <div className="qa-empty">No item rewards yet.</div>
+                  <div className="qa-empty">
+                    No guaranteed item rewards yet.
+                  </div>
                 ) : (
                   <div className="qa-form-grid">
                     {editForm.itemRewards.map((reward, index) => (
@@ -8576,7 +8698,6 @@ export const QuestArchetypeComponent = () => {
                         <select
                           className="qa-select"
                           value={reward.inventoryItemId}
-                          disabled={editForm.rewardMode !== 'explicit'}
                           onChange={(e) =>
                             setEditForm((prev) => ({
                               ...prev,
@@ -8603,7 +8724,6 @@ export const QuestArchetypeComponent = () => {
                           type="number"
                           min={1}
                           className="qa-input"
-                          disabled={editForm.rewardMode !== 'explicit'}
                           value={reward.quantity}
                           onChange={(e) =>
                             setEditForm((prev) => ({
@@ -8651,7 +8771,7 @@ export const QuestArchetypeComponent = () => {
                     }))
                   }
                 >
-                  Add Item Reward
+                  Add Guaranteed Item
                 </button>
               </div>
               <div className="qa-field">

@@ -18,6 +18,38 @@ type RandomRewardPlan struct {
 	ItemGrants []RandomRewardItemGrant `json:"itemGrants"`
 }
 
+func MergeRandomRewardItemGrants(
+	grantSets ...[]RandomRewardItemGrant,
+) []RandomRewardItemGrant {
+	quantities := map[int]int{}
+	for _, grantSet := range grantSets {
+		for _, grant := range grantSet {
+			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+				continue
+			}
+			quantities[grant.InventoryItemID] += grant.Quantity
+		}
+	}
+	if len(quantities) == 0 {
+		return []RandomRewardItemGrant{}
+	}
+
+	ids := make([]int, 0, len(quantities))
+	for itemID := range quantities {
+		ids = append(ids, itemID)
+	}
+	sort.Ints(ids)
+
+	merged := make([]RandomRewardItemGrant, 0, len(ids))
+	for _, itemID := range ids {
+		merged = append(merged, RandomRewardItemGrant{
+			InventoryItemID: itemID,
+			Quantity:        quantities[itemID],
+		})
+	}
+	return merged
+}
+
 type randomRewardProfile struct {
 	xpPerLevel           int
 	xpBase               int
@@ -86,28 +118,7 @@ func BuildRandomRewardPlan(
 		}
 	}
 
-	if len(plan.ItemGrants) > 1 {
-		quantities := map[int]int{}
-		for _, grant := range plan.ItemGrants {
-			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
-				continue
-			}
-			quantities[grant.InventoryItemID] += grant.Quantity
-		}
-		ids := make([]int, 0, len(quantities))
-		for itemID := range quantities {
-			ids = append(ids, itemID)
-		}
-		sort.Ints(ids)
-		merged := make([]RandomRewardItemGrant, 0, len(ids))
-		for _, itemID := range ids {
-			merged = append(merged, RandomRewardItemGrant{
-				InventoryItemID: itemID,
-				Quantity:        quantities[itemID],
-			})
-		}
-		plan.ItemGrants = merged
-	}
+	plan.ItemGrants = MergeRandomRewardItemGrants(plan.ItemGrants)
 
 	return plan
 }

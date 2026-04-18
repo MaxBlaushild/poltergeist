@@ -16,13 +16,16 @@ import '../models/character_action.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../services/base_service.dart';
+import '../services/inventory_image_cache.dart';
 import '../services/media_service.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
+import '../providers/inventory_modal_provider.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
 import '../providers/base_placement_provider.dart';
 import '../utils/dialogue_template.dart';
+import 'cached_inventory_image.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
@@ -115,6 +118,8 @@ class _InventoryPanelState extends State<InventoryPanel>
   List<BaseResourceBalanceData> _baseResources = [];
   bool _loading = true;
   bool _using = false;
+  bool _refreshingInventory = false;
+  bool _showingCachedInventory = false;
   bool _baseResourcesRefreshInFlight = false;
   String? _error;
   OwnedInventoryItem? _selected;
@@ -158,6 +163,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   Timer? _outfitPoller;
   final Set<String> _dismissedOutfitStatuses = {};
   int _pageIndex = 0;
+  int _loadGeneration = 0;
   DateTime? _lastBaseResourcesLoadedAt;
   late final AnimationController _outfitPulseController;
 
@@ -187,71 +193,243 @@ class _InventoryPanelState extends State<InventoryPanel>
     super.dispose();
   }
 
-  Future<void> _load() async {
+  bool get _hasInventoryData =>
+      _items.isNotEmpty || _owned.isNotEmpty || _equipment.isNotEmpty;
+
+  Future<void> _load({bool allowCached = true}) async {
+    final generation = ++_loadGeneration;
+    final authProvider = context.read<AuthProvider>();
+    final inventoryService = context.read<InventoryService>();
+    final baseService = context.read<BaseService>();
+    final hadInventoryData = _hasInventoryData;
+
     setState(() {
-      _loading = true;
+      if (!hadInventoryData) {
+        _loading = true;
+      }
+      _refreshingInventory = true;
+      _showingCachedInventory = false;
       _error = null;
     });
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final svc = context.read<InventoryService>();
-      final itemsFuture = svc.getInventoryItems();
-      final ownedFuture = svc.getOwnedInventoryItems();
-      final equipmentFuture = svc.getEquipment();
-      final baseResourcesFuture = context
-          .read<BaseService>()
-          .getResourceBalances();
-      try {
-        await authProvider.refresh();
-      } catch (_) {}
-      final items = await itemsFuture;
-      final owned = await ownedFuture;
-      final equipment = await equipmentFuture;
-      List<BaseResourceBalanceData> baseResources =
-          const <BaseResourceBalanceData>[];
-      try {
-        baseResources = await baseResourcesFuture;
-      } catch (_) {}
-      if (!mounted) return;
-      final filteredOwned = owned.where((o) => o.quantity > 0).toList();
-      final maxPageIndex = filteredOwned.isEmpty
-          ? 0
-          : ((filteredOwned.length - 1) ~/ _pageSize);
-      final nextPageIndex = _pageIndex > maxPageIndex
-          ? maxPageIndex
-          : _pageIndex;
-      setState(() {
-        _items = items;
-        _owned = filteredOwned;
-        _equipment = equipment;
-        _equipmentBySlot = {for (final entry in equipment) entry.slot: entry};
-        final equipmentByOwnedId = <String, List<EquippedItem>>{};
-        for (final entry in equipment) {
-          equipmentByOwnedId.putIfAbsent(entry.ownedInventoryItemId, () => []);
-          equipmentByOwnedId[entry.ownedInventoryItemId]!.add(entry);
+
+    if (allowCached) {
+      final cachedSnapshot = await inventoryService.getCachedSnapshot();
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
+      if (cachedSnapshot != null && cachedSnapshot.hasData) {
+        _applyInventoryPayload(
+          items: cachedSnapshot.items,
+          owned: cachedSnapshot.ownedItems,
+          equipment: cachedSnapshot.equipment,
+          loading: false,
+          refreshingInventory: true,
+          showingCachedInventory: true,
+          clearError: true,
+        );
+      }
+    }
+
+    unawaited(authProvider.refresh().catchError((_) {}));
+
+    final itemsFuture = inventoryService.refreshInventoryItems();
+    final ownedFuture = inventoryService.refreshOwnedInventoryItems();
+    final equipmentFuture = inventoryService.refreshEquipment();
+    final baseResourcesFuture = baseService.getResourceBalances();
+
+    unawaited(
+      itemsFuture.then((items) {
+        if (!mounted || generation != _loadGeneration || items == null) {
+          return;
         }
-        _equipmentByOwnedId = equipmentByOwnedId;
-        _baseResources = baseResources;
-        _lastBaseResourcesLoadedAt = DateTime.now();
-        _pageIndex = nextPageIndex;
-        if (_selected != null) {
-          final stillOwned = _owned.any((o) => o.id == _selected!.id);
-          if (!stillOwned) {
-            _selected = null;
-            _outfitGeneration = null;
-            _outfitError = null;
-            _outfitPoller?.cancel();
+        _applyInventoryPayload(
+          items: items,
+          refreshingInventory: true,
+          showingCachedInventory: false,
+        );
+      }),
+    );
+
+    unawaited(
+      ownedFuture.then((owned) {
+        if (!mounted || generation != _loadGeneration || owned == null) {
+          return;
+        }
+        _applyInventoryPayload(
+          owned: owned,
+          loading: false,
+          refreshingInventory: true,
+          showingCachedInventory: false,
+        );
+      }),
+    );
+
+    unawaited(
+      equipmentFuture.then((equipment) {
+        if (!mounted || generation != _loadGeneration || equipment == null) {
+          return;
+        }
+        _applyInventoryPayload(
+          equipment: equipment,
+          loading: false,
+          refreshingInventory: true,
+          showingCachedInventory: false,
+        );
+      }),
+    );
+
+    List<BaseResourceBalanceData>? baseResources;
+    try {
+      baseResources = await baseResourcesFuture;
+    } catch (_) {}
+
+    final items = await itemsFuture;
+    final owned = await ownedFuture;
+    final equipment = await equipmentFuture;
+    if (!mounted || generation != _loadGeneration) {
+      return;
+    }
+
+    final hasFreshInventoryResponse =
+        items != null || owned != null || equipment != null;
+    final nextHasInventoryData =
+        (items?.isNotEmpty ?? _items.isNotEmpty) ||
+        ((owned?.any((entry) => entry.quantity > 0)) ?? _owned.isNotEmpty) ||
+        (equipment?.isNotEmpty ?? _equipment.isNotEmpty);
+
+    _applyInventoryPayload(
+      items: items,
+      owned: owned,
+      equipment: equipment,
+      baseResources: baseResources,
+      loading: false,
+      refreshingInventory: false,
+      showingCachedInventory: false,
+      error: !hasFreshInventoryResponse && !nextHasInventoryData
+          ? 'Could not load inventory right now.'
+          : null,
+    );
+  }
+
+  void _applyInventoryPayload({
+    List<InventoryItem>? items,
+    List<OwnedInventoryItem>? owned,
+    List<EquippedItem>? equipment,
+    List<BaseResourceBalanceData>? baseResources,
+    bool? loading,
+    bool? refreshingInventory,
+    bool? showingCachedInventory,
+    bool clearError = false,
+    String? error,
+  }) {
+    final nextItems = items ?? _items;
+    final nextOwned = owned != null
+        ? owned.where((entry) => entry.quantity > 0).toList(growable: false)
+        : _owned;
+    final nextEquipment = equipment ?? _equipment;
+    final nextEquipmentBySlot = {
+      for (final entry in nextEquipment) entry.slot: entry,
+    };
+    final nextEquipmentByOwnedId = <String, List<EquippedItem>>{};
+    for (final entry in nextEquipment) {
+      nextEquipmentByOwnedId.putIfAbsent(entry.ownedInventoryItemId, () => []);
+      nextEquipmentByOwnedId[entry.ownedInventoryItemId]!.add(entry);
+    }
+
+    final maxPageIndex = nextOwned.isEmpty
+        ? 0
+        : ((nextOwned.length - 1) ~/ _pageSize);
+    final nextPageIndex = _pageIndex > maxPageIndex ? maxPageIndex : _pageIndex;
+    final selectedId = _selected?.id;
+    OwnedInventoryItem? nextSelected;
+    if (selectedId != null) {
+      for (final entry in nextOwned) {
+        if (entry.id == selectedId) {
+          nextSelected = entry;
+          break;
+        }
+      }
+    }
+    final selectionWasRemoved = selectedId != null && nextSelected == null;
+    if (selectionWasRemoved) {
+      _outfitPoller?.cancel();
+    }
+
+    final warmImageUrls = <String>{};
+    for (final entry in nextEquipment) {
+      final imageUrl = entry.inventoryItem?.imageUrl.trim() ?? '';
+      if (imageUrl.isNotEmpty) {
+        warmImageUrls.add(imageUrl);
+      }
+    }
+    final totalItems = nextOwned.length;
+    if (totalItems > 0) {
+      final totalPages = (totalItems + _pageSize - 1) ~/ _pageSize;
+      final currentPageIndex = nextPageIndex.clamp(0, totalPages - 1);
+      final pageStart = currentPageIndex * _pageSize;
+      final pageItems = nextOwned
+          .skip(pageStart)
+          .take(_pageSize)
+          .toList(growable: false);
+      for (final ownedEntry in pageItems) {
+        for (final item in nextItems) {
+          if (item.id == ownedEntry.inventoryItemId) {
+            final imageUrl = item.imageUrl.trim();
+            if (imageUrl.isNotEmpty) {
+              warmImageUrls.add(imageUrl);
+            }
+            break;
           }
         }
-        _loading = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = e.toString();
-        });
       }
+    }
+    if (nextSelected != null) {
+      for (final item in nextItems) {
+        if (item.id == nextSelected.inventoryItemId) {
+          final imageUrl = item.imageUrl.trim();
+          if (imageUrl.isNotEmpty) {
+            warmImageUrls.add(imageUrl);
+          }
+          break;
+        }
+      }
+    }
+
+    setState(() {
+      _items = nextItems;
+      _owned = nextOwned;
+      _equipment = nextEquipment;
+      _equipmentBySlot = nextEquipmentBySlot;
+      _equipmentByOwnedId = nextEquipmentByOwnedId;
+      if (baseResources != null) {
+        _baseResources = baseResources;
+        _lastBaseResourcesLoadedAt = DateTime.now();
+      }
+      _pageIndex = nextPageIndex;
+      _selected = nextSelected;
+      if (selectionWasRemoved) {
+        _outfitGeneration = null;
+        _outfitError = null;
+      }
+      if (loading != null) {
+        _loading = loading;
+      }
+      if (refreshingInventory != null) {
+        _refreshingInventory = refreshingInventory;
+      }
+      if (showingCachedInventory != null) {
+        _showingCachedInventory = showingCachedInventory;
+      }
+      if (clearError) {
+        _error = null;
+      }
+      if (error != null) {
+        _error = error;
+      }
+    });
+
+    for (final imageUrl in warmImageUrls) {
+      unawaited(InventoryImageCache.instance.warmImage(imageUrl));
     }
   }
 
@@ -675,6 +853,7 @@ class _InventoryPanelState extends State<InventoryPanel>
     String ownedInventoryItemId, {
     bool silent = false,
   }) async {
+    final authProvider = context.read<AuthProvider>();
     if (!silent) {
       setState(() => _loadingOutfitStatus = true);
     }
@@ -704,9 +883,9 @@ class _InventoryPanelState extends State<InventoryPanel>
         _outfitPoller?.cancel();
       }
       if (status != null && status.isComplete) {
-        await context.read<AuthProvider>().refresh();
+        await authProvider.refresh();
         if (!mounted) return;
-        await _load();
+        await _load(allowCached: false);
       }
     } catch (e) {
       if (!mounted) return;
@@ -749,6 +928,9 @@ class _InventoryPanelState extends State<InventoryPanel>
     OwnedInventoryItem owned,
     InventoryItem inv,
   ) async {
+    final mediaService = context.read<MediaService>();
+    final authProvider = context.read<AuthProvider>();
+    final inventoryService = context.read<InventoryService>();
     if (_using) return;
     setState(() {
       _using = true;
@@ -763,8 +945,7 @@ class _InventoryPanelState extends State<InventoryPanel>
         }
         return;
       }
-      final mediaService = context.read<MediaService>();
-      final userId = context.read<AuthProvider>().user?.id ?? 'anonymous';
+      final userId = authProvider.user?.id ?? 'anonymous';
       final ext = _extensionFromMime(captured.mimeType, captured.name);
       final key =
           'selfies/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
@@ -796,7 +977,7 @@ class _InventoryPanelState extends State<InventoryPanel>
         return;
       }
       final selfieUrl = presigned.split('?').first;
-      final status = await context.read<InventoryService>().useOutfitItem(
+      final status = await inventoryService.useOutfitItem(
         owned.id,
         selfieUrl: selfieUrl,
       );
@@ -900,6 +1081,8 @@ class _InventoryPanelState extends State<InventoryPanel>
     InventoryItem inv, {
     String? preferredSlot,
   }) async {
+    final inventoryService = context.read<InventoryService>();
+    final characterStatsProvider = context.read<CharacterStatsProvider>();
     if (_using) return;
     final slot = inv.equipSlot?.trim();
     if (slot == null || slot.isEmpty) {
@@ -922,14 +1105,11 @@ class _InventoryPanelState extends State<InventoryPanel>
       _error = null;
     });
     try {
-      await context.read<InventoryService>().equipItem(
-        owned.id,
-        slot: resolvedSlot,
-      );
+      await inventoryService.equipItem(owned.id, slot: resolvedSlot);
       if (!mounted) return;
-      await context.read<CharacterStatsProvider>().refresh();
+      await characterStatsProvider.refresh();
       if (!mounted) return;
-      await _load();
+      await _load(allowCached: false);
       if (!mounted) return;
       final shouldCloseAfterTutorialProgress =
           _wouldCompleteTutorialAfterAction(equippedInventoryItemId: inv.id);
@@ -975,7 +1155,7 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await context.read<CharacterStatsProvider>().refresh();
       if (!mounted) return;
-      await _load();
+      await _load(allowCached: false);
     } catch (e) {
       String message = e.toString();
       if (e is DioException) {
@@ -1000,6 +1180,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   }
 
   Future<void> _use(OwnedInventoryItem owned) async {
+    final inventoryModalProvider = context.read<InventoryModalProvider>();
     final item = _itemFor(owned);
     if (item != null && item.consumeCreateBase) {
       final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
@@ -1050,23 +1231,11 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await context.read<CharacterStatsProvider>().refresh();
       if (!mounted) return;
-      await _load();
+      await _load(allowCached: false);
       if (!mounted) return;
-      final rawLearnedRecipes = response['learnedRecipes'];
-      final learnedNames = rawLearnedRecipes is List
-          ? rawLearnedRecipes
-                .whereType<Map>()
-                .map((entry) => entry['itemName']?.toString().trim() ?? '')
-                .where((entry) => entry.isNotEmpty)
-                .toList(growable: false)
-          : const <String>[];
-      if (rawLearnedRecipes is List && rawLearnedRecipes.isNotEmpty) {
-        final summary = learnedNames.isNotEmpty
-            ? learnedNames.join(', ')
-            : '${rawLearnedRecipes.length} new recipe${rawLearnedRecipes.length == 1 ? '' : 's'}';
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Learned $summary.')));
+      final usedItemReceipt = _buildUsedItemReceipt(owned, item, response);
+      if (usedItemReceipt != null) {
+        inventoryModalProvider.setUsedItem(usedItemReceipt);
       }
       final shouldCloseAfterTutorialProgress =
           _wouldCompleteTutorialAfterAction(usedInventoryItemId: item?.id);
@@ -1113,6 +1282,165 @@ class _InventoryPanelState extends State<InventoryPanel>
         setState(() => _using = false);
       }
     }
+  }
+
+  Map<String, dynamic>? _buildUsedItemReceipt(
+    OwnedInventoryItem owned,
+    InventoryItem? item,
+    Map<String, dynamic> response,
+  ) {
+    final rawUsedItem = response['usedItem'];
+    final usedItem = rawUsedItem is Map
+        ? Map<String, dynamic>.from(rawUsedItem)
+        : <String, dynamic>{};
+    if (usedItem.isEmpty && item == null) {
+      return null;
+    }
+
+    final updatedOwned = _owned.cast<OwnedInventoryItem?>().firstWhere(
+      (entry) => entry?.id == owned.id,
+      orElse: () => null,
+    );
+    final rawLearnedRecipes = response['learnedRecipes'];
+    final learnedRecipes = rawLearnedRecipes is List
+        ? rawLearnedRecipes
+              .whereType<Map>()
+              .map(Map<String, dynamic>.from)
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+
+    final remainingQuantity =
+        (usedItem['remainingQuantity'] as num?)?.toInt() ??
+        updatedOwned?.quantity ??
+        0;
+
+    usedItem['eventId'] = DateTime.now().microsecondsSinceEpoch.toString();
+    usedItem['id'] = usedItem['id']?.toString().trim().isNotEmpty == true
+        ? usedItem['id']
+        : owned.id;
+    usedItem['inventoryItemId'] =
+        (usedItem['inventoryItemId'] as num?)?.toInt() ??
+        item?.id ??
+        owned.inventoryItemId;
+    usedItem['name'] = usedItem['name']?.toString().trim().isNotEmpty == true
+        ? usedItem['name']
+        : (item?.name ?? 'Item');
+    usedItem['imageUrl'] =
+        usedItem['imageUrl']?.toString().trim().isNotEmpty == true
+        ? usedItem['imageUrl']
+        : (item?.imageUrl ?? '');
+    usedItem['flavorText'] =
+        usedItem['flavorText']?.toString().trim().isNotEmpty == true
+        ? usedItem['flavorText']
+        : (item?.flavorText ?? '');
+    usedItem['effectText'] =
+        usedItem['effectText']?.toString().trim().isNotEmpty == true
+        ? usedItem['effectText']
+        : (item?.effectText ?? '');
+    usedItem['message'] =
+        usedItem['message']?.toString().trim().isNotEmpty == true
+        ? usedItem['message']
+        : (response['message']?.toString().trim().isNotEmpty == true
+              ? response['message']
+              : 'Item used successfully');
+    usedItem['consumedQuantity'] =
+        (usedItem['consumedQuantity'] as num?)?.toInt() ?? 1;
+    usedItem['remainingQuantity'] = remainingQuantity;
+    usedItem['depleted'] =
+        usedItem['depleted'] == true || remainingQuantity <= 0;
+    usedItem['learnedRecipes'] = learnedRecipes;
+
+    final rawEffectSummary = usedItem['effectSummary'];
+    final effectSummary = rawEffectSummary is List
+        ? rawEffectSummary
+              .map((entry) => entry.toString().trim())
+              .where((entry) => entry.isNotEmpty)
+              .toList(growable: false)
+        : _fallbackUsedItemEffectSummary(item, learnedRecipes);
+    usedItem['effectSummary'] = effectSummary;
+    return usedItem;
+  }
+
+  List<String> _fallbackUsedItemEffectSummary(
+    InventoryItem? item,
+    List<Map<String, dynamic>> learnedRecipes,
+  ) {
+    if (item == null) {
+      return const <String>[];
+    }
+
+    final summary = <String>[];
+    if (item.consumeHealthDelta != 0) {
+      summary.add(
+        'HP ${item.consumeHealthDelta > 0 ? '+' : ''}${item.consumeHealthDelta}',
+      );
+    }
+    if (item.consumeManaDelta != 0) {
+      summary.add(
+        'MP ${item.consumeManaDelta > 0 ? '+' : ''}${item.consumeManaDelta}',
+      );
+    }
+    if (item.consumeRevivePartyMemberHealth > 0) {
+      summary.add(
+        'Revives one ally with ${item.consumeRevivePartyMemberHealth} HP',
+      );
+    }
+    if (item.consumeReviveAllDownedPartyMembersHealth > 0) {
+      summary.add(
+        'Revives all downed allies with ${item.consumeReviveAllDownedPartyMembersHealth} HP',
+      );
+    }
+    if (item.consumeDealDamage > 0) {
+      summary.add(
+        item.consumeDealDamageHits > 1
+            ? 'Deals ${item.consumeDealDamage} damage ${item.consumeDealDamageHits} times'
+            : 'Deals ${item.consumeDealDamage} damage',
+      );
+    }
+    if (item.consumeDealDamageAllEnemies > 0) {
+      summary.add(
+        item.consumeDealDamageAllEnemiesHits > 1
+            ? 'Deals ${item.consumeDealDamageAllEnemies} damage to all enemies ${item.consumeDealDamageAllEnemiesHits} times'
+            : 'Deals ${item.consumeDealDamageAllEnemies} damage to all enemies',
+      );
+    }
+    if (item.consumeCreateBase) {
+      summary.add('Creates a home base');
+    }
+    if (item.consumeStatusesToAdd.isNotEmpty) {
+      summary.add(
+        'Adds ${item.consumeStatusesToAdd.map((status) => status.name).where((name) => name.trim().isNotEmpty).join(', ')}',
+      );
+    }
+    if (item.consumeStatusesToRemove.isNotEmpty) {
+      summary.add('Removes ${item.consumeStatusesToRemove.join(', ')}');
+    }
+    if (item.consumeSpellIds.isNotEmpty) {
+      summary.add(
+        'Grants ${item.consumeSpellIds.length} spell${item.consumeSpellIds.length == 1 ? '' : 's'}',
+      );
+    }
+    if (learnedRecipes.isNotEmpty) {
+      final learnedNames = learnedRecipes
+          .map((entry) => entry['itemName']?.toString().trim() ?? '')
+          .where((entry) => entry.isNotEmpty)
+          .toList(growable: false);
+      if (learnedNames.isNotEmpty) {
+        summary.add('Learned ${learnedNames.join(', ')}');
+      }
+    } else if (item.consumeTeachRecipeIds.isNotEmpty) {
+      summary.add(
+        'Can teach ${item.consumeTeachRecipeIds.length} recipe${item.consumeTeachRecipeIds.length == 1 ? '' : 's'}',
+      );
+    }
+
+    if (summary.isEmpty) {
+      final effectText = item.effectText.trim();
+      if (effectText.isNotEmpty) {
+        summary.add(effectText);
+      }
+    }
+    return summary;
   }
 
   @override
@@ -1200,6 +1528,10 @@ class _InventoryPanelState extends State<InventoryPanel>
                               ),
                           ],
                         ),
+                      if (_refreshingInventory && !_loading) ...[
+                        const SizedBox(height: 12),
+                        _buildInventoryRefreshNotice(context),
+                      ],
                       if (_error != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -1227,6 +1559,42 @@ class _InventoryPanelState extends State<InventoryPanel>
         widget.tutorialDialogue.isNotEmpty ||
         widget.requiredEquipItemIds.isNotEmpty ||
         widget.requiredUseItemIds.isNotEmpty;
+  }
+
+  Widget _buildInventoryRefreshNotice(BuildContext context) {
+    final theme = Theme.of(context);
+    final message = _showingCachedInventory
+        ? 'Showing saved inventory while we check for changes.'
+        : 'Refreshing inventory...';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTutorialGuide(BuildContext context) {
@@ -1565,10 +1933,11 @@ class _InventoryPanelState extends State<InventoryPanel>
               child: hasItem
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        inventoryItem.imageUrl,
+                      child: CachedInventoryImage(
+                        imageUrl: inventoryItem.imageUrl,
                         fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => Icon(
+                        cacheWidth: 128,
+                        errorBuilder: (context) => Icon(
                           Icons.inventory_2_outlined,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -1717,10 +2086,11 @@ class _InventoryPanelState extends State<InventoryPanel>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 30),
-              child: Image.network(
-                inv.imageUrl,
+              child: CachedInventoryImage(
+                imageUrl: inv.imageUrl,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Icon(
+                cacheWidth: 256,
+                errorBuilder: (context) => Icon(
                   Icons.inventory_2_outlined,
                   size: 32,
                   color: theme.colorScheme.onSurfaceVariant,
@@ -2099,10 +2469,11 @@ class _InventoryPanelState extends State<InventoryPanel>
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
           aspectRatio: 1,
-          child: Image.network(
-            inv.imageUrl,
+          child: CachedInventoryImage(
+            imageUrl: inv.imageUrl,
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => Center(
+            cacheWidth: 768,
+            errorBuilder: (context) => Center(
               child: Icon(
                 Icons.inventory_2_outlined,
                 size: 64,

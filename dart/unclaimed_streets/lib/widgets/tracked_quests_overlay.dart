@@ -16,8 +16,8 @@ class TrackedQuestsOverlayController extends ChangeNotifier {
   }
 }
 
-/// Expandable "Quests" overlay on the map. Lists tracked quests; tap a POI to
-/// fly to it and open the POI panel.
+/// Expandable "Quests" overlay on the map. Lists tracked quests and lets the
+/// screen decide whether a tap should focus in place or switch zones first.
 class TrackedQuestsOverlay extends StatefulWidget {
   const TrackedQuestsOverlay({
     super.key,
@@ -33,7 +33,7 @@ class TrackedQuestsOverlay extends StatefulWidget {
     this.onFocusFeaturedMainStoryLead,
   });
 
-  /// When user taps a POI: fly to location then open POI panel.
+  /// When user taps a POI: focus that quest target on the map.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
   final void Function(Quest quest)? onFocusTurnInQuest;

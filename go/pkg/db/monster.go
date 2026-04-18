@@ -22,7 +22,9 @@ type monsterAdminListRow struct {
 func (h *monsterHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
+		Preload("Genre").
 		Preload("Template").
+		Preload("Template.Genre").
 		Preload("Template.Spells").
 		Preload("Template.Spells.Spell").
 		Preload("Template.Progressions").
@@ -65,6 +67,11 @@ func (h *monsterHandle) Create(ctx context.Context, monster *models.Monster) err
 	if monster.ImageGenerationStatus == "" {
 		monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
 	}
+	resolvedGenreID, err := resolveMonsterGenreID(ctx, h.db, monster)
+	if err != nil {
+		return err
+	}
+	monster.GenreID = resolvedGenreID
 	if err := monster.SetGeometry(monster.Latitude, monster.Longitude); err != nil {
 		return err
 	}
@@ -223,6 +230,11 @@ func (h *monsterHandle) Update(ctx context.Context, id uuid.UUID, updates *model
 	}
 	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
 	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
+	resolvedGenreID, err := resolveMonsterGenreID(ctx, h.db, updates)
+	if err != nil {
+		return err
+	}
+	updates.GenreID = resolvedGenreID
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
 	}
@@ -237,6 +249,7 @@ func (h *monsterHandle) Update(ctx context.Context, id uuid.UUID, updates *model
 		"longitude":                       updates.Longitude,
 		"geometry":                        updates.Geometry,
 		"template_id":                     updates.TemplateID,
+		"genre_id":                        updates.GenreID,
 		"dominant_hand_inventory_item_id": updates.DominantHandInventoryItemID,
 		"off_hand_inventory_item_id":      updates.OffHandInventoryItemID,
 		"weapon_inventory_item_id":        updates.WeaponInventoryItemID,

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAPI } from '@poltergeist/contexts';
+import type { InventoryItem } from '@poltergeist/types';
 
 type BaseRecord = {
   id: string;
@@ -77,6 +78,10 @@ type HearthRecoveryStatusTemplate = {
 type HearthRecoveryDraft = {
   level2Statuses: HearthRecoveryStatusTemplate[];
   level3Statuses: HearthRecoveryStatusTemplate[];
+};
+
+type ChaosEngineConfigDraft = {
+  requiredInventoryItemId: string;
 };
 
 type BaseGrassTileStatus = {
@@ -241,6 +246,25 @@ const hearthRecoveryDraftFromStructure = (
   };
 };
 
+const chaosEngineDraftFromStructure = (
+  structure: BaseStructureDefinition
+): ChaosEngineConfigDraft => {
+  const effectConfig =
+    structure.effectConfig && typeof structure.effectConfig === 'object'
+      ? structure.effectConfig
+      : {};
+  const rawRequiredInventoryItemId = effectConfig.requiredInventoryItemId;
+  const requiredInventoryItemId =
+    typeof rawRequiredInventoryItemId === 'number'
+      ? String(rawRequiredInventoryItemId)
+      : typeof rawRequiredInventoryItemId === 'string'
+        ? rawRequiredInventoryItemId
+        : '';
+  return {
+    requiredInventoryItemId,
+  };
+};
+
 export const Bases = () => {
   const { apiClient } = useAPI();
   const [records, setRecords] = useState<BaseRecord[]>([]);
@@ -297,6 +321,14 @@ export const Bases = () => {
   >(null);
   const [hearthRecoveryDrafts, setHearthRecoveryDrafts] = useState<
     Record<string, HearthRecoveryDraft>
+  >({});
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventoryItemsLoading, setInventoryItemsLoading] = useState(false);
+  const [savingChaosEngineConfigId, setSavingChaosEngineConfigId] = useState<
+    string | null
+  >(null);
+  const [chaosEngineConfigDrafts, setChaosEngineConfigDrafts] = useState<
+    Record<string, ChaosEngineConfigDraft>
   >({});
 
   const updateHearthRecoveryDraft = useCallback(
@@ -624,6 +656,25 @@ export const Bases = () => {
     }
   }, [apiClient]);
 
+  const fetchInventoryItems = useCallback(async () => {
+    try {
+      setInventoryItemsLoading(true);
+      const response = await apiClient.get<InventoryItem[]>(
+        '/sonar/inventory-items'
+      );
+      setInventoryItems(Array.isArray(response) ? response : []);
+    } catch (err) {
+      console.error('Failed to load inventory items for base config', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to load inventory items for base config.'
+      );
+    } finally {
+      setInventoryItemsLoading(false);
+    }
+  }, [apiClient]);
+
   const handleGenerateRoomImage = useCallback(
     async (structure: BaseStructureDefinition, level: number) => {
       const jobKey = `${structure.id}:${level}`;
@@ -770,6 +821,55 @@ export const Bases = () => {
       }
     },
     [apiClient, hearthRecoveryDrafts]
+  );
+
+  const handleSaveChaosEngineConfig = useCallback(
+    async (structure: BaseStructureDefinition) => {
+      const draft =
+        chaosEngineConfigDrafts[structure.id] ||
+        chaosEngineDraftFromStructure(structure);
+      const requiredInventoryItemId = draft.requiredInventoryItemId.trim();
+      const parsedRequiredInventoryItemId = requiredInventoryItemId
+        ? Number.parseInt(requiredInventoryItemId, 10)
+        : null;
+      if (
+        parsedRequiredInventoryItemId !== null &&
+        !Number.isFinite(parsedRequiredInventoryItemId)
+      ) {
+        setError('Required inventory item must be a valid item.');
+        return;
+      }
+
+      try {
+        setSavingChaosEngineConfigId(structure.id);
+        setError(null);
+        setBaseMessage(null);
+        const updated = await apiClient.put<BaseStructureDefinition>(
+          `/sonar/admin/base-structures/${structure.id}/chaos-engine-config`,
+          {
+            requiredInventoryItemId: parsedRequiredInventoryItemId,
+          }
+        );
+        setStructures((prev) =>
+          prev.map((record) => (record.id === structure.id ? updated : record))
+        );
+        setChaosEngineConfigDrafts((prev) => ({
+          ...prev,
+          [structure.id]: chaosEngineDraftFromStructure(updated),
+        }));
+        setBaseMessage(`Saved Chaos Engine config for ${structure.name}.`);
+      } catch (err) {
+        console.error('Failed to save Chaos Engine config', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to save Chaos Engine config.';
+        setError(message);
+      } finally {
+        setSavingChaosEngineConfigId(null);
+      }
+    },
+    [apiClient, chaosEngineConfigDrafts]
   );
 
   const renderHearthStatusEditor = (
@@ -1055,6 +1155,10 @@ export const Bases = () => {
   }, [fetchStructures]);
 
   useEffect(() => {
+    void fetchInventoryItems();
+  }, [fetchInventoryItems]);
+
+  useEffect(() => {
     void refreshIconStatus();
   }, [refreshIconStatus]);
 
@@ -1117,11 +1221,7 @@ export const Bases = () => {
       void fetchStructures();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [
-    fetchBases,
-    fetchStructures,
-    structures,
-  ]);
+  }, [fetchBases, fetchStructures, structures]);
 
   if (loading) {
     return <div className="m-10">Loading bases...</div>;
@@ -1740,6 +1840,93 @@ export const Bases = () => {
                             .level3Statuses,
                         'level3Statuses'
                       )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {structure.key === 'chaos_engine' ? (
+                  <div className="mt-4 rounded border border-gray-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">
+                          Chaos Engine Fuel
+                        </h4>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Players will spend one configured item to add one
+                          genre point to a selected zone.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleSaveChaosEngineConfig(structure)
+                        }
+                        disabled={savingChaosEngineConfigId === structure.id}
+                        className="rounded bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {savingChaosEngineConfigId === structure.id
+                          ? 'Saving...'
+                          : 'Save Chaos Engine Config'}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Required Inventory Item
+                        <select
+                          value={
+                            chaosEngineConfigDrafts[structure.id]
+                              ?.requiredInventoryItemId ??
+                            chaosEngineDraftFromStructure(structure)
+                              .requiredInventoryItemId
+                          }
+                          onChange={(event) =>
+                            setChaosEngineConfigDrafts((prev) => ({
+                              ...prev,
+                              [structure.id]: {
+                                requiredInventoryItemId: event.target.value,
+                              },
+                            }))
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                          disabled={inventoryItemsLoading}
+                        >
+                          <option value="">No item selected</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={String(item.id)}>
+                              {item.name}
+                              {item.archived ? ' (Archived)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                        <div className="font-semibold text-gray-900">
+                          Current Fuel Setting
+                        </div>
+                        <div className="mt-1">
+                          {(() => {
+                            const draft =
+                              chaosEngineConfigDrafts[structure.id] ??
+                              chaosEngineDraftFromStructure(structure);
+                            const selectedItem = inventoryItems.find(
+                              (item) =>
+                                String(item.id) ===
+                                draft.requiredInventoryItemId
+                            );
+                            if (!draft.requiredInventoryItemId.trim()) {
+                              return 'No item configured yet.';
+                            }
+                            if (selectedItem) {
+                              return selectedItem.archived
+                                ? `${selectedItem.name} (Archived)`
+                                : selectedItem.name;
+                            }
+                            return `Item #${draft.requiredInventoryItemId}`;
+                          })()}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : null}

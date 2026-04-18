@@ -2,6 +2,8 @@ import 'inventory_item.dart';
 import 'quest_node.dart';
 import 'spell.dart';
 import 'character_action.dart';
+import 'character.dart';
+import 'point_of_interest.dart';
 
 class QuestItemReward {
   final int inventoryItemId;
@@ -94,6 +96,8 @@ class Quest {
   final List<QuestItemReward> itemRewards;
   final List<QuestSpellReward> spellRewards;
   final List<QuestNode> nodes;
+  final Character? questGiverCharacter;
+  final PointOfInterest? questGiverPointOfInterest;
   final bool isAccepted;
   final DateTime? turnedInAt;
   final int completionCount;
@@ -123,6 +127,8 @@ class Quest {
     this.itemRewards = const [],
     this.spellRewards = const [],
     this.nodes = const [],
+    this.questGiverCharacter,
+    this.questGiverPointOfInterest,
     this.isAccepted = false,
     this.turnedInAt,
     this.completionCount = 0,
@@ -212,6 +218,17 @@ class Quest {
               ?.map((e) => QuestNode.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      questGiverCharacter: json['questGiverCharacter'] is Map<String, dynamic>
+          ? Character.fromJson(
+              json['questGiverCharacter'] as Map<String, dynamic>,
+            )
+          : null,
+      questGiverPointOfInterest:
+          json['questGiverPointOfInterest'] is Map<String, dynamic>
+          ? PointOfInterest.fromJson(
+              json['questGiverPointOfInterest'] as Map<String, dynamic>,
+            )
+          : null,
       isAccepted: json['isAccepted'] as bool? ?? false,
       turnedInAt: json['turnedInAt'] != null
           ? DateTime.tryParse(json['turnedInAt'] as String)

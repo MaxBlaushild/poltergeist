@@ -938,10 +938,7 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 
 	seen := make(map[string]googlemaps.Place)
 	seenFallback := make(map[string]googlemaps.Place)
-	maxAttempts := 6
-	if len(requiredTags) > 0 {
-		maxAttempts = 12
-	}
+	maxAttempts := placeSearchAttemptLimit(count, len(requiredTags) > 0)
 	missingTags := requiredTags
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		point := zone.GetRandomPoint()
@@ -998,10 +995,11 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 			if _, ok := seen[place.ID]; ok {
 				continue
 			}
-			if _, ok := seenFallback[place.ID]; !ok {
+			matchesRequired := placeMatchesAnyTag(place, requiredTags)
+			if _, ok := seenFallback[place.ID]; !ok &&
+				(isFallbackPlace(place) || matchesRequired) {
 				seenFallback[place.ID] = place
 			}
-			matchesRequired := placeMatchesAnyTag(place, requiredTags)
 			if llmUsed {
 				if _, ok := llmEnjoyable[place.ID]; !ok && !matchesRequired {
 					continue
@@ -1084,9 +1082,7 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 		candidatePool = results
 	}
 
-	if len(requiredTags) > 0 {
-		results = ensureRequiredSelections(requiredTags, requiredSelections, results, candidatePool, count)
-	}
+	results = ensureRequiredSelections(requiredTags, requiredSelections, results, candidatePool, count)
 
 	if len(results) > count {
 		results = results[:count]
@@ -1336,6 +1332,20 @@ func normalizeRequiredPlaceTags(tags []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func placeSearchAttemptLimit(desired int, hasRequiredTags bool) int {
+	attempts := 6
+	if desired > attempts {
+		attempts = desired
+	}
+	if attempts > 18 {
+		attempts = 18
+	}
+	if hasRequiredTags && attempts < 12 {
+		attempts = 12
+	}
+	return attempts
 }
 
 func zoneSeedJobRequiredPlaceTags(job *models.ZoneSeedJob) []string {
@@ -2107,18 +2117,7 @@ func isEnjoyablePlace(place googlemaps.Place) bool {
 		return false
 	}
 
-	blocked := []string{
-		"accounting", "insurance_agency", "real_estate_agency", "lawyer",
-		"bank", "atm", "police", "fire_station", "post_office", "courthouse",
-		"city_hall", "local_government_office",
-		"doctor", "dentist", "hospital", "health", "pharmacy", "drugstore", "veterinary_care",
-		"school", "primary_school", "secondary_school", "university",
-		"locksmith", "hardware_store", "home_improvement_store",
-		"gas_station", "car_repair", "car_wash", "parking", "storage",
-		"train_station", "subway_station", "bus_station", "transit_station", "airport",
-		"lodging",
-	}
-	if hasAnyType(lowerTypes, blocked) {
+	if !isFallbackPlace(place) {
 		return false
 	}
 
@@ -2156,6 +2155,26 @@ func isEnjoyablePlace(place googlemaps.Place) bool {
 	}
 
 	return false
+}
+
+func isFallbackPlace(place googlemaps.Place) bool {
+	lowerTypes := normalizePlaceTypes(place)
+	if len(lowerTypes) == 0 {
+		return strings.TrimSpace(place.DisplayName.Text) != ""
+	}
+
+	blocked := []string{
+		"accounting", "insurance_agency", "real_estate_agency", "lawyer",
+		"bank", "atm", "police", "fire_station", "post_office", "courthouse",
+		"city_hall", "local_government_office",
+		"doctor", "dentist", "hospital", "health", "pharmacy", "drugstore", "veterinary_care",
+		"school", "primary_school", "secondary_school", "university",
+		"locksmith", "hardware_store", "home_improvement_store",
+		"gas_station", "car_repair", "car_wash", "parking", "storage",
+		"train_station", "subway_station", "bus_station", "transit_station", "airport",
+		"lodging",
+	}
+	return !hasAnyType(lowerTypes, blocked)
 }
 
 func normalizePlaceTypes(place googlemaps.Place) []string {

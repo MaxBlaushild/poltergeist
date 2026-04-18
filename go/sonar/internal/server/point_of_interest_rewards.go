@@ -109,7 +109,6 @@ func (s *server) parsePointOfInterestRewardConfig(
 		config.RewardExperience = 0
 		config.RewardGold = 0
 		config.MaterialRewards = models.BaseMaterialRewards{}
-		config.ItemRewards = []models.PointOfInterestItemReward{}
 		config.SpellRewards = []models.PointOfInterestSpellReward{}
 	}
 	return config, nil

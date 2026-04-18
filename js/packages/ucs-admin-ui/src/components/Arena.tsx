@@ -52,14 +52,12 @@ const sanitizePointForSave = (point: EditablePointOfInterest): Partial<PointOfIn
       ? normalizeMaterialRewards(point.materialRewards ?? [])
       : [],
   itemRewards:
-    point.rewardMode === 'explicit'
-      ? (point.itemRewards ?? [])
-          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
-          .map((reward) => ({
-            inventoryItemId: reward.inventoryItemId,
-            quantity: Math.max(1, reward.quantity || 1),
-          }))
-      : [],
+    (point.itemRewards ?? [])
+      .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+      .map((reward) => ({
+        inventoryItemId: reward.inventoryItemId,
+        quantity: Math.max(1, reward.quantity || 1),
+      })),
   spellRewards:
     point.rewardMode === 'explicit'
       ? (point.spellRewards ?? [])
@@ -799,6 +797,104 @@ export const Arena = () => {
                         </div>
                       </div>
                     )}
+                    {editedPoint?.rewardMode === 'random' && (
+                      <div className="mt-3 space-y-3">
+                        <div className="text-xs text-gray-500">
+                          Random rewards still grant scaled XP and gold.
+                          Guaranteed items below are awarded too.
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-gray-700">
+                              Guaranteed Item Rewards
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditedPoint({
+                                  ...editedPoint,
+                                  itemRewards: [
+                                    ...(editedPoint?.itemRewards ?? []),
+                                    { inventoryItemId: 0, quantity: 1 },
+                                  ],
+                                })
+                              }
+                              className="bg-slate-700 text-white px-2 py-1 rounded text-xs"
+                            >
+                              Add Item Reward
+                            </button>
+                          </div>
+                          {(editedPoint?.itemRewards ?? []).length === 0 ? (
+                            <div className="text-xs text-gray-500">
+                              No guaranteed item rewards configured.
+                            </div>
+                          ) : (
+                            (editedPoint?.itemRewards ?? []).map((reward, index) => (
+                              <div
+                                key={`${reward.inventoryItemId}-${index}`}
+                                className="grid gap-2 md:grid-cols-[minmax(0,1fr)_100px_auto]"
+                              >
+                                <select
+                                  value={reward.inventoryItemId || ''}
+                                  onChange={(e) =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              inventoryItemId: parseInt(e.target.value) || 0,
+                                            }
+                                          : entry
+                                      ),
+                                    })
+                                  }
+                                  className="border rounded px-2 py-1 w-full"
+                                >
+                                  <option value="">Select an item</option>
+                                  {inventoryItems.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={reward.quantity}
+                                  onChange={(e) =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              quantity: Math.max(1, parseInt(e.target.value) || 1),
+                                            }
+                                          : entry
+                                      ),
+                                    })
+                                  }
+                                  className="border rounded px-2 py-1 w-full"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditedPoint({
+                                      ...editedPoint,
+                                      itemRewards: (editedPoint?.itemRewards ?? []).filter((_, entryIndex) => entryIndex !== index),
+                                    })
+                                  }
+                                  className="bg-red-500 text-white px-2 py-1 rounded text-xs"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2 mt-2">
                     <button
@@ -867,7 +963,15 @@ export const Arena = () => {
                       Rewards:{' '}
                       {point.rewardMode === 'explicit'
                         ? `XP ${point.rewardExperience ?? 0} · Gold ${point.rewardGold ?? 0} · Items ${point.itemRewards?.length ?? 0} · Spells ${point.spellRewards?.length ?? 0}`
-                        : `Random ${point.randomRewardSize ?? 'small'}`}
+                        : `Random ${point.randomRewardSize ?? 'small'}${
+                            (point.itemRewards?.length ?? 0) > 0
+                              ? ` + ${point.itemRewards?.length ?? 0} guaranteed item reward${
+                                  (point.itemRewards?.length ?? 0) === 1
+                                    ? ''
+                                    : 's'
+                                }`
+                              : ''
+                          }`}
                     </p>
                     {point.materialRewards && point.materialRewards.length > 0 && (
                       <p className="text-gray-600 mb-2">

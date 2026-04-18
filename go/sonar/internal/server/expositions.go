@@ -574,7 +574,7 @@ func (s *server) performExposition(ctx *gin.Context) {
 		rewardItems := []scenarioRewardItem{}
 		rewardSpells := []scenarioRewardSpell{}
 		if rewardMode == models.RewardModeRandom {
-			plan, _, err := s.randomRewardPlanForUser(
+			plan, _, _, err := s.randomRewardPlanForUser(
 				ctx,
 				user.ID,
 				exposition.RandomRewardSize,
@@ -586,7 +586,10 @@ func (s *server) performExposition(ctx *gin.Context) {
 			}
 			rewardExperience = plan.Experience
 			rewardGold = plan.Gold
-			rewardItems = randomRewardPlanToScenarioItems(plan)
+			rewardItems = mergeScenarioRewardItems(
+				randomRewardPlanToScenarioItems(plan),
+				expositionRewardItemsFromExposition(exposition.ItemRewards),
+			)
 		} else {
 			rewardExperience = exposition.RewardExperience
 			rewardGold = exposition.RewardGold

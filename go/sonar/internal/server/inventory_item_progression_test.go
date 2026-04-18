@@ -61,3 +61,26 @@ func TestRemapTeachRecipeIDsUsesClonedRecipeIDs(t *testing.T) {
 		t.Fatalf("expected external recipe id to remain unchanged, got %q", remapped[1])
 	}
 }
+
+func TestInventoryItemUpsertRequestFromDraftPayloadClearsUnlockLocksStrength(t *testing.T) {
+	request := inventoryItemUpsertRequestFromDraftPayload(models.InventoryItem{
+		Name:                "Latchspike",
+		UnlockLocksStrength: intPtr(42),
+	})
+
+	if request.UnlockLocksStrength != nil {
+		t.Fatalf("expected generated draft conversion to clear unlock locks strength")
+	}
+}
+
+func TestClearGeneratedInventoryUnlockLocksStrength(t *testing.T) {
+	item := &models.InventoryItem{
+		Name:                "Latchspike",
+		UnlockLocksStrength: intPtr(40),
+	}
+
+	clearGeneratedInventoryUnlockLocksStrength(item)
+	if item.UnlockLocksStrength != nil {
+		t.Fatalf("expected helper to clear unlock locks strength")
+	}
+}

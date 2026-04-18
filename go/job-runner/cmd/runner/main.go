@@ -17,7 +17,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
-	"github.com/MaxBlaushild/poltergeist/pkg/ethereum"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
@@ -152,18 +151,6 @@ func main() {
 	// 	polymarketConfigHint,
 	// )
 
-	// Initialize Ethereum client for blockchain transaction checking (read-only)
-	var checkBlockchainTransactionsProcessor *processors.CheckBlockchainTransactionsProcessor
-	if cfg.Public.RPCURL != "" && cfg.Public.ChainID != 0 {
-		ethereumClient, err := ethereum.NewReadOnlyClient(cfg.Public.RPCURL, cfg.Public.ChainID)
-		if err != nil {
-			log.Printf("Warning: Failed to create Ethereum client for transaction checking: %v", err)
-		} else {
-			checkBlockchainTransactionsProcessor = new(processors.CheckBlockchainTransactionsProcessor)
-			*checkBlockchainTransactionsProcessor = processors.NewCheckBlockchainTransactionsProcessor(dbClient, ethereumClient)
-		}
-	}
-
 	mux := asynq.NewServeMux()
 
 	// Add error logging middleware to each handler
@@ -233,9 +220,10 @@ func main() {
 		log.Printf("Discarding legacy task %s because Polymarket monitoring is disabled", t.Type())
 		return nil
 	}))
-	if checkBlockchainTransactionsProcessor != nil {
-		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
-	}
+	mux.Handle(jobs.CheckBlockchainTransactionsTaskType, asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+		log.Printf("Discarding task %s because blockchain transaction polling is temporarily disabled", t.Type())
+		return nil
+	}))
 
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
@@ -265,12 +253,6 @@ func main() {
 
 	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueThumbnailBackfillTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
-	}
-
-	if checkBlockchainTransactionsProcessor != nil {
-		if _, err = scheduler.Register("@every 15s", asynq.NewTask(jobs.CheckBlockchainTransactionsTaskType, nil)); err != nil {
-			log.Fatalf("could not register the blockchain transactions check schedule: %v", err)
-		}
 	}
 
 	// if _, err = scheduler.Register("@every 1m", asynq.NewTask(jobs.MonitorPolymarketTradesTaskType, nil)); err != nil {

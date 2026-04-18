@@ -2,6 +2,7 @@ package dungeonmaster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -15,6 +16,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
@@ -112,6 +114,22 @@ func NewClient(
 		awsClient:        awsClient,
 		asyncClient:      asyncClient,
 	}
+}
+
+func (c *client) enqueueScenarioImageGenerationTask(scenarioID uuid.UUID) error {
+	if c.asyncClient == nil {
+		return fmt.Errorf("async client is not configured")
+	}
+	payloadBytes, err := json.Marshal(jobs.GenerateScenarioImageTaskPayload{
+		ScenarioID: scenarioID,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = c.asyncClient.Enqueue(
+		asynq.NewTask(jobs.GenerateScenarioImageTaskType, payloadBytes),
+	)
+	return err
 }
 
 func (c *client) GenerateQuest(
@@ -722,10 +740,10 @@ func (c *client) processQuestScenarioNode(
 	if err != nil {
 		return previousAnchor, err
 	}
-	thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
-	if thumbnailURL == "" {
-		thumbnailURL = strings.TrimSpace(template.ImageURL)
-	}
+	imageURL, thumbnailURL, shouldGenerateImage := models.ResolveScenarioArtURLs(
+		template.ImageURL,
+		template.ThumbnailURL,
+	)
 
 	scenario := &models.Scenario{
 		ID:                        uuid.New(),
@@ -737,7 +755,7 @@ func (c *client) processQuestScenarioNode(
 		Longitude:                 currentAnchor.Longitude,
 		Prompt:                    strings.TrimSpace(template.Prompt),
 		InternalTags:              models.StringArray{},
-		ImageURL:                  strings.TrimSpace(template.ImageURL),
+		ImageURL:                  imageURL,
 		ThumbnailURL:              thumbnailURL,
 		ScaleWithUserLevel:        questUsesScaledDifficulty(quest),
 		RewardMode:                models.RewardModeExplicit,
@@ -785,6 +803,15 @@ func (c *client) processQuestScenarioNode(
 	}
 	if err := c.dbClient.Scenario().ReplaceSpellRewards(ctx, scenario.ID, []models.ScenarioSpellReward{}); err != nil {
 		return previousAnchor, err
+	}
+	if shouldGenerateImage {
+		if err := c.enqueueScenarioImageGenerationTask(scenario.ID); err != nil {
+			log.Printf(
+				"Failed to enqueue scenario image generation for quest scenario %s: %v",
+				scenario.ID,
+				err,
+			)
+		}
 	}
 
 	questNodeID := uuid.New()
@@ -1189,6 +1216,8 @@ func (c *client) processQuestMonsterEncounterNode(
 			Description:  strings.TrimSpace(template.Description),
 			ImageURL:     strings.TrimSpace(template.ImageURL),
 			ThumbnailURL: strings.TrimSpace(template.ThumbnailURL),
+			GenreID:      template.GenreID,
+			Genre:        template.Genre,
 			TemplateID:   &template.ID,
 			Template:     template,
 		})
@@ -1236,6 +1265,8 @@ func (c *client) processQuestMonsterEncounterNode(
 			ThumbnailURL:     thumbnailURL,
 			Ephemeral:        false,
 			ZoneID:           zone.ID,
+			GenreID:          source.GenreID,
+			Genre:            source.Genre,
 			Latitude:         currentAnchor.Latitude,
 			Longitude:        currentAnchor.Longitude,
 			TemplateID:       &templateID,

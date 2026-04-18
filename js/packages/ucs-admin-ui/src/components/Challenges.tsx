@@ -1193,10 +1193,7 @@ export const Challenges = () => {
             : 0,
         reward: rewardMode === 'explicit' ? parseIntSafe(form.reward, 0) : 0,
         materialRewards: rewardMode === 'explicit' ? form.materialRewards : [],
-        inventoryItemId:
-          rewardMode === 'explicit'
-            ? parseOptionalInt(form.inventoryItemId)
-            : undefined,
+        inventoryItemId: parseOptionalInt(form.inventoryItemId),
         submissionType: form.submissionType,
         difficulty: parseIntSafe(form.difficulty, 0),
         scaleWithUserLevel: form.scaleWithUserLevel,
@@ -1684,6 +1681,11 @@ export const Challenges = () => {
                           Random{' '}
                           {(record.randomRewardSize ?? 'small').toUpperCase()}
                         </div>
+                        {record.inventoryItemId ? (
+                          <div className="text-xs text-gray-600">
+                            Guaranteed item #{record.inventoryItemId}
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <div>
@@ -1987,11 +1989,10 @@ export const Challenges = () => {
               </label>
 
               <label className="text-sm">
-                Reward Item (Optional)
+                Guaranteed Item (Optional)
                 <select
                   className="w-full border rounded-md p-2"
                   value={form.inventoryItemId}
-                  disabled={form.rewardMode !== 'explicit'}
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
@@ -2010,8 +2011,8 @@ export const Challenges = () => {
 
               {form.rewardMode === 'random' ? (
                 <div className="text-xs text-gray-500 md:col-span-2">
-                  Random rewards ignore explicit XP, gold, material, and item
-                  fields.
+                  Random rewards still grant scaled XP and gold. The item below
+                  is guaranteed too; materials stay explicit-only.
                 </div>
               ) : null}
 

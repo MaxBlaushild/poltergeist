@@ -467,10 +467,10 @@ func zoneSeedAutoPlaceHasAnyType(types []string, candidates []string) bool {
 	return false
 }
 
-func isZoneSeedAutoEnjoyablePlace(place googlemaps.Place) bool {
+func isZoneSeedAutoFallbackPlace(place googlemaps.Place) bool {
 	lowerTypes := normalizeZoneSeedAutoPlaceTypes(place)
 	if len(lowerTypes) == 0 {
-		return false
+		return strings.TrimSpace(place.DisplayName.Text) != ""
 	}
 
 	blocked := []string{
@@ -484,7 +484,16 @@ func isZoneSeedAutoEnjoyablePlace(place googlemaps.Place) bool {
 		"train_station", "subway_station", "bus_station", "transit_station", "airport",
 		"lodging",
 	}
-	if zoneSeedAutoPlaceHasAnyType(lowerTypes, blocked) {
+	return !zoneSeedAutoPlaceHasAnyType(lowerTypes, blocked)
+}
+
+func isZoneSeedAutoEnjoyablePlace(place googlemaps.Place) bool {
+	lowerTypes := normalizeZoneSeedAutoPlaceTypes(place)
+	if len(lowerTypes) == 0 {
+		return false
+	}
+
+	if !isZoneSeedAutoFallbackPlace(place) {
 		return false
 	}
 
@@ -523,6 +532,20 @@ func isZoneSeedAutoEnjoyablePlace(place googlemaps.Place) bool {
 	}
 
 	return false
+}
+
+func zoneSeedAutoPlaceSearchAttemptLimit(desired int, hasRequiredTags bool) int {
+	attempts := 6
+	if desired > attempts {
+		attempts = desired
+	}
+	if attempts > 18 {
+		attempts = 18
+	}
+	if hasRequiredTags && attempts < 12 {
+		attempts = 12
+	}
+	return attempts
 }
 
 func zoneSeedAutoExpandRequiredTagAliases(tag string) []string {
@@ -660,10 +683,7 @@ func zoneSeedAutoEstimateEligiblePlaceCount(
 	}
 
 	seen := make(map[string]googlemaps.Place)
-	maxAttempts := 6
-	if len(requiredTags) > 0 {
-		maxAttempts = 10
-	}
+	maxAttempts := zoneSeedAutoPlaceSearchAttemptLimit(desired, len(requiredTags) > 0)
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		point := zone.GetRandomPoint()
@@ -689,7 +709,7 @@ func zoneSeedAutoEstimateEligiblePlaceCount(
 			if !zone.IsPointInBoundary(place.Location.Latitude, place.Location.Longitude) {
 				continue
 			}
-			if !isZoneSeedAutoEnjoyablePlace(place) && !zoneSeedAutoPlaceMatchesAnyTag(place, requiredTags) {
+			if !isZoneSeedAutoFallbackPlace(place) && !zoneSeedAutoPlaceMatchesAnyTag(place, requiredTags) {
 				continue
 			}
 			if _, ok := seen[place.ID]; ok {
@@ -1050,7 +1070,7 @@ func (s *server) resolveZoneSeedDraftRequest(
 		return nil, newZoneSeedDraftResolutionError(500, fmt.Errorf("failed to estimate eligible places for auto mode: %w", err))
 	}
 	warnings = append(warnings, estimateWarnings...)
-	if recommendedCounts.PlaceCount > eligiblePlaceCount {
+	if overrides.PlaceCount == nil && recommendedCounts.PlaceCount > eligiblePlaceCount {
 		warnings = append(
 			warnings,
 			fmt.Sprintf(

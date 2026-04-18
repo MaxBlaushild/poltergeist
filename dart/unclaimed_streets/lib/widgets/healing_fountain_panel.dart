@@ -26,12 +26,14 @@ class HealingFountainPanel extends StatefulWidget {
     required this.onClose,
     this.onUsed,
     this.onUnlocked,
+    this.onStatusChanged,
   });
 
   final HealingFountain fountain;
   final VoidCallback onClose;
   final void Function(Map<String, dynamic> result)? onUsed;
   final Future<void> Function(HealingFountain fountain)? onUnlocked;
+  final void Function(HealingFountain fountain)? onStatusChanged;
 
   @override
   State<HealingFountainPanel> createState() => _HealingFountainPanelState();
@@ -39,6 +41,7 @@ class HealingFountainPanel extends StatefulWidget {
 
 class _HealingFountainPanelState extends State<HealingFountainPanel> {
   bool _loading = false;
+  bool _statusRefreshing = false;
   bool _justUnlocked = false;
   String? _error;
   Timer? _cooldownTicker;
@@ -49,7 +52,11 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
   void initState() {
     super.initState();
     _fountain = widget.fountain;
+    _statusRefreshing = _fountain.id.trim().isNotEmpty;
     _syncCooldownTicker();
+    if (_statusRefreshing) {
+      unawaited(_refreshFountainStatus());
+    }
   }
 
   @override
@@ -187,6 +194,25 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
 
   bool get _isDiscovered => _fountain.discovered || _justUnlocked;
 
+  Future<void> _refreshFountainStatus() async {
+    final latestFountain = await context
+        .read<PoiService>()
+        .getHealingFountainById(_fountain.id);
+    if (!mounted) return;
+
+    if (latestFountain == null) {
+      setState(() => _statusRefreshing = false);
+      return;
+    }
+
+    setState(() {
+      _fountain = latestFountain;
+      _statusRefreshing = false;
+    });
+    _syncCooldownTicker();
+    widget.onStatusChanged?.call(latestFountain);
+  }
+
   String _resolvedThumbnailUrl(HealingFountain fountain) {
     final raw = fountain.thumbnailUrl.trim();
     if (!fountain.discovered) {
@@ -305,6 +331,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
                 _fountain.cooldownSecondsRemaining,
           );
           _syncCooldownTicker();
+          widget.onStatusChanged?.call(_fountain);
         }
       }
       setState(() {
@@ -340,8 +367,11 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     final remaining = nextAvailableAt?.difference(now);
     final cooldownActive =
         !_fountain.availableNow && remaining != null && !remaining.isNegative;
-    final buttonDisabled = _loading || !hasProximityAccess || cooldownActive;
-    final buttonLabel = !hasProximityAccess
+    final buttonDisabled =
+        _loading || _statusRefreshing || !hasProximityAccess || cooldownActive;
+    final buttonLabel = _statusRefreshing
+        ? 'Checking status...'
+        : !hasProximityAccess
         ? 'Too far away'
         : (_loading ? 'Restoring...' : 'Restore Health & Mana');
 
@@ -494,11 +524,13 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: (_loading || !hasProximityAccess)
+              onPressed: (_loading || _statusRefreshing || !hasProximityAccess)
                   ? null
                   : _unlockFountain,
               child: Text(
-                _loading
+                _statusRefreshing
+                    ? 'Checking status...'
+                    : _loading
                     ? 'Unlocking...'
                     : !hasProximityAccess
                     ? 'Too far to unlock'

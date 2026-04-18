@@ -20,6 +20,7 @@ import (
 )
 
 const monsterImagePromptTemplate = "A retro 16-bit RPG monster portrait of %s. %s. Zone context: %s. Aggressive fantasy creature, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette. Keep the background transparent when possible; otherwise use a very light, plain background (off-white or parchment), never dark."
+const monsterImagePromptWithGenreTemplate = "A retro 16-bit RPG monster portrait of %s. %s. Zone context: %s. %s, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette. Keep the background transparent when possible; otherwise use a very light, plain background (off-white or parchment), never dark."
 
 // GenerateMonsterImageProcessor generates monster art in the background.
 type GenerateMonsterImageProcessor struct {
@@ -84,7 +85,20 @@ func (p *GenerateMonsterImageProcessor) ProcessTask(ctx context.Context, task *a
 		monsterName = "Unknown Monster"
 	}
 
+	genre := monster.Genre
+	if genre == nil && monster.Template != nil {
+		genre = monster.Template.Genre
+	}
 	prompt := fmt.Sprintf(monsterImagePromptTemplate, monsterName, description, zoneName)
+	if !isBaselineFantasyMonsterGenre(genre) {
+		prompt = fmt.Sprintf(
+			monsterImagePromptWithGenreTemplate,
+			monsterName,
+			description,
+			zoneName,
+			monsterGenreVisualDirective(genre),
+		)
+	}
 	request := deep_priest.GenerateImageRequest{Prompt: prompt}
 	deep_priest.ApplyGenerateImageDefaults(&request)
 

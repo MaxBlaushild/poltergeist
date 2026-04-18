@@ -825,6 +825,8 @@ class _ShopModalState extends State<ShopModal> {
     final img = item?.imageUrl ?? '';
     final name = item?.name ?? 'Unknown';
     final flavor = item?.flavorText ?? '';
+    final ownedQuantity = _ownedQuantityForItemId(shopItem.itemId);
+    final alreadyOwned = ownedQuantity > 0;
     final isPurchasing = _purchasingItemId == shopItem.itemId;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -833,13 +835,15 @@ class _ShopModalState extends State<ShopModal> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isPurchasing
-              ? theme.colorScheme.primary.withOpacity(0.6)
+              ? theme.colorScheme.primary.withValues(alpha: 0.6)
+              : alreadyOwned
+              ? theme.colorScheme.primary.withValues(alpha: 0.22)
               : theme.dividerColor,
         ),
         boxShadow: [
           if (isPurchasing)
             BoxShadow(
-              color: theme.colorScheme.primary.withOpacity(0.15),
+              color: theme.colorScheme.primary.withValues(alpha: 0.15),
               blurRadius: 12,
               offset: const Offset(0, 6),
             ),
@@ -848,7 +852,11 @@ class _ShopModalState extends State<ShopModal> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildItemImage(context, img),
+          _buildItemImage(
+            context,
+            img,
+            quantityBadge: alreadyOwned ? ownedQuantity : null,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -869,6 +877,8 @@ class _ShopModalState extends State<ShopModal> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 8),
+                _buildOwnershipPill(context, ownedQuantity),
               ],
             ),
           ),
@@ -908,6 +918,49 @@ class _ShopModalState extends State<ShopModal> {
                       ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOwnershipPill(BuildContext context, int ownedQuantity) {
+    final theme = Theme.of(context);
+    final alreadyOwned = ownedQuantity > 0;
+    final background = alreadyOwned
+        ? theme.colorScheme.primary.withValues(alpha: 0.1)
+        : theme.colorScheme.surface;
+    final foreground = alreadyOwned
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: alreadyOwned
+              ? theme.colorScheme.primary.withValues(alpha: 0.2)
+              : theme.dividerColor,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            alreadyOwned
+                ? Icons.inventory_2_outlined
+                : Icons.add_shopping_cart_outlined,
+            size: 16,
+            color: foreground,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            alreadyOwned ? 'Owned x$ownedQuantity' : 'Not owned yet',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -1063,37 +1116,68 @@ class _ShopModalState extends State<ShopModal> {
     );
   }
 
-  Widget _buildItemImage(BuildContext context, String imageUrl) {
+  Widget _buildItemImage(
+    BuildContext context,
+    String imageUrl, {
+    int? quantityBadge,
+  }) {
     final theme = Theme.of(context);
-    if (imageUrl.isEmpty) {
-      return Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.dividerColor),
-        ),
-        child: Icon(
-          Icons.inventory_2_outlined,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
+    final image = imageUrl.isEmpty
+        ? Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: Icon(
+              Icons.inventory_2_outlined,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              imageUrl,
+              width: 64,
+              height: 64,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                width: 64,
+                height: 64,
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: const Icon(Icons.image),
+              ),
+            ),
+          );
+    if ((quantityBadge ?? 0) <= 0) {
+      return image;
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.network(
-        imageUrl,
-        width: 64,
-        height: 64,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          width: 64,
-          height: 64,
-          color: theme.colorScheme.surfaceVariant,
-          child: const Icon(Icons.image),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        image,
+        Positioned(
+          top: -6,
+          right: -6,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: theme.colorScheme.surface, width: 2),
+            ),
+            child: Text(
+              'x$quantityBadge',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 

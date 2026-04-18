@@ -1,4 +1,5 @@
 import '../models/base_progression.dart';
+import '../models/zone.dart';
 import 'api_client.dart';
 
 class BaseService {
@@ -61,6 +62,17 @@ class BaseService {
         .toList();
   }
 
+  Future<List<ZoneGenre>> getZoneGenres({bool includeInactive = false}) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zone-genres',
+      params: includeInactive ? const {'includeInactive': true} : null,
+    );
+    return list
+        .whereType<Map>()
+        .map((entry) => ZoneGenre.fromJson(Map<String, dynamic>.from(entry)))
+        .toList(growable: false);
+  }
+
   Future<BaseProgressionSnapshot> buildStructure(
     String key, {
     required int gridX,
@@ -89,6 +101,16 @@ class BaseService {
 
   Future<Map<String, dynamic>> useHearth() async {
     return _api.post<Map<String, dynamic>>('/sonar/base/hearth/use');
+  }
+
+  Future<Map<String, dynamic>> useChaosEngine({
+    required String zoneId,
+    required String genreId,
+  }) async {
+    return _api.post<Map<String, dynamic>>(
+      '/sonar/base/chaos-engine/use',
+      data: <String, dynamic>{'zoneId': zoneId, 'genreId': genreId},
+    );
   }
 
   Future<BaseCraftingRecipesResponse> getCraftingRecipes(String station) async {

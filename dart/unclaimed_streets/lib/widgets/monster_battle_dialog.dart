@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character_stats.dart';
 import '../models/equipment_item.dart';
@@ -83,6 +84,13 @@ class _BattleItemChoice {
     dealDamageAllEnemiesHits: dealDamageAllEnemiesHits,
     quantity: quantity ?? this.quantity,
   );
+}
+
+class _AbilitySection {
+  const _AbilitySection({required this.title, required this.abilities});
+
+  final String title;
+  final List<Spell> abilities;
 }
 
 class _EncounterEnemyState {
@@ -229,6 +237,14 @@ class MonsterBattleDialog extends StatefulWidget {
 class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   static const Duration _combatTurnDuration = Duration(seconds: 150);
+  static const double _defaultBattleLogHeight = 138;
+  static const double _compactBattleLogHeight = 78;
+  static const double _rootCommandPanelHeight = 158;
+  static const int _maxRecentAbilities = 6;
+  static const String _favoriteAbilityPrefsKeyPrefix =
+      'monster_battle.favorite_ability_ids';
+  static const String _recentAbilityPrefsKeyPrefix =
+      'monster_battle.recent_ability_ids';
   final math.Random _random = math.Random();
   final List<String> _battleLog = <String>[];
 
@@ -298,6 +314,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   final Map<String, DateTime> _techniqueCooldownExpiresAtById =
       <String, DateTime>{};
   final Set<String> _techniqueCooldownClearedById = <String>{};
+  final Set<String> _favoriteAbilityIds = <String>{};
+  List<String> _recentAbilityIds = <String>[];
+  bool _expandBattleLogWhileBrowsing = false;
 
   bool _isBattleStatusNotFoundError(Object error) {
     if (error is DioException) {
@@ -455,6 +474,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     });
     unawaited(_ensureEquipmentLoaded());
     unawaited(_loadItemChoices());
+    unawaited(_loadAbilityPickerPrefs());
   }
 
   @override
@@ -3011,11 +3031,128 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   void _openMenu(_BattleMenuView view, {String? selectedCommandKey}) {
     setState(() {
       _menuView = view;
+      if (view == _BattleMenuView.root || view == _BattleMenuView.items) {
+        _expandBattleLogWhileBrowsing = false;
+      }
       if (selectedCommandKey != null) {
         _selectedCommandKey = selectedCommandKey;
       }
     });
   }
+
+  bool get _isAbilityPickerView =>
+      _menuView == _BattleMenuView.spells ||
+      _menuView == _BattleMenuView.techniques;
+
+  bool get _showCompactBattleLog =>
+      _isAbilityPickerView && !_expandBattleLogWhileBrowsing;
+
+  String _abilityPrefsKey(String prefix) {
+    final scopedUserId = _selfUserId.trim();
+    if (scopedUserId.isEmpty) return prefix;
+    return '$prefix.$scopedUserId';
+  }
+
+  String _abilityStorageKey(Spell ability) {
+    final id = ability.id.trim();
+    if (id.isNotEmpty) return id;
+    final type = ability.abilityType.trim().toLowerCase();
+    final name = ability.name.trim().toLowerCase();
+    return '$type:$name';
+  }
+
+  Future<void> _loadAbilityPickerPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favoriteIds =
+        prefs.getStringList(_abilityPrefsKey(_favoriteAbilityPrefsKeyPrefix)) ??
+        const <String>[];
+    final recentIds =
+        prefs.getStringList(_abilityPrefsKey(_recentAbilityPrefsKeyPrefix)) ??
+        const <String>[];
+    if (!mounted) return;
+    setState(() {
+      _favoriteAbilityIds
+        ..clear()
+        ..addAll(
+          favoriteIds
+              .map((entry) => entry.trim())
+              .where((entry) => entry.isNotEmpty),
+        );
+      _recentAbilityIds = recentIds
+          .map((entry) => entry.trim())
+          .where((entry) => entry.isNotEmpty)
+          .take(_maxRecentAbilities)
+          .toList(growable: true);
+    });
+  }
+
+  Future<void> _saveFavoriteAbilityPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favorites = _favoriteAbilityIds.toList(growable: false)..sort();
+    await prefs.setStringList(
+      _abilityPrefsKey(_favoriteAbilityPrefsKeyPrefix),
+      favorites,
+    );
+  }
+
+  Future<void> _saveRecentAbilityPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _abilityPrefsKey(_recentAbilityPrefsKeyPrefix),
+      _recentAbilityIds,
+    );
+  }
+
+  void _toggleFavoriteAbility(Spell ability) {
+    final key = _abilityStorageKey(ability);
+    if (key.isEmpty) return;
+    setState(() {
+      if (_favoriteAbilityIds.contains(key)) {
+        _favoriteAbilityIds.remove(key);
+      } else {
+        _favoriteAbilityIds.add(key);
+      }
+    });
+    unawaited(_saveFavoriteAbilityPrefs());
+  }
+
+  void _recordRecentAbility(Spell ability) {
+    final key = _abilityStorageKey(ability);
+    if (key.isEmpty) return;
+    if (!mounted) return;
+    setState(() {
+      _recentAbilityIds = <String>[
+        key,
+        ..._recentAbilityIds.where((entry) => entry != key),
+      ].take(_maxRecentAbilities).toList(growable: true);
+    });
+    unawaited(_saveRecentAbilityPrefs());
+  }
+
+  bool _isFavoriteAbility(Spell ability) =>
+      _favoriteAbilityIds.contains(_abilityStorageKey(ability));
+
+  bool _canUseAbilityNow(Spell ability) {
+    if (_isTechnique(ability)) {
+      return !_isTechniqueOnCooldown(ability);
+    }
+    return math.max(0, ability.manaCost) <= _playerMana;
+  }
+
+  double _commandPanelHeightFor(double viewportHeight) {
+    if (!_isAbilityPickerView) {
+      return _rootCommandPanelHeight;
+    }
+    final targetFraction = _showCompactBattleLog ? 0.38 : 0.3;
+    final minHeight = _showCompactBattleLog ? 280.0 : 228.0;
+    final maxHeight = _showCompactBattleLog ? 380.0 : 320.0;
+    return (viewportHeight * targetFraction)
+        .clamp(minHeight, maxHeight)
+        .toDouble();
+  }
+
+  double get _battleLogHeight =>
+      _showCompactBattleLog ? _compactBattleLogHeight : _defaultBattleLogHeight;
 
   Future<void> _playSpriteFx({
     required bool targetMonster,
@@ -3922,6 +4059,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         _syncTechniqueCooldownsFromAbilities();
         _setTechniqueCooldownFromResponse(ability, result.response);
         _syncSelfAllyFromLocalResources();
+        _recordRecentAbility(ability);
         await _resolvePlayerAction(
           message: parts.join(', '),
           damageToMonster: damage,
@@ -3999,6 +4137,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _syncTechniqueCooldownsFromAbilities();
       _setTechniqueCooldownFromResponse(ability, result.response);
       _syncSelfAllyFromLocalResources();
+      _recordRecentAbility(ability);
       await _resolvePlayerAction(
         message: parts.join(', '),
         damageToMonster: damage,
@@ -4039,6 +4178,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     } else if (_isTechnique(ability)) {
       _setTechniqueCooldown(ability);
     }
+    _recordRecentAbility(ability);
     await _resolvePlayerAction(
       message: parts.join(', '),
       damageToMonster: damage,
@@ -4970,7 +5110,359 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
-  Widget _buildLogPanel(ThemeData theme) {
+  Iterable<Spell> _recentAbilitiesInOrder(List<Spell> abilities) sync* {
+    for (final recentId in _recentAbilityIds) {
+      for (final ability in abilities) {
+        if (_abilityStorageKey(ability) == recentId) {
+          yield ability;
+          break;
+        }
+      }
+    }
+  }
+
+  List<_AbilitySection> _abilitySections(
+    List<Spell> abilities, {
+    required String unavailableTitle,
+  }) {
+    final seen = <String>{};
+
+    List<Spell> takeUnique(Iterable<Spell> candidates) {
+      final next = <Spell>[];
+      for (final ability in candidates) {
+        final key = _abilityStorageKey(ability);
+        if (key.isEmpty || seen.contains(key)) continue;
+        seen.add(key);
+        next.add(ability);
+      }
+      return next;
+    }
+
+    final favorites = takeUnique(
+      abilities.where((ability) => _isFavoriteAbility(ability)),
+    );
+    final recent = takeUnique(_recentAbilitiesInOrder(abilities));
+    final usable = takeUnique(
+      abilities.where((ability) => _canUseAbilityNow(ability)),
+    );
+    final unavailable = takeUnique(
+      abilities.where((ability) => !_canUseAbilityNow(ability)),
+    );
+
+    final sections = <_AbilitySection>[];
+    if (favorites.isNotEmpty) {
+      sections.add(_AbilitySection(title: 'Favorites', abilities: favorites));
+    }
+    if (recent.isNotEmpty) {
+      sections.add(_AbilitySection(title: 'Recent', abilities: recent));
+    }
+    if (usable.isNotEmpty) {
+      sections.add(_AbilitySection(title: 'Usable Now', abilities: usable));
+    }
+    if (unavailable.isNotEmpty) {
+      sections.add(
+        _AbilitySection(title: unavailableTitle, abilities: unavailable),
+      );
+    }
+    return sections;
+  }
+
+  String _abilityCommandKey(
+    Spell ability, {
+    required List<Spell> source,
+    required String prefix,
+  }) {
+    final key = _abilityStorageKey(ability);
+    var index = -1;
+    if (key.isNotEmpty) {
+      index = source.indexWhere((entry) => _abilityStorageKey(entry) == key);
+    }
+    if (index < 0) {
+      index = source.indexOf(ability);
+    }
+    if (index < 0) {
+      index = 0;
+    }
+    return '$prefix:$index';
+  }
+
+  String _defaultAbilityCommandKey(
+    List<Spell> abilities, {
+    required String prefix,
+    required String unavailableTitle,
+  }) {
+    final sections = _abilitySections(
+      abilities,
+      unavailableTitle: unavailableTitle,
+    );
+    for (final section in sections) {
+      if (section.abilities.isNotEmpty) {
+        return _abilityCommandKey(
+          section.abilities.first,
+          source: abilities,
+          prefix: prefix,
+        );
+      }
+    }
+    return '$prefix:0';
+  }
+
+  String _abilityRoleLabel(Spell ability) {
+    final effectTypes = ability.effects
+        .map((effect) => effect.type.trim().toLowerCase())
+        .where((type) => type.isNotEmpty)
+        .toSet();
+    if (effectTypes.any((type) => type.contains('all_enemies'))) {
+      return 'AOE';
+    }
+    if (effectTypes.any((type) => type.contains('restore'))) {
+      return 'Heal';
+    }
+    if (effectTypes.any((type) => type.contains('revive'))) {
+      return 'Revive';
+    }
+    if (effectTypes.any(
+      (type) => type.contains('status') || type.contains('detrimental'),
+    )) {
+      return 'Status';
+    }
+    if (effectTypes.any((type) => type.contains('damage'))) {
+      return 'Damage';
+    }
+    return _isTechnique(ability) ? 'Technique' : 'Spell';
+  }
+
+  String _abilitySubtitle(Spell ability) {
+    final parts = <String>['Lv.${math.max(1, ability.abilityLevel)}'];
+    final school = ability.schoolOfMagic.trim();
+    if (school.isNotEmpty) {
+      parts.add(_humanizeToken(school));
+    }
+    final role = _abilityRoleLabel(ability);
+    if (role.isNotEmpty) {
+      parts.add(role);
+    }
+    final summary = ability.effectText.trim().isNotEmpty
+        ? ability.effectText.trim()
+        : ability.description.trim();
+    if (summary.isNotEmpty) {
+      parts.add(summary);
+    }
+    return parts.join(' | ');
+  }
+
+  String? _abilityBadgeLabel(Spell ability) {
+    if (_isTechnique(ability)) {
+      final remaining = _techniqueCooldownRemaining(ability);
+      if (remaining > 0) {
+        return '$remaining turn${remaining == 1 ? '' : 's'}';
+      }
+      final totalCooldown = math.max(0, ability.cooldownTurns);
+      if (totalCooldown > 0) {
+        return 'Ready';
+      }
+      return null;
+    }
+    final manaCost = math.max(0, ability.manaCost);
+    if (manaCost <= 0) {
+      return 'Free';
+    }
+    if (manaCost > _playerMana) {
+      final shortage = manaCost - _playerMana;
+      return 'Need $shortage MP';
+    }
+    return '$manaCost MP';
+  }
+
+  Color _abilityBadgeColor(ThemeData theme, Spell ability) {
+    if (_isTechnique(ability)) {
+      return _isTechniqueOnCooldown(ability)
+          ? const Color(0xFF8C2F39)
+          : const Color(0xFF2F6B3D);
+    }
+    return math.max(0, ability.manaCost) > _playerMana
+        ? const Color(0xFF8C2F39)
+        : const Color(0xFF355C7D);
+  }
+
+  double? _abilityBadgeProgress(Spell ability) {
+    if (!_isTechnique(ability)) return null;
+    final remaining = _techniqueCooldownRemaining(ability);
+    final totalCooldown = math.max(0, ability.cooldownTurns);
+    if (totalCooldown <= 0) return null;
+    return (totalCooldown - remaining) / totalCooldown;
+  }
+
+  Widget _buildSectionHeader(
+    ThemeData theme, {
+    required String title,
+    required int count,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.9,
+              ),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$count',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuShell({required String title, required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => _openMenu(
+                      _BattleMenuView.root,
+                      selectedCommandKey: 'root:Attack',
+                    ),
+              child: const Text('Back'),
+            ),
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  Widget _buildAbilityRow({
+    required ThemeData theme,
+    required Spell ability,
+    required List<Spell> source,
+    required String prefix,
+  }) {
+    final isFavorite = _isFavoriteAbility(ability);
+    final enabled = _canAct && _canUseAbilityNow(ability);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: _buildCommandButton(
+            context: context,
+            label: ability.name,
+            commandKey: _abilityCommandKey(
+              ability,
+              source: source,
+              prefix: prefix,
+            ),
+            onPressed: enabled ? () => _useAbility(ability) : null,
+            subtitle: _abilitySubtitle(ability),
+            subtitleMaxLines: 2,
+            badgeLabel: _abilityBadgeLabel(ability),
+            badgeColor: _abilityBadgeColor(theme, ability),
+            progress: _abilityBadgeProgress(ability),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Tooltip(
+          message: isFavorite ? 'Remove favorite' : 'Add favorite',
+          child: IconButton(
+            onPressed: () => _toggleFavoriteAbility(ability),
+            icon: Icon(
+              isFavorite ? Icons.star : Icons.star_border,
+              color: isFavorite
+                  ? const Color(0xFFB5872F)
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAbilityChoiceList({
+    required ThemeData theme,
+    required String title,
+    required String prefix,
+    required List<Spell> abilities,
+    required String unavailableTitle,
+  }) {
+    final sections = _abilitySections(
+      abilities,
+      unavailableTitle: unavailableTitle,
+    );
+    if (sections.isEmpty) {
+      return _buildMenuShell(
+        title: title,
+        child: const Center(child: Text('No options available.')),
+      );
+    }
+
+    final sectionWidgets = <Widget>[];
+    for (var sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      final section = sections[sectionIndex];
+      if (sectionIndex > 0) {
+        sectionWidgets.add(const SizedBox(height: 12));
+      }
+      sectionWidgets.add(
+        _buildSectionHeader(
+          theme,
+          title: section.title,
+          count: section.abilities.length,
+        ),
+      );
+      sectionWidgets.add(const SizedBox(height: 8));
+      for (
+        var abilityIndex = 0;
+        abilityIndex < section.abilities.length;
+        abilityIndex++
+      ) {
+        if (abilityIndex > 0) {
+          sectionWidgets.add(const SizedBox(height: 6));
+        }
+        sectionWidgets.add(
+          _buildAbilityRow(
+            theme: theme,
+            ability: section.abilities[abilityIndex],
+            source: abilities,
+            prefix: prefix,
+          ),
+        );
+      }
+    }
+
+    return _buildMenuShell(
+      title: title,
+      child: ListView(children: sectionWidgets),
+    );
+  }
+
+  Widget _buildLogPanel(ThemeData theme, {required bool compact}) {
     String chipText;
     Color chipColor;
     if (_battleOver) {
@@ -4999,54 +5491,127 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       chipColor = const Color(0xFF8C2F39);
     }
 
+    final latestMessage = _battleLog.isEmpty ? '...' : _battleLog.last;
+
     return Container(
       width: double.infinity,
-      height: 138,
+      height: _battleLogHeight,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: theme.colorScheme.outline, width: 2),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: chipColor.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: chipColor.withValues(alpha: 0.5)),
-              ),
-              child: Text(
-                chipText,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: chipColor,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: _battleLog.isEmpty
-                ? Text('...', style: theme.textTheme.bodyMedium)
-                : ListView.builder(
-                    reverse: true,
-                    itemCount: _battleLog.length,
-                    itemBuilder: (context, index) {
-                      final message = _battleLog[_battleLog.length - 1 - index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(message, style: theme.textTheme.bodyMedium),
-                      );
-                    },
+      child: compact
+          ? Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: chipColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: chipColor.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: Text(
+                          chipText,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: chipColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        latestMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ],
                   ),
-          ),
-        ],
-      ),
+                ),
+                if (_isAbilityPickerView)
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _expandBattleLogWhileBrowsing = true;
+                      });
+                    },
+                    tooltip: 'Expand log',
+                    icon: const Icon(Icons.unfold_more),
+                  ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: chipColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: chipColor.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Text(
+                        chipText,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: chipColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (_isAbilityPickerView)
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _expandBattleLogWhileBrowsing = false;
+                          });
+                        },
+                        tooltip: 'Collapse log',
+                        icon: const Icon(Icons.unfold_less),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: _battleLog.isEmpty
+                      ? Text('...', style: theme.textTheme.bodyMedium)
+                      : ListView.builder(
+                          reverse: true,
+                          itemCount: _battleLog.length,
+                          itemBuilder: (context, index) {
+                            final message =
+                                _battleLog[_battleLog.length - 1 - index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                message,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -5059,6 +5624,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     String? badgeLabel,
     Color? badgeColor,
     double? progress,
+    int labelMaxLines = 1,
+    int subtitleMaxLines = 1,
   }) {
     final selected = _selectedCommandKey == commandKey;
     final theme = Theme.of(context);
@@ -5094,7 +5661,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               Expanded(
                 child: Text(
                   label,
-                  maxLines: 1,
+                  maxLines: labelMaxLines,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -5127,7 +5694,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             const SizedBox(height: 4),
             Text(
               subtitle,
-              maxLines: 1,
+              maxLines: subtitleMaxLines,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -5152,190 +5719,122 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
-  Widget _buildChoiceList({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return SizedBox(
-      height: 138,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _openMenu(
-                        _BattleMenuView.root,
-                        selectedCommandKey: 'root:Attack',
-                      ),
-                child: const Text('Back'),
-              ),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: children.isEmpty
-                ? const Center(child: Text('No options available.'))
-                : ListView.separated(
-                    itemCount: children.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 6),
-                    itemBuilder: (context, index) => children[index],
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCommandMenu(ThemeData theme) {
     switch (_menuView) {
       case _BattleMenuView.root:
-        return SizedBox(
-          height: 138,
-          child: GridView.count(
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 2.1,
-            children: [
-              _buildCommandButton(
-                context: context,
-                label: 'Attack',
-                commandKey: 'root:Attack',
-                onPressed: _canAct ? _attack : null,
-              ),
-              _buildCommandButton(
-                context: context,
-                label: 'Spell',
-                commandKey: 'root:Spell',
-                onPressed: _canAct
-                    ? () => _openMenu(
-                        _BattleMenuView.spells,
-                        selectedCommandKey: 'spell:0',
-                      )
-                    : null,
-              ),
-              _buildCommandButton(
-                context: context,
-                label: 'Technique',
-                commandKey: 'root:Technique',
-                onPressed: _canAct
-                    ? () => _openMenu(
-                        _BattleMenuView.techniques,
-                        selectedCommandKey: 'technique:0',
-                      )
-                    : null,
-              ),
-              _buildCommandButton(
-                context: context,
-                label: _loadingItems ? 'Item (Loading...)' : 'Item',
-                commandKey: 'root:Item',
-                onPressed: _canAct && !_loadingItems
-                    ? () => _openMenu(
-                        _BattleMenuView.items,
-                        selectedCommandKey: 'item:0',
-                      )
-                    : null,
-              ),
-              _buildCommandButton(
-                context: context,
-                label: 'Escape',
-                commandKey: 'root:Escape',
-                onPressed: _canAct ? _escape : null,
-              ),
-            ],
-          ),
+        return GridView.count(
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 3,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 2.1,
+          children: [
+            _buildCommandButton(
+              context: context,
+              label: 'Attack',
+              commandKey: 'root:Attack',
+              onPressed: _canAct ? _attack : null,
+            ),
+            _buildCommandButton(
+              context: context,
+              label: 'Spell',
+              commandKey: 'root:Spell',
+              onPressed: _canAct
+                  ? () => _openMenu(
+                      _BattleMenuView.spells,
+                      selectedCommandKey: _defaultAbilityCommandKey(
+                        _spells,
+                        prefix: 'spell',
+                        unavailableTitle: 'Need More Mana',
+                      ),
+                    )
+                  : null,
+            ),
+            _buildCommandButton(
+              context: context,
+              label: 'Technique',
+              commandKey: 'root:Technique',
+              onPressed: _canAct
+                  ? () => _openMenu(
+                      _BattleMenuView.techniques,
+                      selectedCommandKey: _defaultAbilityCommandKey(
+                        _techniques,
+                        prefix: 'technique',
+                        unavailableTitle: 'Cooling Down',
+                      ),
+                    )
+                  : null,
+            ),
+            _buildCommandButton(
+              context: context,
+              label: _loadingItems ? 'Item (Loading...)' : 'Item',
+              commandKey: 'root:Item',
+              onPressed: _canAct && !_loadingItems
+                  ? () => _openMenu(
+                      _BattleMenuView.items,
+                      selectedCommandKey: 'item:0',
+                    )
+                  : null,
+            ),
+            _buildCommandButton(
+              context: context,
+              label: 'Escape',
+              commandKey: 'root:Escape',
+              onPressed: _canAct ? _escape : null,
+            ),
+          ],
         );
       case _BattleMenuView.spells:
-        return _buildChoiceList(
+        return _buildAbilityChoiceList(
+          theme: theme,
           title: 'Spells',
-          children: _spells
-              .asMap()
-              .entries
-              .map((entry) {
-                final index = entry.key;
-                final spell = entry.value;
-                return _buildCommandButton(
-                  context: context,
-                  label: '${spell.name} (${spell.manaCost} MP)',
-                  commandKey: 'spell:$index',
-                  onPressed: _canAct ? () => _useAbility(spell) : null,
-                );
-              })
-              .toList(growable: false),
+          prefix: 'spell',
+          abilities: _spells,
+          unavailableTitle: 'Need More Mana',
         );
       case _BattleMenuView.techniques:
-        return _buildChoiceList(
+        return _buildAbilityChoiceList(
+          theme: theme,
           title: 'Techniques',
-          children: _techniques
-              .asMap()
-              .entries
-              .map((entry) {
-                final index = entry.key;
-                final technique = entry.value;
-                final onCooldown = _isTechniqueOnCooldown(technique);
-                final remaining = _techniqueCooldownRemaining(technique);
-                final totalCooldown = math.max(0, technique.cooldownTurns);
-                final progress = totalCooldown <= 0
-                    ? null
-                    : (totalCooldown - remaining) / totalCooldown;
-                return _buildCommandButton(
-                  context: context,
-                  label: technique.name,
-                  commandKey: 'technique:$index',
-                  subtitle: onCooldown
-                      ? '$remaining turn${remaining == 1 ? '' : 's'} remaining'
-                      : totalCooldown > 0
-                      ? 'Cooldown $totalCooldown turn${totalCooldown == 1 ? '' : 's'}'
-                      : null,
-                  badgeLabel: onCooldown
-                      ? 'Cooling'
-                      : totalCooldown > 0
-                      ? 'Ready'
-                      : null,
-                  badgeColor: onCooldown
-                      ? const Color(0xFF8C2F39)
-                      : const Color(0xFF2F6B3D),
-                  progress: progress,
-                  onPressed: _canAct && !onCooldown
-                      ? () => _useAbility(technique)
-                      : null,
-                );
-              })
-              .toList(growable: false),
+          prefix: 'technique',
+          abilities: _techniques,
+          unavailableTitle: 'Cooling Down',
         );
       case _BattleMenuView.items:
         final availableItems = _items
             .where((item) => item.quantity > 0)
             .toList(growable: false);
-        return _buildChoiceList(
+        final itemChildren = availableItems
+            .asMap()
+            .entries
+            .map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              final damageLabel = item.dealDamage > 0
+                  ? ' | DMG ${item.dealDamage}x${item.dealDamageHits}'
+                  : '';
+              final allEnemiesDamageLabel = item.dealDamageAllEnemies > 0
+                  ? ' | AOE ${item.dealDamageAllEnemies}x${item.dealDamageAllEnemiesHits}'
+                  : '';
+              return _buildCommandButton(
+                context: context,
+                label:
+                    '${item.name} x${item.quantity}${item.healthDelta != 0 ? ' | HP ${item.healthDelta > 0 ? '+' : ''}${item.healthDelta}' : ''}${item.manaDelta != 0 ? ' | MP ${item.manaDelta > 0 ? '+' : ''}${item.manaDelta}' : ''}$damageLabel$allEnemiesDamageLabel',
+                commandKey: 'item:$index',
+                onPressed: _canAct ? () => _useItem(item) : null,
+              );
+            })
+            .toList(growable: false);
+        return _buildMenuShell(
           title: 'Items',
-          children: availableItems
-              .asMap()
-              .entries
-              .map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final damageLabel = item.dealDamage > 0
-                    ? ' | DMG ${item.dealDamage}x${item.dealDamageHits}'
-                    : '';
-                final allEnemiesDamageLabel = item.dealDamageAllEnemies > 0
-                    ? ' | AOE ${item.dealDamageAllEnemies}x${item.dealDamageAllEnemiesHits}'
-                    : '';
-                return _buildCommandButton(
-                  context: context,
-                  label:
-                      '${item.name} x${item.quantity}${item.healthDelta != 0 ? ' | HP ${item.healthDelta > 0 ? '+' : ''}${item.healthDelta}' : ''}${item.manaDelta != 0 ? ' | MP ${item.manaDelta > 0 ? '+' : ''}${item.manaDelta}' : ''}$damageLabel$allEnemiesDamageLabel',
-                  commandKey: 'item:$index',
-                  onPressed: _canAct ? () => _useItem(item) : null,
-                );
-              })
-              .toList(growable: false),
+          child: itemChildren.isEmpty
+              ? const Center(child: Text('No options available.'))
+              : ListView.separated(
+                  itemCount: itemChildren.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 6),
+                  itemBuilder: (context, index) => itemChildren[index],
+                ),
         );
     }
   }
@@ -5353,6 +5852,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             child: SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final commandPanelHeight = _commandPanelHeightFor(
+                    constraints.maxHeight,
+                  );
                   return SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
                     child: ConstrainedBox(
@@ -5366,10 +5868,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                           const SizedBox(height: 8),
                           _buildBattlefield(theme),
                           const SizedBox(height: 8),
-                          _buildLogPanel(theme),
+                          _buildLogPanel(theme, compact: _showCompactBattleLog),
                           const SizedBox(height: 8),
                           Container(
-                            height: 158,
+                            height: commandPanelHeight,
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: theme.colorScheme.surface,

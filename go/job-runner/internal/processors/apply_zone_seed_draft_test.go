@@ -3,6 +3,7 @@ package processors
 import (
 	"testing"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 )
@@ -74,5 +75,36 @@ func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
 	}
 	if pools[1].resourceType.ID != typeIDTwo || len(pools[1].inventoryItems) != 1 {
 		t.Fatalf("expected herb pool with 1 item, got %+v", pools[1])
+	}
+}
+
+func TestEnsureRequiredSelectionsTopsOffFromCandidatePoolWithoutTags(t *testing.T) {
+	base := []googlemaps.Place{
+		{ID: "one", DisplayName: googlemaps.LocalizedText{Text: "One"}},
+	}
+	candidatePool := []googlemaps.Place{
+		{ID: "one", DisplayName: googlemaps.LocalizedText{Text: "One"}},
+		{ID: "two", DisplayName: googlemaps.LocalizedText{Text: "Two"}},
+		{ID: "three", DisplayName: googlemaps.LocalizedText{Text: "Three"}},
+	}
+
+	results := ensureRequiredSelections(nil, map[string]googlemaps.Place{}, base, candidatePool, 3)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 places after top-off, got %d", len(results))
+	}
+	if results[0].ID != "one" || results[1].ID != "two" || results[2].ID != "three" {
+		t.Fatalf("unexpected top-off ordering: %+v", results)
+	}
+}
+
+func TestPlaceSearchAttemptLimitScalesWithDesiredCount(t *testing.T) {
+	if got := placeSearchAttemptLimit(4, false); got != 6 {
+		t.Fatalf("expected minimum attempt floor of 6, got %d", got)
+	}
+	if got := placeSearchAttemptLimit(15, false); got != 15 {
+		t.Fatalf("expected desired count to increase attempts, got %d", got)
+	}
+	if got := placeSearchAttemptLimit(30, true); got != 18 {
+		t.Fatalf("expected attempts to clamp at 18, got %d", got)
 	}
 }

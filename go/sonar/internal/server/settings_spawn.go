@@ -187,6 +187,9 @@ func (s *server) spawnNearbyScenarioAndMonster(ctx *gin.Context) {
 }
 
 func (s *server) enqueueScenarioImageGenerationTask(scenarioID uuid.UUID) error {
+	if s.asyncClient == nil {
+		return fmt.Errorf("async client is not configured")
+	}
 	payload := jobs.GenerateScenarioImageTaskPayload{
 		ScenarioID: scenarioID,
 	}
@@ -223,6 +226,7 @@ func spawnedMonsterFromSeed(zoneID uuid.UUID, latitude float64, longitude float6
 	imageURL := ""
 	thumbnailURL := ""
 	level := 1
+	var genreID uuid.UUID
 	var templateID *uuid.UUID
 	var dominantHandID *int
 	var offHandID *int
@@ -234,6 +238,7 @@ func spawnedMonsterFromSeed(zoneID uuid.UUID, latitude float64, longitude float6
 		imageURL = strings.TrimSpace(seed.ImageURL)
 		thumbnailURL = strings.TrimSpace(seed.ThumbnailURL)
 		level = maxInt(1, seed.Level)
+		genreID = seed.GenreID
 		if seed.TemplateID != nil {
 			clonedTemplateID := *seed.TemplateID
 			templateID = &clonedTemplateID
@@ -268,6 +273,7 @@ func spawnedMonsterFromSeed(zoneID uuid.UUID, latitude float64, longitude float6
 		ImageURL:                    imageURL,
 		ThumbnailURL:                thumbnailURL,
 		ZoneID:                      zoneID,
+		GenreID:                     genreID,
 		Latitude:                    latitude,
 		Longitude:                   longitude,
 		TemplateID:                  templateID,

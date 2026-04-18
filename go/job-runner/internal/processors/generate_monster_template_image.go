@@ -20,6 +20,7 @@ import (
 )
 
 const monsterTemplateImagePromptTemplate = "A retro 16-bit RPG %s portrait of %s. %s. Base attributes: STR %d, DEX %d, CON %d, INT %d, WIS %d, CHA %d. Aggressive fantasy creature, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette. Keep the background transparent when possible; otherwise use a very light, plain background (off-white or parchment), never dark."
+const monsterTemplateImagePromptWithGenreTemplate = "A retro 16-bit RPG %s portrait of %s. %s. Base attributes: STR %d, DEX %d, CON %d, INT %d, WIS %d, CHA %d. %s, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette. Keep the background transparent when possible; otherwise use a very light, plain background (off-white or parchment), never dark."
 
 // GenerateMonsterTemplateImageProcessor generates monster template art in the background.
 type GenerateMonsterTemplateImageProcessor struct {
@@ -83,6 +84,21 @@ func (p *GenerateMonsterTemplateImageProcessor) ProcessTask(ctx context.Context,
 		clampMinInt(template.BaseWisdom, 1),
 		clampMinInt(template.BaseCharisma, 1),
 	)
+	if !isBaselineFantasyMonsterGenre(template.Genre) {
+		prompt = fmt.Sprintf(
+			monsterTemplateImagePromptWithGenreTemplate,
+			monsterTemplateImagePromptLabel(template.MonsterType),
+			templateName,
+			description,
+			clampMinInt(template.BaseStrength, 1),
+			clampMinInt(template.BaseDexterity, 1),
+			clampMinInt(template.BaseConstitution, 1),
+			clampMinInt(template.BaseIntelligence, 1),
+			clampMinInt(template.BaseWisdom, 1),
+			clampMinInt(template.BaseCharisma, 1),
+			monsterGenreVisualDirective(template.Genre),
+		)
+	}
 
 	request := deep_priest.GenerateImageRequest{Prompt: prompt}
 	deep_priest.ApplyGenerateImageDefaults(&request)

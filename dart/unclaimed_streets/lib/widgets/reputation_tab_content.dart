@@ -73,17 +73,17 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
 
     try {
       final zoneProvider = context.read<ZoneProvider>();
+      final poiService = context.read<PoiService>();
       var zones = zoneProvider.zones;
       if (zones.isEmpty) {
-        zones = await context.read<PoiService>().getZones();
+        zones = await poiService.getZones();
         if (mounted) {
           zoneProvider.setZones(zones);
         }
       }
 
-      final svc = context.read<PoiService>();
       final reputations = await Future.wait(
-        zones.map((z) => svc.getUserZoneReputation(z.id)),
+        zones.map((z) => poiService.getUserZoneReputation(z.id)),
       );
 
       if (!mounted) return;
@@ -91,7 +91,10 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
       for (var i = 0; i < zones.length; i++) {
         items.add(_ZoneRep(zone: zones[i], reputation: reputations[i]));
       }
-      items.sort((a, b) => a.zone.name.toLowerCase().compareTo(b.zone.name.toLowerCase()));
+      items.sort(
+        (a, b) =>
+            a.zone.name.toLowerCase().compareTo(b.zone.name.toLowerCase()),
+      );
       setState(() {
         _items = items;
         _loading = false;
@@ -127,7 +130,9 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
           children: [
             Text(
               'Zone Reputation',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const Spacer(),
             IconButton(
@@ -151,8 +156,10 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
                   isDense: true,
                   labelText: 'Search zones',
                   prefixIcon: const Icon(Icons.search),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -163,13 +170,16 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 150),
               child: DropdownButtonFormField<_ReputationSort>(
-                value: _sort,
+                key: ValueKey('reputation-sort-${_sort.name}'),
+                initialValue: _sort,
                 isDense: true,
                 style: theme.textTheme.bodySmall,
                 decoration: InputDecoration(
                   labelText: 'Sort',
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -191,13 +201,16 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 160),
               child: DropdownButtonFormField<_ReputationFilter>(
-                value: _filter,
+                key: ValueKey('reputation-filter-${_filter.name}'),
+                initialValue: _filter,
                 isDense: true,
                 style: theme.textTheme.bodySmall,
                 decoration: InputDecoration(
                   labelText: 'Filter',
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -287,12 +300,10 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
   List<_ZoneRep> _applySortAndFilter(List<_ZoneRep> items) {
     final query = _query.trim().toLowerCase();
     final filtered = items.where((item) {
-      if (item.reputation == null ||
-          item.reputation!.totalReputation <= 0) {
+      if (item.reputation == null || item.reputation!.totalReputation <= 0) {
         return false;
       }
-      if (query.isNotEmpty &&
-          !item.zone.name.toLowerCase().contains(query)) {
+      if (query.isNotEmpty && !item.zone.name.toLowerCase().contains(query)) {
         return false;
       }
       if (_filter == _ReputationFilter.all) return true;
@@ -351,6 +362,21 @@ class _ReputationCard extends StatelessWidget {
     final badge = _badgeStyle(theme.colorScheme, rep?.name);
     final repName = _capitalize(rep?.name.name ?? 'Uncharted');
     final levelText = rep != null ? 'Level ${rep.level}' : 'No rep yet';
+    final positiveGenreScores =
+        entry.zone.genreScores
+            .where((score) => score.score > 0)
+            .toList(growable: false)
+          ..sort((left, right) {
+            final scoreCompare = right.score.compareTo(left.score);
+            if (scoreCompare != 0) return scoreCompare;
+            final sortCompare = left.genre.sortOrder.compareTo(
+              right.genre.sortOrder,
+            );
+            if (sortCompare != 0) return sortCompare;
+            return left.genre.name.toLowerCase().compareTo(
+              right.genre.name.toLowerCase(),
+            );
+          });
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -382,7 +408,10 @@ class _ReputationCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: badge.background,
                   borderRadius: BorderRadius.circular(999),
@@ -415,6 +444,48 @@ class _ReputationCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+          ],
+          if (entry.zone.genreScores.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Genres',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (positiveGenreScores.isEmpty)
+              Text(
+                'No genre alignment yet.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: positiveGenreScores
+                    .map(
+                      (score) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${score.genre.name} ${score.score}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
           ],
           const SizedBox(height: 10),
           _repProgress(context, rep),
@@ -468,8 +539,10 @@ class _ReputationCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
             value: progress.clamp(0.0, 1.0),
-            backgroundColor: theme.colorScheme.surfaceVariant,
-            valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              theme.colorScheme.primary,
+            ),
             minHeight: 8,
           ),
         ),
@@ -495,12 +568,7 @@ class _BadgeStyle {
   });
 }
 
-enum _ReputationSort {
-  zoneName,
-  levelDesc,
-  totalDesc,
-  repName,
-}
+enum _ReputationSort { zoneName, levelDesc, totalDesc, repName }
 
 enum _ReputationFilter {
   all,
@@ -589,20 +657,20 @@ _BadgeStyle _badgeStyle(ColorScheme scheme, UserZoneReputationName? rep) {
       );
     case UserZoneReputationName.exalted:
       return _BadgeStyle(
-        background: scheme.primary.withOpacity(0.12),
+        background: scheme.primary.withValues(alpha: 0.12),
         foreground: scheme.primary,
-        border: scheme.primary.withOpacity(0.5),
+        border: scheme.primary.withValues(alpha: 0.5),
       );
     case UserZoneReputationName.legendary:
       return _BadgeStyle(
-        background: scheme.secondary.withOpacity(0.14),
+        background: scheme.secondary.withValues(alpha: 0.14),
         foreground: scheme.secondary,
-        border: scheme.secondary.withOpacity(0.5),
+        border: scheme.secondary.withValues(alpha: 0.5),
       );
     case UserZoneReputationName.neutral:
     default:
       return _BadgeStyle(
-        background: scheme.surfaceVariant,
+        background: scheme.surfaceContainerHighest,
         foreground: scheme.onSurfaceVariant,
         border: scheme.outlineVariant,
       );

@@ -6,15 +6,17 @@ class ActivityService {
 
   ActivityService(this._api);
 
-  Future<List<ActivityFeed>> getActivities() async {
-    try {
-      final list = await _api.get<List<dynamic>>('/sonar/activities');
-      return list
-          .map((e) => ActivityFeed.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+  Future<List<ActivityFeed>> getActivities({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/activities',
+      params: {'limit': limit, 'offset': offset},
+    );
+    return list
+        .map((e) => ActivityFeed.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> markAsSeen(List<String> activityIds) async {

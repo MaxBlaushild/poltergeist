@@ -14,6 +14,7 @@ import {
   MaterialRewardForm,
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import type { ZoneGenre } from '@poltergeist/types';
 
 type MonsterEncounterType = 'monster' | 'boss' | 'raid';
 type MonsterTemplateType = 'monster' | 'boss' | 'raid';
@@ -24,6 +25,8 @@ type MonsterTemplateRecord = {
   updatedAt: string;
   archived?: boolean;
   monsterType: MonsterTemplateType;
+  genreId: string;
+  genre?: ZoneGenre;
   name: string;
   description: string;
   imageUrl: string;
@@ -74,6 +77,8 @@ type MonsterRecord = {
   imageUrl: string;
   thumbnailUrl: string;
   zoneId: string;
+  genreId: string;
+  genre?: ZoneGenre;
   latitude: number;
   longitude: number;
   templateId?: string;
@@ -243,6 +248,7 @@ type EncounterIconState = {
 
 type MonsterTemplateFormState = {
   monsterType: MonsterTemplateType;
+  genreId: string;
   name: string;
   description: string;
   imageUrl: string;
@@ -467,6 +473,16 @@ const parseOptionalInt = (value: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
+  const fantasy = genres.find(
+    (genre) => (genre.name || '').trim().toLowerCase() === 'fantasy'
+  );
+  return fantasy?.id ?? genres[0]?.id ?? '';
+};
+
+const formatGenreLabel = (genre?: ZoneGenre | null): string =>
+  genre?.name?.trim() || 'Fantasy';
+
 const monsterListPageSize = 25;
 
 type PaginationControlsProps = {
@@ -520,8 +536,9 @@ const PaginationControls = ({
   );
 };
 
-const emptyTemplateForm = (): MonsterTemplateFormState => ({
+const emptyTemplateForm = (genreId = ''): MonsterTemplateFormState => ({
   monsterType: 'monster',
+  genreId,
   name: '',
   description: '',
   imageUrl: '',
@@ -562,6 +579,7 @@ const templateFormFromRecord = (
   template: MonsterTemplateRecord
 ): MonsterTemplateFormState => ({
   monsterType: template.monsterType ?? 'monster',
+  genreId: template.genreId ?? template.genre?.id ?? '',
   name: template.name ?? '',
   description: template.description ?? '',
   imageUrl: template.imageUrl ?? '',
@@ -628,6 +646,7 @@ const templateFormFromRecord = (
 
 const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
   monsterType: form.monsterType,
+  genreId: form.genreId.trim(),
   name: form.name.trim(),
   description: form.description.trim(),
   imageUrl: form.imageUrl.trim(),
@@ -758,15 +777,12 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   rewardGold:
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
   materialRewards: form.rewardMode === 'explicit' ? form.materialRewards : [],
-  itemRewards:
-    form.rewardMode === 'explicit'
-      ? form.itemRewards
-          .map((reward) => ({
-            inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
-            quantity: parseIntSafe(reward.quantity, 0),
-          }))
-          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
-      : [],
+  itemRewards: form.itemRewards
+    .map((reward) => ({
+      inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
+      quantity: parseIntSafe(reward.quantity, 0),
+    }))
+    .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
 });
 
 const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
@@ -838,15 +854,12 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   rewardGold:
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
   materialRewards: form.rewardMode === 'explicit' ? form.materialRewards : [],
-  itemRewards:
-    form.rewardMode === 'explicit'
-      ? form.itemRewards
-          .map((reward) => ({
-            inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
-            quantity: parseIntSafe(reward.quantity, 0),
-          }))
-          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
-      : [],
+  itemRewards: form.itemRewards
+    .map((reward) => ({
+      inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
+      quantity: parseIntSafe(reward.quantity, 0),
+    }))
+    .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
   scaleWithUserLevel: form.scaleWithUserLevel,
   recurrenceFrequency: form.recurrenceFrequency,
   zoneId: form.zoneId.trim(),
@@ -986,6 +999,7 @@ export const Monsters = () => {
   >([]);
   const [monsterOptions, setMonsterOptions] = useState<MonsterRecord[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [query, setQuery] = useState('');
   const [zoneQuery, setZoneQuery] = useState('');
@@ -1054,6 +1068,7 @@ export const Monsters = () => {
   const [bulkTemplateCount, setBulkTemplateCount] = useState('8');
   const [bulkTemplateType, setBulkTemplateType] =
     useState<MonsterTemplateType>('monster');
+  const [bulkTemplateGenreId, setBulkTemplateGenreId] = useState('');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<
     'all' | MonsterTemplateType
   >('all');
@@ -1096,16 +1111,22 @@ export const Monsters = () => {
   const encounterLongitudeRef = React.useRef(encounterForm.longitude);
   const deferredQuery = useDeferredValue(query);
   const deferredZoneQuery = useDeferredValue(zoneQuery);
+  const defaultGenreId = useMemo(
+    () => defaultGenreIdFromList(genres),
+    [genres]
+  );
 
   const loadReferenceData = useCallback(async () => {
     try {
       setReferenceLoading(true);
-      const [spellResp, inventoryResp] = await Promise.all([
+      const [spellResp, inventoryResp, genreResp] = await Promise.all([
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
+        apiClient.get<ZoneGenre[]>('/sonar/zone-genres?includeInactive=true'),
       ]);
       setSpells(Array.isArray(spellResp) ? spellResp : []);
       setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
+      setGenres(Array.isArray(genreResp) ? genreResp : []);
     } catch (err) {
       console.error('Failed to load monster admin reference data', err);
       setError('Failed to load monster admin reference data.');
@@ -1208,6 +1229,21 @@ export const Monsters = () => {
   useEffect(() => {
     void loadReferenceData();
   }, [loadReferenceData]);
+
+  useEffect(() => {
+    if (!bulkTemplateGenreId && defaultGenreId) {
+      setBulkTemplateGenreId(defaultGenreId);
+    }
+  }, [bulkTemplateGenreId, defaultGenreId]);
+
+  useEffect(() => {
+    if (!showTemplateModal) return;
+    if (!templateForm.genreId && defaultGenreId) {
+      setTemplateForm((prev) =>
+        prev.genreId ? prev : { ...prev, genreId: defaultGenreId }
+      );
+    }
+  }, [defaultGenreId, showTemplateModal, templateForm.genreId]);
 
   useEffect(() => {
     void loadPagedData();
@@ -1481,7 +1517,7 @@ export const Monsters = () => {
 
   const openCreateTemplate = () => {
     setEditingTemplate(null);
-    setTemplateForm(emptyTemplateForm());
+    setTemplateForm(emptyTemplateForm(defaultGenreId));
     setShowTemplateModal(true);
   };
 
@@ -1494,7 +1530,7 @@ export const Monsters = () => {
   const closeTemplateModal = () => {
     setShowTemplateModal(false);
     setEditingTemplate(null);
-    setTemplateForm(emptyTemplateForm());
+    setTemplateForm(emptyTemplateForm(defaultGenreId));
   };
 
   const saveTemplate = async () => {
@@ -1657,7 +1693,11 @@ export const Monsters = () => {
       setBulkTemplateJob(null);
       const response = await apiClient.post<BulkMonsterTemplateStatus>(
         '/sonar/monster-templates/bulk-generate',
-        { count, monsterType: bulkTemplateType }
+        {
+          count,
+          monsterType: bulkTemplateType,
+          genreId: bulkTemplateGenreId,
+        }
       );
       setBulkTemplateJob(response);
       if (response.status === 'completed') {
@@ -1698,7 +1738,11 @@ export const Monsters = () => {
       setBulkTemplateJob(null);
       const response = await apiClient.post<BulkMonsterTemplateStatus>(
         '/sonar/monster-templates/bulk-generate',
-        { count: 1, monsterType }
+        {
+          count: 1,
+          monsterType,
+          genreId: bulkTemplateGenreId,
+        }
       );
       setBulkTemplateJob(response);
       setBulkTemplateType(monsterType);
@@ -2832,6 +2876,23 @@ export const Monsters = () => {
                   </option>
                 ))}
               </select>
+              <select
+                value={bulkTemplateGenreId}
+                onChange={(event) => setBulkTemplateGenreId(event.target.value)}
+                className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk template genre"
+              >
+                {genres.length === 0 ? (
+                  <option value="">Fantasy</option>
+                ) : (
+                  genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {formatGenreLabel(genre)}
+                      {genre.active === false ? ' (inactive)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
               <input
                 type="number"
                 min={1}
@@ -2899,6 +2960,12 @@ export const Monsters = () => {
                 Type:{' '}
                 {formatMonsterTemplateTypeLabel(
                   bulkTemplateJob.monsterType ?? bulkTemplateType
+                )}
+              </span>
+              <span>
+                Genre:{' '}
+                {formatGenreLabel(
+                  genres.find((genre) => genre.id === bulkTemplateGenreId)
                 )}
               </span>
               <span>Job: {bulkTemplateJob.jobId}</span>
@@ -3274,6 +3341,9 @@ export const Monsters = () => {
                                 template.monsterType
                               )}
                             </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Genre: {formatGenreLabel(template.genre)}
+                            </p>
                             {template.description ? (
                               <p className="text-sm text-gray-600 mt-1">
                                 {template.description}
@@ -3478,11 +3548,17 @@ export const Monsters = () => {
                                   : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
+                              Genre:{' '}
+                              {formatGenreLabel(
+                                monster.genre ?? monster.template?.genre
+                              )}
+                            </p>
+                            <p className="text-sm text-gray-600">
                               Dominant Hand:{' '}
                               {monster.dominantHandInventoryItem?.name ??
                                 monster.weaponInventoryItem?.name ??
-                                (monster.dominantHandInventoryItemId ??
-                                monster.weaponInventoryItemId
+                                ((monster.dominantHandInventoryItemId ??
+                                monster.weaponInventoryItemId)
                                   ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
                                   : 'N/A')}
                             </p>
@@ -3524,7 +3600,16 @@ export const Monsters = () => {
                             </p>
                             <p className="text-sm text-gray-600">
                               {(monster.rewardMode ?? 'random') === 'random'
-                                ? `Random ${(monster.randomRewardSize ?? 'small').toUpperCase()} reward`
+                                ? `Random ${(monster.randomRewardSize ?? 'small').toUpperCase()} reward${
+                                    (monster.itemRewards?.length ?? 0) > 0
+                                      ? ` + ${monster.itemRewards?.length ?? 0} guaranteed item reward${
+                                          (monster.itemRewards?.length ?? 0) ===
+                                          1
+                                            ? ''
+                                            : 's'
+                                        }`
+                                      : ''
+                                  }`
                                 : `XP ${monster.rewardExperience} · Gold ${monster.rewardGold} · Item rewards ${
                                     monster.itemRewards?.length ?? 0
                                   }`}
@@ -3705,7 +3790,16 @@ export const Monsters = () => {
                             <p className="text-sm text-gray-600">
                               Rewards:{' '}
                               {encounter.rewardMode === 'random'
-                                ? `Random ${(encounter.randomRewardSize ?? 'small').toUpperCase()} reward`
+                                ? `Random ${(encounter.randomRewardSize ?? 'small').toUpperCase()} reward${
+                                    (encounter.itemRewards?.length ?? 0) > 0
+                                      ? ` + ${encounter.itemRewards?.length ?? 0} guaranteed item reward${
+                                          (encounter.itemRewards?.length ??
+                                            0) === 1
+                                            ? ''
+                                            : 's'
+                                        }`
+                                      : ''
+                                  }`
                                 : `XP ${encounter.rewardExperience} · Gold ${encounter.rewardGold} · Item rewards ${
                                     encounter.itemRewards?.length ?? 0
                                   }`}
@@ -3808,6 +3902,30 @@ export const Monsters = () => {
                         {option.label}
                       </option>
                     ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Genre</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.genreId}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        genreId: event.target.value,
+                      }))
+                    }
+                  >
+                    {genres.length === 0 ? (
+                      <option value="">Fantasy</option>
+                    ) : (
+                      genres.map((genre) => (
+                        <option key={genre.id} value={genre.id}>
+                          {formatGenreLabel(genre)}
+                          {genre.active === false ? ' (inactive)' : ''}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </label>
                 <label className="block">
@@ -4380,11 +4498,10 @@ export const Monsters = () => {
 
               <div className="border border-gray-200 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Item Rewards</h3>
+                  <h3 className="font-medium">Guaranteed Item Rewards</h3>
                   <button
                     type="button"
                     className="qa-btn qa-btn-secondary"
-                    disabled={monsterForm.rewardMode !== 'explicit'}
                     onClick={() =>
                       setMonsterForm((prev) => ({
                         ...prev,
@@ -4411,7 +4528,6 @@ export const Monsters = () => {
                       <select
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.inventoryItemId}
-                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateMonsterItemReward(index, {
                             inventoryItemId: event.target.value,
@@ -4430,7 +4546,6 @@ export const Monsters = () => {
                         min={1}
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.quantity}
-                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateMonsterItemReward(index, {
                             quantity: event.target.value,
@@ -4440,7 +4555,6 @@ export const Monsters = () => {
                       <button
                         type="button"
                         className="qa-btn qa-btn-danger"
-                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onClick={() =>
                           setMonsterForm((prev) => ({
                             ...prev,
@@ -4459,8 +4573,8 @@ export const Monsters = () => {
 
               {monsterForm.rewardMode === 'random' ? (
                 <p className="text-xs text-gray-500">
-                  Random rewards ignore explicit XP, gold, material, and item
-                  rewards.
+                  Random rewards still grant scaled XP and gold. Guaranteed
+                  items above are awarded too; materials stay explicit-only.
                 </p>
               ) : null}
 
@@ -4691,11 +4805,12 @@ export const Monsters = () => {
 
               <div className="border border-gray-200 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Encounter Item Rewards</h3>
+                  <h3 className="font-medium">
+                    Guaranteed Encounter Item Rewards
+                  </h3>
                   <button
                     type="button"
                     className="qa-btn qa-btn-secondary"
-                    disabled={encounterForm.rewardMode !== 'explicit'}
                     onClick={() =>
                       setEncounterForm((prev) => ({
                         ...prev,
@@ -4722,7 +4837,6 @@ export const Monsters = () => {
                       <select
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.inventoryItemId}
-                        disabled={encounterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateEncounterItemReward(index, {
                             inventoryItemId: event.target.value,
@@ -4741,7 +4855,6 @@ export const Monsters = () => {
                         min={1}
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.quantity}
-                        disabled={encounterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateEncounterItemReward(index, {
                             quantity: event.target.value,
@@ -4751,7 +4864,6 @@ export const Monsters = () => {
                       <button
                         type="button"
                         className="qa-btn qa-btn-danger"
-                        disabled={encounterForm.rewardMode !== 'explicit'}
                         onClick={() =>
                           setEncounterForm((prev) => ({
                             ...prev,

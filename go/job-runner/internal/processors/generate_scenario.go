@@ -53,19 +53,13 @@ Return JSON only:
   "prompt": "2-4 vivid sentences",
   "difficulty": 0-40,
   "rewardExperience": 0-120,
-  "rewardGold": 0-120,
-  "itemRewards": [
-    { "inventoryItemId": <id from allowed list>, "quantity": 1-3 }
-  ]
+  "rewardGold": 0-120
 }
 
 Rules:
 - Prompt must be specific to this zone and location, with a clear conflict/opportunity.
 - The scenario must feel materially different from the recent scenarios listed above.
 - Keep tone adventurous and grounded in physical surroundings.
-- itemRewards can be empty.
-- Use only inventoryItemId values from this allowed list:
-%s
 `
 
 const choiceScenarioGenerationPromptTemplate = `
@@ -100,10 +94,7 @@ Return JSON only:
       "proficiencies": ["0-3 short proficiencies"],
       "difficulty": null or 0-40,
       "rewardExperience": 0-80,
-      "rewardGold": 0-80,
-      "itemRewards": [
-        { "inventoryItemId": <id from allowed list>, "quantity": 1-2 }
-      ]
+      "rewardGold": 0-80
     }
   ]
 }
@@ -113,9 +104,6 @@ Rules:
 - The scenario must feel materially different from the recent scenarios listed above.
 - options must contain exactly 3 entries and each option should feel distinct.
 - proficiencies should be practical, short labels.
-- itemRewards can be empty.
-- Use only inventoryItemId values from this allowed list:
-%s
 `
 
 var scenarioGenerationEncounterAnchors = []string{
@@ -265,16 +253,6 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 
 	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
 
-	inventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load inventory items: %w", err)
-	}
-	allowedItemIDs := make(map[int]struct{}, len(inventoryItems))
-	for _, item := range inventoryItems {
-		allowedItemIDs[item.ID] = struct{}{}
-	}
-	allowedItemsPrompt := buildAllowedItemsPrompt(inventoryItems)
-
 	scenario := &models.Scenario{
 		ZoneID:              job.ZoneID,
 		Latitude:            lat,
@@ -315,7 +293,6 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			lng,
 			varianceSalt,
 			recentScenarioAvoidance,
-			allowedItemsPrompt,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -330,7 +307,6 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		scenario.Difficulty = sanitizeScenarioDifficulty(generated.Difficulty, 24)
 		scenario.RewardExperience = clampInt(generated.RewardExperience, 0, 120)
 		scenario.RewardGold = clampInt(generated.RewardGold, 0, 120)
-		rewards = sanitizeScenarioRewards(generated.ItemRewards, allowedItemIDs, 3)
 	} else {
 		prompt := fmt.Sprintf(
 			choiceScenarioGenerationPromptTemplate,
@@ -340,7 +316,6 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			lng,
 			varianceSalt,
 			recentScenarioAvoidance,
-			allowedItemsPrompt,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -353,7 +328,7 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 
 		scenario.Prompt = sanitizeScenarioPrompt(generated.Prompt)
 		scenario.Difficulty = sanitizeScenarioDifficulty(generated.Difficulty, 24)
-		options = sanitizeScenarioOptions(generated.Options, allowedItemIDs)
+		options = sanitizeScenarioOptions(generated.Options, nil)
 		if len(options) == 0 {
 			options = append(options, fallbackScenarioOption())
 		}

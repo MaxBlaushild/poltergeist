@@ -312,6 +312,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/base/structures/:key/upgrade", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upgradeBaseStructure))
 	r.DELETE("/sonar/base/structures/:key", middleware.WithAuthentication(s.authClient, s.livenessClient, s.destroyBaseStructure))
 	r.POST("/sonar/base/hearth/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useBaseHearth))
+	r.POST("/sonar/base/chaos-engine/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useBaseChaosEngine))
 	r.GET("/sonar/base/crafting/:station/recipes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCraftingRecipes))
 	r.POST("/sonar/base/crafting/:station/recipes/:recipeID/craft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.craftBaseRecipe))
 	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
@@ -396,6 +397,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removeTagFromPointOfInterest))
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
 	r.GET("/sonar/admin/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminZones))
+	r.GET("/sonar/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneGenres))
+	r.POST("/sonar/admin/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneGenre))
+	r.PATCH("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneGenre))
+	r.DELETE("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneGenre))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
 	r.GET("/sonar/districts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistricts))
@@ -650,6 +655,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/base-structures", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminBaseStructures))
 	r.PUT("/sonar/admin/base-structures/:id/prompts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructurePrompts))
 	r.PUT("/sonar/admin/base-structures/:id/hearth-recovery-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructureHearthRecoveryConfig))
+	r.PUT("/sonar/admin/base-structures/:id/chaos-engine-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateBaseStructureChaosEngineConfig))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelImage))
 	r.POST("/sonar/admin/base-structures/:id/levels/:level/generate-top-down-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseStructureLevelTopDownImage))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
@@ -765,7 +771,33 @@ func (s *server) getActivities(ctx *gin.Context) {
 		return
 	}
 
-	activities, err := s.dbClient.Activity().GetFeed(ctx, user.ID)
+	const defaultActivityPageSize = 20
+	const maxActivityPageSize = 100
+
+	limit := defaultActivityPageSize
+	if raw := strings.TrimSpace(ctx.Query("limit")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		if parsed > maxActivityPageSize {
+			parsed = maxActivityPageSize
+		}
+		limit = parsed
+	}
+
+	offset := 0
+	if raw := strings.TrimSpace(ctx.Query("offset")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset"})
+			return
+		}
+		offset = parsed
+	}
+
+	activities, err := s.dbClient.Activity().GetFeedPage(ctx, user.ID, limit, offset)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -830,10 +862,16 @@ func (s *server) enrichActivities(ctx context.Context, activities []models.Activ
 					}
 				}
 				if payload.QuestID != uuid.Nil || payload.QuestName != "" {
-					entities["quest"] = map[string]interface{}{
+					questInfo := map[string]interface{}{
 						"id":   payload.QuestID,
 						"name": payload.QuestName,
 					}
+					if payload.QuestID != uuid.Nil {
+						if quest, err := s.dbClient.Quest().FindByID(ctx, payload.QuestID); err == nil && quest != nil {
+							questInfo["imageUrl"] = quest.ImageURL
+						}
+					}
+					entities["quest"] = questInfo
 				}
 				if payload.ZoneID != uuid.Nil || payload.ZoneName != "" {
 					entities["zone"] = map[string]interface{}{
@@ -881,6 +919,35 @@ func (s *server) enrichActivities(ctx context.Context, activities []models.Activ
 			if err := json.Unmarshal(activity.Data, &payload); err == nil {
 				entities["level"] = map[string]interface{}{
 					"newLevel": payload.NewLevel,
+				}
+			}
+		case models.ActivityTypeMonsterBattleInvite:
+			inviterIDRaw := strings.TrimSpace(fmt.Sprint(data["inviterUserId"]))
+			if inviterIDRaw != "" {
+				if inviterID, err := uuid.Parse(inviterIDRaw); err == nil {
+					if inviter, err := s.dbClient.User().FindByID(ctx, inviterID); err == nil && inviter != nil {
+						entities["inviter"] = map[string]interface{}{
+							"id":                inviter.ID,
+							"name":              userDisplayName(inviter),
+							"profilePictureUrl": strings.TrimSpace(inviter.ProfilePictureUrl),
+						}
+					}
+				}
+			}
+			monsterIDRaw := strings.TrimSpace(fmt.Sprint(data["monsterId"]))
+			if monsterIDRaw != "" {
+				if monsterID, err := uuid.Parse(monsterIDRaw); err == nil {
+					if monster, err := s.dbClient.Monster().FindByID(ctx, monsterID); err == nil && monster != nil {
+						monsterImageURL := strings.TrimSpace(monster.ImageURL)
+						if monsterImageURL == "" && monster.Template != nil {
+							monsterImageURL = strings.TrimSpace(monster.Template.ImageURL)
+						}
+						entities["monster"] = map[string]interface{}{
+							"id":       monster.ID,
+							"name":     strings.TrimSpace(monster.Name),
+							"imageUrl": monsterImageURL,
+						}
+					}
 				}
 			}
 		}
@@ -1836,7 +1903,13 @@ func (s *server) editZone(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, zone)
+	serialized, err := s.serializeSingleZoneWithGenres(ctx, zone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, serialized)
 }
 
 func (s *server) upsertZoneBoundary(ctx *gin.Context) {
@@ -2461,6 +2534,10 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	}
 
 	if existingAcceptance != nil {
+		if models.IsMainStoryQuestCategory(quest.Category) && existingAcceptance.IsTurnedIn() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "main story quest already completed"})
+			return
+		}
 		// Ensure accepted quests stay tracked even if acceptance predates tracking.
 		if err := s.dbClient.TrackedQuest().Create(ctx, questID, user.ID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -5777,7 +5854,12 @@ func (s *server) getZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, zone)
+	serialized, err := s.serializeSingleZoneWithGenres(ctx, zone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, serialized)
 }
 
 func (s *server) createZone(ctx *gin.Context) {
@@ -5805,7 +5887,12 @@ func (s *server) createZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, zone)
+	serialized, err := s.serializeSingleZoneWithGenres(ctx, zone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, serialized)
 }
 
 func (s *server) getDistricts(ctx *gin.Context) {
@@ -6895,7 +6982,12 @@ func (s *server) getZones(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, zones)
+	serialized, err := s.serializeZonesWithGenres(ctx, zones)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, serialized)
 }
 
 func (s *server) addPointOfInterestToZone(ctx *gin.Context) {
@@ -7261,6 +7353,10 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	if err := s.hydrateQuestLogQuestGivers(ctx, user.ID, questLog); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	ctx.JSON(http.StatusOK, questLog)
 }
@@ -8835,6 +8931,16 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
+	updatedOwnedInventoryItem, updatedErr := s.dbClient.InventoryItem().FindByID(ctx, ownedInventoryItem.ID)
+	if updatedErr != nil || updatedOwnedInventoryItem == nil {
+		fallbackOwnedItem := *ownedInventoryItem
+		fallbackOwnedItem.Quantity--
+		if fallbackOwnedItem.Quantity < 0 {
+			fallbackOwnedItem.Quantity = 0
+		}
+		updatedOwnedInventoryItem = &fallbackOwnedItem
+	}
+
 	if inventoryItem.IsCaptureType {
 		challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, request.ChallengeID)
 		if err != nil {
@@ -8856,15 +8962,18 @@ func (s *server) useItem(ctx *gin.Context) {
 			})
 			return
 		}
+		response := submissionResultResponsePayload(result)
+		response["usedItem"] = usedInventoryItemReceiptPayload(
+			dbInventoryItem,
+			updatedOwnedInventoryItem,
+			learnedRecipes,
+			"item used successfully",
+		)
 		if len(learnedRecipes) > 0 {
-			ctx.JSON(http.StatusOK, gin.H{
-				"result":         result,
-				"learnedRecipes": learnedRecipes,
-			})
-			return
+			response["learnedRecipes"] = learnedRecipes
 		}
 
-		ctx.JSON(http.StatusOK, result)
+		ctx.JSON(http.StatusOK, response)
 		return
 	}
 
@@ -8881,6 +8990,12 @@ func (s *server) useItem(ctx *gin.Context) {
 			"message":        "base created successfully",
 			"base":           serializeBase(base),
 			"learnedRecipes": learnedRecipes,
+			"usedItem": usedInventoryItemReceiptPayload(
+				dbInventoryItem,
+				updatedOwnedInventoryItem,
+				learnedRecipes,
+				"base created successfully",
+			),
 		}
 		if tutorialStatus != nil {
 			response["tutorialStatus"] = tutorialStatus
@@ -8892,6 +9007,12 @@ func (s *server) useItem(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message":        "item used successfully",
 		"learnedRecipes": learnedRecipes,
+		"usedItem": usedInventoryItemReceiptPayload(
+			dbInventoryItem,
+			updatedOwnedInventoryItem,
+			learnedRecipes,
+			"item used successfully",
+		),
 	})
 }
 
@@ -11797,7 +11918,7 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	rewardItemChoices := []scenarioRewardItem{}
 	rewardMode := models.NormalizeRewardMode(string(challenge.RewardMode))
 	if rewardMode == models.RewardModeRandom {
-		plan, _, err := s.randomRewardPlanForUser(
+		plan, _, _, err := s.randomRewardPlanForUser(
 			ctx,
 			user.ID,
 			challenge.RandomRewardSize,
@@ -11809,7 +11930,10 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		}
 		rewardExperience = plan.Experience
 		rewardGold = plan.Gold
-		rewardItems = randomRewardPlanToScenarioItems(plan)
+		rewardItems = mergeScenarioRewardItems(
+			randomRewardPlanToScenarioItems(plan),
+			challengeRewardItemsFromInventoryItemID(challenge.InventoryItemID),
+		)
 		rewardItemChoices = []scenarioRewardItem{}
 	} else {
 		rewardExperience = challenge.RewardExperience
@@ -13436,7 +13560,7 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	rewardItems := []scenarioRewardItem{}
 	rewardSpells := []scenarioRewardSpell{}
 	if rewardMode == models.RewardModeRandom {
-		plan, _, err := s.randomRewardPlanForUser(
+		plan, _, _, err := s.randomRewardPlanForUser(
 			c,
 			user.ID,
 			rewardSize,
@@ -13448,7 +13572,10 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		}
 		rewardExperience = plan.Experience
 		rewardGold = plan.Gold
-		rewardItems = randomRewardPlanToScenarioItems(plan)
+		rewardItems = mergeScenarioRewardItems(
+			randomRewardPlanToScenarioItems(plan),
+			pointOfInterestRewardItemsFromRewards(pointOfInterest.ItemRewards),
+		)
 	} else {
 		rewardExperience = pointOfInterest.RewardExperience
 		if rewardExperience < 0 {
@@ -15183,7 +15310,7 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 				continue
 			}
 			if acc, exists := acceptedV2[questID]; exists {
-				if acc.TurnedInAt != nil {
+				if acc.IsTurnedIn() {
 					log.Printf("getCharacterActions: hiding turned-in quest action=%s questId=%v userId=%s", action.ID, questID, user.ID)
 					continue
 				}
@@ -16058,13 +16185,10 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	// Add explicit items only when explicit reward mode is selected.
-	if rewardMode == models.RewardModeExplicit {
-		for _, item := range requestBody.Items {
-			if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChest.ID, item.InventoryItemID, item.Quantity); err != nil {
-				// Log error but don't fail the request
-				continue
-			}
+	for _, item := range requestBody.Items {
+		if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChest.ID, item.InventoryItemID, item.Quantity); err != nil {
+			// Log error but don't fail the request
+			continue
 		}
 	}
 
@@ -16197,8 +16321,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	// Update explicit items only when explicit mode is selected.
-	if updates.RewardMode == models.RewardModeExplicit && requestBody.Items != nil {
+	if requestBody.Items != nil {
 		// Remove all existing items
 		existingChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
 		if err == nil && existingChest != nil {
@@ -16213,11 +16336,6 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 				// Log error but continue
 				continue
 			}
-		}
-	}
-	if updates.RewardMode == models.RewardModeRandom {
-		for _, item := range existingChest.Items {
-			_ = s.dbClient.TreasureChest().RemoveItem(ctx, treasureChestID, item.InventoryItemID)
 		}
 	}
 
@@ -16456,7 +16574,7 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	rewardGold := 0
 	rewardItems := []scenarioRewardItem{}
 	if rewardMode == models.RewardModeRandom {
-		plan, _, err := s.randomRewardPlanForUser(
+		plan, _, _, err := s.randomRewardPlanForUser(
 			ctx,
 			user.ID,
 			rewardSize,
@@ -16468,7 +16586,10 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		}
 		rewardExperience = plan.Experience
 		rewardGold = plan.Gold
-		rewardItems = randomRewardPlanToScenarioItems(plan)
+		rewardItems = mergeScenarioRewardItems(
+			randomRewardPlanToScenarioItems(plan),
+			chestRewardItemsFromChest(treasureChest.Items),
+		)
 	} else {
 		rewardExperience = treasureChest.RewardExperience
 		if rewardExperience < 0 {
@@ -18942,7 +19063,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 	}
 	if success {
 		if scenarioRewardMode == models.RewardModeRandom {
-			plan, _, err := s.randomRewardPlanForUser(
+			plan, _, _, err := s.randomRewardPlanForUser(
 				ctx,
 				user.ID,
 				scenarioRandomRewardSize,
@@ -18954,7 +19075,10 @@ func (s *server) performScenario(ctx *gin.Context) {
 			}
 			rewardExperience = plan.Experience
 			rewardGold = plan.Gold
-			rewardItems = randomRewardPlanToScenarioItems(plan)
+			rewardItems = mergeScenarioRewardItems(
+				randomRewardPlanToScenarioItems(plan),
+				scenarioRewardItemsFromScenario(scenario.ItemRewards),
+			)
 			rewardItemChoices = []scenarioRewardItem{}
 			rewardSpells = []scenarioRewardSpell{}
 		}

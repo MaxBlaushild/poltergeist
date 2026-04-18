@@ -1018,11 +1018,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     ),
                   );
                 }),
-              if (quest.hasRandomRewards &&
-                  quest.gold <= 0 &&
-                  quest.materialRewards.isEmpty &&
-                  quest.itemRewards.isEmpty &&
-                  quest.spellRewards.isEmpty)
+              if (quest.hasRandomRewards)
                 _buildRandomRewardNotice(context, quest),
               if (quest.gold <= 0 &&
                   !quest.hasRandomRewards &&

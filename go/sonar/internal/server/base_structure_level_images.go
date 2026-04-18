@@ -148,6 +148,84 @@ func (s *server) updateBaseStructureHearthRecoveryConfig(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, serializeBaseStructureDefinition(*definition))
 }
 
+func (s *server) updateBaseStructureChaosEngineConfig(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	definitionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || definitionID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base structure definition ID"})
+		return
+	}
+
+	definition, err := s.dbClient.BaseStructureDefinition().FindByID(ctx, definitionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if definition == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "base structure definition not found"})
+		return
+	}
+	if strings.TrimSpace(definition.Key) != "chaos_engine" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Chaos Engine config can only be updated for the Chaos Engine Room"})
+		return
+	}
+
+	var body struct {
+		RequiredInventoryItemID *int `json:"requiredInventoryItemId"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if body.RequiredInventoryItemID != nil && *body.RequiredInventoryItemID <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "requiredInventoryItemId must be positive"})
+		return
+	}
+	if body.RequiredInventoryItemID != nil {
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, *body.RequiredInventoryItemID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item not found"})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if item == nil || item.Archived {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "inventory item is unavailable"})
+			return
+		}
+	}
+
+	effectConfig := definition.EffectConfig
+	if effectConfig == nil {
+		effectConfig = models.MetadataJSONB{}
+	}
+	if body.RequiredInventoryItemID == nil {
+		effectConfig["requiredInventoryItemId"] = nil
+	} else {
+		effectConfig["requiredInventoryItemId"] = *body.RequiredInventoryItemID
+	}
+
+	if err := s.dbClient.BaseStructureDefinition().UpdateEffectConfig(ctx, definitionID, effectConfig); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	definition, err = s.dbClient.BaseStructureDefinition().FindByID(ctx, definitionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, serializeBaseStructureDefinition(*definition))
+}
+
 func (s *server) generateBaseStructureLevelImage(ctx *gin.Context) {
 	s.generateBaseStructureLevelVisual(ctx, "")
 }
