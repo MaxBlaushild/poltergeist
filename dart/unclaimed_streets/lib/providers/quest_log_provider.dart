@@ -72,6 +72,91 @@ class QuestLogProvider with ChangeNotifier {
     return _quests.any((q) => q.currentNode?.pointOfInterest?.id == poi.id);
   }
 
+  List<String> _normalizeTrackedQuestIds(List<String> trackedQuestIds) {
+    final normalized = <String>[];
+    final seen = <String>{};
+    for (final questId in trackedQuestIds) {
+      final trimmed = questId.trim();
+      if (trimmed.isEmpty || !seen.add(trimmed)) continue;
+      normalized.add(trimmed);
+    }
+    return normalized;
+  }
+
+  List<Quest> _promoteTutorialTrackedQuests(
+    List<Quest> quests,
+    List<String> trackedQuestIds,
+  ) {
+    final trackedIds = trackedQuestIds.toSet();
+    if (trackedIds.isEmpty) {
+      return List<Quest>.from(quests);
+    }
+
+    final tutorialTracked = <Quest>[];
+    final remaining = <Quest>[];
+    for (final quest in quests) {
+      final questId = quest.id.trim();
+      if (quest.isTutorial && trackedIds.contains(questId)) {
+        tutorialTracked.add(quest);
+      } else {
+        remaining.add(quest);
+      }
+    }
+
+    if (tutorialTracked.isEmpty) {
+      return List<Quest>.from(quests);
+    }
+    return [...tutorialTracked, ...remaining];
+  }
+
+  List<String> _promoteTutorialTrackedQuestIds(
+    List<String> trackedQuestIds,
+    List<Quest> orderedQuests,
+  ) {
+    if (trackedQuestIds.isEmpty) {
+      return const [];
+    }
+
+    final trackedIdSet = trackedQuestIds.toSet();
+    final tutorialTrackedIds = <String>[];
+    final seen = <String>{};
+
+    for (final quest in orderedQuests) {
+      final questId = quest.id.trim();
+      if (!quest.isTutorial ||
+          !trackedIdSet.contains(questId) ||
+          !seen.add(questId)) {
+        continue;
+      }
+      tutorialTrackedIds.add(questId);
+    }
+
+    if (tutorialTrackedIds.isEmpty) {
+      return List<String>.from(trackedQuestIds);
+    }
+
+    final orderedIds = <String>[...tutorialTrackedIds];
+    for (final questId in trackedQuestIds) {
+      if (seen.add(questId)) {
+        orderedIds.add(questId);
+      }
+    }
+    return orderedIds;
+  }
+
+  List<Quest> _trackedQuestsForState(
+    List<Quest> quests,
+    List<String> trackedQuestIds,
+  ) {
+    final trackedIds = trackedQuestIds.toSet();
+    if (trackedIds.isEmpty) {
+      return const [];
+    }
+    return quests
+        .where((quest) => trackedIds.contains(quest.id.trim()))
+        .toList();
+  }
+
   void _onZoneOrTagsChanged() {
     final zoneId = _zone.selectedZone?.id;
     final tagNames = _tagNamesFromSelection();
@@ -122,21 +207,33 @@ class QuestLogProvider with ChangeNotifier {
     try {
       final tagNames = _tagNamesFromSelection();
       final log = await _service.getQuestLog(zoneId: zoneId, tags: tagNames);
-      _quests = log.quests;
+      final normalizedTrackedQuestIds = _normalizeTrackedQuestIds(
+        log.trackedQuestIds,
+      );
+      final orderedQuests = _promoteTutorialTrackedQuests(
+        log.quests,
+        normalizedTrackedQuestIds,
+      );
+      final orderedTrackedQuestIds = _promoteTutorialTrackedQuestIds(
+        normalizedTrackedQuestIds,
+        orderedQuests,
+      );
+      _quests = orderedQuests;
       _completedQuests = log.completedQuests;
-      _trackedQuestIds = List.from(log.trackedQuestIds);
-      _pointsOfInterest = getMapPointsOfInterest(log.quests);
-      final tracked = log.quests
-          .where((q) => log.trackedQuestIds.contains(q.id))
-          .toList();
+      _trackedQuestIds = orderedTrackedQuestIds;
+      _pointsOfInterest = getMapPointsOfInterest(orderedQuests);
+      final tracked = _trackedQuestsForState(
+        orderedQuests,
+        orderedTrackedQuestIds,
+      );
       _trackedPointOfInterestIds = tracked
           .expand((q) => getAllPointsOfInterestIdsForQuest(q))
           .toList();
-      _currentNodePoiIds = log.quests
+      _currentNodePoiIds = orderedQuests
           .where((q) => q.isAccepted)
           .expand((q) => getAllPointsOfInterestIdsForQuest(q))
           .toList();
-      _currentNodePolygons = log.quests
+      _currentNodePolygons = orderedQuests
           .where((q) => q.isAccepted && !q.readyToTurnIn)
           .map((q) => q.currentNode?.polygon ?? const <QuestNodePolygonPoint>[])
           .where((poly) => poly.isNotEmpty)

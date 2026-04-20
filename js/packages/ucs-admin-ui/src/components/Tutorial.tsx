@@ -53,6 +53,7 @@ type TutorialConfigResponse = {
   baseQuestGiverCharacterId?: string | null;
   baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
+  scenarioObjectiveCopy?: string;
   loadoutDialogue?: DialogueMessage[];
   loadoutObjectiveCopy?: string;
   postMonsterDialogue?: DialogueMessage[];
@@ -66,6 +67,7 @@ type TutorialConfigResponse = {
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
   monsterEncounterId?: string | null;
+  monsterObjectiveCopy?: string;
   monsterRewardExperience?: number;
   monsterRewardGold?: number;
   monsterItemRewards?: Array<{ inventoryItemId?: number; quantity?: number }>;
@@ -287,6 +289,7 @@ export const Tutorial = () => {
     setBaseQuestGiverCharacterTemplateId,
   ] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
+  const [scenarioObjectiveCopy, setScenarioObjectiveCopy] = useState('');
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutObjectiveCopy, setLoadoutObjectiveCopy] = useState('');
   const [postMonsterDialogue, setPostMonsterDialogue] = useState<
@@ -309,6 +312,7 @@ export const Tutorial = () => {
   >(null);
   const [options, setOptions] = useState<TutorialOptionRow[]>([]);
   const [monsterEncounterId, setMonsterEncounterId] = useState('');
+  const [monsterObjectiveCopy, setMonsterObjectiveCopy] = useState('');
   const [monsterRewardExperience, setMonsterRewardExperience] = useState(0);
   const [monsterRewardGold, setMonsterRewardGold] = useState(0);
   const [monsterItemRewards, setMonsterItemRewards] = useState<
@@ -351,6 +355,7 @@ export const Tutorial = () => {
           config.baseQuestGiverCharacterTemplateId ?? ''
         );
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
+        setScenarioObjectiveCopy(config.scenarioObjectiveCopy ?? '');
         setLoadoutDialogue(
           Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
         );
@@ -382,6 +387,7 @@ export const Tutorial = () => {
           (config.imageGenerationError ?? '').trim() || null
         );
         setMonsterEncounterId(config.monsterEncounterId ?? '');
+        setMonsterObjectiveCopy(config.monsterObjectiveCopy ?? '');
         setMonsterRewardExperience(
           typeof config.monsterRewardExperience === 'number'
             ? config.monsterRewardExperience
@@ -751,6 +757,7 @@ export const Tutorial = () => {
             ? baseQuestGiverCharacterTemplateId || null
             : null,
         dialogue,
+        scenarioObjectiveCopy: scenarioObjectiveCopy.trim(),
         loadoutDialogue,
         loadoutObjectiveCopy: loadoutObjectiveCopy.trim(),
         postMonsterDialogue,
@@ -762,6 +769,7 @@ export const Tutorial = () => {
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
         monsterEncounterId: monsterEncounterId || null,
+        monsterObjectiveCopy: monsterObjectiveCopy.trim(),
         monsterRewardExperience: Math.max(0, monsterRewardExperience),
         monsterRewardGold: Math.max(0, monsterRewardGold),
         monsterItemRewards: monsterItemRewards
@@ -974,6 +982,26 @@ export const Tutorial = () => {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Tracked Quest Copy
+                    </label>
+                    <textarea
+                      value={scenarioObjectiveCopy}
+                      onChange={(event) =>
+                        setScenarioObjectiveCopy(event.target.value)
+                      }
+                      rows={3}
+                      placeholder="Complete the tutorial scenario to continue."
+                      className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      This short objective copy is shown in the tracked quest
+                      overlay while the player is on the tutorial scenario step.
+                    </p>
+                  </div>
+                </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">
                     Scenario Prompt
@@ -1612,6 +1640,24 @@ export const Tutorial = () => {
 
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="md:col-span-3">
+                  <div className="mb-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Tracked Quest Copy
+                    </label>
+                    <textarea
+                      value={monsterObjectiveCopy}
+                      onChange={(event) =>
+                        setMonsterObjectiveCopy(event.target.value)
+                      }
+                      rows={3}
+                      placeholder="Defeat the tutorial monster encounter to continue."
+                      className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      This short objective copy is shown in the tracked quest
+                      overlay while the player is on the tutorial monster step.
+                    </p>
+                  </div>
                   <SearchableSelect
                     label="Monster Encounter"
                     placeholder="Search encounter name…"

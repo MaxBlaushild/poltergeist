@@ -35,6 +35,16 @@ class TrackedQuestsOverlay extends StatefulWidget {
     this.onFocusFeaturedMainStoryLead,
     this.onPreviewFeaturedMainStoryLead,
     this.onCloseOverlay,
+    this.tutorialScenarioTitle,
+    this.tutorialScenarioDetail,
+    this.tutorialScenarioObjectiveCopy,
+    this.onFocusTutorialScenario,
+    this.onPreviewTutorialScenario,
+    this.tutorialMonsterTitle,
+    this.tutorialMonsterDetail,
+    this.tutorialMonsterObjectiveCopy,
+    this.onFocusTutorialMonster,
+    this.onPreviewTutorialMonster,
     this.expandUpwards = false,
     this.collapsedHeight = 48,
     this.maxExpandedHeight = 384,
@@ -55,6 +65,16 @@ class TrackedQuestsOverlay extends StatefulWidget {
   final VoidCallback? onFocusFeaturedMainStoryLead;
   final VoidCallback? onPreviewFeaturedMainStoryLead;
   final VoidCallback? onCloseOverlay;
+  final String? tutorialScenarioTitle;
+  final String? tutorialScenarioDetail;
+  final String? tutorialScenarioObjectiveCopy;
+  final VoidCallback? onFocusTutorialScenario;
+  final VoidCallback? onPreviewTutorialScenario;
+  final String? tutorialMonsterTitle;
+  final String? tutorialMonsterDetail;
+  final String? tutorialMonsterObjectiveCopy;
+  final VoidCallback? onFocusTutorialMonster;
+  final VoidCallback? onPreviewTutorialMonster;
   final bool expandUpwards;
   final double collapsedHeight;
   final double maxExpandedHeight;
@@ -306,10 +326,60 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     widget.onFocusPoI(poi);
   }
 
+  void _onTutorialScenarioTap() {
+    _collapse();
+    widget.onFocusTutorialScenario?.call();
+  }
+
+  void _onTutorialMonsterTap() {
+    _collapse();
+    widget.onFocusTutorialMonster?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<QuestLogProvider, DiscoveriesProvider>(
       builder: (context, ql, discoveries, _) {
+        final tutorialScenarioObjectiveCopy =
+            widget.tutorialScenarioObjectiveCopy?.trim() ?? '';
+        final tutorialMonsterObjectiveCopy =
+            widget.tutorialMonsterObjectiveCopy?.trim() ?? '';
+        final tutorialItems = <_TrackedQuestCarouselItem>[
+          if (tutorialScenarioObjectiveCopy.isNotEmpty)
+            _TrackedQuestCarouselItem(
+              id: 'tutorial:scenario',
+              child: KeyedSubtree(
+                key: const ValueKey('tutorial-tracked-scenario'),
+                child: _TutorialTrackedObjectiveCard(
+                  title: widget.tutorialScenarioTitle ?? 'Tutorial Scenario',
+                  detail: widget.tutorialScenarioDetail ?? '',
+                  objectiveCopy: tutorialScenarioObjectiveCopy,
+                  icon: Icons.auto_awesome_rounded,
+                  onTap: widget.onFocusTutorialScenario == null
+                      ? null
+                      : _onTutorialScenarioTap,
+                ),
+              ),
+              onPreview: widget.onPreviewTutorialScenario,
+            ),
+          if (tutorialMonsterObjectiveCopy.isNotEmpty)
+            _TrackedQuestCarouselItem(
+              id: 'tutorial:monster',
+              child: KeyedSubtree(
+                key: const ValueKey('tutorial-tracked-monster'),
+                child: _TutorialTrackedObjectiveCard(
+                  title: widget.tutorialMonsterTitle ?? 'Tutorial Monster',
+                  detail: widget.tutorialMonsterDetail ?? '',
+                  objectiveCopy: tutorialMonsterObjectiveCopy,
+                  icon: Icons.gps_fixed_rounded,
+                  onTap: widget.onFocusTutorialMonster == null
+                      ? null
+                      : _onTutorialMonsterTap,
+                ),
+              ),
+              onPreview: widget.onPreviewTutorialMonster,
+            ),
+        ];
         final tracked =
             ql.quests.where((q) => ql.trackedQuestIds.contains(q.id)).toList()
               ..sort((a, b) {
@@ -359,6 +429,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         _lastAcceptedTrackedQuestIds = acceptedTrackedQuestIds;
         _hasAcceptedTrackedQuestSnapshot = true;
         final contentItems = <_TrackedQuestCarouselItem>[
+          ...tutorialItems,
           if (featuredMainStoryPoi != null)
             _TrackedQuestCarouselItem(
               id: 'featured-main-story:${featuredMainStoryPoi.id}',
@@ -414,6 +485,14 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         }
 
         if (visibleTracked.isEmpty && featuredMainStoryPoi == null) {
+          if (tutorialItems.isNotEmpty) {
+            // fall through and render the tutorial-only overlay state
+          } else {
+            return const SizedBox.shrink();
+          }
+        }
+
+        if (contentItems.isEmpty) {
           return const SizedBox.shrink();
         }
 
@@ -689,6 +768,109 @@ class _ImportantQuestLeadCard extends StatelessWidget {
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: const Color(0xFFF8EBD0)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialTrackedObjectiveCard extends StatelessWidget {
+  const _TutorialTrackedObjectiveCard({
+    required this.title,
+    required this.objectiveCopy,
+    required this.icon,
+    this.detail = '',
+    this.onTap,
+  });
+
+  final String title;
+  final String objectiveCopy;
+  final String detail;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedTitle = title.trim().isNotEmpty
+        ? title.trim()
+        : 'Tutorial Objective';
+    final normalizedDetail = detail.trim();
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF5D3E12), Color(0xFF2E1E0A)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE7C36A)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7C36A),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Tutorial Objective',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: const Color(0xFF3A1A11),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _TrackedQuestTileFrame(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0x33F1D597),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, color: const Color(0xFFF1D597), size: 22),
+              ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    normalizedTitle,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    objectiveCopy.trim(),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFFF8EBD0),
+                      height: 1.35,
+                    ),
+                  ),
+                  if (normalizedDetail.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      normalizedDetail,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         ),

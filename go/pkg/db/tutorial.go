@@ -525,8 +525,9 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	}
 
 	created := models.TutorialConfig{
-		ID:       1,
-		Dialogue: models.DialogueSequence{},
+		ID:                    1,
+		Dialogue:              models.DialogueSequence{},
+		ScenarioObjectiveCopy: "Complete the tutorial scenario to continue.",
 		LoadoutDialogue: models.DialogueSequence{
 			{
 				Speaker: "character",
@@ -551,6 +552,7 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 		ScenarioImageURL:          "",
 		ImageGenerationStatus:     models.TutorialImageGenerationStatusNone,
 		Options:                   []models.TutorialScenarioOption{},
+		MonsterObjectiveCopy:      "Defeat the tutorial monster encounter to continue.",
 		MonsterItemRewards:        []models.TutorialItemReward{},
 		ItemRewards:               []models.TutorialItemReward{},
 		SpellRewards:              []models.TutorialSpellReward{},

@@ -37,6 +37,7 @@ type tutorialConfigRequest struct {
 	BaseQuestGiverCharacterID         *string                      `json:"baseQuestGiverCharacterId"`
 	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
 	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
+	ScenarioObjectiveCopy             string                       `json:"scenarioObjectiveCopy"`
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
 	LoadoutObjectiveCopy              string                       `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue               []models.DialogueMessage     `json:"postMonsterDialogue"`
@@ -49,6 +50,7 @@ type tutorialConfigRequest struct {
 	ScenarioImageURL                  string                       `json:"scenarioImageUrl"`
 	Options                           []tutorialOptionPayload      `json:"options"`
 	MonsterEncounterID                *string                      `json:"monsterEncounterId"`
+	MonsterObjectiveCopy              string                       `json:"monsterObjectiveCopy"`
 	MonsterRewardExperience           int                          `json:"monsterRewardExperience"`
 	MonsterRewardGold                 int                          `json:"monsterRewardGold"`
 	MonsterItemRewards                []scenarioRewardItemPayload  `json:"monsterItemRewards"`
@@ -67,6 +69,7 @@ type tutorialStatusResponse struct {
 	MonsterEncounterID        *uuid.UUID               `json:"monsterEncounterId,omitempty"`
 	Character                 *models.Character        `json:"character,omitempty"`
 	Dialogue                  []models.DialogueMessage `json:"dialogue"`
+	ScenarioObjectiveCopy     string                   `json:"scenarioObjectiveCopy"`
 	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
 	LoadoutObjectiveCopy      string                   `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue       []models.DialogueMessage `json:"postMonsterDialogue"`
@@ -75,6 +78,7 @@ type tutorialStatusResponse struct {
 	PostBasePlacementDialogue []models.DialogueMessage `json:"postBasePlacementDialogue"`
 	HearthObjectiveCopy       string                   `json:"hearthObjectiveCopy"`
 	PostBaseDialogue          []models.DialogueMessage `json:"postBaseDialogue"`
+	MonsterObjectiveCopy      string                   `json:"monsterObjectiveCopy"`
 	RequiredEquipItemIDs      []int                    `json:"requiredEquipItemIds"`
 	CompletedEquipItemIDs     []int                    `json:"completedEquipItemIds"`
 	RequiredUseItemIDs        []int                    `json:"requiredUseItemIds"`
@@ -511,6 +515,7 @@ func buildTutorialStatusResponse(
 			Stage:                     models.TutorialStageCompleted,
 			Character:                 config.Character,
 			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+			ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 			LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 			PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
@@ -519,6 +524,7 @@ func buildTutorialStatusResponse(
 			PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
 			HearthObjectiveCopy:       config.HearthObjectiveCopy,
 			PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
+			MonsterObjectiveCopy:      config.MonsterObjectiveCopy,
 			RequiredEquipItemIDs:      []int{},
 			CompletedEquipItemIDs:     []int{},
 			RequiredUseItemIDs:        []int{},
@@ -541,6 +547,7 @@ func buildTutorialStatusResponse(
 		MonsterEncounterID:        activeTutorialMonsterEncounterID(state),
 		Character:                 config.Character,
 		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+		ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 		LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 		PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
@@ -549,6 +556,7 @@ func buildTutorialStatusResponse(
 		PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
 		HearthObjectiveCopy:       config.HearthObjectiveCopy,
 		PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
+		MonsterObjectiveCopy:      config.MonsterObjectiveCopy,
 		RequiredEquipItemIDs:      append([]int{}, state.RequiredEquipItemIDs...),
 		CompletedEquipItemIDs:     append([]int{}, state.CompletedEquipItemIDs...),
 		RequiredUseItemIDs:        append([]int{}, state.RequiredUseItemIDs...),
@@ -559,6 +567,7 @@ func buildTutorialStatusResponse(
 func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialConfig, error) {
 	config := &models.TutorialConfig{
 		Dialogue:                  models.DialogueSequence{},
+		ScenarioObjectiveCopy:     strings.TrimSpace(body.ScenarioObjectiveCopy),
 		LoadoutDialogue:           models.DialogueSequence{},
 		LoadoutObjectiveCopy:      strings.TrimSpace(body.LoadoutObjectiveCopy),
 		PostMonsterDialogue:       models.DialogueSequence{},
@@ -570,6 +579,7 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 		ScenarioPrompt:            strings.TrimSpace(body.ScenarioPrompt),
 		ScenarioImageURL:          strings.TrimSpace(body.ScenarioImageURL),
 		Options:                   []models.TutorialScenarioOption{},
+		MonsterObjectiveCopy:      strings.TrimSpace(body.MonsterObjectiveCopy),
 		MonsterItemRewards:        []models.TutorialItemReward{},
 		ItemRewards:               []models.TutorialItemReward{},
 		SpellRewards:              []models.TutorialSpellReward{},

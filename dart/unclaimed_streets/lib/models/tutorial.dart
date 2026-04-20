@@ -7,6 +7,7 @@ class TutorialStatus {
   final String stage;
   final Character? character;
   final List<DialogueMessage> dialogue;
+  final String scenarioObjectiveCopy;
   final List<DialogueMessage> loadoutDialogue;
   final String loadoutObjectiveCopy;
   final List<DialogueMessage> postMonsterDialogue;
@@ -17,6 +18,7 @@ class TutorialStatus {
   final List<DialogueMessage> postBaseDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
+  final String monsterObjectiveCopy;
   final List<int> requiredEquipItemIds;
   final List<int> completedEquipItemIds;
   final List<int> requiredUseItemIds;
@@ -28,6 +30,7 @@ class TutorialStatus {
     required this.stage,
     this.character,
     this.dialogue = const [],
+    this.scenarioObjectiveCopy = '',
     this.loadoutDialogue = const [],
     this.loadoutObjectiveCopy = '',
     this.postMonsterDialogue = const [],
@@ -38,6 +41,7 @@ class TutorialStatus {
     this.postBaseDialogue = const [],
     this.scenarioId,
     this.monsterEncounterId,
+    this.monsterObjectiveCopy = '',
     this.requiredEquipItemIds = const [],
     this.completedEquipItemIds = const [],
     this.requiredUseItemIds = const [],
@@ -90,6 +94,14 @@ class TutorialStatus {
     return 'Equip your new gear and use the spellbook to continue.';
   }
 
+  String get resolvedScenarioObjectiveCopy {
+    final trimmed = scenarioObjectiveCopy.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return 'Complete the tutorial scenario to continue.';
+  }
+
   String get resolvedBaseKitObjectiveCopy {
     final trimmed = baseKitObjectiveCopy.trim();
     if (trimmed.isNotEmpty) {
@@ -104,6 +116,14 @@ class TutorialStatus {
       return trimmed;
     }
     return 'Use your hearth to heal yourself before the tutorial continues.';
+  }
+
+  String get resolvedMonsterObjectiveCopy {
+    final trimmed = monsterObjectiveCopy.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return 'Defeat the tutorial monster encounter to continue.';
   }
 
   bool get hasOutstandingLoadoutRequirements =>
@@ -261,6 +281,7 @@ class TutorialStatus {
       stage: json['stage']?.toString().trim() ?? '',
       character: character,
       dialogue: dialogue,
+      scenarioObjectiveCopy: json['scenarioObjectiveCopy']?.toString() ?? '',
       loadoutDialogue: loadoutDialogue,
       loadoutObjectiveCopy: json['loadoutObjectiveCopy']?.toString() ?? '',
       postMonsterDialogue: postMonsterDialogue,
@@ -271,6 +292,7 @@ class TutorialStatus {
       postBaseDialogue: postBaseDialogue,
       scenarioId: json['scenarioId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),
+      monsterObjectiveCopy: json['monsterObjectiveCopy']?.toString() ?? '',
       requiredEquipItemIds: _parseIntList(json['requiredEquipItemIds']),
       completedEquipItemIds: _parseIntList(json['completedEquipItemIds']),
       requiredUseItemIds: _parseIntList(json['requiredUseItemIds']),
@@ -284,6 +306,7 @@ class TutorialStatus {
     String? stage,
     Character? character,
     List<DialogueMessage>? dialogue,
+    String? scenarioObjectiveCopy,
     List<DialogueMessage>? loadoutDialogue,
     String? loadoutObjectiveCopy,
     List<DialogueMessage>? postMonsterDialogue,
@@ -294,6 +317,7 @@ class TutorialStatus {
     List<DialogueMessage>? postBaseDialogue,
     String? scenarioId,
     String? monsterEncounterId,
+    String? monsterObjectiveCopy,
     List<int>? requiredEquipItemIds,
     List<int>? completedEquipItemIds,
     List<int>? requiredUseItemIds,
@@ -305,6 +329,8 @@ class TutorialStatus {
       stage: stage ?? this.stage,
       character: character ?? this.character,
       dialogue: dialogue ?? this.dialogue,
+      scenarioObjectiveCopy:
+          scenarioObjectiveCopy ?? this.scenarioObjectiveCopy,
       loadoutDialogue: loadoutDialogue ?? this.loadoutDialogue,
       loadoutObjectiveCopy: loadoutObjectiveCopy ?? this.loadoutObjectiveCopy,
       postMonsterDialogue: postMonsterDialogue ?? this.postMonsterDialogue,
@@ -316,6 +342,7 @@ class TutorialStatus {
       postBaseDialogue: postBaseDialogue ?? this.postBaseDialogue,
       scenarioId: scenarioId ?? this.scenarioId,
       monsterEncounterId: monsterEncounterId ?? this.monsterEncounterId,
+      monsterObjectiveCopy: monsterObjectiveCopy ?? this.monsterObjectiveCopy,
       requiredEquipItemIds: requiredEquipItemIds ?? this.requiredEquipItemIds,
       completedEquipItemIds:
           completedEquipItemIds ?? this.completedEquipItemIds,

@@ -35,6 +35,7 @@ type TutorialConfig struct {
 	Character                         *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
 	DialogueJSON                      datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	Dialogue                          DialogueSequence         `gorm:"-" json:"dialogue"`
+	ScenarioObjectiveCopy             string                   `gorm:"column:scenario_objective_copy" json:"scenarioObjectiveCopy"`
 	LoadoutDialogueJSON               datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	LoadoutDialogue                   DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
 	LoadoutObjectiveCopy              string                   `gorm:"column:loadout_objective_copy" json:"loadoutObjectiveCopy"`
@@ -62,6 +63,7 @@ type TutorialConfig struct {
 	Options                           []TutorialScenarioOption `gorm:"-" json:"options"`
 	MonsterEncounterID                *uuid.UUID               `gorm:"column:monster_encounter_id;type:uuid" json:"monsterEncounterId"`
 	MonsterEncounter                  *MonsterEncounter        `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
+	MonsterObjectiveCopy              string                   `gorm:"column:monster_objective_copy" json:"monsterObjectiveCopy"`
 	MonsterRewardExperience           int                      `gorm:"column:monster_reward_experience" json:"monsterRewardExperience"`
 	MonsterRewardGold                 int                      `gorm:"column:monster_reward_gold" json:"monsterRewardGold"`
 	MonsterItemRewardsJSON            datatypes.JSON           `gorm:"column:monster_item_rewards_json;type:jsonb;default:'[]'" json:"-"`
@@ -206,9 +208,11 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 	c.ScenarioPrompt = strings.TrimSpace(c.ScenarioPrompt)
 	c.ScenarioImageURL = strings.TrimSpace(c.ScenarioImageURL)
+	c.ScenarioObjectiveCopy = strings.TrimSpace(c.ScenarioObjectiveCopy)
 	c.LoadoutObjectiveCopy = strings.TrimSpace(c.LoadoutObjectiveCopy)
 	c.BaseKitObjectiveCopy = strings.TrimSpace(c.BaseKitObjectiveCopy)
 	c.HearthObjectiveCopy = strings.TrimSpace(c.HearthObjectiveCopy)
+	c.MonsterObjectiveCopy = strings.TrimSpace(c.MonsterObjectiveCopy)
 	c.ImageGenerationStatus = strings.TrimSpace(c.ImageGenerationStatus)
 	if c.ImageGenerationStatus == "" {
 		c.ImageGenerationStatus = TutorialImageGenerationStatusNone

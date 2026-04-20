@@ -2835,6 +2835,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(_pulsePoi(lat, lng));
   }
 
+  void _focusTutorialScenarioFromTrackedOverlay({
+    double zoom = _trackedQuestOverlayFocusZoom,
+  }) {
+    final scenarioId = _tutorialStatus?.scenarioId?.trim() ?? '';
+    if (scenarioId.isEmpty) return;
+    final scenario = _scenarioById(scenarioId);
+    if (scenario == null) return;
+    _selectZoneByIdIfDifferent(scenario.zoneId);
+    _flyToLocation(scenario.latitude, scenario.longitude, zoom: zoom);
+    unawaited(_pulsePoi(scenario.latitude, scenario.longitude));
+  }
+
+  void _focusTutorialMonsterFromTrackedOverlay({
+    double zoom = _trackedQuestOverlayFocusZoom,
+  }) {
+    final encounterId = _tutorialStatus?.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isEmpty) return;
+    final encounter = _monsterById(encounterId);
+    if (encounter == null) return;
+    _selectZoneByIdIfDifferent(encounter.zoneId);
+    _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
+    unawaited(_pulsePoi(encounter.latitude, encounter.longitude));
+  }
+
   void _focusMainStoryLead(_MainStoryLead lead) async {
     final focusLocation = _mainStoryLeadFocusLocation(lead);
     if (focusLocation == null) {
@@ -2885,6 +2909,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     _focusMainStoryLead(_MainStoryLead(poi: poi, character: featuredCharacter));
+  }
+
+  String _tutorialScenarioOverlayTitle(TutorialStatus? status) {
+    final scenarioId = status?.scenarioId?.trim() ?? '';
+    if (scenarioId.isEmpty) return 'Tutorial Scenario';
+    final scenario = _scenarioById(scenarioId);
+    if (scenario == null) return 'Tutorial Scenario';
+    return _compactSelectionLabel(
+      scenario.prompt,
+      fallback: 'Tutorial Scenario',
+    );
+  }
+
+  String _tutorialScenarioOverlayDetail(TutorialStatus? status) {
+    if (!(status?.hasActiveScenario ?? false)) {
+      return '';
+    }
+    return 'Scenario';
+  }
+
+  String _tutorialMonsterOverlayTitle(TutorialStatus? status) {
+    final encounterId = status?.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isEmpty) return 'Tutorial Monster';
+    final encounter = _monsterById(encounterId);
+    final trimmedName = encounter?.name.trim() ?? '';
+    if (trimmedName.isNotEmpty) {
+      return trimmedName;
+    }
+    return 'Tutorial Monster';
+  }
+
+  String _tutorialMonsterOverlayDetail(TutorialStatus? status) {
+    final encounterId = status?.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isEmpty) return '';
+    final encounter = _monsterById(encounterId);
+    if (encounter == null) return 'Monster Encounter';
+    return encounter.encounterTypeLabel;
   }
 
   void _focusQuestTurnIn(Quest quest, {double zoom = _defaultMapFocusZoom}) {
@@ -11097,6 +11158,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       includeKnownPins: false,
       requireFreshZonePins: true,
     );
+    final tutorialStatus = _tutorialStatus;
+    final tutorialScenarioTrackedObjective =
+        tutorialStatus?.hasActiveScenario ?? false
+        ? tutorialStatus!.resolvedScenarioObjectiveCopy
+        : '';
+    final tutorialMonsterTrackedObjective =
+        tutorialStatus?.hasActiveMonsterEncounter ?? false
+        ? tutorialStatus!.resolvedMonsterObjectiveCopy
+        : '';
     final authUser = context.watch<AuthProvider>().user;
     final party = context.watch<PartyProvider>().party;
     final hasPartyMapStrip = authUser != null;
@@ -11125,6 +11195,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       screenWidth - zoneWidgetLeftInset - zoneWidgetRightInset,
     );
     final hasTrackedQuestOverlay =
+        tutorialScenarioTrackedObjective.isNotEmpty ||
+        tutorialMonsterTrackedObjective.isNotEmpty ||
         mainStoryLead != null ||
         questLog.quests.any(
           (quest) => questLog.trackedQuestIds.contains(quest.id),
@@ -11646,6 +11718,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           featuredMainStoryPoi: mainStoryLead?.poi,
                           featuredMainStoryQuestGiverName:
                               mainStoryLead?.character?.name,
+                          tutorialScenarioTitle: _tutorialScenarioOverlayTitle(
+                            tutorialStatus,
+                          ),
+                          tutorialScenarioDetail:
+                              _tutorialScenarioOverlayDetail(tutorialStatus),
+                          tutorialScenarioObjectiveCopy:
+                              tutorialScenarioTrackedObjective,
+                          onFocusTutorialScenario:
+                              tutorialScenarioTrackedObjective.isEmpty
+                              ? null
+                              : () => _focusTutorialScenarioFromTrackedOverlay(
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
+                          onPreviewTutorialScenario:
+                              tutorialScenarioTrackedObjective.isEmpty
+                              ? null
+                              : () => _focusTutorialScenarioFromTrackedOverlay(
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
+                          tutorialMonsterTitle: _tutorialMonsterOverlayTitle(
+                            tutorialStatus,
+                          ),
+                          tutorialMonsterDetail: _tutorialMonsterOverlayDetail(
+                            tutorialStatus,
+                          ),
+                          tutorialMonsterObjectiveCopy:
+                              tutorialMonsterTrackedObjective,
+                          onFocusTutorialMonster:
+                              tutorialMonsterTrackedObjective.isEmpty
+                              ? null
+                              : () => _focusTutorialMonsterFromTrackedOverlay(
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
+                          onPreviewTutorialMonster:
+                              tutorialMonsterTrackedObjective.isEmpty
+                              ? null
+                              : () => _focusTutorialMonsterFromTrackedOverlay(
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
                           onFocusFeaturedMainStoryLead: mainStoryLead == null
                               ? null
                               : () => _focusMainStoryLeadFromTrackedOverlay(
