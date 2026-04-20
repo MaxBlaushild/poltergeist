@@ -8,9 +8,12 @@ class TutorialStatus {
   final Character? character;
   final List<DialogueMessage> dialogue;
   final List<DialogueMessage> loadoutDialogue;
+  final String loadoutObjectiveCopy;
   final List<DialogueMessage> postMonsterDialogue;
   final List<DialogueMessage> baseKitDialogue;
+  final String baseKitObjectiveCopy;
   final List<DialogueMessage> postBasePlacementDialogue;
+  final String hearthObjectiveCopy;
   final List<DialogueMessage> postBaseDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
@@ -26,9 +29,12 @@ class TutorialStatus {
     this.character,
     this.dialogue = const [],
     this.loadoutDialogue = const [],
+    this.loadoutObjectiveCopy = '',
     this.postMonsterDialogue = const [],
     this.baseKitDialogue = const [],
+    this.baseKitObjectiveCopy = '',
     this.postBasePlacementDialogue = const [],
+    this.hearthObjectiveCopy = '',
     this.postBaseDialogue = const [],
     this.scenarioId,
     this.monsterEncounterId,
@@ -75,6 +81,30 @@ class TutorialStatus {
 
   bool get shouldShowPostBaseDialogue =>
       isPostBaseDialogueStep && postBaseDialogue.isNotEmpty && !isCompleted;
+
+  String get resolvedLoadoutObjectiveCopy {
+    final trimmed = loadoutObjectiveCopy.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return 'Equip your new gear and use the spellbook to continue.';
+  }
+
+  String get resolvedBaseKitObjectiveCopy {
+    final trimmed = baseKitObjectiveCopy.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return 'Use your home base kit to establish your base.';
+  }
+
+  String get resolvedHearthObjectiveCopy {
+    final trimmed = hearthObjectiveCopy.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return 'Use your hearth to heal yourself before the tutorial continues.';
+  }
 
   bool get hasOutstandingLoadoutRequirements =>
       _remaining(requiredEquipItemIds, completedEquipItemIds).isNotEmpty ||
@@ -232,9 +262,12 @@ class TutorialStatus {
       character: character,
       dialogue: dialogue,
       loadoutDialogue: loadoutDialogue,
+      loadoutObjectiveCopy: json['loadoutObjectiveCopy']?.toString() ?? '',
       postMonsterDialogue: postMonsterDialogue,
       baseKitDialogue: baseKitDialogue,
+      baseKitObjectiveCopy: json['baseKitObjectiveCopy']?.toString() ?? '',
       postBasePlacementDialogue: postBasePlacementDialogue,
+      hearthObjectiveCopy: json['hearthObjectiveCopy']?.toString() ?? '',
       postBaseDialogue: postBaseDialogue,
       scenarioId: json['scenarioId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),
@@ -252,9 +285,12 @@ class TutorialStatus {
     Character? character,
     List<DialogueMessage>? dialogue,
     List<DialogueMessage>? loadoutDialogue,
+    String? loadoutObjectiveCopy,
     List<DialogueMessage>? postMonsterDialogue,
     List<DialogueMessage>? baseKitDialogue,
+    String? baseKitObjectiveCopy,
     List<DialogueMessage>? postBasePlacementDialogue,
+    String? hearthObjectiveCopy,
     List<DialogueMessage>? postBaseDialogue,
     String? scenarioId,
     String? monsterEncounterId,
@@ -270,10 +306,13 @@ class TutorialStatus {
       character: character ?? this.character,
       dialogue: dialogue ?? this.dialogue,
       loadoutDialogue: loadoutDialogue ?? this.loadoutDialogue,
+      loadoutObjectiveCopy: loadoutObjectiveCopy ?? this.loadoutObjectiveCopy,
       postMonsterDialogue: postMonsterDialogue ?? this.postMonsterDialogue,
       baseKitDialogue: baseKitDialogue ?? this.baseKitDialogue,
+      baseKitObjectiveCopy: baseKitObjectiveCopy ?? this.baseKitObjectiveCopy,
       postBasePlacementDialogue:
           postBasePlacementDialogue ?? this.postBasePlacementDialogue,
+      hearthObjectiveCopy: hearthObjectiveCopy ?? this.hearthObjectiveCopy,
       postBaseDialogue: postBaseDialogue ?? this.postBaseDialogue,
       scenarioId: scenarioId ?? this.scenarioId,
       monsterEncounterId: monsterEncounterId ?? this.monsterEncounterId,

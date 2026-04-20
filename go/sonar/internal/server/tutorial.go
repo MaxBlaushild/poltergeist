@@ -38,9 +38,12 @@ type tutorialConfigRequest struct {
 	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
 	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
+	LoadoutObjectiveCopy              string                       `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue               []models.DialogueMessage     `json:"postMonsterDialogue"`
 	BaseKitDialogue                   []models.DialogueMessage     `json:"baseKitDialogue"`
+	BaseKitObjectiveCopy              string                       `json:"baseKitObjectiveCopy"`
 	PostBasePlacementDialogue         []models.DialogueMessage     `json:"postBasePlacementDialogue"`
+	HearthObjectiveCopy               string                       `json:"hearthObjectiveCopy"`
 	PostBaseDialogue                  []models.DialogueMessage     `json:"postBaseDialogue"`
 	ScenarioPrompt                    string                       `json:"scenarioPrompt"`
 	ScenarioImageURL                  string                       `json:"scenarioImageUrl"`
@@ -65,9 +68,12 @@ type tutorialStatusResponse struct {
 	Character                 *models.Character        `json:"character,omitempty"`
 	Dialogue                  []models.DialogueMessage `json:"dialogue"`
 	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
+	LoadoutObjectiveCopy      string                   `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue       []models.DialogueMessage `json:"postMonsterDialogue"`
 	BaseKitDialogue           []models.DialogueMessage `json:"baseKitDialogue"`
+	BaseKitObjectiveCopy      string                   `json:"baseKitObjectiveCopy"`
 	PostBasePlacementDialogue []models.DialogueMessage `json:"postBasePlacementDialogue"`
+	HearthObjectiveCopy       string                   `json:"hearthObjectiveCopy"`
 	PostBaseDialogue          []models.DialogueMessage `json:"postBaseDialogue"`
 	RequiredEquipItemIDs      []int                    `json:"requiredEquipItemIds"`
 	CompletedEquipItemIDs     []int                    `json:"completedEquipItemIds"`
@@ -506,9 +512,12 @@ func buildTutorialStatusResponse(
 			Character:                 config.Character,
 			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
+			LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 			PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
 			BaseKitDialogue:           append([]models.DialogueMessage{}, config.BaseKitDialogue...),
+			BaseKitObjectiveCopy:      config.BaseKitObjectiveCopy,
 			PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
+			HearthObjectiveCopy:       config.HearthObjectiveCopy,
 			PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
 			RequiredEquipItemIDs:      []int{},
 			CompletedEquipItemIDs:     []int{},
@@ -533,9 +542,12 @@ func buildTutorialStatusResponse(
 		Character:                 config.Character,
 		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
+		LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 		PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
 		BaseKitDialogue:           append([]models.DialogueMessage{}, config.BaseKitDialogue...),
+		BaseKitObjectiveCopy:      config.BaseKitObjectiveCopy,
 		PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
+		HearthObjectiveCopy:       config.HearthObjectiveCopy,
 		PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
 		RequiredEquipItemIDs:      append([]int{}, state.RequiredEquipItemIDs...),
 		CompletedEquipItemIDs:     append([]int{}, state.CompletedEquipItemIDs...),
@@ -548,9 +560,12 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	config := &models.TutorialConfig{
 		Dialogue:                  models.DialogueSequence{},
 		LoadoutDialogue:           models.DialogueSequence{},
+		LoadoutObjectiveCopy:      strings.TrimSpace(body.LoadoutObjectiveCopy),
 		PostMonsterDialogue:       models.DialogueSequence{},
 		BaseKitDialogue:           models.DialogueSequence{},
+		BaseKitObjectiveCopy:      strings.TrimSpace(body.BaseKitObjectiveCopy),
 		PostBasePlacementDialogue: models.DialogueSequence{},
+		HearthObjectiveCopy:       strings.TrimSpace(body.HearthObjectiveCopy),
 		PostBaseDialogue:          models.DialogueSequence{},
 		ScenarioPrompt:            strings.TrimSpace(body.ScenarioPrompt),
 		ScenarioImageURL:          strings.TrimSpace(body.ScenarioImageURL),

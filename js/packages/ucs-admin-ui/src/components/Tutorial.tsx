@@ -54,9 +54,12 @@ type TutorialConfigResponse = {
   baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
+  loadoutObjectiveCopy?: string;
   postMonsterDialogue?: DialogueMessage[];
   baseKitDialogue?: DialogueMessage[];
+  baseKitObjectiveCopy?: string;
   postBasePlacementDialogue?: DialogueMessage[];
+  hearthObjectiveCopy?: string;
   postBaseDialogue?: DialogueMessage[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
@@ -187,7 +190,7 @@ const SearchableSelect = ({
     <div className="relative">
       <label className="block text-sm font-medium text-gray-700">{label}</label>
       <input
-        value={open ? query : selected?.label ?? ''}
+        value={open ? query : (selected?.label ?? '')}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
@@ -285,13 +288,16 @@ export const Tutorial = () => {
   ] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
+  const [loadoutObjectiveCopy, setLoadoutObjectiveCopy] = useState('');
   const [postMonsterDialogue, setPostMonsterDialogue] = useState<
     DialogueMessage[]
   >([]);
   const [baseKitDialogue, setBaseKitDialogue] = useState<DialogueMessage[]>([]);
+  const [baseKitObjectiveCopy, setBaseKitObjectiveCopy] = useState('');
   const [postBasePlacementDialogue, setPostBasePlacementDialogue] = useState<
     DialogueMessage[]
   >([]);
+  const [hearthObjectiveCopy, setHearthObjectiveCopy] = useState('');
   const [postBaseDialogue, setPostBaseDialogue] = useState<DialogueMessage[]>(
     []
   );
@@ -348,6 +354,7 @@ export const Tutorial = () => {
         setLoadoutDialogue(
           Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
         );
+        setLoadoutObjectiveCopy(config.loadoutObjectiveCopy ?? '');
         setPostMonsterDialogue(
           Array.isArray(config.postMonsterDialogue)
             ? config.postMonsterDialogue
@@ -356,11 +363,13 @@ export const Tutorial = () => {
         setBaseKitDialogue(
           Array.isArray(config.baseKitDialogue) ? config.baseKitDialogue : []
         );
+        setBaseKitObjectiveCopy(config.baseKitObjectiveCopy ?? '');
         setPostBasePlacementDialogue(
           Array.isArray(config.postBasePlacementDialogue)
             ? config.postBasePlacementDialogue
             : []
         );
+        setHearthObjectiveCopy(config.hearthObjectiveCopy ?? '');
         setPostBaseDialogue(
           Array.isArray(config.postBaseDialogue) ? config.postBaseDialogue : []
         );
@@ -743,9 +752,12 @@ export const Tutorial = () => {
             : null,
         dialogue,
         loadoutDialogue,
+        loadoutObjectiveCopy: loadoutObjectiveCopy.trim(),
         postMonsterDialogue,
         baseKitDialogue,
+        baseKitObjectiveCopy: baseKitObjectiveCopy.trim(),
         postBasePlacementDialogue,
+        hearthObjectiveCopy: hearthObjectiveCopy.trim(),
         postBaseDialogue,
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
@@ -1313,6 +1325,27 @@ export const Tutorial = () => {
               </div>
 
               <div className="mt-4">
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Tracked Quest Copy
+                  </label>
+                  <textarea
+                    value={loadoutObjectiveCopy}
+                    onChange={(event) =>
+                      setLoadoutObjectiveCopy(event.target.value)
+                    }
+                    rows={3}
+                    placeholder="Equip your new gear and use the spellbook to continue."
+                    className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    This short objective copy is shown while the player is
+                    blocked on the loadout step.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4">
                 <DialogueMessageListEditor
                   label="Dialogue Lines"
                   helperText="Shown while the inventory drawer is forced open."
@@ -1352,6 +1385,25 @@ export const Tutorial = () => {
                 </p>
               </div>
 
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                <label className="block text-sm font-medium text-gray-700">
+                  Tracked Quest Copy
+                </label>
+                <textarea
+                  value={baseKitObjectiveCopy}
+                  onChange={(event) =>
+                    setBaseKitObjectiveCopy(event.target.value)
+                  }
+                  rows={3}
+                  placeholder="Use your home base kit to establish your base."
+                  className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  This short objective copy is shown while the player is blocked
+                  on placing their home base kit.
+                </p>
+              </div>
+
               <DialogueMessageListEditor
                 label="Drawer Guidance"
                 helperText="Use this to tell the player how to open and place their home base kit."
@@ -1366,8 +1418,8 @@ export const Tutorial = () => {
                   Post-Base Placement Dialogue
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Shown as soon as the player establishes their base. After
-                  this dialogue closes, the tutorial requires them to use their
+                  Shown as soon as the player establishes their base. After this
+                  dialogue closes, the tutorial requires them to use their
                   hearth before the final conversation can begin.
                 </p>
               </div>
@@ -1393,8 +1445,22 @@ export const Tutorial = () => {
               </div>
 
               <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                This step uses the in-game base UI and does not need separate
-                dialogue lines.
+                <label className="block text-sm font-medium text-gray-700">
+                  Tracked Quest Copy
+                </label>
+                <textarea
+                  value={hearthObjectiveCopy}
+                  onChange={(event) =>
+                    setHearthObjectiveCopy(event.target.value)
+                  }
+                  rows={3}
+                  placeholder="Use your hearth to heal yourself before the tutorial continues."
+                  className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  This short objective copy is shown while the player is blocked
+                  on using their hearth.
+                </p>
               </div>
             </section>
 

@@ -1485,7 +1485,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Use your hearth to heal yourself before the tutorial continues.',
+                tutorialStatus.resolvedHearthObjectiveCopy,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFF4C3824),
                   height: 1.35,

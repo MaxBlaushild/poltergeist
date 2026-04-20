@@ -37,6 +37,7 @@ type TutorialConfig struct {
 	Dialogue                          DialogueSequence         `gorm:"-" json:"dialogue"`
 	LoadoutDialogueJSON               datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	LoadoutDialogue                   DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
+	LoadoutObjectiveCopy              string                   `gorm:"column:loadout_objective_copy" json:"loadoutObjectiveCopy"`
 	BaseQuestArchetypeID              *uuid.UUID               `json:"baseQuestArchetypeId" gorm:"column:base_quest_archetype_id;type:uuid"`
 	BaseQuestArchetype                *QuestArchetype          `json:"baseQuestArchetype,omitempty" gorm:"foreignKey:BaseQuestArchetypeID"`
 	BaseQuestGiverCharacterID         *uuid.UUID               `json:"baseQuestGiverCharacterId" gorm:"column:base_quest_giver_character_id;type:uuid"`
@@ -47,8 +48,10 @@ type TutorialConfig struct {
 	PostMonsterDialogue               DialogueSequence         `gorm:"-" json:"postMonsterDialogue"`
 	BaseKitDialogueJSON               datatypes.JSON           `gorm:"column:base_kit_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	BaseKitDialogue                   DialogueSequence         `gorm:"-" json:"baseKitDialogue"`
+	BaseKitObjectiveCopy              string                   `gorm:"column:base_kit_objective_copy" json:"baseKitObjectiveCopy"`
 	PostBasePlacementDialogueJSON     datatypes.JSON           `gorm:"column:post_base_placement_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostBasePlacementDialogue         DialogueSequence         `gorm:"-" json:"postBasePlacementDialogue"`
+	HearthObjectiveCopy               string                   `gorm:"column:hearth_objective_copy" json:"hearthObjectiveCopy"`
 	PostBaseDialogueJSON              datatypes.JSON           `gorm:"column:post_base_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostBaseDialogue                  DialogueSequence         `gorm:"-" json:"postBaseDialogue"`
 	ScenarioPrompt                    string                   `json:"scenarioPrompt"`
@@ -203,6 +206,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 	c.ScenarioPrompt = strings.TrimSpace(c.ScenarioPrompt)
 	c.ScenarioImageURL = strings.TrimSpace(c.ScenarioImageURL)
+	c.LoadoutObjectiveCopy = strings.TrimSpace(c.LoadoutObjectiveCopy)
+	c.BaseKitObjectiveCopy = strings.TrimSpace(c.BaseKitObjectiveCopy)
+	c.HearthObjectiveCopy = strings.TrimSpace(c.HearthObjectiveCopy)
 	c.ImageGenerationStatus = strings.TrimSpace(c.ImageGenerationStatus)
 	if c.ImageGenerationStatus == "" {
 		c.ImageGenerationStatus = TutorialImageGenerationStatusNone

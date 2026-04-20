@@ -84,6 +84,7 @@ class InventoryPanel extends StatefulWidget {
     super.key,
     required this.onClose,
     this.closeLocked = false,
+    this.tutorialObjectiveCopy = '',
     this.tutorialDialogue = const [],
     this.requiredEquipItemIds = const [],
     this.completedEquipItemIds = const [],
@@ -94,6 +95,7 @@ class InventoryPanel extends StatefulWidget {
 
   final VoidCallback onClose;
   final bool closeLocked;
+  final String tutorialObjectiveCopy;
   final List<DialogueMessage> tutorialDialogue;
   final List<int> requiredEquipItemIds;
   final List<int> completedEquipItemIds;
@@ -1557,6 +1559,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   bool _showTutorialGuide(BuildContext context) {
     return widget.closeLocked ||
         widget.tutorialDialogue.isNotEmpty ||
+        widget.tutorialObjectiveCopy.trim().isNotEmpty ||
         widget.requiredEquipItemIds.isNotEmpty ||
         widget.requiredUseItemIds.isNotEmpty;
   }
@@ -1626,6 +1629,17 @@ class _InventoryPanelState extends State<InventoryPanel>
               color: const Color(0xFF6A4A14),
             ),
           ),
+          if (widget.tutorialObjectiveCopy.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              widget.tutorialObjectiveCopy.trim(),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF4C3824),
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           ...widget.tutorialDialogue.map((line) {
             final effect = _dialogueEffectName(line.effect);

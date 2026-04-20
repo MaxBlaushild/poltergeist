@@ -106,6 +106,11 @@ func (h *tutorialHandle) ActivateForUser(
 		scenario.ID = uuid.New()
 		scenario.CreatedAt = now
 		scenario.UpdatedAt = now
+		resolvedScenarioGenreID, err := resolveScenarioGenreID(ctx, tx, scenario)
+		if err != nil {
+			return err
+		}
+		scenario.GenreID = resolvedScenarioGenreID
 		normalizeScenarioFailurePenaltyDefaults(scenario)
 		if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
 			return err
@@ -264,6 +269,11 @@ func (h *tutorialHandle) ActivateMonsterForUser(
 			monster.ID = uuid.New()
 			monster.CreatedAt = now
 			monster.UpdatedAt = now
+			resolvedMonsterGenreID, err := resolveMonsterGenreID(ctx, tx, &monster)
+			if err != nil {
+				return err
+			}
+			monster.GenreID = resolvedMonsterGenreID
 			if err := monster.SetGeometry(monster.Latitude, monster.Longitude); err != nil {
 				return err
 			}
@@ -524,7 +534,8 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 				Order:   0,
 			},
 		},
-		PostMonsterDialogue: models.DialogueSequence{},
+		LoadoutObjectiveCopy: "Equip your new gear and use the spellbook to continue.",
+		PostMonsterDialogue:  models.DialogueSequence{},
 		BaseKitDialogue: models.DialogueSequence{
 			{
 				Speaker: "character",
@@ -532,7 +543,9 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 				Order:   0,
 			},
 		},
+		BaseKitObjectiveCopy:      "Use your home base kit to establish your base.",
 		PostBasePlacementDialogue: models.DialogueSequence{},
+		HearthObjectiveCopy:       "Use your hearth to heal yourself before the tutorial continues.",
 		PostBaseDialogue:          models.DialogueSequence{},
 		ScenarioPrompt:            "You hear a commotion outside of your door.",
 		ScenarioImageURL:          "",

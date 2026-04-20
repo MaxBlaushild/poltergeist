@@ -159,6 +159,11 @@ const _defaultMapFocusZoom = 16.0;
 const _trackedQuestOverlayFocusZoom = 14.0;
 const _poiAssociationCoordinatePrecision = 4;
 const _pinSelectionHitRadiusPx = 24.0;
+const _playerUnderfootPinDistanceMeters = 18.0;
+const _playerUnderfootPinAccuracyCapMeters = 24.0;
+const _playerUnderfootTapHalfWidthPx = 36.0;
+const _playerUnderfootTapTopReachPx = 72.0;
+const _playerUnderfootTapBottomReachPx = 14.0;
 const _transparentMapHaloColor = 'rgba(0,0,0,0)';
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
@@ -877,6 +882,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         dialogue: status.isBaseKitStep
             ? status.baseKitDialogue
             : status.loadoutDialogue,
+        objectiveCopy: status.isBaseKitStep
+            ? status.resolvedBaseKitObjectiveCopy
+            : status.resolvedLoadoutObjectiveCopy,
         requiredEquipItemIds: status.requiredEquipItemIds,
         completedEquipItemIds: status.completedEquipItemIds,
         requiredUseItemIds: status.requiredUseItemIds,
@@ -2591,7 +2599,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       iconImage: imageId,
       iconSize: _playerPresenceMarkerIconSize,
       iconOpacity: 1.0,
-      iconAnchor: 'center',
+      iconAnchor: 'bottom',
       iconHaloColor: _transparentMapHaloColor,
       iconHaloWidth: 0.0,
       zIndex: 99,
@@ -7113,23 +7121,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       preferredType: preferredType,
       preferredId: preferredId,
     );
-    if (!mounted || candidates.isEmpty) return false;
-    if (candidates.length == 1) {
-      _openMapPinByTypeAndId(candidates.first.type, candidates.first.id);
-      return true;
-    }
-    _showPinSelectionSheet(candidates);
-    return true;
+    return _openPinSelectionCandidates(candidates);
   }
 
-  Future<List<_MapPinSelectionCandidate>> _pinSelectionCandidatesForPoint(
-    Point<double> point, {
-    String? preferredType,
-    String? preferredId,
-  }) async {
-    final controller = _mapController;
-    if (controller == null || !_styleLoaded) return const [];
-
+  List<_MapPinAnnotationSeed> _selectablePinAnnotationSeeds() {
     final annotations = <_MapPinAnnotationSeed>[];
 
     void addSymbolSeeds(Iterable<Symbol> symbols) {
@@ -7211,6 +7206,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     addCircleSeeds(_monsterCircles);
     addCircleSeeds(_challengeCircles);
 
+    return annotations;
+  }
+
+  Future<List<_MapPinSelectionCandidate>> _pinSelectionCandidatesForPoint(
+    Point<double> point, {
+    String? preferredType,
+    String? preferredId,
+  }) async {
+    final controller = _mapController;
+    if (controller == null || !_styleLoaded) return const [];
+
+    final annotations = _selectablePinAnnotationSeeds();
     if (annotations.isEmpty) return const [];
 
     final screenPoints = await controller.toScreenLocationBatch(
@@ -7241,7 +7248,66 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    final candidates = bestByKey.values.toList();
+    return _sortPinSelectionCandidates(
+      bestByKey.values.toList(),
+      preferredType: preferredType,
+      preferredId: preferredId,
+    );
+  }
+
+  List<_MapPinSelectionCandidate> _pinSelectionCandidatesNearLocation(
+    AppLocation location, {
+    String? preferredType,
+    String? preferredId,
+  }) {
+    if (!_styleLoaded) return const [];
+
+    final lat = location.latitude;
+    final lng = location.longitude;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+      return const [];
+    }
+
+    final annotations = _selectablePinAnnotationSeeds();
+    if (annotations.isEmpty) return const [];
+
+    final maxDistanceMeters = _playerUnderfootSelectionRadiusMeters(location);
+    final bestByKey = <String, _MapPinSelectionCandidate>{};
+    for (final annotation in annotations) {
+      final distance = _distanceMeters(
+        lat,
+        lng,
+        annotation.geometry.latitude,
+        annotation.geometry.longitude,
+      );
+      if (distance > maxDistanceMeters) continue;
+
+      final candidate = _buildPinSelectionCandidate(
+        annotation.type,
+        annotation.id,
+        distance,
+      );
+      if (candidate == null) continue;
+
+      final key = '${candidate.type}:${candidate.id}';
+      final existing = bestByKey[key];
+      if (existing == null || candidate.distance < existing.distance) {
+        bestByKey[key] = candidate;
+      }
+    }
+
+    return _sortPinSelectionCandidates(
+      bestByKey.values.toList(),
+      preferredType: preferredType,
+      preferredId: preferredId,
+    );
+  }
+
+  List<_MapPinSelectionCandidate> _sortPinSelectionCandidates(
+    List<_MapPinSelectionCandidate> candidates, {
+    String? preferredType,
+    String? preferredId,
+  }) {
     candidates.sort((a, b) {
       final aPreferred = a.type == preferredType && a.id == preferredId;
       final bPreferred = b.type == preferredType && b.id == preferredId;
@@ -7251,6 +7317,57 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return a.title.toLowerCase().compareTo(b.title.toLowerCase());
     });
     return candidates;
+  }
+
+  double _playerUnderfootSelectionRadiusMeters(AppLocation location) {
+    final accuracy = location.accuracy;
+    if (!accuracy.isFinite || accuracy <= 0) {
+      return _playerUnderfootPinDistanceMeters;
+    }
+    return math.max(
+      _playerUnderfootPinDistanceMeters,
+      math.min(accuracy, _playerUnderfootPinAccuracyCapMeters),
+    );
+  }
+
+  bool _openPinSelectionCandidates(List<_MapPinSelectionCandidate> candidates) {
+    if (!mounted || candidates.isEmpty) return false;
+    if (candidates.length == 1) {
+      _openMapPinByTypeAndId(candidates.first.type, candidates.first.id);
+      return true;
+    }
+    _showPinSelectionSheet(candidates);
+    return true;
+  }
+
+  Future<bool> _maybeHandlePlayerUnderfootTap(Point<double> point) async {
+    final controller = _mapController;
+    final location = context.read<LocationProvider>().location;
+    if (controller == null || !_styleLoaded || location == null) return false;
+
+    final lat = location.latitude;
+    final lng = location.longitude;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+      return false;
+    }
+
+    final nearbyCandidates = _pinSelectionCandidatesNearLocation(location);
+    if (nearbyCandidates.isEmpty) return false;
+
+    try {
+      final playerPoint = await controller.toScreenLocation(LatLng(lat, lng));
+      if (!mounted) return false;
+      final dx = (point.x - playerPoint.x.toDouble()).abs();
+      final dy = point.y - playerPoint.y.toDouble();
+      final tappedPlayerMarker =
+          dx <= _playerUnderfootTapHalfWidthPx &&
+          dy <= _playerUnderfootTapBottomReachPx &&
+          dy >= -_playerUnderfootTapTopReachPx;
+      if (!tappedPlayerMarker) return false;
+      return _openPinSelectionCandidates(nearbyCandidates);
+    } catch (_) {
+      return false;
+    }
   }
 
   _MapPinSelectionCandidate? _buildPinSelectionCandidate(
@@ -7744,6 +7861,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (_shouldIgnoreMapClickForRecentFeatureTap(point)) return;
     final handledPinTap = await _maybeHandlePinTap(point);
     if (handledPinTap || !mounted) return;
+    final handledUnderfootTap = await _maybeHandlePlayerUnderfootTap(point);
+    if (handledUnderfootTap || !mounted) return;
     final zone = context.read<ZoneProvider>().findZoneAtCoordinate(
       coordinates.latitude,
       coordinates.longitude,
@@ -11062,6 +11181,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         polygonChallenge ??= challenge;
       }
     }
+    final nearbyPlayerPinCandidates =
+        !_isPlacingBase && loc != null && _styleLoaded && !_mapLoadFailed
+        ? _pinSelectionCandidatesNearLocation(loc)
+        : const <_MapPinSelectionCandidate>[];
+    final polygonActionCount =
+        (polygonQuest != null && polygonNode != null ? 1 : 0) +
+        (polygonChallenge != null ? 1 : 0);
+    final nearbyPinChipBottom =
+        polygonActionBottom +
+        (polygonActionCount * stackedPolygonActionSpacing);
 
     if (_styleLoaded &&
         !_mapLoadFailed &&
@@ -11380,6 +11509,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     polygonChallengeQuestEntry != null
                         ? 'Challenge: ${polygonChallengeQuestEntry.key.name}'
                         : 'Challenge Area',
+                  ),
+                ),
+              ),
+            if (!_isPlacingBase && nearbyPlayerPinCandidates.isNotEmpty)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: nearbyPinChipBottom,
+                child: PointerInterceptor(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: _MiniActionChip(
+                      icon: Icons.place_rounded,
+                      label: nearbyPlayerPinCandidates.length == 1
+                          ? 'Nearby marker'
+                          : 'Nearby (${nearbyPlayerPinCandidates.length})',
+                      onTap: () {
+                        final location = context
+                            .read<LocationProvider>()
+                            .location;
+                        if (location == null) return;
+                        _openPinSelectionCandidates(
+                          _pinSelectionCandidatesNearLocation(location),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -14260,6 +14415,49 @@ class _MiniInfoChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(label, style: theme.textTheme.labelMedium),
         ],
+      ),
+    );
+  }
+}
+
+class _MiniActionChip extends StatelessWidget {
+  const _MiniActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.92),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.22),
+        ),
+      ),
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: theme.colorScheme.onSurface),
+              const SizedBox(width: 8),
+              Text(label, style: theme.textTheme.labelLarge),
+            ],
+          ),
+        ),
       ),
     );
   }

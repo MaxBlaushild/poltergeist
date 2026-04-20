@@ -34,6 +34,7 @@ import '../models/character_action.dart';
 class InventoryTutorialSession {
   const InventoryTutorialSession({
     this.dialogue = const [],
+    this.objectiveCopy = '',
     this.requiredEquipItemIds = const [],
     this.completedEquipItemIds = const [],
     this.requiredUseItemIds = const [],
@@ -42,6 +43,7 @@ class InventoryTutorialSession {
   });
 
   final List<DialogueMessage> dialogue;
+  final String objectiveCopy;
   final List<int> requiredEquipItemIds;
   final List<int> completedEquipItemIds;
   final List<int> requiredUseItemIds;
@@ -1144,6 +1146,11 @@ class _SideDrawerState extends State<_SideDrawer> {
                                   onClose: () => Navigator.of(context).pop(),
                                   closeLocked:
                                       widget.inventoryTutorialSession != null,
+                                  tutorialObjectiveCopy:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.objectiveCopy ??
+                                      '',
                                   tutorialDialogue:
                                       widget
                                           .inventoryTutorialSession
