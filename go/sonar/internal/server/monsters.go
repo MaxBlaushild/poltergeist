@@ -865,7 +865,16 @@ func (s *server) monsterEncounterResponseFrom(
 				encounter.EncounterType,
 			)
 		}
-		entry, err := s.buildMonsterResponse(ctx, userID, &monster)
+		resolvedUserLevel := 0
+		if applyLevelScaling {
+			resolvedUserLevel = userLevel
+		}
+		entry, err := s.buildMonsterResponseForUserLevel(
+			ctx,
+			userID,
+			&monster,
+			resolvedUserLevel,
+		)
 		if err != nil {
 			return monsterEncounterResponse{}, err
 		}
@@ -1021,9 +1030,26 @@ func monsterTemplateResolvedAbilitiesForLevel(
 	}
 
 	for _, templateSpell := range template.Spells {
+		if !spellUnlockedForMonsterAbilityLevel(templateSpell.Spell, level) {
+			continue
+		}
 		appendAbility(templateSpell.Spell)
 	}
 	return abilities
+}
+
+func spellUnlockedForMonsterAbilityLevel(spell models.Spell, level int) bool {
+	if spell.ID == uuid.Nil {
+		return false
+	}
+	if level < 1 {
+		level = 1
+	}
+	unlockLevel := spell.AbilityLevel
+	if unlockLevel <= 0 {
+		unlockLevel = 1
+	}
+	return unlockLevel <= level
 }
 
 func monsterTemplateProgressionSpellAtOrBelowLevel(
@@ -1066,6 +1092,7 @@ func monsterResponseFrom(
 	statusBonuses models.CharacterStatBonuses,
 	activeStatuses []models.MonsterStatus,
 	activeBattle *models.MonsterBattle,
+	userLevel int,
 ) monsterResponse {
 	genreID := monster.GenreID
 	genre := monster.Genre
@@ -1091,7 +1118,14 @@ func monsterResponseFrom(
 			currentMana = 0
 		}
 	}
-	spells := monsterTemplateResolvedAbilitiesForLevel(monster.Template, monster.EffectiveLevel())
+	resolvedAbilityLevel := cappedMonsterAbilityLevelForUserLevel(
+		monster.EffectiveLevel(),
+		userLevel,
+	)
+	spells := monsterTemplateResolvedAbilitiesForLevel(
+		monster.Template,
+		resolvedAbilityLevel,
+	)
 	imageURL := monster.ImageURL
 	if imageURL == "" && monster.Template != nil {
 		imageURL = monster.Template.ImageURL
@@ -1378,12 +1412,27 @@ func (s *server) buildMonsterResponse(
 	userID uuid.UUID,
 	monster *models.Monster,
 ) (monsterResponse, error) {
+	return s.buildMonsterResponseForUserLevel(ctx, userID, monster, 0)
+}
+
+func (s *server) buildMonsterResponseForUserLevel(
+	ctx context.Context,
+	userID uuid.UUID,
+	monster *models.Monster,
+	userLevel int,
+) (monsterResponse, error) {
 	activeBattle, err := s.findActiveMonsterBattleForUser(ctx, userID, monster.ID)
 	if err != nil {
 		return monsterResponse{}, err
 	}
 	if activeBattle == nil {
-		response := monsterResponseFrom(monster, models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil)
+		response := monsterResponseFrom(
+			monster,
+			models.CharacterStatBonuses{},
+			[]models.MonsterStatus{},
+			nil,
+			userLevel,
+		)
 		if err := s.applyMonsterRewardsForUser(ctx, userID, monster, &response); err != nil {
 			return monsterResponse{}, err
 		}
@@ -1402,7 +1451,20 @@ func (s *server) buildMonsterResponse(
 	if err != nil {
 		return monsterResponse{}, err
 	}
-	response := monsterResponseFrom(battleMonster, totalStatusBonuses, activeStatuses, activeBattle)
+	resolvedUserLevel := userLevel
+	if resolvedUserLevel <= 0 {
+		resolvedUserLevel, err = s.monsterBattleScalingLevel(ctx, activeBattle)
+		if err != nil {
+			return monsterResponse{}, err
+		}
+	}
+	response := monsterResponseFrom(
+		battleMonster,
+		totalStatusBonuses,
+		activeStatuses,
+		activeBattle,
+		resolvedUserLevel,
+	)
 	if err := s.applyMonsterRewardsForUser(ctx, userID, monster, &response); err != nil {
 		return monsterResponse{}, err
 	}
@@ -3155,7 +3217,16 @@ func (s *server) getAdminMonsters(ctx *gin.Context) {
 
 	items := make([]monsterResponse, 0, len(result.Monsters))
 	for i := range result.Monsters {
-		items = append(items, monsterResponseFrom(&result.Monsters[i], models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil))
+		items = append(
+			items,
+			monsterResponseFrom(
+				&result.Monsters[i],
+				models.CharacterStatBonuses{},
+				[]models.MonsterStatus{},
+				nil,
+				0,
+			),
+		)
 	}
 
 	ctx.JSON(http.StatusOK, paginatedMonsterResponse{

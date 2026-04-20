@@ -3,6 +3,8 @@ package liveness
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,9 +16,14 @@ const (
 	locationKey     = "user_location:%s"
 	locationSeenKey = "last_location_seen:%s"
 	ttl             = 1 * time.Minute
-	locationTTL     = 5 * time.Minute
+	locationTTL     = 30 * time.Minute
 	locationSeenTTL = 30 * time.Minute
 )
+
+type LocationSnapshot struct {
+	Location string
+	SeenAt   time.Time
+}
 
 type LivenessClient interface {
 	IsActive(ctx context.Context, userID uuid.UUID) (bool, error)
@@ -24,6 +31,7 @@ type LivenessClient interface {
 	SetLastActive(ctx context.Context, userID uuid.UUID) error
 	SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error
 	GetUserLocation(ctx context.Context, userID uuid.UUID) (string, error)
+	GetUserLocationSnapshot(ctx context.Context, userID uuid.UUID) (*LocationSnapshot, error)
 }
 
 type livenessClient struct {
@@ -74,6 +82,62 @@ func (c *livenessClient) GetUserLocation(ctx context.Context, userID uuid.UUID) 
 		return "", err
 	}
 	return result, nil
+}
+
+func (c *livenessClient) GetUserLocationSnapshot(ctx context.Context, userID uuid.UUID) (*LocationSnapshot, error) {
+	values, err := c.redisClient.MGet(
+		ctx,
+		c.makeLocationKey(userID),
+		c.makeLocationSeenKey(userID),
+	).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(values) < 2 {
+		return nil, nil
+	}
+
+	location := strings.TrimSpace(redisStringValue(values[0]))
+	seenAt, hasSeenAt, err := redisUnixTimeValue(values[1])
+	if err != nil {
+		return nil, err
+	}
+
+	if location == "" && !hasSeenAt {
+		return nil, nil
+	}
+	if !hasSeenAt {
+		return &LocationSnapshot{Location: location}, nil
+	}
+	return &LocationSnapshot{
+		Location: location,
+		SeenAt:   seenAt,
+	}, nil
+}
+
+func redisStringValue(value interface{}) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func redisUnixTimeValue(value interface{}) (time.Time, bool, error) {
+	raw := strings.TrimSpace(redisStringValue(value))
+	if raw == "" {
+		return time.Time{}, false, nil
+	}
+	unixValue, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return time.Unix(unixValue, 0), true, nil
 }
 
 func (c *livenessClient) makeKey(userID uuid.UUID) string {

@@ -47,6 +47,8 @@ type TutorialConfig struct {
 	PostMonsterDialogue               DialogueSequence         `gorm:"-" json:"postMonsterDialogue"`
 	BaseKitDialogueJSON               datatypes.JSON           `gorm:"column:base_kit_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	BaseKitDialogue                   DialogueSequence         `gorm:"-" json:"baseKitDialogue"`
+	PostBasePlacementDialogueJSON     datatypes.JSON           `gorm:"column:post_base_placement_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	PostBasePlacementDialogue         DialogueSequence         `gorm:"-" json:"postBasePlacementDialogue"`
 	PostBaseDialogueJSON              datatypes.JSON           `gorm:"column:post_base_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostBaseDialogue                  DialogueSequence         `gorm:"-" json:"postBaseDialogue"`
 	ScenarioPrompt                    string                   `json:"scenarioPrompt"`
@@ -86,6 +88,8 @@ const (
 	TutorialStageMonster             = "monster"
 	TutorialStagePostMonsterDialogue = "post_monster_dialogue"
 	TutorialStageBaseKit             = "base_kit"
+	TutorialStagePostBasePlacement   = "post_base_placement_dialogue"
+	TutorialStageHearth              = "hearth"
 	TutorialStagePostBaseDialogue    = "post_base_dialogue"
 	TutorialStageCompleted           = "completed"
 )
@@ -107,6 +111,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.BaseKitDialogue == nil {
 		c.BaseKitDialogue = DialogueSequence{}
 	}
+	if c.PostBasePlacementDialogue == nil {
+		c.PostBasePlacementDialogue = DialogueSequence{}
+	}
 	if c.PostBaseDialogue == nil {
 		c.PostBaseDialogue = DialogueSequence{}
 	}
@@ -127,6 +134,7 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	c.LoadoutDialogue = normalizeDialogueSequence(c.LoadoutDialogue)
 	c.PostMonsterDialogue = normalizeDialogueSequence(c.PostMonsterDialogue)
 	c.BaseKitDialogue = normalizeDialogueSequence(c.BaseKitDialogue)
+	c.PostBasePlacementDialogue = normalizeDialogueSequence(c.PostBasePlacementDialogue)
 	c.PostBaseDialogue = normalizeDialogueSequence(c.PostBaseDialogue)
 
 	options := make([]TutorialScenarioOption, 0, len(c.Options))
@@ -173,6 +181,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 		return err
 	}
 	if err := assignTutorialJSON(&c.BaseKitDialogueJSON, c.BaseKitDialogue); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&c.PostBasePlacementDialogueJSON, c.PostBasePlacementDialogue); err != nil {
 		return err
 	}
 	if err := assignTutorialJSON(&c.PostBaseDialogueJSON, c.PostBaseDialogue); err != nil {
@@ -232,6 +243,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	if err := parseTutorialDialogueSequenceJSON(c.BaseKitDialogueJSON, &c.BaseKitDialogue); err != nil {
 		return err
 	}
+	if err := parseTutorialDialogueSequenceJSON(c.PostBasePlacementDialogueJSON, &c.PostBasePlacementDialogue); err != nil {
+		return err
+	}
 	if err := parseTutorialDialogueSequenceJSON(c.PostBaseDialogueJSON, &c.PostBaseDialogue); err != nil {
 		return err
 	}
@@ -258,6 +272,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	}
 	if c.BaseKitDialogue == nil {
 		c.BaseKitDialogue = DialogueSequence{}
+	}
+	if c.PostBasePlacementDialogue == nil {
+		c.PostBasePlacementDialogue = DialogueSequence{}
 	}
 	if c.PostBaseDialogue == nil {
 		c.PostBaseDialogue = DialogueSequence{}
@@ -442,6 +459,10 @@ func normalizeTutorialStage(input string) string {
 		return TutorialStagePostMonsterDialogue
 	case TutorialStageBaseKit:
 		return TutorialStageBaseKit
+	case TutorialStagePostBasePlacement:
+		return TutorialStagePostBasePlacement
+	case TutorialStageHearth:
+		return TutorialStageHearth
 	case TutorialStagePostBaseDialogue:
 		return TutorialStagePostBaseDialogue
 	case TutorialStageCompleted:

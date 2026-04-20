@@ -56,6 +56,7 @@ type TutorialConfigResponse = {
   loadoutDialogue?: DialogueMessage[];
   postMonsterDialogue?: DialogueMessage[];
   baseKitDialogue?: DialogueMessage[];
+  postBasePlacementDialogue?: DialogueMessage[];
   postBaseDialogue?: DialogueMessage[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
@@ -288,6 +289,9 @@ export const Tutorial = () => {
     DialogueMessage[]
   >([]);
   const [baseKitDialogue, setBaseKitDialogue] = useState<DialogueMessage[]>([]);
+  const [postBasePlacementDialogue, setPostBasePlacementDialogue] = useState<
+    DialogueMessage[]
+  >([]);
   const [postBaseDialogue, setPostBaseDialogue] = useState<DialogueMessage[]>(
     []
   );
@@ -351,6 +355,11 @@ export const Tutorial = () => {
         );
         setBaseKitDialogue(
           Array.isArray(config.baseKitDialogue) ? config.baseKitDialogue : []
+        );
+        setPostBasePlacementDialogue(
+          Array.isArray(config.postBasePlacementDialogue)
+            ? config.postBasePlacementDialogue
+            : []
         );
         setPostBaseDialogue(
           Array.isArray(config.postBaseDialogue) ? config.postBaseDialogue : []
@@ -736,6 +745,7 @@ export const Tutorial = () => {
         loadoutDialogue,
         postMonsterDialogue,
         baseKitDialogue,
+        postBasePlacementDialogue,
         postBaseDialogue,
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
@@ -1353,6 +1363,44 @@ export const Tutorial = () => {
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-900">
+                  Post-Base Placement Dialogue
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown as soon as the player establishes their base. After
+                  this dialogue closes, the tutorial requires them to use their
+                  hearth before the final conversation can begin.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Dialogue Lines"
+                helperText="Use this to direct the player into their new base and point them toward the hearth."
+                value={postBasePlacementDialogue}
+                onChange={setPostBasePlacementDialogue}
+              />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Hearth Objective
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  After the post-base placement dialogue, the player must use
+                  their base&apos;s hearth to heal before the final tutorial
+                  dialogue will appear.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                This step uses the in-game base UI and does not need separate
+                dialogue lines.
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
                   Home Base Quest
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
@@ -1471,8 +1519,8 @@ export const Tutorial = () => {
                   Post-Base Dialogue
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Shown immediately after the player establishes their base and
-                  before the Welcome to Unclaimed Streets overlay appears.
+                  Shown after the player uses their hearth and before the
+                  Welcome to Unclaimed Streets overlay appears.
                 </p>
               </div>
 

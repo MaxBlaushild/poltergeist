@@ -8,6 +8,17 @@ class LocationService {
     distanceFilter: 5,
   );
 
+  double? _normalizedHeading(double heading) {
+    if (!heading.isFinite || heading < 0) return null;
+    final normalized = heading % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+  }
+
+  double? _normalizedSpeed(double speed) {
+    if (!speed.isFinite || speed < 0) return null;
+    return speed;
+  }
+
   Future<bool> checkPermission() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return false;
@@ -15,11 +26,12 @@ class LocationService {
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
-    return p == LocationPermission.whileInUse ||
-        p == LocationPermission.always;
+    return p == LocationPermission.whileInUse || p == LocationPermission.always;
   }
 
-  Future<AppLocation?> getCurrentLocation({bool requestPermission = true}) async {
+  Future<AppLocation?> getCurrentLocation({
+    bool requestPermission = true,
+  }) async {
     if (requestPermission) {
       final ok = await checkPermission();
       if (!ok) return null;
@@ -34,13 +46,17 @@ class LocationService {
         latitude: pos.latitude,
         longitude: pos.longitude,
         accuracy: pos.accuracy,
+        heading: _normalizedHeading(pos.heading),
+        speed: _normalizedSpeed(pos.speed),
       );
     } catch (_) {
       return null;
     }
   }
 
-  Stream<AppLocation> getLocationStream({bool requestPermission = true}) async* {
+  Stream<AppLocation> getLocationStream({
+    bool requestPermission = true,
+  }) async* {
     if (requestPermission) {
       final ok = await checkPermission();
       if (!ok) return;
@@ -52,6 +68,8 @@ class LocationService {
         latitude: pos.latitude,
         longitude: pos.longitude,
         accuracy: pos.accuracy,
+        heading: _normalizedHeading(pos.heading),
+        speed: _normalizedSpeed(pos.speed),
       ),
     );
   }

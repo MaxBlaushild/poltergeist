@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
@@ -20,12 +21,33 @@ import (
 )
 
 const (
-	monsterBattlePartyInviteRadiusMeters = 50.0
-	monsterBattleInviteTTL               = 1 * time.Minute
-	monsterBattleLowHealthHealThreshold  = 0.45
-	monsterBattleBossEmergencyHealRatio  = 0.22
-	monsterBattleBossHealLockTurns       = 2
-	monsterBattleBossMaxHealPercent      = 18
+	monsterBattlePartyInviteRadiusMeters  = 50.0
+	monsterBattlePartyFreshLocationMaxAge = 5 * time.Minute
+	monsterBattlePartyKnownFarMaxAge      = 30 * time.Minute
+	monsterBattlePartyKnownFarFreshMeters = 100.0
+	monsterBattlePartyKnownFarStaleMeters = 500.0
+	monsterBattleInviteTTL                = 1 * time.Minute
+	monsterBattleLowHealthHealThreshold   = 0.45
+	monsterBattleBossEmergencyHealRatio   = 0.22
+	monsterBattleBossHealLockTurns        = 2
+	monsterBattleBossMaxHealPercent       = 18
+	monsterAbilityDampenerPctLevel5       = 55
+	monsterAbilityDampenerPctLevel10      = 70
+	monsterAbilityDampenerPctLevel15      = 85
+	monsterAbilitySingleCapPctLevel4      = 25
+	monsterAbilityAoeCapPctLevel4         = 12
+	monsterAbilityBossBurstCapPctLevel4   = 35
+	monsterAbilitySingleCapPctLevel10     = 30
+	monsterAbilityAoeCapPctLevel10        = 15
+	monsterAbilityBossBurstCapPctLevel10  = 40
+)
+
+type monsterBattleInviteProximityDecision string
+
+const (
+	monsterBattleInviteProximityDecisionInvite   monsterBattleInviteProximityDecision = "invite"
+	monsterBattleInviteProximityDecisionKnownFar monsterBattleInviteProximityDecision = "known_far"
+	monsterBattleInviteProximityDecisionUnknown  monsterBattleInviteProximityDecision = "unknown"
 )
 
 type monsterBattleParticipantSummary struct {
@@ -122,6 +144,76 @@ func monsterBattleUserDisplayName(user *models.User) string {
 		return name
 	}
 	return "Party Member"
+}
+
+func monsterBattleInviteAnchor(
+	monster *models.Monster,
+	encounter *models.MonsterEncounter,
+) (float64, float64, bool) {
+	if encounter != nil &&
+		isValidStandaloneCoordinate(encounter.Latitude, encounter.Longitude) {
+		return encounter.Latitude, encounter.Longitude, true
+	}
+	if monster != nil &&
+		isValidStandaloneCoordinate(monster.Latitude, monster.Longitude) {
+		return monster.Latitude, monster.Longitude, true
+	}
+	return 0, 0, false
+}
+
+func normalizeLocationSnapshotAge(age time.Duration) time.Duration {
+	if age < 0 {
+		return 0
+	}
+	return age
+}
+
+func classifyMonsterBattleInviteProximity(
+	snapshot *liveness.LocationSnapshot,
+	anchorLat float64,
+	anchorLng float64,
+	now time.Time,
+) (monsterBattleInviteProximityDecision, float64, time.Duration) {
+	if snapshot == nil || snapshot.SeenAt.IsZero() {
+		return monsterBattleInviteProximityDecisionUnknown, 0, 0
+	}
+	if !isValidStandaloneCoordinate(anchorLat, anchorLng) {
+		return monsterBattleInviteProximityDecisionUnknown, 0, 0
+	}
+
+	age := normalizeLocationSnapshotAge(now.Sub(snapshot.SeenAt))
+	if age > monsterBattlePartyKnownFarMaxAge {
+		return monsterBattleInviteProximityDecisionUnknown, 0, age
+	}
+
+	locationStr := strings.TrimSpace(snapshot.Location)
+	if locationStr == "" {
+		return monsterBattleInviteProximityDecisionUnknown, 0, age
+	}
+
+	memberLat, memberLng, err := parseUserLocationString(locationStr)
+	if err != nil {
+		return monsterBattleInviteProximityDecisionUnknown, 0, age
+	}
+
+	distanceMeters := util.HaversineDistance(
+		memberLat,
+		memberLng,
+		anchorLat,
+		anchorLng,
+	)
+	if age <= monsterBattlePartyFreshLocationMaxAge &&
+		distanceMeters <= monsterBattlePartyInviteRadiusMeters {
+		return monsterBattleInviteProximityDecisionInvite, distanceMeters, age
+	}
+	if age <= monsterBattlePartyFreshLocationMaxAge &&
+		distanceMeters >= monsterBattlePartyKnownFarFreshMeters {
+		return monsterBattleInviteProximityDecisionKnownFar, distanceMeters, age
+	}
+	if distanceMeters >= monsterBattlePartyKnownFarStaleMeters {
+		return monsterBattleInviteProximityDecisionKnownFar, distanceMeters, age
+	}
+	return monsterBattleInviteProximityDecisionUnknown, distanceMeters, age
 }
 
 func (s *server) recordMonsterBattleLastAction(
@@ -288,6 +380,20 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 	if err != nil {
 		return err
 	}
+	var encounter *models.MonsterEncounter
+	if battle.MonsterEncounterID != nil && *battle.MonsterEncounterID != uuid.Nil {
+		encounter, err = s.dbClient.MonsterEncounter().FindByID(
+			ctx,
+			*battle.MonsterEncounterID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	inviteAnchorLat, inviteAnchorLng, hasInviteAnchor := monsterBattleInviteAnchor(
+		monster,
+		encounter,
+	)
 	if monster.OwnerUserID != nil {
 		battle.State = string(models.MonsterBattleStateActive)
 		if err := s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State); err != nil {
@@ -298,46 +404,59 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 
 	inviteCount := 0
 	for _, member := range partyMembers {
-		isActive, err := s.livenessClient.HasRecentLocation(ctx, member.ID)
+		locationSnapshot, err := s.getUserLocationSnapshot(ctx, member.ID)
 		if err != nil {
 			log.Printf(
-				"[party-combat][invite] skipped member=%s battle=%s reason=active-check-error err=%v",
+				"[party-combat][invite] skipped member=%s battle=%s reason=location-snapshot-error err=%v",
 				member.ID,
 				battle.ID,
 				err,
 			)
 			continue
 		}
-		if !isActive {
+		if locationSnapshot == nil || locationSnapshot.SeenAt.IsZero() {
 			log.Printf(
-				"[party-combat][invite] skipped member=%s battle=%s reason=not-active",
+				"[party-combat][invite] skipped member=%s battle=%s reason=no-recent-location",
 				member.ID,
 				battle.ID,
 			)
 			continue
 		}
-
-		memberLat, memberLng, err := s.getUserLatLng(ctx, member.ID)
-		if err == nil {
-			distanceMeters := util.HaversineDistance(memberLat, memberLng, monster.Latitude, monster.Longitude)
-			if distanceMeters > monsterBattlePartyInviteRadiusMeters {
+		if hasInviteAnchor {
+			decision, distanceMeters, age := classifyMonsterBattleInviteProximity(
+				locationSnapshot,
+				inviteAnchorLat,
+				inviteAnchorLng,
+				now,
+			)
+			switch decision {
+			case monsterBattleInviteProximityDecisionInvite:
+				// Fresh and near enough: proceed.
+			case monsterBattleInviteProximityDecisionKnownFar:
 				log.Printf(
-					"[party-combat][invite] skipped member=%s battle=%s reason=too-far distance=%.2fm max=%.2fm",
+					"[party-combat][invite] skipped member=%s battle=%s reason=known-far distance=%.2fm age=%s",
 					member.ID,
 					battle.ID,
 					distanceMeters,
-					monsterBattlePartyInviteRadiusMeters,
+					age.Round(time.Second),
 				)
 				continue
+			default:
+				// If we have ambiguous or stale location data, fail open so combat
+				// waits for a response instead of silently bypassing party flow.
+				log.Printf(
+					"[party-combat][invite] fallback-invite member=%s battle=%s reason=location-unknown distance=%.2fm age=%s",
+					member.ID,
+					battle.ID,
+					distanceMeters,
+					age.Round(time.Second),
+				)
 			}
 		} else {
-			// If we know the member is active but cannot read precise location,
-			// fail open so combat waits for a response instead of silently bypassing party flow.
 			log.Printf(
-				"[party-combat][invite] fallback-invite member=%s battle=%s reason=location-unavailable err=%v",
+				"[party-combat][invite] fallback-invite member=%s battle=%s reason=anchor-unavailable",
 				member.ID,
 				battle.ID,
-				err,
 			)
 		}
 
@@ -847,10 +966,98 @@ func monsterAbilityHasSupport(spell *models.Spell) bool {
 	return false
 }
 
-func monsterAbilityDamageForCombat(monster *models.Monster, spell *models.Spell) int {
+func monsterAbilityDamageDampenerPercent(abilityLevel int) int {
+	switch {
+	case abilityLevel <= 5:
+		return monsterAbilityDampenerPctLevel5
+	case abilityLevel <= 10:
+		return monsterAbilityDampenerPctLevel10
+	case abilityLevel <= 15:
+		return monsterAbilityDampenerPctLevel15
+	default:
+		return 100
+	}
+}
+
+func applyMonsterAbilityDamageDampener(damage int, abilityLevel int) int {
+	if damage <= 0 {
+		return 0
+	}
+	dampenerPercent := monsterAbilityDamageDampenerPercent(abilityLevel)
+	if dampenerPercent >= 100 {
+		return damage
+	}
+	return maxInt(1, ((damage*dampenerPercent)+50)/100)
+}
+
+func monsterAbilityDamageCapPercentForCombat(
+	monster *models.Monster,
+	spell *models.Spell,
+	abilityLevel int,
+) int {
+	if spell == nil || abilityLevel > 10 {
+		return 0
+	}
+	targetsAllEnemies := monsterAbilityTargetsAllEnemies(spell)
+	isBossBurst := monsterUsesBossHealingRules(monster) && spell.CooldownTurns >= 2
+	if abilityLevel <= 4 {
+		switch {
+		case targetsAllEnemies:
+			return monsterAbilityAoeCapPctLevel4
+		case isBossBurst:
+			return monsterAbilityBossBurstCapPctLevel4
+		default:
+			return monsterAbilitySingleCapPctLevel4
+		}
+	}
+	switch {
+	case targetsAllEnemies:
+		return monsterAbilityAoeCapPctLevel10
+	case isBossBurst:
+		return monsterAbilityBossBurstCapPctLevel10
+	default:
+		return monsterAbilitySingleCapPctLevel10
+	}
+}
+
+func capMonsterAbilityDamageAgainstHealth(
+	damage int,
+	monster *models.Monster,
+	spell *models.Spell,
+	userLevel int,
+	targetMaxHealth int,
+) int {
+	if damage <= 0 || targetMaxHealth <= 0 || monster == nil {
+		return maxInt(0, damage)
+	}
+	abilityLevel := cappedMonsterAbilityLevelForUserLevel(
+		monster.EffectiveLevel(),
+		userLevel,
+	)
+	capPercent := monsterAbilityDamageCapPercentForCombat(
+		monster,
+		spell,
+		abilityLevel,
+	)
+	if capPercent <= 0 {
+		return damage
+	}
+	maxDamage := maxInt(1, (targetMaxHealth*capPercent)/100)
+	return min(damage, maxDamage)
+}
+
+func monsterAbilityDamageForCombat(
+	monster *models.Monster,
+	spell *models.Spell,
+	userLevel int,
+) int {
 	if monster == nil || spell == nil {
 		return 0
 	}
+	abilityLevel := cappedMonsterAbilityLevelForUserLevel(
+		monster.EffectiveLevel(),
+		userLevel,
+	)
 	explicitDamage := 0
 	for _, effect := range spell.Effects {
 		switch effect.Type {
@@ -869,7 +1076,10 @@ func monsterAbilityDamageForCombat(monster *models.Monster, spell *models.Spell)
 	if models.NormalizeSpellAbilityType(string(spell.AbilityType)) == models.SpellAbilityTypeTechnique {
 		bonus += maxInt(0, (monster.EffectiveStats().Strength-10)/2)
 	}
-	return maxInt(1, explicitDamage+bonus)
+	return applyMonsterAbilityDamageDampener(
+		maxInt(1, explicitDamage+bonus),
+		abilityLevel,
+	)
 }
 
 func monsterAbilityDamageAffinity(spell *models.Spell) *string {
@@ -998,10 +1208,20 @@ func applyMonsterHealingLockout(
 }
 
 func monsterCombatAbilities(monster *models.Monster) []models.Spell {
+	return monsterCombatAbilitiesForUserLevel(monster, 0)
+}
+
+func monsterCombatAbilitiesForUserLevel(
+	monster *models.Monster,
+	userLevel int,
+) []models.Spell {
 	if monster == nil {
 		return []models.Spell{}
 	}
-	return monsterTemplateResolvedAbilitiesForLevel(monster.Template, monster.EffectiveLevel())
+	return monsterTemplateResolvedAbilitiesForLevel(
+		monster.Template,
+		cappedMonsterAbilityLevelForUserLevel(monster.EffectiveLevel(), userLevel),
+	)
 }
 
 func chooseMonsterBattleAbility(
@@ -1010,9 +1230,10 @@ func chooseMonsterBattleAbility(
 	currentHealth int,
 	maxHealth int,
 	currentMana int,
+	userLevel int,
 	now time.Time,
 ) *models.Spell {
-	abilities := monsterCombatAbilities(monster)
+	abilities := monsterCombatAbilitiesForUserLevel(monster, userLevel)
 	if len(abilities) == 0 {
 		return nil
 	}
@@ -1062,9 +1283,9 @@ func chooseMonsterBattleAbility(
 
 	if len(offense) > 0 && rand.Intn(100) < 55 {
 		best := offense[0]
-		bestDamage := monsterAbilityDamageForCombat(monster, &best)
+		bestDamage := monsterAbilityDamageForCombat(monster, &best, userLevel)
 		for _, ability := range offense[1:] {
-			damage := monsterAbilityDamageForCombat(monster, &ability)
+			damage := monsterAbilityDamageForCombat(monster, &ability, userLevel)
 			if damage > bestDamage {
 				best = ability
 				bestDamage = damage
@@ -1335,8 +1556,20 @@ func (s *server) executeMonsterBattleAction(
 	maxMonsterHealth := maxInt(1, monster.DerivedMaxHealthWithBonuses(statusBonuses))
 	maxMonsterMana := maxInt(0, monster.DerivedMaxManaWithBonuses(statusBonuses))
 	currentMonsterMana := maxInt(0, maxMonsterMana-battle.MonsterManaDeficit)
+	battleScalingLevel, err := s.monsterBattleScalingLevel(ctx, battle)
+	if err != nil {
+		return nil, nil, err
+	}
 	now := time.Now()
-	ability := chooseMonsterBattleAbility(monster, battle, currentMonsterHealth, maxMonsterHealth, currentMonsterMana, now)
+	ability := chooseMonsterBattleAbility(
+		monster,
+		battle,
+		currentMonsterHealth,
+		maxMonsterHealth,
+		currentMonsterMana,
+		battleScalingLevel,
+		now,
+	)
 	if ability == nil {
 		log.Printf(
 			"[party-combat][monster-ai] battle=%s monster=%s action=attack reason=no-usable-abilities currentMana=%d maxMana=%d cooldowns=%d",
@@ -1460,7 +1693,7 @@ func (s *server) executeMonsterBattleAction(
 		resourceByUserID[resource.UserID] = resource
 	}
 
-	damage := monsterAbilityDamageForCombat(monster, ability)
+	damage := monsterAbilityDamageForCombat(monster, ability, battleScalingLevel)
 	if damage > 0 && len(targetIDs) > 0 {
 		damageAffinity := monsterAbilityDamageAffinity(ability)
 		damageWithBonus, _, _ := applyAffinityDamageBonus(
@@ -1471,8 +1704,15 @@ func (s *server) executeMonsterBattleAction(
 		maxAppliedDamage := 0
 		for _, userID := range targetIDs {
 			resource := resourceByUserID[userID]
-			appliedDamage, _, _ := applyCharacterAffinityResistance(
+			damageAgainstTarget := capMonsterAbilityDamageAgainstHealth(
 				damageWithBonus,
+				monster,
+				ability,
+				battleScalingLevel,
+				resource.MaxHealth,
+			)
+			appliedDamage, _, _ := applyCharacterAffinityResistance(
+				damageAgainstTarget,
 				damageAffinity,
 				resource.Bonuses,
 			)

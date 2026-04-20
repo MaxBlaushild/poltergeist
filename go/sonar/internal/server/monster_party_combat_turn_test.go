@@ -92,7 +92,15 @@ func TestChooseMonsterBattleAbilityPrefersSupportWhenLowHealth(t *testing.T) {
 		},
 	}
 
-	chosen := chooseMonsterBattleAbility(monster, nil, 20, 100, 999, time.Now())
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		nil,
+		20,
+		100,
+		999,
+		monster.Level,
+		time.Now(),
+	)
 	if chosen == nil || chosen.Name != "Recover" {
 		t.Fatalf("expected low-health monster to prefer healing, got %+v", chosen)
 	}
@@ -126,7 +134,15 @@ func TestChooseMonsterBattleAbilityBossDelaysHealingUntilEmergency(t *testing.T)
 		},
 	}
 
-	chosen := chooseMonsterBattleAbility(monster, nil, 25, 100, 999, time.Now())
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		nil,
+		25,
+		100,
+		999,
+		monster.Level,
+		time.Now(),
+	)
 	if chosen == nil || chosen.Name != "Bolt" {
 		t.Fatalf("expected boss above emergency threshold to stay offensive, got %+v", chosen)
 	}
@@ -160,7 +176,15 @@ func TestChooseMonsterBattleAbilityBossPrefersHealingAtEmergency(t *testing.T) {
 		},
 	}
 
-	chosen := chooseMonsterBattleAbility(monster, nil, 20, 100, 999, time.Now())
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		nil,
+		20,
+		100,
+		999,
+		monster.Level,
+		time.Now(),
+	)
 	if chosen == nil || chosen.Name != "Recover" {
 		t.Fatalf("expected boss at emergency health to heal, got %+v", chosen)
 	}
@@ -195,7 +219,15 @@ func TestChooseMonsterBattleAbilitySkipsUnaffordableSpell(t *testing.T) {
 		},
 	}
 
-	chosen := chooseMonsterBattleAbility(monster, nil, 90, 100, 10, time.Now())
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		nil,
+		90,
+		100,
+		10,
+		monster.Level,
+		time.Now(),
+	)
 	if chosen == nil || chosen.Name != "Claw" {
 		t.Fatalf("expected affordable ability to be chosen, got %+v", chosen)
 	}
@@ -235,7 +267,15 @@ func TestChooseMonsterBattleAbilitySkipsCoolingDownAbility(t *testing.T) {
 		},
 	}
 
-	chosen := chooseMonsterBattleAbility(monster, battle, 90, 100, 999, now)
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		battle,
+		90,
+		100,
+		999,
+		monster.Level,
+		now,
+	)
 	if chosen == nil || chosen.Name != "Jab" {
 		t.Fatalf("expected non-cooling-down ability to be chosen, got %+v", chosen)
 	}
@@ -331,9 +371,112 @@ func TestMonsterAbilityDamageForCombatTechniqueAddsStrengthBonus(t *testing.T) {
 		},
 	}
 
-	got := monsterAbilityDamageForCombat(monster, ability)
+	got := monsterAbilityDamageForCombat(monster, ability, monster.Level)
 	if got <= 20 {
 		t.Fatalf("expected technique damage to include level/strength bonuses, got %d", got)
+	}
+}
+
+func TestMonsterCombatAbilitiesCapsAbilityTierToUserLevelPlusOne(t *testing.T) {
+	early := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Ember Snap",
+		AbilityLevel: 5,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	late := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Ember Nova",
+		AbilityLevel: 9,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: early},
+				{Spell: late},
+			},
+		},
+	}
+
+	abilities := monsterCombatAbilitiesForUserLevel(monster, 4)
+	if len(abilities) != 1 {
+		t.Fatalf("expected exactly one ability after early-game cap, got %d", len(abilities))
+	}
+	if abilities[0].ID != early.ID {
+		t.Fatalf("expected user level 4 to only expose %q, got %q", early.Name, abilities[0].Name)
+	}
+}
+
+func TestMonsterCombatAbilitiesSkipsLockedDirectTemplateSpells(t *testing.T) {
+	late := models.Spell{
+		ID:           uuid.New(),
+		Name:         "Shadow Burst",
+		AbilityLevel: 10,
+		AbilityType:  models.SpellAbilityTypeSpell,
+	}
+	monster := &models.Monster{
+		Level: 3,
+		Template: &models.MonsterTemplate{
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: late},
+			},
+		},
+	}
+
+	abilities := monsterCombatAbilities(monster)
+	if len(abilities) != 0 {
+		t.Fatalf("expected locked direct template spell to stay unavailable, got %d abilities", len(abilities))
+	}
+}
+
+func TestMonsterAbilityDamageForCombatAppliesEarlyGameDampener(t *testing.T) {
+	monster := &models.Monster{
+		Level: 12,
+	}
+	ability := &models.Spell{
+		ID:          uuid.New(),
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 50, Hits: 1},
+		},
+	}
+
+	got := monsterAbilityDamageForCombat(monster, ability, 4)
+	if got != 30 {
+		t.Fatalf("expected early-game dampener to reduce damage to 30, got %d", got)
+	}
+}
+
+func TestCapMonsterAbilityDamageAgainstHealthProtectsLowLevelPlayers(t *testing.T) {
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+		},
+	}
+	bossBurst := &models.Spell{
+		ID:            uuid.New(),
+		AbilityType:   models.SpellAbilityTypeSpell,
+		CooldownTurns: 2,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 60, Hits: 1},
+		},
+	}
+	aoe := &models.Spell{
+		ID:          uuid.New(),
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamageAllEnemies, Amount: 60, Hits: 1},
+		},
+	}
+
+	if got := capMonsterAbilityDamageAgainstHealth(70, monster, bossBurst, 3, 100); got != 35 {
+		t.Fatalf("expected early boss burst to cap at 35, got %d", got)
+	}
+	if got := capMonsterAbilityDamageAgainstHealth(70, monster, aoe, 3, 100); got != 12 {
+		t.Fatalf("expected early AOE to cap at 12, got %d", got)
 	}
 }
 

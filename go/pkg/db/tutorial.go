@@ -375,13 +375,56 @@ func (h *tutorialHandle) AdvanceToBaseKit(
 	})
 }
 
-func (h *tutorialHandle) AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error {
+func (h *tutorialHandle) AdvanceToPostBasePlacementDialogue(
+	ctx context.Context,
+	userID uuid.UUID,
+) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
 		if err != nil {
 			return err
 		}
 		if state.CompletedAt != nil || state.Stage != models.TutorialStageBaseKit {
+			return nil
+		}
+		state.Stage = models.TutorialStagePostBasePlacement
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = []int{}
+		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) AdvanceToHearth(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil || state.Stage != models.TutorialStagePostBasePlacement {
+			return nil
+		}
+		state.Stage = models.TutorialStageHearth
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = []int{}
+		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil ||
+			(state.Stage != models.TutorialStageBaseKit &&
+				state.Stage != models.TutorialStageHearth) {
 			return nil
 		}
 		state.Stage = models.TutorialStagePostBaseDialogue
@@ -489,14 +532,15 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 				Order:   0,
 			},
 		},
-		PostBaseDialogue:      models.DialogueSequence{},
-		ScenarioPrompt:        "You hear a commotion outside of your door.",
-		ScenarioImageURL:      "",
-		ImageGenerationStatus: models.TutorialImageGenerationStatusNone,
-		Options:               []models.TutorialScenarioOption{},
-		MonsterItemRewards:    []models.TutorialItemReward{},
-		ItemRewards:           []models.TutorialItemReward{},
-		SpellRewards:          []models.TutorialSpellReward{},
+		PostBasePlacementDialogue: models.DialogueSequence{},
+		PostBaseDialogue:          models.DialogueSequence{},
+		ScenarioPrompt:            "You hear a commotion outside of your door.",
+		ScenarioImageURL:          "",
+		ImageGenerationStatus:     models.TutorialImageGenerationStatusNone,
+		Options:                   []models.TutorialScenarioOption{},
+		MonsterItemRewards:        []models.TutorialItemReward{},
+		ItemRewards:               []models.TutorialItemReward{},
+		SpellRewards:              []models.TutorialSpellReward{},
 	}
 	if err := db.WithContext(ctx).Create(&created).Error; err != nil {
 		return nil, err

@@ -40,6 +40,7 @@ type tutorialConfigRequest struct {
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
 	PostMonsterDialogue               []models.DialogueMessage     `json:"postMonsterDialogue"`
 	BaseKitDialogue                   []models.DialogueMessage     `json:"baseKitDialogue"`
+	PostBasePlacementDialogue         []models.DialogueMessage     `json:"postBasePlacementDialogue"`
 	PostBaseDialogue                  []models.DialogueMessage     `json:"postBaseDialogue"`
 	ScenarioPrompt                    string                       `json:"scenarioPrompt"`
 	ScenarioImageURL                  string                       `json:"scenarioImageUrl"`
@@ -55,22 +56,23 @@ type tutorialConfigRequest struct {
 }
 
 type tutorialStatusResponse struct {
-	ShowWelcomeDialogue   bool                     `json:"showWelcomeDialogue"`
-	Stage                 string                   `json:"stage"`
-	ActivatedAt           interface{}              `json:"activatedAt"`
-	CompletedAt           interface{}              `json:"completedAt"`
-	ScenarioID            *uuid.UUID               `json:"scenarioId,omitempty"`
-	MonsterEncounterID    *uuid.UUID               `json:"monsterEncounterId,omitempty"`
-	Character             *models.Character        `json:"character,omitempty"`
-	Dialogue              []models.DialogueMessage `json:"dialogue"`
-	LoadoutDialogue       []models.DialogueMessage `json:"loadoutDialogue"`
-	PostMonsterDialogue   []models.DialogueMessage `json:"postMonsterDialogue"`
-	BaseKitDialogue       []models.DialogueMessage `json:"baseKitDialogue"`
-	PostBaseDialogue      []models.DialogueMessage `json:"postBaseDialogue"`
-	RequiredEquipItemIDs  []int                    `json:"requiredEquipItemIds"`
-	CompletedEquipItemIDs []int                    `json:"completedEquipItemIds"`
-	RequiredUseItemIDs    []int                    `json:"requiredUseItemIds"`
-	CompletedUseItemIDs   []int                    `json:"completedUseItemIds"`
+	ShowWelcomeDialogue       bool                     `json:"showWelcomeDialogue"`
+	Stage                     string                   `json:"stage"`
+	ActivatedAt               interface{}              `json:"activatedAt"`
+	CompletedAt               interface{}              `json:"completedAt"`
+	ScenarioID                *uuid.UUID               `json:"scenarioId,omitempty"`
+	MonsterEncounterID        *uuid.UUID               `json:"monsterEncounterId,omitempty"`
+	Character                 *models.Character        `json:"character,omitempty"`
+	Dialogue                  []models.DialogueMessage `json:"dialogue"`
+	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
+	PostMonsterDialogue       []models.DialogueMessage `json:"postMonsterDialogue"`
+	BaseKitDialogue           []models.DialogueMessage `json:"baseKitDialogue"`
+	PostBasePlacementDialogue []models.DialogueMessage `json:"postBasePlacementDialogue"`
+	PostBaseDialogue          []models.DialogueMessage `json:"postBaseDialogue"`
+	RequiredEquipItemIDs      []int                    `json:"requiredEquipItemIds"`
+	CompletedEquipItemIDs     []int                    `json:"completedEquipItemIds"`
+	RequiredUseItemIDs        []int                    `json:"requiredUseItemIds"`
+	CompletedUseItemIDs       []int                    `json:"completedUseItemIds"`
 }
 
 type activateTutorialRequest struct {
@@ -454,6 +456,11 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 				return
 			}
 		}
+	case "post_base_placement_dialogue_closed":
+		if err := s.dbClient.Tutorial().AdvanceToHearth(ctx, user.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	case "post_base_dialogue_closed":
 		if err := s.dbClient.Tutorial().MarkCompleted(ctx, user.ID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -494,18 +501,19 @@ func buildTutorialStatusResponse(
 	}
 	if state == nil {
 		return tutorialStatusResponse{
-			ShowWelcomeDialogue:   false,
-			Stage:                 models.TutorialStageCompleted,
-			Character:             config.Character,
-			Dialogue:              append([]models.DialogueMessage{}, config.Dialogue...),
-			LoadoutDialogue:       append([]models.DialogueMessage{}, config.LoadoutDialogue...),
-			PostMonsterDialogue:   append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
-			BaseKitDialogue:       append([]models.DialogueMessage{}, config.BaseKitDialogue...),
-			PostBaseDialogue:      append([]models.DialogueMessage{}, config.PostBaseDialogue...),
-			RequiredEquipItemIDs:  []int{},
-			CompletedEquipItemIDs: []int{},
-			RequiredUseItemIDs:    []int{},
-			CompletedUseItemIDs:   []int{},
+			ShowWelcomeDialogue:       false,
+			Stage:                     models.TutorialStageCompleted,
+			Character:                 config.Character,
+			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
+			PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
+			BaseKitDialogue:           append([]models.DialogueMessage{}, config.BaseKitDialogue...),
+			PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
+			PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
+			RequiredEquipItemIDs:      []int{},
+			CompletedEquipItemIDs:     []int{},
+			RequiredUseItemIDs:        []int{},
+			CompletedUseItemIDs:       []int{},
 		}
 	}
 
@@ -516,42 +524,44 @@ func buildTutorialStatusResponse(
 		config.Character != nil
 
 	return tutorialStatusResponse{
-		ShowWelcomeDialogue:   showWelcomeDialogue,
-		Stage:                 state.Stage,
-		ActivatedAt:           state.ActivatedAt,
-		CompletedAt:           state.CompletedAt,
-		ScenarioID:            activeTutorialScenarioID(state),
-		MonsterEncounterID:    activeTutorialMonsterEncounterID(state),
-		Character:             config.Character,
-		Dialogue:              append([]models.DialogueMessage{}, config.Dialogue...),
-		LoadoutDialogue:       append([]models.DialogueMessage{}, config.LoadoutDialogue...),
-		PostMonsterDialogue:   append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
-		BaseKitDialogue:       append([]models.DialogueMessage{}, config.BaseKitDialogue...),
-		PostBaseDialogue:      append([]models.DialogueMessage{}, config.PostBaseDialogue...),
-		RequiredEquipItemIDs:  append([]int{}, state.RequiredEquipItemIDs...),
-		CompletedEquipItemIDs: append([]int{}, state.CompletedEquipItemIDs...),
-		RequiredUseItemIDs:    append([]int{}, state.RequiredUseItemIDs...),
-		CompletedUseItemIDs:   append([]int{}, state.CompletedUseItemIDs...),
+		ShowWelcomeDialogue:       showWelcomeDialogue,
+		Stage:                     state.Stage,
+		ActivatedAt:               state.ActivatedAt,
+		CompletedAt:               state.CompletedAt,
+		ScenarioID:                activeTutorialScenarioID(state),
+		MonsterEncounterID:        activeTutorialMonsterEncounterID(state),
+		Character:                 config.Character,
+		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
+		PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
+		BaseKitDialogue:           append([]models.DialogueMessage{}, config.BaseKitDialogue...),
+		PostBasePlacementDialogue: append([]models.DialogueMessage{}, config.PostBasePlacementDialogue...),
+		PostBaseDialogue:          append([]models.DialogueMessage{}, config.PostBaseDialogue...),
+		RequiredEquipItemIDs:      append([]int{}, state.RequiredEquipItemIDs...),
+		CompletedEquipItemIDs:     append([]int{}, state.CompletedEquipItemIDs...),
+		RequiredUseItemIDs:        append([]int{}, state.RequiredUseItemIDs...),
+		CompletedUseItemIDs:       append([]int{}, state.CompletedUseItemIDs...),
 	}
 }
 
 func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialConfig, error) {
 	config := &models.TutorialConfig{
-		Dialogue:                models.DialogueSequence{},
-		LoadoutDialogue:         models.DialogueSequence{},
-		PostMonsterDialogue:     models.DialogueSequence{},
-		BaseKitDialogue:         models.DialogueSequence{},
-		PostBaseDialogue:        models.DialogueSequence{},
-		ScenarioPrompt:          strings.TrimSpace(body.ScenarioPrompt),
-		ScenarioImageURL:        strings.TrimSpace(body.ScenarioImageURL),
-		Options:                 []models.TutorialScenarioOption{},
-		MonsterItemRewards:      []models.TutorialItemReward{},
-		ItemRewards:             []models.TutorialItemReward{},
-		SpellRewards:            []models.TutorialSpellReward{},
-		MonsterRewardExperience: body.MonsterRewardExperience,
-		MonsterRewardGold:       body.MonsterRewardGold,
-		RewardExperience:        body.RewardExperience,
-		RewardGold:              body.RewardGold,
+		Dialogue:                  models.DialogueSequence{},
+		LoadoutDialogue:           models.DialogueSequence{},
+		PostMonsterDialogue:       models.DialogueSequence{},
+		BaseKitDialogue:           models.DialogueSequence{},
+		PostBasePlacementDialogue: models.DialogueSequence{},
+		PostBaseDialogue:          models.DialogueSequence{},
+		ScenarioPrompt:            strings.TrimSpace(body.ScenarioPrompt),
+		ScenarioImageURL:          strings.TrimSpace(body.ScenarioImageURL),
+		Options:                   []models.TutorialScenarioOption{},
+		MonsterItemRewards:        []models.TutorialItemReward{},
+		ItemRewards:               []models.TutorialItemReward{},
+		SpellRewards:              []models.TutorialSpellReward{},
+		MonsterRewardExperience:   body.MonsterRewardExperience,
+		MonsterRewardGold:         body.MonsterRewardGold,
+		RewardExperience:          body.RewardExperience,
+		RewardGold:                body.RewardGold,
 	}
 
 	if body.CharacterID != nil {
@@ -604,6 +614,7 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
 	config.PostMonsterDialogue = models.DialogueSequence(body.PostMonsterDialogue)
 	config.BaseKitDialogue = models.DialogueSequence(body.BaseKitDialogue)
+	config.PostBasePlacementDialogue = models.DialogueSequence(body.PostBasePlacementDialogue)
 	config.PostBaseDialogue = models.DialogueSequence(body.PostBaseDialogue)
 
 	if body.MonsterEncounterID != nil {
@@ -723,6 +734,18 @@ func (s *server) maybeAdvanceTutorialProgress(
 		if base == nil {
 			return state, nil
 		}
+		if err := s.dbClient.Tutorial().AdvanceToPostBasePlacementDialogue(ctx, userID); err != nil {
+			return nil, err
+		}
+		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+	case models.TutorialStageHearth:
+		usedHearth, err := s.userHasTutorialHearthRecovery(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !usedHearth {
+			return state, nil
+		}
 		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, userID); err != nil {
 			return nil, err
 		}
@@ -781,6 +804,26 @@ func (s *server) maybeAdvanceTutorialProgress(
 		return nil, err
 	}
 	return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+}
+
+func (s *server) userHasTutorialHearthRecovery(
+	ctx context.Context,
+	userID uuid.UUID,
+) (bool, error) {
+	activeDailyStates, err := s.dbClient.UserBaseDailyState().FindActiveByUserID(
+		ctx,
+		userID,
+		time.Now(),
+	)
+	if err != nil {
+		return false, err
+	}
+	for _, state := range activeDailyStates {
+		if strings.EqualFold(strings.TrimSpace(state.StateKey), baseDailyStateKeyHearthRecovery) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *server) forceResetTutorialReplayState(

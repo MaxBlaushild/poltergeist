@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math"
 	"math/rand"
@@ -577,6 +578,7 @@ func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneS
 			DraftID:      uuid.New(),
 			Name:         shopkeeperName,
 			Description:  description,
+			Dialogue:     generateZoneSeedShopkeeperDialogue(tag, zone.Name, shopkeeperName),
 			PlaceID:      "",
 			Latitude:     float64Ptr(lat),
 			Longitude:    float64Ptr(lng),
@@ -597,6 +599,119 @@ func humanizeShopkeeperTag(tag string) string {
 		return "specialized"
 	}
 	return strings.ToLower(cleaned)
+}
+
+func generateZoneSeedShopkeeperDialogue(tag string, zoneName string, shopkeeperName string) []string {
+	tagLabel := humanizeShopkeeperTag(tag)
+	introLines := zoneSeedShopkeeperIntroLines(tagLabel, zoneName)
+	specialtyLines := zoneSeedShopkeeperSpecialtyLines(tag)
+	banterLines := []string{
+		"I trade fair, gossip cheap, and dramatic pauses for free.",
+		"If anything on the shelf winks at you, haggle confidently.",
+		"No refunds for sudden destiny or accidental prophecies.",
+		"I polish the good stock until it starts acting superior.",
+	}
+
+	hash := stableZoneSeedDraftHash(strings.ToLower(strings.TrimSpace(shopkeeperName + "|" + tag + "|" + zoneName)))
+	lines := []string{
+		introLines[hash%len(introLines)],
+		specialtyLines[(hash/len(introLines))%len(specialtyLines)],
+		banterLines[(hash/(len(introLines)*len(specialtyLines)))%len(banterLines)],
+	}
+	return sanitizeZoneSeedTalkDialogueLines(lines)
+}
+
+func zoneSeedShopkeeperIntroLines(tagLabel string, zoneName string) []string {
+	zoneLabel := strings.TrimSpace(zoneName)
+	if zoneLabel == "" {
+		return []string{
+			fmt.Sprintf("Best %s on this road, or at least the best arranged.", tagLabel),
+			fmt.Sprintf("If you're hunting for %s, you've found the friendliest stall for miles.", tagLabel),
+			"Everything here survived a very rude journey, including me.",
+			fmt.Sprintf("Take your time. Good %s like to size up their next owner.", tagLabel),
+		}
+	}
+
+	return []string{
+		fmt.Sprintf("Best %s in %s, or at least the best arranged.", tagLabel, zoneLabel),
+		fmt.Sprintf("If you're hunting for %s, this is the friendliest stall in %s.", tagLabel, zoneLabel),
+		fmt.Sprintf("Everything here survived the road into %s, including me.", zoneLabel),
+		fmt.Sprintf("Take your time. Good %s like to size up their next owner.", tagLabel),
+	}
+}
+
+func zoneSeedShopkeeperSpecialtyLines(tag string) []string {
+	lowerTag := strings.ToLower(strings.TrimSpace(tag))
+	lines := []string{
+		"The best stock never looks eager. It looks inevitable.",
+		"There is always one shelf here that starts showing off at the right moment.",
+	}
+
+	switch {
+	case strings.Contains(lowerTag, "potion"),
+		strings.Contains(lowerTag, "alchemy"),
+		strings.Contains(lowerTag, "elixir"),
+		strings.Contains(lowerTag, "herb"):
+		lines = append(lines,
+			"The lively bottles only rattle for people they like.",
+			"If a potion glows twice, it is probably excited, not angry.",
+		)
+	case strings.Contains(lowerTag, "weapon"),
+		strings.Contains(lowerTag, "blade"),
+		strings.Contains(lowerTag, "sword"),
+		strings.Contains(lowerTag, "axe"),
+		strings.Contains(lowerTag, "bow"),
+		strings.Contains(lowerTag, "armor"),
+		strings.Contains(lowerTag, "shield"):
+		lines = append(lines,
+			"A good blade should feel eager, not hungry.",
+			"Armor ought to sound reassuring, not theatrical.",
+		)
+	case strings.Contains(lowerTag, "book"),
+		strings.Contains(lowerTag, "scroll"),
+		strings.Contains(lowerTag, "tome"),
+		strings.Contains(lowerTag, "rune"):
+		lines = append(lines,
+			"The runes behave better when someone reads them politely.",
+			"Scrolls hate damp weather almost as much as I do.",
+		)
+	case strings.Contains(lowerTag, "food"),
+		strings.Contains(lowerTag, "spice"),
+		strings.Contains(lowerTag, "bread"),
+		strings.Contains(lowerTag, "tea"),
+		strings.Contains(lowerTag, "cook"):
+		lines = append(lines,
+			"Fresh spice can fix a mood faster than a sermon.",
+			"The best provisions should smell like a promise.",
+		)
+	case strings.Contains(lowerTag, "jewel"),
+		strings.Contains(lowerTag, "gem"),
+		strings.Contains(lowerTag, "ring"),
+		strings.Contains(lowerTag, "amulet"),
+		strings.Contains(lowerTag, "charm"),
+		strings.Contains(lowerTag, "relic"):
+		lines = append(lines,
+			"Charms pick favorites. I simply introduce them.",
+			"If a trinket warms in your palm, it has opinions.",
+		)
+	case strings.Contains(lowerTag, "cloth"),
+		strings.Contains(lowerTag, "robe"),
+		strings.Contains(lowerTag, "boot"),
+		strings.Contains(lowerTag, "garment"),
+		strings.Contains(lowerTag, "fashion"):
+		lines = append(lines,
+			"Good cloth remembers the shape of brave people.",
+			"Boots tell the truth long before their owners do.",
+		)
+	}
+
+	return lines
+}
+
+func stableZoneSeedDraftHash(value string) int {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.TrimSpace(value)))
+	return int(hasher.Sum32())
 }
 
 func generateZoneSeedShopkeeperName(tag string, zoneName string, used map[string]struct{}) string {

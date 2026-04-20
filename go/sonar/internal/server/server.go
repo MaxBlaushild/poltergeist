@@ -2191,11 +2191,21 @@ func (s *server) currentQuestNode(
 }
 
 func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, float64, error) {
-	locationStr, err := s.livenessClient.GetUserLocation(ctx, userID)
-	if err != nil || locationStr == "" {
+	snapshot, err := s.getUserLocationSnapshot(ctx, userID)
+	if err != nil || snapshot == nil || strings.TrimSpace(snapshot.Location) == "" {
 		return 0, 0, fmt.Errorf("user location not available")
 	}
+	return parseUserLocationString(snapshot.Location)
+}
 
+func (s *server) getUserLocationSnapshot(
+	ctx context.Context,
+	userID uuid.UUID,
+) (*liveness.LocationSnapshot, error) {
+	return s.livenessClient.GetUserLocationSnapshot(ctx, userID)
+}
+
+func parseUserLocationString(locationStr string) (float64, float64, error) {
 	parts := strings.Split(locationStr, ",")
 	if len(parts) < 2 {
 		return 0, 0, fmt.Errorf("invalid location format")

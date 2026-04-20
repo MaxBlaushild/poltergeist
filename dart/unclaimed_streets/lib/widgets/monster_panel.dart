@@ -145,7 +145,7 @@ class _MonsterPanelState extends State<MonsterPanel> {
                 if (!mysteryState && widget.encounter.isBossEncounter)
                   const _InfoChip(
                     icon: Icons.trending_up,
-                    label: 'Scaled +5 levels',
+                    label: 'Boss-scaled threat',
                   ),
               ],
             ),

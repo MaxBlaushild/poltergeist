@@ -47,11 +47,26 @@ func TestScaledEncounterMonsterLevelForUserLevel(t *testing.T) {
 }
 
 func TestScaledEncounterMonsterLevelForBossEncounter(t *testing.T) {
+	if got := scaledEncounterMonsterLevelForUserLevelAndType(4, 1, models.MonsterEncounterTypeBoss); got != 5 {
+		t.Fatalf("expected level-4 boss scaled level to taper to 5, got %d", got)
+	}
 	if got := scaledEncounterMonsterLevelForUserLevelAndType(25, 1, models.MonsterEncounterTypeBoss); got != 27 {
 		t.Fatalf("expected 1-monster boss scaled level to be 27, got %d", got)
 	}
 	if got := scaledEncounterMonsterLevelForUserLevelAndType(25, 3, models.MonsterEncounterTypeBoss); got != 11 {
 		t.Fatalf("expected 3-monster boss scaled level to be 11, got %d", got)
+	}
+}
+
+func TestCappedMonsterAbilityLevelForUserLevel(t *testing.T) {
+	if got := cappedMonsterAbilityLevelForUserLevel(12, 4); got != 5 {
+		t.Fatalf("expected user level 4 to cap monster abilities at 5, got %d", got)
+	}
+	if got := cappedMonsterAbilityLevelForUserLevel(3, 10); got != 3 {
+		t.Fatalf("expected low-level monster to keep its own ability level, got %d", got)
+	}
+	if got := cappedMonsterAbilityLevelForUserLevel(8, 0); got != 8 {
+		t.Fatalf("expected zero user level to disable capping, got %d", got)
 	}
 }
 

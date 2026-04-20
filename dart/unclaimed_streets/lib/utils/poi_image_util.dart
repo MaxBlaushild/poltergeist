@@ -231,6 +231,131 @@ Future<Uint8List?> loadBaseDiamondMarker({bool isCurrentUserBase = false}) {
   });
 }
 
+Uint8List? peekPlayerPresenceMarker(
+  String? imageUrl, {
+  bool usePortrait = true,
+}) {
+  final normalizedUrl = usePortrait && imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : '__fallback__';
+  return _thumbnailCache['player_presence_v2|$normalizedUrl'];
+}
+
+Future<Uint8List?> loadPlayerPresenceMarker(
+  String? imageUrl, {
+  bool usePortrait = true,
+}) {
+  final normalizedUrl = usePortrait && imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : '__fallback__';
+  final cacheKey = 'player_presence_v2|$normalizedUrl';
+  return _loadThumbnailCached(cacheKey, () async {
+    img.Image? portrait;
+    if (usePortrait && imageUrl != null && imageUrl.isNotEmpty) {
+      final bytes = await _loadSourceCached(imageUrl);
+      if (bytes != null) {
+        final decoded = img.decodeImage(bytes);
+        if (decoded != null) {
+          portrait = img.copyResizeCropSquare(
+            decoded,
+            size: 136,
+            antialias: true,
+          );
+        }
+      }
+    }
+
+    final marker = _buildPlayerPresenceMarker(portrait: portrait);
+    return Uint8List.fromList(img.encodePng(marker));
+  });
+}
+
+img.Image _buildPlayerPresenceMarker({img.Image? portrait}) {
+  final image = img.Image(
+    width: _thumbnailSize,
+    height: _thumbnailSize,
+    numChannels: 4,
+  );
+  img.fill(image, color: img.ColorRgba8(0, 0, 0, 0));
+
+  final shadowColor = img.ColorRgba8(9, 16, 24, 72);
+  final outlineColor = img.ColorRgba8(33, 46, 61, 255);
+  final accentColor = img.ColorRgba8(223, 191, 113, 255);
+  final portraitRingColor = img.ColorRgba8(98, 160, 176, 255);
+  final highlightColor = img.ColorRgba8(255, 249, 237, 255);
+  final panelColor = img.ColorRgba8(242, 232, 208, 255);
+  final ribbonColor = img.ColorRgba8(70, 123, 139, 255);
+
+  _fillCircle(image, 96, 98, 72, shadowColor);
+  _fillTriangle(
+    image,
+    x1: 72,
+    y1: 120,
+    x2: 120,
+    y2: 120,
+    x3: 96,
+    y3: 178,
+    color: shadowColor,
+  );
+
+  _fillTriangle(
+    image,
+    x1: 68,
+    y1: 116,
+    x2: 124,
+    y2: 116,
+    x3: 96,
+    y3: 176,
+    color: outlineColor,
+  );
+  _fillTriangle(
+    image,
+    x1: 74,
+    y1: 120,
+    x2: 118,
+    y2: 120,
+    x3: 96,
+    y3: 168,
+    color: accentColor,
+  );
+  _fillTriangle(
+    image,
+    x1: 79,
+    y1: 124,
+    x2: 113,
+    y2: 124,
+    x3: 96,
+    y3: 160,
+    color: ribbonColor,
+  );
+
+  _fillCircle(image, 96, 80, 64, outlineColor);
+  _fillCircle(image, 96, 80, 58, accentColor);
+  _fillCircle(image, 96, 80, 52, portraitRingColor);
+  _fillCircle(image, 96, 80, 47, highlightColor);
+
+  if (portrait != null) {
+    _stampCircularImage(image, portrait, centerX: 96, centerY: 80, radius: 44);
+  } else {
+    _fillCircle(image, 96, 80, 44, panelColor);
+    _drawFallbackPlayerGlyph(
+      image,
+      centerX: 96,
+      centerY: 82,
+      outlineColor: outlineColor,
+      accentColor: accentColor,
+      ribbonColor: ribbonColor,
+      highlightColor: highlightColor,
+    );
+  }
+
+  _fillRect(image, x1: 68, y1: 122, x2: 124, y2: 138, color: outlineColor);
+  _fillRect(image, x1: 72, y1: 126, x2: 120, y2: 134, color: accentColor);
+  _fillRect(image, x1: 80, y1: 128, x2: 112, y2: 132, color: highlightColor);
+
+  return image;
+}
+
 img.Image _buildPoiCategoryThumbnail(PoiMarkerCategory category) {
   final palette = _poiMarkerPalette(category);
   final image = img.Image(
@@ -890,6 +1015,75 @@ int _pixelAlpha(img.Image image, int x, int y) {
     return pixel.maxChannelValue.toInt();
   }
   return pixel.a.round();
+}
+
+void _stampCircularImage(
+  img.Image destination,
+  img.Image source, {
+  required int centerX,
+  required int centerY,
+  required int radius,
+}) {
+  final diameter = radius * 2;
+  final portrait = source.width == diameter && source.height == diameter
+      ? source
+      : img.copyResizeCropSquare(source, size: diameter, antialias: true);
+  final top = centerY - radius;
+  final left = centerX - radius;
+  final radiusSquared = radius * radius;
+
+  for (var y = 0; y < diameter; y++) {
+    for (var x = 0; x < diameter; x++) {
+      final dx = x - radius;
+      final dy = y - radius;
+      if ((dx * dx) + (dy * dy) > radiusSquared) continue;
+      final dstX = left + x;
+      final dstY = top + y;
+      if (dstX < 0 ||
+          dstX >= destination.width ||
+          dstY < 0 ||
+          dstY >= destination.height) {
+        continue;
+      }
+      if (_pixelAlpha(portrait, x, y) <= 0) continue;
+      destination.setPixel(dstX, dstY, portrait.getPixel(x, y));
+    }
+  }
+}
+
+void _drawFallbackPlayerGlyph(
+  img.Image image, {
+  required int centerX,
+  required int centerY,
+  required img.Color outlineColor,
+  required img.Color accentColor,
+  required img.Color ribbonColor,
+  required img.Color highlightColor,
+}) {
+  _fillDiamond(image, centerX, centerY - 3, 24, accentColor);
+  _fillDiamond(image, centerX, centerY - 3, 16, highlightColor);
+  _fillCircle(image, centerX, centerY - 18, 10, outlineColor);
+  _fillCircle(image, centerX, centerY - 18, 6, highlightColor);
+  _fillTriangle(
+    image,
+    x1: centerX - 18,
+    y1: centerY + 20,
+    x2: centerX + 18,
+    y2: centerY + 20,
+    x3: centerX,
+    y3: centerY - 2,
+    color: ribbonColor,
+  );
+  _fillTriangle(
+    image,
+    x1: centerX - 12,
+    y1: centerY + 16,
+    x2: centerX + 12,
+    y2: centerY + 16,
+    x3: centerX,
+    y3: centerY + 2,
+    color: outlineColor,
+  );
 }
 
 void _fillDiamond(

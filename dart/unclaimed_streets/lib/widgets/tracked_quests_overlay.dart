@@ -24,36 +24,63 @@ class TrackedQuestsOverlay extends StatefulWidget {
     required this.onFocusPoI,
     required this.onFocusNode,
     this.onFocusTurnInQuest,
-    this.onOpenQuestDetails,
+    this.onPreviewPoI,
+    this.onPreviewNode,
+    this.onPreviewTurnInQuest,
     this.resolveQuestReceiverCharacter,
     this.resolveQuestReceiverPoi,
     this.controller,
     this.featuredMainStoryPoi,
     this.featuredMainStoryQuestGiverName,
     this.onFocusFeaturedMainStoryLead,
+    this.onPreviewFeaturedMainStoryLead,
+    this.onCloseOverlay,
+    this.expandUpwards = false,
+    this.collapsedHeight = 48,
+    this.maxExpandedHeight = 384,
   });
 
   /// When user taps a POI: focus that quest target on the map.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
   final void Function(Quest quest)? onFocusTurnInQuest;
-  final void Function(Quest quest)? onOpenQuestDetails;
+  final void Function(PointOfInterest poi)? onPreviewPoI;
+  final void Function(QuestNode node)? onPreviewNode;
+  final void Function(Quest quest)? onPreviewTurnInQuest;
   final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
   final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
   final TrackedQuestsOverlayController? controller;
   final PointOfInterest? featuredMainStoryPoi;
   final String? featuredMainStoryQuestGiverName;
   final VoidCallback? onFocusFeaturedMainStoryLead;
+  final VoidCallback? onPreviewFeaturedMainStoryLead;
+  final VoidCallback? onCloseOverlay;
+  final bool expandUpwards;
+  final double collapsedHeight;
+  final double maxExpandedHeight;
 
   @override
   State<TrackedQuestsOverlay> createState() => _TrackedQuestsOverlayState();
 }
 
 class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
+  static const double _carouselSwipeThreshold = 40;
+  static const double _carouselSwipeVelocityThreshold = 300;
+
   bool _expanded = false;
   bool _showContent = false;
   TrackedQuestsOverlayController? _controller;
   List<Quest> _cachedTracked = const [];
+  List<_TrackedQuestCarouselItem> _carouselItems = const [];
+  int _currentItemIndex = 0;
+  int _carouselTransitionDirection = 1;
+  double _dragDeltaX = 0;
+  bool _previewCurrentItemAfterBuild = false;
+  String? _lastViewedCarouselItemId;
+  String? _preferredOpenCarouselItemId;
+  String? _pendingOpenCarouselItemId;
+  Set<String> _lastAcceptedTrackedQuestIds = <String>{};
+  bool _hasAcceptedTrackedQuestSnapshot = false;
 
   @override
   void initState() {
@@ -84,16 +111,11 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   }
 
   void _toggle() {
-    setState(() {
-      _expanded = !_expanded;
-      if (_expanded) {
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) setState(() => _showContent = true);
-        });
-      } else {
-        _showContent = false;
-      }
-    });
+    if (_expanded) {
+      _collapseAndRestorePlayer();
+      return;
+    }
+    _expand();
   }
 
   void _expand() {
@@ -101,27 +123,181 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     setState(() {
       _expanded = true;
       _showContent = false;
+      _previewCurrentItemAfterBuild = true;
+      _pendingOpenCarouselItemId =
+          _preferredOpenCarouselItemId ?? _lastViewedCarouselItemId;
+      _preferredOpenCarouselItemId = null;
     });
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) setState(() => _showContent = true);
     });
   }
 
-  void _onPoITap(PointOfInterest poi) {
+  void _collapseAndRestorePlayer() {
+    _collapse();
+    widget.onCloseOverlay?.call();
+  }
+
+  void _collapse() {
     setState(() {
       _expanded = false;
       _showContent = false;
     });
+  }
+
+  void _onPoITap(PointOfInterest poi) {
+    _collapse();
     widget.onFocusPoI(poi);
+  }
+
+  int _resolvedItemIndex(int itemCount) {
+    if (itemCount <= 0) return 0;
+    if (_currentItemIndex < 0) return 0;
+    if (_currentItemIndex >= itemCount) return itemCount - 1;
+    return _currentItemIndex;
+  }
+
+  void _syncCurrentItemIndexIfNeeded(int desiredIndex) {
+    if (desiredIndex == _currentItemIndex || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _currentItemIndex == desiredIndex) return;
+      setState(() => _currentItemIndex = desiredIndex);
+    });
+  }
+
+  int _indexOfCarouselItemId(String itemId) {
+    return _carouselItems.indexWhere((item) => item.id == itemId);
+  }
+
+  int _resolvedDisplayItemIndex() {
+    if (_carouselItems.isEmpty) return 0;
+
+    final pendingOpenItemId = _pendingOpenCarouselItemId;
+    if (pendingOpenItemId != null) {
+      final pendingIndex = _indexOfCarouselItemId(pendingOpenItemId);
+      if (pendingIndex != -1) {
+        return pendingIndex;
+      }
+    }
+
+    final lastViewedCarouselItemId = _lastViewedCarouselItemId;
+    if (lastViewedCarouselItemId != null) {
+      final lastViewedIndex = _indexOfCarouselItemId(lastViewedCarouselItemId);
+      if (lastViewedIndex != -1) {
+        return lastViewedIndex;
+      }
+    }
+
+    return _resolvedItemIndex(_carouselItems.length);
+  }
+
+  void _rememberCarouselItemAt(int index) {
+    if (index < 0 || index >= _carouselItems.length) return;
+    _lastViewedCarouselItemId = _carouselItems[index].id;
+    _preferredOpenCarouselItemId = null;
+  }
+
+  void _previewCarouselItem(int index) {
+    if (index < 0 || index >= _carouselItems.length) return;
+    _carouselItems[index].onPreview?.call();
+  }
+
+  VoidCallback? _buildQuestPreviewCallback(Quest quest) {
+    final node = quest.currentNode;
+    final poi = node?.pointOfInterest;
+    final awaitingTurnIn = questIsAwaitingTurnIn(quest);
+    final questReceiver = widget.resolveQuestReceiverCharacter?.call(quest);
+    final questReceiverPoi = widget.resolveQuestReceiverPoi?.call(quest);
+    final hasDirectFocusTarget = questNodeHasDirectFocusTarget(node);
+
+    if (awaitingTurnIn) {
+      if (widget.onPreviewTurnInQuest == null ||
+          (questReceiver == null && questReceiverPoi == null)) {
+        return null;
+      }
+      return () => widget.onPreviewTurnInQuest!(quest);
+    }
+    if (poi != null) {
+      if (widget.onPreviewPoI == null) return null;
+      return () => widget.onPreviewPoI!(poi);
+    }
+    if (hasDirectFocusTarget && node != null) {
+      if (widget.onPreviewNode == null) return null;
+      return () => widget.onPreviewNode!(node);
+    }
+    return null;
+  }
+
+  void _goToItem(int nextIndex, {required int itemCount}) {
+    final currentIndex = _resolvedItemIndex(itemCount);
+    if (nextIndex < 0 || nextIndex >= itemCount || nextIndex == currentIndex) {
+      return;
+    }
+    setState(() {
+      _carouselTransitionDirection = nextIndex > currentIndex ? 1 : -1;
+      _currentItemIndex = nextIndex;
+    });
+    _rememberCarouselItemAt(nextIndex);
+    _previewCarouselItem(nextIndex);
+  }
+
+  void _showPreviousItem({required int itemCount}) {
+    _goToItem(_resolvedItemIndex(itemCount) - 1, itemCount: itemCount);
+  }
+
+  void _showNextItem({required int itemCount}) {
+    _goToItem(_resolvedItemIndex(itemCount) + 1, itemCount: itemCount);
+  }
+
+  void _handleHorizontalDragStart(DragStartDetails details) {
+    _dragDeltaX = 0;
+  }
+
+  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
+    _dragDeltaX += details.delta.dx;
+  }
+
+  void _handleHorizontalDragCancel() {
+    _dragDeltaX = 0;
+  }
+
+  void _handleHorizontalDragEnd(
+    DragEndDetails details, {
+    required int itemCount,
+  }) {
+    final velocity = details.primaryVelocity ?? 0;
+    final dragDelta = _dragDeltaX;
+    _dragDeltaX = 0;
+    if (itemCount <= 1) return;
+
+    final swipedLeft =
+        velocity <= -_carouselSwipeVelocityThreshold ||
+        dragDelta <= -_carouselSwipeThreshold;
+    final swipedRight =
+        velocity >= _carouselSwipeVelocityThreshold ||
+        dragDelta >= _carouselSwipeThreshold;
+
+    if (swipedLeft) {
+      _showNextItem(itemCount: itemCount);
+    } else if (swipedRight) {
+      _showPreviousItem(itemCount: itemCount);
+    }
+  }
+
+  void _onNodeTap(QuestNode node) {
+    _collapse();
+    widget.onFocusNode(node);
+  }
+
+  void _onTurnInTap(Quest quest) {
+    _collapse();
+    widget.onFocusTurnInQuest?.call(quest);
   }
 
   void _onFeaturedMainStoryLeadTap() {
     final poi = widget.featuredMainStoryPoi;
     if (poi == null) return;
-    setState(() {
-      _expanded = false;
-      _showContent = false;
-    });
+    _collapse();
     final onFocusLead = widget.onFocusFeaturedMainStoryLead;
     if (onFocusLead != null) {
       onFocusLead();
@@ -164,22 +340,223 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
+        final acceptedTrackedQuestIds = <String>{
+          for (final quest in visibleTracked)
+            if (quest.isAccepted && quest.id.trim().isNotEmpty) quest.id.trim(),
+        };
+        if (_hasAcceptedTrackedQuestSnapshot) {
+          final newlyAcceptedTrackedQuestIds = acceptedTrackedQuestIds
+              .difference(_lastAcceptedTrackedQuestIds);
+          if (newlyAcceptedTrackedQuestIds.isNotEmpty) {
+            for (final quest in visibleTracked) {
+              final questId = quest.id.trim();
+              if (!newlyAcceptedTrackedQuestIds.contains(questId)) continue;
+              _preferredOpenCarouselItemId = 'quest:$questId';
+              break;
+            }
+          }
+        }
+        _lastAcceptedTrackedQuestIds = acceptedTrackedQuestIds;
+        _hasAcceptedTrackedQuestSnapshot = true;
+        final contentItems = <_TrackedQuestCarouselItem>[
+          if (featuredMainStoryPoi != null)
+            _TrackedQuestCarouselItem(
+              id: 'featured-main-story:${featuredMainStoryPoi.id}',
+              child: KeyedSubtree(
+                key: ValueKey('featured-main-story-${featuredMainStoryPoi.id}'),
+                child: _ImportantQuestLeadCard(
+                  poi: featuredMainStoryPoi,
+                  questGiverName: widget.featuredMainStoryQuestGiverName,
+                  onTap: _onFeaturedMainStoryLeadTap,
+                ),
+              ),
+              onPreview:
+                  widget.onPreviewFeaturedMainStoryLead ??
+                  (widget.onPreviewPoI == null
+                      ? null
+                      : () => widget.onPreviewPoI!(featuredMainStoryPoi)),
+            ),
+          ...visibleTracked.map(
+            (quest) => _TrackedQuestCarouselItem(
+              id: 'quest:${quest.id}',
+              child: KeyedSubtree(
+                key: ValueKey('tracked-quest-${quest.id}'),
+                child: _TrackedQuestCard(
+                  quest: quest,
+                  discoveredIds: discoveredIds,
+                  onPoITap: _onPoITap,
+                  onNodeTap: _onNodeTap,
+                  onTurnInTap: widget.onFocusTurnInQuest == null
+                      ? null
+                      : _onTurnInTap,
+                  resolveQuestReceiverCharacter:
+                      widget.resolveQuestReceiverCharacter,
+                  resolveQuestReceiverPoi: widget.resolveQuestReceiverPoi,
+                ),
+              ),
+              onPreview: _buildQuestPreviewCallback(quest),
+            ),
+          ),
+        ];
+        _carouselItems = contentItems;
+        final itemCount = contentItems.length;
+        final currentItemIndex = _resolvedDisplayItemIndex();
+        final hasMultipleItems = itemCount > 1;
+        _syncCurrentItemIndexIfNeeded(currentItemIndex);
+        if (_previewCurrentItemAfterBuild && itemCount > 0) {
+          _previewCurrentItemAfterBuild = false;
+          _pendingOpenCarouselItemId = null;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _rememberCarouselItemAt(currentItemIndex);
+            _previewCarouselItem(currentItemIndex);
+          });
+        }
 
         if (visibleTracked.isEmpty && featuredMainStoryPoi == null) {
           return const SizedBox.shrink();
         }
 
         final screenWidth = MediaQuery.sizeOf(context).width;
-        const rightMargin = 16.0;
-        const minSideMargin = 16.0;
         const collapsedWidth = 96.0;
-        final maxAllowedWidth = (screenWidth - rightMargin - minSideMargin)
-            .clamp(collapsedWidth, 288.0);
+        const sideMargin = 16.0;
+        final expandUpwards = widget.expandUpwards;
+        final collapsedHeight = widget.collapsedHeight;
+        final arrowIcon = _expanded
+            ? (expandUpwards ? Icons.expand_more : Icons.expand_less)
+            : (expandUpwards ? Icons.expand_less : Icons.expand_more);
+        final maxAllowedWidth = (screenWidth - (sideMargin * 2)).clamp(
+          collapsedWidth,
+          288.0,
+        );
         final width = _expanded ? maxAllowedWidth : collapsedWidth;
+        final header = InkWell(
+          onTap: _toggle,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, _expanded ? 12 : 24, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Quests',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: Colors.white),
+                ),
+                Icon(arrowIcon, color: Colors.white, size: 24),
+              ],
+            ),
+          ),
+        );
+        final content = AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: expandUpwards
+              ? Alignment.bottomCenter
+              : Alignment.topCenter,
+          clipBehavior: Clip.hardEdge,
+          child: _expanded && _showContent
+              ? Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    8,
+                    expandUpwards ? 8 : 0,
+                    8,
+                    expandUpwards ? 0 : 8,
+                  ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: hasMultipleItems
+                        ? _handleHorizontalDragStart
+                        : null,
+                    onHorizontalDragUpdate: hasMultipleItems
+                        ? _handleHorizontalDragUpdate
+                        : null,
+                    onHorizontalDragCancel: hasMultipleItems
+                        ? _handleHorizontalDragCancel
+                        : null,
+                    onHorizontalDragEnd: hasMultipleItems
+                        ? (details) => _handleHorizontalDragEnd(
+                            details,
+                            itemCount: itemCount,
+                          )
+                        : null,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (hasMultipleItems)
+                          _TrackedQuestCarouselChevron(
+                            icon: Icons.chevron_left,
+                            enabled: currentItemIndex > 0,
+                            onTap: currentItemIndex > 0
+                                ? () => _showPreviousItem(itemCount: itemCount)
+                                : null,
+                          ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: ClipRect(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeOutCubic,
+                                layoutBuilder:
+                                    (currentChild, previousChildren) => Stack(
+                                      alignment: Alignment.topCenter,
+                                      children: [
+                                        ...previousChildren,
+                                        if (currentChild != null) currentChild,
+                                      ],
+                                    ),
+                                transitionBuilder: (child, animation) {
+                                  final curved = CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutCubic,
+                                  );
+                                  final offsetTween = Tween<Offset>(
+                                    begin: Offset(
+                                      _carouselTransitionDirection * 0.18,
+                                      0,
+                                    ),
+                                    end: Offset.zero,
+                                  );
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: offsetTween.animate(curved),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: contentItems[currentItemIndex].child,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (hasMultipleItems)
+                          _TrackedQuestCarouselChevron(
+                            icon: Icons.chevron_right,
+                            enabled: currentItemIndex < itemCount - 1,
+                            onTap: currentItemIndex < itemCount - 1
+                                ? () => _showNextItem(itemCount: itemCount)
+                                : null,
+                          ),
+                      ],
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        );
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: width,
+          height: _expanded ? null : collapsedHeight,
+          constraints: _expanded
+              ? BoxConstraints(minHeight: collapsedHeight)
+              : BoxConstraints.tightFor(height: collapsedHeight),
           child: Material(
             color: Colors.black54,
             borderRadius: BorderRadius.circular(12),
@@ -187,89 +564,61 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                InkWell(
-                  onTap: _toggle,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      12,
-                      12,
-                      _expanded ? 12 : 24,
-                      12,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Quests',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.titleSmall?.copyWith(color: Colors.white),
-                        ),
-                        Icon(
-                          _expanded ? Icons.expand_less : Icons.expand_more,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                AnimatedCrossFade(
-                  firstChild: const SizedBox.shrink(),
-                  secondChild: _showContent
-                      ? Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 384),
-                            child: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (featuredMainStoryPoi != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: _ImportantQuestLeadCard(
-                                        poi: featuredMainStoryPoi,
-                                        questGiverName: widget
-                                            .featuredMainStoryQuestGiverName,
-                                        onTap: _onFeaturedMainStoryLeadTap,
-                                      ),
-                                    ),
-                                  ...visibleTracked.map(
-                                    (quest) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: _TrackedQuestCard(
-                                        quest: quest,
-                                        discoveredIds: discoveredIds,
-                                        onPoITap: _onPoITap,
-                                        onNodeTap: widget.onFocusNode,
-                                        onTurnInTap: widget.onFocusTurnInQuest,
-                                        onOpenQuestDetails:
-                                            widget.onOpenQuestDetails,
-                                        resolveQuestReceiverCharacter: widget
-                                            .resolveQuestReceiverCharacter,
-                                        resolveQuestReceiverPoi:
-                                            widget.resolveQuestReceiverPoi,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                  crossFadeState: _expanded && _showContent
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 200),
-                ),
+                if (expandUpwards) ...[
+                  content,
+                  header,
+                ] else ...[
+                  header,
+                  content,
+                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _TrackedQuestCarouselItem {
+  const _TrackedQuestCarouselItem({
+    required this.id,
+    required this.child,
+    this.onPreview,
+  });
+
+  final String id;
+  final Widget child;
+  final VoidCallback? onPreview;
+}
+
+class _TrackedQuestCarouselChevron extends StatelessWidget {
+  const _TrackedQuestCarouselChevron({
+    required this.icon,
+    required this.enabled,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: enabled ? 0.9 : 0.3,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, color: Colors.white),
+          iconSize: 22,
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+        ),
+      ),
     );
   }
 }
@@ -355,7 +704,6 @@ class _TrackedQuestCard extends StatelessWidget {
     required this.onPoITap,
     required this.onNodeTap,
     this.onTurnInTap,
-    this.onOpenQuestDetails,
     this.resolveQuestReceiverCharacter,
     this.resolveQuestReceiverPoi,
   });
@@ -365,7 +713,6 @@ class _TrackedQuestCard extends StatelessWidget {
   final void Function(PointOfInterest) onPoITap;
   final void Function(QuestNode) onNodeTap;
   final void Function(Quest quest)? onTurnInTap;
-  final void Function(Quest quest)? onOpenQuestDetails;
   final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
   final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
 
@@ -378,101 +725,70 @@ class _TrackedQuestCard extends StatelessWidget {
     final questReceiverPoi = resolveQuestReceiverPoi?.call(quest);
     final objectiveLines = questObjectiveLines(node);
     final hasDirectFocusTarget = questNodeHasDirectFocusTarget(node);
-    final detailFallbackTap = onOpenQuestDetails == null
-        ? null
-        : () => onOpenQuestDetails!(quest);
-    final VoidCallback? nodeTap = hasDirectFocusTarget
-        ? () => onNodeTap(node!)
-        : detailFallbackTap;
+    final VoidCallback? cardTap;
+    if (awaitingTurnIn) {
+      cardTap =
+          onTurnInTap == null ||
+              (questReceiver == null && questReceiverPoi == null)
+          ? null
+          : () => onTurnInTap!(quest);
+    } else if (poi != null) {
+      cardTap = () => onPoITap(poi);
+    } else if (hasDirectFocusTarget) {
+      cardTap = () => onNodeTap(node!);
+    } else {
+      cardTap = null;
+    }
 
-    return Container(
-      padding: const EdgeInsets.all(8),
+    return Ink(
       decoration: BoxDecoration(
         color: Colors.black26,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      child: InkWell(
+        onTap: cardTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  quest.name,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (awaitingTurnIn)
-            _TrackedQuestTurnInTile(
-              questReceiver: questReceiver,
-              pointOfInterest: questReceiverPoi,
-              onTap:
-                  onTurnInTap == null ||
-                      (questReceiver == null && questReceiverPoi == null)
-                  ? detailFallbackTap
-                  : () => onTurnInTap!(quest),
-            )
-          else if (poi != null)
-            _QuestPoiTile(
-              node: node!,
-              poi: poi,
-              discoveredIds: discoveredIds,
-              onTap: () => onPoITap(poi),
-              onChallengeTap: () => onNodeTap(node),
-              onChevronTap: onOpenQuestDetails == null
-                  ? null
-                  : () => onOpenQuestDetails!(quest),
-              objectiveLines: objectiveLines,
-            )
-          else
-            InkWell(
-              onTap: nodeTap,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    QuestObjectiveIcon(
-                      node: node,
-                      discoveredPoiIds: discoveredIds,
-                      size: 28,
-                      borderRadius: 4,
-                      iconColor: Colors.white70,
-                      backgroundColor: Colors.grey.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          QuestObjectiveChallengeBadge(node: node),
-                          if (questObjectiveChallengeLabel(node) != null)
-                            const SizedBox(height: 6),
-                          ...objectiveLines.map(
-                            (line) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                line,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: Colors.white70),
-                              ),
-                            ),
-                          ),
-                        ],
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      quest.name,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-        ],
+              const SizedBox(height: 8),
+              if (awaitingTurnIn)
+                _TrackedQuestTurnInTile(
+                  questReceiver: questReceiver,
+                  pointOfInterest: questReceiverPoi,
+                )
+              else if (poi != null)
+                _TrackedQuestObjectiveTile(
+                  node: node!,
+                  title: poi.name,
+                  discoveredIds: discoveredIds,
+                  objectiveLines: objectiveLines,
+                )
+              else
+                _TrackedQuestObjectiveTile(
+                  node: node,
+                  title: _trackedQuestObjectiveTitle(node),
+                  discoveredIds: discoveredIds,
+                  objectiveLines: objectiveLines,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -482,12 +798,10 @@ class _TrackedQuestTurnInTile extends StatelessWidget {
   const _TrackedQuestTurnInTile({
     required this.questReceiver,
     required this.pointOfInterest,
-    this.onTap,
   });
 
   final Character? questReceiver;
   final PointOfInterest? pointOfInterest;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -503,167 +817,163 @@ class _TrackedQuestTurnInTile extends StatelessWidget {
         ? 'Collect your rewards at $locationName.'
         : 'Collect your rewards from $receiverName.';
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: const Color(0x1FFFFFFF),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0x33F1D597)),
-        ),
-        child: Row(
-          children: [
-            QuestTurnInPortrait(
-              character: questReceiver,
-              size: 40,
-              backgroundColor: const Color(0x33F1D597),
-              foregroundColor: const Color(0xFFF1D597),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1D597),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      'Ready to Turn In',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: const Color(0xFF3A1A11),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    headline,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subhead,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, size: 18, color: Colors.white70),
-          ],
-        ),
+    return _TrackedQuestTileFrame(
+      leading: QuestTurnInPortrait(
+        character: questReceiver,
+        size: 40,
+        backgroundColor: const Color(0x33F1D597),
+        foregroundColor: const Color(0xFFF1D597),
       ),
-    );
-  }
-}
-
-class _QuestPoiTile extends StatelessWidget {
-  const _QuestPoiTile({
-    required this.node,
-    required this.poi,
-    required this.discoveredIds,
-    required this.onTap,
-    required this.onChallengeTap,
-    required this.objectiveLines,
-    this.onChevronTap,
-  });
-
-  final QuestNode node;
-  final PointOfInterest poi;
-  final Set<String> discoveredIds;
-  final VoidCallback onTap;
-  final VoidCallback onChallengeTap;
-  final List<String> objectiveLines;
-  final VoidCallback? onChevronTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4, right: 8),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    QuestObjectiveIcon(
-                      node: node,
-                      discoveredPoiIds: discoveredIds,
-                      size: 28,
-                      borderRadius: 4,
-                      iconColor: Colors.white70,
-                      backgroundColor: Colors.grey.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            poi.name,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          const SizedBox(height: 4),
-                          QuestObjectiveChallengeBadge(node: node),
-                          if (questObjectiveChallengeLabel(node) != null)
-                            const SizedBox(height: 4),
-                          ...objectiveLines.map(
-                            (line) => GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: onChallengeTap,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 2,
-                                ),
-                                child: Text(
-                                  line,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: Colors.white70),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          Text(
+            headline,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          InkWell(
-            onTap: onChevronTap ?? onTap,
-            borderRadius: BorderRadius.circular(6),
-            child: const Padding(
-              padding: EdgeInsets.all(2),
-              child: Icon(Icons.chevron_right, size: 16, color: Colors.white70),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            subhead,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
           ),
         ],
       ),
     );
   }
+}
+
+class _TrackedQuestObjectiveTile extends StatelessWidget {
+  const _TrackedQuestObjectiveTile({
+    required this.node,
+    required this.title,
+    required this.discoveredIds,
+    required this.objectiveLines,
+  });
+
+  final QuestNode? node;
+  final String title;
+  final Set<String> discoveredIds;
+  final List<String> objectiveLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final challengeLabel = questObjectiveChallengeLabel(node);
+    final normalizedTitle = title.trim();
+    final detailLines = objectiveLines
+        .where((line) => line.trim().isNotEmpty)
+        .where((line) => line.trim() != normalizedTitle)
+        .toList();
+
+    return _TrackedQuestTileFrame(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      leading: QuestObjectiveIcon(
+        node: node,
+        discoveredPoiIds: discoveredIds,
+        size: 40,
+        borderRadius: 10,
+        iconColor: const Color(0xFFF1D597),
+        backgroundColor: const Color(0x33F1D597),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            normalizedTitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (challengeLabel != null) ...[
+            const SizedBox(height: 6),
+            QuestObjectiveChallengeBadge(node: node),
+          ],
+          if (detailLines.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...detailLines.map(
+              (line) => Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Text(
+                  line,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackedQuestTileFrame extends StatelessWidget {
+  const _TrackedQuestTileFrame({
+    required this.leading,
+    required this.child,
+    this.crossAxisAlignment = CrossAxisAlignment.center,
+  });
+
+  final Widget leading;
+  final Widget child;
+  final CrossAxisAlignment crossAxisAlignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0x1FFFFFFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x33F1D597)),
+      ),
+      child: Row(
+        crossAxisAlignment: crossAxisAlignment,
+        children: [
+          leading,
+          const SizedBox(width: 10),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+String _trackedQuestObjectiveTitle(QuestNode? node) {
+  final fetchCharacterName = node?.fetchCharacter?.name.trim() ?? '';
+  if (fetchCharacterName.isNotEmpty) {
+    return 'Deliver to $fetchCharacterName';
+  }
+
+  final expositionTitle = node?.exposition?.title.trim() ?? '';
+  if (expositionTitle.isNotEmpty) {
+    return expositionTitle;
+  }
+
+  if (node?.challengeId?.trim().isNotEmpty ?? false) {
+    return 'Challenge objective';
+  }
+
+  final hasMonsterObjective =
+      (node?.monsterEncounterId?.trim().isNotEmpty ?? false) ||
+      (node?.monsterId?.trim().isNotEmpty ?? false);
+  if (hasMonsterObjective) {
+    return 'Monster encounter';
+  }
+
+  if (node?.scenarioId?.trim().isNotEmpty ?? false) {
+    return 'Scenario objective';
+  }
+
+  if (node?.polygon.isNotEmpty ?? false) {
+    return 'Quest area';
+  }
+
+  return 'Current objective';
 }

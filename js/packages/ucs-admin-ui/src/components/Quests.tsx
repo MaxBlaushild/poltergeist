@@ -50,6 +50,15 @@ type PointOfInterestImport = {
   updatedAt: string;
 };
 
+type PointOfInterestWithCharacters = PointOfInterest & {
+  characters?: Character[];
+};
+
+type ZoneCharacterPinPayload = {
+  pointsOfInterest: PointOfInterestWithCharacters[];
+  characters: Character[];
+};
+
 type QuestNodeType =
   | 'poi'
   | 'polygon'
@@ -227,6 +236,75 @@ const emptyQuestForm = {
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
   spellRewards: [] as { spellId: string }[],
 };
+
+const cloneCharacterLocationDrafts = (
+  locations: { latitude: number; longitude: number }[] | null | undefined
+) =>
+  (locations ?? []).map((location) => ({
+    latitude: location.latitude,
+    longitude: location.longitude,
+  }));
+
+const buildCharacterLocations = (
+  characterId: string,
+  locations: { latitude: number; longitude: number }[],
+  existingLocations: Character['locations'] | null | undefined
+): Character['locations'] =>
+  locations.map((location, index) => ({
+    id: existingLocations?.[index]?.id ?? '',
+    characterId: existingLocations?.[index]?.characterId ?? characterId,
+    createdAt: existingLocations?.[index]?.createdAt ?? '',
+    updatedAt: existingLocations?.[index]?.updatedAt ?? '',
+    latitude: location.latitude,
+    longitude: location.longitude,
+  }));
+
+const mergeCharacters = (
+  ...sources: Array<Character[] | null | undefined>
+): Character[] => {
+  const merged = new Map<string, Character>();
+
+  sources.forEach((source) => {
+    source?.forEach((character) => {
+      if (!character?.id) return;
+
+      const existing = merged.get(character.id);
+      if (!existing) {
+        merged.set(character.id, character);
+        return;
+      }
+
+      merged.set(character.id, {
+        ...existing,
+        ...character,
+        locations:
+          character.locations && character.locations.length > 0
+            ? character.locations
+            : existing.locations,
+        pointOfInterest:
+          character.pointOfInterest ?? existing.pointOfInterest,
+        pointOfInterestId:
+          character.pointOfInterestId ?? existing.pointOfInterestId,
+      });
+    });
+  });
+
+  return Array.from(merged.values()).sort((left, right) =>
+    (left.name ?? '').localeCompare(right.name ?? '')
+  );
+};
+
+const mergeZoneCharacters = (
+  payload: ZoneCharacterPinPayload | null | undefined
+): Character[] =>
+  payload
+    ? mergeCharacters(
+        payload.characters,
+        payload.pointsOfInterest.flatMap(
+          (pointOfInterest) => pointOfInterest.characters ?? []
+        )
+      )
+    : [];
 
 const buildQuestFormFromQuest = (quest: Quest) => {
   const rewardMode = getQuestRewardMode(quest);
@@ -874,9 +952,12 @@ export const Quests = () => {
   const { tagGroups } = useTagContext();
   const { locationArchetypes } = useQuestArchetypes();
   const [quests, setQuests] = useState<Quest[]>([]);
-  const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>(
-    []
-  );
+  const [pointsOfInterest, setPointsOfInterest] = useState<
+    PointOfInterestWithCharacters[]
+  >([]);
+  const [zoneCharacterPinsById, setZoneCharacterPinsById] = useState<
+    Record<string, ZoneCharacterPinPayload>
+  >({});
   const [characters, setCharacters] = useState<Character[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
@@ -898,6 +979,11 @@ export const Quests = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [zoneSearch, setZoneSearch] = useState('');
   const [characterSearch, setCharacterSearch] = useState('');
+  const [characterZoneFilterId, setCharacterZoneFilterId] = useState('');
+  const [characterZoneLoading, setCharacterZoneLoading] = useState(false);
+  const [characterZoneError, setCharacterZoneError] = useState<string | null>(
+    null
+  );
   const [poiSearch, setPoiSearch] = useState('');
   const [poiFiltersOpen, setPoiFiltersOpen] = useState(false);
   const [poiZoneFilterId, setPoiZoneFilterId] = useState('');
@@ -1012,6 +1098,23 @@ export const Quests = () => {
     () => quests.find((quest) => quest.id === selectedQuestId) ?? null,
     [quests, selectedQuestId]
   );
+  const pointOfInterestCharacters = useMemo(
+    () =>
+      pointsOfInterest.flatMap(
+        (pointOfInterest) => pointOfInterest.characters ?? []
+      ),
+    [pointsOfInterest]
+  );
+  const questGiverCharacters = useMemo(
+    () => mergeCharacters(characters, pointOfInterestCharacters),
+    [characters, pointOfInterestCharacters]
+  );
+  const zoneFilteredCharacters = useMemo(() => {
+    if (!characterZoneFilterId) {
+      return questGiverCharacters;
+    }
+    return mergeZoneCharacters(zoneCharacterPinsById[characterZoneFilterId]);
+  }, [characterZoneFilterId, questGiverCharacters, zoneCharacterPinsById]);
   const selectedQuestIsHydrating = Boolean(
     selectedQuest && questDetailLoadingId === selectedQuest.id
   );
@@ -1035,10 +1138,14 @@ export const Quests = () => {
   );
   const selectedQuestGiver = useMemo(
     () =>
-      characters.find(
+      questGiverCharacters.find(
         (character) => character.id === questForm.questGiverCharacterId
       ) ?? null,
-    [characters, questForm.questGiverCharacterId]
+    [questGiverCharacters, questForm.questGiverCharacterId]
+  );
+  const characterFilterZone = useMemo(
+    () => zones.find((zone) => zone.id === characterZoneFilterId) ?? null,
+    [characterZoneFilterId, zones]
   );
   const selectedQuestNodeCounts = useMemo(() => {
     const counts: Record<QuestNodeType, number> = {
@@ -1177,7 +1284,7 @@ export const Quests = () => {
     let isMounted = true;
     const loadSupportingData = async () => {
       const results = await Promise.allSettled([
-        apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest'),
+        apiClient.get<PointOfInterestWithCharacters[]>('/sonar/pointsOfInterest'),
         apiClient.get<Character[]>('/sonar/characters'),
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
@@ -1321,27 +1428,51 @@ export const Quests = () => {
   }, [selectedQuest]);
 
   useEffect(() => {
-    if (!questForm.questGiverCharacterId) {
-      setSelectedCharacterLocations([]);
+    setSelectedCharacterLocations(
+      cloneCharacterLocationDrafts(selectedQuestGiver?.locations)
+    );
+  }, [selectedQuestGiver]);
+
+  useEffect(() => {
+    setCharacterZoneFilterId(questForm.zoneId ?? '');
+    setCharacterSearch('');
+    setCharacterZoneError(null);
+  }, [questForm.zoneId]);
+
+  useEffect(() => {
+    if (!characterZoneFilterId || zoneCharacterPinsById[characterZoneFilterId]) {
       return;
     }
+
     let isMounted = true;
-    const loadLocations = async () => {
+    const loadZoneCharacterPins = async () => {
+      setCharacterZoneLoading(true);
+      setCharacterZoneError(null);
       try {
-        const response = await apiClient.get<
-          { latitude: number; longitude: number }[]
-        >(`/sonar/characters/${questForm.questGiverCharacterId}/locations`);
+        const response = await apiClient.get<ZoneCharacterPinPayload>(
+          `/sonar/zones/${characterZoneFilterId}/pins`
+        );
         if (!isMounted) return;
-        setSelectedCharacterLocations(response);
+        setZoneCharacterPinsById((prev) => ({
+          ...prev,
+          [characterZoneFilterId]: response,
+        }));
       } catch (error) {
-        console.error('Failed to load character locations for map', error);
+        if (!isMounted) return;
+        console.error('Failed to load zone character pins', error);
+        setCharacterZoneError('Unable to load characters for that zone.');
+      } finally {
+        if (isMounted) {
+          setCharacterZoneLoading(false);
+        }
       }
     };
-    loadLocations();
+
+    void loadZoneCharacterPins();
     return () => {
       isMounted = false;
     };
-  }, [apiClient, questForm.questGiverCharacterId]);
+  }, [apiClient, characterZoneFilterId, zoneCharacterPinsById]);
 
   useEffect(() => {
     if (!questForm.zoneId) return;
@@ -1733,12 +1864,19 @@ export const Quests = () => {
   }, [zones, zoneSearch]);
 
   const filteredCharacters = useMemo(() => {
-    if (!characterSearch.trim()) return characters;
+    if (!characterSearch.trim()) return zoneFilteredCharacters;
     const term = characterSearch.toLowerCase();
-    return characters.filter((character) =>
+    return zoneFilteredCharacters.filter((character) =>
       character.name?.toLowerCase().includes(term)
     );
-  }, [characters, characterSearch]);
+  }, [characterSearch, zoneFilteredCharacters]);
+  const characterOptions = useMemo(
+    () =>
+      selectedQuestGiver
+        ? mergeCharacters(filteredCharacters, [selectedQuestGiver])
+        : filteredCharacters,
+    [filteredCharacters, selectedQuestGiver]
+  );
 
   const allTags = useMemo(() => {
     const tags: Tag[] = [];
@@ -3450,20 +3588,13 @@ export const Quests = () => {
     refreshPointsOfInterest();
   }, [importJobs]);
 
-  const openCharacterLocations = async () => {
+  const openCharacterLocations = () => {
     if (!questForm.questGiverCharacterId) return;
     setCharacterLocationsOpen(true);
-    setCharacterLocationsLoading(true);
-    try {
-      const response = await apiClient.get<
-        { latitude: number; longitude: number }[]
-      >(`/sonar/characters/${questForm.questGiverCharacterId}/locations`);
-      setSelectedCharacterLocations(response);
-    } catch (error) {
-      console.error('Failed to load character locations', error);
-    } finally {
-      setCharacterLocationsLoading(false);
-    }
+    setCharacterLocationsLoading(false);
+    setSelectedCharacterLocations(
+      cloneCharacterLocationDrafts(selectedQuestGiver?.locations)
+    );
   };
 
   const handleAddCharacterLocation = () => {
@@ -3489,13 +3620,62 @@ export const Quests = () => {
 
   const handleSaveCharacterLocations = async () => {
     if (!questForm.questGiverCharacterId) return;
+    const nextLocations = cloneCharacterLocationDrafts(
+      selectedCharacterLocations
+    );
     try {
       await apiClient.put(
         `/sonar/characters/${questForm.questGiverCharacterId}/locations`,
         {
-          locations: selectedCharacterLocations,
+          locations: nextLocations,
         }
       );
+      const nextCharacterLocations = buildCharacterLocations(
+        questForm.questGiverCharacterId,
+        nextLocations,
+        selectedQuestGiver?.locations
+      );
+      setCharacters((prev) =>
+        prev.map((character) =>
+          character.id === questForm.questGiverCharacterId
+            ? { ...character, locations: nextCharacterLocations }
+            : character
+        )
+      );
+      setPointsOfInterest((prev) =>
+        prev.map((pointOfInterest) => ({
+          ...pointOfInterest,
+          characters: (pointOfInterest.characters ?? []).map((character) =>
+            character.id === questForm.questGiverCharacterId
+              ? { ...character, locations: nextCharacterLocations }
+              : character
+          ),
+        }))
+      );
+      setZoneCharacterPinsById((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).map(([zoneId, payload]) => [
+            zoneId,
+            {
+              ...payload,
+              characters: payload.characters.map((character) =>
+                character.id === questForm.questGiverCharacterId
+                  ? { ...character, locations: nextCharacterLocations }
+                  : character
+              ),
+              pointsOfInterest: payload.pointsOfInterest.map((pointOfInterest) => ({
+                ...pointOfInterest,
+                characters: (pointOfInterest.characters ?? []).map((character) =>
+                  character.id === questForm.questGiverCharacterId
+                    ? { ...character, locations: nextCharacterLocations }
+                    : character
+                ),
+              })),
+            },
+          ])
+        )
+      );
+      setSelectedCharacterLocations(nextLocations);
       setCharacterLocationsOpen(false);
     } catch (error) {
       console.error('Failed to save character locations', error);
@@ -3659,12 +3839,41 @@ export const Quests = () => {
                 <label className="block text-sm font-medium text-gray-700">
                   Quest Giver Character
                 </label>
+                <select
+                  className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
+                  value={characterZoneFilterId}
+                  onChange={(e) => {
+                    setCharacterZoneFilterId(e.target.value);
+                    setCharacterSearch('');
+                    setCharacterZoneError(null);
+                  }}
+                >
+                  <option value="">All Zones</option>
+                  {zones.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.name}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
                   placeholder="Filter characters..."
                   value={characterSearch}
                   onChange={(e) => setCharacterSearch(e.target.value)}
                 />
+                <div className="mb-2 text-xs text-gray-500">
+                  {characterZoneLoading && characterZoneFilterId
+                    ? 'Loading characters for selected zone...'
+                    : characterZoneError
+                      ? characterZoneError
+                      : `Showing ${characterOptions.length} character${
+                          characterOptions.length === 1 ? '' : 's'
+                        }${
+                          characterFilterZone
+                            ? ` in ${characterFilterZone.name}`
+                            : ' across all zones'
+                        }.`}
+                </div>
                 <select
                   className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                   value={questForm.questGiverCharacterId}
@@ -3675,8 +3884,14 @@ export const Quests = () => {
                     }))
                   }
                 >
-                  <option value="">None</option>
-                  {filteredCharacters.map((character) => (
+                  <option value="">
+                    {characterZoneLoading && characterZoneFilterId
+                      ? 'Loading characters...'
+                      : characterOptions.length === 0
+                        ? 'No matching characters'
+                        : 'None'}
+                  </option>
+                  {characterOptions.map((character) => (
                     <option key={character.id} value={character.id}>
                       {character.name}
                     </option>
@@ -4566,6 +4781,41 @@ export const Quests = () => {
                         Quest Giver Character
                       </label>
                       <select
+                        className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
+                        value={characterZoneFilterId}
+                        onChange={(e) => {
+                          setCharacterZoneFilterId(e.target.value);
+                          setCharacterSearch('');
+                          setCharacterZoneError(null);
+                        }}
+                      >
+                        <option value="">All Zones</option>
+                        {zones.map((zone) => (
+                          <option key={zone.id} value={zone.id}>
+                            {zone.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="mt-1 mb-2 block w-full border border-gray-300 rounded-md p-2"
+                        placeholder="Filter characters..."
+                        value={characterSearch}
+                        onChange={(e) => setCharacterSearch(e.target.value)}
+                      />
+                      <div className="mb-2 text-xs text-gray-500">
+                        {characterZoneLoading && characterZoneFilterId
+                          ? 'Loading characters for selected zone...'
+                          : characterZoneError
+                            ? characterZoneError
+                            : `Showing ${characterOptions.length} character${
+                                characterOptions.length === 1 ? '' : 's'
+                              }${
+                                characterFilterZone
+                                  ? ` in ${characterFilterZone.name}`
+                                  : ' across all zones'
+                              }.`}
+                      </div>
+                      <select
                         className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                         value={questForm.questGiverCharacterId}
                         onChange={(e) =>
@@ -4575,8 +4825,14 @@ export const Quests = () => {
                           }))
                         }
                       >
-                        <option value="">None</option>
-                        {characters.map((character) => (
+                        <option value="">
+                          {characterZoneLoading && characterZoneFilterId
+                            ? 'Loading characters...'
+                            : characterOptions.length === 0
+                              ? 'No matching characters'
+                              : 'None'}
+                        </option>
+                        {characterOptions.map((character) => (
                           <option key={character.id} value={character.id}>
                             {character.name}
                           </option>

@@ -640,6 +640,8 @@ type TutorialHandle interface {
 	) (*models.UserTutorialState, *models.MonsterEncounter, error)
 	ResetForReplay(ctx context.Context, userID uuid.UUID) error
 	AdvanceToBaseKit(ctx context.Context, userID uuid.UUID, requiredUseItemIDs []int) error
+	AdvanceToPostBasePlacementDialogue(ctx context.Context, userID uuid.UUID) error
+	AdvanceToHearth(ctx context.Context, userID uuid.UUID) error
 	AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error
 	MarkCompleted(ctx context.Context, userID uuid.UUID) error
 	MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error

@@ -70,6 +70,7 @@ class PointOfInterestPanel extends StatefulWidget {
     this.linkedMonsters = const [],
     required this.onClose,
     this.onUnlocked,
+    this.onDiscoveryCelebrationsComplete,
     this.onCharacterTap,
     this.onScenarioTap,
     this.onChallengeTap,
@@ -91,6 +92,7 @@ class PointOfInterestPanel extends StatefulWidget {
 
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
+  final VoidCallback? onDiscoveryCelebrationsComplete;
   final void Function(Character character)? onCharacterTap;
   final void Function(Scenario scenario)? onScenarioTap;
   final void Function(Challenge challenge)? onChallengeTap;
@@ -458,14 +460,21 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      final onDiscoveryCelebrationsComplete =
+          widget.onDiscoveryCelebrationsComplete;
+      if (onDiscoveryCelebrationsComplete != null) {
+        onDiscoveryCelebrationsComplete();
+        widget.onClose();
+        messenger.showSnackBar(const SnackBar(content: Text('Discovered!')));
+        return;
+      }
       setState(() {
         _justUnlocked = true;
         _loading = false;
         _error = null;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Discovered!')));
+      messenger.showSnackBar(const SnackBar(content: Text('Discovered!')));
     } catch (e) {
       if (_isDiscoveryDuplicateError(e)) {
         if (!mounted) return;
@@ -544,19 +553,24 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      final onDiscoveryCelebrationsComplete =
+          widget.onDiscoveryCelebrationsComplete;
+      final successMessage =
+          consumeWarning ?? 'Discovered with the Golden Telescope!';
+      if (onDiscoveryCelebrationsComplete != null) {
+        onDiscoveryCelebrationsComplete();
+        widget.onClose();
+        messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+        return;
+      }
       setState(() {
         _justUnlocked = true;
         _usingTelescope = false;
       });
       await _loadTelescope();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            consumeWarning ?? 'Discovered with the Golden Telescope!',
-          ),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       if (_isDiscoveryDuplicateError(e)) {
         if (!mounted) return;

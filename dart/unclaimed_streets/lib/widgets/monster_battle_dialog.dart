@@ -238,7 +238,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   static const Duration _combatTurnDuration = Duration(seconds: 150);
   static const double _defaultBattleLogHeight = 138;
-  static const double _compactBattleLogHeight = 78;
+  static const double _compactBattleLogHeight = 54;
   static const double _rootCommandPanelHeight = 158;
   static const int _maxRecentAbilities = 6;
   static const String _favoriteAbilityPrefsKeyPrefix =
@@ -316,7 +316,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   final Set<String> _techniqueCooldownClearedById = <String>{};
   final Set<String> _favoriteAbilityIds = <String>{};
   List<String> _recentAbilityIds = <String>[];
-  bool _expandBattleLogWhileBrowsing = false;
+  bool _battleLogCollapsed = true;
 
   bool _isBattleStatusNotFoundError(Object error) {
     if (error is DioException) {
@@ -2639,6 +2639,58 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         normalized.contains('revive');
   }
 
+  int _monsterAbilityTierLevel(Monster monster) {
+    final monsterLevel = math.max(1, monster.level);
+    final playerLevel = math.max(1, _playerLevel);
+    return math.min(monsterLevel, playerLevel + 1);
+  }
+
+  int _monsterAbilityDamageDampenerPercent(int abilityLevel) {
+    if (abilityLevel <= 5) return 55;
+    if (abilityLevel <= 10) return 70;
+    if (abilityLevel <= 15) return 85;
+    return 100;
+  }
+
+  int _applyMonsterAbilityDamageDampener(int damage, int abilityLevel) {
+    if (damage <= 0) return 0;
+    final dampenerPercent = _monsterAbilityDamageDampenerPercent(abilityLevel);
+    if (dampenerPercent >= 100) return damage;
+    return math.max(1, ((damage * dampenerPercent) / 100).round());
+  }
+
+  int _monsterAbilityDamageCapPercent(Spell ability, int abilityLevel) {
+    if (abilityLevel > 10) return 0;
+    final targetsAllEnemies = ability.effects.any(
+      (effect) => _isAllEnemiesDamageEffect(effect.type),
+    );
+    final isBossBurst =
+        widget.encounter.isBossEncounter && ability.cooldownTurns >= 2;
+    if (abilityLevel <= 4) {
+      if (targetsAllEnemies) return 12;
+      if (isBossBurst) return 35;
+      return 25;
+    }
+    if (targetsAllEnemies) return 15;
+    if (isBossBurst) return 40;
+    return 30;
+  }
+
+  int _capMonsterAbilityDamageAgainstPlayer(
+    Monster monster,
+    Spell ability,
+    int damage,
+  ) {
+    if (damage <= 0 || _playerMaxHealth <= 0) return math.max(0, damage);
+    final capPercent = _monsterAbilityDamageCapPercent(
+      ability,
+      _monsterAbilityTierLevel(monster),
+    );
+    if (capPercent <= 0) return damage;
+    final maxDamage = math.max(1, (_playerMaxHealth * capPercent) ~/ 100);
+    return math.min(damage, maxDamage);
+  }
+
   int _damageHits(int hits, {required bool hasDamage}) {
     if (!hasDamage) return 0;
     return hits > 0 ? hits : 1;
@@ -2729,9 +2781,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final techniqueBonus = _isTechnique(ability)
         ? math.max(0, (monster.strength - 10) ~/ 2)
         : 0;
-    return math.max<int>(
+    final rawDamage = math.max<int>(
       1,
       explicitDamage + math.max<int>(0, monster.level ~/ 3) + techniqueBonus,
+    );
+    return _applyMonsterAbilityDamageDampener(
+      rawDamage,
+      _monsterAbilityTierLevel(monster),
     );
   }
 
@@ -2867,7 +2923,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       return true;
     }
 
-    final damage = _monsterAbilityDamage(enemy.monster, ability);
+    final damage = _capMonsterAbilityDamageAgainstPlayer(
+      enemy.monster,
+      ability,
+      _monsterAbilityDamage(enemy.monster, ability),
+    );
     if (damage <= 0) {
       return false;
     }
@@ -3031,9 +3091,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   void _openMenu(_BattleMenuView view, {String? selectedCommandKey}) {
     setState(() {
       _menuView = view;
-      if (view == _BattleMenuView.root || view == _BattleMenuView.items) {
-        _expandBattleLogWhileBrowsing = false;
-      }
       if (selectedCommandKey != null) {
         _selectedCommandKey = selectedCommandKey;
       }
@@ -3044,8 +3101,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _menuView == _BattleMenuView.spells ||
       _menuView == _BattleMenuView.techniques;
 
-  bool get _showCompactBattleLog =>
-      _isAbilityPickerView && !_expandBattleLogWhileBrowsing;
+  bool get _showCompactBattleLog => _battleLogCollapsed;
 
   String _abilityPrefsKey(String prefix) {
     final scopedUserId = _selfUserId.trim();
@@ -5493,10 +5549,37 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
     final latestMessage = _battleLog.isEmpty ? '...' : _battleLog.last;
 
+    Widget buildTurnStateButton({required bool collapsed}) {
+      return OutlinedButton.icon(
+        onPressed: () {
+          setState(() {
+            _battleLogCollapsed = !_battleLogCollapsed;
+          });
+        },
+        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, size: 18),
+        label: Text(chipText, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          foregroundColor: chipColor,
+          backgroundColor: chipColor.withValues(alpha: 0.12),
+          side: BorderSide(color: chipColor.withValues(alpha: 0.45)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          textStyle: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       height: _battleLogHeight,
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 8 : 12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
@@ -5504,52 +5587,18 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       ),
       child: compact
           ? Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: chipColor.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: chipColor.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: Text(
-                          chipText,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: chipColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        latestMessage,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
+                  child: Text(
+                    latestMessage,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
                   ),
                 ),
-                if (_isAbilityPickerView)
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _expandBattleLogWhileBrowsing = true;
-                      });
-                    },
-                    tooltip: 'Expand log',
-                    icon: const Icon(Icons.unfold_more),
-                  ),
+                const SizedBox(width: 10),
+                buildTurnStateButton(collapsed: true),
               ],
             )
           : Column(
@@ -5557,37 +5606,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               children: [
                 Row(
                   children: [
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: chipColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: chipColor.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      child: Text(
-                        chipText,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: chipColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    Text(
+                      'Combat Log',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    if (_isAbilityPickerView)
-                      IconButton(
-                        onPressed: () {
-                          setState(() {
-                            _expandBattleLogWhileBrowsing = false;
-                          });
-                        },
-                        tooltip: 'Collapse log',
-                        icon: const Icon(Icons.unfold_less),
-                      ),
+                    const Spacer(),
+                    buildTurnStateButton(collapsed: false),
                   ],
                 ),
                 const SizedBox(height: 6),

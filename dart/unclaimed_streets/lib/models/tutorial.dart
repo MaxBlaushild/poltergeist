@@ -10,6 +10,7 @@ class TutorialStatus {
   final List<DialogueMessage> loadoutDialogue;
   final List<DialogueMessage> postMonsterDialogue;
   final List<DialogueMessage> baseKitDialogue;
+  final List<DialogueMessage> postBasePlacementDialogue;
   final List<DialogueMessage> postBaseDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
@@ -27,6 +28,7 @@ class TutorialStatus {
     this.loadoutDialogue = const [],
     this.postMonsterDialogue = const [],
     this.baseKitDialogue = const [],
+    this.postBasePlacementDialogue = const [],
     this.postBaseDialogue = const [],
     this.scenarioId,
     this.monsterEncounterId,
@@ -48,6 +50,11 @@ class TutorialStatus {
   bool get isPostMonsterDialogueStep =>
       stage == 'post_monster_dialogue' && !isCompleted;
 
+  bool get isPostBasePlacementDialogueStep =>
+      stage == 'post_base_placement_dialogue' && !isCompleted;
+
+  bool get isHearthStep => stage == 'hearth' && !isCompleted;
+
   bool get isPostBaseDialogueStep =>
       stage == 'post_base_dialogue' && !isCompleted;
 
@@ -59,6 +66,11 @@ class TutorialStatus {
   bool get shouldShowPostMonsterDialogue =>
       isPostMonsterDialogueStep &&
       postMonsterDialogue.isNotEmpty &&
+      !isCompleted;
+
+  bool get shouldShowPostBasePlacementDialogue =>
+      isPostBasePlacementDialogueStep &&
+      postBasePlacementDialogue.isNotEmpty &&
       !isCompleted;
 
   bool get shouldShowPostBaseDialogue =>
@@ -166,6 +178,32 @@ class TutorialStatus {
     }
 
     final postBaseDialogue = <DialogueMessage>[];
+    final postBasePlacementDialogue = <DialogueMessage>[];
+    final rawPostBasePlacementDialogue = json['postBasePlacementDialogue'];
+    if (rawPostBasePlacementDialogue is List) {
+      for (
+        var index = 0;
+        index < rawPostBasePlacementDialogue.length;
+        index++
+      ) {
+        final line = rawPostBasePlacementDialogue[index];
+        if (line is Map<String, dynamic>) {
+          postBasePlacementDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          postBasePlacementDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            postBasePlacementDialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
     final rawPostBaseDialogue = json['postBaseDialogue'];
     if (rawPostBaseDialogue is List) {
       for (var index = 0; index < rawPostBaseDialogue.length; index++) {
@@ -196,6 +234,7 @@ class TutorialStatus {
       loadoutDialogue: loadoutDialogue,
       postMonsterDialogue: postMonsterDialogue,
       baseKitDialogue: baseKitDialogue,
+      postBasePlacementDialogue: postBasePlacementDialogue,
       postBaseDialogue: postBaseDialogue,
       scenarioId: json['scenarioId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),
@@ -215,6 +254,7 @@ class TutorialStatus {
     List<DialogueMessage>? loadoutDialogue,
     List<DialogueMessage>? postMonsterDialogue,
     List<DialogueMessage>? baseKitDialogue,
+    List<DialogueMessage>? postBasePlacementDialogue,
     List<DialogueMessage>? postBaseDialogue,
     String? scenarioId,
     String? monsterEncounterId,
@@ -232,6 +272,8 @@ class TutorialStatus {
       loadoutDialogue: loadoutDialogue ?? this.loadoutDialogue,
       postMonsterDialogue: postMonsterDialogue ?? this.postMonsterDialogue,
       baseKitDialogue: baseKitDialogue ?? this.baseKitDialogue,
+      postBasePlacementDialogue:
+          postBasePlacementDialogue ?? this.postBasePlacementDialogue,
       postBaseDialogue: postBaseDialogue ?? this.postBaseDialogue,
       scenarioId: scenarioId ?? this.scenarioId,
       monsterEncounterId: monsterEncounterId ?? this.monsterEncounterId,

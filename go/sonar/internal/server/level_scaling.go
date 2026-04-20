@@ -15,6 +15,8 @@ const (
 	challengeScaledNoStatDifficultyCap = 50
 	standardEncounterScaleFactor       = 0.90
 	raidEncounterRecommendedPartySize  = 5.0
+	maxMonsterAbilityLeadLevels        = 1
+	maxBossEncounterBonusLevels        = 5
 )
 
 func normalizeScaledLevel(level int) int {
@@ -154,10 +156,35 @@ func scaledRaidEncounterMonsterLevelForUserLevel(level int, memberCount int) int
 	return maxInt(1, scaled)
 }
 
+func scaledBossEncounterBonusLevels(level int) int {
+	normalizedLevel := normalizeScaledLevel(level)
+	bonusLevels := normalizedLevel / 3
+	if bonusLevels > maxBossEncounterBonusLevels {
+		return maxBossEncounterBonusLevels
+	}
+	return maxInt(0, bonusLevels)
+}
+
+func cappedMonsterAbilityLevelForUserLevel(monsterLevel int, userLevel int) int {
+	normalizedMonsterLevel := normalizeScaledLevel(monsterLevel)
+	if userLevel <= 0 {
+		return normalizedMonsterLevel
+	}
+	normalizedUserLevel := normalizeScaledLevel(userLevel)
+	cappedLevel := normalizedUserLevel + maxMonsterAbilityLeadLevels
+	if cappedLevel < normalizedMonsterLevel {
+		return cappedLevel
+	}
+	return normalizedMonsterLevel
+}
+
 func scaledEncounterMonsterLevelForUserLevelAndType(level int, memberCount int, encounterType models.MonsterEncounterType) int {
 	switch models.NormalizeMonsterEncounterType(string(encounterType)) {
 	case models.MonsterEncounterTypeBoss:
-		return scaledStandardEncounterMonsterLevelForUserLevel(level+5, memberCount)
+		return scaledStandardEncounterMonsterLevelForUserLevel(
+			level+scaledBossEncounterBonusLevels(level),
+			memberCount,
+		)
 	case models.MonsterEncounterTypeRaid:
 		return scaledRaidEncounterMonsterLevelForUserLevel(level, memberCount)
 	default:

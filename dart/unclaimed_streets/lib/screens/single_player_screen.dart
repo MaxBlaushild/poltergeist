@@ -33,6 +33,7 @@ import '../models/resource.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
+import '../models/user.dart';
 import '../models/zone.dart';
 import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
@@ -68,7 +69,6 @@ import '../widgets/monster_battle_dialog.dart';
 import '../widgets/monster_panel.dart';
 import '../widgets/new_item_modal.dart';
 import '../widgets/point_of_interest_panel.dart';
-import '../widgets/quest_log_panel.dart';
 import '../widgets/resource_panel.dart';
 import '../widgets/rpg_dialogue_modal.dart';
 import '../widgets/scenario_panel.dart';
@@ -118,6 +118,9 @@ const int _monsterBattleDefeatStatusDurationMinutes = 15;
 const _questPulseCoreColor = '#f7d46f';
 const _questPulseMistColor = '#fff1c3';
 const _questPulseRingColor = '#f1bb47';
+const _mainStoryPulseCoreColor = '#b53a4b';
+const _mainStoryPulseMistColor = '#f3cbd2';
+const _mainStoryPulseRingColor = '#7a1823';
 const _discoveryPulseCoreColor = '#f6d98c';
 const _discoveryPulseMistColor = '#fff5d7';
 const _discoveryPulseRingColor = '#f5c542';
@@ -131,14 +134,29 @@ int _monsterBattleDefeatResourceFloor(int maxResource, int floorPercent) {
 const _baseMarkerIconSize = 1.68 * _baseMarkerSizeScale;
 const _basePlacementPreviewIconSize = 1.76 * _baseMarkerSizeScale;
 const _baseFallbackCircleRadius = 42.0 * _baseMarkerSizeScale;
+const _playerPresenceMarkerIconSize = 0.9;
+const _playerPresenceAuraColor = '#5faab8';
+const _playerPresencePulseColor = '#f4d989';
+const _playerPresencePulseStrokeColor = '#f8ebc4';
+const _playerPresenceConeFillColor = '#5faab8';
+const _playerPresenceConeOutlineColor = '#f4e9d6';
+const _playerPresenceConeMinLengthMeters = 28.0;
+const _playerPresenceConeMaxLengthMeters = 46.0;
+const _playerPresenceConeBaseHalfAngleDegrees = 26.0;
+const _playerPresenceHeadingSpeedThreshold = 0.9;
+const _playerPresenceBearingFallbackDistanceMeters = 6.0;
+const _playerPresencePulseCycle = Duration(milliseconds: 1900);
+const _playerPresencePulseFrameDelay = Duration(milliseconds: 90);
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
 const _zoneBaseContentFreshDuration = Duration(minutes: 2);
-const _zoneBaseContentWarmupDebounce = Duration(milliseconds: 900);
-const _zoneBaseContentWarmupThrottle = Duration(seconds: 4);
+const _zoneBaseContentWarmupDebounce = Duration(milliseconds: 250);
+const _zoneBaseContentWarmupThrottle = Duration(seconds: 2);
 const _zoneBaseContentWarmCount = 4;
 const _zoneBaseContentMaxCacheEntries = 6;
 const _zoneBaseContentThumbnailWarmCount = 8;
+const _defaultMapFocusZoom = 16.0;
+const _trackedQuestOverlayFocusZoom = 14.0;
 const _poiAssociationCoordinatePrecision = 4;
 const _pinSelectionHitRadiusPx = 24.0;
 const _transparentMapHaloColor = 'rgba(0,0,0,0)';
@@ -187,6 +205,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   int _poiMarkerGeneration = 0;
   List<Symbol> _questPoiHighlightSymbols = [];
   List<Circle> _questPoiHighlightCircles = [];
+  List<Symbol> _mainStoryPoiHighlightSymbols = [];
+  List<Circle> _mainStoryPoiHighlightCircles = [];
   final Set<String> _activePulseKeys = <String>{};
   List<Symbol> _characterSymbols = [];
   final Map<String, List<Symbol>> _characterSymbolsById = {};
@@ -261,6 +281,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   ActivityFeedProvider? _activityFeedProvider;
   BasePlacementProvider? _basePlacementProvider;
   Map<String, dynamic>? _lastHandledCompletionModal;
+  VoidCallback? _pendingCompletionModalDrainAction;
   final Set<String> _handledLevelUpActivityIds = <String>{};
   bool _levelUpActivityDrainScheduled = false;
   String _lastAuthenticatedUserId = '';
@@ -269,7 +290,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Timer? _questPoiPulseTimer;
   String? _questLogRequestedZoneId;
   bool _questLogRefreshInFlight = false;
-  bool _questAvailabilityRefreshInFlight = false;
+  bool _questAvailabilityLeadSyncPending = false;
+  int _questAvailabilityLeadSyncGeneration = 0;
   bool _manualRefreshInFlight = false;
   int _skipQuestLogMapRefreshCount = 0;
   DateTime? _lastQuestLogRefreshAt;
@@ -287,6 +309,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   DateTime? _lastFeatureTapAt;
   Point<double>? _lastFeatureTapPoint;
   Set<String> _lastQuestTurnInCharacterIds = <String>{};
+  String? _lastFeaturedMainStoryPulsePoiId;
+  String? _lastFeaturedMainStoryPulseCharacterId;
   Map<String, String> _lastTrackedQuestObjectiveSignatures = <String, String>{};
   bool _hasTrackedQuestObjectiveSnapshot = false;
   int _lastQuestPolygonHash = 0;
@@ -303,6 +327,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String _lastZoneBaseContentWarmSignature = '';
   DateTime? _lastZoneBaseContentWarmAt;
   String? _renderedTreasureChestZoneId;
+  String? _loadingZoneTransitionZoneId;
   QuestSubmissionOverlayPhase _questSubmissionPhase =
       QuestSubmissionOverlayPhase.hidden;
   String? _questSubmissionMessage;
@@ -346,6 +371,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Symbol? _basePlacementPreviewSymbol;
   Uint8List? _basePlacementPreviewBytes;
   String? _autoOpenedMainStoryLeadKey;
+  Symbol? _playerPresenceSymbol;
+  Circle? _playerPresenceAuraCircle;
+  Circle? _playerPresencePulseCircle;
+  Fill? _playerPresenceConeFill;
+  Line? _playerPresenceConeLine;
+  Timer? _playerPresencePulseTimer;
+  int _playerPresenceRefreshGeneration = 0;
+  LatLng? _lastPlayerPresenceLatLng;
+  double? _lastResolvedPlayerHeading;
 
   @override
   void initState() {
@@ -394,6 +428,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _questGlowTimer?.cancel();
     _questPoiPulseTimer?.cancel();
     _zoneBaseContentWarmupTimer?.cancel();
+    _playerPresencePulseTimer?.cancel();
     _clearQuestSubmissionRevealTimers();
     _trackedQuestsController.dispose();
     try {
@@ -445,7 +480,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _hasZoneBaseContentSnapshot(selectedZoneId) &&
         _hasZonePinContentSnapshot(selectedZoneId)) {
       _pinBatchRevealInProgress = true;
-      unawaited(_hideZoneScopedPins());
     }
     unawaited(_loadTreasureChestsForSelectedZone());
     _scheduleZoneBaseContentWarmup(immediate: true);
@@ -462,6 +496,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _scheduleZoneBaseContentWarmup();
     _refreshScenarioVisibilityForLocationChange();
     _maybeShowTutorialDialogues();
+    unawaited(_refreshPlayerPresence());
   }
 
   void _onActivityFeedChanged() {
@@ -582,6 +617,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _completedTaskProvider?.reset();
     }
     if (auth.loading || !auth.isAuthenticated) {
+      unawaited(_clearPlayerPresenceOverlays());
       return;
     }
     _queueLoadAllIfAuthenticated();
@@ -591,6 +627,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(_loadBases());
     unawaited(context.read<PartyProvider>().fetchParty());
     unawaited(_loadTutorialStatus(force: true));
+    unawaited(_refreshPlayerPresence());
   }
 
   void _queueLoadAllIfAuthenticated() {
@@ -881,6 +918,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     if ((status?.isPostMonsterDialogueStep ?? false) ||
+        (status?.isPostBasePlacementDialogueStep ?? false) ||
+        (status?.isHearthStep ?? false) ||
         (status?.isPostBaseDialogueStep ?? false)) {
       return;
     }
@@ -944,6 +983,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final modal = provider.currentModal;
     if (modal == null) {
       _lastHandledCompletionModal = null;
+      final pendingCompletionModalDrainAction =
+          _pendingCompletionModalDrainAction;
+      _pendingCompletionModalDrainAction = null;
+      if (pendingCompletionModalDrainAction != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          pendingCompletionModalDrainAction();
+        });
+      }
       if (_tutorialLoadoutPendingAfterCompletionModal) {
         _tutorialLoadoutPendingAfterCompletionModal = false;
         unawaited(_beginTutorialLoadoutStep());
@@ -963,6 +1011,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     _lastHandledCompletionModal = modal;
     unawaited(_reconcileMapFromCompletionModal(modal));
+  }
+
+  void _runAfterCompletionModals(VoidCallback action) {
+    final provider = _completedTaskProvider;
+    if (provider?.currentModal == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        action();
+      });
+      return;
+    }
+    _pendingCompletionModalDrainAction = action;
   }
 
   Future<void> _reconcileMapFromCompletionModal(
@@ -1222,15 +1282,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _onQuestLogChanged() {
     if (!mounted) return;
     final questLog = context.read<QuestLogProvider>();
-    if (questLog.loading) return;
+    if (questLog.loading) {
+      _setQuestAvailabilityLeadSyncPending(true);
+      return;
+    }
     _openTrackedQuestsForObjectiveUpdates(questLog);
     _applyQuestLogOverlaysIfChanged();
     if (_skipQuestLogMapRefreshCount > 0) {
       _skipQuestLogMapRefreshCount -= 1;
+      _setQuestAvailabilityLeadSyncPending(false);
       return;
     }
-    unawaited(_loadTreasureChestsForSelectedZone());
-    unawaited(_refreshQuestAvailabilityMarkers());
+    final syncGeneration = ++_questAvailabilityLeadSyncGeneration;
+    _setQuestAvailabilityLeadSyncPending(true);
+    // Quest availability is embedded in zone pin payloads, so quest-log changes
+    // need a fresh pin fetch before showing any main-story availability lead.
+    unawaited(_refreshQuestAvailabilityAfterQuestLogChange(syncGeneration));
   }
 
   void _onMapFocusRequest() {
@@ -1270,6 +1337,36 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }());
   }
 
+  void _setQuestAvailabilityLeadSyncPending(bool pending) {
+    if (_questAvailabilityLeadSyncPending == pending) {
+      return;
+    }
+    void update() {
+      _questAvailabilityLeadSyncPending = pending;
+    }
+
+    if (mounted) {
+      setState(update);
+    } else {
+      update();
+    }
+  }
+
+  Future<void> _refreshQuestAvailabilityAfterQuestLogChange(
+    int syncGeneration,
+  ) async {
+    try {
+      await _loadTreasureChestsForSelectedZone(forceRefreshZonePins: true);
+    } catch (_) {
+      // Best-effort refresh; keep existing pins if the forced reload fails.
+    }
+    if (!mounted || syncGeneration != _questAvailabilityLeadSyncGeneration) {
+      return;
+    }
+    _setQuestAvailabilityLeadSyncPending(false);
+    _applyQuestLogOverlaysIfChanged();
+  }
+
   void _applyQuestLogOverlaysIfChanged() {
     if (!_styleLoaded || _mapController == null) {
       _questLogNeedsOverlayApply = true;
@@ -1279,6 +1376,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
     final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
     final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
+    final featuredMainStoryPulseTarget = _featuredMainStoryPulseTarget(
+      questLog,
+    );
+    final featuredMainStoryPulsePoiId = featuredMainStoryPulseTarget?.poiId;
+    final featuredMainStoryPulseCharacterId =
+        featuredMainStoryPulseTarget?.characterId;
     final trackedQuestIds = questLog.trackedQuestIds
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
@@ -1297,8 +1400,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _lastQuestTurnInCharacterIds,
       turnInCharacterIds,
     );
+    final featuredMainStoryPulsePoiChanged =
+        _lastFeaturedMainStoryPulsePoiId != featuredMainStoryPulsePoiId;
+    final featuredMainStoryPulseCharacterChanged =
+        _lastFeaturedMainStoryPulseCharacterId !=
+        featuredMainStoryPulseCharacterId;
     final polyChanged = polygonHash != _lastQuestPolygonHash;
-    if (!poiChanged && !turnInCharactersChanged && !polyChanged) return;
+    if (!poiChanged &&
+        !turnInCharactersChanged &&
+        !featuredMainStoryPulsePoiChanged &&
+        !featuredMainStoryPulseCharacterChanged &&
+        !polyChanged) {
+      return;
+    }
     final newlyAddedPoiIds = questPoiIds.difference(_lastQuestPoiIds);
     final removedPoiIds = _lastQuestPoiIds.difference(questPoiIds);
     final newlyAddedTurnInCharacterIds = turnInCharacterIds.difference(
@@ -1307,9 +1421,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final removedTurnInCharacterIds = _lastQuestTurnInCharacterIds.difference(
       turnInCharacterIds,
     );
+    final previousFeaturedMainStoryPulsePoiId =
+        _lastFeaturedMainStoryPulsePoiId;
+    final previousFeaturedMainStoryPulseCharacterId =
+        _lastFeaturedMainStoryPulseCharacterId;
     _lastQuestPoiIds = questPoiIds;
     _lastTrackedQuestIds = trackedQuestIds;
     _lastQuestTurnInCharacterIds = turnInCharacterIds;
+    _lastFeaturedMainStoryPulsePoiId = featuredMainStoryPulsePoiId;
+    _lastFeaturedMainStoryPulseCharacterId = featuredMainStoryPulseCharacterId;
     _lastQuestPolygonHash = polygonHash;
     if (poiChanged && newlyAddedPoiIds.isNotEmpty) {
       for (final poiId in newlyAddedPoiIds.intersection(trackedQuestPoiIds)) {
@@ -1347,6 +1467,35 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final changedCharacterIds = <String>{
         ...newlyAddedTurnInCharacterIds,
         ...removedTurnInCharacterIds,
+      };
+      for (final characterId in changedCharacterIds) {
+        final character = _characterById(characterId);
+        if (character == null) continue;
+        unawaited(_updateCharacterSymbolForState(character));
+      }
+    }
+    if (featuredMainStoryPulsePoiChanged) {
+      final changedPoiIds = <String>{
+        if (previousFeaturedMainStoryPulsePoiId?.isNotEmpty == true)
+          previousFeaturedMainStoryPulsePoiId!,
+        if (featuredMainStoryPulsePoiId?.isNotEmpty == true)
+          featuredMainStoryPulsePoiId!,
+      };
+      for (final poiId in changedPoiIds) {
+        unawaited(
+          _updatePoiSymbolForQuestState(
+            poiId,
+            isQuestCurrent: questPoiIds.contains(poiId),
+          ),
+        );
+      }
+    }
+    if (featuredMainStoryPulseCharacterChanged) {
+      final changedCharacterIds = <String>{
+        if (previousFeaturedMainStoryPulseCharacterId?.isNotEmpty == true)
+          previousFeaturedMainStoryPulseCharacterId!,
+        if (featuredMainStoryPulseCharacterId?.isNotEmpty == true)
+          featuredMainStoryPulseCharacterId!,
       };
       for (final characterId in changedCharacterIds) {
         final character = _characterById(characterId);
@@ -1793,11 +1942,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  _MainStoryLead? _currentZoneMainStoryLead(QuestLogProvider questLog) {
+  _MainStoryLead? _currentZoneMainStoryLead(
+    QuestLogProvider questLog, {
+    bool allowGlobalFallback = true,
+    bool includeKnownPins = true,
+    bool requireFreshZonePins = false,
+  }) {
+    if (requireFreshZonePins && _questAvailabilityLeadSyncPending) {
+      return null;
+    }
     final selectedZone = context.read<ZoneProvider>().selectedZone;
     final location = context.read<LocationProvider>().location;
     final userLat = location?.latitude;
     final userLng = location?.longitude;
+    final poiCandidates = includeKnownPins ? _knownPois() : _pois;
+    final characterCandidates = includeKnownPins
+        ? _knownCharacters()
+        : _characters;
     PointOfInterest? bestPoi;
     Character? bestCharacter;
     double? bestDistance;
@@ -1805,7 +1966,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     Character? bestGlobalCharacter;
     double? bestGlobalDistance;
 
-    for (final poi in _knownPois()) {
+    for (final poi in poiCandidates) {
       final poiLat = double.tryParse(poi.lat);
       final poiLng = double.tryParse(poi.lng);
       Character? featuredCharacter;
@@ -1841,7 +2002,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    for (final character in _knownCharacters()) {
+    for (final character in characterCandidates) {
       if (!character.hasAvailableMainStoryQuest) continue;
       final poi = _syntheticPoiForCharacterLead(character);
       if (poi == null) continue;
@@ -1869,9 +2030,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    bestPoi ??= bestGlobalPoi;
-    bestCharacter ??= bestGlobalCharacter;
-    bestDistance ??= bestGlobalDistance;
+    if (allowGlobalFallback) {
+      bestPoi ??= bestGlobalPoi;
+      bestCharacter ??= bestGlobalCharacter;
+      bestDistance ??= bestGlobalDistance;
+    }
     if (bestPoi == null) return null;
     return _MainStoryLead(
       poi: bestPoi,
@@ -1986,6 +2149,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _retryMap() {
     _mapLoadTimeout?.cancel();
+    _playerPresencePulseTimer?.cancel();
+    _playerPresencePulseTimer = null;
     setState(() {
       _mapLoadFailed = false;
       _styleLoaded = false;
@@ -2044,6 +2209,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _renderedTreasureChestZoneId = null;
       _questLines = [];
       _characterSymbolsById.clear();
+      _playerPresenceSymbol = null;
+      _playerPresenceAuraCircle = null;
+      _playerPresencePulseCircle = null;
+      _playerPresenceConeFill = null;
+      _playerPresenceConeLine = null;
+      _playerPresenceRefreshGeneration = 0;
+      _lastPlayerPresenceLatLng = null;
+      _lastResolvedPlayerHeading = null;
     });
     _startMapLoadTimeout();
   }
@@ -2057,6 +2230,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(
       (() async {
         await _setSymbolOverlap();
+        await _refreshPlayerPresence();
         await _addPoiMarkers();
         if (_scenarioVisibilityRefreshPending) {
           _scenarioVisibilityRefreshPending = false;
@@ -2091,6 +2265,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  void _centerOnUserLocation() {
+    final c = _mapController;
+    final loc = context.read<LocationProvider>().location;
+    if (c == null || loc == null) return;
+    final lat = loc.latitude;
+    final lng = loc.longitude;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+      return;
+    }
+    final currentCamera = c.cameraPosition;
+    try {
+      c.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(lat, lng),
+            zoom: currentCamera?.zoom ?? 15.5,
+            tilt: currentCamera?.tilt ?? 0.0,
+            bearing: currentCamera?.bearing ?? 0.0,
+          ),
+        ),
+        duration: const Duration(milliseconds: 450),
+      );
+    } catch (_) {}
+  }
+
   void _animateToUserLocationIfReady() {
     if (!mounted ||
         !_styleLoaded ||
@@ -2121,26 +2320,421 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     });
   }
 
-  void _centerOnUserLocation() {
-    if (!_styleLoaded || _mapLoadFailed) return;
-    final c = _mapController;
-    final loc = context.read<LocationProvider>().location;
-    if (c == null || loc == null) return;
-    final zoneProvider = context.read<ZoneProvider>();
-    zoneProvider.unlockSelection();
-    _updateSelectedZoneFromLocation();
-    final lat = loc.latitude;
-    final lng = loc.longitude;
-    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180)
-      return;
-    try {
-      c.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: LatLng(lat, lng), zoom: 15),
-        ),
-        duration: const Duration(milliseconds: 500),
+  bool _playerPresenceUsesPortrait(User? user) {
+    if (user == null || !user.hasCustomizedPortrait) return false;
+    final portraitUrl = user.profilePictureUrl.trim();
+    if (portraitUrl.isEmpty) return false;
+    final normalized = portraitUrl.toLowerCase();
+    return !normalized.contains('character-undiscovered') &&
+        !normalized.contains('loading-image');
+  }
+
+  double? _normalizedHeading(double? heading) {
+    if (heading == null || !heading.isFinite) return null;
+    final normalized = heading % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+  }
+
+  double _radiansToDegrees(double radians) => radians * 180.0 / math.pi;
+
+  double _bearingDegrees(double lat1, double lng1, double lat2, double lng2) {
+    final phi1 = _degreesToRadians(lat1);
+    final phi2 = _degreesToRadians(lat2);
+    final lambda = _degreesToRadians(lng2 - lng1);
+    final y = math.sin(lambda) * math.cos(phi2);
+    final x =
+        math.cos(phi1) * math.sin(phi2) -
+        math.sin(phi1) * math.cos(phi2) * math.cos(lambda);
+    return _normalizedHeading(_radiansToDegrees(math.atan2(y, x))) ?? 0.0;
+  }
+
+  LatLng _offsetLatLng(
+    LatLng origin,
+    double bearingDegrees,
+    double distanceMeters,
+  ) {
+    const earthRadiusMeters = 6378137.0;
+    final angularDistance = distanceMeters / earthRadiusMeters;
+    final bearing = _degreesToRadians(bearingDegrees);
+    final lat1 = _degreesToRadians(origin.latitude);
+    final lng1 = _degreesToRadians(origin.longitude);
+
+    final sinLat1 = math.sin(lat1);
+    final cosLat1 = math.cos(lat1);
+    final sinAngular = math.sin(angularDistance);
+    final cosAngular = math.cos(angularDistance);
+
+    final lat2 = math.asin(
+      sinLat1 * cosAngular + cosLat1 * sinAngular * math.cos(bearing),
+    );
+    final lng2 =
+        lng1 +
+        math.atan2(
+          math.sin(bearing) * sinAngular * cosLat1,
+          cosAngular - sinLat1 * math.sin(lat2),
+        );
+
+    return LatLng(_radiansToDegrees(lat2), _radiansToDegrees(lng2));
+  }
+
+  double? _resolvePlayerHeading(AppLocation location) {
+    final speed = location.speed ?? 0.0;
+    final directHeading = _normalizedHeading(location.heading);
+    if (directHeading != null &&
+        speed >= _playerPresenceHeadingSpeedThreshold) {
+      return directHeading;
+    }
+
+    final previous = _lastPlayerPresenceLatLng;
+    if (previous != null) {
+      final distance = _haversineDistanceMeters(
+        previous.latitude,
+        previous.longitude,
+        location.latitude,
+        location.longitude,
       );
+      if (distance >= _playerPresenceBearingFallbackDistanceMeters) {
+        return _bearingDegrees(
+          previous.latitude,
+          previous.longitude,
+          location.latitude,
+          location.longitude,
+        );
+      }
+    }
+
+    return _lastResolvedPlayerHeading;
+  }
+
+  List<LatLng> _buildPlayerFollowConeRing(
+    LatLng origin,
+    double headingDegrees, {
+    required double speedMetersPerSecond,
+  }) {
+    final speedFactor = (speedMetersPerSecond / 5.0).clamp(0.0, 1.0).toDouble();
+    final lengthMeters = _lerpDouble(
+      _playerPresenceConeMinLengthMeters,
+      _playerPresenceConeMaxLengthMeters,
+      speedFactor,
+    );
+    final halfAngle = _lerpDouble(
+      _playerPresenceConeBaseHalfAngleDegrees,
+      18.0,
+      speedFactor,
+    );
+
+    final ring = <LatLng>[origin];
+    const arcSteps = 6;
+    for (var step = 0; step <= arcSteps; step++) {
+      final t = step / arcSteps;
+      final angle = headingDegrees - halfAngle + (halfAngle * 2 * t);
+      ring.add(_offsetLatLng(origin, angle, lengthMeters));
+    }
+    ring.add(origin);
+    return ring;
+  }
+
+  String _playerPresenceImageIdFor(User? user) {
+    final portraitUrl = user?.profilePictureUrl.trim() ?? '';
+    final signature = _playerPresenceUsesPortrait(user)
+        ? portraitUrl
+        : 'fallback';
+    return 'player_presence_marker_${Object.hash(user?.id ?? '', signature).abs()}';
+  }
+
+  CircleOptions _playerPresenceAuraOptions(
+    LatLng geometry, {
+    required double accuracyMeters,
+  }) {
+    final radius = (20.0 + (accuracyMeters / 12.0)).clamp(20.0, 30.0);
+    return CircleOptions(
+      geometry: geometry,
+      circleRadius: radius.toDouble(),
+      circleColor: _playerPresenceAuraColor,
+      circleBlur: 0.36,
+      circleOpacity: 0.18,
+      circleStrokeWidth: 1.4,
+      circleStrokeColor: _playerPresencePulseStrokeColor,
+      circleStrokeOpacity: 0.16,
+    );
+  }
+
+  CircleOptions _playerPresencePulseOptions(LatLng geometry) {
+    final cycleMs = _playerPresencePulseCycle.inMilliseconds;
+    final progress =
+        (DateTime.now().millisecondsSinceEpoch % cycleMs) / cycleMs;
+    final eased = Curves.easeOutCubic.transform(progress);
+    final fade = 1.0 - Curves.easeInCubic.transform(progress);
+    return CircleOptions(
+      geometry: geometry,
+      circleRadius: _lerpDouble(24.0, 48.0, eased),
+      circleColor: _playerPresencePulseColor,
+      circleBlur: 0.26,
+      circleOpacity: 0.12 * fade,
+      circleStrokeWidth: _lerpDouble(3.6, 0.9, eased),
+      circleStrokeColor: _playerPresencePulseStrokeColor,
+      circleStrokeOpacity: 0.52 * fade,
+    );
+  }
+
+  Future<void> _clearPlayerPresenceOverlays({bool resetTracking = true}) async {
+    _playerPresenceRefreshGeneration++;
+    _playerPresencePulseTimer?.cancel();
+    _playerPresencePulseTimer = null;
+
+    final c = _mapController;
+    final symbol = _playerPresenceSymbol;
+    final aura = _playerPresenceAuraCircle;
+    final pulse = _playerPresencePulseCircle;
+    final coneFill = _playerPresenceConeFill;
+    final coneLine = _playerPresenceConeLine;
+
+    _playerPresenceSymbol = null;
+    _playerPresenceAuraCircle = null;
+    _playerPresencePulseCircle = null;
+    _playerPresenceConeFill = null;
+    _playerPresenceConeLine = null;
+    if (resetTracking) {
+      _lastPlayerPresenceLatLng = null;
+      _lastResolvedPlayerHeading = null;
+    }
+
+    if (c == null) return;
+
+    if (symbol != null) {
+      try {
+        await c.removeSymbols([symbol]);
+      } catch (_) {}
+    }
+    for (final circle in [aura, pulse]) {
+      if (circle == null) continue;
+      try {
+        await c.removeCircle(circle);
+      } catch (_) {}
+    }
+    if (coneFill != null) {
+      try {
+        await c.removeFills([coneFill]);
+      } catch (_) {}
+    }
+    if (coneLine != null) {
+      try {
+        await c.removeLines([coneLine]);
+      } catch (_) {}
+    }
+  }
+
+  void _ensurePlayerPresencePulseTimer() {
+    if (_playerPresencePulseTimer != null) return;
+    _playerPresencePulseTimer = Timer.periodic(
+      _playerPresencePulseFrameDelay,
+      (_) => unawaited(_updatePlayerPresencePulseFrame()),
+    );
+  }
+
+  Future<void> _updatePlayerPresencePulseFrame() async {
+    final c = _mapController;
+    final pulse = _playerPresencePulseCircle;
+    final geometry = _lastPlayerPresenceLatLng;
+    if (c == null || pulse == null || geometry == null || !_styleLoaded) {
+      return;
+    }
+    try {
+      await c.updateCircle(pulse, _playerPresencePulseOptions(geometry));
     } catch (_) {}
+  }
+
+  Future<void> _refreshPlayerPresence() async {
+    final generation = ++_playerPresenceRefreshGeneration;
+    final c = _mapController;
+    final location = context.read<LocationProvider>().location;
+    final auth = context.read<AuthProvider>();
+
+    if (c == null ||
+        !_styleLoaded ||
+        _mapLoadFailed ||
+        location == null ||
+        auth.loading ||
+        !auth.isAuthenticated) {
+      await _clearPlayerPresenceOverlays();
+      return;
+    }
+
+    final lat = location.latitude;
+    final lng = location.longitude;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+      await _clearPlayerPresenceOverlays();
+      return;
+    }
+
+    final authUser = auth.user;
+    final usePortrait = _playerPresenceUsesPortrait(authUser);
+    final portraitUrl = authUser?.profilePictureUrl.trim();
+    final imageId = _playerPresenceImageIdFor(authUser);
+    final imageBytes =
+        peekPlayerPresenceMarker(portraitUrl, usePortrait: usePortrait) ??
+        await loadPlayerPresenceMarker(portraitUrl, usePortrait: usePortrait);
+    if (!mounted || generation != _playerPresenceRefreshGeneration) return;
+    if (imageBytes == null) {
+      await _clearPlayerPresenceOverlays(resetTracking: false);
+      return;
+    }
+
+    await _ensureMapImage(c, imageId, imageBytes);
+    if (!mounted || generation != _playerPresenceRefreshGeneration) return;
+
+    final geometry = LatLng(lat, lng);
+    final heading = _resolvePlayerHeading(location);
+
+    final symbolOptions = SymbolOptions(
+      geometry: geometry,
+      iconImage: imageId,
+      iconSize: _playerPresenceMarkerIconSize,
+      iconOpacity: 1.0,
+      iconAnchor: 'center',
+      iconHaloColor: _transparentMapHaloColor,
+      iconHaloWidth: 0.0,
+      zIndex: 99,
+    );
+    if (_playerPresenceSymbol == null) {
+      try {
+        _playerPresenceSymbol = await c.addSymbol(symbolOptions, const {
+          'type': 'playerPresence',
+        });
+      } catch (_) {}
+    } else {
+      try {
+        await c.updateSymbol(_playerPresenceSymbol!, symbolOptions);
+      } catch (_) {
+        _playerPresenceSymbol = null;
+      }
+      if (_playerPresenceSymbol == null) {
+        try {
+          _playerPresenceSymbol = await c.addSymbol(symbolOptions, const {
+            'type': 'playerPresence',
+          });
+        } catch (_) {}
+      }
+    }
+
+    final auraOptions = _playerPresenceAuraOptions(
+      geometry,
+      accuracyMeters: location.accuracy,
+    );
+    if (_playerPresenceAuraCircle != null) {
+      try {
+        await c.updateCircle(_playerPresenceAuraCircle!, auraOptions);
+      } catch (_) {
+        _playerPresenceAuraCircle = null;
+      }
+    }
+    if (_playerPresenceAuraCircle == null) {
+      try {
+        _playerPresenceAuraCircle = await c.addCircle(auraOptions, const {
+          'type': 'playerPresenceAura',
+        });
+      } catch (_) {}
+    }
+
+    final pulseOptions = _playerPresencePulseOptions(geometry);
+    if (_playerPresencePulseCircle != null) {
+      try {
+        await c.updateCircle(_playerPresencePulseCircle!, pulseOptions);
+      } catch (_) {
+        _playerPresencePulseCircle = null;
+      }
+    }
+    if (_playerPresencePulseCircle == null) {
+      try {
+        _playerPresencePulseCircle = await c.addCircle(pulseOptions, const {
+          'type': 'playerPresencePulse',
+        });
+      } catch (_) {}
+    }
+
+    if (heading == null) {
+      if (_playerPresenceConeFill != null) {
+        try {
+          await c.removeFills([_playerPresenceConeFill!]);
+        } catch (_) {}
+        _playerPresenceConeFill = null;
+      }
+      if (_playerPresenceConeLine != null) {
+        try {
+          await c.removeLines([_playerPresenceConeLine!]);
+        } catch (_) {}
+        _playerPresenceConeLine = null;
+      }
+    } else {
+      final speed = (location.speed ?? 0.0).clamp(0.0, 8.0).toDouble();
+      final ring = _buildPlayerFollowConeRing(
+        geometry,
+        heading,
+        speedMetersPerSecond: speed,
+      );
+      final fillOptions = FillOptions(
+        geometry: [ring],
+        fillColor: _playerPresenceConeFillColor,
+        fillOpacity: 0.16,
+        fillOutlineColor: _playerPresenceConeOutlineColor,
+      );
+      final lineOptions = LineOptions(
+        geometry: ring,
+        lineColor: _playerPresenceConeOutlineColor,
+        lineWidth: 2.0,
+        lineOpacity: 0.52,
+        lineJoin: 'round',
+        lineBlur: 0.1,
+      );
+
+      if (_playerPresenceConeFill != null) {
+        try {
+          await c.updateFill(_playerPresenceConeFill!, fillOptions);
+        } catch (_) {
+          _playerPresenceConeFill = null;
+        }
+      }
+      if (_playerPresenceConeFill == null) {
+        try {
+          final fills = await c.addFills(
+            [fillOptions],
+            [
+              {'type': 'playerPresenceCone'},
+            ],
+          );
+          if (fills.isNotEmpty) {
+            _playerPresenceConeFill = fills.first;
+          }
+        } catch (_) {}
+      }
+
+      if (_playerPresenceConeLine != null) {
+        try {
+          await c.updateLine(_playerPresenceConeLine!, lineOptions);
+        } catch (_) {
+          _playerPresenceConeLine = null;
+        }
+      }
+      if (_playerPresenceConeLine == null) {
+        try {
+          final lines = await c.addLines(
+            [lineOptions],
+            [
+              {'type': 'playerPresenceCone'},
+            ],
+          );
+          if (lines.isNotEmpty) {
+            _playerPresenceConeLine = lines.first;
+          }
+        } catch (_) {}
+      }
+    }
+
+    _lastPlayerPresenceLatLng = geometry;
+    if (heading != null) {
+      _lastResolvedPlayerHeading = heading;
+    }
+    _ensurePlayerPresencePulseTimer();
   }
 
   Future<void> _refreshMapContent() async {
@@ -2181,7 +2775,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  void _flyToLocation(double lat, double lng) {
+  void _flyToLocation(
+    double lat,
+    double lng, {
+    double zoom = _defaultMapFocusZoom,
+  }) {
     final c = _mapController;
     if (c == null ||
         !lat.isFinite ||
@@ -2192,18 +2790,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     try {
       c.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: LatLng(lat, lng), zoom: 16),
+          CameraPosition(target: LatLng(lat, lng), zoom: zoom),
         ),
         duration: const Duration(milliseconds: 500),
       );
     } catch (_) {}
   }
 
-  void _focusQuestPoI(PointOfInterest poi) async {
+  void _focusQuestPoI(
+    PointOfInterest poi, {
+    double zoom = _defaultMapFocusZoom,
+  }) async {
     final lat = double.tryParse(poi.lat) ?? 0.0;
     final lng = double.tryParse(poi.lng) ?? 0.0;
     final changedZone = _selectZoneForPoiIfDifferent(poi);
-    _flyToLocation(lat, lng);
+    _flyToLocation(lat, lng, zoom: zoom);
     unawaited(_pulsePoi(lat, lng));
     if (changedZone) return;
     final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
@@ -2215,11 +2816,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  void _previewTrackedQuestPoi(
+    PointOfInterest poi, {
+    double zoom = _trackedQuestOverlayFocusZoom,
+  }) {
+    final lat = double.tryParse(poi.lat) ?? 0.0;
+    final lng = double.tryParse(poi.lng) ?? 0.0;
+    _selectZoneForPoiIfDifferent(poi);
+    _flyToLocation(lat, lng, zoom: zoom);
+    unawaited(_pulsePoi(lat, lng));
+  }
+
   void _focusMainStoryLead(_MainStoryLead lead) async {
-    final lat = double.tryParse(lead.poi.lat) ?? 0.0;
-    final lng = double.tryParse(lead.poi.lng) ?? 0.0;
-    _flyToLocation(lat, lng);
-    _pulsePoi(lat, lng);
+    final focusLocation = _mainStoryLeadFocusLocation(lead);
+    if (focusLocation == null) {
+      return;
+    }
+    _selectZoneForMainStoryLeadIfDifferent(lead);
+    _flyToLocation(focusLocation.latitude, focusLocation.longitude);
+    unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
     final isolation = _mapMarkerIsolationForMainStoryLead(lead);
     if (lead.character != null) {
       await _runWithMapMarkerIsolation(isolation, () async {
@@ -2238,6 +2853,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  void _focusMainStoryLeadFromTrackedOverlay(
+    _MainStoryLead lead, {
+    double zoom = _trackedQuestOverlayFocusZoom,
+  }) {
+    final focusLocation = _mainStoryLeadFocusLocation(lead);
+    if (focusLocation == null) {
+      return;
+    }
+    _selectZoneForMainStoryLeadIfDifferent(lead);
+    _flyToLocation(focusLocation.latitude, focusLocation.longitude, zoom: zoom);
+    unawaited(
+      _pulseMainStoryLeadFocus(focusLocation.latitude, focusLocation.longitude),
+    );
+  }
+
   void _focusMainStoryLeadPoi(PointOfInterest poi) {
     Character? featuredCharacter;
     for (final character in poi.characters) {
@@ -2249,8 +2879,66 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _focusMainStoryLead(_MainStoryLead(poi: poi, character: featuredCharacter));
   }
 
-  void _focusQuestTurnIn(Quest quest) {
-    unawaited(_focusQuestTurnInFlow(quest));
+  void _focusQuestTurnIn(Quest quest, {double zoom = _defaultMapFocusZoom}) {
+    unawaited(_focusQuestTurnInFlow(quest, zoom: zoom));
+  }
+
+  void _returnToPlayerFromTrackedQuestOverlay() {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return;
+    _updateSelectedZoneFromLocation(force: true);
+    _flyToLocation(location.latitude, location.longitude);
+  }
+
+  LatLng? _mainStoryLeadFocusLocation(_MainStoryLead lead) {
+    final character = lead.character;
+    if (character != null) {
+      final characterLocation = _questNodeFetchCharacterLocation(character);
+      if (characterLocation != null) {
+        return characterLocation;
+      }
+    }
+    final lat = double.tryParse(lead.poi.lat);
+    final lng = double.tryParse(lead.poi.lng);
+    if (!_isValidMapCoordinate(lat, lng)) {
+      return null;
+    }
+    return LatLng(lat!, lng!);
+  }
+
+  bool _selectZoneForMainStoryLeadIfDifferent(_MainStoryLead lead) {
+    final focusLocation = _mainStoryLeadFocusLocation(lead);
+    if (focusLocation != null) {
+      return _selectZoneForCoordinatesIfDifferent(
+        focusLocation.latitude,
+        focusLocation.longitude,
+      );
+    }
+    return _selectZoneForPoiIfDifferent(lead.poi);
+  }
+
+  _FeaturedMainStoryPulseTarget? _featuredMainStoryPulseTarget(
+    QuestLogProvider questLog,
+  ) {
+    final lead = _currentZoneMainStoryLead(
+      questLog,
+      allowGlobalFallback: false,
+      includeKnownPins: false,
+      requireFreshZonePins: true,
+    );
+    if (lead == null) return null;
+
+    final character = lead.character;
+    if (character != null && _visibleCharacterPoints(character).isNotEmpty) {
+      final characterId = character.id.trim();
+      if (characterId.isNotEmpty) {
+        return _FeaturedMainStoryPulseTarget.character(characterId);
+      }
+    }
+
+    final poiId = lead.poi.id.trim();
+    if (poiId.isEmpty) return null;
+    return _FeaturedMainStoryPulseTarget.poi(poiId);
   }
 
   bool _selectZoneForQuestNodeIfDifferent(QuestNode node) {
@@ -2344,7 +3032,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
-  Future<void> _focusQuestTurnInFlow(Quest quest) async {
+  Future<void> _focusQuestTurnInFlow(
+    Quest quest, {
+    double zoom = _defaultMapFocusZoom,
+  }) async {
     final questReceiver = _questReceiverCharacterForQuest(quest);
     final questReceiverPoi = _questReceiverPoiForQuest(quest);
 
@@ -2359,12 +3050,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _selectZoneForPoiIfDifferent(questReceiverPoi);
       }
       if (focusLocation != null) {
-        _flyToLocation(focusLocation.latitude, focusLocation.longitude);
+        _flyToLocation(
+          focusLocation.latitude,
+          focusLocation.longitude,
+          zoom: zoom,
+        );
         unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
       } else if (questReceiverPoi != null) {
         final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
         final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
-        _flyToLocation(lat, lng);
+        _flyToLocation(lat, lng, zoom: zoom);
         unawaited(_pulsePoi(lat, lng));
       }
       return;
@@ -2377,17 +3072,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
     final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
     _selectZoneForPoiIfDifferent(questReceiverPoi);
-    _flyToLocation(lat, lng);
+    _flyToLocation(lat, lng, zoom: zoom);
     unawaited(_pulsePoi(lat, lng));
   }
 
-  void _focusQuestNode(QuestNode node) {
+  void _focusQuestNode(QuestNode node, {double zoom = _defaultMapFocusZoom}) {
     _selectZoneForQuestNodeIfDifferent(node);
     final poi = node.pointOfInterest;
     if (poi != null) {
       final lat = double.tryParse(poi.lat) ?? 0.0;
       final lng = double.tryParse(poi.lng) ?? 0.0;
-      _flyToLocation(lat, lng);
+      _flyToLocation(lat, lng, zoom: zoom);
       _pulsePoi(lat, lng);
       return;
     }
@@ -2395,7 +3090,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (fetchCharacter != null) {
       final focusLocation = _questNodeFetchCharacterLocation(fetchCharacter);
       if (focusLocation != null) {
-        _flyToLocation(focusLocation.latitude, focusLocation.longitude);
+        _flyToLocation(
+          focusLocation.latitude,
+          focusLocation.longitude,
+          zoom: zoom,
+        );
         _pulsePoi(focusLocation.latitude, focusLocation.longitude);
         return;
       }
@@ -2404,7 +3103,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (scenarioId.isNotEmpty) {
       final scenario = _scenarioById(scenarioId);
       if (scenario != null) {
-        _flyToLocation(scenario.latitude, scenario.longitude);
+        _flyToLocation(scenario.latitude, scenario.longitude, zoom: zoom);
         _pulsePoi(scenario.latitude, scenario.longitude);
         return;
       }
@@ -2413,7 +3112,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (expositionId.isNotEmpty) {
       final exposition = _expositionById(expositionId);
       if (exposition != null) {
-        _flyToLocation(exposition.latitude, exposition.longitude);
+        _flyToLocation(exposition.latitude, exposition.longitude, zoom: zoom);
         _pulsePoi(exposition.latitude, exposition.longitude);
         return;
       }
@@ -2422,7 +3121,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (encounterId.isNotEmpty) {
       final encounter = _monsterById(encounterId);
       if (encounter != null) {
-        _flyToLocation(encounter.latitude, encounter.longitude);
+        _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
         _pulsePoi(encounter.latitude, encounter.longitude);
         return;
       }
@@ -2431,7 +3130,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (monsterId.isNotEmpty) {
       final encounter = _monsterEncounterByMemberMonsterId(monsterId);
       if (encounter != null) {
-        _flyToLocation(encounter.latitude, encounter.longitude);
+        _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
         _pulsePoi(encounter.latitude, encounter.longitude);
         return;
       }
@@ -2441,7 +3140,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final challenge = _challengeById(challengeId);
       if (challenge != null) {
         final anchor = _challengeProximityAnchor(challenge);
-        _flyToLocation(anchor.latitude, anchor.longitude);
+        _flyToLocation(anchor.latitude, anchor.longitude, zoom: zoom);
         if (challenge.hasPolygon) {
           _pulsePolygon(challenge.polygonPoints);
         } else {
@@ -2452,7 +3151,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (node.polygon.isNotEmpty) {
       final center = _polygonCenter(node.polygon);
-      _flyToLocation(center.latitude, center.longitude);
+      _flyToLocation(center.latitude, center.longitude, zoom: zoom);
       _pulsePolygon(node.polygon);
     }
   }
@@ -2923,6 +3622,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  Future<void> _pulseMainStoryLeadFocus(double lat, double lng) async {
+    await _animateFeatheredPulse(
+      lat,
+      lng,
+      pulseKey: _pulseKeyForCoordinates('main_story_lead', lat, lng),
+      coreColor: _mainStoryPulseCoreColor,
+      mistColor: _mainStoryPulseMistColor,
+      ringColor: _mainStoryPulseRingColor,
+      coreStartRadius: 8,
+      coreEndRadius: 26,
+      mistStartRadius: 18,
+      mistEndRadius: 52,
+      ringStartRadius: 14,
+      ringEndRadius: 58,
+      maxCoreOpacity: 0.18,
+      maxMistOpacity: 0.16,
+      maxRingOpacity: 0.22,
+      initialStrokeWidth: 2.6,
+      steps: 14,
+      frameDelay: const Duration(milliseconds: 55),
+    );
+  }
+
   Future<void> _pulseDiscoveredPoi(double lat, double lng) async {
     await _animateFeatheredPulse(
       lat,
@@ -3242,6 +3964,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         status.isBaseKitStep ||
         status.hasActiveMonsterEncounter ||
         status.isPostMonsterDialogueStep ||
+        status.isPostBasePlacementDialogueStep ||
+        status.isHearthStep ||
         status.isPostBaseDialogueStep;
     if (tutorialStillActive) return;
 
@@ -3313,6 +4037,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       unawaited(_advanceTutorialAfterDialogue('post_monster_dialogue_closed'));
       return;
     }
+    if (status.shouldShowPostBasePlacementDialogue) {
+      unawaited(
+        _showTutorialProgressDialogue(status, stage: 'post_base_placement'),
+      );
+      return;
+    }
+    if (status.isPostBasePlacementDialogueStep) {
+      unawaited(
+        _advanceTutorialAfterDialogue('post_base_placement_dialogue_closed'),
+      );
+      return;
+    }
     if (status.shouldShowPostBaseDialogue) {
       unawaited(_showTutorialProgressDialogue(status, stage: 'post_base'));
       return;
@@ -3353,13 +4089,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     final rawDialogue = stage == 'post_base'
         ? status.postBaseDialogue
+        : stage == 'post_base_placement'
+        ? status.postBasePlacementDialogue
         : status.postMonsterDialogue;
     if (rawDialogue.isEmpty) {
-      if (stage == 'post_base') {
-        await _completeTutorialAfterBaseDialogue();
-      } else {
-        await _advanceTutorialAfterDialogue('post_monster_dialogue_closed');
-      }
+      await _completeTutorialDialogueStage(stage);
       return;
     }
 
@@ -3393,13 +4127,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               finalStepLabel: 'Continue',
               onClose: () async {
                 Navigator.of(dialogContext).pop();
-                if (stage == 'post_base') {
-                  await _completeTutorialAfterBaseDialogue();
-                } else {
-                  await _advanceTutorialAfterDialogue(
-                    'post_monster_dialogue_closed',
-                  );
-                }
+                await _completeTutorialDialogueStage(stage);
               },
             ),
           );
@@ -3409,6 +4137,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (mounted) {
         setState(() => _tutorialDialogVisible = false);
       }
+    }
+  }
+
+  Future<void> _completeTutorialDialogueStage(String stage) async {
+    switch (stage) {
+      case 'post_base':
+        await _completeTutorialAfterBaseDialogue();
+        return;
+      case 'post_base_placement':
+        await _advanceTutorialAfterDialogue(
+          'post_base_placement_dialogue_closed',
+        );
+        return;
+      default:
+        await _advanceTutorialAfterDialogue('post_monster_dialogue_closed');
     }
   }
 
@@ -3610,11 +4353,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _challenges = [];
         });
       }
+      _setLoadingZoneTransition(null);
       return;
     }
     final zoneChanged = _renderedTreasureChestZoneId != zoneId;
     final hasZoneSnapshot = _hasZoneBaseContentSnapshot(zoneId);
     final hasZonePinsSnapshot = _hasZonePinContentSnapshot(zoneId);
+    _setLoadingZoneTransition(
+      zoneChanged && !(hasZoneSnapshot && hasZonePinsSnapshot) ? zoneId : null,
+    );
     if (zoneChanged &&
         hasZoneSnapshot &&
         hasZonePinsSnapshot &&
@@ -3623,17 +4370,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _markersAdded &&
         !_shouldSuppressNormalMapPinsForTutorial &&
         !_tutorialNormalPinsRevealInProgress) {
-      setState(() {
-        _pois = [];
-        _characters = [];
-        _treasureChests = [];
-        _healingFountains = [];
-        _resources = [];
-        _scenarios = [];
-        _expositions = [];
-        _monsters = [];
-        _challenges = [];
-      });
+      _applyCachedZoneSnapshot(zoneId);
       await _refreshZoneScopedMapPins();
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
     }
@@ -3810,29 +4547,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           .toList();
       final challenges = challengeById.values.toList();
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
-      setState(() {
-        _pois = pinContent.pointsOfInterest;
-        _characters = pinContent.characters;
-        _treasureChests = chests
+      _applyZoneContent(
+        zoneId,
+        pinContent: pinContent,
+        treasureChests: chests
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
-            .toList();
-        _healingFountains = healingFountains;
-        _resources = resources
+            .toList(growable: false),
+        healingFountains: healingFountains,
+        resources: resources
             .where(
               (resource) =>
                   !resource.gatheredByUser &&
                   !_gatheredResourceIds.contains(resource.id),
             )
-            .toList(growable: false);
-        _scenarios = scenarios;
-        _expositions = expositions;
-        _monsters = monsters;
-        _challenges = challenges;
-      });
-      _renderedTreasureChestZoneId = zoneId;
+            .toList(growable: false),
+        scenarios: scenarios,
+        expositions: expositions,
+        monsters: monsters,
+        challenges: challenges,
+      );
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshZoneScopedMapPins();
       }
+      _clearLoadingZoneTransition(zoneId, requestVersion);
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
       if (mounted && requestVersion == _zoneContentRequestVersion) {
@@ -3852,7 +4589,114 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           await _refreshZoneScopedMapPins();
         }
       }
+      _clearLoadingZoneTransition(zoneId, requestVersion);
     }
+  }
+
+  void _applyZoneContent(
+    String zoneId, {
+    required _ZonePinContent pinContent,
+    required List<TreasureChest> treasureChests,
+    required List<HealingFountain> healingFountains,
+    required List<ResourceNode> resources,
+    required List<Scenario> scenarios,
+    required List<Exposition> expositions,
+    required List<MonsterEncounter> monsters,
+    required List<Challenge> challenges,
+  }) {
+    void update() {
+      _pois = pinContent.pointsOfInterest;
+      _characters = pinContent.characters;
+      _treasureChests = treasureChests;
+      _healingFountains = healingFountains;
+      _resources = resources;
+      _scenarios = scenarios;
+      _expositions = expositions;
+      _monsters = monsters;
+      _challenges = challenges;
+      _renderedTreasureChestZoneId = zoneId;
+    }
+
+    if (mounted) {
+      setState(update);
+    } else {
+      update();
+    }
+  }
+
+  void _setLoadingZoneTransition(String? zoneId) {
+    final normalizedZoneId = zoneId?.trim();
+    if (_loadingZoneTransitionZoneId == normalizedZoneId) return;
+    if (mounted) {
+      setState(() => _loadingZoneTransitionZoneId = normalizedZoneId);
+    } else {
+      _loadingZoneTransitionZoneId = normalizedZoneId;
+    }
+  }
+
+  void _clearLoadingZoneTransition(String zoneId, int requestVersion) {
+    if (requestVersion != _zoneContentRequestVersion) return;
+    if (_loadingZoneTransitionZoneId != zoneId) return;
+    _setLoadingZoneTransition(null);
+  }
+
+  void _applyCachedZoneSnapshot(String zoneId) {
+    final normalizedZoneId = zoneId.trim();
+    if (normalizedZoneId.isEmpty) return;
+    final cachedBase = _zoneBaseContentCache[normalizedZoneId];
+    final cachedPins = _zonePinContentCache[normalizedZoneId];
+    if (cachedBase == null || cachedPins == null) return;
+    cachedBase.touch();
+    cachedPins.touch();
+
+    final currentQuestScenarioIds = _currentQuestScenarioIds();
+    final currentQuestMonsterIds = _currentQuestMonsterIds();
+    final activeTutorialScenarioId =
+        _tutorialStatus != null && _tutorialStatus!.hasActiveScenario
+        ? _tutorialStatus!.scenarioId?.trim() ?? ''
+        : '';
+    final activeTutorialMonsterEncounterId =
+        _tutorialStatus != null && _tutorialStatus!.hasActiveMonsterEncounter
+        ? _tutorialStatus!.monsterEncounterId?.trim() ?? ''
+        : '';
+    final content = cachedBase.content;
+    _applyZoneContent(
+      normalizedZoneId,
+      pinContent: cachedPins.content,
+      treasureChests: content.treasureChests
+          .where((chest) => !_openedTreasureChestIds.contains(chest.id))
+          .toList(growable: false),
+      healingFountains: content.healingFountains,
+      resources: content.resources
+          .where(
+            (resource) =>
+                !resource.gatheredByUser &&
+                !_gatheredResourceIds.contains(resource.id),
+          )
+          .toList(growable: false),
+      scenarios: content.scenarios
+          .where(
+            (scenario) =>
+                currentQuestScenarioIds.contains(scenario.id) ||
+                scenario.id == activeTutorialScenarioId ||
+                (!scenario.attemptedByUser &&
+                    !_resolvedScenarioIds.contains(scenario.id) &&
+                    !_resolvedScenarioSignatures.contains(
+                      _scenarioSignature(scenario),
+                    )),
+          )
+          .toList(growable: false),
+      expositions: content.expositions,
+      monsters: content.monsters
+          .where(
+            (monster) =>
+                currentQuestMonsterIds.contains(monster.id) ||
+                monster.id == activeTutorialMonsterEncounterId ||
+                !_defeatedMonsterIds.contains(monster.id),
+          )
+          .toList(growable: false),
+      challenges: content.challenges,
+    );
   }
 
   Future<void> _refreshZoneScopedMapPins() async {
@@ -4097,30 +4941,34 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     ).take(_zoneBaseContentWarmCount).toList(growable: false);
     for (final zoneId in warmIds) {
       if (zoneId.isEmpty) continue;
+      final pendingFetches = <Future<void>>[];
       final cached = _zoneBaseContentCache[zoneId];
       if (cached != null && cached.isFresh) {
         cached.touch();
       } else {
-        try {
-          await _fetchZoneBaseContent(
+        pendingFetches.add(
+          _fetchZoneBaseContent(
             zoneId,
             svc: svc,
             forceRefresh: cached != null,
-          );
-        } catch (_) {}
+          ).then((_) {}).catchError((_) {}),
+        );
       }
       final pinCached = _zonePinContentCache[zoneId];
       if (pinCached != null && pinCached.isFresh) {
         pinCached.touch();
-        continue;
-      }
-      try {
-        await _fetchZonePinContent(
-          zoneId,
-          svc: svc,
-          forceRefresh: pinCached != null,
+      } else {
+        pendingFetches.add(
+          _fetchZonePinContent(
+            zoneId,
+            svc: svc,
+            forceRefresh: pinCached != null,
+          ).then((_) {}).catchError((_) {}),
         );
-      } catch (_) {}
+      }
+      if (pendingFetches.isNotEmpty) {
+        await Future.wait(pendingFetches);
+      }
     }
     _trimZoneBaseContentCache(pinnedZoneIds: warmIds.toSet());
     _trimZonePinContentCache(pinnedZoneIds: warmIds.toSet());
@@ -7041,6 +7889,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             unawaited(_pulseDiscoveredPoi(lat, lng));
           }
         },
+        onDiscoveryCelebrationsComplete: () {
+          _runAfterCompletionModals(() {
+            unawaited(_showPointOfInterestPanel(poi, true));
+          });
+        },
       ),
     );
   }
@@ -7057,19 +7910,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         poiId,
         isQuestCurrent: questPoiIds.contains(poiId),
       );
-    }
-  }
-
-  Future<void> _refreshQuestAvailabilityMarkers() async {
-    if (_questAvailabilityRefreshInFlight) return;
-    if (!_styleLoaded || _mapController == null || !_markersAdded) return;
-    _questAvailabilityRefreshInFlight = true;
-    try {
-      await _loadTreasureChestsForSelectedZone(forceRefreshZonePins: true);
-    } catch (_) {
-      // Best-effort refresh; ignore failures.
-    } finally {
-      _questAvailabilityRefreshInFlight = false;
     }
   }
 
@@ -7099,6 +7939,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final questLog = context.read<QuestLogProvider>();
       final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
       final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
+      final featuredMainStoryPulseTarget = _featuredMainStoryPulseTarget(
+        questLog,
+      );
       final filters = context.read<QuestFilterProvider>();
       final tags = context.read<TagsProvider>();
       final tagFilterActive =
@@ -7124,6 +7967,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _poiSymbolById.clear();
       _questPoiHighlightSymbols.clear();
       _questPoiHighlightCircles.clear();
+      _mainStoryPoiHighlightSymbols.clear();
+      _mainStoryPoiHighlightCircles.clear();
       _questPoiPulseTimer?.cancel();
       _questPoiPulseTimer = null;
       if (_characterSymbols.isNotEmpty) {
@@ -7359,6 +8204,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final isQuestCurrent = questPoiIds.contains(poi.id);
         final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
         final shouldPulseLikeQuest = trackedQuestPoiIds.contains(poi.id);
+        final shouldPulseLikeMainStory =
+            featuredMainStoryPulseTarget?.poiId == poi.id;
         final hasMapContent = _poiHasMapContent(
           poi,
           isQuestCurrent: isQuestCurrent,
@@ -7422,6 +8269,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               poiId: poi.id,
               isQuestCurrent: isQuestCurrent,
               shouldPulseLikeQuest: shouldPulseLikeQuest,
+              shouldPulseLikeMainStory: shouldPulseLikeMainStory,
               options: SymbolOptions(
                 geometry: LatLng(lat, lng),
                 iconImage: versionedId,
@@ -7499,6 +8347,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
         final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
         final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+        final shouldPulseLikeMainStory =
+            featuredMainStoryPulseTarget?.characterId == ch.id;
         final useAccentMarker =
             hasQuestAvailable || shouldUseTurnInHalo || hasMainStoryAccent;
         Uint8List? markerBytes;
@@ -7559,7 +8409,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             if (!mounted) return;
             _characterSymbols.add(sym);
             (_characterSymbolsById[ch.id] ??= []).add(sym);
-            _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
+            _setPoiPulseHighlightState(
+              sym,
+              shouldPulseLikeQuest: shouldPulseLikeQuest,
+              shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+            );
           }
           continue;
         }
@@ -7676,9 +8530,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (result == null) continue;
         _poiSymbols.add(result.symbol);
         _poiSymbolById[result.request.poiId] = result.symbol;
-        _setQuestPoiHighlight(
+        _setPoiPulseHighlightState(
           result.symbol,
-          result.request.shouldPulseLikeQuest,
+          shouldPulseLikeQuest: result.request.shouldPulseLikeQuest,
+          shouldPulseLikeMainStory: result.request.shouldPulseLikeMainStory,
         );
       }
     }
@@ -7740,6 +8595,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final shouldPulseLikeQuest = trackedQuestPoiIds.contains(
       result.update.poi.id,
     );
+    final shouldPulseLikeMainStory =
+        _featuredMainStoryPulseTarget(
+          context.read<QuestLogProvider>(),
+        )?.poiId ==
+        result.update.poi.id;
     final hasMapContentNow = _poiHasMapContent(
       result.update.poi,
       isQuestCurrent: isQuestCurrentNow,
@@ -7787,7 +8647,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted || markerGeneration != _poiMarkerGeneration) return;
         _poiSymbols.add(newSym);
         _poiSymbolById[result.update.poi.id] = newSym;
-        _setQuestPoiHighlight(newSym, shouldPulseLikeQuest);
+        _setPoiPulseHighlightState(
+          newSym,
+          shouldPulseLikeQuest: shouldPulseLikeQuest,
+          shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+        );
         await _applyMapMarkerIsolationIfNeeded();
       } catch (_) {}
       return;
@@ -7814,7 +8678,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           zIndex: isQuestCurrentNow ? 4 : 2,
         ),
       );
-      _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
+      _setPoiPulseHighlightState(
+        sym,
+        shouldPulseLikeQuest: shouldPulseLikeQuest,
+        shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+      );
     } catch (_) {}
     await _applyMapMarkerIsolationIfNeeded();
   }
@@ -8747,6 +9615,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _setQuestPoiHighlight(Symbol sym, bool enabled) {
+    _mainStoryPoiHighlightSymbols.remove(sym);
     _questPoiHighlightSymbols.remove(sym);
     if (enabled) {
       _questPoiHighlightSymbols.add(sym);
@@ -8755,11 +9624,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _setQuestCircleHighlight(Circle circle, bool enabled) {
+    _mainStoryPoiHighlightCircles.remove(circle);
     _questPoiHighlightCircles.remove(circle);
     if (enabled) {
       _questPoiHighlightCircles.add(circle);
     }
     _ensureQuestPoiPulseTimer();
+  }
+
+  void _setMainStoryPoiHighlight(Symbol sym, bool enabled) {
+    _questPoiHighlightSymbols.remove(sym);
+    _mainStoryPoiHighlightSymbols.remove(sym);
+    if (enabled) {
+      _mainStoryPoiHighlightSymbols.add(sym);
+    }
+    _ensureQuestPoiPulseTimer();
+  }
+
+  void _setPoiPulseHighlightState(
+    Symbol sym, {
+    required bool shouldPulseLikeQuest,
+    required bool shouldPulseLikeMainStory,
+  }) {
+    if (shouldPulseLikeMainStory) {
+      _setMainStoryPoiHighlight(sym, true);
+      return;
+    }
+    _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
   }
 
   Future<void> _revealLoadedPins(MapLibreMapController c) async {
@@ -8773,62 +9664,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       discoveries: context.read<DiscoveriesProvider>(),
       mapContentPoiIds: _buildPoiIdsWithMapContent(),
     );
-  }
-
-  Future<void> _hideZoneScopedPins() async {
-    final c = _mapController;
-    if (c == null || !_styleLoaded || !_markersAdded) return;
-
-    for (final entry in _poiSymbolById.entries) {
-      try {
-        await c.updateSymbol(
-          entry.value,
-          const SymbolOptions(iconOpacity: 0.0),
-        );
-      } catch (_) {}
-    }
-
-    for (final ch in _characters) {
-      final symbols = _characterSymbolsById[ch.id];
-      if (symbols == null) continue;
-      for (final symbol in symbols) {
-        try {
-          await c.updateSymbol(symbol, const SymbolOptions(iconOpacity: 0.0));
-        } catch (_) {}
-      }
-    }
-
-    Future<void> hideSymbols(Iterable<Symbol> symbols) async {
-      for (final symbol in symbols) {
-        try {
-          await c.updateSymbol(symbol, const SymbolOptions(iconOpacity: 0.0));
-        } catch (_) {}
-      }
-    }
-
-    Future<void> hideCircles(Iterable<Circle> circles) async {
-      for (final circle in circles) {
-        try {
-          await c.updateCircle(circle, const CircleOptions(circleOpacity: 0.0));
-        } catch (_) {}
-      }
-    }
-
-    await hideSymbols(_chestSymbolById.values);
-    await hideCircles(_chestCircleById.values);
-    await hideSymbols(_healingFountainSymbolById.values);
-    await hideCircles(_healingFountainCircleById.values);
-    await hideSymbols(_resourceSymbolById.values);
-    await hideCircles(_resourceCircleById.values);
-    await hideSymbols(_scenarioSymbolById.values);
-    await hideCircles(_scenarioCircleById.values);
-    await hideSymbols(_expositionSymbolById.values);
-    await hideCircles(_expositionCircleById.values);
-    await hideSymbols(_monsterSymbolById.values);
-    await hideCircles(_monsterCircleById.values);
-    await hideSymbols(_challengeSymbolById.values);
-    await hideCircles(_challengeCircleById.values);
-    await _clearChallengePolygonOverlays();
   }
 
   Future<void> _removePoiSymbol(String poiId) async {
@@ -8854,8 +9689,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final opacity = circle.options.circleOpacity ?? 1.0;
       return geometry == null || opacity <= 0.05;
     });
+    _mainStoryPoiHighlightSymbols.removeWhere((symbol) {
+      final geometry = symbol.options.geometry;
+      final opacity = symbol.options.iconOpacity ?? 1.0;
+      return geometry == null || opacity <= 0.05;
+    });
+    _mainStoryPoiHighlightCircles.removeWhere((circle) {
+      final geometry = circle.options.geometry;
+      final opacity = circle.options.circleOpacity ?? 1.0;
+      return geometry == null || opacity <= 0.05;
+    });
     if (_questPoiHighlightSymbols.isEmpty &&
-        _questPoiHighlightCircles.isEmpty) {
+        _questPoiHighlightCircles.isEmpty &&
+        _mainStoryPoiHighlightSymbols.isEmpty &&
+        _mainStoryPoiHighlightCircles.isEmpty) {
       _questPoiPulseTimer?.cancel();
       _questPoiPulseTimer = null;
       return;
@@ -8876,6 +9723,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final opacity = circle.options.circleOpacity ?? 1.0;
         if (geometry == null || opacity <= 0.05) continue;
         unawaited(_pulsePoi(geometry.latitude, geometry.longitude));
+      }
+      final mainStorySymbolSnapshot = List<Symbol>.from(
+        _mainStoryPoiHighlightSymbols,
+      );
+      for (final symbol in mainStorySymbolSnapshot) {
+        final geometry = symbol.options.geometry;
+        final opacity = symbol.options.iconOpacity ?? 1.0;
+        if (geometry == null || opacity <= 0.05) continue;
+        unawaited(
+          _pulseMainStoryLeadFocus(geometry.latitude, geometry.longitude),
+        );
+      }
+      final mainStoryCircleSnapshot = List<Circle>.from(
+        _mainStoryPoiHighlightCircles,
+      );
+      for (final circle in mainStoryCircleSnapshot) {
+        final geometry = circle.options.geometry;
+        final opacity = circle.options.circleOpacity ?? 1.0;
+        if (geometry == null || opacity <= 0.05) continue;
+        unawaited(
+          _pulseMainStoryLeadFocus(geometry.latitude, geometry.longitude),
+        );
       }
     }
 
@@ -8925,6 +9794,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final shouldPulseLikeQuest = _trackedQuestPoiIdsForPulse(
       questLog,
     ).contains(poi.id);
+    final shouldPulseLikeMainStory =
+        _featuredMainStoryPulseTarget(questLog)?.poiId == poi.id;
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
     final hasMapContent = _poiHasMapContent(
       poi,
@@ -9035,7 +9906,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _poiSymbols.add(newSym);
         _poiSymbolById[poi.id] = newSym;
-        _setQuestPoiHighlight(newSym, shouldPulseLikeQuest);
+        _setPoiPulseHighlightState(
+          newSym,
+          shouldPulseLikeQuest: shouldPulseLikeQuest,
+          shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+        );
         await _applyMapMarkerIsolationIfNeeded();
       } catch (_) {}
       return;
@@ -9059,7 +9934,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           zIndex: isQuestCurrent ? 4 : 2,
         ),
       );
-      _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
+      _setPoiPulseHighlightState(
+        sym,
+        shouldPulseLikeQuest: shouldPulseLikeQuest,
+        shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+      );
     } catch (_) {}
     await _applyMapMarkerIsolationIfNeeded();
   }
@@ -9176,6 +10055,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
     final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
     final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+    final shouldPulseLikeMainStory =
+        _featuredMainStoryPulseTarget(questLog)?.characterId == ch.id;
     final useAccentMarker =
         hasQuestAvailable || shouldUseTurnInHalo || hasMainStoryAccent;
     Uint8List? imageBytes;
@@ -9255,7 +10136,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _characterSymbols.add(sym);
         (_characterSymbolsById[ch.id] ??= []).add(sym);
-        _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
+        _setPoiPulseHighlightState(
+          sym,
+          shouldPulseLikeQuest: shouldPulseLikeQuest,
+          shouldPulseLikeMainStory: shouldPulseLikeMainStory,
+        );
       } catch (_) {}
     }
     await _applyMapMarkerIsolationIfNeeded();
@@ -9980,7 +10865,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  void _updateSelectedZoneFromLocation() {
+  void _updateSelectedZoneFromLocation({bool force = false}) {
     final location = context.read<LocationProvider>().location;
     if (location == null || _zones.isEmpty) return;
 
@@ -9989,6 +10874,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       location.latitude,
       location.longitude,
     );
+    if (force) {
+      zoneProvider.unlockSelection();
+    }
     zoneProvider.setSelectedZone(zone);
   }
 
@@ -10070,28 +10958,72 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     const overlayButtonSize = 48.0;
     const overlayButtonSpacing = 12.0;
     const overlayButtonCount = 3;
-    const zoneWidgetCollapsedHeight = 40.0;
-    const zoneWidgetBottomPadding = 24.0;
+    const topOverlayLaneGap = 20.0;
+    const partyStripTileWidth = 58.0;
+    const partyStripToggleGap = 2.0;
+    const partyStripToggleWidth = 26.0;
+    const partyStripHorizontalPadding = 12.0;
+    const trackedQuestOverlayCollapsedHeight = 48.0;
+    const bottomOverlayPadding = 24.0;
+    const zoneLoadingSpinnerSize = 28.0;
     const polygonActionGap = 12.0;
     const stackedPolygonActionSpacing = 56.0;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final overlayButtonStackHeight =
         overlayButtonSize * overlayButtonCount +
         overlayButtonSpacing * (overlayButtonCount - 1);
-    final mainStoryLead = _currentZoneMainStoryLead(questLog);
-    final polygonActionBottom =
-        MediaQuery.paddingOf(context).bottom +
-        zoneWidgetBottomPadding +
-        zoneWidgetCollapsedHeight +
-        polygonActionGap;
+    final mainStoryLead = _currentZoneMainStoryLead(
+      questLog,
+      allowGlobalFallback: false,
+      includeKnownPins: false,
+      requireFreshZonePins: true,
+    );
     final authUser = context.watch<AuthProvider>().user;
-    context.watch<PartyProvider>().party;
+    final party = context.watch<PartyProvider>().party;
     final hasPartyMapStrip = authUser != null;
+    final partyMemberCount = authUser == null
+        ? 0
+        : <String>{
+            authUser.id,
+            if (party != null)
+              ...party.members
+                  .map((member) => member.id)
+                  .where((id) => id.isNotEmpty),
+          }.length;
+    final hasExpandablePartyStrip = partyMemberCount > 1;
+    final partyStripClosedWidth = hasPartyMapStrip
+        ? partyStripTileWidth +
+              (hasExpandablePartyStrip
+                  ? partyStripToggleGap + partyStripToggleWidth
+                  : 0.0) +
+              partyStripHorizontalPadding
+        : 0.0;
+    final zoneWidgetLeftInset = 16.0 + overlayButtonSize + topOverlayLaneGap;
+    final zoneWidgetRightInset =
+        16.0 + partyStripClosedWidth + topOverlayLaneGap;
+    final zoneWidgetAvailableWidth = math.max(
+      0.0,
+      screenWidth - zoneWidgetLeftInset - zoneWidgetRightInset,
+    );
     final hasTrackedQuestOverlay =
         mainStoryLead != null ||
         questLog.quests.any(
           (quest) => questLog.trackedQuestIds.contains(quest.id),
         );
-    final selectedZoneId = context.watch<ZoneProvider>().selectedZone?.id;
+    final polygonActionBottom =
+        MediaQuery.paddingOf(context).bottom +
+        bottomOverlayPadding +
+        (hasTrackedQuestOverlay ? trackedQuestOverlayCollapsedHeight : 0) +
+        polygonActionGap;
+    final selectedZone = context.watch<ZoneProvider>().selectedZone;
+    final selectedZoneId = selectedZone?.id;
+    final loadingZoneSpinnerDockHeight = hasTrackedQuestOverlay
+        ? trackedQuestOverlayCollapsedHeight
+        : zoneLoadingSpinnerSize;
+    final loadingZoneSpinnerBottom =
+        MediaQuery.paddingOf(context).bottom +
+        bottomOverlayPadding +
+        ((loadingZoneSpinnerDockHeight - zoneLoadingSpinnerSize) / 2);
     _maybeAutoOpenTrackedQuestsForMainStoryLead(mainStoryLead, selectedZoneId);
 
     Quest? polygonQuest;
@@ -10178,35 +11110,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
-          Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (event) {
-              if (kDebugMode) {
-                debugPrint(
-                  'SinglePlayer: map pointer down at ${event.position}',
-                );
-              }
+          MapLibreMap(
+            key: ValueKey(_mapKey),
+            initialCameraPosition: initialPosition,
+            styleString: _stamenWatercolorStyle,
+            gestureRecognizers: _mapGestureRecognizers,
+            scrollGesturesEnabled: true,
+            zoomGesturesEnabled: true,
+            rotateGesturesEnabled: true,
+            tiltGesturesEnabled: true,
+            onMapCreated: (c) {
+              debugPrint('SinglePlayer: map created');
+              _mapController = c;
+              _setupTapHandlers(c);
             },
-            child: MapLibreMap(
-              key: ValueKey(_mapKey),
-              initialCameraPosition: initialPosition,
-              styleString: _stamenWatercolorStyle,
-              minMaxZoomPreference: const MinMaxZoomPreference(null, 16),
-              gestureRecognizers: _mapGestureRecognizers,
-              scrollGesturesEnabled: true,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: true,
-              tiltGesturesEnabled: true,
-              onMapCreated: (c) {
-                debugPrint('SinglePlayer: map created');
-                _mapController = c;
-                _setupTapHandlers(c);
-              },
-              onMapClick: _handleMapClick,
-              onStyleLoadedCallback: _onMapStyleLoaded,
-              myLocationEnabled: true,
-              compassEnabled: false,
-            ),
+            onMapClick: _handleMapClick,
+            onStyleLoadedCallback: _onMapStyleLoaded,
+            myLocationEnabled: false,
+            compassEnabled: false,
           ),
           if (!_styleLoaded && !_mapLoadFailed)
             Positioned.fill(
@@ -10364,43 +11285,59 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
               ),
-            if (!_isPlacingBase && (hasPartyMapStrip || hasTrackedQuestOverlay))
+            if (!_isPlacingBase)
+              Positioned(
+                left: 16,
+                bottom: loadingZoneSpinnerBottom,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: _loadingZoneTransitionZoneId == null
+                        ? const SizedBox.shrink(
+                            key: ValueKey('zone_transition_hidden'),
+                          )
+                        : _buildZoneTransitionSpinner(
+                            key: ValueKey(_loadingZoneTransitionZoneId),
+                          ),
+                  ),
+                ),
+              ),
+            if (!_isPlacingBase)
+              Positioned(
+                top: 0,
+                left: zoneWidgetLeftInset,
+                right: zoneWidgetRightInset,
+                child: PointerInterceptor(
+                  child: SafeArea(
+                    bottom: false,
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: zoneWidgetAvailableWidth,
+                        ),
+                        child: ZoneWidget(
+                          controller: _zoneWidgetController,
+                          expandedHeight: 260,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (!_isPlacingBase && hasPartyMapStrip)
               Positioned(
                 top: 0,
                 right: 16,
                 child: PointerInterceptor(
                   child: SafeArea(
                     bottom: false,
-                    child: Align(
+                    child: const Align(
                       alignment: Alignment.topRight,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (hasPartyMapStrip) const PartyMemberMapStrip(),
-                          if (hasPartyMapStrip && hasTrackedQuestOverlay)
-                            const SizedBox(height: 20),
-                          if (hasTrackedQuestOverlay)
-                            TrackedQuestsOverlay(
-                              controller: _trackedQuestsController,
-                              onFocusPoI: _focusQuestPoI,
-                              onFocusNode: _focusQuestNode,
-                              onFocusTurnInQuest: _focusQuestTurnIn,
-                              onOpenQuestDetails: _openQuestLogForQuest,
-                              resolveQuestReceiverCharacter:
-                                  _questReceiverCharacterForQuest,
-                              resolveQuestReceiverPoi:
-                                  _questReceiverPoiForQuest,
-                              featuredMainStoryPoi: mainStoryLead?.poi,
-                              featuredMainStoryQuestGiverName:
-                                  mainStoryLead?.character?.name,
-                              onFocusFeaturedMainStoryLead:
-                                  mainStoryLead == null
-                                  ? null
-                                  : () => _focusMainStoryLead(mainStoryLead),
-                            ),
-                        ],
-                      ),
+                      child: PartyMemberMapStrip(),
                     ),
                   ),
                 ),
@@ -10506,7 +11443,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
                 ),
               ),
-            if (!_isPlacingBase)
+            if (!_isPlacingBase && hasTrackedQuestOverlay)
               Positioned(
                 left: 0,
                 right: 0,
@@ -10515,13 +11452,59 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   child: SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
+                      padding: const EdgeInsets.only(
+                        bottom: bottomOverlayPadding,
+                      ),
                       child: Align(
                         alignment: Alignment.bottomCenter,
-                        child: ZoneWidget(
-                          controller: _zoneWidgetController,
+                        child: TrackedQuestsOverlay(
+                          controller: _trackedQuestsController,
                           expandUpwards: true,
-                          expandedHeight: 260,
+                          collapsedHeight: trackedQuestOverlayCollapsedHeight,
+                          onFocusPoI: (poi) => _focusQuestPoI(
+                            poi,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          onFocusNode: (node) => _focusQuestNode(
+                            node,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          onFocusTurnInQuest: (quest) => _focusQuestTurnIn(
+                            quest,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          onPreviewPoI: (poi) => _previewTrackedQuestPoi(
+                            poi,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          onPreviewNode: (node) => _focusQuestNode(
+                            node,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          onPreviewTurnInQuest: (quest) => _focusQuestTurnIn(
+                            quest,
+                            zoom: _trackedQuestOverlayFocusZoom,
+                          ),
+                          resolveQuestReceiverCharacter:
+                              _questReceiverCharacterForQuest,
+                          resolveQuestReceiverPoi: _questReceiverPoiForQuest,
+                          featuredMainStoryPoi: mainStoryLead?.poi,
+                          featuredMainStoryQuestGiverName:
+                              mainStoryLead?.character?.name,
+                          onFocusFeaturedMainStoryLead: mainStoryLead == null
+                              ? null
+                              : () => _focusMainStoryLeadFromTrackedOverlay(
+                                  mainStoryLead,
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
+                          onPreviewFeaturedMainStoryLead: mainStoryLead == null
+                              ? null
+                              : () => _focusMainStoryLeadFromTrackedOverlay(
+                                  mainStoryLead,
+                                  zoom: _trackedQuestOverlayFocusZoom,
+                                ),
+                          onCloseOverlay:
+                              _returnToPlayerFromTrackedQuestOverlay,
                         ),
                       ),
                     ),
@@ -11070,6 +12053,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoneTransitionSpinner({Key? key}) {
+    return PaperTexture(
+      key: key,
+      borderRadius: BorderRadius.circular(999),
+      opacity: 0.08,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6E8C9).withValues(alpha: 0.94),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFD0AE6B).withValues(alpha: 0.9),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(7),
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8A5A14)),
           ),
         ),
       ),
@@ -13186,70 +14202,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  void _openQuestLogForQuest(Quest quest) {
-    _showQuestLog(context, initialSelectedQuest: quest);
-  }
-
-  void _showQuestLog(BuildContext context, {Quest? initialSelectedQuest}) {
-    _refreshQuestLog();
-    context.read<TagsProvider>().refresh();
-    final featuredMainStoryLead = _currentZoneMainStoryLead(
-      context.read<QuestLogProvider>(),
-    );
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.3,
-        maxChildSize: 0.95,
-        builder: (_, scrollController) => PaperSheet(
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Quest Log',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: QuestLogPanel(
-                  onClose: () => Navigator.of(context).pop(),
-                  onFocusPoI: _focusQuestPoI,
-                  onFocusNode: _focusQuestNode,
-                  onFocusTurnInQuest: _focusQuestTurnIn,
-                  resolveQuestReceiverCharacter:
-                      _questReceiverCharacterForQuest,
-                  resolveQuestReceiverPoi: _questReceiverPoiForQuest,
-                  initialSelectedQuest: initialSelectedQuest,
-                  featuredMainStoryPoi: featuredMainStoryLead?.poi,
-                  featuredMainStoryQuestGiverName:
-                      featuredMainStoryLead?.character?.name,
-                  onFocusFeaturedMainStoryLead: _focusMainStoryLeadPoi,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showLog(BuildContext context) {
     context.read<LogProvider>().refresh();
     showModalBottomSheet(
@@ -13329,6 +14281,7 @@ class _OverlayButton extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
     final borderColor = theme.colorScheme.outlineVariant;
+    final foregroundColor = theme.colorScheme.onSurface;
     return Material(
       color: surfaceColor,
       shape: RoundedRectangleBorder(
@@ -13346,9 +14299,9 @@ class _OverlayButton extends StatelessWidget {
             child: isBusy
                 ? CircularProgressIndicator(
                     strokeWidth: 2.4,
-                    color: theme.colorScheme.onSurface,
+                    color: foregroundColor,
                   )
-                : Icon(icon, size: 24, color: theme.colorScheme.onSurface),
+                : Icon(icon, size: 24, color: foregroundColor),
           ),
         ),
       ),
@@ -13366,6 +14319,16 @@ class _MainStoryLead {
   final PointOfInterest poi;
   final Character? character;
   final double? distanceMeters;
+}
+
+class _FeaturedMainStoryPulseTarget {
+  const _FeaturedMainStoryPulseTarget.poi(this.poiId) : characterId = null;
+
+  const _FeaturedMainStoryPulseTarget.character(this.characterId)
+    : poiId = null;
+
+  final String? poiId;
+  final String? characterId;
 }
 
 class _MapMarkerIsolation {
@@ -13413,6 +14376,7 @@ class _PoiSymbolRequest {
     required this.poiId,
     required this.isQuestCurrent,
     required this.shouldPulseLikeQuest,
+    required this.shouldPulseLikeMainStory,
     required this.options,
     required this.data,
   });
@@ -13420,6 +14384,7 @@ class _PoiSymbolRequest {
   final String poiId;
   final bool isQuestCurrent;
   final bool shouldPulseLikeQuest;
+  final bool shouldPulseLikeMainStory;
   final SymbolOptions options;
   final Map<String, dynamic> data;
 }

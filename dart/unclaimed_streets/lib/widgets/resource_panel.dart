@@ -246,6 +246,15 @@ class _ResourcePanelState extends State<ResourcePanel> {
     final isGatherDisabledByRequirement =
         activeRequirement != null &&
         (!_ownedItemsLoaded || isRequirementMissing);
+    final disabledRequirementBackground = Color.alphaBlend(
+      Colors.grey.withValues(alpha: 0.38),
+      theme.colorScheme.surfaceContainerHighest,
+    );
+    final disabledRequirementForeground = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.12),
+      theme.colorScheme.onSurfaceVariant,
+    );
+    final loadingBackground = theme.colorScheme.primary.withValues(alpha: 0.72);
     final rewardLabel = resourceTypeName.toLowerCase() == 'resource'
         ? 'random resources'
         : 'random ${resourceTypeName.toLowerCase()} resources';
@@ -407,10 +416,28 @@ class _ResourcePanelState extends State<ResourcePanel> {
             ],
             const SizedBox(height: 20),
             FilledButton.icon(
-              style: FilledButton.styleFrom(
-                disabledBackgroundColor:
-                    theme.colorScheme.surfaceContainerHighest,
-                disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (!states.contains(WidgetState.disabled)) return null;
+                  return isGatherDisabledByRequirement
+                      ? disabledRequirementBackground
+                      : loadingBackground;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (!states.contains(WidgetState.disabled)) return null;
+                  return isGatherDisabledByRequirement
+                      ? disabledRequirementForeground
+                      : theme.colorScheme.onPrimary;
+                }),
+                side: WidgetStateProperty.resolveWith((states) {
+                  if (!states.contains(WidgetState.disabled) ||
+                      !isGatherDisabledByRequirement) {
+                    return null;
+                  }
+                  return BorderSide(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.85),
+                  );
+                }),
               ),
               onPressed: (_loading || isGatherDisabledByRequirement)
                   ? null

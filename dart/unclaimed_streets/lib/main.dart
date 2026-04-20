@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
 
 import 'config/router.dart';
@@ -43,6 +44,7 @@ import 'providers/character_stats_provider.dart';
 import 'providers/user_level_provider.dart';
 
 void main() {
+  MapLibreMap.useHybridComposition = true;
   runApp(const SonarApp());
 }
 

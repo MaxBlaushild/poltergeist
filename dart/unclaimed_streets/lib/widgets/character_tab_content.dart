@@ -34,6 +34,7 @@ class _CharacterTabContentState extends State<CharacterTabContent>
     with SingleTickerProviderStateMixin {
   static const double _damageLabelColumnWidth = 120;
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
+  static const int _shopPriceCharismaCap = 100;
   static const Map<String, String> _labels = {
     'strength': 'Strength',
     'dexterity': 'Dexterity',
@@ -237,6 +238,13 @@ class _CharacterTabContentState extends State<CharacterTabContent>
     final baseStats = overrideStats?.toMap() ?? statsProvider.baseStats;
     final bonusStats =
         overrideStats?.bonusMap() ?? statsProvider.equipmentBonuses;
+    final previewStats = {
+      for (final key in CharacterStatsProvider.statKeys)
+        key:
+            (baseStats[key] ?? CharacterStatsProvider.baseStatValue) +
+            (bonusStats[key] ?? 0) +
+            (_pending[key] ?? 0),
+    };
     final effectiveConstitution =
         (baseStats['constitution'] ?? CharacterStatsProvider.baseStatValue) +
         (bonusStats['constitution'] ?? 0);
@@ -355,6 +363,13 @@ class _CharacterTabContentState extends State<CharacterTabContent>
             'Character stats',
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap the info icon on a stat to see what it changes.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
@@ -476,6 +491,11 @@ class _CharacterTabContentState extends State<CharacterTabContent>
               final remaining = unspentPoints - _pendingTotal;
               final canAdd = canEdit && remaining > 0;
               final canRemove = canEdit && pendingValue > 0;
+              final tooltipMessage = _statImpactTooltipMessage(
+                key,
+                previewStats,
+                displayLevel,
+              );
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
@@ -493,11 +513,23 @@ class _CharacterTabContentState extends State<CharacterTabContent>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            label,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              _buildStatInfoTooltip(
+                                context,
+                                message: tooltipMessage,
+                              ),
+                            ],
                           ),
                           if (pendingValue > 0)
                             Text(
@@ -1318,6 +1350,125 @@ class _CharacterTabContentState extends State<CharacterTabContent>
         ),
       ],
     );
+  }
+
+  Widget _buildStatInfoTooltip(
+    BuildContext context, {
+    required String message,
+  }) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: message,
+      triggerMode: TooltipTriggerMode.tap,
+      waitDuration: const Duration(milliseconds: 200),
+      showDuration: const Duration(seconds: 6),
+      child: Icon(
+        Icons.info_outline_rounded,
+        size: 16,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+
+  String _statImpactTooltipMessage(
+    String statKey,
+    Map<String, int> previewStats,
+    int level,
+  ) {
+    final strength =
+        previewStats['strength'] ?? CharacterStatsProvider.baseStatValue;
+    final dexterity =
+        previewStats['dexterity'] ?? CharacterStatsProvider.baseStatValue;
+    final constitution =
+        previewStats['constitution'] ?? CharacterStatsProvider.baseStatValue;
+    final intelligence =
+        previewStats['intelligence'] ?? CharacterStatsProvider.baseStatValue;
+    final wisdom =
+        previewStats['wisdom'] ?? CharacterStatsProvider.baseStatValue;
+    final charisma =
+        previewStats['charisma'] ?? CharacterStatsProvider.baseStatValue;
+    final maxHealth = CharacterStats.deriveHealthFromConstitution(constitution);
+    final maxMana = CharacterStats.deriveManaFromMentalStats(
+      intelligence,
+      wisdom,
+    );
+    final strengthBonus = _strengthTechniqueDamageBonus(strength);
+    final (unarmedMin, unarmedMax) = _unarmedDamagePreview(
+      level: level,
+      strength: strength,
+      dexterity: dexterity,
+    );
+    final normalizedCharisma = charisma <= 0
+        ? 0.0
+        : charisma >= _shopPriceCharismaCap
+        ? 1.0
+        : charisma / _shopPriceCharismaCap;
+    final purchaseDiscount = (25 * normalizedCharisma).round();
+    final sellPercent = (50 + (25 * normalizedCharisma)).round();
+
+    switch (statKey) {
+      case 'strength':
+        return 'Strength boosts physical techniques and unarmed attacks.\n'
+            'Current physical technique bonus: +$strengthBonus damage.\n'
+            'Current unarmed preview: $unarmedMin-$unarmedMax damage.';
+      case 'dexterity':
+        return 'Dexterity widens your unarmed damage range and decides party battle turn order.\n'
+            'Current unarmed preview: $unarmedMin-$unarmedMax damage.\n'
+            'Current initiative value: $dexterity.';
+      case 'constitution':
+        return 'Constitution increases survivability rather than raw ability damage.\n'
+            'Each point grants 10 max health.\n'
+            'Current max health: $maxHealth HP.';
+      case 'intelligence':
+        return 'Intelligence helps power mental and magical abilities.\n'
+            'Intelligence and Wisdom together grant 5 max mana per combined point.\n'
+            'Current max mana from INT + WIS: $maxMana.';
+      case 'wisdom':
+        return 'Wisdom supports mental and magical abilities.\n'
+            'Wisdom and Intelligence together grant 5 max mana per combined point.\n'
+            'Current max mana from INT + WIS: $maxMana.';
+      case 'charisma':
+        return 'Charisma does not currently boost combat damage, but it improves shopping and social-style checks.\n'
+            'Current shop discount: $purchaseDiscount% off buy prices.\n'
+            'Current sell value: $sellPercent% of an item\'s buy price.';
+      default:
+        return 'This stat affects character progression and gameplay checks.';
+    }
+  }
+
+  int _strengthTechniqueDamageBonus(int strength) {
+    final bonus = ((strength - CharacterStatsProvider.baseStatValue) / 2)
+        .floor();
+    if (bonus <= 0) return 0;
+    if (bonus >= 999) return 999;
+    return bonus;
+  }
+
+  (int, int) _unarmedDamagePreview({
+    required int level,
+    required int strength,
+    required int dexterity,
+  }) {
+    final strengthBonus = _strengthTechniqueDamageBonus(strength);
+    final minDamageBase = level + (strength / 4).floor() + strengthBonus;
+    final minDamage = minDamageBase < 1
+        ? 1
+        : minDamageBase > 999
+        ? 999
+        : minDamageBase;
+    final dexterityRangeBonusBase = (dexterity / 3).floor();
+    final dexterityRangeBonus = dexterityRangeBonusBase < 1
+        ? 1
+        : dexterityRangeBonusBase > 999
+        ? 999
+        : dexterityRangeBonusBase;
+    final maxDamageBase = minDamage + dexterityRangeBonus + strengthBonus;
+    final maxDamage = maxDamageBase < minDamage
+        ? minDamage
+        : maxDamageBase > 9999
+        ? 9999
+        : maxDamageBase;
+    return (minDamage, maxDamage);
   }
 
   String _statusRemainingText(DateTime? expiresAt) {
