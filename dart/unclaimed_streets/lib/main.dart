@@ -19,7 +19,6 @@ import 'services/activity_service.dart';
 import 'services/base_service.dart';
 import 'services/chat_service.dart';
 import 'services/character_stats_service.dart';
-import 'services/feedback_service.dart';
 import 'services/inventory_service.dart';
 import 'services/party_service.dart';
 import 'services/poi_service.dart';
@@ -72,7 +71,6 @@ class SonarApp extends StatelessWidget {
     final baseService = BaseService(apiClient);
     final chatService = ChatService(apiClient);
     final characterStatsService = CharacterStatsService(apiClient);
-    final feedbackService = FeedbackService(apiClient);
     final tagsService = TagsService(apiClient);
     final questLogService = QuestLogService(apiClient);
     final inventoryService = InventoryService(apiClient);
@@ -111,7 +109,6 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
         ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
         Provider<MediaService>.value(value: mediaService),
-        Provider<FeedbackService>.value(value: feedbackService),
         Provider<BaseService>.value(value: baseService),
         Provider<PoiService>.value(value: poiService),
         Provider<InventoryService>.value(value: inventoryService),

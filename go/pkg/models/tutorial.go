@@ -36,6 +36,8 @@ type TutorialConfig struct {
 	DialogueJSON                      datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	Dialogue                          DialogueSequence         `gorm:"-" json:"dialogue"`
 	ScenarioObjectiveCopy             string                   `gorm:"column:scenario_objective_copy" json:"scenarioObjectiveCopy"`
+	PostScenarioDialogueJSON          datatypes.JSON           `gorm:"column:post_scenario_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	PostScenarioDialogue              DialogueSequence         `gorm:"-" json:"postScenarioDialogue"`
 	LoadoutDialogueJSON               datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	LoadoutDialogue                   DialogueSequence         `gorm:"-" json:"loadoutDialogue"`
 	LoadoutObjectiveCopy              string                   `gorm:"column:loadout_objective_copy" json:"loadoutObjectiveCopy"`
@@ -87,16 +89,17 @@ const (
 )
 
 const (
-	TutorialStageWelcome             = "welcome"
-	TutorialStageScenario            = "scenario"
-	TutorialStageLoadout             = "loadout"
-	TutorialStageMonster             = "monster"
-	TutorialStagePostMonsterDialogue = "post_monster_dialogue"
-	TutorialStageBaseKit             = "base_kit"
-	TutorialStagePostBasePlacement   = "post_base_placement_dialogue"
-	TutorialStageHearth              = "hearth"
-	TutorialStagePostBaseDialogue    = "post_base_dialogue"
-	TutorialStageCompleted           = "completed"
+	TutorialStageWelcome              = "welcome"
+	TutorialStageScenario             = "scenario"
+	TutorialStagePostScenarioDialogue = "post_scenario_dialogue"
+	TutorialStageLoadout              = "loadout"
+	TutorialStageMonster              = "monster"
+	TutorialStagePostMonsterDialogue  = "post_monster_dialogue"
+	TutorialStageBaseKit              = "base_kit"
+	TutorialStagePostBasePlacement    = "post_base_placement_dialogue"
+	TutorialStageHearth               = "hearth"
+	TutorialStagePostBaseDialogue     = "post_base_dialogue"
+	TutorialStageCompleted            = "completed"
 )
 
 func (TutorialConfig) TableName() string {
@@ -106,6 +109,9 @@ func (TutorialConfig) TableName() string {
 func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.Dialogue == nil {
 		c.Dialogue = DialogueSequence{}
+	}
+	if c.PostScenarioDialogue == nil {
+		c.PostScenarioDialogue = DialogueSequence{}
 	}
 	if c.LoadoutDialogue == nil {
 		c.LoadoutDialogue = DialogueSequence{}
@@ -136,6 +142,7 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 
 	c.Dialogue = normalizeDialogueSequence(c.Dialogue)
+	c.PostScenarioDialogue = normalizeDialogueSequence(c.PostScenarioDialogue)
 	c.LoadoutDialogue = normalizeDialogueSequence(c.LoadoutDialogue)
 	c.PostMonsterDialogue = normalizeDialogueSequence(c.PostMonsterDialogue)
 	c.BaseKitDialogue = normalizeDialogueSequence(c.BaseKitDialogue)
@@ -177,6 +184,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	c.SpellRewards = normalizeTutorialSpellRewards(c.SpellRewards)
 
 	if err := assignTutorialJSON(&c.DialogueJSON, c.Dialogue); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&c.PostScenarioDialogueJSON, c.PostScenarioDialogue); err != nil {
 		return err
 	}
 	if err := assignTutorialJSON(&c.LoadoutDialogueJSON, c.LoadoutDialogue); err != nil {
@@ -244,6 +254,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	if err := parseTutorialDialogueSequenceJSON(c.DialogueJSON, &c.Dialogue); err != nil {
 		return err
 	}
+	if err := parseTutorialDialogueSequenceJSON(c.PostScenarioDialogueJSON, &c.PostScenarioDialogue); err != nil {
+		return err
+	}
 	if err := parseTutorialDialogueSequenceJSON(c.LoadoutDialogueJSON, &c.LoadoutDialogue); err != nil {
 		return err
 	}
@@ -273,6 +286,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	}
 	if c.Dialogue == nil {
 		c.Dialogue = DialogueSequence{}
+	}
+	if c.PostScenarioDialogue == nil {
+		c.PostScenarioDialogue = DialogueSequence{}
 	}
 	if c.LoadoutDialogue == nil {
 		c.LoadoutDialogue = DialogueSequence{}
@@ -461,6 +477,8 @@ func normalizeTutorialStage(input string) string {
 	switch strings.TrimSpace(strings.ToLower(input)) {
 	case TutorialStageScenario:
 		return TutorialStageScenario
+	case TutorialStagePostScenarioDialogue:
+		return TutorialStagePostScenarioDialogue
 	case TutorialStageLoadout:
 		return TutorialStageLoadout
 	case TutorialStageMonster:
@@ -469,10 +487,8 @@ func normalizeTutorialStage(input string) string {
 		return TutorialStagePostMonsterDialogue
 	case TutorialStageBaseKit:
 		return TutorialStageBaseKit
-	case TutorialStagePostBasePlacement:
-		return TutorialStagePostBasePlacement
-	case TutorialStageHearth:
-		return TutorialStageHearth
+	case TutorialStagePostBasePlacement, TutorialStageHearth:
+		return TutorialStagePostBaseDialogue
 	case TutorialStagePostBaseDialogue:
 		return TutorialStagePostBaseDialogue
 	case TutorialStageCompleted:

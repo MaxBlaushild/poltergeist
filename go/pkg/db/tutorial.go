@@ -216,12 +216,27 @@ func (h *tutorialHandle) MarkScenarioResolved(
 		if state.TutorialScenarioID == nil || *state.TutorialScenarioID != scenarioID {
 			return nil
 		}
-		state.Stage = models.TutorialStageLoadout
+		state.Stage = models.TutorialStagePostScenarioDialogue
 		state.SelectedScenarioOptionID = selectedOptionID
 		state.RequiredEquipItemIDs = requiredEquipItemIDs
 		state.CompletedEquipItemIDs = []int{}
 		state.RequiredUseItemIDs = requiredUseItemIDs
 		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) AdvanceToLoadout(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil || state.Stage != models.TutorialStagePostScenarioDialogue {
+			return nil
+		}
+		state.Stage = models.TutorialStageLoadout
 		state.UpdatedAt = time.Now()
 		return tx.Save(state).Error
 	})
@@ -385,47 +400,6 @@ func (h *tutorialHandle) AdvanceToBaseKit(
 	})
 }
 
-func (h *tutorialHandle) AdvanceToPostBasePlacementDialogue(
-	ctx context.Context,
-	userID uuid.UUID,
-) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
-		if err != nil {
-			return err
-		}
-		if state.CompletedAt != nil || state.Stage != models.TutorialStageBaseKit {
-			return nil
-		}
-		state.Stage = models.TutorialStagePostBasePlacement
-		state.RequiredEquipItemIDs = []int{}
-		state.CompletedEquipItemIDs = []int{}
-		state.RequiredUseItemIDs = []int{}
-		state.CompletedUseItemIDs = []int{}
-		state.UpdatedAt = time.Now()
-		return tx.Save(state).Error
-	})
-}
-
-func (h *tutorialHandle) AdvanceToHearth(ctx context.Context, userID uuid.UUID) error {
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
-		if err != nil {
-			return err
-		}
-		if state.CompletedAt != nil || state.Stage != models.TutorialStagePostBasePlacement {
-			return nil
-		}
-		state.Stage = models.TutorialStageHearth
-		state.RequiredEquipItemIDs = []int{}
-		state.CompletedEquipItemIDs = []int{}
-		state.RequiredUseItemIDs = []int{}
-		state.CompletedUseItemIDs = []int{}
-		state.UpdatedAt = time.Now()
-		return tx.Save(state).Error
-	})
-}
-
 func (h *tutorialHandle) AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
@@ -434,6 +408,7 @@ func (h *tutorialHandle) AdvanceToPostBaseDialogue(ctx context.Context, userID u
 		}
 		if state.CompletedAt != nil ||
 			(state.Stage != models.TutorialStageBaseKit &&
+				state.Stage != models.TutorialStagePostBasePlacement &&
 				state.Stage != models.TutorialStageHearth) {
 			return nil
 		}
@@ -528,6 +503,7 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 		ID:                    1,
 		Dialogue:              models.DialogueSequence{},
 		ScenarioObjectiveCopy: "Complete the tutorial scenario to continue.",
+		PostScenarioDialogue:  models.DialogueSequence{},
 		LoadoutDialogue: models.DialogueSequence{
 			{
 				Speaker: "character",

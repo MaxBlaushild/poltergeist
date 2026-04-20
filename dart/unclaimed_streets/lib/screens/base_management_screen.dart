@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../models/base.dart';
 import '../models/base_progression.dart';
 import '../models/inventory_item.dart';
-import '../models/tutorial.dart';
 import '../models/zone.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/zone_provider.dart';
@@ -168,7 +167,6 @@ class BaseManagementContent extends StatefulWidget {
 
 class _BaseManagementContentState extends State<BaseManagementContent> {
   BaseProgressionSnapshot? _snapshot;
-  TutorialStatus? _tutorialStatus;
   List<BaseStructureDefinitionData> _catalog = const [];
   bool _loading = true;
   String? _error;
@@ -239,19 +237,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   }
 
   Future<void> _notifyTutorialProgressChanged() async {
-    try {
-      final status = await context.read<PoiService>().getTutorialStatus();
-      if (mounted) {
-        setState(() {
-          _tutorialStatus = status;
-        });
-      }
-    } catch (error) {
-      debugPrint(
-        'BaseManagementContent: tutorial status refresh failed: $error',
-      );
-    }
-
     final onTutorialProgressChanged = widget.onTutorialProgressChanged;
     if (onTutorialProgressChanged == null) return;
     try {
@@ -1454,69 +1439,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
-  Widget _buildTutorialObjectiveCard(ThemeData theme) {
-    final tutorialStatus = _tutorialStatus;
-    if (tutorialStatus == null || !tutorialStatus.isHearthStep) {
-      return const SizedBox.shrink();
-    }
-
-    final hearthStructure = _structureByKey['hearth'];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 18),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF9F1DC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFD8B36B), width: 1.4),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Tutorial Objective',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF6A4A14),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                tutorialStatus.resolvedHearthObjectiveCopy,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF4C3824),
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Open the hearth room and make a full recovery.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF6A4A14),
-                ),
-              ),
-              if (hearthStructure != null) ...[
-                const SizedBox(height: 12),
-                FilledButton.tonal(
-                  onPressed: _busyStructureKey != null
-                      ? null
-                      : () async {
-                          await _showRoomDetails(hearthStructure);
-                        },
-                  child: const Text('Open Hearth'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1572,7 +1494,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
             _buildBaseStats(theme),
             _buildMoveControls(theme),
             _buildGrid(theme),
-            _buildTutorialObjectiveCard(theme),
             _buildActiveEffects(theme),
             if (_error != null) ...[
               const SizedBox(height: 12),

@@ -59,7 +59,7 @@ export const Feedback = () => {
         <div>
           <h1 className="text-2xl font-bold">Feedback</h1>
           <p className="text-sm text-gray-600">
-            In-app shake submissions from players.
+            Player reports and product feedback submitted in-app.
           </p>
         </div>
         <button

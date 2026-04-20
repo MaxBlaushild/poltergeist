@@ -631,6 +631,7 @@ type TutorialHandle interface {
 	) error
 	RecordEquippedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
 	RecordUsedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
+	AdvanceToLoadout(ctx context.Context, userID uuid.UUID) error
 	ActivateMonsterForUser(
 		ctx context.Context,
 		userID uuid.UUID,
@@ -640,8 +641,6 @@ type TutorialHandle interface {
 	) (*models.UserTutorialState, *models.MonsterEncounter, error)
 	ResetForReplay(ctx context.Context, userID uuid.UUID) error
 	AdvanceToBaseKit(ctx context.Context, userID uuid.UUID, requiredUseItemIDs []int) error
-	AdvanceToPostBasePlacementDialogue(ctx context.Context, userID uuid.UUID) error
-	AdvanceToHearth(ctx context.Context, userID uuid.UUID) error
 	AdvanceToPostBaseDialogue(ctx context.Context, userID uuid.UUID) error
 	MarkCompleted(ctx context.Context, userID uuid.UUID) error
 	MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error

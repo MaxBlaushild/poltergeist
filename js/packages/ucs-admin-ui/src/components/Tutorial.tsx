@@ -54,13 +54,12 @@ type TutorialConfigResponse = {
   baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
   scenarioObjectiveCopy?: string;
+  postScenarioDialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
   loadoutObjectiveCopy?: string;
   postMonsterDialogue?: DialogueMessage[];
   baseKitDialogue?: DialogueMessage[];
   baseKitObjectiveCopy?: string;
-  postBasePlacementDialogue?: DialogueMessage[];
-  hearthObjectiveCopy?: string;
   postBaseDialogue?: DialogueMessage[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
@@ -290,6 +289,9 @@ export const Tutorial = () => {
   ] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
   const [scenarioObjectiveCopy, setScenarioObjectiveCopy] = useState('');
+  const [postScenarioDialogue, setPostScenarioDialogue] = useState<
+    DialogueMessage[]
+  >([]);
   const [loadoutDialogue, setLoadoutDialogue] = useState<DialogueMessage[]>([]);
   const [loadoutObjectiveCopy, setLoadoutObjectiveCopy] = useState('');
   const [postMonsterDialogue, setPostMonsterDialogue] = useState<
@@ -297,10 +299,6 @@ export const Tutorial = () => {
   >([]);
   const [baseKitDialogue, setBaseKitDialogue] = useState<DialogueMessage[]>([]);
   const [baseKitObjectiveCopy, setBaseKitObjectiveCopy] = useState('');
-  const [postBasePlacementDialogue, setPostBasePlacementDialogue] = useState<
-    DialogueMessage[]
-  >([]);
-  const [hearthObjectiveCopy, setHearthObjectiveCopy] = useState('');
   const [postBaseDialogue, setPostBaseDialogue] = useState<DialogueMessage[]>(
     []
   );
@@ -356,6 +354,11 @@ export const Tutorial = () => {
         );
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
         setScenarioObjectiveCopy(config.scenarioObjectiveCopy ?? '');
+        setPostScenarioDialogue(
+          Array.isArray(config.postScenarioDialogue)
+            ? config.postScenarioDialogue
+            : []
+        );
         setLoadoutDialogue(
           Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []
         );
@@ -369,12 +372,6 @@ export const Tutorial = () => {
           Array.isArray(config.baseKitDialogue) ? config.baseKitDialogue : []
         );
         setBaseKitObjectiveCopy(config.baseKitObjectiveCopy ?? '');
-        setPostBasePlacementDialogue(
-          Array.isArray(config.postBasePlacementDialogue)
-            ? config.postBasePlacementDialogue
-            : []
-        );
-        setHearthObjectiveCopy(config.hearthObjectiveCopy ?? '');
         setPostBaseDialogue(
           Array.isArray(config.postBaseDialogue) ? config.postBaseDialogue : []
         );
@@ -758,13 +755,12 @@ export const Tutorial = () => {
             : null,
         dialogue,
         scenarioObjectiveCopy: scenarioObjectiveCopy.trim(),
+        postScenarioDialogue,
         loadoutDialogue,
         loadoutObjectiveCopy: loadoutObjectiveCopy.trim(),
         postMonsterDialogue,
         baseKitDialogue,
         baseKitObjectiveCopy: baseKitObjectiveCopy.trim(),
-        postBasePlacementDialogue,
-        hearthObjectiveCopy: hearthObjectiveCopy.trim(),
         postBaseDialogue,
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
@@ -1343,6 +1339,25 @@ export const Tutorial = () => {
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-900">
+                  Post-Scenario Dialogue
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown right after the opening tutorial scenario resolves and
+                  before the loadout step begins.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Dialogue Lines"
+                helperText="Use this for a standalone tutorial conversation beat between the scenario and the loadout step."
+                value={postScenarioDialogue}
+                onChange={setPostScenarioDialogue}
+              />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
                   Loadout Step
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
@@ -1438,58 +1453,6 @@ export const Tutorial = () => {
                 value={baseKitDialogue}
                 onChange={setBaseKitDialogue}
               />
-            </section>
-
-            <section className="rounded-lg border border-gray-200 p-4">
-              <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Post-Base Placement Dialogue
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  Shown as soon as the player establishes their base. After this
-                  dialogue closes, the tutorial requires them to use their
-                  hearth before the final conversation can begin.
-                </p>
-              </div>
-
-              <DialogueMessageListEditor
-                label="Dialogue Lines"
-                helperText="Use this to direct the player into their new base and point them toward the hearth."
-                value={postBasePlacementDialogue}
-                onChange={setPostBasePlacementDialogue}
-              />
-            </section>
-
-            <section className="rounded-lg border border-gray-200 p-4">
-              <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Hearth Objective
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  After the post-base placement dialogue, the player must use
-                  their base&apos;s hearth to heal before the final tutorial
-                  dialogue will appear.
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                <label className="block text-sm font-medium text-gray-700">
-                  Tracked Quest Copy
-                </label>
-                <textarea
-                  value={hearthObjectiveCopy}
-                  onChange={(event) =>
-                    setHearthObjectiveCopy(event.target.value)
-                  }
-                  rows={3}
-                  placeholder="Use your hearth to heal yourself before the tutorial continues."
-                  className="mt-2 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                />
-                <p className="mt-2 text-xs text-gray-500">
-                  This short objective copy is shown while the player is blocked
-                  on using their hearth.
-                </p>
-              </div>
             </section>
 
             <section className="rounded-lg border border-gray-200 p-4">
@@ -1613,7 +1576,7 @@ export const Tutorial = () => {
                   Post-Base Dialogue
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Shown after the player uses their hearth and before the
+                  Shown after the player places their base and before the
                   Welcome to Unclaimed Streets overlay appears.
                 </p>
               </div>

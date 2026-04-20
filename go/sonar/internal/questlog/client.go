@@ -141,6 +141,7 @@ var (
 	syntheticTutorialQuestID                = uuid.MustParse("5a4cb6a9-2489-4c83-a5be-b525f4a280e7")
 	syntheticTutorialWelcomeNodeID          = uuid.MustParse("6d59d16d-a5bb-4ed2-bc23-9adfe7173eb7")
 	syntheticTutorialScenarioNodeID         = uuid.MustParse("9b695530-637f-431c-a10f-47df31b2debf")
+	syntheticTutorialPostScenarioNodeID     = uuid.MustParse("97d21933-d5bb-4421-b498-f4ddc0196aad")
 	syntheticTutorialLoadoutNodeID          = uuid.MustParse("55b94fe3-d84d-489d-8255-5fd8254b70ce")
 	syntheticTutorialMonsterNodeID          = uuid.MustParse("8ff3d79c-c3d2-4ba0-a52e-2d2138a6b93f")
 	syntheticTutorialPostMonsterNodeID      = uuid.MustParse("f30ca0ab-cdbb-4a0c-b39b-ab4191e90df1")
@@ -643,6 +644,13 @@ func (c *questlogClient) buildTutorialQuestNode(
 			OrderIndex:     0,
 			ObjectiveText:  objectiveText,
 			ScenarioID:     state.TutorialScenarioID,
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		}
+	case models.TutorialStagePostScenarioDialogue:
+		return &QuestNode{
+			ID:             syntheticTutorialPostScenarioNodeID,
+			OrderIndex:     0,
+			ObjectiveText:  "Continue the tutorial conversation.",
 			SubmissionType: models.DefaultQuestNodeSubmissionType(),
 		}
 	case models.TutorialStageLoadout:

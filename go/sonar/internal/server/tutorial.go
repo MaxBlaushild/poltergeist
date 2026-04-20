@@ -38,6 +38,7 @@ type tutorialConfigRequest struct {
 	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
 	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
 	ScenarioObjectiveCopy             string                       `json:"scenarioObjectiveCopy"`
+	PostScenarioDialogue              []models.DialogueMessage     `json:"postScenarioDialogue"`
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
 	LoadoutObjectiveCopy              string                       `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue               []models.DialogueMessage     `json:"postMonsterDialogue"`
@@ -70,6 +71,7 @@ type tutorialStatusResponse struct {
 	Character                 *models.Character        `json:"character,omitempty"`
 	Dialogue                  []models.DialogueMessage `json:"dialogue"`
 	ScenarioObjectiveCopy     string                   `json:"scenarioObjectiveCopy"`
+	PostScenarioDialogue      []models.DialogueMessage `json:"postScenarioDialogue"`
 	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
 	LoadoutObjectiveCopy      string                   `json:"loadoutObjectiveCopy"`
 	PostMonsterDialogue       []models.DialogueMessage `json:"postMonsterDialogue"`
@@ -445,6 +447,11 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 
 	action := strings.TrimSpace(strings.ToLower(requestBody.Action))
 	switch action {
+	case "post_scenario_dialogue_closed":
+		if err := s.dbClient.Tutorial().AdvanceToLoadout(ctx, user.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	case "post_monster_dialogue_closed":
 		requiredUseItemIDs, err := s.tutorialBaseKitRequirementItemIDs(ctx, config)
 		if err != nil {
@@ -467,7 +474,7 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 			}
 		}
 	case "post_base_placement_dialogue_closed":
-		if err := s.dbClient.Tutorial().AdvanceToHearth(ctx, user.ID); err != nil {
+		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, user.ID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -516,6 +523,7 @@ func buildTutorialStatusResponse(
 			Character:                 config.Character,
 			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 			ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
+			PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 			LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 			PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
@@ -548,6 +556,7 @@ func buildTutorialStatusResponse(
 		Character:                 config.Character,
 		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 		ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
+		PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
 		LoadoutObjectiveCopy:      config.LoadoutObjectiveCopy,
 		PostMonsterDialogue:       append([]models.DialogueMessage{}, config.PostMonsterDialogue...),
@@ -568,6 +577,7 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	config := &models.TutorialConfig{
 		Dialogue:                  models.DialogueSequence{},
 		ScenarioObjectiveCopy:     strings.TrimSpace(body.ScenarioObjectiveCopy),
+		PostScenarioDialogue:      models.DialogueSequence{},
 		LoadoutDialogue:           models.DialogueSequence{},
 		LoadoutObjectiveCopy:      strings.TrimSpace(body.LoadoutObjectiveCopy),
 		PostMonsterDialogue:       models.DialogueSequence{},
@@ -636,6 +646,7 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	}
 
 	config.Dialogue = models.DialogueSequence(body.Dialogue)
+	config.PostScenarioDialogue = models.DialogueSequence(body.PostScenarioDialogue)
 	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
 	config.PostMonsterDialogue = models.DialogueSequence(body.PostMonsterDialogue)
 	config.BaseKitDialogue = models.DialogueSequence(body.BaseKitDialogue)
@@ -759,18 +770,6 @@ func (s *server) maybeAdvanceTutorialProgress(
 		if base == nil {
 			return state, nil
 		}
-		if err := s.dbClient.Tutorial().AdvanceToPostBasePlacementDialogue(ctx, userID); err != nil {
-			return nil, err
-		}
-		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
-	case models.TutorialStageHearth:
-		usedHearth, err := s.userHasTutorialHearthRecovery(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		if !usedHearth {
-			return state, nil
-		}
 		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, userID); err != nil {
 			return nil, err
 		}
@@ -829,26 +828,6 @@ func (s *server) maybeAdvanceTutorialProgress(
 		return nil, err
 	}
 	return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
-}
-
-func (s *server) userHasTutorialHearthRecovery(
-	ctx context.Context,
-	userID uuid.UUID,
-) (bool, error) {
-	activeDailyStates, err := s.dbClient.UserBaseDailyState().FindActiveByUserID(
-		ctx,
-		userID,
-		time.Now(),
-	)
-	if err != nil {
-		return false, err
-	}
-	for _, state := range activeDailyStates {
-		if strings.EqualFold(strings.TrimSpace(state.StateKey), baseDailyStateKeyHearthRecovery) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (s *server) forceResetTutorialReplayState(

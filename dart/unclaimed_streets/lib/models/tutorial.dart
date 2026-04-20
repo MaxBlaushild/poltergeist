@@ -8,13 +8,12 @@ class TutorialStatus {
   final Character? character;
   final List<DialogueMessage> dialogue;
   final String scenarioObjectiveCopy;
+  final List<DialogueMessage> postScenarioDialogue;
   final List<DialogueMessage> loadoutDialogue;
   final String loadoutObjectiveCopy;
   final List<DialogueMessage> postMonsterDialogue;
   final List<DialogueMessage> baseKitDialogue;
   final String baseKitObjectiveCopy;
-  final List<DialogueMessage> postBasePlacementDialogue;
-  final String hearthObjectiveCopy;
   final List<DialogueMessage> postBaseDialogue;
   final String? scenarioId;
   final String? monsterEncounterId;
@@ -31,13 +30,12 @@ class TutorialStatus {
     this.character,
     this.dialogue = const [],
     this.scenarioObjectiveCopy = '',
+    this.postScenarioDialogue = const [],
     this.loadoutDialogue = const [],
     this.loadoutObjectiveCopy = '',
     this.postMonsterDialogue = const [],
     this.baseKitDialogue = const [],
     this.baseKitObjectiveCopy = '',
-    this.postBasePlacementDialogue = const [],
-    this.hearthObjectiveCopy = '',
     this.postBaseDialogue = const [],
     this.scenarioId,
     this.monsterEncounterId,
@@ -53,17 +51,15 @@ class TutorialStatus {
       (scenarioId?.trim().isNotEmpty ?? false) &&
       !isCompleted;
 
+  bool get isPostScenarioDialogueStep =>
+      stage == 'post_scenario_dialogue' && !isCompleted;
+
   bool get isLoadoutStep => stage == 'loadout' && !isCompleted;
 
   bool get isBaseKitStep => stage == 'base_kit' && !isCompleted;
 
   bool get isPostMonsterDialogueStep =>
       stage == 'post_monster_dialogue' && !isCompleted;
-
-  bool get isPostBasePlacementDialogueStep =>
-      stage == 'post_base_placement_dialogue' && !isCompleted;
-
-  bool get isHearthStep => stage == 'hearth' && !isCompleted;
 
   bool get isPostBaseDialogueStep =>
       stage == 'post_base_dialogue' && !isCompleted;
@@ -78,9 +74,9 @@ class TutorialStatus {
       postMonsterDialogue.isNotEmpty &&
       !isCompleted;
 
-  bool get shouldShowPostBasePlacementDialogue =>
-      isPostBasePlacementDialogueStep &&
-      postBasePlacementDialogue.isNotEmpty &&
+  bool get shouldShowPostScenarioDialogue =>
+      isPostScenarioDialogueStep &&
+      postScenarioDialogue.isNotEmpty &&
       !isCompleted;
 
   bool get shouldShowPostBaseDialogue =>
@@ -108,14 +104,6 @@ class TutorialStatus {
       return trimmed;
     }
     return 'Use your home base kit to establish your base.';
-  }
-
-  String get resolvedHearthObjectiveCopy {
-    final trimmed = hearthObjectiveCopy.trim();
-    if (trimmed.isNotEmpty) {
-      return trimmed;
-    }
-    return 'Use your hearth to heal yourself before the tutorial continues.';
   }
 
   String get resolvedMonsterObjectiveCopy {
@@ -154,6 +142,28 @@ class TutorialStatus {
           final value = line?.toString().trim() ?? '';
           if (value.isNotEmpty) {
             dialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
+    final postScenarioDialogue = <DialogueMessage>[];
+    final rawPostScenarioDialogue = json['postScenarioDialogue'];
+    if (rawPostScenarioDialogue is List) {
+      for (var index = 0; index < rawPostScenarioDialogue.length; index++) {
+        final line = rawPostScenarioDialogue[index];
+        if (line is Map<String, dynamic>) {
+          postScenarioDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          postScenarioDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            postScenarioDialogue.add(
               DialogueMessage(speaker: 'character', text: value, order: index),
             );
           }
@@ -228,32 +238,6 @@ class TutorialStatus {
     }
 
     final postBaseDialogue = <DialogueMessage>[];
-    final postBasePlacementDialogue = <DialogueMessage>[];
-    final rawPostBasePlacementDialogue = json['postBasePlacementDialogue'];
-    if (rawPostBasePlacementDialogue is List) {
-      for (
-        var index = 0;
-        index < rawPostBasePlacementDialogue.length;
-        index++
-      ) {
-        final line = rawPostBasePlacementDialogue[index];
-        if (line is Map<String, dynamic>) {
-          postBasePlacementDialogue.add(DialogueMessage.fromJson(line));
-        } else if (line is Map) {
-          postBasePlacementDialogue.add(
-            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
-          );
-        } else {
-          final value = line?.toString().trim() ?? '';
-          if (value.isNotEmpty) {
-            postBasePlacementDialogue.add(
-              DialogueMessage(speaker: 'character', text: value, order: index),
-            );
-          }
-        }
-      }
-    }
-
     final rawPostBaseDialogue = json['postBaseDialogue'];
     if (rawPostBaseDialogue is List) {
       for (var index = 0; index < rawPostBaseDialogue.length; index++) {
@@ -282,13 +266,12 @@ class TutorialStatus {
       character: character,
       dialogue: dialogue,
       scenarioObjectiveCopy: json['scenarioObjectiveCopy']?.toString() ?? '',
+      postScenarioDialogue: postScenarioDialogue,
       loadoutDialogue: loadoutDialogue,
       loadoutObjectiveCopy: json['loadoutObjectiveCopy']?.toString() ?? '',
       postMonsterDialogue: postMonsterDialogue,
       baseKitDialogue: baseKitDialogue,
       baseKitObjectiveCopy: json['baseKitObjectiveCopy']?.toString() ?? '',
-      postBasePlacementDialogue: postBasePlacementDialogue,
-      hearthObjectiveCopy: json['hearthObjectiveCopy']?.toString() ?? '',
       postBaseDialogue: postBaseDialogue,
       scenarioId: json['scenarioId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),
@@ -307,13 +290,12 @@ class TutorialStatus {
     Character? character,
     List<DialogueMessage>? dialogue,
     String? scenarioObjectiveCopy,
+    List<DialogueMessage>? postScenarioDialogue,
     List<DialogueMessage>? loadoutDialogue,
     String? loadoutObjectiveCopy,
     List<DialogueMessage>? postMonsterDialogue,
     List<DialogueMessage>? baseKitDialogue,
     String? baseKitObjectiveCopy,
-    List<DialogueMessage>? postBasePlacementDialogue,
-    String? hearthObjectiveCopy,
     List<DialogueMessage>? postBaseDialogue,
     String? scenarioId,
     String? monsterEncounterId,
@@ -331,14 +313,12 @@ class TutorialStatus {
       dialogue: dialogue ?? this.dialogue,
       scenarioObjectiveCopy:
           scenarioObjectiveCopy ?? this.scenarioObjectiveCopy,
+      postScenarioDialogue: postScenarioDialogue ?? this.postScenarioDialogue,
       loadoutDialogue: loadoutDialogue ?? this.loadoutDialogue,
       loadoutObjectiveCopy: loadoutObjectiveCopy ?? this.loadoutObjectiveCopy,
       postMonsterDialogue: postMonsterDialogue ?? this.postMonsterDialogue,
       baseKitDialogue: baseKitDialogue ?? this.baseKitDialogue,
       baseKitObjectiveCopy: baseKitObjectiveCopy ?? this.baseKitObjectiveCopy,
-      postBasePlacementDialogue:
-          postBasePlacementDialogue ?? this.postBasePlacementDialogue,
-      hearthObjectiveCopy: hearthObjectiveCopy ?? this.hearthObjectiveCopy,
       postBaseDialogue: postBaseDialogue ?? this.postBaseDialogue,
       scenarioId: scenarioId ?? this.scenarioId,
       monsterEncounterId: monsterEncounterId ?? this.monsterEncounterId,

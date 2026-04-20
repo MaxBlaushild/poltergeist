@@ -455,6 +455,8 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                 child: _TrackedQuestCard(
                   quest: quest,
                   discoveredIds: discoveredIds,
+                  tutorialScenarioObjectiveCopy: tutorialScenarioObjectiveCopy,
+                  tutorialMonsterObjectiveCopy: tutorialMonsterObjectiveCopy,
                   onPoITap: _onPoITap,
                   onNodeTap: _onNodeTap,
                   onTurnInTap: widget.onFocusTurnInQuest == null
@@ -793,9 +795,7 @@ class _TutorialTrackedObjectiveCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final normalizedTitle = title.trim().isNotEmpty
-        ? title.trim()
-        : 'Tutorial Objective';
+    final normalizedTitle = 'Current Objective';
     final normalizedDetail = detail.trim();
 
     return InkWell(
@@ -883,6 +883,8 @@ class _TrackedQuestCard extends StatelessWidget {
   const _TrackedQuestCard({
     required this.quest,
     required this.discoveredIds,
+    required this.tutorialScenarioObjectiveCopy,
+    required this.tutorialMonsterObjectiveCopy,
     required this.onPoITap,
     required this.onNodeTap,
     this.onTurnInTap,
@@ -892,6 +894,8 @@ class _TrackedQuestCard extends StatelessWidget {
 
   final Quest quest;
   final Set<String> discoveredIds;
+  final String tutorialScenarioObjectiveCopy;
+  final String tutorialMonsterObjectiveCopy;
   final void Function(PointOfInterest) onPoITap;
   final void Function(QuestNode) onNodeTap;
   final void Function(Quest quest)? onTurnInTap;
@@ -905,7 +909,28 @@ class _TrackedQuestCard extends StatelessWidget {
     final awaitingTurnIn = questIsAwaitingTurnIn(quest);
     final questReceiver = resolveQuestReceiverCharacter?.call(quest);
     final questReceiverPoi = resolveQuestReceiverPoi?.call(quest);
-    final objectiveLines = questObjectiveLines(node);
+    final hasTutorialMonsterObjective =
+        quest.isTutorial &&
+        ((node?.monsterEncounterId?.trim().isNotEmpty ?? false) ||
+            (node?.monsterId?.trim().isNotEmpty ?? false)) &&
+        tutorialMonsterObjectiveCopy.isNotEmpty;
+    final hasTutorialScenarioObjective =
+        quest.isTutorial &&
+        (node?.scenarioId?.trim().isNotEmpty ?? false) &&
+        tutorialScenarioObjectiveCopy.isNotEmpty;
+    final hasTutorialObjectiveOverride =
+        hasTutorialMonsterObjective || hasTutorialScenarioObjective;
+    final tutorialObjectiveCopy = hasTutorialMonsterObjective
+        ? tutorialMonsterObjectiveCopy
+        : hasTutorialScenarioObjective
+        ? tutorialScenarioObjectiveCopy
+        : '';
+    final objectiveLines = hasTutorialObjectiveOverride
+        ? <String>[tutorialObjectiveCopy]
+        : questObjectiveLines(node);
+    final objectiveTitle = hasTutorialObjectiveOverride
+        ? 'Current Objective'
+        : poi?.name ?? _trackedQuestObjectiveTitle(node);
     final hasDirectFocusTarget = questNodeHasDirectFocusTarget(node);
     final VoidCallback? cardTap;
     if (awaitingTurnIn) {
@@ -939,7 +964,7 @@ class _TrackedQuestCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      quest.name,
+                      quest.isTutorial ? 'Current Objective' : quest.name,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -957,14 +982,14 @@ class _TrackedQuestCard extends StatelessWidget {
               else if (poi != null)
                 _TrackedQuestObjectiveTile(
                   node: node!,
-                  title: poi.name,
+                  title: objectiveTitle,
                   discoveredIds: discoveredIds,
                   objectiveLines: objectiveLines,
                 )
               else
                 _TrackedQuestObjectiveTile(
                   node: node,
-                  title: _trackedQuestObjectiveTitle(node),
+                  title: objectiveTitle,
                   discoveredIds: discoveredIds,
                   objectiveLines: objectiveLines,
                 ),

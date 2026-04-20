@@ -318,6 +318,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String? _lastFeaturedMainStoryPulseCharacterId;
   Map<String, String> _lastTrackedQuestObjectiveSignatures = <String, String>{};
   bool _hasTrackedQuestObjectiveSnapshot = false;
+  String _lastTutorialTrackedObjectiveSignature = '';
+  bool _hasTutorialTrackedObjectiveSnapshot = false;
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
   bool _pinBatchRevealInProgress = false;
@@ -925,9 +927,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _rebuildMapPins();
       return;
     }
-    if ((status?.isPostMonsterDialogueStep ?? false) ||
-        (status?.isPostBasePlacementDialogueStep ?? false) ||
-        (status?.isHearthStep ?? false) ||
+    if ((status?.isPostScenarioDialogueStep ?? false) ||
+        (status?.isPostMonsterDialogueStep ?? false) ||
         (status?.isPostBaseDialogueStep ?? false)) {
       return;
     }
@@ -1552,6 +1553,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _trackedQuestsController.open();
   }
 
+  void _openTrackedQuestsForTutorialObjectiveUpdates(TutorialStatus? status) {
+    final signature = _tutorialTrackedObjectiveSignature(status);
+    if (!_hasTutorialTrackedObjectiveSnapshot) {
+      _lastTutorialTrackedObjectiveSignature = signature;
+      _hasTutorialTrackedObjectiveSnapshot = true;
+      if (signature.isNotEmpty) {
+        _trackedQuestsController.open();
+      }
+      return;
+    }
+    if (signature == _lastTutorialTrackedObjectiveSignature) {
+      return;
+    }
+    _lastTutorialTrackedObjectiveSignature = signature;
+    if (signature.isEmpty) {
+      return;
+    }
+    _trackedQuestsController.open();
+  }
+
   String _trackedQuestObjectiveSignature(Quest quest) {
     final node = quest.currentNode;
     final polygonHash = _hashQuestPolygons([
@@ -1570,6 +1591,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       node?.challengeId ?? '',
       polygonHash.toString(),
     ].join('|');
+  }
+
+  String _tutorialTrackedObjectiveSignature(TutorialStatus? status) {
+    if (status == null || status.isCompleted) {
+      return '';
+    }
+    if (status.hasActiveScenario) {
+      return [
+        'scenario',
+        status.scenarioId?.trim() ?? '',
+        status.resolvedScenarioObjectiveCopy,
+      ].join('|');
+    }
+    if (status.hasActiveMonsterEncounter) {
+      return [
+        'monster',
+        status.monsterEncounterId?.trim() ?? '',
+        status.resolvedMonsterObjectiveCopy,
+      ].join('|');
+    }
+    return '';
   }
 
   int _hashQuestPolygons(List<List<QuestNodePolygonPoint>> polygons) {
@@ -3976,6 +4018,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         await _resetTutorialPresentationForInactiveStatus(status);
       }
       _syncTutorialInventorySession(status);
+      _openTrackedQuestsForTutorialObjectiveUpdates(status);
       if (_tutorialReplayPending &&
           (status == null ||
               status.character == null ||
@@ -4029,12 +4072,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final tutorialStillActive =
         status.showWelcomeDialogue ||
         status.hasActiveScenario ||
+        status.isPostScenarioDialogueStep ||
         status.isLoadoutStep ||
         status.isBaseKitStep ||
         status.hasActiveMonsterEncounter ||
         status.isPostMonsterDialogueStep ||
-        status.isPostBasePlacementDialogueStep ||
-        status.isHearthStep ||
         status.isPostBaseDialogueStep;
     if (tutorialStillActive) return;
 
@@ -4098,24 +4140,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (status == null || status.character == null) {
       return;
     }
+    if (status.shouldShowPostScenarioDialogue) {
+      unawaited(_showTutorialProgressDialogue(status, stage: 'post_scenario'));
+      return;
+    }
+    if (status.isPostScenarioDialogueStep) {
+      unawaited(_advanceTutorialAfterDialogue('post_scenario_dialogue_closed'));
+      return;
+    }
     if (status.shouldShowPostMonsterDialogue) {
       unawaited(_showTutorialProgressDialogue(status, stage: 'post_monster'));
       return;
     }
     if (status.isPostMonsterDialogueStep) {
       unawaited(_advanceTutorialAfterDialogue('post_monster_dialogue_closed'));
-      return;
-    }
-    if (status.shouldShowPostBasePlacementDialogue) {
-      unawaited(
-        _showTutorialProgressDialogue(status, stage: 'post_base_placement'),
-      );
-      return;
-    }
-    if (status.isPostBasePlacementDialogueStep) {
-      unawaited(
-        _advanceTutorialAfterDialogue('post_base_placement_dialogue_closed'),
-      );
       return;
     }
     if (status.shouldShowPostBaseDialogue) {
@@ -4158,8 +4196,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     final rawDialogue = stage == 'post_base'
         ? status.postBaseDialogue
-        : stage == 'post_base_placement'
-        ? status.postBasePlacementDialogue
+        : stage == 'post_scenario'
+        ? status.postScenarioDialogue
         : status.postMonsterDialogue;
     if (rawDialogue.isEmpty) {
       await _completeTutorialDialogueStage(stage);
@@ -4211,13 +4249,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<void> _completeTutorialDialogueStage(String stage) async {
     switch (stage) {
+      case 'post_scenario':
+        await _advanceTutorialAfterDialogue('post_scenario_dialogue_closed');
+        return;
       case 'post_base':
         await _completeTutorialAfterBaseDialogue();
-        return;
-      case 'post_base_placement':
-        await _advanceTutorialAfterDialogue(
-          'post_base_placement_dialogue_closed',
-        );
         return;
       default:
         await _advanceTutorialAfterDialogue('post_monster_dialogue_closed');
@@ -11253,17 +11289,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         polygonChallenge ??= challenge;
       }
     }
-    final nearbyPlayerPinCandidates =
-        !_isPlacingBase && loc != null && _styleLoaded && !_mapLoadFailed
-        ? _pinSelectionCandidatesNearLocation(loc)
-        : const <_MapPinSelectionCandidate>[];
-    final polygonActionCount =
-        (polygonQuest != null && polygonNode != null ? 1 : 0) +
-        (polygonChallenge != null ? 1 : 0);
-    final nearbyPinChipBottom =
-        polygonActionBottom +
-        (polygonActionCount * stackedPolygonActionSpacing);
-
     if (_styleLoaded &&
         !_mapLoadFailed &&
         _mapController != null &&
@@ -11581,32 +11606,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     polygonChallengeQuestEntry != null
                         ? 'Challenge: ${polygonChallengeQuestEntry.key.name}'
                         : 'Challenge Area',
-                  ),
-                ),
-              ),
-            if (!_isPlacingBase && nearbyPlayerPinCandidates.isNotEmpty)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: nearbyPinChipBottom,
-                child: PointerInterceptor(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: _MiniActionChip(
-                      icon: Icons.place_rounded,
-                      label: nearbyPlayerPinCandidates.length == 1
-                          ? 'Nearby marker'
-                          : 'Nearby (${nearbyPlayerPinCandidates.length})',
-                      onTap: () {
-                        final location = context
-                            .read<LocationProvider>()
-                            .location;
-                        if (location == null) return;
-                        _openPinSelectionCandidates(
-                          _pinSelectionCandidatesNearLocation(location),
-                        );
-                      },
-                    ),
                   ),
                 ),
               ),
@@ -14526,49 +14525,6 @@ class _MiniInfoChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(label, style: theme.textTheme.labelMedium),
         ],
-      ),
-    );
-  }
-}
-
-class _MiniActionChip extends StatelessWidget {
-  const _MiniActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.92),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(999),
-        side: BorderSide(
-          color: theme.colorScheme.outline.withValues(alpha: 0.22),
-        ),
-      ),
-      elevation: 4,
-      shadowColor: Colors.black.withValues(alpha: 0.18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: theme.colorScheme.onSurface),
-              const SizedBox(width: 8),
-              Text(label, style: theme.textTheme.labelLarge),
-            ],
-          ),
-        ),
       ),
     );
   }
