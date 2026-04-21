@@ -11,8 +11,18 @@ import 'quest_objective_display.dart';
 import 'quest_turn_in_target.dart';
 
 class TrackedQuestsOverlayController extends ChangeNotifier {
-  void open() {
+  String? _pendingOpenItemId;
+
+  void open({String? itemId}) {
+    final trimmed = itemId?.trim() ?? '';
+    _pendingOpenItemId = trimmed.isEmpty ? null : trimmed;
     notifyListeners();
+  }
+
+  String? consumePendingOpenItemId() {
+    final pendingItemId = _pendingOpenItemId;
+    _pendingOpenItemId = null;
+    return pendingItemId;
   }
 }
 
@@ -119,6 +129,25 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
 
   void _handleController() {
     if (!mounted) return;
+    final pendingOpenItemId = _controller?.consumePendingOpenItemId();
+    if (pendingOpenItemId != null) {
+      _preferredOpenCarouselItemId = pendingOpenItemId;
+      _pendingOpenCarouselItemId = pendingOpenItemId;
+      if (_expanded) {
+        final currentIndex = _resolvedItemIndex(_carouselItems.length);
+        final pendingIndex = _indexOfCarouselItemId(pendingOpenItemId);
+        setState(() {
+          if (pendingIndex != -1) {
+            _carouselTransitionDirection = pendingIndex >= currentIndex
+                ? 1
+                : -1;
+            _currentItemIndex = pendingIndex;
+          }
+          _previewCurrentItemAfterBuild = true;
+        });
+        return;
+      }
+    }
     _expand();
   }
 

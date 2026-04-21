@@ -155,7 +155,9 @@ func (c *client) GenerateQuest(
 			fmt.Errorf("quest archetype %s not found", questArchetypeID.String()),
 		)
 	}
-	if questGiverCharacterID == nil {
+	if questGenerationSkipsQuestGiver(questGiverCharacterID) {
+		questGiverCharacterID = nil
+	} else if questGiverCharacterID == nil {
 		resolvedQuestGiverID, err := c.resolveQuestTemplateCharacterID(ctx, zone, questArchType)
 		if err != nil {
 			log.Printf("Error resolving quest giver character: %v", err)
@@ -271,6 +273,10 @@ func (c *client) GenerateQuest(
 
 	log.Printf("Successfully generated quest %s", quest.ID)
 	return quest, nil
+}
+
+func questGenerationSkipsQuestGiver(questGiverCharacterID *uuid.UUID) bool {
+	return questGiverCharacterID != nil && *questGiverCharacterID == uuid.Nil
 }
 
 func (c *client) processQuestNode(

@@ -15,6 +15,7 @@ import '../models/resource.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
+import '../models/tutorial_guide_chat.dart';
 import '../models/user_zone_reputation.dart';
 import '../models/zone.dart';
 import 'api_client.dart';
@@ -361,6 +362,20 @@ class PoiService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<TutorialGuideChatResponse> sendTutorialGuideChat({
+    required String message,
+    List<TutorialGuideChatTurn> history = const [],
+  }) async {
+    final raw = await _api.post<Map<String, dynamic>>(
+      '/sonar/tutorial/guide-chat',
+      data: {
+        'message': message.trim(),
+        'history': history.map((turn) => turn.toJson()).toList(),
+      },
+    );
+    return TutorialGuideChatResponse.fromJson(raw);
   }
 
   static String extractApiErrorMessage(Object error, String fallback) {

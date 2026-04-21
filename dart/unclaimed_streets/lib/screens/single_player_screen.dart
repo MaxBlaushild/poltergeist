@@ -75,6 +75,7 @@ import '../widgets/scenario_panel.dart';
 import '../widgets/tracked_quests_overlay.dart';
 import '../widgets/shop_modal.dart';
 import '../widgets/treasure_chest_panel.dart';
+import '../widgets/tutorial_guide_chat_modal.dart';
 import '../widgets/used_item_modal.dart';
 import '../widgets/zone_widget.dart';
 import '../widgets/paper_texture.dart';
@@ -109,6 +110,8 @@ const _legacyMysteryImageUrl =
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
 const _discoveredCharactersPrefsKeyPrefix =
     'single_player_discovered_characters';
+const _tutorialGuideButtonAcknowledgedPrefsKeyPrefix =
+    'single_player_tutorial_guide_button_acknowledged';
 const _mapThumbnailVersion = 'v13';
 const _standardMarkerThumbnailSize = 0.75;
 const _baseMarkerSizeScale = 0.75;
@@ -360,6 +363,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   bool _tutorialStatusReloadQueuedPreserveCompletedReveal = false;
   bool _tutorialStatusChecked = false;
   bool _tutorialDialogVisible = false;
+  bool _tutorialAdvanceInFlight = false;
   bool _tutorialActivationInFlight = false;
   bool _tutorialReplayResetInFlight = false;
   bool _tutorialReplayPending = false;
@@ -375,17 +379,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   bool _tutorialWelcomeOverlayVisible = false;
   double _tutorialWelcomeOverlayOpacity = 0.0;
   late final AnimationController _tutorialGuideDockController;
+  late final AnimationController _tutorialGuideButtonPulseController;
   bool _tutorialGuideDockVisible = false;
   Character? _tutorialGuideDockCharacter;
   String _tutorialGuideDockExcerpt = '';
+  bool _tutorialGuideButtonAcknowledged = false;
   String _lastTutorialQuestSyncSignature = '';
+  Set<String> _lastAcceptedTrackedTutorialQuestIds = <String>{};
+  bool _hasAcceptedTrackedTutorialQuestSnapshot = false;
   String? _pendingBaseOwnedInventoryItemId;
   InventoryItem? _pendingBaseInventoryItem;
   LatLng? _pendingBaseSelection;
   bool _creatingBase = false;
   Symbol? _basePlacementPreviewSymbol;
   Uint8List? _basePlacementPreviewBytes;
-  String? _autoOpenedMainStoryLeadKey;
   Symbol? _playerPresenceSymbol;
   Circle? _playerPresenceAuraCircle;
   Circle? _playerPresencePulseCircle;
@@ -407,6 +414,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           if (!mounted || !_tutorialGuideDockVisible) return;
           setState(() {});
         });
+    _tutorialGuideButtonPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1700),
+    );
     debugPrint('SinglePlayer: initState');
     _startMapLoadTimeout();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -429,6 +440,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _basePlacementProvider?.addListener(_onBasePlacementRequested);
       _lastAuthenticatedUserId =
           context.read<AuthProvider>().user?.id.trim() ?? '';
+      unawaited(_restoreTutorialGuideButtonAcknowledgement());
       context.read<TutorialReplayProvider>().addListener(
         _onTutorialReplayRequested,
       );
@@ -448,6 +460,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   @override
   void dispose() {
     _tutorialGuideDockController.dispose();
+    _tutorialGuideButtonPulseController.dispose();
     _mapLoadTimeout?.cancel();
     _questGlowTimer?.cancel();
     _questPoiPulseTimer?.cancel();
@@ -639,8 +652,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _lastAuthenticatedUserId = userId;
       _handledLevelUpActivityIds.clear();
       _completedTaskProvider?.reset();
+      _tutorialGuideButtonAcknowledged = false;
+      _lastAcceptedTrackedTutorialQuestIds = <String>{};
+      _hasAcceptedTrackedTutorialQuestSnapshot = false;
+      unawaited(_restoreTutorialGuideButtonAcknowledgement());
     }
     if (auth.loading || !auth.isAuthenticated) {
+      _tutorialGuideButtonPulseController.stop();
       unawaited(_clearPlayerPresenceOverlays());
       return;
     }
@@ -690,15 +708,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     try {
       final status = await context.read<PoiService>().resetTutorial();
       if (!mounted) return;
-      setState(() {
-        _tutorialStatus = status;
-        _tutorialStatusChecked = true;
-      });
-      _syncQuestLogToTutorialStatus(status);
-      await _ensureTutorialScenarioLoaded(status);
-      await _ensureTutorialMonsterLoaded(status);
-      await _syncTutorialMapModeFromStatus(status);
-      _syncTutorialInventorySession(status);
+      await _clearTutorialGuideButtonAcknowledgement();
+      if (!mounted) return;
+      await _applyTutorialStatusUpdate(status);
       await _rebuildMapPins();
     } catch (error) {
       if (!mounted) return;
@@ -1313,6 +1325,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _setQuestAvailabilityLeadSyncPending(true);
       return;
     }
+    _openTrackedQuestsForTutorialQuestAwards(questLog);
     _openTrackedQuestsForObjectiveUpdates(questLog);
     _applyQuestLogOverlaysIfChanged();
     if (_skipQuestLogMapRefreshCount > 0) {
@@ -1330,11 +1343,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _onMapFocusRequest() {
     if (!mounted) return;
     final provider = context.read<MapFocusProvider>();
-    final mainStoryLeadPoi = provider.consumeMainStoryLeadPoi();
-    if (mainStoryLeadPoi != null) {
-      _focusMainStoryLeadPoi(mainStoryLeadPoi);
-      return;
-    }
     final poi = provider.consumePoi();
     if (poi != null) {
       _focusQuestPoI(poi);
@@ -1546,6 +1554,103 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return true;
   }
 
+  String _tutorialGuideButtonAcknowledgedPrefsKey(String userId) {
+    return '${_tutorialGuideButtonAcknowledgedPrefsKeyPrefix}_$userId';
+  }
+
+  Future<void> _restoreTutorialGuideButtonAcknowledgement() async {
+    if (!mounted) return;
+    final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (userId.isEmpty) {
+      setState(() => _tutorialGuideButtonAcknowledged = false);
+      _syncTutorialGuideButtonPulse(_tutorialStatus);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final currentUserId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (currentUserId != userId) return;
+    final acknowledged =
+        prefs.getBool(_tutorialGuideButtonAcknowledgedPrefsKey(userId)) ??
+        false;
+    setState(() => _tutorialGuideButtonAcknowledged = acknowledged);
+    _syncTutorialGuideButtonPulse(_tutorialStatus);
+  }
+
+  Future<void> _markTutorialGuideButtonAcknowledged() async {
+    if (_tutorialGuideButtonAcknowledged) return;
+
+    if (mounted) {
+      setState(() => _tutorialGuideButtonAcknowledged = true);
+    } else {
+      _tutorialGuideButtonAcknowledged = true;
+    }
+    _syncTutorialGuideButtonPulse(_tutorialStatus);
+
+    final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_tutorialGuideButtonAcknowledgedPrefsKey(userId), true);
+  }
+
+  Future<void> _clearTutorialGuideButtonAcknowledgement() async {
+    if (mounted) {
+      setState(() => _tutorialGuideButtonAcknowledged = false);
+    } else {
+      _tutorialGuideButtonAcknowledged = false;
+    }
+    _syncTutorialGuideButtonPulse(_tutorialStatus);
+
+    final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tutorialGuideButtonAcknowledgedPrefsKey(userId));
+  }
+
+  void _syncTutorialGuideButtonPulse(TutorialStatus? status) {
+    final shouldPulse =
+        _isTutorialGuideButtonUnlocked(status) &&
+        !_tutorialGuideDockVisible &&
+        !_tutorialGuideButtonAcknowledged;
+    if (shouldPulse) {
+      if (!_tutorialGuideButtonPulseController.isAnimating) {
+        _tutorialGuideButtonPulseController.repeat();
+      }
+      return;
+    }
+    if (_tutorialGuideButtonPulseController.isAnimating) {
+      _tutorialGuideButtonPulseController.stop();
+    }
+    if (_tutorialGuideButtonPulseController.value != 0.0) {
+      _tutorialGuideButtonPulseController.value = 0.0;
+    }
+  }
+
+  String? _primaryTrackedTutorialQuestCarouselItemId(
+    QuestLogProvider questLog,
+  ) {
+    final trackedQuestIds = questLog.trackedQuestIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (trackedQuestIds.isEmpty) {
+      return null;
+    }
+
+    for (final quest in questLog.quests) {
+      final questId = quest.id.trim();
+      if (questId.isEmpty ||
+          !quest.isTutorial ||
+          !quest.isAccepted ||
+          !trackedQuestIds.contains(questId)) {
+        continue;
+      }
+      return 'quest:$questId';
+    }
+    return null;
+  }
+
   void _openTrackedQuestsForObjectiveUpdates(QuestLogProvider questLog) {
     final signatures = <String, String>{};
     for (final quest in questLog.quests) {
@@ -1568,6 +1673,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     _lastTrackedQuestObjectiveSignatures = signatures;
     if (!hasObjectiveUpdate) return;
+    _trackedQuestsController.open();
+  }
+
+  void _openTrackedQuestsForTutorialQuestAwards(QuestLogProvider questLog) {
+    final acceptedTrackedTutorialQuestIds = <String>{};
+    for (final quest in questLog.quests) {
+      final questId = quest.id.trim();
+      if (questId.isEmpty ||
+          !quest.isTutorial ||
+          !quest.isAccepted ||
+          !questLog.trackedQuestIds.contains(questId)) {
+        continue;
+      }
+      acceptedTrackedTutorialQuestIds.add(questId);
+    }
+
+    if (!_hasAcceptedTrackedTutorialQuestSnapshot) {
+      _lastAcceptedTrackedTutorialQuestIds = acceptedTrackedTutorialQuestIds;
+      _hasAcceptedTrackedTutorialQuestSnapshot = true;
+      return;
+    }
+
+    final newlyAcceptedTrackedTutorialQuestIds = acceptedTrackedTutorialQuestIds
+        .difference(_lastAcceptedTrackedTutorialQuestIds);
+    _lastAcceptedTrackedTutorialQuestIds = acceptedTrackedTutorialQuestIds;
+    if (newlyAcceptedTrackedTutorialQuestIds.isEmpty) return;
+
+    for (final quest in questLog.quests) {
+      final questId = quest.id.trim();
+      if (!newlyAcceptedTrackedTutorialQuestIds.contains(questId)) continue;
+      _trackedQuestsController.open(itemId: 'quest:$questId');
+      return;
+    }
     _trackedQuestsController.open();
   }
 
@@ -1667,11 +1805,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   String _poiMarkerImageId(
     PointOfInterest poi, {
-    required bool hasMapContent,
+    required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
     final categoryId = poi.markerCategory.wireValue;
-    if (hasMapContent) {
+    if (hasQuestMarker) {
       return hasMainStoryAccent
           ? 'poi_category_${categoryId}_main_story'
           : 'poi_category_${categoryId}_activity';
@@ -1681,10 +1819,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   Uint8List? _peekPoiMarkerImage(
     PointOfInterest poi, {
-    required bool hasMapContent,
+    required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
-    if (hasMapContent) {
+    if (hasQuestMarker) {
       return hasMainStoryAccent
           ? peekPoiCategoryThumbnailWithMainStoryMarker(poi.markerCategory)
           : peekPoiCategoryThumbnailWithQuestMarker(poi.markerCategory);
@@ -1694,10 +1832,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   Future<Uint8List?> _loadPoiMarkerImage(
     PointOfInterest poi, {
-    required bool hasMapContent,
+    required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
-    if (hasMapContent) {
+    if (hasQuestMarker) {
       return hasMainStoryAccent
           ? loadPoiCategoryThumbnailWithMainStoryMarker(poi.markerCategory)
           : loadPoiCategoryThumbnailWithQuestMarker(poi.markerCategory);
@@ -1770,6 +1908,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return ids;
   }
 
+  Set<String> _buildPoiIdsWithQuestMarkerContent() {
+    final ids = <String>{};
+    final byCoordinate = _buildPoiCoordinateIndex();
+
+    void addPoiId(String? poiId) {
+      final normalizedId = _normalizePoiId(poiId);
+      if (normalizedId.isEmpty) return;
+      ids.add(normalizedId);
+    }
+
+    void addByCoordinate(double latitude, double longitude) {
+      final key = _coordinateKey(latitude, longitude);
+      if (key == null) return;
+      final matchedPoiIds = byCoordinate[key];
+      if (matchedPoiIds == null || matchedPoiIds.isEmpty) return;
+      ids.addAll(matchedPoiIds);
+    }
+
+    for (final exposition in _expositions) {
+      addPoiId(exposition.pointOfInterestId);
+      addByCoordinate(exposition.latitude, exposition.longitude);
+    }
+    for (final scenario in _scenarios) {
+      addPoiId(scenario.pointOfInterestId);
+      addByCoordinate(scenario.latitude, scenario.longitude);
+    }
+    for (final monster in _monsters) {
+      addPoiId(monster.pointOfInterestId);
+      addByCoordinate(monster.latitude, monster.longitude);
+    }
+
+    return ids;
+  }
+
   bool _poiHasMapContent(
     PointOfInterest poi, {
     required bool isQuestCurrent,
@@ -1777,6 +1949,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }) {
     if (poi.hasAvailableQuest || isQuestCurrent) return true;
     final contentIds = mapContentPoiIds ?? _buildPoiIdsWithMapContent();
+    return contentIds.contains(poi.id);
+  }
+
+  bool _poiHasQuestMarkerContent(
+    PointOfInterest poi, {
+    required bool isQuestCurrent,
+    Set<String>? questMarkerPoiIds,
+  }) {
+    if (poi.hasAvailableQuest || isQuestCurrent) return true;
+    final contentIds =
+        questMarkerPoiIds ?? _buildPoiIdsWithQuestMarkerContent();
     return contentIds.contains(poi.id);
   }
 
@@ -2109,36 +2292,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       character: bestCharacter,
       distanceMeters: bestDistance,
     );
-  }
-
-  String _mainStoryLeadAutoOpenKey(
-    _MainStoryLead lead,
-    String? selectedZoneId,
-  ) {
-    final zoneKey = selectedZoneId ?? 'no-zone';
-    final characterKey = lead.character?.id ?? 'no-character';
-    return '$zoneKey|${lead.poi.id}|$characterKey';
-  }
-
-  void _maybeAutoOpenTrackedQuestsForMainStoryLead(
-    _MainStoryLead? mainStoryLead,
-    String? selectedZoneId,
-  ) {
-    if (_isPlacingBase || mainStoryLead == null) {
-      return;
-    }
-    final autoOpenKey = _mainStoryLeadAutoOpenKey(
-      mainStoryLead,
-      selectedZoneId,
-    );
-    if (_autoOpenedMainStoryLeadKey == autoOpenKey) {
-      return;
-    }
-    _autoOpenedMainStoryLeadKey = autoOpenKey;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _trackedQuestsController.open();
-    });
   }
 
   double _haversineDistanceMeters(
@@ -2919,43 +3072,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     unawaited(_pulsePoi(encounter.latitude, encounter.longitude));
   }
 
-  void _focusMainStoryLead(_MainStoryLead lead) async {
-    final focusLocation = _mainStoryLeadFocusLocation(lead);
-    if (focusLocation == null) {
-      return;
-    }
-    _selectZoneForMainStoryLeadIfDifferent(lead);
-    _flyToLocation(focusLocation.latitude, focusLocation.longitude);
-    unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
-    final isolation = _mapMarkerIsolationForMainStoryLead(lead);
-    if (lead.character != null) {
-      await _runWithMapMarkerIsolation(isolation, () async {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        if (!mounted) return;
-        await _showCharacterPanel(lead.character!);
-      });
-      return;
-    }
-    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
-      lead.poi.id,
-    );
-    await _runWithMapMarkerIsolation(
-      isolation,
-      () => _showPointOfInterestPanel(lead.poi, hasDiscovered),
-    );
-  }
-
-  void _focusMainStoryLeadPoi(PointOfInterest poi) {
-    Character? featuredCharacter;
-    for (final character in poi.characters) {
-      if (character.hasAvailableMainStoryQuest) {
-        featuredCharacter = character;
-        break;
-      }
-    }
-    _focusMainStoryLead(_MainStoryLead(poi: poi, character: featuredCharacter));
-  }
-
   String _tutorialScenarioOverlayTitle(TutorialStatus? status) {
     final scenarioId = status?.scenarioId?.trim() ?? '';
     if (scenarioId.isEmpty) return 'Tutorial Scenario';
@@ -3002,33 +3118,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (location == null) return;
     _updateSelectedZoneFromLocation(force: true);
     _flyToLocation(location.latitude, location.longitude);
-  }
-
-  LatLng? _mainStoryLeadFocusLocation(_MainStoryLead lead) {
-    final character = lead.character;
-    if (character != null) {
-      final characterLocation = _questNodeFetchCharacterLocation(character);
-      if (characterLocation != null) {
-        return characterLocation;
-      }
-    }
-    final lat = double.tryParse(lead.poi.lat);
-    final lng = double.tryParse(lead.poi.lng);
-    if (!_isValidMapCoordinate(lat, lng)) {
-      return null;
-    }
-    return LatLng(lat!, lng!);
-  }
-
-  bool _selectZoneForMainStoryLeadIfDifferent(_MainStoryLead lead) {
-    final focusLocation = _mainStoryLeadFocusLocation(lead);
-    if (focusLocation != null) {
-      return _selectZoneForCoordinatesIfDifferent(
-        focusLocation.latitude,
-        focusLocation.longitude,
-      );
-    }
-    return _selectZoneForPoiIfDifferent(lead.poi);
   }
 
   _FeaturedMainStoryPulseTarget? _featuredMainStoryPulseTarget(
@@ -3313,15 +3402,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _MapMarkerIsolation(
       markerKeys: {_mapMarkerIsolationKey('poi', poi.id)},
     );
-  }
-
-  _MapMarkerIsolation _mapMarkerIsolationForMainStoryLead(_MainStoryLead lead) {
-    final markerKeys = <String>{_mapMarkerIsolationKey('poi', lead.poi.id)};
-    final characterId = lead.character?.id.trim() ?? '';
-    if (characterId.isNotEmpty) {
-      markerKeys.add(_mapMarkerIsolationKey('character', characterId));
-    }
-    return _MapMarkerIsolation(markerKeys: markerKeys);
   }
 
   bool _isMapMarkerIsolationVisible(String type, String id) {
@@ -3986,9 +4066,41 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
+  Future<bool> _applyTutorialStatusUpdate(
+    TutorialStatus? status, {
+    bool preserveCompletedReveal = false,
+  }) async {
+    if (!mounted || status == null) return false;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+
+    setState(() {
+      _tutorialStatus = status;
+      _tutorialStatusChecked = true;
+    });
+    _syncQuestLogToTutorialStatus(status);
+    await _ensureTutorialScenarioLoaded(status);
+    await _ensureTutorialMonsterLoaded(status);
+    await _syncTutorialMapModeFromStatus(status);
+    if (!preserveCompletedReveal) {
+      await _resetTutorialPresentationForInactiveStatus(status);
+    }
+    _syncTutorialInventorySession(status);
+    _syncTutorialGuideButtonPulse(status);
+    _openTrackedQuestsForTutorialObjectiveUpdates(status);
+    if (_tutorialReplayPending &&
+        (status.character == null || status.dialogue.isEmpty)) {
+      _tutorialReplayPending = false;
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('Tutorial is not configured yet.')),
+      );
+    }
+    return true;
+  }
+
   Future<void> _loadTutorialStatus({
     bool force = false,
     bool preserveCompletedReveal = false,
+    bool triggerDialogues = true,
   }) async {
     if (!mounted) return;
     if (_tutorialStatusLoading) {
@@ -4001,41 +4113,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       return;
     }
     if (!force && _tutorialStatusChecked) {
-      _maybeShowTutorialDialogues();
+      if (triggerDialogues) {
+        _maybeShowTutorialDialogues();
+      }
       return;
     }
 
     _tutorialStatusLoading = true;
+    var loadedStatus = false;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final status = await context.read<PoiService>().getTutorialStatus();
       if (!mounted) return;
-      setState(() {
-        _tutorialStatus = status;
-        _tutorialStatusChecked = true;
-      });
-      _syncQuestLogToTutorialStatus(status);
-      await _ensureTutorialScenarioLoaded(status);
-      await _ensureTutorialMonsterLoaded(status);
-      await _syncTutorialMapModeFromStatus(status);
-      if (!preserveCompletedReveal) {
-        await _resetTutorialPresentationForInactiveStatus(status);
-      }
-      _syncTutorialInventorySession(status);
-      _openTrackedQuestsForTutorialObjectiveUpdates(status);
-      if (_tutorialReplayPending &&
-          (status == null ||
-              status.character == null ||
-              status.dialogue.isEmpty)) {
-        _tutorialReplayPending = false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tutorial is not configured yet.')),
+      loadedStatus = await _applyTutorialStatusUpdate(
+        status,
+        preserveCompletedReveal: preserveCompletedReveal,
+      );
+      if (!loadedStatus) {
+        debugPrint(
+          'SinglePlayer: tutorial status request returned no data; preserving existing tutorial state.',
         );
+        if (_tutorialReplayPending && !_tutorialStatusChecked) {
+          _tutorialReplayPending = false;
+          messenger?.showSnackBar(
+            const SnackBar(content: Text('Tutorial is not configured yet.')),
+          );
+        }
       }
     } finally {
       _tutorialStatusLoading = false;
     }
 
-    _maybeShowTutorialDialogues();
+    if (loadedStatus && triggerDialogues) {
+      _maybeShowTutorialDialogues();
+    }
     if (_tutorialStatusReloadQueued) {
       final queuedPreserveCompletedReveal =
           _tutorialStatusReloadQueuedPreserveCompletedReveal;
@@ -4045,6 +4156,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _loadTutorialStatus(
           force: true,
           preserveCompletedReveal: queuedPreserveCompletedReveal,
+          triggerDialogues: triggerDialogues,
         ),
       );
     }
@@ -4173,7 +4285,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         status.isCompleted;
   }
 
+  Future<void> _showTutorialGuideButtonInteraction() async {
+    final status = _tutorialStatus;
+    if (status != null &&
+        status.isCompleted &&
+        _tutorialGuideButtonAcknowledged) {
+      await _showTutorialGuideSupportChat();
+      return;
+    }
+    await _showTutorialGuideButtonDialogue();
+  }
+
+  String _tutorialGuideSupportGreetingForStatus(TutorialStatus? status) {
+    final configuredGreeting = status?.guideSupportGreeting.trim() ?? '';
+    if (configuredGreeting.isNotEmpty) {
+      return configuredGreeting;
+    }
+    final characterName = status?.character?.name.trim() ?? 'your guide';
+    return '$characterName is here to help. Ask about quests, combat, equipment, your base, or what to do next, and you will get an in-world answer.';
+  }
+
   Future<void> _showTutorialGuideButtonDialogue() async {
+    await _markTutorialGuideButtonAcknowledged();
+    if (!mounted) return;
     final status = _tutorialStatus;
     final character = status?.character;
     final dialogue = _tutorialGuideDialogueForStatus(status);
@@ -4215,6 +4349,66 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
+  Future<void> _showTutorialGuideSupportChat() async {
+    final status = _tutorialStatus;
+    final character = status?.character;
+    if (character == null || _tutorialDialogVisible) {
+      return;
+    }
+
+    setState(() => _tutorialDialogVisible = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        useSafeArea: false,
+        barrierDismissible: true,
+        barrierColor: Colors.transparent,
+        builder: (dialogContext) {
+          return TutorialGuideChatModal(
+            character: character,
+            initialAssistantMessage: _tutorialGuideSupportGreetingForStatus(
+              status,
+            ),
+            onClose: () => Navigator.of(dialogContext).pop(),
+            onSendMessage: (message, history) async {
+              try {
+                final response = await context
+                    .read<PoiService>()
+                    .sendTutorialGuideChat(message: message, history: history);
+                final answer = response.message.trim();
+                if (answer.isNotEmpty) {
+                  return answer;
+                }
+              } on DioException catch (error) {
+                throw Exception(
+                  PoiService.extractApiErrorMessage(
+                    error,
+                    'Guide support is unavailable right now.',
+                  ),
+                );
+              }
+              return '${character.name} pauses for a moment. "I do not have a clean answer for that right now."';
+            },
+          );
+        },
+      );
+    } on DioException catch (error) {
+      if (!mounted) return;
+      final message = PoiService.extractApiErrorMessage(
+        error,
+        'Guide support is unavailable right now.',
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() => _tutorialDialogVisible = false);
+      }
+    }
+  }
+
   String _tutorialGuidePortraitUrl(Character? character) {
     if (character == null) return '';
     final dialogue = character.dialogueImageUrl?.trim() ?? '';
@@ -4249,6 +4443,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _tutorialGuideDockExcerpt = _tutorialGuideDockExcerptForStatus(status);
       _tutorialGuideDockVisible = true;
     });
+    _syncTutorialGuideButtonPulse(status);
     try {
       await _tutorialGuideDockController.forward(from: 0);
     } finally {
@@ -4258,6 +4453,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           _tutorialGuideDockCharacter = null;
           _tutorialGuideDockExcerpt = '';
         });
+        _syncTutorialGuideButtonPulse(_tutorialStatus);
       } else {
         _tutorialGuideDockVisible = false;
         _tutorialGuideDockCharacter = null;
@@ -4269,6 +4465,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _maybeShowTutorialDialogues() {
     if (!mounted ||
         _tutorialDialogVisible ||
+        _tutorialAdvanceInFlight ||
         _tutorialActivationInFlight ||
         _tutorialReplayResetInFlight ||
         _tutorialGuideDockVisible) {
@@ -4429,15 +4626,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     TutorialStatus status, {
     bool forceReplay = false,
   }) async {
-    await context.read<PoiService>().advanceTutorial('welcome_dialogue_closed');
-    await _loadTutorialStatus(force: true);
+    await _advanceTutorialStateAction('welcome_dialogue_closed');
     if (!mounted) return;
     final nextStatus = _tutorialStatus;
-    if ((nextStatus?.isPostWelcomeDialogueStep ?? false) ||
-        (nextStatus?.shouldShowPostWelcomeDialogue ?? false)) {
+    if (nextStatus == null || nextStatus.stage.trim() == 'welcome') {
       return;
     }
-    await _completeTutorialPostWelcomeStep(status, forceReplay: forceReplay);
+    if (nextStatus.isPostWelcomeDialogueStep ||
+        nextStatus.shouldShowPostWelcomeDialogue) {
+      _maybeShowTutorialDialogues();
+      return;
+    }
+    await _completeTutorialPostWelcomeStep(
+      nextStatus,
+      forceReplay: forceReplay,
+    );
   }
 
   Future<void> _completeTutorialPostWelcomeStep(
@@ -4453,17 +4656,56 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   Future<void> _advanceTutorialAfterDialogue(String action) async {
-    await context.read<PoiService>().advanceTutorial(action);
-    await _loadTutorialStatus(force: true);
+    await _advanceTutorialStateAction(action);
+    if (!mounted) return;
+    final currentStage = _tutorialStatus?.stage.trim() ?? '';
+    final blockedStage = action == 'post_scenario_dialogue_closed'
+        ? 'post_scenario_dialogue'
+        : action == 'post_monster_dialogue_closed'
+        ? 'post_monster_dialogue'
+        : '';
+    if (blockedStage.isNotEmpty && currentStage == blockedStage) {
+      return;
+    }
+    _maybeShowTutorialDialogues();
   }
 
   Future<void> _completeTutorialAfterBaseDialogue() async {
-    await context.read<PoiService>().advanceTutorial(
+    await _advanceTutorialStateAction(
       'post_base_dialogue_closed',
+      preserveCompletedReveal: true,
     );
-    await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
     if (!mounted) return;
+    if ((_tutorialStatus?.stage.trim() ?? '') == 'post_base_dialogue') {
+      return;
+    }
     await _beginTutorialNormalPinsReveal();
+  }
+
+  Future<void> _advanceTutorialStateAction(
+    String action, {
+    bool preserveCompletedReveal = false,
+  }) async {
+    if (!mounted || _tutorialAdvanceInFlight) return;
+
+    _tutorialAdvanceInFlight = true;
+    try {
+      final status = await context.read<PoiService>().advanceTutorial(action);
+      if (!mounted) return;
+      final updated = await _applyTutorialStatusUpdate(
+        status,
+        preserveCompletedReveal: preserveCompletedReveal,
+      );
+      if (!updated) {
+        await _loadTutorialStatus(
+          force: true,
+          preserveCompletedReveal: preserveCompletedReveal,
+          triggerDialogues: false,
+        );
+      }
+    } finally {
+      _tutorialAdvanceInFlight = false;
+    }
   }
 
   Future<void> _showTutorialWelcomeDialog(
@@ -4562,10 +4804,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           ..._scenarios.where((item) => item.id != scenario.id),
         ];
       });
+      final questLog = context.read<QuestLogProvider>();
       await _rebuildMapPins();
       if (!mounted) return;
       _flyToLocation(scenario.latitude, scenario.longitude);
       unawaited(_pulsePoi(scenario.latitude, scenario.longitude));
+      await questLog.refresh();
+      if (!mounted) return;
+      final tutorialTrackedQuestItemId =
+          _primaryTrackedTutorialQuestCarouselItemId(questLog);
+      if (tutorialTrackedQuestItemId != null) {
+        _trackedQuestsController.open(itemId: tutorialTrackedQuestItemId);
+      }
       unawaited(_loadTutorialStatus(force: true));
     } catch (error) {
       await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
@@ -8605,6 +8855,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final poiImageUpdates = <_PoiImageUpdate>[];
       final poiSymbolRequests = <_PoiSymbolRequest>[];
       final mapContentPoiIds = _buildPoiIdsWithMapContent();
+      final questMarkerPoiIds = _buildPoiIdsWithQuestMarkerContent();
       for (final poi in _pois) {
         if (!_isPoiInSelectedZone(poi)) continue;
         final lat = double.tryParse(poi.lat) ?? 0.0;
@@ -8620,6 +8871,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           poi,
           isQuestCurrent: isQuestCurrent,
           mapContentPoiIds: mapContentPoiIds,
+        );
+        final hasQuestMarkerContent = _poiHasQuestMarkerContent(
+          poi,
+          isQuestCurrent: isQuestCurrent,
+          questMarkerPoiIds: questMarkerPoiIds,
         );
         final hasCharacter = poi.characters.isNotEmpty;
         final baseEligible = !undiscovered || hasCharacter || hasMapContent;
@@ -8638,11 +8894,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
         String? placeholderId;
         String? symbolImageId;
-        if (hasMapContent && hasMainStoryAccent) {
+        if (hasQuestMarkerContent && hasMainStoryAccent) {
           placeholderId = mainStoryPlaceholderBytes != null
               ? 'poi_placeholder_main_story'
               : null;
-        } else if (hasMapContent) {
+        } else if (hasQuestMarkerContent) {
           placeholderId = availablePlaceholderBytes != null
               ? 'poi_placeholder_available'
               : null;
@@ -8654,13 +8910,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         if (useRealImage) {
           final cachedImageBytes = _peekPoiMarkerImage(
             poi,
-            hasMapContent: hasMapContent,
+            hasQuestMarker: hasQuestMarkerContent,
             hasMainStoryAccent: hasMainStoryAccent,
           );
           if (cachedImageBytes != null) {
             symbolImageId = _poiMarkerImageId(
               poi,
-              hasMapContent: hasMapContent,
+              hasQuestMarker: hasQuestMarkerContent,
               hasMainStoryAccent: hasMainStoryAccent,
             );
             await _ensureMapImage(
@@ -8731,6 +8987,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               poi: poi,
               isQuestCurrent: isQuestCurrent,
               hasMapContent: hasMapContent,
+              hasQuestMarker: hasQuestMarkerContent,
               hasMainStoryAccent: hasMainStoryAccent,
               undiscovered: undiscovered,
             ),
@@ -8972,6 +9229,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final currentQuestPoiIds = _currentQuestPoiIdsForFilter(questLog);
       final trackedQuestPoiIds = _trackedQuestPoiIdsForPulse(questLog);
       final mapContentPoiIds = _buildPoiIdsWithMapContent();
+      final questMarkerPoiIds = _buildPoiIdsWithQuestMarkerContent();
       await Future.wait(
         results.map(
           (result) => _applyPoiImageUpdate(
@@ -8981,6 +9239,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             currentQuestPoiIds,
             trackedQuestPoiIds,
             mapContentPoiIds,
+            questMarkerPoiIds,
           ),
         ),
       );
@@ -8995,6 +9254,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     Set<String> currentQuestPoiIds,
     Set<String> trackedQuestPoiIds,
     Set<String> mapContentPoiIds,
+    Set<String> questMarkerPoiIds,
   ) async {
     final bytes = result.bytes;
     final imageId = result.imageId;
@@ -9015,8 +9275,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       isQuestCurrent: isQuestCurrentNow,
       mapContentPoiIds: mapContentPoiIds,
     );
+    final hasQuestMarkerNow = _poiHasQuestMarkerContent(
+      result.update.poi,
+      isQuestCurrent: isQuestCurrentNow,
+      questMarkerPoiIds: questMarkerPoiIds,
+    );
     if (isQuestCurrentNow != result.update.isQuestCurrent ||
-        hasMapContentNow != result.update.hasMapContent) {
+        hasMapContentNow != result.update.hasMapContent ||
+        hasQuestMarkerNow != result.update.hasQuestMarker) {
       return;
     }
 
@@ -9102,29 +9368,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   ) async {
     Uint8List? imageBytes;
     String? imageId;
-    if (update.hasMapContent) {
+    if (update.hasQuestMarker) {
       imageBytes = await _loadPoiMarkerImage(
         update.poi,
-        hasMapContent: true,
+        hasQuestMarker: true,
         hasMainStoryAccent: update.hasMainStoryAccent,
       );
       if (imageBytes != null) {
         imageId = _poiMarkerImageId(
           update.poi,
-          hasMapContent: true,
+          hasQuestMarker: true,
           hasMainStoryAccent: update.hasMainStoryAccent,
         );
       }
     } else {
       imageBytes = await _loadPoiMarkerImage(
         update.poi,
-        hasMapContent: false,
+        hasQuestMarker: false,
         hasMainStoryAccent: false,
       );
       if (imageBytes != null) {
         imageId = _poiMarkerImageId(
           update.poi,
-          hasMapContent: false,
+          hasQuestMarker: false,
           hasMainStoryAccent: false,
         );
       }
@@ -10207,10 +10473,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final shouldPulseLikeMainStory =
         _featuredMainStoryPulseTarget(questLog)?.poiId == poi.id;
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
+    final questMarkerPoiIds = _buildPoiIdsWithQuestMarkerContent();
     final hasMapContent = _poiHasMapContent(
       poi,
       isQuestCurrent: isQuestCurrent,
       mapContentPoiIds: mapContentPoiIds,
+    );
+    final hasQuestMarkerContent = _poiHasQuestMarkerContent(
+      poi,
+      isQuestCurrent: isQuestCurrent,
+      questMarkerPoiIds: questMarkerPoiIds,
     );
     final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
     final hasCharacter = poi.characters.isNotEmpty;
@@ -10242,18 +10514,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     late final String imageId;
     Uint8List? imageBytes;
-    if (hasMapContent) {
+    if (hasQuestMarkerContent) {
       imageBytes = useRealImage
           ? await _loadPoiMarkerImage(
               poi,
-              hasMapContent: true,
+              hasQuestMarker: true,
               hasMainStoryAccent: hasMainStoryAccent,
             )
           : null;
       imageId = imageBytes != null
           ? _poiMarkerImageId(
               poi,
-              hasMapContent: true,
+              hasQuestMarker: true,
               hasMainStoryAccent: hasMainStoryAccent,
             )
           : (hasMainStoryAccent
@@ -10262,13 +10534,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     } else if (useRealImage) {
       imageBytes = await _loadPoiMarkerImage(
         poi,
-        hasMapContent: false,
+        hasQuestMarker: false,
         hasMainStoryAccent: false,
       );
       imageId = imageBytes != null
           ? _poiMarkerImageId(
               poi,
-              hasMapContent: false,
+              hasQuestMarker: false,
               hasMainStoryAccent: false,
             )
           : 'poi_placeholder';
@@ -11383,17 +11655,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final showTutorialGuideButton =
         _isTutorialGuideButtonUnlocked(tutorialStatus) &&
         !_tutorialGuideDockVisible;
+    final pulseTutorialGuideButton =
+        showTutorialGuideButton && !_tutorialGuideButtonAcknowledged;
     final overlayButtonTotalCount =
         overlayButtonCount + (showTutorialGuideButton ? 1 : 0);
     final overlayButtonStackHeight =
         overlayButtonSize * overlayButtonTotalCount +
         overlayButtonSpacing * math.max(0, overlayButtonTotalCount - 1);
-    final mainStoryLead = _currentZoneMainStoryLead(
-      questLog,
-      allowGlobalFallback: false,
-      includeKnownPins: false,
-      requireFreshZonePins: true,
-    );
     final tutorialScenarioTrackedObjective =
         tutorialStatus?.hasActiveScenario ?? false
         ? tutorialStatus!.resolvedScenarioObjectiveCopy
@@ -11432,7 +11700,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final hasTrackedQuestOverlay =
         tutorialScenarioTrackedObjective.isNotEmpty ||
         tutorialMonsterTrackedObjective.isNotEmpty ||
-        mainStoryLead != null ||
         questLog.quests.any(
           (quest) => questLog.trackedQuestIds.contains(quest.id),
         );
@@ -11441,8 +11708,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         bottomOverlayPadding +
         (hasTrackedQuestOverlay ? trackedQuestOverlayCollapsedHeight : 0) +
         polygonActionGap;
-    final selectedZone = context.watch<ZoneProvider>().selectedZone;
-    final selectedZoneId = selectedZone?.id;
     final loadingZoneSpinnerDockHeight = hasTrackedQuestOverlay
         ? trackedQuestOverlayCollapsedHeight
         : zoneLoadingSpinnerSize;
@@ -11450,8 +11715,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         MediaQuery.paddingOf(context).bottom +
         bottomOverlayPadding +
         ((loadingZoneSpinnerDockHeight - zoneLoadingSpinnerSize) / 2);
-    _maybeAutoOpenTrackedQuestsForMainStoryLead(mainStoryLead, selectedZoneId);
-
     Quest? polygonQuest;
     QuestNode? polygonNode;
     Challenge? polygonChallenge;
@@ -11702,11 +11965,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                   ),
                                   if (showTutorialGuideButton) ...[
                                     const SizedBox(height: 12),
-                                    _OverlayPortraitButton(
-                                      imageUrl: _tutorialGuidePortraitUrl(
-                                        tutorialStatus?.character,
-                                      ),
-                                      onTap: _showTutorialGuideButtonDialogue,
+                                    AnimatedBuilder(
+                                      animation:
+                                          _tutorialGuideButtonPulseController,
+                                      builder: (context, _) {
+                                        return _OverlayPortraitButton(
+                                          imageUrl: _tutorialGuidePortraitUrl(
+                                            tutorialStatus?.character,
+                                          ),
+                                          onTap:
+                                              _showTutorialGuideButtonInteraction,
+                                          pulseProgress:
+                                              pulseTutorialGuideButton
+                                              ? _tutorialGuideButtonPulseController
+                                                    .value
+                                              : null,
+                                        );
+                                      },
                                     ),
                                   ],
                                 ],
@@ -14969,50 +15244,97 @@ class _OverlayButton extends StatelessWidget {
 }
 
 class _OverlayPortraitButton extends StatelessWidget {
-  const _OverlayPortraitButton({required this.imageUrl, required this.onTap});
+  const _OverlayPortraitButton({
+    required this.imageUrl,
+    required this.onTap,
+    this.pulseProgress,
+  });
 
   final String imageUrl;
   final VoidCallback onTap;
+  final double? pulseProgress;
+
+  Widget _buildPulseRing(double progress) {
+    final curved = Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
+    final scale = 1.0 + (0.55 * curved);
+    final opacity = (1.0 - curved).clamp(0.0, 1.0);
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFF5C542).withValues(alpha: 0.12 * opacity),
+          border: Border.all(
+            color: const Color(0xFFD2B26C).withValues(alpha: 0.82 * opacity),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFF4D989).withValues(alpha: 0.24 * opacity),
+              blurRadius: 14,
+              spreadRadius: 1.5,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
     final borderColor = theme.colorScheme.outlineVariant;
-    return Material(
-      color: surfaceColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: borderColor),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3E2BC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: const Color(0xFFD2B26C).withValues(alpha: 0.92),
+    final primaryPulseProgress = pulseProgress?.clamp(0.0, 1.0);
+    final secondaryPulseProgress = primaryPulseProgress == null
+        ? null
+        : ((primaryPulseProgress + 0.5) % 1.0);
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        if (secondaryPulseProgress != null)
+          IgnorePointer(child: _buildPulseRing(secondaryPulseProgress)),
+        if (primaryPulseProgress != null)
+          IgnorePointer(child: _buildPulseRing(primaryPulseProgress)),
+        Material(
+          color: surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: borderColor),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3E2BC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFD2B26C).withValues(alpha: 0.92),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Icon(Icons.person),
+                        )
+                      : const Icon(Icons.person),
+                ),
               ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(9),
-              child: imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Icon(Icons.person),
-                    )
-                  : const Icon(Icons.person),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -15102,6 +15424,7 @@ class _PoiImageUpdate {
     required this.poi,
     required this.isQuestCurrent,
     required this.hasMapContent,
+    required this.hasQuestMarker,
     required this.hasMainStoryAccent,
     required this.undiscovered,
   });
@@ -15109,6 +15432,7 @@ class _PoiImageUpdate {
   final PointOfInterest poi;
   final bool isQuestCurrent;
   final bool hasMapContent;
+  final bool hasQuestMarker;
   final bool hasMainStoryAccent;
   final bool undiscovered;
 }

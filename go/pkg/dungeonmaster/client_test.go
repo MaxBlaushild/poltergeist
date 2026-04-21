@@ -190,3 +190,19 @@ func TestResolveQuestEncounterTypeAppliesAuthoredBossOrRaidScaling(t *testing.T)
 		t.Fatalf("expected authored raid tier, got %s", got)
 	}
 }
+
+func TestQuestGenerationSkipsQuestGiver(t *testing.T) {
+	if questGenerationSkipsQuestGiver(nil) {
+		t.Fatal("expected nil quest giver to continue with normal resolution")
+	}
+
+	questGiverID := uuid.New()
+	if questGenerationSkipsQuestGiver(&questGiverID) {
+		t.Fatal("expected real quest giver id to stay attached")
+	}
+
+	explicitNoGiver := uuid.Nil
+	if !questGenerationSkipsQuestGiver(&explicitNoGiver) {
+		t.Fatal("expected uuid.Nil sentinel to skip quest giver generation")
+	}
+}

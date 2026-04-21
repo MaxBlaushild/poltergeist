@@ -38,6 +38,9 @@ type tutorialConfigRequest struct {
 	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
 	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
 	PostWelcomeDialogue               []models.DialogueMessage     `json:"postWelcomeDialogue"`
+	GuideSupportGreeting              string                       `json:"guideSupportGreeting"`
+	GuideSupportPersonality           string                       `json:"guideSupportPersonality"`
+	GuideSupportBehavior              string                       `json:"guideSupportBehavior"`
 	ScenarioObjectiveCopy             string                       `json:"scenarioObjectiveCopy"`
 	PostScenarioDialogue              []models.DialogueMessage     `json:"postScenarioDialogue"`
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
@@ -72,6 +75,7 @@ type tutorialStatusResponse struct {
 	Character                 *models.Character        `json:"character,omitempty"`
 	Dialogue                  []models.DialogueMessage `json:"dialogue"`
 	PostWelcomeDialogue       []models.DialogueMessage `json:"postWelcomeDialogue"`
+	GuideSupportGreeting      string                   `json:"guideSupportGreeting"`
 	ScenarioObjectiveCopy     string                   `json:"scenarioObjectiveCopy"`
 	PostScenarioDialogue      []models.DialogueMessage `json:"postScenarioDialogue"`
 	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
@@ -228,9 +232,8 @@ func (s *server) adminInstantiateTutorialBaseQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if config == nil || config.BaseQuestArchetypeID == nil ||
-		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tutorial home base quest is not fully configured"})
+	if config == nil || config.BaseQuestArchetypeID == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tutorial home base quest archetype is not configured"})
 		return
 	}
 
@@ -347,6 +350,16 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		return
 	}
 
+	currentState, err := s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if currentState != nil && currentState.CompletedAt != nil {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "tutorial already completed"})
+		return
+	}
+
 	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -354,6 +367,18 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 	}
 
 	zones, err := s.dbClient.Zone().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	tutorialQuest, err := s.ensureTutorialAwardedQuestExists(
+		ctx,
+		user.ID,
+		userLat,
+		userLng,
+		config,
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -421,6 +446,10 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to activate tutorial scenario"})
 		return
 	}
+	if err := s.acceptAndTrackTutorialQuest(ctx, user.ID, tutorialQuest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, scenarioWithUserStatus{
 		Scenario:        *scenario,
@@ -447,55 +476,72 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 		return
 	}
 
+	state, err := s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	state, err = s.maybeAdvanceTutorialProgress(ctx, user.ID, config, state)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	action := strings.TrimSpace(strings.ToLower(requestBody.Action))
 	switch action {
 	case "welcome_dialogue_closed":
-		if err := s.dbClient.Tutorial().AdvanceToPostWelcomeDialogue(ctx, user.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if state != nil &&
+			state.CompletedAt == nil &&
+			state.Stage == models.TutorialStageWelcome {
+			if err := s.dbClient.Tutorial().AdvanceToPostWelcomeDialogue(ctx, user.ID); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	case "post_scenario_dialogue_closed":
-		if _, err := s.advanceTutorialToMonsterOrComplete(ctx, user.ID, config); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if state != nil &&
+			state.CompletedAt == nil &&
+			state.Stage == models.TutorialStagePostScenarioDialogue {
+			if _, err := s.advanceTutorialToMonsterOrComplete(ctx, user.ID, config); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	case "post_monster_dialogue_closed":
-		requiredUseItemIDs, err := s.tutorialBaseKitRequirementItemIDs(ctx, config)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if len(requiredUseItemIDs) > 0 {
-			if err := s.dbClient.Tutorial().AdvanceToBaseKit(ctx, user.ID, requiredUseItemIDs); err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else {
-			if err := s.dbClient.Tutorial().AdvanceToBaseKit(ctx, user.ID, []int{}); err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, user.ID); err != nil {
+		if state != nil &&
+			state.CompletedAt == nil &&
+			state.Stage == models.TutorialStagePostMonsterDialogue {
+			if err := s.advanceTutorialAfterPostMonsterDialogue(ctx, user.ID, config); err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 		}
 	case "post_base_placement_dialogue_closed":
-		if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, user.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if state != nil &&
+			state.CompletedAt == nil &&
+			(state.Stage == models.TutorialStagePostBasePlacement ||
+				state.Stage == models.TutorialStageHearth ||
+				state.Stage == models.TutorialStagePostBaseDialogue) {
+			if err := s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, user.ID); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	case "post_base_dialogue_closed":
-		if err := s.dbClient.Tutorial().MarkCompleted(ctx, user.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if state != nil &&
+			state.CompletedAt == nil &&
+			state.Stage == models.TutorialStagePostBaseDialogue {
+			if err := s.dbClient.Tutorial().MarkCompleted(ctx, user.ID); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	default:
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unsupported tutorial action"})
 		return
 	}
 
-	state, err := s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
+	state, err = s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -522,6 +568,7 @@ func buildTutorialStatusResponse(
 			Character:                 config.Character,
 			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 			PostWelcomeDialogue:       append([]models.DialogueMessage{}, config.PostWelcomeDialogue...),
+			GuideSupportGreeting:      config.GuideSupportGreeting,
 			ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 			PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
@@ -556,6 +603,7 @@ func buildTutorialStatusResponse(
 		Character:                 config.Character,
 		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
 		PostWelcomeDialogue:       append([]models.DialogueMessage{}, config.PostWelcomeDialogue...),
+		GuideSupportGreeting:      config.GuideSupportGreeting,
 		ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 		PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
@@ -578,6 +626,9 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	config := &models.TutorialConfig{
 		Dialogue:                  models.DialogueSequence{},
 		PostWelcomeDialogue:       models.DialogueSequence{},
+		GuideSupportGreeting:      strings.TrimSpace(body.GuideSupportGreeting),
+		GuideSupportPersonality:   strings.TrimSpace(body.GuideSupportPersonality),
+		GuideSupportBehavior:      strings.TrimSpace(body.GuideSupportBehavior),
 		ScenarioObjectiveCopy:     strings.TrimSpace(body.ScenarioObjectiveCopy),
 		PostScenarioDialogue:      models.DialogueSequence{},
 		LoadoutDialogue:           models.DialogueSequence{},
@@ -758,6 +809,22 @@ func (s *server) maybeAdvanceTutorialProgress(
 		return nil, nil
 	}
 	switch state.Stage {
+	case models.TutorialStageWelcome:
+		if state.ActivatedAt != nil || state.CompletedAt != nil {
+			return state, nil
+		}
+		if config != nil && len(config.Dialogue) == 0 {
+			if err := s.dbClient.Tutorial().AdvanceToPostWelcomeDialogue(ctx, userID); err != nil {
+				return nil, err
+			}
+			return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+		}
+		return state, nil
+	case models.TutorialStagePostScenarioDialogue:
+		if config != nil && len(config.PostScenarioDialogue) > 0 {
+			return state, nil
+		}
+		return s.advanceTutorialToMonsterOrComplete(ctx, userID, config)
 	case models.TutorialStageLoadout:
 		if state.HasOutstandingLoadoutRequirements() {
 			return state, nil
@@ -769,6 +836,14 @@ func (s *server) maybeAdvanceTutorialProgress(
 			return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
 		}
 		return s.advanceTutorialToMonsterOrComplete(ctx, userID, config)
+	case models.TutorialStagePostMonsterDialogue:
+		if config != nil && len(config.PostMonsterDialogue) > 0 {
+			return state, nil
+		}
+		if err := s.advanceTutorialAfterPostMonsterDialogue(ctx, userID, config); err != nil {
+			return nil, err
+		}
+		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
 	case models.TutorialStageBaseKit:
 		if state.HasOutstandingLoadoutRequirements() {
 			return state, nil
@@ -784,9 +859,35 @@ func (s *server) maybeAdvanceTutorialProgress(
 			return nil, err
 		}
 		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+	case models.TutorialStagePostBaseDialogue:
+		if config != nil && len(config.PostBaseDialogue) > 0 {
+			return state, nil
+		}
+		if err := s.dbClient.Tutorial().MarkCompleted(ctx, userID); err != nil {
+			return nil, err
+		}
+		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
 	default:
 		return state, nil
 	}
+}
+
+func (s *server) advanceTutorialAfterPostMonsterDialogue(
+	ctx context.Context,
+	userID uuid.UUID,
+	config *models.TutorialConfig,
+) error {
+	requiredUseItemIDs, err := s.tutorialBaseKitRequirementItemIDs(ctx, config)
+	if err != nil {
+		return err
+	}
+	if len(requiredUseItemIDs) > 0 {
+		return s.dbClient.Tutorial().AdvanceToBaseKit(ctx, userID, requiredUseItemIDs)
+	}
+	if err := s.dbClient.Tutorial().AdvanceToBaseKit(ctx, userID, []int{}); err != nil {
+		return err
+	}
+	return s.dbClient.Tutorial().AdvanceToPostBaseDialogue(ctx, userID)
 }
 
 func (s *server) advanceTutorialToMonsterOrComplete(
@@ -917,16 +1018,13 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 	base *models.Base,
 	config *models.TutorialConfig,
 ) {
-	if base == nil || config == nil || config.BaseQuestArchetypeID == nil ||
-		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil {
 		return
 	}
 
 	baseLatitude := base.Latitude
 	baseLongitude := base.Longitude
 	questArchetypeID := *config.BaseQuestArchetypeID
-	questGiverCharacterID := cloneOptionalTutorialUUID(config.BaseQuestGiverCharacterID)
-	questGiverCharacterTemplateID := cloneOptionalTutorialUUID(config.BaseQuestGiverCharacterTemplateID)
 
 	fallback := func() {
 		go func() {
@@ -938,9 +1036,7 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 				Longitude: baseLongitude,
 			}
 			asyncConfig := &models.TutorialConfig{
-				BaseQuestArchetypeID:              &questArchetypeID,
-				BaseQuestGiverCharacterID:         questGiverCharacterID,
-				BaseQuestGiverCharacterTemplateID: questGiverCharacterTemplateID,
+				BaseQuestArchetypeID: &questArchetypeID,
 			}
 
 			if err := s.instantiateTutorialBaseQuest(
@@ -964,12 +1060,10 @@ func (s *server) instantiateTutorialBaseQuestAsync(
 	}
 
 	payloadBytes, err := json.Marshal(jobs.InstantiateTutorialBaseQuestTaskPayload{
-		UserID:                            userID,
-		BaseLatitude:                      baseLatitude,
-		BaseLongitude:                     baseLongitude,
-		BaseQuestArchetypeID:              questArchetypeID,
-		BaseQuestGiverCharacterID:         questGiverCharacterID,
-		BaseQuestGiverCharacterTemplateID: questGiverCharacterTemplateID,
+		UserID:               userID,
+		BaseLatitude:         baseLatitude,
+		BaseLongitude:        baseLongitude,
+		BaseQuestArchetypeID: questArchetypeID,
 	})
 	if err != nil {
 		log.Printf("[tutorial] failed to marshal tutorial base quest task payload user=%s err=%v", userID, err)
@@ -990,14 +1084,6 @@ func activeTutorialScenarioID(state *models.UserTutorialState) *uuid.UUID {
 		return nil
 	}
 	return state.TutorialScenarioID
-}
-
-func cloneOptionalTutorialUUID(input *uuid.UUID) *uuid.UUID {
-	if input == nil {
-		return nil
-	}
-	value := *input
-	return &value
 }
 
 func activeTutorialMonsterEncounterID(state *models.UserTutorialState) *uuid.UUID {
@@ -1260,7 +1346,7 @@ func tutorialMonsterEncounterItemRewards(input []models.TutorialItemReward) mode
 }
 
 func (s *server) tutorialBaseKitRequirementItemIDs(
-	ctx *gin.Context,
+	ctx context.Context,
 	config *models.TutorialConfig,
 ) ([]int, error) {
 	if config == nil || config.MonsterEncounterID == nil {
@@ -1322,8 +1408,7 @@ func (s *server) instantiateTutorialBaseQuest(
 	base *models.Base,
 	config *models.TutorialConfig,
 ) error {
-	if base == nil || config == nil || config.BaseQuestArchetypeID == nil ||
-		(config.BaseQuestGiverCharacterID == nil && config.BaseQuestGiverCharacterTemplateID == nil) {
+	if base == nil || config == nil || config.BaseQuestArchetypeID == nil {
 		return nil
 	}
 	return dungeonmasterruntime.InstantiateTutorialBaseQuest(
@@ -1358,6 +1443,102 @@ func (s *server) findTutorialBaseQuestForUser(
 		return quest, nil
 	}
 	return nil, nil
+}
+
+func (s *server) ensureTutorialAwardedQuestExists(
+	ctx context.Context,
+	userID uuid.UUID,
+	latitude float64,
+	longitude float64,
+	config *models.TutorialConfig,
+) (*models.Quest, error) {
+	if config == nil || config.BaseQuestArchetypeID == nil || *config.BaseQuestArchetypeID == uuid.Nil {
+		return nil, nil
+	}
+
+	quest, err := s.findTutorialBaseQuestForUser(ctx, userID, *config.BaseQuestArchetypeID)
+	if err != nil {
+		return nil, err
+	}
+	if quest == nil {
+		if err := s.instantiateTutorialBaseQuest(
+			ctx,
+			userID,
+			&models.Base{Latitude: latitude, Longitude: longitude},
+			config,
+		); err != nil {
+			return nil, err
+		}
+		quest, err = s.findTutorialBaseQuestForUser(ctx, userID, *config.BaseQuestArchetypeID)
+		if err != nil {
+			return nil, err
+		}
+		if quest == nil {
+			return nil, fmt.Errorf("failed to create tutorial follow-up quest")
+		}
+	}
+
+	if err := s.normalizeTutorialAwardedQuest(ctx, quest, userID); err != nil {
+		return nil, err
+	}
+	return quest, nil
+}
+
+func (s *server) normalizeTutorialAwardedQuest(
+	ctx context.Context,
+	quest *models.Quest,
+	userID uuid.UUID,
+) error {
+	if quest == nil {
+		return nil
+	}
+
+	ownerUserID := userID
+	quest.OwnerUserID = &ownerUserID
+	quest.Ephemeral = true
+	quest.QuestGiverCharacterID = nil
+	quest.ClosurePolicy = models.QuestClosurePolicyAuto
+	quest.DebriefPolicy = models.QuestDebriefPolicyNone
+	quest.UpdatedAt = time.Now()
+	return s.dbClient.Quest().Update(ctx, quest.ID, quest)
+}
+
+func (s *server) acceptAndTrackTutorialQuest(
+	ctx context.Context,
+	userID uuid.UUID,
+	quest *models.Quest,
+) error {
+	if quest == nil {
+		return nil
+	}
+
+	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, userID, quest.ID)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	if acceptance == nil {
+		acceptance = &models.QuestAcceptanceV2{
+			ID:         uuid.New(),
+			CreatedAt:  now,
+			UpdatedAt:  now,
+			UserID:     userID,
+			QuestID:    quest.ID,
+			AcceptedAt: now,
+		}
+		if err := s.dbClient.QuestAcceptanceV2().Create(ctx, acceptance); err != nil {
+			return err
+		}
+	}
+
+	if _, err := s.currentQuestNode(ctx, quest, acceptance); err != nil {
+		return err
+	}
+	if err := s.finalizeQuestClosureIfReady(ctx, quest, acceptance, now); err != nil {
+		return err
+	}
+	return s.dbClient.TrackedQuest().Create(ctx, quest.ID, userID)
 }
 
 func cloneMonsterItemRewards(input []models.MonsterItemReward) []models.MonsterItemReward {

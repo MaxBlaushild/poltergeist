@@ -333,4 +333,23 @@ class QuestLogProvider with ChangeNotifier {
       return 'Failed to share quest.';
     }
   }
+
+  Future<String?> forgetQuest(String questId) async {
+    try {
+      await _service.forgetQuest(questId);
+      await _refreshAfterMutation('forgetQuest');
+      return null;
+    } catch (e) {
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final message = data['error'];
+          if (message is String && message.trim().isNotEmpty) {
+            return message.trim();
+          }
+        }
+      }
+      return 'Failed to forget quest.';
+    }
+  }
 }

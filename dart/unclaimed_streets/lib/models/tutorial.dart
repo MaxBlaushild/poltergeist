@@ -8,6 +8,7 @@ class TutorialStatus {
   final Character? character;
   final List<DialogueMessage> dialogue;
   final List<DialogueMessage> postWelcomeDialogue;
+  final String guideSupportGreeting;
   final String scenarioObjectiveCopy;
   final List<DialogueMessage> postScenarioDialogue;
   final List<DialogueMessage> loadoutDialogue;
@@ -31,6 +32,7 @@ class TutorialStatus {
     this.character,
     this.dialogue = const [],
     this.postWelcomeDialogue = const [],
+    this.guideSupportGreeting = '',
     this.scenarioObjectiveCopy = '',
     this.postScenarioDialogue = const [],
     this.loadoutDialogue = const [],
@@ -298,6 +300,7 @@ class TutorialStatus {
       character: character,
       dialogue: dialogue,
       postWelcomeDialogue: postWelcomeDialogue,
+      guideSupportGreeting: json['guideSupportGreeting']?.toString() ?? '',
       scenarioObjectiveCopy: json['scenarioObjectiveCopy']?.toString() ?? '',
       postScenarioDialogue: postScenarioDialogue,
       loadoutDialogue: loadoutDialogue,
@@ -323,6 +326,7 @@ class TutorialStatus {
     Character? character,
     List<DialogueMessage>? dialogue,
     List<DialogueMessage>? postWelcomeDialogue,
+    String? guideSupportGreeting,
     String? scenarioObjectiveCopy,
     List<DialogueMessage>? postScenarioDialogue,
     List<DialogueMessage>? loadoutDialogue,
@@ -346,6 +350,7 @@ class TutorialStatus {
       character: character ?? this.character,
       dialogue: dialogue ?? this.dialogue,
       postWelcomeDialogue: postWelcomeDialogue ?? this.postWelcomeDialogue,
+      guideSupportGreeting: guideSupportGreeting ?? this.guideSupportGreeting,
       scenarioObjectiveCopy:
           scenarioObjectiveCopy ?? this.scenarioObjectiveCopy,
       postScenarioDialogue: postScenarioDialogue ?? this.postScenarioDialogue,

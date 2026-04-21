@@ -515,11 +515,14 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	}
 
 	created := models.TutorialConfig{
-		ID:                    1,
-		Dialogue:              models.DialogueSequence{},
-		PostWelcomeDialogue:   models.DialogueSequence{},
-		ScenarioObjectiveCopy: "Complete the tutorial scenario to continue.",
-		PostScenarioDialogue:  models.DialogueSequence{},
+		ID:                      1,
+		Dialogue:                models.DialogueSequence{},
+		PostWelcomeDialogue:     models.DialogueSequence{},
+		GuideSupportGreeting:    "",
+		GuideSupportPersonality: "",
+		GuideSupportBehavior:    "",
+		ScenarioObjectiveCopy:   "Complete the tutorial scenario to continue.",
+		PostScenarioDialogue:    models.DialogueSequence{},
 		LoadoutDialogue: models.DialogueSequence{
 			{
 				Speaker: "character",

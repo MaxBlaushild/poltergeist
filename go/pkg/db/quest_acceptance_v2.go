@@ -51,6 +51,12 @@ func (h *questAcceptanceV2Handle) UpdateCurrentNode(ctx context.Context, id uuid
 		Updates(updates).Error
 }
 
+func (h *questAcceptanceV2Handle) Delete(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).
+		Where("id = ?", id).
+		Delete(&models.QuestAcceptanceV2{}).Error
+}
+
 func (h *questAcceptanceV2Handle) MarkObjectivesCompleted(ctx context.Context, id uuid.UUID, completedAt time.Time) error {
 	return h.db.WithContext(ctx).
 		Model(&models.QuestAcceptanceV2{}).

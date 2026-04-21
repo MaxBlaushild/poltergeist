@@ -191,6 +191,53 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     );
   }
 
+  Future<void> _confirmForgetQuest(BuildContext context, Quest quest) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text('Forget Quest?'),
+          content: Text(
+            'You will lose your current progress on "${quest.name}" and it will be removed from your quest log until you accept it again.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Keep Quest'),
+            ),
+            FilledButton.tonal(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                foregroundColor: theme.colorScheme.error,
+              ),
+              child: const Text('Forget Quest'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(this.context);
+    final error = await this.context.read<QuestLogProvider>().forgetQuest(
+      quest.id,
+    );
+    if (!mounted) return;
+
+    if (error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+
+    setState(() {
+      _selectedQuest = null;
+    });
+    messenger.showSnackBar(SnackBar(content: Text('${quest.name} forgotten.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_selectedQuest != null) {
@@ -570,6 +617,11 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
             !quest.isTutorial &&
             quest.turnedInAt == null &&
             partyMembers.isNotEmpty;
+        final canForgetQuest =
+            quest.isAccepted &&
+            !quest.isTutorial &&
+            !quest.isMainStory &&
+            quest.turnedInAt == null;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
@@ -664,6 +716,17 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                             child: Text(
                               isTracked ? 'Untrack Quest' : 'Track Quest',
                             ),
+                          ),
+                        if (canForgetQuest)
+                          TextButton(
+                            onPressed: () =>
+                                _confirmForgetQuest(context, quest),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
+                            ),
+                            child: const Text('Forget Quest'),
                           ),
                       ],
                     ),

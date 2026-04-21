@@ -54,6 +54,9 @@ type TutorialConfigResponse = {
   baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
   postWelcomeDialogue?: DialogueMessage[];
+  guideSupportGreeting?: string;
+  guideSupportPersonality?: string;
+  guideSupportBehavior?: string;
   scenarioObjectiveCopy?: string;
   postScenarioDialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
@@ -292,6 +295,9 @@ export const Tutorial = () => {
   const [postWelcomeDialogue, setPostWelcomeDialogue] = useState<
     DialogueMessage[]
   >([]);
+  const [guideSupportGreeting, setGuideSupportGreeting] = useState('');
+  const [guideSupportPersonality, setGuideSupportPersonality] = useState('');
+  const [guideSupportBehavior, setGuideSupportBehavior] = useState('');
   const [scenarioObjectiveCopy, setScenarioObjectiveCopy] = useState('');
   const [postScenarioDialogue, setPostScenarioDialogue] = useState<
     DialogueMessage[]
@@ -362,6 +368,9 @@ export const Tutorial = () => {
             ? config.postWelcomeDialogue
             : []
         );
+        setGuideSupportGreeting(config.guideSupportGreeting ?? '');
+        setGuideSupportPersonality(config.guideSupportPersonality ?? '');
+        setGuideSupportBehavior(config.guideSupportBehavior ?? '');
         setScenarioObjectiveCopy(config.scenarioObjectiveCopy ?? '');
         setPostScenarioDialogue(
           Array.isArray(config.postScenarioDialogue)
@@ -764,6 +773,9 @@ export const Tutorial = () => {
             : null,
         dialogue,
         postWelcomeDialogue,
+        guideSupportGreeting: guideSupportGreeting.trim(),
+        guideSupportPersonality: guideSupportPersonality.trim(),
+        guideSupportBehavior: guideSupportBehavior.trim(),
         scenarioObjectiveCopy: scenarioObjectiveCopy.trim(),
         postScenarioDialogue,
         loadoutDialogue,
@@ -833,15 +845,8 @@ export const Tutorial = () => {
       setStatusKind('error');
       return;
     }
-    if (
-      !baseQuestArchetypeId ||
-      (baseQuestGiverSourceType === 'character'
-        ? !baseQuestGiverCharacterId
-        : !baseQuestGiverCharacterTemplateId)
-    ) {
-      setStatusMessage(
-        'Configure the Home Base Quest archetype and source questgiver first.'
-      );
+    if (!baseQuestArchetypeId) {
+      setStatusMessage('Configure the Home Base Quest archetype first.');
       setStatusKind('error');
       return;
     }
@@ -994,6 +999,77 @@ export const Tutorial = () => {
                 value={postWelcomeDialogue}
                 onChange={setPostWelcomeDialogue}
               />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Guide Support Chat
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Controls the guide&apos;s opening message and AI chat voice
+                  after the tutorial is complete.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Opening Message
+                  </label>
+                  <textarea
+                    value={guideSupportGreeting}
+                    onChange={(event) =>
+                      setGuideSupportGreeting(event.target.value)
+                    }
+                    rows={3}
+                    placeholder="You made it through. Ask me about your quest, gear, combat, or where to head next."
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Shown as the first assistant message when the player opens
+                    the guide chat. Leave blank to use the built-in default.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Personality
+                  </label>
+                  <textarea
+                    value={guideSupportPersonality}
+                    onChange={(event) =>
+                      setGuideSupportPersonality(event.target.value)
+                    }
+                    rows={4}
+                    placeholder="Warm, sly, streetwise mentor. Encouraging, observant, and a little playful without ever sounding snarky."
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Use this for tone, cadence, attitude, and how the guide
+                    should feel.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Behavior Rules
+                  </label>
+                  <textarea
+                    value={guideSupportBehavior}
+                    onChange={(event) =>
+                      setGuideSupportBehavior(event.target.value)
+                    }
+                    rows={4}
+                    placeholder="Prioritize the next actionable step. Keep answers short. Only lean into lore when the player asks for it directly."
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Use this for guidance like what to prioritize, what to
+                    avoid, and how concise the replies should be.
+                  </p>
+                </div>
+              </div>
             </section>
 
             <section className="rounded-lg border border-gray-200 p-4">
@@ -1491,9 +1567,10 @@ export const Tutorial = () => {
                   Home Base Quest
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  After the player places their base, the tutorial can clone a
-                  questgiver and generate a private live quest from the selected
-                  archetype near that base.
+                  After the guide button intro, the tutorial can award a
+                  private live quest from the selected archetype directly to
+                  the player. The quest is auto-accepted, tracked, and does not
+                  need to be turned in.
                 </p>
               </div>
 
@@ -1558,14 +1635,19 @@ export const Tutorial = () => {
                 />
               </div>
 
+              <p className="mt-3 text-xs text-amber-700">
+                Questgiver source fields are legacy and are ignored for this
+                tutorial reward flow.
+              </p>
+
               <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
                 <div className="mb-3">
                   <h3 className="text-sm font-medium text-gray-900">
                     Run For User
                   </h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Saves this tutorial config, then queues the follow-up home
-                    base quest for a user who already has a base.
+                    Saves this tutorial config, then queues the same private
+                    follow-up quest for a user who already has a base.
                   </p>
                 </div>
 

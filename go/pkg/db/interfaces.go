@@ -890,6 +890,7 @@ type TrackedPointOfInterestGroupHandle interface {
 type TrackedQuestHandle interface {
 	Create(ctx context.Context, questID uuid.UUID, userID uuid.UUID) error
 	Delete(ctx context.Context, questID uuid.UUID) error
+	DeleteForUser(ctx context.Context, questID uuid.UUID, userID uuid.UUID) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedQuest, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
@@ -1212,6 +1213,7 @@ type QuestAcceptanceV2Handle interface {
 	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (*models.QuestAcceptanceV2, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptanceV2, error)
 	UpdateCurrentNode(ctx context.Context, id uuid.UUID, currentNodeID *uuid.UUID) error
+	Delete(ctx context.Context, id uuid.UUID) error
 	MarkObjectivesCompleted(ctx context.Context, id uuid.UUID, completedAt time.Time) error
 	MarkClosed(ctx context.Context, id uuid.UUID, closedAt time.Time, closureMethod models.QuestClosureMethod, debriefPending bool, debriefedAt *time.Time) error
 	MarkDebriefed(ctx context.Context, id uuid.UUID, debriefedAt time.Time) error

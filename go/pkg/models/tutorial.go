@@ -37,6 +37,9 @@ type TutorialConfig struct {
 	Dialogue                          DialogueSequence         `gorm:"-" json:"dialogue"`
 	PostWelcomeDialogueJSON           datatypes.JSON           `gorm:"column:post_welcome_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostWelcomeDialogue               DialogueSequence         `gorm:"-" json:"postWelcomeDialogue"`
+	GuideSupportGreeting              string                   `gorm:"column:guide_support_greeting" json:"guideSupportGreeting"`
+	GuideSupportPersonality           string                   `gorm:"column:guide_support_personality" json:"guideSupportPersonality"`
+	GuideSupportBehavior              string                   `gorm:"column:guide_support_behavior" json:"guideSupportBehavior"`
 	ScenarioObjectiveCopy             string                   `gorm:"column:scenario_objective_copy" json:"scenarioObjectiveCopy"`
 	PostScenarioDialogueJSON          datatypes.JSON           `gorm:"column:post_scenario_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostScenarioDialogue              DialogueSequence         `gorm:"-" json:"postScenarioDialogue"`
@@ -228,6 +231,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 	c.ScenarioPrompt = strings.TrimSpace(c.ScenarioPrompt)
 	c.ScenarioImageURL = strings.TrimSpace(c.ScenarioImageURL)
+	c.GuideSupportGreeting = strings.TrimSpace(c.GuideSupportGreeting)
+	c.GuideSupportPersonality = strings.TrimSpace(c.GuideSupportPersonality)
+	c.GuideSupportBehavior = strings.TrimSpace(c.GuideSupportBehavior)
 	c.ScenarioObjectiveCopy = strings.TrimSpace(c.ScenarioObjectiveCopy)
 	c.LoadoutObjectiveCopy = strings.TrimSpace(c.LoadoutObjectiveCopy)
 	c.BaseKitObjectiveCopy = strings.TrimSpace(c.BaseKitObjectiveCopy)

@@ -573,6 +573,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
+	r.DELETE("/sonar/quests/:questId/acceptance", middleware.WithAuthentication(s.authClient, s.livenessClient, s.forgetQuest))
 	r.POST("/sonar/quests/close/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.closeQuest))
 	r.POST("/sonar/quests/:id/debrief", middleware.WithAuthentication(s.authClient, s.livenessClient, s.debriefQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
@@ -697,6 +698,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/tutorial/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.resetTutorial))
 	r.POST("/sonar/tutorial/activate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.activateTutorial))
 	r.POST("/sonar/tutorial/advance", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceTutorial))
+	r.POST("/sonar/tutorial/guide-chat", middleware.WithAuthenticationWithoutLocation(s.authClient, s.tutorialGuideSupportChat))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
@@ -2330,17 +2332,22 @@ func (s *server) getTrackedPointOfInterestGroups(ctx *gin.Context) {
 
 func (s *server) deleteTrackedPointOfInterestGroup(ctx *gin.Context) {
 	id := ctx.Param("id")
-	groupIDUUID, err := uuid.Parse(id)
+	questID, err := uuid.Parse(id)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tracked point of interest group ID"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tracked quest ID"})
 		return
 	}
-	err = s.dbClient.TrackedQuest().Delete(ctx, groupIDUUID)
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	err = s.dbClient.TrackedQuest().DeleteForUser(ctx, questID, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "tracked point of interest group deleted successfully"})
+	ctx.JSON(http.StatusOK, gin.H{"message": "tracked quest deleted successfully"})
 }
 
 func (s *server) deleteAllTrackedPointOfInterestGroups(ctx *gin.Context) {
@@ -2724,6 +2731,53 @@ func (s *server) shareQuest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest shared successfully"})
+}
+
+func (s *server) forgetQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil || user == nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	questID, err := uuid.Parse(strings.TrimSpace(ctx.Param("questId")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
+		return
+	}
+
+	quest, acceptance, err := s.loadQuestClosureContext(ctx, user.ID, questID)
+	if err != nil {
+		switch err.Error() {
+		case "quest not found":
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case "quest not accepted":
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	if models.IsMainStoryQuestCategory(quest.Category) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "main story quests cannot be forgotten"})
+		return
+	}
+	if acceptance.IsTurnedIn() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "completed quests cannot be forgotten"})
+		return
+	}
+
+	if err := s.dbClient.TrackedQuest().DeleteForUser(ctx, questID, user.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestAcceptanceV2().Delete(ctx, acceptance.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest forgotten successfully"})
 }
 
 func (s *server) loadQuestClosureContext(

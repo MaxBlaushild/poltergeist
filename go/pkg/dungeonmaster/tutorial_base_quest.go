@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -82,21 +81,13 @@ func InstantiateTutorialBaseQuest(
 	baseQuestGiverCharacterID *uuid.UUID,
 	baseQuestGiverCharacterTemplateID *uuid.UUID,
 ) error {
+	_ = baseQuestGiverCharacterID
+	_ = baseQuestGiverCharacterTemplateID
 	if base == nil || baseQuestArchetypeID == uuid.Nil {
 		return nil
 	}
 
 	if err := PurgeTutorialReplayArtifacts(ctx, dbClient, userID, &baseQuestArchetypeID); err != nil {
-		return err
-	}
-
-	sourceTemplate, err := loadTutorialBaseQuestGiverTemplateData(
-		ctx,
-		dbClient,
-		baseQuestGiverCharacterID,
-		baseQuestGiverCharacterTemplateID,
-	)
-	if err != nil {
 		return err
 	}
 
@@ -109,118 +100,42 @@ func InstantiateTutorialBaseQuest(
 		return err
 	}
 
-	cloneLatitude, cloneLongitude := offsetTutorialCharacterNearBase(base.Latitude, base.Longitude, 60)
-	clonedCharacterID := uuid.New()
-	now := time.Now()
-	var generatedQuestID *uuid.UUID
-	cleanupArtifacts := true
+	explicitNoGiver := uuid.Nil
+	var generatedQuestID uuid.UUID
+	cleanupQuest := false
 	defer func() {
-		if !cleanupArtifacts {
+		if !cleanupQuest || generatedQuestID == uuid.Nil {
 			return
 		}
-		if generatedQuestID != nil && *generatedQuestID != uuid.Nil {
-			if err := dbClient.Quest().Delete(ctx, *generatedQuestID); err != nil {
-				log.Printf(
-					"[tutorial] failed to clean up generated base quest quest=%s err=%v",
-					generatedQuestID.String(),
-					err,
-				)
-			}
-		}
-		if err := dbClient.Character().Delete(ctx, clonedCharacterID); err != nil {
+		if err := dbClient.Quest().Delete(ctx, generatedQuestID); err != nil {
 			log.Printf(
-				"[tutorial] failed to clean up generated base quest giver character=%s err=%v",
-				clonedCharacterID.String(),
+				"[tutorial] failed to clean up generated base quest quest=%s err=%v",
+				generatedQuestID.String(),
 				err,
 			)
 		}
 	}()
 
-	clonedCharacter := sourceTemplate.Instantiate(
-		models.CharacterTemplateInstanceOptions{
-			ID:           clonedCharacterID,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-			OwnerUserID:  &userID,
-			Ephemeral:    true,
-			InternalTags: cloneTutorialQuestGiverInternalTags(sourceTemplate.InternalTags),
-		},
-	)
-	if err := dbClient.Character().Create(ctx, clonedCharacter); err != nil {
-		return err
-	}
-	if err := dbClient.CharacterLocation().ReplaceForCharacter(ctx, clonedCharacterID, []models.CharacterLocation{
-		{
-			ID:          uuid.New(),
-			CreatedAt:   now,
-			UpdatedAt:   now,
-			CharacterID: clonedCharacterID,
-			Latitude:    cloneLatitude,
-			Longitude:   cloneLongitude,
-		},
-	}); err != nil {
-		return err
-	}
-
-	quest, err := dungeonmasterClient.GenerateQuest(ctx, zone, baseQuestArchetypeID, &clonedCharacterID)
+	quest, err := dungeonmasterClient.GenerateQuest(ctx, zone, baseQuestArchetypeID, &explicitNoGiver)
 	if err != nil {
 		return err
 	}
 	if quest == nil {
 		return fmt.Errorf("failed to generate tutorial base quest")
 	}
-	generatedQuestID = &quest.ID
+	generatedQuestID = quest.ID
+	cleanupQuest = true
 	quest.OwnerUserID = &userID
 	quest.Ephemeral = true
-	quest.QuestGiverCharacterID = &clonedCharacterID
-	quest.UpdatedAt = time.Now()
+	quest.QuestGiverCharacterID = nil
+	quest.ClosurePolicy = models.QuestClosurePolicyAuto
+	quest.DebriefPolicy = models.QuestDebriefPolicyNone
 	if err := dbClient.Quest().Update(ctx, quest.ID, quest); err != nil {
 		return err
 	}
 
-	cleanupArtifacts = false
+	cleanupQuest = false
 	return nil
-}
-
-func loadTutorialBaseQuestGiverTemplateData(
-	ctx context.Context,
-	dbClient db.DbClient,
-	baseQuestGiverCharacterID *uuid.UUID,
-	baseQuestGiverCharacterTemplateID *uuid.UUID,
-) (models.CharacterTemplateData, error) {
-	switch {
-	case baseQuestGiverCharacterID != nil && *baseQuestGiverCharacterID != uuid.Nil:
-		sourceCharacter, err := dbClient.Character().FindByID(ctx, *baseQuestGiverCharacterID)
-		if err != nil {
-			return models.CharacterTemplateData{}, err
-		}
-		if sourceCharacter == nil {
-			return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character not found")
-		}
-		return models.CharacterTemplateDataFromCharacter(sourceCharacter), nil
-	case baseQuestGiverCharacterTemplateID != nil && *baseQuestGiverCharacterTemplateID != uuid.Nil:
-		sourceTemplate, err := dbClient.CharacterTemplate().FindByID(ctx, *baseQuestGiverCharacterTemplateID)
-		if err != nil {
-			return models.CharacterTemplateData{}, err
-		}
-		if sourceTemplate == nil {
-			return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character template not found")
-		}
-		return models.CharacterTemplateDataFromCharacterTemplate(sourceTemplate), nil
-	default:
-		return models.CharacterTemplateData{}, fmt.Errorf("tutorial base quest giver character source is required")
-	}
-}
-
-func cloneTutorialQuestGiverInternalTags(input models.StringArray) models.StringArray {
-	tags := append(models.StringArray{}, input...)
-	if !models.CharacterHasInternalTag(
-		&models.Character{InternalTags: tags},
-		TutorialGeneratedBaseQuestGiverTag,
-	) {
-		tags = append(tags, TutorialGeneratedBaseQuestGiverTag)
-	}
-	return tags
 }
 
 func isTutorialReplayCharacterArtifact(
@@ -288,17 +203,4 @@ func selectTutorialZoneForCoordinates(zones []*models.Zone, latitude float64, lo
 		return nil, fmt.Errorf("no zones available")
 	}
 	return nearest, nil
-}
-
-func offsetTutorialCharacterNearBase(latitude float64, longitude float64, distanceMeters float64) (float64, float64) {
-	if distanceMeters <= 0 {
-		return latitude, longitude
-	}
-	latOffset := distanceMeters / 111111.0
-	cosLat := math.Cos(latitude * math.Pi / 180.0)
-	if math.Abs(cosLat) < 0.00001 {
-		cosLat = 0.00001
-	}
-	lngOffset := (distanceMeters * 0.35) / (111111.0 * cosLat)
-	return latitude + latOffset, longitude + lngOffset
 }
