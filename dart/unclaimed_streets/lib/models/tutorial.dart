@@ -7,6 +7,7 @@ class TutorialStatus {
   final String stage;
   final Character? character;
   final List<DialogueMessage> dialogue;
+  final List<DialogueMessage> postWelcomeDialogue;
   final String scenarioObjectiveCopy;
   final List<DialogueMessage> postScenarioDialogue;
   final List<DialogueMessage> loadoutDialogue;
@@ -29,6 +30,7 @@ class TutorialStatus {
     required this.stage,
     this.character,
     this.dialogue = const [],
+    this.postWelcomeDialogue = const [],
     this.scenarioObjectiveCopy = '',
     this.postScenarioDialogue = const [],
     this.loadoutDialogue = const [],
@@ -54,6 +56,9 @@ class TutorialStatus {
   bool get isPostScenarioDialogueStep =>
       stage == 'post_scenario_dialogue' && !isCompleted;
 
+  bool get isPostWelcomeDialogueStep =>
+      stage == 'post_welcome_dialogue' && !isCompleted;
+
   bool get isLoadoutStep => stage == 'loadout' && !isCompleted;
 
   bool get isBaseKitStep => stage == 'base_kit' && !isCompleted;
@@ -72,6 +77,11 @@ class TutorialStatus {
   bool get shouldShowPostMonsterDialogue =>
       isPostMonsterDialogueStep &&
       postMonsterDialogue.isNotEmpty &&
+      !isCompleted;
+
+  bool get shouldShowPostWelcomeDialogue =>
+      isPostWelcomeDialogueStep &&
+      postWelcomeDialogue.isNotEmpty &&
       !isCompleted;
 
   bool get shouldShowPostScenarioDialogue =>
@@ -142,6 +152,28 @@ class TutorialStatus {
           final value = line?.toString().trim() ?? '';
           if (value.isNotEmpty) {
             dialogue.add(
+              DialogueMessage(speaker: 'character', text: value, order: index),
+            );
+          }
+        }
+      }
+    }
+
+    final postWelcomeDialogue = <DialogueMessage>[];
+    final rawPostWelcomeDialogue = json['postWelcomeDialogue'];
+    if (rawPostWelcomeDialogue is List) {
+      for (var index = 0; index < rawPostWelcomeDialogue.length; index++) {
+        final line = rawPostWelcomeDialogue[index];
+        if (line is Map<String, dynamic>) {
+          postWelcomeDialogue.add(DialogueMessage.fromJson(line));
+        } else if (line is Map) {
+          postWelcomeDialogue.add(
+            DialogueMessage.fromJson(Map<String, dynamic>.from(line)),
+          );
+        } else {
+          final value = line?.toString().trim() ?? '';
+          if (value.isNotEmpty) {
+            postWelcomeDialogue.add(
               DialogueMessage(speaker: 'character', text: value, order: index),
             );
           }
@@ -265,6 +297,7 @@ class TutorialStatus {
       stage: json['stage']?.toString().trim() ?? '',
       character: character,
       dialogue: dialogue,
+      postWelcomeDialogue: postWelcomeDialogue,
       scenarioObjectiveCopy: json['scenarioObjectiveCopy']?.toString() ?? '',
       postScenarioDialogue: postScenarioDialogue,
       loadoutDialogue: loadoutDialogue,
@@ -289,6 +322,7 @@ class TutorialStatus {
     String? stage,
     Character? character,
     List<DialogueMessage>? dialogue,
+    List<DialogueMessage>? postWelcomeDialogue,
     String? scenarioObjectiveCopy,
     List<DialogueMessage>? postScenarioDialogue,
     List<DialogueMessage>? loadoutDialogue,
@@ -311,6 +345,7 @@ class TutorialStatus {
       stage: stage ?? this.stage,
       character: character ?? this.character,
       dialogue: dialogue ?? this.dialogue,
+      postWelcomeDialogue: postWelcomeDialogue ?? this.postWelcomeDialogue,
       scenarioObjectiveCopy:
           scenarioObjectiveCopy ?? this.scenarioObjectiveCopy,
       postScenarioDialogue: postScenarioDialogue ?? this.postScenarioDialogue,

@@ -216,7 +216,7 @@ func (h *tutorialHandle) MarkScenarioResolved(
 		if state.TutorialScenarioID == nil || *state.TutorialScenarioID != scenarioID {
 			return nil
 		}
-		state.Stage = models.TutorialStagePostScenarioDialogue
+		state.Stage = models.TutorialStageLoadout
 		state.SelectedScenarioOptionID = selectedOptionID
 		state.RequiredEquipItemIDs = requiredEquipItemIDs
 		state.CompletedEquipItemIDs = []int{}
@@ -227,16 +227,31 @@ func (h *tutorialHandle) MarkScenarioResolved(
 	})
 }
 
-func (h *tutorialHandle) AdvanceToLoadout(ctx context.Context, userID uuid.UUID) error {
+func (h *tutorialHandle) AdvanceToPostWelcomeDialogue(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
 		if err != nil {
 			return err
 		}
-		if state.CompletedAt != nil || state.Stage != models.TutorialStagePostScenarioDialogue {
+		if state.CompletedAt != nil || state.Stage != models.TutorialStageWelcome {
 			return nil
 		}
-		state.Stage = models.TutorialStageLoadout
+		state.Stage = models.TutorialStagePostWelcomeDialogue
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) AdvanceToPostScenarioDialogue(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil || state.Stage != models.TutorialStageLoadout {
+			return nil
+		}
+		state.Stage = models.TutorialStagePostScenarioDialogue
 		state.UpdatedAt = time.Now()
 		return tx.Save(state).Error
 	})
@@ -502,6 +517,7 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	created := models.TutorialConfig{
 		ID:                    1,
 		Dialogue:              models.DialogueSequence{},
+		PostWelcomeDialogue:   models.DialogueSequence{},
 		ScenarioObjectiveCopy: "Complete the tutorial scenario to continue.",
 		PostScenarioDialogue:  models.DialogueSequence{},
 		LoadoutDialogue: models.DialogueSequence{

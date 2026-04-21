@@ -631,7 +631,8 @@ type TutorialHandle interface {
 	) error
 	RecordEquippedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
 	RecordUsedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
-	AdvanceToLoadout(ctx context.Context, userID uuid.UUID) error
+	AdvanceToPostWelcomeDialogue(ctx context.Context, userID uuid.UUID) error
+	AdvanceToPostScenarioDialogue(ctx context.Context, userID uuid.UUID) error
 	ActivateMonsterForUser(
 		ctx context.Context,
 		userID uuid.UUID,

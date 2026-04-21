@@ -35,6 +35,8 @@ type TutorialConfig struct {
 	Character                         *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
 	DialogueJSON                      datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	Dialogue                          DialogueSequence         `gorm:"-" json:"dialogue"`
+	PostWelcomeDialogueJSON           datatypes.JSON           `gorm:"column:post_welcome_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	PostWelcomeDialogue               DialogueSequence         `gorm:"-" json:"postWelcomeDialogue"`
 	ScenarioObjectiveCopy             string                   `gorm:"column:scenario_objective_copy" json:"scenarioObjectiveCopy"`
 	PostScenarioDialogueJSON          datatypes.JSON           `gorm:"column:post_scenario_dialogue_json;type:jsonb;default:'[]'" json:"-"`
 	PostScenarioDialogue              DialogueSequence         `gorm:"-" json:"postScenarioDialogue"`
@@ -90,6 +92,7 @@ const (
 
 const (
 	TutorialStageWelcome              = "welcome"
+	TutorialStagePostWelcomeDialogue  = "post_welcome_dialogue"
 	TutorialStageScenario             = "scenario"
 	TutorialStagePostScenarioDialogue = "post_scenario_dialogue"
 	TutorialStageLoadout              = "loadout"
@@ -109,6 +112,9 @@ func (TutorialConfig) TableName() string {
 func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.Dialogue == nil {
 		c.Dialogue = DialogueSequence{}
+	}
+	if c.PostWelcomeDialogue == nil {
+		c.PostWelcomeDialogue = DialogueSequence{}
 	}
 	if c.PostScenarioDialogue == nil {
 		c.PostScenarioDialogue = DialogueSequence{}
@@ -142,6 +148,7 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 
 	c.Dialogue = normalizeDialogueSequence(c.Dialogue)
+	c.PostWelcomeDialogue = normalizeDialogueSequence(c.PostWelcomeDialogue)
 	c.PostScenarioDialogue = normalizeDialogueSequence(c.PostScenarioDialogue)
 	c.LoadoutDialogue = normalizeDialogueSequence(c.LoadoutDialogue)
 	c.PostMonsterDialogue = normalizeDialogueSequence(c.PostMonsterDialogue)
@@ -184,6 +191,9 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	c.SpellRewards = normalizeTutorialSpellRewards(c.SpellRewards)
 
 	if err := assignTutorialJSON(&c.DialogueJSON, c.Dialogue); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&c.PostWelcomeDialogueJSON, c.PostWelcomeDialogue); err != nil {
 		return err
 	}
 	if err := assignTutorialJSON(&c.PostScenarioDialogueJSON, c.PostScenarioDialogue); err != nil {
@@ -254,6 +264,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	if err := parseTutorialDialogueSequenceJSON(c.DialogueJSON, &c.Dialogue); err != nil {
 		return err
 	}
+	if err := parseTutorialDialogueSequenceJSON(c.PostWelcomeDialogueJSON, &c.PostWelcomeDialogue); err != nil {
+		return err
+	}
 	if err := parseTutorialDialogueSequenceJSON(c.PostScenarioDialogueJSON, &c.PostScenarioDialogue); err != nil {
 		return err
 	}
@@ -286,6 +299,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	}
 	if c.Dialogue == nil {
 		c.Dialogue = DialogueSequence{}
+	}
+	if c.PostWelcomeDialogue == nil {
+		c.PostWelcomeDialogue = DialogueSequence{}
 	}
 	if c.PostScenarioDialogue == nil {
 		c.PostScenarioDialogue = DialogueSequence{}
@@ -475,6 +491,8 @@ func normalizeTutorialSpellRewards(input []TutorialSpellReward) []TutorialSpellR
 
 func normalizeTutorialStage(input string) string {
 	switch strings.TrimSpace(strings.ToLower(input)) {
+	case TutorialStagePostWelcomeDialogue:
+		return TutorialStagePostWelcomeDialogue
 	case TutorialStageScenario:
 		return TutorialStageScenario
 	case TutorialStagePostScenarioDialogue:

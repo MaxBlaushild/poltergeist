@@ -3,6 +3,9 @@ package models
 import "testing"
 
 func TestNormalizeTutorialStageCollapsesRemovedBaseStages(t *testing.T) {
+	if got := normalizeTutorialStage(TutorialStagePostWelcomeDialogue); got != TutorialStagePostWelcomeDialogue {
+		t.Fatalf("expected %q to normalize to itself, got %q", TutorialStagePostWelcomeDialogue, got)
+	}
 	if got := normalizeTutorialStage(TutorialStagePostScenarioDialogue); got != TutorialStagePostScenarioDialogue {
 		t.Fatalf("expected %q to normalize to itself, got %q", TutorialStagePostScenarioDialogue, got)
 	}

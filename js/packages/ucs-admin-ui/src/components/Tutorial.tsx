@@ -53,6 +53,7 @@ type TutorialConfigResponse = {
   baseQuestGiverCharacterId?: string | null;
   baseQuestGiverCharacterTemplateId?: string | null;
   dialogue?: DialogueMessage[];
+  postWelcomeDialogue?: DialogueMessage[];
   scenarioObjectiveCopy?: string;
   postScenarioDialogue?: DialogueMessage[];
   loadoutDialogue?: DialogueMessage[];
@@ -288,6 +289,9 @@ export const Tutorial = () => {
     setBaseQuestGiverCharacterTemplateId,
   ] = useState('');
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([]);
+  const [postWelcomeDialogue, setPostWelcomeDialogue] = useState<
+    DialogueMessage[]
+  >([]);
   const [scenarioObjectiveCopy, setScenarioObjectiveCopy] = useState('');
   const [postScenarioDialogue, setPostScenarioDialogue] = useState<
     DialogueMessage[]
@@ -353,6 +357,11 @@ export const Tutorial = () => {
           config.baseQuestGiverCharacterTemplateId ?? ''
         );
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
+        setPostWelcomeDialogue(
+          Array.isArray(config.postWelcomeDialogue)
+            ? config.postWelcomeDialogue
+            : []
+        );
         setScenarioObjectiveCopy(config.scenarioObjectiveCopy ?? '');
         setPostScenarioDialogue(
           Array.isArray(config.postScenarioDialogue)
@@ -754,6 +763,7 @@ export const Tutorial = () => {
             ? baseQuestGiverCharacterTemplateId || null
             : null,
         dialogue,
+        postWelcomeDialogue,
         scenarioObjectiveCopy: scenarioObjectiveCopy.trim(),
         postScenarioDialogue,
         loadoutDialogue,
@@ -964,6 +974,26 @@ export const Tutorial = () => {
                   onChange={setDialogue}
                 />
               </div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Guide Button Intro
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown right after the welcome dialogue closes. When this beat
+                  ends, the guide portrait docks into the fourth button slot on
+                  the left and stays available from then on.
+                </p>
+              </div>
+
+              <DialogueMessageListEditor
+                label="Dialogue Lines"
+                helperText="Use this for the conversation that introduces the permanent guide portrait button."
+                value={postWelcomeDialogue}
+                onChange={setPostWelcomeDialogue}
+              />
             </section>
 
             <section className="rounded-lg border border-gray-200 p-4">
@@ -1339,17 +1369,17 @@ export const Tutorial = () => {
             <section className="rounded-lg border border-gray-200 p-4">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-900">
-                  Post-Scenario Dialogue
+                  Pre-Monster Dialogue
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Shown right after the opening tutorial scenario resolves and
-                  before the loadout step begins.
+                  Shown after the loadout step is complete and before the
+                  tutorial monster fight begins.
                 </p>
               </div>
 
               <DialogueMessageListEditor
                 label="Dialogue Lines"
-                helperText="Use this for a standalone tutorial conversation beat between the scenario and the loadout step."
+                helperText="Use this for a standalone tutorial conversation beat between the equip step and the monster fight."
                 value={postScenarioDialogue}
                 onChange={setPostScenarioDialogue}
               />

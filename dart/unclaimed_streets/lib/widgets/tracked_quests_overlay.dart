@@ -30,10 +30,6 @@ class TrackedQuestsOverlay extends StatefulWidget {
     this.resolveQuestReceiverCharacter,
     this.resolveQuestReceiverPoi,
     this.controller,
-    this.featuredMainStoryPoi,
-    this.featuredMainStoryQuestGiverName,
-    this.onFocusFeaturedMainStoryLead,
-    this.onPreviewFeaturedMainStoryLead,
     this.onCloseOverlay,
     this.tutorialScenarioTitle,
     this.tutorialScenarioDetail,
@@ -60,10 +56,6 @@ class TrackedQuestsOverlay extends StatefulWidget {
   final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
   final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
   final TrackedQuestsOverlayController? controller;
-  final PointOfInterest? featuredMainStoryPoi;
-  final String? featuredMainStoryQuestGiverName;
-  final VoidCallback? onFocusFeaturedMainStoryLead;
-  final VoidCallback? onPreviewFeaturedMainStoryLead;
   final VoidCallback? onCloseOverlay;
   final String? tutorialScenarioTitle;
   final String? tutorialScenarioDetail;
@@ -314,18 +306,6 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     widget.onFocusTurnInQuest?.call(quest);
   }
 
-  void _onFeaturedMainStoryLeadTap() {
-    final poi = widget.featuredMainStoryPoi;
-    if (poi == null) return;
-    _collapse();
-    final onFocusLead = widget.onFocusFeaturedMainStoryLead;
-    if (onFocusLead != null) {
-      onFocusLead();
-      return;
-    }
-    widget.onFocusPoI(poi);
-  }
-
   void _onTutorialScenarioTap() {
     _collapse();
     widget.onFocusTutorialScenario?.call();
@@ -406,7 +386,6 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
               .toList();
         }
         final visibleTracked = tracked.isNotEmpty ? tracked : _cachedTracked;
-        final featuredMainStoryPoi = widget.featuredMainStoryPoi;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
@@ -430,23 +409,6 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         _hasAcceptedTrackedQuestSnapshot = true;
         final contentItems = <_TrackedQuestCarouselItem>[
           ...tutorialItems,
-          if (featuredMainStoryPoi != null)
-            _TrackedQuestCarouselItem(
-              id: 'featured-main-story:${featuredMainStoryPoi.id}',
-              child: KeyedSubtree(
-                key: ValueKey('featured-main-story-${featuredMainStoryPoi.id}'),
-                child: _ImportantQuestLeadCard(
-                  poi: featuredMainStoryPoi,
-                  questGiverName: widget.featuredMainStoryQuestGiverName,
-                  onTap: _onFeaturedMainStoryLeadTap,
-                ),
-              ),
-              onPreview:
-                  widget.onPreviewFeaturedMainStoryLead ??
-                  (widget.onPreviewPoI == null
-                      ? null
-                      : () => widget.onPreviewPoI!(featuredMainStoryPoi)),
-            ),
           ...visibleTracked.map(
             (quest) => _TrackedQuestCarouselItem(
               id: 'quest:${quest.id}',
@@ -484,14 +446,6 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
             _rememberCarouselItemAt(currentItemIndex);
             _previewCarouselItem(currentItemIndex);
           });
-        }
-
-        if (visibleTracked.isEmpty && featuredMainStoryPoi == null) {
-          if (tutorialItems.isNotEmpty) {
-            // fall through and render the tutorial-only overlay state
-          } else {
-            return const SizedBox.shrink();
-          }
         }
 
         if (contentItems.isEmpty) {
@@ -698,80 +652,6 @@ class _TrackedQuestCarouselChevron extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-        ),
-      ),
-    );
-  }
-}
-
-class _ImportantQuestLeadCard extends StatelessWidget {
-  const _ImportantQuestLeadCard({
-    required this.poi,
-    required this.onTap,
-    this.questGiverName,
-  });
-
-  final PointOfInterest poi;
-  final VoidCallback onTap;
-  final String? questGiverName;
-
-  @override
-  Widget build(BuildContext context) {
-    final questGiver = questGiverName?.trim() ?? '';
-    final locationName = poi.name.trim().isNotEmpty
-        ? poi.name.trim()
-        : 'nearby';
-    final headline = questGiver.isNotEmpty
-        ? 'Talk to $questGiver.'
-        : 'A main story thread is waiting nearby.';
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF7A1823), Color(0xFF4E0F17)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE7C36A)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE7C36A),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Important Quest Available',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: const Color(0xFF3A1A11),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              headline,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Head to $locationName.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xFFF8EBD0)),
-            ),
-          ],
         ),
       ),
     );

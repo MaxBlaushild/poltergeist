@@ -83,14 +83,14 @@ Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['quest_v8|$url'];
+  return _thumbnailCache['quest_v9|$url'];
 }
 
 Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['main_story_v10|$url'];
+  return _thumbnailCache['main_story_v11|$url'];
 }
 
 Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
@@ -98,13 +98,13 @@ Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
 }
 
 Uint8List? peekPoiCategoryThumbnailWithQuestMarker(PoiMarkerCategory category) {
-  return _thumbnailCache['poi_category_quest_v2|${category.wireValue}'];
+  return _thumbnailCache['poi_category_quest_v3|${category.wireValue}'];
 }
 
 Uint8List? peekPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  return _thumbnailCache['poi_category_main_story_v4|${category.wireValue}'];
+  return _thumbnailCache['poi_category_main_story_v5|${category.wireValue}'];
 }
 
 /// Fetches the POI image (or placeholder), resizes to a square, applies
@@ -137,11 +137,17 @@ Future<Uint8List?> loadPoiCategoryThumbnail(PoiMarkerCategory category) {
 Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_quest_v2|${category.wireValue}';
+  final cacheKey = 'poi_category_quest_v3|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
     final generated = await _loadGeneratedPoiCategoryThumbnail(category);
-    if (generated != null) return generated;
+    if (generated != null) {
+      final decoded = img.decodeImage(generated);
+      if (decoded == null) return generated;
+      drawQuestAvailabilityBadge(decoded);
+      return Uint8List.fromList(img.encodePng(decoded));
+    }
     final image = _buildPoiCategoryThumbnail(category);
+    drawQuestAvailabilityBadge(image);
     return Uint8List.fromList(img.encodePng(image));
   });
 }
@@ -149,11 +155,17 @@ Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
 Future<Uint8List?> loadPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_main_story_v4|${category.wireValue}';
+  final cacheKey = 'poi_category_main_story_v5|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
     final generated = await _loadGeneratedPoiCategoryThumbnail(category);
-    if (generated != null) return generated;
+    if (generated != null) {
+      final decoded = img.decodeImage(generated);
+      if (decoded == null) return generated;
+      drawMainStoryCrest(decoded);
+      return Uint8List.fromList(img.encodePng(decoded));
+    }
     final image = _buildPoiCategoryThumbnail(category);
+    drawMainStoryCrest(image);
     return Uint8List.fromList(img.encodePng(image));
   });
 }
@@ -813,13 +825,14 @@ Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'quest_v8|$url';
+  final cacheKey = 'quest_v9|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final square = _buildTransparentRoundedThumbnail(decoded);
+    drawQuestAvailabilityBadge(square);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
@@ -828,13 +841,14 @@ Future<Uint8List?> loadPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'main_story_v10|$url';
+  final cacheKey = 'main_story_v11|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final square = _buildTransparentRoundedThumbnail(decoded);
+    drawMainStoryCrest(square);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
@@ -880,6 +894,55 @@ bool _isInsideRoundedRect(int x, int y, int width, int height) {
   final dx = x - cornerCenterX;
   final dy = y - cornerCenterY;
   return dx * dx + dy * dy <= _cornerRadius * _cornerRadius;
+}
+
+void drawQuestAvailabilityBadge(img.Image image) {
+  final bounds = _findOpaqueBounds(image) ?? _fallbackOpaqueBounds(image);
+  final outerRadius = math.max(13, math.min(18, (bounds.width * 0.11).round()));
+  final centerX = (bounds.right + outerRadius - 2)
+      .clamp(outerRadius + 4, image.width - outerRadius - 5)
+      .toInt();
+  final centerY = (bounds.top + outerRadius - 2)
+      .clamp(outerRadius + 4, image.height - outerRadius - 5)
+      .toInt();
+
+  final shadow = img.ColorRgba8(28, 18, 8, 110);
+  final ring = img.ColorRgba8(255, 250, 240, 255);
+  final gold = img.ColorRgba8(245, 197, 66, 255);
+  final highlight = img.ColorRgba8(255, 232, 156, 255);
+  final ink = img.ColorRgba8(58, 36, 0, 255);
+  final stemHalfWidth = math.max(2, outerRadius ~/ 4).toInt();
+  final stemTop = (centerY - outerRadius + math.max(4, outerRadius ~/ 3))
+      .toInt();
+  final stemBottom = (centerY + outerRadius - math.max(8, outerRadius ~/ 2))
+      .toInt();
+  final dotRadius = math.max(2, outerRadius ~/ 5).toInt();
+
+  _fillCircle(image, centerX + 2, centerY + 3, outerRadius + 2, shadow);
+  _fillCircle(image, centerX, centerY, outerRadius + 2, ring);
+  _fillCircle(image, centerX, centerY, outerRadius, gold);
+  _fillCircle(
+    image,
+    centerX - math.max(3, outerRadius ~/ 3),
+    centerY - math.max(3, outerRadius ~/ 3),
+    math.max(3, outerRadius ~/ 3),
+    highlight,
+  );
+  _fillRect(
+    image,
+    x1: centerX - stemHalfWidth,
+    y1: stemTop,
+    x2: centerX + stemHalfWidth,
+    y2: stemBottom,
+    color: ink,
+  );
+  _fillCircle(
+    image,
+    centerX,
+    centerY + outerRadius - math.max(4, outerRadius ~/ 3),
+    dotRadius,
+    ink,
+  );
 }
 
 void drawMainStoryCrest(img.Image image) {

@@ -147,6 +147,9 @@ const _playerPresenceHeadingSpeedThreshold = 0.9;
 const _playerPresenceBearingFallbackDistanceMeters = 6.0;
 const _playerPresencePulseCycle = Duration(milliseconds: 1900);
 const _playerPresencePulseFrameDelay = Duration(milliseconds: 90);
+const _overlayRailButtonSize = 48.0;
+const _overlayRailButtonSpacing = 12.0;
+const _overlayRailButtonLeftInset = 16.0;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
 const _zoneBaseContentFreshDuration = Duration(minutes: 2);
@@ -185,7 +188,8 @@ class SinglePlayerScreen extends StatefulWidget {
   State<SinglePlayerScreen> createState() => _SinglePlayerScreenState();
 }
 
-class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
+class _SinglePlayerScreenState extends State<SinglePlayerScreen>
+    with TickerProviderStateMixin {
   MapLibreMapController? _mapController;
   List<Zone> _zones = [];
   List<PointOfInterest> _pois = [];
@@ -370,6 +374,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialRevealPendingAfterCompletionModal = false;
   bool _tutorialWelcomeOverlayVisible = false;
   double _tutorialWelcomeOverlayOpacity = 0.0;
+  late final AnimationController _tutorialGuideDockController;
+  bool _tutorialGuideDockVisible = false;
+  Character? _tutorialGuideDockCharacter;
+  String _tutorialGuideDockExcerpt = '';
   String _lastTutorialQuestSyncSignature = '';
   String? _pendingBaseOwnedInventoryItemId;
   InventoryItem? _pendingBaseInventoryItem;
@@ -391,6 +399,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _tutorialGuideDockController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 820),
+        )..addListener(() {
+          if (!mounted || !_tutorialGuideDockVisible) return;
+          setState(() {});
+        });
     debugPrint('SinglePlayer: initState');
     _startMapLoadTimeout();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -431,6 +447,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   @override
   void dispose() {
+    _tutorialGuideDockController.dispose();
     _mapLoadTimeout?.cancel();
     _questGlowTimer?.cancel();
     _questPoiPulseTimer?.cancel();
@@ -928,6 +945,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     if ((status?.isPostScenarioDialogueStep ?? false) ||
+        (status?.isPostWelcomeDialogueStep ?? false) ||
         (status?.isPostMonsterDialogueStep ?? false) ||
         (status?.isPostBaseDialogueStep ?? false)) {
       return;
@@ -2927,21 +2945,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  void _focusMainStoryLeadFromTrackedOverlay(
-    _MainStoryLead lead, {
-    double zoom = _trackedQuestOverlayFocusZoom,
-  }) {
-    final focusLocation = _mainStoryLeadFocusLocation(lead);
-    if (focusLocation == null) {
-      return;
-    }
-    _selectZoneForMainStoryLeadIfDifferent(lead);
-    _flyToLocation(focusLocation.latitude, focusLocation.longitude, zoom: zoom);
-    unawaited(
-      _pulseMainStoryLeadFocus(focusLocation.latitude, focusLocation.longitude),
-    );
-  }
-
   void _focusMainStoryLeadPoi(PointOfInterest poi) {
     Character? featuredCharacter;
     for (final character in poi.characters) {
@@ -4071,6 +4074,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (status == null) return;
     final tutorialStillActive =
         status.showWelcomeDialogue ||
+        status.isPostWelcomeDialogueStep ||
         status.hasActiveScenario ||
         status.isPostScenarioDialogueStep ||
         status.isLoadoutStep ||
@@ -4085,15 +4089,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         (_tutorialFocusedMonsterEncounterId?.trim().isNotEmpty ?? false) ||
         _tutorialNormalPinsRevealInProgress ||
         _tutorialWelcomeOverlayVisible ||
-        _tutorialWelcomeOverlayOpacity > 0.0;
+        _tutorialWelcomeOverlayOpacity > 0.0 ||
+        _tutorialGuideDockVisible;
     if (!hasStalePresentation) return;
 
+    _tutorialGuideDockController.stop();
     setState(() {
       _tutorialFocusedScenarioId = null;
       _tutorialFocusedMonsterEncounterId = null;
       _tutorialNormalPinsRevealInProgress = false;
       _tutorialWelcomeOverlayVisible = false;
       _tutorialWelcomeOverlayOpacity = 0.0;
+      _tutorialGuideDockVisible = false;
+      _tutorialGuideDockCharacter = null;
+      _tutorialGuideDockExcerpt = '';
       _tutorialLoadoutPendingAfterCompletionModal = false;
       _tutorialPostMonsterDialoguePendingAfterCompletionModal = false;
       _tutorialRevealPendingAfterCompletionModal = false;
@@ -4126,11 +4135,143 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     ].join('|');
   }
 
+  List<DialogueMessage> _tutorialGuideDialogueForStatus(
+    TutorialStatus? status,
+  ) {
+    if (status == null) return const [];
+    final primary = status.postWelcomeDialogue;
+    if (primary.isNotEmpty) {
+      return List<DialogueMessage>.from(primary)
+        ..sort((a, b) => a.order.compareTo(b.order));
+    }
+    final fallback = status.dialogue;
+    return List<DialogueMessage>.from(fallback)
+      ..sort((a, b) => a.order.compareTo(b.order));
+  }
+
+  String _tutorialGuideDockExcerptForStatus(TutorialStatus? status) {
+    final dialogue = _tutorialGuideDialogueForStatus(status);
+    for (final line in dialogue) {
+      final text = line.text.trim();
+      if (text.isNotEmpty) return text;
+    }
+    return 'Tap the portrait on the left whenever you want to hear from me.';
+  }
+
+  bool _isTutorialGuideButtonUnlocked(TutorialStatus? status) {
+    if (status == null || status.character == null) {
+      return false;
+    }
+    return status.isPostWelcomeDialogueStep ||
+        status.hasActiveScenario ||
+        status.isPostScenarioDialogueStep ||
+        status.isLoadoutStep ||
+        status.isBaseKitStep ||
+        status.hasActiveMonsterEncounter ||
+        status.isPostMonsterDialogueStep ||
+        status.isPostBaseDialogueStep ||
+        status.isCompleted;
+  }
+
+  Future<void> _showTutorialGuideButtonDialogue() async {
+    final status = _tutorialStatus;
+    final character = status?.character;
+    final dialogue = _tutorialGuideDialogueForStatus(status);
+    if (character == null || dialogue.isEmpty || _tutorialDialogVisible) {
+      return;
+    }
+
+    final action = CharacterAction(
+      id: 'tutorial-guide-button',
+      createdAt: '',
+      updatedAt: '',
+      characterId: character.id,
+      actionType: 'tutorial',
+      dialogue: dialogue,
+    );
+
+    setState(() => _tutorialDialogVisible = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        useSafeArea: false,
+        barrierDismissible: true,
+        barrierColor: Colors.transparent,
+        builder: (dialogContext) {
+          return RpgDialogueModal(
+            character: character,
+            action: action,
+            dialogueOverride: dialogue,
+            finalStepLabel: 'Close',
+            onClose: () => Navigator.of(dialogContext).pop(),
+          );
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _tutorialDialogVisible = false);
+      }
+    }
+  }
+
+  String _tutorialGuidePortraitUrl(Character? character) {
+    if (character == null) return '';
+    final dialogue = character.dialogueImageUrl?.trim() ?? '';
+    if (dialogue.isNotEmpty) return dialogue;
+    final thumbnail = character.thumbnailUrl?.trim() ?? '';
+    if (thumbnail.isNotEmpty) return thumbnail;
+    final mapIcon = character.mapIconUrl?.trim() ?? '';
+    if (mapIcon.isNotEmpty) return mapIcon;
+    return '';
+  }
+
+  Rect _tutorialGuideDockTargetRect(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final targetTop =
+        topInset +
+        (3 * _overlayRailButtonSize) +
+        (3 * _overlayRailButtonSpacing);
+    return const Rect.fromLTWH(
+      _overlayRailButtonLeftInset,
+      0,
+      _overlayRailButtonSize,
+      _overlayRailButtonSize,
+    ).shift(Offset(0, targetTop));
+  }
+
+  Future<void> _runTutorialGuideDockSequence(TutorialStatus status) async {
+    final character = status.character;
+    if (character == null || !mounted) return;
+
+    setState(() {
+      _tutorialGuideDockCharacter = character;
+      _tutorialGuideDockExcerpt = _tutorialGuideDockExcerptForStatus(status);
+      _tutorialGuideDockVisible = true;
+    });
+    try {
+      await _tutorialGuideDockController.forward(from: 0);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _tutorialGuideDockVisible = false;
+          _tutorialGuideDockCharacter = null;
+          _tutorialGuideDockExcerpt = '';
+        });
+      } else {
+        _tutorialGuideDockVisible = false;
+        _tutorialGuideDockCharacter = null;
+        _tutorialGuideDockExcerpt = '';
+      }
+    }
+  }
+
   void _maybeShowTutorialDialogues() {
     if (!mounted ||
         _tutorialDialogVisible ||
         _tutorialActivationInFlight ||
-        _tutorialReplayResetInFlight) {
+        _tutorialReplayResetInFlight ||
+        _tutorialGuideDockVisible) {
       return;
     }
     if (_completedTaskProvider?.currentModal != null) {
@@ -4138,6 +4279,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     final status = _tutorialStatus;
     if (status == null || status.character == null) {
+      return;
+    }
+    if (status.shouldShowPostWelcomeDialogue) {
+      unawaited(_showTutorialProgressDialogue(status, stage: 'post_welcome'));
+      return;
+    }
+    if (status.isPostWelcomeDialogueStep) {
+      unawaited(
+        _completeTutorialPostWelcomeStep(
+          status,
+          forceReplay: _tutorialReplayPending,
+        ),
+      );
       return;
     }
     if (status.shouldShowPostScenarioDialogue) {
@@ -4167,7 +4321,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (status.dialogue.isEmpty) {
       if (status.showWelcomeDialogue || _tutorialReplayPending) {
         unawaited(
-          _activateTutorialScenario(
+          _advanceTutorialAfterWelcome(
             status,
             forceReplay: _tutorialReplayPending,
           ),
@@ -4196,11 +4350,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     final rawDialogue = stage == 'post_base'
         ? status.postBaseDialogue
+        : stage == 'post_welcome'
+        ? status.postWelcomeDialogue
         : stage == 'post_scenario'
         ? status.postScenarioDialogue
         : status.postMonsterDialogue;
     if (rawDialogue.isEmpty) {
-      await _completeTutorialDialogueStage(stage);
+      await _completeTutorialDialogueStage(status, stage);
       return;
     }
 
@@ -4234,7 +4390,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               finalStepLabel: 'Continue',
               onClose: () async {
                 Navigator.of(dialogContext).pop();
-                await _completeTutorialDialogueStage(stage);
+                await _completeTutorialDialogueStage(status, stage);
               },
             ),
           );
@@ -4247,8 +4403,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  Future<void> _completeTutorialDialogueStage(String stage) async {
+  Future<void> _completeTutorialDialogueStage(
+    TutorialStatus status,
+    String stage,
+  ) async {
     switch (stage) {
+      case 'post_welcome':
+        await _completeTutorialPostWelcomeStep(
+          status,
+          forceReplay: _tutorialReplayPending,
+        );
+        return;
       case 'post_scenario':
         await _advanceTutorialAfterDialogue('post_scenario_dialogue_closed');
         return;
@@ -4258,6 +4423,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       default:
         await _advanceTutorialAfterDialogue('post_monster_dialogue_closed');
     }
+  }
+
+  Future<void> _advanceTutorialAfterWelcome(
+    TutorialStatus status, {
+    bool forceReplay = false,
+  }) async {
+    await context.read<PoiService>().advanceTutorial('welcome_dialogue_closed');
+    await _loadTutorialStatus(force: true);
+    if (!mounted) return;
+    final nextStatus = _tutorialStatus;
+    if ((nextStatus?.isPostWelcomeDialogueStep ?? false) ||
+        (nextStatus?.shouldShowPostWelcomeDialogue ?? false)) {
+      return;
+    }
+    await _completeTutorialPostWelcomeStep(status, forceReplay: forceReplay);
+  }
+
+  Future<void> _completeTutorialPostWelcomeStep(
+    TutorialStatus status, {
+    bool forceReplay = false,
+  }) async {
+    if (_tutorialGuideDockVisible || _tutorialActivationInFlight) {
+      return;
+    }
+    await _runTutorialGuideDockSequence(status);
+    if (!mounted) return;
+    await _activateTutorialScenario(status, forceReplay: forceReplay);
   }
 
   Future<void> _advanceTutorialAfterDialogue(String action) async {
@@ -4315,7 +4507,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               finalStepLabel: 'Begin',
               onClose: () async {
                 Navigator.of(dialogContext).pop();
-                await _activateTutorialScenario(
+                await _advanceTutorialAfterWelcome(
                   status,
                   forceReplay: forceReplay,
                 );
@@ -4426,9 +4618,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         error,
         'Failed to start the tutorial scenario.',
       );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
     } finally {
       if (mounted) {
         setState(() => _tutorialActivationInFlight = false);
@@ -11171,8 +11365,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final lat = loc?.latitude ?? 0.0;
     final lng = loc?.longitude ?? 0.0;
     final initialPosition = CameraPosition(target: LatLng(lat, lng), zoom: 15);
-    const overlayButtonSize = 48.0;
-    const overlayButtonSpacing = 12.0;
+    const overlayButtonSize = _overlayRailButtonSize;
+    const overlayButtonSpacing = _overlayRailButtonSpacing;
     const overlayButtonCount = 3;
     const topOverlayLaneGap = 20.0;
     const partyStripTileWidth = 58.0;
@@ -11185,16 +11379,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     const polygonActionGap = 12.0;
     const stackedPolygonActionSpacing = 56.0;
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final tutorialStatus = _tutorialStatus;
+    final showTutorialGuideButton =
+        _isTutorialGuideButtonUnlocked(tutorialStatus) &&
+        !_tutorialGuideDockVisible;
+    final overlayButtonTotalCount =
+        overlayButtonCount + (showTutorialGuideButton ? 1 : 0);
     final overlayButtonStackHeight =
-        overlayButtonSize * overlayButtonCount +
-        overlayButtonSpacing * (overlayButtonCount - 1);
+        overlayButtonSize * overlayButtonTotalCount +
+        overlayButtonSpacing * math.max(0, overlayButtonTotalCount - 1);
     final mainStoryLead = _currentZoneMainStoryLead(
       questLog,
       allowGlobalFallback: false,
       includeKnownPins: false,
       requireFreshZonePins: true,
     );
-    final tutorialStatus = _tutorialStatus;
     final tutorialScenarioTrackedObjective =
         tutorialStatus?.hasActiveScenario ?? false
         ? tutorialStatus!.resolvedScenarioObjectiveCopy
@@ -11501,6 +11700,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                     icon: Icons.my_location,
                                     onTap: _centerOnUserLocation,
                                   ),
+                                  if (showTutorialGuideButton) ...[
+                                    const SizedBox(height: 12),
+                                    _OverlayPortraitButton(
+                                      imageUrl: _tutorialGuidePortraitUrl(
+                                        tutorialStatus?.character,
+                                      ),
+                                      onTap: _showTutorialGuideButtonDialogue,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -11714,9 +11922,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           resolveQuestReceiverCharacter:
                               _questReceiverCharacterForQuest,
                           resolveQuestReceiverPoi: _questReceiverPoiForQuest,
-                          featuredMainStoryPoi: mainStoryLead?.poi,
-                          featuredMainStoryQuestGiverName:
-                              mainStoryLead?.character?.name,
                           tutorialScenarioTitle: _tutorialScenarioOverlayTitle(
                             tutorialStatus,
                           ),
@@ -11754,18 +11959,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               tutorialMonsterTrackedObjective.isEmpty
                               ? null
                               : () => _focusTutorialMonsterFromTrackedOverlay(
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                ),
-                          onFocusFeaturedMainStoryLead: mainStoryLead == null
-                              ? null
-                              : () => _focusMainStoryLeadFromTrackedOverlay(
-                                  mainStoryLead,
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                ),
-                          onPreviewFeaturedMainStoryLead: mainStoryLead == null
-                              ? null
-                              : () => _focusMainStoryLeadFromTrackedOverlay(
-                                  mainStoryLead,
                                   zoom: _trackedQuestOverlayFocusZoom,
                                 ),
                           onCloseOverlay:
@@ -12214,6 +12407,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ),
           if (_tutorialWelcomeOverlayVisible)
             Positioned.fill(child: _buildTutorialWelcomeOverlay(context)),
+          if (_tutorialGuideDockVisible)
+            Positioned.fill(child: _buildTutorialGuideDockOverlay(context)),
           const CelebrationModalManager(),
           const NewItemModal(),
           const UsedItemModal(),
@@ -12320,6 +12515,205 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTutorialGuideDockOverlay(BuildContext context) {
+    final character = _tutorialGuideDockCharacter;
+    if (character == null) {
+      return const SizedBox.shrink();
+    }
+
+    double lerp(num a, num b, double t) => a + ((b - a) * t);
+
+    final theme = Theme.of(context);
+    final progress = _tutorialGuideDockController.value.clamp(0.0, 1.0);
+    final collapseProgress = (progress / 0.42).clamp(0.0, 1.0);
+    final travelProgress = ((progress - 0.42) / 0.58).clamp(0.0, 1.0);
+    final collapseCurve = Curves.easeInOutCubic.transform(collapseProgress);
+    final travelCurve = Curves.easeInOutCubic.transform(travelProgress);
+    final screenSize = MediaQuery.sizeOf(context);
+    final safePadding = MediaQuery.paddingOf(context);
+    final startWidth = math.min(screenSize.width - 44, 336.0).toDouble();
+    const startHeight = 228.0;
+    const portraitStartSize = 104.0;
+    final targetRect = _tutorialGuideDockTargetRect(context);
+    final collapsedLeft = (screenSize.width - portraitStartSize) / 2;
+    final collapsedTop = math.max(
+      safePadding.top + 32,
+      (screenSize.height - portraitStartSize) / 2 - 8,
+    );
+    final startLeft = (screenSize.width - startWidth) / 2;
+    final startTop = math.max(
+      safePadding.top + 20,
+      (screenSize.height - startHeight) / 2 - 24,
+    );
+
+    final width = travelProgress > 0
+        ? lerp(portraitStartSize, targetRect.width, travelCurve)
+        : lerp(startWidth, portraitStartSize, collapseCurve);
+    final height = travelProgress > 0
+        ? lerp(portraitStartSize, targetRect.height, travelCurve)
+        : lerp(startHeight, portraitStartSize, collapseCurve);
+    final left = travelProgress > 0
+        ? lerp(collapsedLeft, targetRect.left, travelCurve)
+        : lerp(startLeft, collapsedLeft, collapseCurve);
+    final top = travelProgress > 0
+        ? lerp(collapsedTop, targetRect.top, travelCurve)
+        : lerp(startTop, collapsedTop, collapseCurve);
+    final shellOpacity = travelProgress > 0 ? 1.0 - travelCurve : 1.0;
+    final textOpacity = 1.0 - collapseCurve;
+    final portraitScale = travelProgress > 0
+        ? lerp(1.0, 0.84, travelCurve)
+        : lerp(1.0, 1.06, 1.0 - collapseCurve);
+
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: width,
+            height: height,
+            child: PaperTexture(
+              borderRadius: BorderRadius.circular(28),
+              opacity: 0.14 * math.max(0.0, math.min(1.0, shellOpacity)),
+              child: Container(
+                padding: EdgeInsets.all(travelProgress > 0 ? 0 : 16),
+                decoration: BoxDecoration(
+                  color: const Color(
+                    0xFFF7EBD1,
+                  ).withValues(alpha: 0.98 * shellOpacity),
+                  borderRadius: BorderRadius.circular(
+                    lerp(28, 14, travelCurve).toDouble(),
+                  ),
+                  border: Border.all(
+                    color: const Color(
+                      0xFFD2B26C,
+                    ).withValues(alpha: 0.9 * shellOpacity),
+                    width: 1.3,
+                  ),
+                  boxShadow: shellOpacity <= 0.05
+                      ? const []
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: 0.26 * shellOpacity,
+                            ),
+                            blurRadius: 24,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                ),
+                child: Stack(
+                  children: [
+                    if (travelProgress == 0)
+                      Opacity(
+                        opacity: math.max(0.0, math.min(1.0, textOpacity)),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: 120,
+                              left: 10,
+                              right: 10,
+                              bottom: 10,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(
+                                14,
+                                12,
+                                14,
+                                12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.82),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFD9C89C,
+                                  ).withValues(alpha: 0.92),
+                                ),
+                              ),
+                              child: Text(
+                                _tutorialGuideDockExcerpt,
+                                maxLines: 3,
+                                overflow: TextOverflow.fade,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: const Color(0xFF4F3B1D),
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Center(
+                      child: Transform.scale(
+                        scale: portraitScale.toDouble(),
+                        child: _buildTutorialGuidePortraitFrame(
+                          imageUrl: _tutorialGuidePortraitUrl(character),
+                          size: travelProgress > 0 ? width : portraitStartSize,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTutorialGuidePortraitFrame({
+    required String imageUrl,
+    required double size,
+  }) {
+    final clampedSize = math.max(size, 40.0).toDouble();
+    return Container(
+      width: clampedSize,
+      height: clampedSize,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E2BC),
+        borderRadius: BorderRadius.circular(
+          math.min(clampedSize * 0.22, 18).toDouble(),
+        ),
+        border: Border.all(
+          color: const Color(0xFFD2B26C).withValues(alpha: 0.94),
+          width: 1.3,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          math.min(clampedSize * 0.19, 16).toDouble(),
+        ),
+        child: imageUrl.isNotEmpty
+            ? Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.person,
+                  size: clampedSize * 0.5,
+                  color: const Color(0xFF8C5A14),
+                ),
+              )
+            : Icon(
+                Icons.person,
+                size: clampedSize * 0.5,
+                color: const Color(0xFF8C5A14),
+              ),
       ),
     );
   }
@@ -14567,6 +14961,55 @@ class _OverlayButton extends StatelessWidget {
                     color: foregroundColor,
                   )
                 : Icon(icon, size: 24, color: foregroundColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlayPortraitButton extends StatelessWidget {
+  const _OverlayPortraitButton({required this.imageUrl, required this.onTap});
+
+  final String imageUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+    final borderColor = theme.colorScheme.outlineVariant;
+    return Material(
+      color: surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: borderColor),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3E2BC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFFD2B26C).withValues(alpha: 0.92),
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(Icons.person),
+                    )
+                  : const Icon(Icons.person),
+            ),
           ),
         ),
       ),

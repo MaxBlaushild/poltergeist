@@ -1060,12 +1060,6 @@ class _SideDrawerState extends State<_SideDrawer> {
                                     );
                                     context.go('/single-player');
                                   },
-                                  onFocusFeaturedMainStoryLead: (poi) {
-                                    context
-                                        .read<MapFocusProvider>()
-                                        .focusMainStoryLead(poi);
-                                    context.go('/single-player');
-                                  },
                                 )
                               : _tabIndex == _partyTab
                               ? PartyTabContent(

@@ -37,6 +37,7 @@ type tutorialConfigRequest struct {
 	BaseQuestGiverCharacterID         *string                      `json:"baseQuestGiverCharacterId"`
 	BaseQuestGiverCharacterTemplateID *string                      `json:"baseQuestGiverCharacterTemplateId"`
 	Dialogue                          []models.DialogueMessage     `json:"dialogue"`
+	PostWelcomeDialogue               []models.DialogueMessage     `json:"postWelcomeDialogue"`
 	ScenarioObjectiveCopy             string                       `json:"scenarioObjectiveCopy"`
 	PostScenarioDialogue              []models.DialogueMessage     `json:"postScenarioDialogue"`
 	LoadoutDialogue                   []models.DialogueMessage     `json:"loadoutDialogue"`
@@ -70,6 +71,7 @@ type tutorialStatusResponse struct {
 	MonsterEncounterID        *uuid.UUID               `json:"monsterEncounterId,omitempty"`
 	Character                 *models.Character        `json:"character,omitempty"`
 	Dialogue                  []models.DialogueMessage `json:"dialogue"`
+	PostWelcomeDialogue       []models.DialogueMessage `json:"postWelcomeDialogue"`
 	ScenarioObjectiveCopy     string                   `json:"scenarioObjectiveCopy"`
 	PostScenarioDialogue      []models.DialogueMessage `json:"postScenarioDialogue"`
 	LoadoutDialogue           []models.DialogueMessage `json:"loadoutDialogue"`
@@ -447,8 +449,13 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 
 	action := strings.TrimSpace(strings.ToLower(requestBody.Action))
 	switch action {
+	case "welcome_dialogue_closed":
+		if err := s.dbClient.Tutorial().AdvanceToPostWelcomeDialogue(ctx, user.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	case "post_scenario_dialogue_closed":
-		if err := s.dbClient.Tutorial().AdvanceToLoadout(ctx, user.ID); err != nil {
+		if _, err := s.advanceTutorialToMonsterOrComplete(ctx, user.ID, config); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -483,14 +490,6 @@ func (s *server) advanceTutorial(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		base, err := s.dbClient.Base().FindByUserID(ctx, user.ID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if base != nil {
-			s.instantiateTutorialBaseQuestAsync(user.ID, base, config)
-		}
 	default:
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unsupported tutorial action"})
 		return
@@ -522,6 +521,7 @@ func buildTutorialStatusResponse(
 			Stage:                     models.TutorialStageCompleted,
 			Character:                 config.Character,
 			Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+			PostWelcomeDialogue:       append([]models.DialogueMessage{}, config.PostWelcomeDialogue...),
 			ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 			PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 			LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
@@ -555,6 +555,7 @@ func buildTutorialStatusResponse(
 		MonsterEncounterID:        activeTutorialMonsterEncounterID(state),
 		Character:                 config.Character,
 		Dialogue:                  append([]models.DialogueMessage{}, config.Dialogue...),
+		PostWelcomeDialogue:       append([]models.DialogueMessage{}, config.PostWelcomeDialogue...),
 		ScenarioObjectiveCopy:     config.ScenarioObjectiveCopy,
 		PostScenarioDialogue:      append([]models.DialogueMessage{}, config.PostScenarioDialogue...),
 		LoadoutDialogue:           append([]models.DialogueMessage{}, config.LoadoutDialogue...),
@@ -576,6 +577,7 @@ func buildTutorialStatusResponse(
 func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialConfig, error) {
 	config := &models.TutorialConfig{
 		Dialogue:                  models.DialogueSequence{},
+		PostWelcomeDialogue:       models.DialogueSequence{},
 		ScenarioObjectiveCopy:     strings.TrimSpace(body.ScenarioObjectiveCopy),
 		PostScenarioDialogue:      models.DialogueSequence{},
 		LoadoutDialogue:           models.DialogueSequence{},
@@ -646,6 +648,7 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	}
 
 	config.Dialogue = models.DialogueSequence(body.Dialogue)
+	config.PostWelcomeDialogue = models.DialogueSequence(body.PostWelcomeDialogue)
 	config.PostScenarioDialogue = models.DialogueSequence(body.PostScenarioDialogue)
 	config.LoadoutDialogue = models.DialogueSequence(body.LoadoutDialogue)
 	config.PostMonsterDialogue = models.DialogueSequence(body.PostMonsterDialogue)
@@ -759,6 +762,13 @@ func (s *server) maybeAdvanceTutorialProgress(
 		if state.HasOutstandingLoadoutRequirements() {
 			return state, nil
 		}
+		if config != nil && len(config.PostScenarioDialogue) > 0 {
+			if err := s.dbClient.Tutorial().AdvanceToPostScenarioDialogue(ctx, userID); err != nil {
+				return nil, err
+			}
+			return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+		}
+		return s.advanceTutorialToMonsterOrComplete(ctx, userID, config)
 	case models.TutorialStageBaseKit:
 		if state.HasOutstandingLoadoutRequirements() {
 			return state, nil
@@ -777,7 +787,13 @@ func (s *server) maybeAdvanceTutorialProgress(
 	default:
 		return state, nil
 	}
+}
 
+func (s *server) advanceTutorialToMonsterOrComplete(
+	ctx context.Context,
+	userID uuid.UUID,
+	config *models.TutorialConfig,
+) (*models.UserTutorialState, error) {
 	if config == nil || config.MonsterEncounterID == nil {
 		if err := s.dbClient.Tutorial().MarkCompleted(ctx, userID); err != nil {
 			return nil, err
@@ -799,7 +815,7 @@ func (s *server) maybeAdvanceTutorialProgress(
 
 	userLat, userLng, err := s.getUserLatLng(ctx, userID)
 	if err != nil {
-		return state, nil
+		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
 	}
 	zones, err := s.dbClient.Zone().FindAll(ctx)
 	if err != nil {
