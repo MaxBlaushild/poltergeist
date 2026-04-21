@@ -1,0 +1,5 @@
+ALTER TABLE zone_seed_jobs
+DROP COLUMN IF EXISTS zone_kind;
+
+ALTER TABLE zones
+DROP COLUMN IF EXISTS kind;

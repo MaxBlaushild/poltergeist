@@ -34,6 +34,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
           'Define the shared genre axes that zones can gain through Chaos Engine activity.',
       },
       {
+        id: 'zone-kinds',
+        label: 'Zone Kinds',
+        path: '/zone-kinds',
+        description:
+          'Create reusable zone presets, tune seeding ratios, and assign them to zones.',
+      },
+      {
         id: 'districts',
         label: 'Districts',
         path: '/districts',

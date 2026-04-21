@@ -398,10 +398,16 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
 	r.GET("/sonar/admin/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminZones))
 	r.GET("/sonar/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneGenres))
+	r.GET("/sonar/zoneKinds", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneKinds))
+	r.POST("/sonar/zoneKinds", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneKind))
+	r.PATCH("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneKind))
+	r.DELETE("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneKind))
+	r.POST("/sonar/zoneKinds/assign-zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.assignZoneKindToZones))
 	r.POST("/sonar/admin/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneGenre))
 	r.PATCH("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneGenre))
 	r.DELETE("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneGenre))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
+	r.POST("/sonar/zones/:id/discover", middleware.WithAuthentication(s.authClient, s.livenessClient, s.discoverZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
 	r.GET("/sonar/districts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistricts))
 	r.GET("/sonar/districts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrict))
@@ -1885,6 +1891,7 @@ func (s *server) editZone(ctx *gin.Context) {
 	var requestBody struct {
 		Name         string   `json:"name"`
 		Description  string   `json:"description"`
+		Kind         string   `json:"kind"`
 		InternalTags []string `json:"internalTags"`
 	}
 
@@ -1898,6 +1905,7 @@ func (s *server) editZone(ctx *gin.Context) {
 		zoneIDUUID,
 		requestBody.Name,
 		requestBody.Description,
+		models.NormalizeZoneKind(requestBody.Kind),
 		parseZoneInternalTags(requestBody.InternalTags),
 	)
 	if err != nil {
@@ -5920,6 +5928,12 @@ func (s *server) getZonePins(ctx *gin.Context) {
 }
 
 func (s *server) getZone(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	id := ctx.Param("id")
 	zoneID, err := uuid.Parse(id)
 	if err != nil {
@@ -5932,12 +5946,156 @@ func (s *server) getZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	serialized, err := s.serializeSingleZoneWithGenres(ctx, zone)
+	serialized, err := s.serializeSingleZoneWithGenresForUser(ctx, user.ID, zone)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, serialized)
+}
+
+func (s *server) discoverZone(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil || zoneID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	var requestBody struct {
+		Lat *float64 `json:"lat"`
+		Lng *float64 `json:"lng"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Lat == nil || requestBody.Lng == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng are required"})
+		return
+	}
+	if math.IsNaN(*requestBody.Lat) || math.IsInf(*requestBody.Lat, 0) ||
+		math.IsNaN(*requestBody.Lng) || math.IsInf(*requestBody.Lng, 0) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be finite"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if zone == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found"})
+		return
+	}
+	if !zone.IsPointInBoundary(*requestBody.Lat, *requestBody.Lng) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user must be inside the zone to discover it"})
+		return
+	}
+
+	alreadyDiscovered, err := s.dbClient.ZoneDiscovery().ExistsForUserAndZone(
+		ctx,
+		user.ID,
+		zoneID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if alreadyDiscovered {
+		serializedZone, err := s.serializeSingleZoneWithGenresForUser(ctx, user.ID, zone)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"message":           "zone already discovered",
+			"alreadyDiscovered": true,
+			"zone":              serializedZone,
+		})
+		return
+	}
+
+	discovery := &models.ZoneDiscovery{
+		UserID: user.ID,
+		ZoneID: zoneID,
+	}
+	if err := s.dbClient.ZoneDiscovery().Create(ctx, discovery); err != nil {
+		lowerErr := strings.ToLower(err.Error())
+		if strings.Contains(lowerErr, "duplicate key") ||
+			strings.Contains(lowerErr, "zone_discoveries_user_zone_unique") {
+			serializedZone, serializeErr := s.serializeSingleZoneWithGenresForUser(ctx, user.ID, zone)
+			if serializeErr != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": serializeErr.Error()})
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{
+				"message":           "zone already discovered",
+				"alreadyDiscovered": true,
+				"zone":              serializedZone,
+			})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	plan, _, _, err := s.randomRewardPlanForUser(
+		ctx,
+		user.ID,
+		models.RandomRewardSizeSmall,
+		fmt.Sprintf("zone:%s:user:%s", zone.ID, user.ID),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	rewardExperience := plan.Experience
+	rewardGold := plan.Gold
+	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
+		ctx,
+		user.ID,
+		rewardExperience,
+		rewardGold,
+		randomRewardPlanToScenarioItems(plan),
+		nil,
+		[]string{},
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	serializedZone, err := s.serializeSingleZoneWithGenresForUser(ctx, user.ID, zone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedUser, err := s.dbClient.User().FindByID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":           "zone discovered successfully",
+		"alreadyDiscovered": false,
+		"zone":              serializedZone,
+		"rewardExperience":  rewardExperience,
+		"rewardGold":        rewardGold,
+		"goldAwarded":       rewardGold,
+		"itemsAwarded":      itemsAwarded,
+		"spellsAwarded":     spellsAwarded,
+		"user":              updatedUser,
+	})
 }
 
 func (s *server) createZone(ctx *gin.Context) {
@@ -5946,6 +6104,7 @@ func (s *server) createZone(ctx *gin.Context) {
 		Latitude     float64  `json:"latitude"`
 		Longitude    float64  `json:"longitude"`
 		Description  string   `json:"description"`
+		Kind         string   `json:"kind"`
 		InternalTags []string `json:"internalTags"`
 	}
 
@@ -5959,6 +6118,7 @@ func (s *server) createZone(ctx *gin.Context) {
 		Latitude:     requestBody.Latitude,
 		Longitude:    requestBody.Longitude,
 		Description:  requestBody.Description,
+		Kind:         requestBody.Kind,
 		InternalTags: parseZoneInternalTags(requestBody.InternalTags),
 	}
 	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {
@@ -6278,6 +6438,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 type zoneSeedDraftRequest struct {
 	SeedMode             string   `json:"seedMode"`
 	CountMode            string   `json:"countMode"`
+	ZoneKind             string   `json:"zoneKind"`
 	PlaceCount           *int     `json:"placeCount"`
 	MonsterCount         *int     `json:"monsterCount"`
 	BossEncounterCount   *int     `json:"bossEncounterCount"`
@@ -6294,6 +6455,7 @@ type zoneSeedDraftRequest struct {
 type normalizedZoneSeedDraftRequest struct {
 	SeedMode             string
 	CountMode            string
+	ZoneKind             string
 	PlaceCount           int
 	MonsterCount         int
 	BossEncounterCount   int
@@ -6341,6 +6503,7 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	return &normalizedZoneSeedDraftRequest{
 		SeedMode:             mode,
 		CountMode:            countMode,
+		ZoneKind:             models.NormalizeZoneKind(requestBody.ZoneKind),
 		PlaceCount:           counts.PlaceCount,
 		MonsterCount:         counts.MonsterCount,
 		BossEncounterCount:   counts.BossEncounterCount,
@@ -6371,6 +6534,7 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
 		ZoneID:               zoneID,
+		ZoneKind:             settings.ZoneKind,
 		Status:               models.ZoneSeedStatusQueued,
 		SeedMode:             settings.SeedMode,
 		CountMode:            settings.CountMode,
@@ -6473,6 +6637,10 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+		} else if resolvedSettings != nil && resolvedSettings.ZoneKind == "" {
+			settingsCopy := *resolvedSettings
+			settingsCopy.ZoneKind = zoneSeedEffectiveKind(zone, "")
+			resolvedSettings = &settingsCopy
 		}
 
 		job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, resolvedSettings)
@@ -7062,12 +7230,18 @@ func (s *server) getScenarioGenerationJob(ctx *gin.Context) {
 }
 
 func (s *server) getZones(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	zones, err := s.dbClient.Zone().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	serialized, err := s.serializeZonesWithGenres(ctx, zones)
+	serialized, err := s.serializeZonesWithGenresForUser(ctx, user.ID, zones)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -13785,6 +13959,10 @@ func (s *server) deleteUser(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete discoveries: " + err.Error()})
 		return
 	}
+	if err := s.dbClient.ZoneDiscovery().DeleteByUserID(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete zone discoveries: " + err.Error()})
+		return
+	}
 
 	// 2. Delete all submissions
 	if err := s.dbClient.PointOfInterestChallenge().DeleteAllSubmissionsForUser(ctx, userID); err != nil {
@@ -14633,6 +14811,10 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 		// 1. Delete all discoveries
 		if err := s.dbClient.PointOfInterestDiscovery().DeleteByUserID(ctx, userID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete discoveries for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+		if err := s.dbClient.ZoneDiscovery().DeleteByUserID(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete zone discoveries for user " + userID.String() + ": " + err.Error()})
 			return
 		}
 

@@ -21,6 +21,7 @@ export type Zone = {
     createdAt: string;
     updatedAt: string;
     description: string;
+    kind: string;
     internalTags?: string[];
     zoneImportId?: string | null;
     boundary: number[][];
@@ -39,6 +40,7 @@ export type ZoneAdminSummary = {
     createdAt: string;
     updatedAt: string;
     description: string;
+    kind: string;
     internalTags?: string[];
     zoneImportId?: string | null;
     importMetroName?: string | null;

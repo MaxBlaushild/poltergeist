@@ -166,6 +166,7 @@ const buildZoneSearchText = (zone: ZoneAdminSummary) =>
   [
     zone.name,
     zone.description,
+    zone.kind || '',
     zone.importMetroName || '',
     ...(zone.internalTags || []),
   ]
@@ -1230,10 +1231,7 @@ export const Zones = () => {
     setSelectedZoneIds(new Set());
   };
 
-  const openFlushZonesModal = (
-    zoneIDs: string[],
-    mode: 'single' | 'bulk'
-  ) => {
+  const openFlushZonesModal = (zoneIDs: string[], mode: 'single' | 'bulk') => {
     if (zoneIDs.length === 0) {
       return;
     }
@@ -1262,7 +1260,10 @@ export const Zones = () => {
     });
   };
 
-  const handleFlushZones = async (zoneIDs: string[], mode: 'single' | 'bulk') => {
+  const handleFlushZones = async (
+    zoneIDs: string[],
+    mode: 'single' | 'bulk'
+  ) => {
     if (zoneIDs.length === 0) {
       return;
     }
@@ -1807,8 +1808,8 @@ export const Zones = () => {
               Bulk Cleanup
             </div>
             <div className="mt-1 text-sm text-slate-500">
-              {selectedZoneIds.size} selected overall, {selectedFilteredZoneCount}{' '}
-              in the current filter.
+              {selectedZoneIds.size} selected overall,{' '}
+              {selectedFilteredZoneCount} in the current filter.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1831,7 +1832,9 @@ export const Zones = () => {
               disabled={selectedZoneIds.size === 0 || bulkFlushingZones}
               className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-amber-300"
             >
-              {bulkFlushingZones ? 'Flushing Zones...' : 'Flush Selected Content'}
+              {bulkFlushingZones
+                ? 'Flushing Zones...'
+                : 'Flush Selected Content'}
             </button>
           </div>
         </div>
@@ -1846,7 +1849,9 @@ export const Zones = () => {
           }
           onClearAll={() => setSelectedFlushContentTypes([])}
           onCancel={closeFlushZonesModal}
-          onConfirm={() => void handleFlushZones(pendingFlushZoneIds, pendingFlushMode)}
+          onConfirm={() =>
+            void handleFlushZones(pendingFlushZoneIds, pendingFlushMode)
+          }
           isSubmitting={Boolean(flushingZoneId) || bulkFlushingZones}
           error={zoneSummariesError}
         />
@@ -1927,6 +1932,13 @@ export const Zones = () => {
                             ? `Imported from ${zone.importMetroName}`
                             : 'Manual zone'}
                         </div>
+                        {zone.kind && (
+                          <div className="mt-2">
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                              {zone.kind}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">

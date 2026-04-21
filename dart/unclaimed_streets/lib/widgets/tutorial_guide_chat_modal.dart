@@ -140,6 +140,13 @@ class _TutorialGuideChatModalState extends State<TutorialGuideChatModal> {
     final colorScheme = theme.colorScheme;
     final imageUrl = _portraitUrl();
     final canSendMessage = _composerHasText && !_sending;
+    final composerTextStyle = theme.textTheme.bodyMedium?.copyWith(
+      height: 1.15,
+      color: colorScheme.onSurface,
+    );
+    final composerHintStyle = composerTextStyle?.copyWith(
+      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
+    );
 
     return Material(
       color: Colors.black54,
@@ -313,17 +320,10 @@ class _TutorialGuideChatModalState extends State<TutorialGuideChatModal> {
                                     textCapitalization:
                                         TextCapitalization.sentences,
                                     textInputAction: TextInputAction.send,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      height: 1.35,
-                                      color: colorScheme.onSurface,
-                                    ),
+                                    style: composerTextStyle,
                                     decoration: InputDecoration.collapsed(
                                       hintText: 'Message',
-                                      hintStyle: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant
-                                                .withValues(alpha: 0.72),
-                                          ),
+                                      hintStyle: composerHintStyle,
                                     ),
                                     onSubmitted: (_) => _sendCurrentMessage(),
                                   ),

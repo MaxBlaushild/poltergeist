@@ -455,6 +455,18 @@ class PoiService {
     return zones;
   }
 
+  Future<Map<String, dynamic>> discoverZone(
+    String zoneId, {
+    required double lat,
+    required double lng,
+  }) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/zones/$zoneId/discover',
+      data: {'lat': lat, 'lng': lng},
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
   Future<List<PointOfInterest>> getPointsOfInterest() async {
     final list = await _api.get<List<dynamic>>('/sonar/pointsOfInterest');
     return list

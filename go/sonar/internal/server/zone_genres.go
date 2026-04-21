@@ -43,16 +43,23 @@ func serializeZoneGenreScores(genres []models.ZoneGenre, zoneScores map[uuid.UUI
 	return scores
 }
 
-func serializeZone(zone *models.Zone, genres []models.ZoneGenre, zoneScores map[uuid.UUID]int) gin.H {
+func serializeZone(
+	zone *models.Zone,
+	genres []models.ZoneGenre,
+	zoneScores map[uuid.UUID]int,
+	discovery *models.ZoneDiscovery,
+) gin.H {
 	if zone == nil {
 		return gin.H{}
 	}
+	discovered := discovery != nil && discovery.ID != uuid.Nil
 	return gin.H{
 		"id":             zone.ID,
 		"createdAt":      zone.CreatedAt,
 		"updatedAt":      zone.UpdatedAt,
 		"name":           zone.Name,
 		"description":    zone.Description,
+		"kind":           zone.Kind,
 		"internalTags":   zone.InternalTags,
 		"latitude":       zone.Latitude,
 		"longitude":      zone.Longitude,
@@ -61,6 +68,13 @@ func serializeZone(zone *models.Zone, genres []models.ZoneGenre, zoneScores map[
 		"boundaryCoords": zone.BoundaryCoords,
 		"points":         zone.Points,
 		"genreScores":    serializeZoneGenreScores(genres, zoneScores),
+		"discovered":     discovered,
+		"discoveredAt": func() interface{} {
+			if !discovered {
+				return nil
+			}
+			return discovery.CreatedAt
+		}(),
 	}
 }
 
@@ -78,7 +92,26 @@ func zoneGenreScoreIndex(scores []models.ZoneGenreScore) map[uuid.UUID]map[uuid.
 	return index
 }
 
-func (s *server) serializeZonesWithGenres(ctx context.Context, zones []*models.Zone) ([]gin.H, error) {
+func zoneDiscoveryIndex(
+	discoveries []models.ZoneDiscovery,
+) map[uuid.UUID]*models.ZoneDiscovery {
+	index := make(map[uuid.UUID]*models.ZoneDiscovery, len(discoveries))
+	for i := range discoveries {
+		discovery := discoveries[i]
+		if discovery.ZoneID == uuid.Nil {
+			continue
+		}
+		discoveryCopy := discovery
+		index[discovery.ZoneID] = &discoveryCopy
+	}
+	return index
+}
+
+func (s *server) serializeZonesWithGenresAndDiscoveries(
+	ctx context.Context,
+	zones []*models.Zone,
+	discoveryByZone map[uuid.UUID]*models.ZoneDiscovery,
+) ([]gin.H, error) {
 	activeGenres, err := s.dbClient.ZoneGenre().FindActive(ctx)
 	if err != nil {
 		return nil, err
@@ -106,9 +139,40 @@ func (s *server) serializeZonesWithGenres(ctx context.Context, zones []*models.Z
 		if zone == nil {
 			continue
 		}
-		serialized = append(serialized, serializeZone(zone, activeGenres, scoreMapByZone[zone.ID]))
+		serialized = append(
+			serialized,
+			serializeZone(
+				zone,
+				activeGenres,
+				scoreMapByZone[zone.ID],
+				discoveryByZone[zone.ID],
+			),
+		)
 	}
 	return serialized, nil
+}
+
+func (s *server) serializeZonesWithGenres(
+	ctx context.Context,
+	zones []*models.Zone,
+) ([]gin.H, error) {
+	return s.serializeZonesWithGenresAndDiscoveries(ctx, zones, nil)
+}
+
+func (s *server) serializeZonesWithGenresForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	zones []*models.Zone,
+) ([]gin.H, error) {
+	discoveries, err := s.dbClient.ZoneDiscovery().GetDiscoveriesForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.serializeZonesWithGenresAndDiscoveries(
+		ctx,
+		zones,
+		zoneDiscoveryIndex(discoveries),
+	)
 }
 
 func (s *server) serializeSingleZoneWithGenres(ctx context.Context, zone *models.Zone) (gin.H, error) {
@@ -116,6 +180,24 @@ func (s *server) serializeSingleZoneWithGenres(ctx context.Context, zone *models
 		return gin.H{}, nil
 	}
 	serialized, err := s.serializeZonesWithGenres(ctx, []*models.Zone{zone})
+	if err != nil {
+		return nil, err
+	}
+	if len(serialized) == 0 {
+		return gin.H{}, nil
+	}
+	return serialized[0], nil
+}
+
+func (s *server) serializeSingleZoneWithGenresForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	zone *models.Zone,
+) (gin.H, error) {
+	if zone == nil {
+		return gin.H{}, nil
+	}
+	serialized, err := s.serializeZonesWithGenresForUser(ctx, userID, []*models.Zone{zone})
 	if err != nil {
 		return nil, err
 	}

@@ -103,14 +103,28 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("zone not found"))
 	}
 
+	nextDescription := zone.Description
 	if strings.TrimSpace(job.Draft.ZoneDescription) != "" {
-		if err := p.dbClient.Zone().UpdateNameAndDescription(
+		nextDescription = job.Draft.ZoneDescription
+	}
+	nextKind := zone.Kind
+	if strings.TrimSpace(job.ZoneKind) != "" {
+		nextKind = models.NormalizeZoneKind(job.ZoneKind)
+	}
+	if nextDescription != zone.Description || nextKind != zone.Kind {
+		updatedZone, err := p.dbClient.Zone().UpdateMetadata(
 			ctx,
 			zone.ID,
 			zone.Name,
-			job.Draft.ZoneDescription,
-		); err != nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to update zone description: %w", err))
+			nextDescription,
+			nextKind,
+			zone.InternalTags,
+		)
+		if err != nil {
+			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to update zone metadata: %w", err))
+		}
+		if updatedZone != nil {
+			zone = updatedZone
 		}
 	}
 

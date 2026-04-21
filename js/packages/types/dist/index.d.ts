@@ -41,6 +41,7 @@ export * from './questArchetype';
 export * from './questArchetypeSuggestion';
 export * from './mainStory';
 export * from './locationArchetype';
+export * from './zoneKind';
 export * from './zoneQuestArchetype';
 export * from './zone';
 export * from './zoneImport';

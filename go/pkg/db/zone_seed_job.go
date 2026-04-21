@@ -62,6 +62,22 @@ func (h *zoneSeedJobHandle) FindFiltered(
 	return jobs, nil
 }
 
+func (h *zoneSeedJobHandle) ReplaceZoneKind(ctx context.Context, currentKind string, nextKind string) (int, error) {
+	normalizedCurrentKind := models.NormalizeZoneKind(currentKind)
+	if normalizedCurrentKind == "" {
+		return 0, nil
+	}
+
+	result := h.db.WithContext(ctx).
+		Model(&models.ZoneSeedJob{}).
+		Where("zone_kind = ?", normalizedCurrentKind).
+		Update("zone_kind", models.NormalizeZoneKind(nextKind))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
+}
+
 func (h *zoneSeedJobHandle) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.ZoneSeedJob{}, "id = ?", id).Error
 }

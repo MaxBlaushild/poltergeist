@@ -10,6 +10,19 @@ class ZoneProvider extends ChangeNotifier {
   Zone? get selectedZone => _selectedZone;
   bool get isSelectionLocked => _selectionLocked;
 
+  Zone? zoneById(String zoneId) {
+    final normalizedZoneId = zoneId.trim();
+    if (normalizedZoneId.isEmpty) return null;
+    for (final zone in _zones) {
+      if (zone.id == normalizedZoneId) return zone;
+    }
+    return null;
+  }
+
+  bool isZoneDiscovered(String zoneId) {
+    return zoneById(zoneId)?.discovered == true;
+  }
+
   void setZones(List<Zone> zones) {
     _zones = zones;
     if (_selectedZone != null) {
@@ -19,6 +32,21 @@ class ZoneProvider extends ChangeNotifier {
           break;
         }
       }
+    }
+    notifyListeners();
+  }
+
+  void upsertZone(Zone zone) {
+    final updated = List<Zone>.from(_zones);
+    final existingIndex = updated.indexWhere((entry) => entry.id == zone.id);
+    if (existingIndex >= 0) {
+      updated[existingIndex] = zone;
+    } else {
+      updated.add(zone);
+    }
+    _zones = updated;
+    if (_selectedZone?.id == zone.id) {
+      _selectedZone = zone;
     }
     notifyListeners();
   }

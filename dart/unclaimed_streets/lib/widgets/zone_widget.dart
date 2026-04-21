@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/zone.dart';
 import '../models/user_zone_reputation.dart';
 import '../providers/location_provider.dart';
 import '../providers/zone_provider.dart';
@@ -88,7 +89,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
       location.latitude,
       location.longitude,
     );
-    zoneProvider.setSelectedZone(zone);
+    zoneProvider.setSelectedZone(zone?.discovered == true ? zone : null);
   }
 
   Future<void> _loadReputation(String zoneId) async {
@@ -133,6 +134,15 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     return value[0].toUpperCase() + value.substring(1);
   }
 
+  Zone? _zoneAtCurrentLocation(ZoneProvider zoneProvider) {
+    final location = context.watch<LocationProvider>().location;
+    if (location == null) return null;
+    return zoneProvider.findZoneAtCoordinate(
+      location.latitude,
+      location.longitude,
+    );
+  }
+
   List<_GenrePreviewEntry> _genreScoresPreview() {
     final selectedZone = context.read<ZoneProvider>().selectedZone;
     final scores = selectedZone?.genreScores ?? const [];
@@ -164,15 +174,34 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     return Consumer<ZoneProvider>(
       builder: (context, zoneProvider, _) {
         final selectedZone = zoneProvider.selectedZone;
+        final locationZone = _zoneAtCurrentLocation(zoneProvider);
+        final undiscoveredZone =
+            selectedZone == null &&
+                locationZone != null &&
+                !locationZone.discovered
+            ? locationZone
+            : null;
+        final displayedZone = selectedZone ?? undiscoveredZone;
+        final showingUndiscovered = undiscoveredZone != null;
         final theme = Theme.of(context);
-        final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
-        final borderColor = theme.colorScheme.outlineVariant;
+        final surfaceColor = showingUndiscovered
+            ? const Color(0xFF1C2430).withValues(alpha: 0.96)
+            : theme.colorScheme.surface.withValues(alpha: 0.95);
+        final borderColor = showingUndiscovered
+            ? const Color(0xFFD3BF88)
+            : theme.colorScheme.outlineVariant;
+        final primaryTextColor = showingUndiscovered
+            ? const Color(0xFFF6E7B8)
+            : theme.colorScheme.onSurface;
+        final secondaryTextColor = showingUndiscovered
+            ? const Color(0xFFD7DDE8)
+            : theme.colorScheme.onSurface;
         final textStyle = theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurface,
+          color: primaryTextColor,
           fontWeight: FontWeight.w600,
         );
         final subTextStyle = theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurface,
+          color: secondaryTextColor,
         );
         final genreScoresPreview = _genreScoresPreview();
         final expandUpwards = widget.expandUpwards;
@@ -188,14 +217,20 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final header = Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            if (showingUndiscovered) ...[
+              Icon(Icons.explore_off, size: 16, color: primaryTextColor),
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: Text(
-                selectedZone?.name ?? 'Hinterlands',
+                showingUndiscovered
+                    ? 'Uncharted Territory'
+                    : displayedZone?.name ?? 'Hinterlands',
                 style: textStyle,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(arrowIcon, size: 16, color: theme.colorScheme.onSurface),
+            Icon(arrowIcon, size: 16, color: primaryTextColor),
           ],
         );
         final content = _showContent && _isOpen
@@ -208,7 +243,35 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_reputation != null) ...[
+                    if (showingUndiscovered) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF0F1722,
+                          ).withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0x80D3BF88),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Unknown lands ahead',
+                              style: textStyle?.copyWith(fontSize: 14),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Step inside this shrouded zone to uncover its true name and earn a small discovery reward.',
+                              style: subTextStyle,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (_reputation != null) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -238,13 +301,16 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                         ),
                       ),
                     ],
-                    if (_reputation != null &&
-                        selectedZone?.description != null)
+                    if (!showingUndiscovered &&
+                        _reputation != null &&
+                        displayedZone?.description != null)
                       const SizedBox(height: 8),
-                    if (selectedZone?.description != null) ...[
-                      Text(selectedZone!.description!, style: subTextStyle),
+                    if (!showingUndiscovered &&
+                        displayedZone?.description != null) ...[
+                      Text(displayedZone!.description!, style: subTextStyle),
                     ],
-                    if (selectedZone?.genreScores.isNotEmpty == true) ...[
+                    if (!showingUndiscovered &&
+                        displayedZone?.genreScores.isNotEmpty == true) ...[
                       const SizedBox(height: 10),
                       Text('Genres', style: textStyle?.copyWith(fontSize: 13)),
                       const SizedBox(height: 6),
@@ -269,7 +335,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                               ),
                             ),
                           ),
-                          if ((selectedZone?.genreScores.length ?? 0) >
+                          if ((displayedZone?.genreScores.length ?? 0) >
                               genreScoresPreview.length)
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -282,7 +348,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
-                                '+${(selectedZone?.genreScores.length ?? 0) - genreScoresPreview.length} more',
+                                '+${(displayedZone?.genreScores.length ?? 0) - genreScoresPreview.length} more',
                                 style: subTextStyle,
                               ),
                             ),
@@ -309,11 +375,13 @@ class _ZoneWidgetState extends State<ZoneWidget> {
             color: surfaceColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borderColor, width: 1.5),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x332D2416),
-                blurRadius: 10,
-                offset: Offset(0, 4),
+                color: showingUndiscovered
+                    ? const Color(0x44101723)
+                    : const Color(0x332D2416),
+                blurRadius: showingUndiscovered ? 16 : 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),

@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
-import { Zone } from '@poltergeist/types';
+import { Zone, ZoneKind } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -80,6 +80,7 @@ type ZoneSeedCountAudit = {
 type ZoneSeedJob = {
   id: string;
   zoneId: string;
+  zoneKind?: string;
   status: string;
   seedMode?: SeedMode;
   countMode?: CountMode;
@@ -108,6 +109,7 @@ type ZoneSeedJob = {
 type ZoneSeedDraftPayload = Partial<ZoneSeedCounts> & {
   seedMode?: SeedMode;
   countMode?: CountMode;
+  zoneKind?: string;
   requiredPlaceTags: string[];
   shopkeeperItemTags: string[];
 };
@@ -732,12 +734,14 @@ const parseCountInput = (value: string) => {
 const buildSeedDraftPayload = (params: {
   seedMode: SeedMode;
   countMode: CountMode;
+  zoneKind: string;
   manualCountInputs: SeedCountInputMap;
   autoOverrideInputs: Partial<SeedCountInputMap>;
   autoRecommendation: ZoneSeedCounts | null;
   requiredPlaceTags: string[];
   shopkeeperItemTags: string[];
 }): { payload?: ZoneSeedDraftPayload; error?: string } => {
+  const normalizedZoneKind = params.zoneKind.trim();
   if (params.seedMode === 'manual') {
     const payload: ZoneSeedDraftPayload = {
       seedMode: 'manual',
@@ -745,6 +749,9 @@ const buildSeedDraftPayload = (params: {
       requiredPlaceTags: params.requiredPlaceTags,
       shopkeeperItemTags: params.shopkeeperItemTags,
     };
+    if (normalizedZoneKind) {
+      payload.zoneKind = normalizedZoneKind;
+    }
 
     for (const field of seedCountFields) {
       const parsed = parseCountInput(params.manualCountInputs[field.key]);
@@ -767,6 +774,9 @@ const buildSeedDraftPayload = (params: {
     requiredPlaceTags: params.requiredPlaceTags,
     shopkeeperItemTags: params.shopkeeperItemTags,
   };
+  if (normalizedZoneKind) {
+    payload.zoneKind = normalizedZoneKind;
+  }
 
   for (const field of seedCountFields) {
     const override = params.autoOverrideInputs[field.key];
@@ -786,6 +796,7 @@ const buildSeedDraftPayload = (params: {
 export const ZoneSeedJobs = () => {
   const { apiClient } = useAPI();
   const { zones, refreshZones } = useZoneContext();
+  const [zoneKinds, setZoneKinds] = useState<ZoneKind[]>([]);
   const [draftZoneId, setDraftZoneId] = useState<string>('');
   const [jobFilterZoneId, setJobFilterZoneId] = useState<string>('');
   const [jobFilterStatuses, setJobFilterStatuses] = useState<string[]>([]);
@@ -811,11 +822,25 @@ export const ZoneSeedJobs = () => {
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
   const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] =
     useState(false);
+  const [zoneKind, setZoneKind] = useState('');
   const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
   const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
   const [bulkZoneQuery, setBulkZoneQuery] = useState('');
   const [bulkSelectedZoneIds, setBulkSelectedZoneIds] = useState<string[]>([]);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const loadZoneKinds = async () => {
+      try {
+        const response = await apiClient.get<ZoneKind[]>('/sonar/zoneKinds');
+        setZoneKinds(response);
+      } catch (loadError) {
+        console.error('Error fetching zone kinds:', loadError);
+      }
+    };
+
+    void loadZoneKinds();
+  }, [apiClient]);
 
   const knownPlaceTags = useMemo(
     () => [
@@ -871,10 +896,26 @@ export const ZoneSeedJobs = () => {
     const entries = sortedZones.map((zone) => [zone.id, zone.name] as const);
     return new Map(entries);
   }, [sortedZones]);
+  const zoneKindBySlug = useMemo(() => {
+    const entries = zoneKinds.map((entry) => [entry.slug, entry] as const);
+    return new Map(entries);
+  }, [zoneKinds]);
 
   const selectedZone = useMemo<Zone | undefined>(() => {
     return sortedZones.find((zone) => zone.id === draftZoneId);
   }, [sortedZones, draftZoneId]);
+  const selectedZoneAssignedKind = useMemo(() => {
+    if (!selectedZone?.kind) {
+      return null;
+    }
+    return zoneKindBySlug.get(selectedZone.kind) ?? null;
+  }, [selectedZone, zoneKindBySlug]);
+  const selectedOverrideKind = useMemo(() => {
+    if (!zoneKind) {
+      return null;
+    }
+    return zoneKindBySlug.get(zoneKind) ?? null;
+  }, [zoneKind, zoneKindBySlug]);
 
   const autoAreaSquareFeet = useMemo(
     () => getZoneAreaSquareFeet(selectedZone),
@@ -1175,6 +1216,7 @@ export const ZoneSeedJobs = () => {
     const { payload, error: payloadError } = buildSeedDraftPayload({
       seedMode,
       countMode,
+      zoneKind,
       manualCountInputs,
       autoOverrideInputs,
       autoRecommendation,
@@ -1223,6 +1265,7 @@ export const ZoneSeedJobs = () => {
     const { payload, error: payloadError } = buildSeedDraftPayload({
       seedMode: 'manual',
       countMode,
+      zoneKind,
       manualCountInputs,
       autoOverrideInputs: {},
       autoRecommendation: null,
@@ -1561,6 +1604,45 @@ export const ZoneSeedJobs = () => {
             </div>
           )}
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="md:col-span-2 xl:col-span-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Zone kind
+              </label>
+              <select
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={zoneKind}
+                onChange={(e) => setZoneKind(e.target.value)}
+              >
+                <option value="">
+                  {bulkSelectedZoneIds.length > 0
+                    ? "Use each zone's assigned kind"
+                    : "Use the selected zone's assigned kind"}
+                </option>
+                {zoneKinds.map((entry) => (
+                  <option key={entry.id} value={entry.slug}>
+                    {entry.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Leave blank to use the zone's saved kind. Pick a value here to
+                override the assignment for this queued job.
+              </p>
+              {!zoneKind && selectedZone?.kind && (
+                <p className="mt-1 text-[11px] text-emerald-700">
+                  This zone will use{' '}
+                  <span className="font-medium">
+                    {selectedZoneAssignedKind?.name ?? selectedZone.kind}
+                  </span>{' '}
+                  by default.
+                </p>
+              )}
+              {selectedOverrideKind?.description && (
+                <p className="mt-1 text-[11px] text-slate-600">
+                  {selectedOverrideKind.description}
+                </p>
+              )}
+            </div>
             {seedCountFields.map((field) => {
               const inputValue =
                 seedMode === 'auto'
@@ -1994,7 +2076,8 @@ export const ZoneSeedJobs = () => {
                 const finalCounts = getJobFinalCounts(job);
                 const recommendedCounts = job.autoSeedAudit?.recommendedCounts;
                 const currentAwareTargetCounts = job.countAudit?.targetCounts;
-                const currentAwareExistingCounts = job.countAudit?.existingCounts;
+                const currentAwareExistingCounts =
+                  job.countAudit?.existingCounts;
                 const currentAwareQueuedCounts = job.countAudit?.queuedCounts;
                 return (
                   <div
@@ -2032,6 +2115,11 @@ export const ZoneSeedJobs = () => {
                             {formatZoneSeedCounts(finalCounts)},{' '}
                             {job.shopkeeperItemTags?.length ?? 0} shopkeepers
                           </p>
+                          {job.zoneKind && (
+                            <p className="text-xs text-gray-500">
+                              Zone kind: {job.zoneKind}
+                            </p>
+                          )}
                           {job.seedMode === 'auto' && job.autoSeedAudit && (
                             <p className="text-xs text-gray-500">
                               Auto audit:{' '}
@@ -2083,7 +2171,7 @@ export const ZoneSeedJobs = () => {
                                 Required tags:{' '}
                                 {job.requiredPlaceTags.join(', ')}
                               </p>
-                          )}
+                            )}
                           {job.shopkeeperItemTags &&
                             job.shopkeeperItemTags.length > 0 && (
                               <p className="text-xs text-gray-500">
@@ -2284,7 +2372,8 @@ export const ZoneSeedJobs = () => {
                                         )}
                                       </div>
                                     )}
-                                    {job.countAudit.remainingRequiredPlaceTags &&
+                                    {job.countAudit
+                                      .remainingRequiredPlaceTags &&
                                       job.countAudit.remainingRequiredPlaceTags
                                         .length > 0 && (
                                         <div className="mt-1">
@@ -2406,6 +2495,9 @@ export const ZoneSeedJobs = () => {
                               <div>
                                 {job.resourceCount ?? 0} random resources
                               </div>
+                              {job.zoneKind && (
+                                <div>Zone kind set to {job.zoneKind}</div>
+                              )}
                               <div>
                                 {job.shopkeeperItemTags?.length ?? 0}{' '}
                                 shopkeepers generated at random zone locations

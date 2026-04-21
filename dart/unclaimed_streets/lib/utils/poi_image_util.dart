@@ -83,7 +83,7 @@ Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  return _thumbnailCache['quest_v9|$url'];
+  return _thumbnailCache['quest_v10|$url'];
 }
 
 Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
@@ -98,7 +98,7 @@ Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
 }
 
 Uint8List? peekPoiCategoryThumbnailWithQuestMarker(PoiMarkerCategory category) {
-  return _thumbnailCache['poi_category_quest_v3|${category.wireValue}'];
+  return _thumbnailCache['poi_category_quest_v4|${category.wireValue}'];
 }
 
 Uint8List? peekPoiCategoryThumbnailWithMainStoryMarker(
@@ -137,17 +137,11 @@ Future<Uint8List?> loadPoiCategoryThumbnail(PoiMarkerCategory category) {
 Future<Uint8List?> loadPoiCategoryThumbnailWithQuestMarker(
   PoiMarkerCategory category,
 ) {
-  final cacheKey = 'poi_category_quest_v3|${category.wireValue}';
+  final cacheKey = 'poi_category_quest_v4|${category.wireValue}';
   return _loadThumbnailCached(cacheKey, () async {
     final generated = await _loadGeneratedPoiCategoryThumbnail(category);
-    if (generated != null) {
-      final decoded = img.decodeImage(generated);
-      if (decoded == null) return generated;
-      drawQuestAvailabilityBadge(decoded);
-      return Uint8List.fromList(img.encodePng(decoded));
-    }
+    if (generated != null) return generated;
     final image = _buildPoiCategoryThumbnail(category);
-    drawQuestAvailabilityBadge(image);
     return Uint8List.fromList(img.encodePng(image));
   });
 }
@@ -819,20 +813,20 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
   });
 }
 
-/// Same as [loadPoiThumbnail], but keeps a separate cache namespace for
-/// quest-available markers.
+/// Same as [loadPoiThumbnail], but keeps a separate cache namespace because
+/// quest availability is communicated by the shared map pulse effect rather
+/// than marker-specific image decoration.
 Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  final cacheKey = 'quest_v9|$url';
+  final cacheKey = 'quest_v10|$url';
   return _loadThumbnailCached(cacheKey, () async {
     final bytes = await _loadSourceCached(url);
     if (bytes == null) return null;
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final square = _buildTransparentRoundedThumbnail(decoded);
-    drawQuestAvailabilityBadge(square);
     return Uint8List.fromList(img.encodePng(square));
   });
 }
@@ -894,120 +888,6 @@ bool _isInsideRoundedRect(int x, int y, int width, int height) {
   final dx = x - cornerCenterX;
   final dy = y - cornerCenterY;
   return dx * dx + dy * dy <= _cornerRadius * _cornerRadius;
-}
-
-void drawQuestAvailabilityBadge(img.Image image) {
-  final bounds = _findOpaqueBounds(image) ?? _fallbackOpaqueBounds(image);
-  final tabWidth = math.max(34, math.min(58, (bounds.width * 0.55).round()));
-  final tabHeight = math.max(18, math.min(28, (tabWidth * 0.48).round()));
-  final halfWidth = tabWidth ~/ 2;
-  final halfHeight = tabHeight ~/ 2;
-  final overlap = math.max(6, tabHeight ~/ 3);
-  final centerX = bounds.centerX
-      .round()
-      .clamp(halfWidth + 4, image.width - halfWidth - 5)
-      .toInt();
-  final centerY = (bounds.bottom - halfHeight + overlap)
-      .clamp(halfHeight + 4, image.height - halfHeight - 5)
-      .toInt();
-  final left = centerX - halfWidth;
-  final right = left + tabWidth - 1;
-  final top = centerY - halfHeight;
-  final bottom = top + tabHeight - 1;
-  final connectorHalfWidth = math.max(5, tabHeight ~/ 3);
-  final connectorTop = math.max(4, top - math.max(4, tabHeight ~/ 4)).toInt();
-
-  final shadow = img.ColorRgba8(28, 18, 8, 110);
-  final ring = img.ColorRgba8(255, 250, 240, 255);
-  final gold = img.ColorRgba8(245, 197, 66, 255);
-  final highlight = img.ColorRgba8(255, 232, 156, 255);
-  final ink = img.ColorRgba8(58, 36, 0, 255);
-  final stemHalfWidth = math.max(2, tabHeight ~/ 8).toInt();
-  final stemTop = (top + math.max(4, tabHeight ~/ 4)).toInt();
-  final stemBottom = (bottom - math.max(7, tabHeight ~/ 3)).toInt();
-  final dotRadius = math.max(2, tabHeight ~/ 7).toInt();
-  final innerInset = 2;
-
-  _fillTriangle(
-    image,
-    x1: centerX - connectorHalfWidth + 2,
-    y1: top + 3,
-    x2: centerX + connectorHalfWidth + 2,
-    y2: top + 3,
-    x3: centerX + 2,
-    y3: connectorTop + 3,
-    color: shadow,
-  );
-  _fillHorizontalCapsule(
-    image,
-    x1: left + 2,
-    y1: top + 3,
-    x2: right + 2,
-    y2: bottom + 3,
-    color: shadow,
-  );
-
-  _fillTriangle(
-    image,
-    x1: centerX - connectorHalfWidth,
-    y1: top,
-    x2: centerX + connectorHalfWidth,
-    y2: top,
-    x3: centerX,
-    y3: connectorTop,
-    color: ring,
-  );
-  _fillHorizontalCapsule(
-    image,
-    x1: left,
-    y1: top,
-    x2: right,
-    y2: bottom,
-    color: ring,
-  );
-
-  _fillTriangle(
-    image,
-    x1: centerX - connectorHalfWidth + 1,
-    y1: top + innerInset,
-    x2: centerX + connectorHalfWidth - 1,
-    y2: top + innerInset,
-    x3: centerX,
-    y3: connectorTop + innerInset + 1,
-    color: gold,
-  );
-  _fillHorizontalCapsule(
-    image,
-    x1: left + innerInset,
-    y1: top + innerInset,
-    x2: right - innerInset,
-    y2: bottom - innerInset,
-    color: gold,
-  );
-
-  _fillHorizontalCapsule(
-    image,
-    x1: left + innerInset + 3,
-    y1: top + innerInset + 2,
-    x2: right - innerInset - 3,
-    y2: top + innerInset + math.max(4, tabHeight ~/ 4),
-    color: highlight,
-  );
-  _fillRect(
-    image,
-    x1: centerX - stemHalfWidth,
-    y1: stemTop,
-    x2: centerX + stemHalfWidth,
-    y2: stemBottom,
-    color: ink,
-  );
-  _fillCircle(
-    image,
-    centerX,
-    bottom - math.max(4, tabHeight ~/ 4),
-    dotRadius,
-    ink,
-  );
 }
 
 void drawMainStoryCrest(img.Image image) {
@@ -1269,34 +1149,6 @@ void _fillRect(
   required img.Color color,
 }) {
   img.fillRect(image, x1: x1, y1: y1, x2: x2, y2: y2, color: color);
-}
-
-void _fillHorizontalCapsule(
-  img.Image image, {
-  required int x1,
-  required int y1,
-  required int x2,
-  required int y2,
-  required img.Color color,
-}) {
-  final width = x2 - x1 + 1;
-  final height = y2 - y1 + 1;
-  if (width <= 0 || height <= 0) return;
-  final radius = math.min(height ~/ 2, width ~/ 2);
-  if (radius <= 0) {
-    _fillRect(image, x1: x1, y1: y1, x2: x2, y2: y2, color: color);
-    return;
-  }
-  _fillRect(
-    image,
-    x1: x1 + radius,
-    y1: y1,
-    x2: x2 - radius,
-    y2: y2,
-    color: color,
-  );
-  _fillCircle(image, x1 + radius, y1 + (height ~/ 2), radius, color);
-  _fillCircle(image, x2 - radius, y1 + (height ~/ 2), radius, color);
 }
 
 void _fillCircle(

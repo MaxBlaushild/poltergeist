@@ -60,6 +60,8 @@ class Zone {
   final String? description;
   final double latitude;
   final double longitude;
+  final bool discovered;
+  final String? discoveredAt;
   final String? boundary; // WKT string format
   final List<LatLngCoords>? boundaryCoords;
   final List<LatLngCoords>? points;
@@ -71,6 +73,8 @@ class Zone {
     this.description,
     required this.latitude,
     required this.longitude,
+    this.discovered = false,
+    this.discoveredAt,
     this.boundary,
     this.boundaryCoords,
     this.points,
@@ -84,6 +88,8 @@ class Zone {
       description: json['description'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+      discovered: json['discovered'] == true,
+      discoveredAt: json['discoveredAt']?.toString(),
       boundary: json['boundary'] as String?,
       boundaryCoords: (json['boundaryCoords'] as List<dynamic>?)
           ?.map((e) => LatLngCoords.fromJsonSafe(e as Map<String, dynamic>))
@@ -105,16 +111,48 @@ class Zone {
     );
   }
 
-  /// Ordered ring (lat/lng) for polygon outline. Uses points, boundaryCoords, or parsed boundary WKT. Null if none.
+  Zone copyWith({
+    String? id,
+    String? name,
+    String? description,
+    double? latitude,
+    double? longitude,
+    bool? discovered,
+    String? discoveredAt,
+    String? boundary,
+    List<LatLngCoords>? boundaryCoords,
+    List<LatLngCoords>? points,
+    List<ZoneGenreScore>? genreScores,
+  }) {
+    return Zone(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      discovered: discovered ?? this.discovered,
+      discoveredAt: discoveredAt ?? this.discoveredAt,
+      boundary: boundary ?? this.boundary,
+      boundaryCoords: boundaryCoords ?? this.boundaryCoords,
+      points: points ?? this.points,
+      genreScores: genreScores ?? this.genreScores,
+    );
+  }
+
+  /// Ordered ring (lat/lng) for polygon outline.
+  ///
+  /// Prefer the server-normalized boundary geometry so client hit-testing
+  /// matches backend discovery checks. Raw points are only a fallback because
+  /// they may not describe the same polygon shape.
   List<LatLngCoords>? get ring {
-    if (points != null && points!.isNotEmpty) {
-      return _orderPointsByAngle(points!);
-    }
     if (boundaryCoords != null && boundaryCoords!.isNotEmpty) {
       return boundaryCoords;
     }
     final coords = _parseBoundaryWkt(boundary);
     if (coords != null && coords.isNotEmpty) return coords;
+    if (points != null && points!.isNotEmpty) {
+      return _orderPointsByAngle(points!);
+    }
     return null;
   }
 

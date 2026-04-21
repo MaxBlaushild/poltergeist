@@ -139,6 +139,7 @@ SELECT
 	zones.updated_at,
 	zones.name,
 	zones.description,
+	zones.kind,
 	zones.internal_tags,
 	zones.latitude,
 	zones.longitude,
@@ -764,17 +765,57 @@ func (h *zoneHandler) UpdateNameAndDescription(ctx context.Context, zoneID uuid.
 	}).Error
 }
 
-func (h *zoneHandler) UpdateMetadata(ctx context.Context, zoneID uuid.UUID, name string, description string, internalTags models.StringArray) (*models.Zone, error) {
+func (h *zoneHandler) UpdateMetadata(
+	ctx context.Context,
+	zoneID uuid.UUID,
+	name string,
+	description string,
+	kind string,
+	internalTags models.StringArray,
+) (*models.Zone, error) {
 	if internalTags == nil {
 		internalTags = models.StringArray{}
 	}
 	if err := h.db.WithContext(ctx).Model(&models.Zone{}).Where("id = ?", zoneID).Updates(map[string]interface{}{
 		"name":          name,
 		"description":   description,
+		"kind":          models.NormalizeZoneKind(kind),
 		"internal_tags": internalTags,
 	}).Error; err != nil {
 		return nil, err
 	}
 
 	return h.FindByID(ctx, zoneID)
+}
+
+func (h *zoneHandler) SetKind(ctx context.Context, zoneIDs []uuid.UUID, kind string) (int, error) {
+	normalizedZoneIDs := normalizeZoneIDs(zoneIDs)
+	if len(normalizedZoneIDs) == 0 {
+		return 0, nil
+	}
+
+	result := h.db.WithContext(ctx).
+		Model(&models.Zone{}).
+		Where("id IN ?", normalizedZoneIDs).
+		Update("kind", models.NormalizeZoneKind(kind))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
+}
+
+func (h *zoneHandler) ReplaceKind(ctx context.Context, currentKind string, nextKind string) (int, error) {
+	normalizedCurrentKind := models.NormalizeZoneKind(currentKind)
+	if normalizedCurrentKind == "" {
+		return 0, nil
+	}
+
+	result := h.db.WithContext(ctx).
+		Model(&models.Zone{}).
+		Where("kind = ?", normalizedCurrentKind).
+		Update("kind", models.NormalizeZoneKind(nextKind))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
 }

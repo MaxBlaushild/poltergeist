@@ -34,6 +34,7 @@ type Zone struct {
 	UpdatedAt      time.Time    `json:"updatedAt"`
 	Name           string       `json:"name"`
 	Description    string       `json:"description"`
+	Kind           string       `json:"kind"`
 	InternalTags   StringArray  `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	Latitude       float64      `json:"latitude"`
 	Longitude      float64      `json:"longitude"`
@@ -42,6 +43,30 @@ type Zone struct {
 	BoundaryCoords []Location   `json:"boundaryCoords" gorm:"-"`
 	Polygon        *orb.Polygon `json:"polygon" gorm:"-"`
 	Points         []Point      `json:"points" gorm:"many2many:boundary_points;"`
+}
+
+func NormalizeZoneKind(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "_", "-")
+	trimmed = strings.ReplaceAll(trimmed, " ", "-")
+	parts := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == '-'
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "-")
+}
+
+func (z *Zone) BeforeSave(tx *gorm.DB) error {
+	z.Kind = NormalizeZoneKind(z.Kind)
+	if z.InternalTags == nil {
+		z.InternalTags = StringArray{}
+	}
+	return nil
 }
 
 func (z *Zone) AfterFind(tx *gorm.DB) (err error) {

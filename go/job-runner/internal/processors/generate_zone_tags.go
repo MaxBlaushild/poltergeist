@@ -199,7 +199,7 @@ func (p *GenerateZoneTagsProcessor) generateTags(ctx context.Context, job *model
 	}
 
 	nextTags := applyGeneratedZoneTags(zone.InternalTags, selectedTags, candidateTags)
-	if _, err := p.dbClient.Zone().UpdateMetadata(ctx, zone.ID, zone.Name, zone.Description, nextTags); err != nil {
+	if _, err := p.dbClient.Zone().UpdateMetadata(ctx, zone.ID, zone.Name, zone.Description, zone.Kind, nextTags); err != nil {
 		return fmt.Errorf("failed to update zone tags: %w", err)
 	}
 

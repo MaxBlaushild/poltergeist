@@ -57,10 +57,12 @@ type DbClient interface {
 	OutfitProfileGeneration() OutfitProfileGenerationHandle
 	PointOfInterestChildren() PointOfInterestChildrenHandle
 	PointOfInterestDiscovery() PointOfInterestDiscoveryHandle
+	ZoneDiscovery() ZoneDiscoveryHandle
 	MatchUser() MatchUserHandle
 	Tag() TagHandle
 	TagGroup() TagGroupHandle
 	Zone() ZoneHandle
+	ZoneKind() ZoneKindHandle
 	ZoneGenre() ZoneGenreHandle
 	ZoneGenreScore() ZoneGenreScoreHandle
 	LocationArchetype() LocationArchetypeHandle
@@ -433,6 +435,7 @@ type ZoneSeedJobHandle interface {
 	FindRecent(ctx context.Context, limit int) ([]models.ZoneSeedJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneSeedJob, error)
 	FindFiltered(ctx context.Context, zoneID *uuid.UUID, statuses []string, limit int) ([]models.ZoneSeedJob, error)
+	ReplaceZoneKind(ctx context.Context, currentKind string, nextKind string) (int, error)
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 }
 
@@ -689,6 +692,13 @@ type PointOfInterestDiscoveryHandle interface {
 	Create(ctx context.Context, discovery *models.PointOfInterestDiscovery) error
 }
 
+type ZoneDiscoveryHandle interface {
+	GetDiscoveriesForUser(userID uuid.UUID) ([]models.ZoneDiscovery, error)
+	ExistsForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (bool, error)
+	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
+	Create(ctx context.Context, discovery *models.ZoneDiscovery) error
+}
+
 type MatchUserHandle interface {
 	Create(ctx context.Context, matchUser *models.MatchUser) error
 	FindByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.MatchUser, error)
@@ -731,8 +741,19 @@ type ZoneHandle interface {
 	RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
 	UpdateNameAndDescription(ctx context.Context, zoneID uuid.UUID, name string, description string) error
-	UpdateMetadata(ctx context.Context, zoneID uuid.UUID, name string, description string, internalTags models.StringArray) (*models.Zone, error)
+	UpdateMetadata(ctx context.Context, zoneID uuid.UUID, name string, description string, kind string, internalTags models.StringArray) (*models.Zone, error)
+	SetKind(ctx context.Context, zoneIDs []uuid.UUID, kind string) (int, error)
+	ReplaceKind(ctx context.Context, currentKind string, nextKind string) (int, error)
 	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error)
+}
+
+type ZoneKindHandle interface {
+	Create(ctx context.Context, zoneKind *models.ZoneKind) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneKind, error)
+	FindBySlug(ctx context.Context, slug string) (*models.ZoneKind, error)
+	FindAll(ctx context.Context) ([]models.ZoneKind, error)
+	Update(ctx context.Context, zoneKind *models.ZoneKind) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type ZoneGenreHandle interface {

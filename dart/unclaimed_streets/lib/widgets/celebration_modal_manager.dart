@@ -124,6 +124,8 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Treasure Found!';
       case 'pointOfInterestDiscovered':
         return 'Discovery!';
+      case 'zoneDiscovered':
+        return 'New Zone!';
       case 'healingFountainUsed':
         return 'Fully Restored!';
       case 'resourceGathered':
@@ -282,6 +284,45 @@ class CelebrationModalManager extends StatelessWidget {
               experience: rewardExperience,
               gold: goldAwarded,
               materials: baseResourcesAwarded,
+              items: itemsAwarded,
+              spells: spellsAwarded,
+              emptyMessage: 'No additional rewards.',
+            ),
+          ],
+        );
+      case 'zoneDiscovered':
+        final zoneName = data['zoneName'] as String? ?? 'this zone';
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final goldAwarded =
+            (data['rewardGold'] as num?)?.toInt() ??
+            (data['goldAwarded'] as num?)?.toInt() ??
+            0;
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        final spellsAwarded =
+            (data['spellsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'You discovered $zoneName and received:',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 10),
+            _buildRewardSection(
+              context,
+              experience: rewardExperience,
+              gold: goldAwarded,
               items: itemsAwarded,
               spells: spellsAwarded,
               emptyMessage: 'No additional rewards.',

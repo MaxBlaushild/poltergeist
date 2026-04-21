@@ -3,28 +3,6 @@ import 'package:image/image.dart' as img;
 import 'package:unclaimed_streets/utils/poi_image_util.dart';
 
 void main() {
-  test('drawQuestAvailabilityBadge anchors to the bottom center', () {
-    final leftAligned = _markerWithContent(x1: 34, y1: 86, x2: 82, y2: 152);
-    final leftBefore = leftAligned.clone();
-    drawQuestAvailabilityBadge(leftAligned);
-    final leftDiff = _diffBounds(leftBefore, leftAligned);
-
-    expect(leftDiff, isNotNull);
-    expect(leftDiff!.centerX, closeTo(58, 5));
-    expect(leftDiff.top, greaterThan(86));
-    expect(leftDiff.bottom, greaterThan(152));
-
-    final rightAligned = _markerWithContent(x1: 118, y1: 42, x2: 164, y2: 122);
-    final rightBefore = rightAligned.clone();
-    drawQuestAvailabilityBadge(rightAligned);
-    final rightDiff = _diffBounds(rightBefore, rightAligned);
-
-    expect(rightDiff, isNotNull);
-    expect(rightDiff!.centerX, closeTo(141, 5));
-    expect(rightDiff.top, greaterThan(42));
-    expect(rightDiff.bottom, greaterThan(122));
-  });
-
   test('drawMainStoryCrest centers on the opaque content bounds', () {
     final leftAligned = _markerWithContent(x1: 34, y1: 86, x2: 82, y2: 152);
     final leftBefore = leftAligned.clone();

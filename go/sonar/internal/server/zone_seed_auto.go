@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"math"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/paulmach/orb/geo"
+	"gorm.io/gorm"
 )
 
 const (
@@ -220,6 +222,7 @@ func zoneSeedApplyCountOverrides(
 }
 
 func zoneSeedCountsToNormalizedRequest(
+	zoneKind string,
 	mode string,
 	countMode string,
 	counts models.ZoneSeedResolvedCounts,
@@ -231,6 +234,7 @@ func zoneSeedCountsToNormalizedRequest(
 	return &normalizedZoneSeedDraftRequest{
 		SeedMode:             mode,
 		CountMode:            countMode,
+		ZoneKind:             zoneKind,
 		PlaceCount:           counts.PlaceCount,
 		MonsterCount:         counts.MonsterCount,
 		BossEncounterCount:   counts.BossEncounterCount,
@@ -404,6 +408,51 @@ func zoneSeedInferAutoCounts(
 	}
 
 	return counts, warnings
+}
+
+func zoneSeedEffectiveKind(zone *models.Zone, requestedKind string) string {
+	if normalized := models.NormalizeZoneKind(requestedKind); normalized != "" {
+		return normalized
+	}
+	if zone == nil {
+		return ""
+	}
+	return models.NormalizeZoneKind(zone.Kind)
+}
+
+func (s *server) applyZoneKindRatios(
+	ctx context.Context,
+	zoneKindSlug string,
+	counts models.ZoneSeedResolvedCounts,
+	warnings models.StringArray,
+) (models.ZoneSeedResolvedCounts, models.StringArray, error) {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKindSlug)
+	if normalizedZoneKind == "" {
+		return counts, warnings, nil
+	}
+
+	zoneKind, err := s.dbClient.ZoneKind().FindBySlug(ctx, normalizedZoneKind)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			warnings = append(
+				warnings,
+				fmt.Sprintf(
+					`Zone kind "%s" is not defined yet, so baseline auto counts were used.`,
+					normalizedZoneKind,
+				),
+			)
+			return counts, warnings, nil
+		}
+		return counts, warnings, err
+	}
+
+	return zoneKind.ApplyToCounts(counts), append(
+		warnings,
+		fmt.Sprintf(
+			`Applied zone kind ratios from "%s" to the auto seed recommendation.`,
+			zoneKind.Name,
+		),
+	), nil
 }
 
 func zoneSeedAutoPlaceSearchRadius(zone models.Zone) float64 {
@@ -1006,6 +1055,7 @@ func (s *server) applyZoneSeedCurrentAwareMode(
 
 	queuedCounts, countAudit := zoneSeedResolveCurrentAwareCounts(targetCounts, snapshot)
 	return zoneSeedCountsToNormalizedRequest(
+		settings.ZoneKind,
 		settings.SeedMode,
 		settings.CountMode,
 		queuedCounts,
@@ -1025,11 +1075,15 @@ func (s *server) resolveZoneSeedDraftRequest(
 	if err != nil {
 		return nil, newZoneSeedDraftResolutionError(400, err)
 	}
+	effectiveZoneKind := zoneSeedEffectiveKind(zone, requestBody.ZoneKind)
 
 	if mode == models.ZoneSeedModeManual {
 		settings, err := normalizeZoneSeedDraftRequest(requestBody)
 		if err != nil {
 			return nil, newZoneSeedDraftResolutionError(400, err)
+		}
+		if settings.ZoneKind == "" {
+			settings.ZoneKind = effectiveZoneKind
 		}
 		settings, err = s.applyZoneSeedCurrentAwareMode(ctx, zone, settings)
 		if err != nil {
@@ -1059,6 +1113,10 @@ func (s *server) resolveZoneSeedDraftRequest(
 	}
 
 	recommendedCounts, warnings := zoneSeedInferAutoCounts(areaAcres, requiredTags)
+	recommendedCounts, warnings, err = s.applyZoneKindRatios(ctx, effectiveZoneKind, recommendedCounts, warnings)
+	if err != nil {
+		return nil, newZoneSeedDraftResolutionError(500, fmt.Errorf("failed to apply zone kind ratios: %w", err))
+	}
 	eligiblePlaceCount, estimateWarnings, err := zoneSeedAutoEstimateEligiblePlaceCount(
 		ctx,
 		*zone,
@@ -1102,6 +1160,7 @@ func (s *server) resolveZoneSeedDraftRequest(
 	}
 
 	return zoneSeedCountsToNormalizedRequest(
+		effectiveZoneKind,
 		mode,
 		countMode,
 		queuedCounts,

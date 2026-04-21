@@ -72,6 +72,7 @@ func districtZoneSeedSettingsFromNormalized(
 		return models.DistrictZoneSeedSettings{}
 	}
 	return models.DistrictZoneSeedSettings{
+		ZoneKind:             settings.ZoneKind,
 		PlaceCount:           settings.PlaceCount,
 		MonsterCount:         settings.MonsterCount,
 		BossEncounterCount:   settings.BossEncounterCount,
@@ -149,6 +150,7 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 	var requestBody struct {
 		DistrictID           string   `json:"districtId"`
 		QuestArchetypeIDs    []string `json:"questArchetypeIds"`
+		ZoneKind             string   `json:"zoneKind"`
 		PlaceCount           *int     `json:"placeCount"`
 		MonsterCount         *int     `json:"monsterCount"`
 		BossEncounterCount   *int     `json:"bossEncounterCount"`
@@ -186,6 +188,7 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 	}
 
 	zoneSeedSettingsInput, err := normalizeZoneSeedDraftRequest(zoneSeedDraftRequest{
+		ZoneKind:             requestBody.ZoneKind,
 		PlaceCount:           requestBody.PlaceCount,
 		MonsterCount:         requestBody.MonsterCount,
 		BossEncounterCount:   requestBody.BossEncounterCount,

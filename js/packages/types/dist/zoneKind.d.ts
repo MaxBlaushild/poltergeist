@@ -1,0 +1,17 @@
+export type ZoneKind = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    slug: string;
+    name: string;
+    description: string;
+    placeCountRatio: number;
+    monsterCountRatio: number;
+    bossEncounterCountRatio: number;
+    raidEncounterCountRatio: number;
+    inputEncounterCountRatio: number;
+    optionEncounterCountRatio: number;
+    treasureChestCountRatio: number;
+    healingFountainCountRatio: number;
+    resourceCountRatio: number;
+};

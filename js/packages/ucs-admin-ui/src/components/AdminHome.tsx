@@ -10,13 +10,18 @@ const workflowHighlights = [
     title: 'Shape the World',
     description:
       'Work from the map outward: define zones, group them into districts, and clean up the places inside them.',
-    links: ['zones', 'districts', 'points-of-interest', 'location-archetypes'],
+    links: ['zones', 'zone-kinds', 'districts', 'points-of-interest'],
   },
   {
     title: 'Author Quest Content',
     description:
       'Design the reusable quest machinery first, then inspect the concrete quests it generates.',
-    links: ['quest-archetypes', 'zone-quest-archetypes', 'quests', 'zone-seeding'],
+    links: [
+      'quest-archetypes',
+      'zone-quest-archetypes',
+      'quests',
+      'zone-seeding',
+    ],
   },
   {
     title: 'Build Encounter Content',
@@ -44,15 +49,21 @@ export const AdminHome = () => {
       <section className="dashboard-hero">
         <div className="dashboard-hero__copy">
           <div className="dashboard-kicker">Unclaimed Streets Admin</div>
-          <h1>Control center for worldbuilding, quest design, and live operations.</h1>
+          <h1>
+            Control center for worldbuilding, quest design, and live operations.
+          </h1>
           <p>
-            Start from the map, jump into quest systems, or head straight to live
-            player tooling. The dashboard below mirrors the new navigation so the
-            whole admin surface is easier to scan.
+            Start from the map, jump into quest systems, or head straight to
+            live player tooling. The dashboard below mirrors the new navigation
+            so the whole admin surface is easier to scan.
           </p>
           <div className="dashboard-hero__actions">
             {featuredAdminNavItems.slice(0, 4).map((item) => (
-              <Link key={item.id} to={item.path} className="dashboard-hero__button">
+              <Link
+                key={item.id}
+                to={item.path}
+                className="dashboard-hero__button"
+              >
                 {item.label}
               </Link>
             ))}
@@ -62,7 +73,11 @@ export const AdminHome = () => {
           <div className="dashboard-hero__panel-kicker">Suggested Starts</div>
           <div className="dashboard-hero__panel-grid">
             {featuredAdminNavItems.slice(4, 8).map((item) => (
-              <Link key={item.id} to={item.path} className="dashboard-hero__mini-card">
+              <Link
+                key={item.id}
+                to={item.path}
+                className="dashboard-hero__mini-card"
+              >
                 <strong>{item.label}</strong>
                 <span>{item.description}</span>
               </Link>
@@ -78,7 +93,10 @@ export const AdminHome = () => {
         </div>
         <div className="dashboard-workflow-grid">
           {workflowHighlights.map((workflow) => (
-            <div key={workflow.title} className="dashboard-card dashboard-card--workflow">
+            <div
+              key={workflow.title}
+              className="dashboard-card dashboard-card--workflow"
+            >
               <h3>{workflow.title}</h3>
               <p>{workflow.description}</p>
               <div className="dashboard-chip-list">
@@ -86,7 +104,11 @@ export const AdminHome = () => {
                   .map((id) => navItemById.get(id))
                   .filter(Boolean)
                   .map((item) => (
-                    <Link key={item!.id} to={item!.path} className="dashboard-chip">
+                    <Link
+                      key={item!.id}
+                      to={item!.path}
+                      className="dashboard-chip"
+                    >
                       {item!.label}
                     </Link>
                   ))}
@@ -103,12 +125,19 @@ export const AdminHome = () => {
         </div>
         <div className="dashboard-group-grid">
           {adminNavigationGroups.map((group) => (
-            <div key={group.id} className="dashboard-card dashboard-card--group">
+            <div
+              key={group.id}
+              className="dashboard-card dashboard-card--group"
+            >
               <div className="dashboard-card__eyebrow">{group.label}</div>
               <h3>{group.description}</h3>
               <div className="dashboard-link-list">
                 {group.items.map((item) => (
-                  <Link key={item.id} to={item.path} className="dashboard-link-row">
+                  <Link
+                    key={item.id}
+                    to={item.path}
+                    className="dashboard-link-row"
+                  >
                     <span>{item.label}</span>
                     <small>{item.description}</small>
                   </Link>

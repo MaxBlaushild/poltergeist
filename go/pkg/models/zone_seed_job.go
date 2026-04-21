@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -88,6 +89,7 @@ type ZoneSeedJob struct {
 	CreatedAt            time.Time          `json:"createdAt"`
 	UpdatedAt            time.Time          `json:"updatedAt"`
 	ZoneID               uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
+	ZoneKind             string             `json:"zoneKind" gorm:"column:zone_kind"`
 	Status               string             `json:"status"`
 	SeedMode             string             `json:"seedMode"`
 	CountMode            string             `json:"countMode"`
@@ -190,6 +192,11 @@ type ZoneSeedMainQuestNodeDraft struct {
 	ChallengeDifficulty    int       `json:"challengeDifficulty,omitempty"`
 	ChallengeShuffleStatus string    `json:"challengeShuffleStatus,omitempty"`
 	ChallengeShuffleError  *string   `json:"challengeShuffleError,omitempty"`
+}
+
+func (j *ZoneSeedJob) BeforeSave(tx *gorm.DB) error {
+	j.ZoneKind = NormalizeZoneKind(j.ZoneKind)
+	return nil
 }
 
 func (d ZoneSeedDraft) Value() (driver.Value, error) {

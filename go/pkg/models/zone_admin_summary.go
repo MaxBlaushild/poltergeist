@@ -12,6 +12,7 @@ type ZoneAdminSummary struct {
 	UpdatedAt               time.Time   `json:"updatedAt" gorm:"column:updated_at"`
 	Name                    string      `json:"name" gorm:"column:name"`
 	Description             string      `json:"description" gorm:"column:description"`
+	Kind                    string      `json:"kind" gorm:"column:kind"`
 	InternalTags            StringArray `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	Latitude                float64     `json:"latitude" gorm:"column:latitude"`
 	Longitude               float64     `json:"longitude" gorm:"column:longitude"`

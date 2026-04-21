@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI } from '@poltergeist/contexts';
-import { District, QuestArchetype } from '@poltergeist/types';
+import { District, QuestArchetype, ZoneKind } from '@poltergeist/types';
 import { Link } from 'react-router-dom';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 
@@ -26,6 +26,7 @@ type DistrictSeedJob = {
   errorMessage?: string | null;
   questArchetypeIds: string[];
   zoneSeedSettings?: {
+    zoneKind?: string;
     placeCount?: number;
     monsterCount?: number;
     bossEncounterCount?: number;
@@ -116,6 +117,7 @@ export const DistrictSeedJobsPanel = ({
 }) => {
   const { apiClient } = useAPI();
   const { questArchetypes } = useQuestArchetypes();
+  const [zoneKinds, setZoneKinds] = useState<ZoneKind[]>([]);
   const [jobs, setJobs] = useState<DistrictSeedJob[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -130,6 +132,7 @@ export const DistrictSeedJobsPanel = ({
   const [optionEncounterCount, setOptionEncounterCount] = useState('0');
   const [treasureChestCount, setTreasureChestCount] = useState('0');
   const [healingFountainCount, setHealingFountainCount] = useState('0');
+  const [zoneKind, setZoneKind] = useState('');
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
   const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
@@ -140,6 +143,25 @@ export const DistrictSeedJobsPanel = ({
 
   const districtId = district?.id || '';
   const hasZones = (district?.zones?.length || 0) > 0;
+  const zoneKindBySlug = useMemo(() => {
+    const entries = zoneKinds.map(
+      (zoneKind) => [zoneKind.slug, zoneKind] as const
+    );
+    return new Map(entries);
+  }, [zoneKinds]);
+
+  useEffect(() => {
+    const loadZoneKinds = async () => {
+      try {
+        const response = await apiClient.get<ZoneKind[]>('/sonar/zoneKinds');
+        setZoneKinds(response);
+      } catch (loadError) {
+        console.error('Failed to load zone kinds', loadError);
+      }
+    };
+
+    void loadZoneKinds();
+  }, [apiClient]);
   const knownPlaceTags = useMemo(
     () => [
       'cafe',
@@ -237,6 +259,7 @@ export const DistrictSeedJobsPanel = ({
 
   const selectedCount = selectedQuestArchetypeIds.size;
   const hasZoneSeedSettings =
+    zoneKind.trim().length > 0 ||
     requiredPlaceTags.length > 0 ||
     shopkeeperItemTags.length > 0 ||
     [
@@ -314,6 +337,7 @@ export const DistrictSeedJobsPanel = ({
         {
           districtId,
           questArchetypeIds: Array.from(selectedQuestArchetypeIds),
+          zoneKind: zoneKind.trim(),
           ...numericValues,
           requiredPlaceTags,
           shopkeeperItemTags,
@@ -403,6 +427,32 @@ export const DistrictSeedJobsPanel = ({
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+              Zone kind
+            </label>
+            <select
+              value={zoneKind}
+              onChange={(event) => setZoneKind(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            >
+              <option value="">No zone kind override</option>
+              {zoneKinds.map((entry) => (
+                <option key={entry.id} value={entry.slug}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Optional kind applied to each child zone seed job and stamped onto
+              the zone when approved.
+            </p>
+            {zoneKindBySlug.get(zoneKind)?.description && (
+              <p className="mt-1 text-xs text-slate-600">
+                {zoneKindBySlug.get(zoneKind)?.description}
+              </p>
+            )}
+          </div>
           {[
             ['Places', placeCount, setPlaceCount],
             ['Monsters', monsterCount, setMonsterCount],
@@ -697,6 +747,11 @@ export const DistrictSeedJobsPanel = ({
                     {job.questArchetypeIds.length} quest templates and{' '}
                     {job.zoneSeedJobIds?.length || 0} child-zone seed jobs
                   </div>
+                  {job.zoneSeedSettings?.zoneKind && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      Zone kind: {job.zoneSeedSettings.zoneKind}
+                    </div>
+                  )}
                   <div className="mt-1 text-xs text-gray-500">
                     Job ID: {job.id}
                   </div>

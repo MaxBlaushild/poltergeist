@@ -72,6 +72,7 @@ type DistrictSeedResult struct {
 }
 
 type DistrictZoneSeedSettings struct {
+	ZoneKind             string      `json:"zoneKind,omitempty"`
 	PlaceCount           int         `json:"placeCount"`
 	MonsterCount         int         `json:"monsterCount"`
 	BossEncounterCount   int         `json:"bossEncounterCount"`
@@ -85,6 +86,9 @@ type DistrictZoneSeedSettings struct {
 }
 
 func (s DistrictZoneSeedSettings) HasContent() bool {
+	if strings.TrimSpace(s.ZoneKind) != "" {
+		return true
+	}
 	if s.PlaceCount > 0 ||
 		s.MonsterCount > 0 ||
 		s.BossEncounterCount > 0 ||

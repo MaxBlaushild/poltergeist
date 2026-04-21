@@ -112,7 +112,7 @@ const _discoveredCharactersPrefsKeyPrefix =
     'single_player_discovered_characters';
 const _tutorialGuideButtonAcknowledgedPrefsKeyPrefix =
     'single_player_tutorial_guide_button_acknowledged';
-const _mapThumbnailVersion = 'v13';
+const _mapThumbnailVersion = 'v14';
 const _standardMarkerThumbnailSize = 0.75;
 const _baseMarkerSizeScale = 0.75;
 const int _monsterBattleDefeatHealthFloorPercent = 30;
@@ -295,6 +295,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Map<String, dynamic>? _lastHandledCompletionModal;
   VoidCallback? _pendingCompletionModalDrainAction;
   final Set<String> _handledLevelUpActivityIds = <String>{};
+  final Set<String> _zoneDiscoveryInFlightIds = <String>{};
   bool _levelUpActivityDrainScheduled = false;
   String _lastAuthenticatedUserId = '';
   Timer? _questGlowTimer;
@@ -2024,6 +2025,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     ids.addAll(_trackedQuestTurnInPoiIds(questLog));
     return ids;
+  }
+
+  bool _shouldPulseQuestPoi(
+    PointOfInterest poi, {
+    required bool isQuestCurrent,
+    Set<String>? trackedQuestPoiIds,
+  }) {
+    if (poi.hasAvailableQuest || isQuestCurrent) return true;
+    final trackedIds =
+        trackedQuestPoiIds ??
+        _trackedQuestPoiIdsForPulse(context.read<QuestLogProvider>());
+    return trackedIds.contains(poi.id);
+  }
+
+  bool _shouldPulseQuestCharacter(
+    Character character, {
+    bool? isCurrentQuestTarget,
+    bool? isTrackedQuestTarget,
+  }) {
+    if (character.hasAvailableQuest) return true;
+    final currentQuestTarget =
+        isCurrentQuestTarget ?? _isCurrentQuestTurnInCharacter(character.id);
+    if (currentQuestTarget) return true;
+    return isTrackedQuestTarget ?? _isTrackedQuestTurnInCharacter(character.id);
   }
 
   List<List<QuestNodePolygonPoint>> _trackedQuestCurrentNodePolygons(
@@ -8331,7 +8356,154 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
-  void _selectZone(Zone? zone) {
+  void _showUndiscoveredZoneFeedback() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Enter this zone to discover it.')),
+    );
+  }
+
+  void _upsertZone(Zone zone) {
+    context.read<ZoneProvider>().upsertZone(zone);
+    if (!mounted) return;
+    setState(() {
+      final zones = List<Zone>.from(_zones);
+      final existingIndex = zones.indexWhere((entry) => entry.id == zone.id);
+      if (existingIndex >= 0) {
+        zones[existingIndex] = zone;
+      } else {
+        zones.add(zone);
+      }
+      _zones = zones;
+    });
+  }
+
+  Zone _zoneFromDiscoveryResponse(
+    Map<String, dynamic> response,
+    Zone fallback,
+  ) {
+    final rawZone = response['zone'];
+    if (rawZone is Map<String, dynamic>) {
+      return Zone.fromJson(rawZone);
+    }
+    if (rawZone is Map) {
+      return Zone.fromJson(Map<String, dynamic>.from(rawZone));
+    }
+    return fallback.copyWith(discovered: true);
+  }
+
+  Map<String, dynamic>? _zoneDiscoveryRewardModalData(
+    Zone zone,
+    Map<String, dynamic> response,
+  ) {
+    final rewardExperience =
+        (response['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold =
+        (response['rewardGold'] as num?)?.toInt() ??
+        (response['goldAwarded'] as num?)?.toInt() ??
+        0;
+    final itemsAwarded =
+        (response['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final spellsAwarded =
+        (response['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+
+    if (rewardExperience <= 0 &&
+        rewardGold <= 0 &&
+        itemsAwarded.isEmpty &&
+        spellsAwarded.isEmpty) {
+      return null;
+    }
+
+    return {
+      'zoneName': zone.name,
+      'rewardExperience': rewardExperience,
+      'rewardGold': rewardGold,
+      'goldAwarded': rewardGold,
+      'itemsAwarded': itemsAwarded,
+      'spellsAwarded': spellsAwarded,
+    };
+  }
+
+  Future<void> _presentZoneDiscoveryRewards(
+    Zone zone,
+    Map<String, dynamic> response,
+  ) async {
+    if (response['alreadyDiscovered'] == true) return;
+    final statsProvider = context.read<CharacterStatsProvider>();
+    final previousLevel = statsProvider.level;
+    await Future.wait([
+      context.read<AuthProvider>().refresh(),
+      statsProvider.refresh(silent: true),
+      context.read<UserLevelProvider>().refresh(),
+      context.read<ActivityFeedProvider>().refresh(),
+    ]);
+    if (!mounted) return;
+    final modalData = _zoneDiscoveryRewardModalData(zone, response);
+    final completedTaskProvider = context.read<CompletedTaskProvider>();
+    if (modalData != null) {
+      completedTaskProvider.showModal('zoneDiscovered', data: modalData);
+    }
+    completedTaskProvider.queueLevelUpFollowUpIfNeeded(
+      previousLevel: previousLevel,
+      currentLevel: statsProvider.level,
+    );
+  }
+
+  Future<void> _discoverZoneForLocation(Zone zone, AppLocation location) async {
+    final zoneId = zone.id.trim();
+    if (zoneId.isEmpty || zone.discovered) return;
+    if (!_zoneDiscoveryInFlightIds.add(zoneId)) return;
+
+    try {
+      final response = await context.read<PoiService>().discoverZone(
+        zoneId,
+        lat: location.latitude,
+        lng: location.longitude,
+      );
+      if (!mounted) return;
+
+      final updatedZone = _zoneFromDiscoveryResponse(response, zone);
+      _upsertZone(updatedZone);
+      await _presentZoneDiscoveryRewards(updatedZone, response);
+      if (!mounted || !updatedZone.discovered) return;
+
+      final currentLocation = context.read<LocationProvider>().location;
+      if (currentLocation == null) return;
+      final currentZone = context.read<ZoneProvider>().findZoneAtCoordinate(
+        currentLocation.latitude,
+        currentLocation.longitude,
+      );
+      if (currentZone?.id == updatedZone.id) {
+        context.read<ZoneProvider>().setSelectedZone(updatedZone);
+      }
+    } on DioException catch (error) {
+      debugPrint('SinglePlayer: zone discovery failed: $error');
+      debugPrint(
+        'SinglePlayer: zone discovery response=${error.response?.data}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('SinglePlayer: zone discovery error: $error');
+      debugPrint('SinglePlayer: zone discovery stack: $stackTrace');
+    } finally {
+      _zoneDiscoveryInFlightIds.remove(zoneId);
+    }
+  }
+
+  void _selectZone(Zone? zone, {bool showUndiscoveredFeedback = false}) {
+    if (zone != null && !zone.discovered) {
+      if (showUndiscoveredFeedback) {
+        _showUndiscoveredZoneFeedback();
+      }
+      return;
+    }
     final zoneProvider = context.read<ZoneProvider>();
     zoneProvider.setSelectedZone(zone, manual: true);
     if (zone == null) {
@@ -8352,6 +8524,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   bool _selectZoneIfDifferent(Zone? zone) {
     final targetZoneId = zone?.id.trim() ?? '';
     if (targetZoneId.isEmpty) return false;
+    if (zone?.discovered != true) return false;
     final currentZoneId = _effectiveSelectedZone()?.id.trim() ?? '';
     if (currentZoneId == targetZoneId) return false;
     _selectZone(zone);
@@ -8408,7 +8581,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       coordinates.latitude,
       coordinates.longitude,
     );
-    _selectZone(zone);
+    _selectZone(zone, showUndiscoveredFeedback: zone != null);
   }
 
   void _onBasePlacementRequested() {
@@ -8864,7 +9037,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         final undiscovered = !useRealImage;
         final isQuestCurrent = questPoiIds.contains(poi.id);
         final hasMainStoryAccent = _poiHasMainStoryAccent(poi, questLog);
-        final shouldPulseLikeQuest = trackedQuestPoiIds.contains(poi.id);
+        final shouldPulseLikeQuest = _shouldPulseQuestPoi(
+          poi,
+          isQuestCurrent: isQuestCurrent,
+          trackedQuestPoiIds: trackedQuestPoiIds,
+        );
         final shouldPulseLikeMainStory =
             featuredMainStoryPulseTarget?.poiId == poi.id;
         final hasMapContent = _poiHasMapContent(
@@ -9013,7 +9190,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         final hasQuestAvailable = ch.hasAvailableQuest;
         final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
         final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
-        final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+        final shouldPulseLikeQuest = _shouldPulseQuestCharacter(
+          ch,
+          isCurrentQuestTarget: shouldUseTurnInHalo,
+          isTrackedQuestTarget: _isTrackedQuestTurnInCharacter(ch.id),
+        );
         final shouldPulseLikeMainStory =
             featuredMainStoryPulseTarget?.characterId == ch.id;
         final useAccentMarker =
@@ -9262,8 +9443,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (!mounted || markerGeneration != _poiMarkerGeneration) return;
 
     final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
-    final shouldPulseLikeQuest = trackedQuestPoiIds.contains(
-      result.update.poi.id,
+    final shouldPulseLikeQuest = _shouldPulseQuestPoi(
+      result.update.poi,
+      isQuestCurrent: isQuestCurrentNow,
+      trackedQuestPoiIds: trackedQuestPoiIds,
     );
     final shouldPulseLikeMainStory =
         _featuredMainStoryPulseTarget(
@@ -10017,10 +10200,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   Zone? _effectiveSelectedZone() {
-    final selectedZone = context.read<ZoneProvider>().selectedZone;
-    if (selectedZone != null) return selectedZone;
-    if (_zones.isEmpty) return null;
-    return _zones.first;
+    return context.read<ZoneProvider>().selectedZone;
   }
 
   bool _isPoiInSelectedZone(PointOfInterest poi) {
@@ -10074,6 +10254,72 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return '#$hex';
   }
 
+  String _shroudedToneForZone(Zone zone, {int salt = 0}) {
+    final seed =
+        '${zone.id}|${zone.latitude.toStringAsFixed(4)}|${zone.longitude.toStringAsFixed(4)}|shrouded|$salt';
+    int hash = 0;
+    for (final code in seed.codeUnits) {
+      hash = 0x1fffffff & (hash + code);
+      hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+      hash ^= (hash >> 6);
+    }
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    hash ^= (hash >> 11);
+    hash = 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+    final hue = 208 + (hash % 14); // 208–221
+    final saturation = 18 + ((hash >> 8) % 10); // 18–27
+    final lightness = 18 + ((hash >> 16) % 7); // 18–24
+    final color = HSLColor.fromAHSL(
+      1,
+      hue.toDouble(),
+      saturation / 100,
+      lightness / 100,
+    ).toColor();
+    final hex = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
+    return '#$hex';
+  }
+
+  bool _isUndiscoveredZone(Zone zone) => !zone.discovered;
+
+  String _zoneFillColor(Zone zone, {int salt = 0}) {
+    if (_isUndiscoveredZone(zone)) {
+      return _shroudedToneForZone(zone, salt: salt);
+    }
+    return _earthToneForZone(zone, salt: salt);
+  }
+
+  double _zoneFillOpacity(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 0.68 : 0.4;
+  }
+
+  String _zoneOuterLineColor(Zone zone) {
+    return _isUndiscoveredZone(zone) ? '#0d1218' : '#000000';
+  }
+
+  double _zoneOuterLineOpacity(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 0.42 : 0.18;
+  }
+
+  double _zoneOuterLineWidth(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 8.0 : 7.0;
+  }
+
+  double _zoneOuterLineBlur(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 2.1 : 1.6;
+  }
+
+  String _zoneInnerLineColor(Zone zone) {
+    return _isUndiscoveredZone(zone) ? '#d8c28b' : '#000000';
+  }
+
+  double _zoneInnerLineOpacity(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 0.9 : 0.95;
+  }
+
+  double _zoneInnerLineWidth(Zone zone) {
+    return _isUndiscoveredZone(zone) ? 2.2 : 2.8;
+  }
+
   Future<void> _addZoneBoundaries() {
     _zoneBoundaryRefreshSequence = _zoneBoundaryRefreshSequence.then((_) async {
       try {
@@ -10120,8 +10366,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         fillOptions.add(
           FillOptions(
             geometry: [ring],
-            fillColor: _earthToneForZone(z, salt: i),
-            fillOpacity: 0.4,
+            fillColor: _zoneFillColor(z, salt: i),
+            fillOpacity: _zoneFillOpacity(z),
           ),
         );
         fillData.add({'type': 'zone', 'id': z.id});
@@ -10129,10 +10375,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       options.add(
         LineOptions(
           geometry: ring,
-          lineColor: '#000000',
-          lineWidth: 7.0,
-          lineOpacity: 0.18,
-          lineBlur: 1.6,
+          lineColor: _zoneOuterLineColor(z),
+          lineWidth: _zoneOuterLineWidth(z),
+          lineOpacity: _zoneOuterLineOpacity(z),
+          lineBlur: _zoneOuterLineBlur(z),
           lineJoin: 'round',
         ),
       );
@@ -10140,9 +10386,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       options.add(
         LineOptions(
           geometry: ring,
-          lineColor: '#000000',
-          lineWidth: 2.8,
-          lineOpacity: 0.95,
+          lineColor: _zoneInnerLineColor(z),
+          lineWidth: _zoneInnerLineWidth(z),
+          lineOpacity: _zoneInnerLineOpacity(z),
           lineJoin: 'round',
         ),
       );
@@ -10198,8 +10444,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         [
           FillOptions(
             geometry: [ring],
-            fillColor: _earthToneForZone(zone, salt: zoneIndex),
-            fillOpacity: 0.4,
+            fillColor: _zoneFillColor(zone, salt: zoneIndex),
+            fillOpacity: _zoneFillOpacity(zone),
           ),
         ],
         [
@@ -10467,9 +10713,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final questLog = context.read<QuestLogProvider>();
     final useRealImage = discoveries.hasDiscovered(poi.id);
     final undiscovered = !useRealImage;
-    final shouldPulseLikeQuest = _trackedQuestPoiIdsForPulse(
-      questLog,
-    ).contains(poi.id);
+    final shouldPulseLikeQuest = _shouldPulseQuestPoi(
+      poi,
+      isQuestCurrent: isQuestCurrent,
+      trackedQuestPoiIds: _trackedQuestPoiIdsForPulse(questLog),
+    );
     final shouldPulseLikeMainStory =
         _featuredMainStoryPulseTarget(questLog)?.poiId == poi.id;
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
@@ -10736,7 +10984,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final questLog = context.read<QuestLogProvider>();
     final hasMainStoryAccent = _characterHasMainStoryAccent(ch, questLog);
     final shouldUseTurnInHalo = _isCurrentQuestTurnInCharacter(ch.id);
-    final shouldPulseLikeQuest = _isTrackedQuestTurnInCharacter(ch.id);
+    final shouldPulseLikeQuest = _shouldPulseQuestCharacter(
+      ch,
+      isCurrentQuestTarget: shouldUseTurnInHalo,
+      isTrackedQuestTarget: _isTrackedQuestTurnInCharacter(ch.id),
+    );
     final shouldPulseLikeMainStory =
         _featuredMainStoryPulseTarget(questLog)?.characterId == ch.id;
     final useAccentMarker =
@@ -11558,6 +11810,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
     if (force) {
       zoneProvider.unlockSelection();
+    }
+    if (zone == null) {
+      zoneProvider.setSelectedZone(null);
+      return;
+    }
+    if (!zone.discovered) {
+      zoneProvider.setSelectedZone(null);
+      unawaited(_discoverZoneForLocation(zone, location));
+      return;
     }
     zoneProvider.setSelectedZone(zone);
   }

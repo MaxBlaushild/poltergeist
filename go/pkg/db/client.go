@@ -60,10 +60,12 @@ type client struct {
 	outfitProfileGenerationHandle        *outfitProfileGenerationHandle
 	pointOfInterestChildrenHandle        *pointOfInterestChildrenHandle
 	pointOfInterestDiscoveryHandle       *pointOfInterestDiscoveryHandle
+	zoneDiscoveryHandle                  *zoneDiscoveryHandle
 	matchUserHandle                      *matchUserHandle
 	tagHandle                            *tagHandle
 	tagGroupHandle                       *tagGroupHandle
 	zoneHandle                           *zoneHandler
+	zoneKindHandle                       *zoneKindHandle
 	zoneGenreHandle                      *zoneGenreHandler
 	zoneGenreScoreHandle                 *zoneGenreScoreHandler
 	locationArchetypeHandle              *locationArchetypeHandle
@@ -242,10 +244,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		outfitProfileGenerationHandle:        &outfitProfileGenerationHandle{db: db},
 		pointOfInterestChildrenHandle:        &pointOfInterestChildrenHandle{db: db},
 		pointOfInterestDiscoveryHandle:       &pointOfInterestDiscoveryHandle{db: db},
+		zoneDiscoveryHandle:                  &zoneDiscoveryHandle{db: db},
 		matchUserHandle:                      &matchUserHandle{db: db},
 		tagHandle:                            &tagHandle{db: db},
 		tagGroupHandle:                       &tagGroupHandle{db: db},
 		zoneHandle:                           &zoneHandler{db: db},
+		zoneKindHandle:                       &zoneKindHandle{db: db},
 		zoneGenreHandle:                      &zoneGenreHandler{db: db},
 		zoneGenreScoreHandle:                 &zoneGenreScoreHandler{db: db},
 		locationArchetypeHandle:              &locationArchetypeHandle{db: db},
@@ -542,6 +546,10 @@ func (c *client) Zone() ZoneHandle {
 	return c.zoneHandle
 }
 
+func (c *client) ZoneKind() ZoneKindHandle {
+	return c.zoneKindHandle
+}
+
 func (c *client) ZoneGenre() ZoneGenreHandle {
 	return c.zoneGenreHandle
 }
@@ -564,6 +572,10 @@ func (c *client) MatchUser() MatchUserHandle {
 
 func (c *client) PointOfInterestDiscovery() PointOfInterestDiscoveryHandle {
 	return c.pointOfInterestDiscoveryHandle
+}
+
+func (c *client) ZoneDiscovery() ZoneDiscoveryHandle {
+	return c.zoneDiscoveryHandle
 }
 
 func (c *client) PointOfInterestChildren() PointOfInterestChildrenHandle {
