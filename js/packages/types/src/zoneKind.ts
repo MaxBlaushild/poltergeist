@@ -14,5 +14,7 @@ export type ZoneKind = {
   optionEncounterCountRatio: number;
   treasureChestCountRatio: number;
   healingFountainCountRatio: number;
+  herbalismResourceCountRatio: number;
+  miningResourceCountRatio: number;
   resourceCountRatio: number;
 };

@@ -78,6 +78,34 @@ func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
 	}
 }
 
+func TestZoneSeedBuildResourcePoolsBySlugGroupsEligibleTypes(t *testing.T) {
+	herbalismID := uuid.New()
+	miningID := uuid.New()
+
+	resourceTypes := []models.ResourceType{
+		{ID: herbalismID, Name: "Herbalism", Slug: "herbalism"},
+		{ID: miningID, Name: "Mining", Slug: "mining"},
+	}
+	items := []models.InventoryItem{
+		{ID: 101, Name: "Moonleaf", ResourceTypeID: &herbalismID},
+		{ID: 201, Name: "Iron Ore", ResourceTypeID: &miningID},
+	}
+
+	poolsBySlug := zoneSeedBuildResourcePoolsBySlug(resourceTypes, items)
+	if len(poolsBySlug[zoneSeedHerbalismResourceTypeSlug]) != 1 {
+		t.Fatalf("expected one herbalism pool, got %+v", poolsBySlug[zoneSeedHerbalismResourceTypeSlug])
+	}
+	if len(poolsBySlug[zoneSeedMiningResourceTypeSlug]) != 1 {
+		t.Fatalf("expected one mining pool, got %+v", poolsBySlug[zoneSeedMiningResourceTypeSlug])
+	}
+	if poolsBySlug[zoneSeedHerbalismResourceTypeSlug][0].resourceType.ID != herbalismID {
+		t.Fatalf("expected herbalism pool to map to herbalism resource type, got %+v", poolsBySlug[zoneSeedHerbalismResourceTypeSlug][0])
+	}
+	if poolsBySlug[zoneSeedMiningResourceTypeSlug][0].resourceType.ID != miningID {
+		t.Fatalf("expected mining pool to map to mining resource type, got %+v", poolsBySlug[zoneSeedMiningResourceTypeSlug][0])
+	}
+}
+
 func TestEnsureRequiredSelectionsTopsOffFromCandidatePoolWithoutTags(t *testing.T) {
 	base := []googlemaps.Place{
 		{ID: "one", DisplayName: googlemaps.LocalizedText{Text: "One"}},

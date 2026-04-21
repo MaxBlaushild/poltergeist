@@ -49,15 +49,17 @@ func newZoneSeedDraftResolutionError(statusCode int, err error) error {
 }
 
 type zoneSeedDraftCountOverrides struct {
-	PlaceCount           *int
-	MonsterCount         *int
-	BossEncounterCount   *int
-	RaidEncounterCount   *int
-	InputEncounterCount  *int
-	OptionEncounterCount *int
-	TreasureChestCount   *int
-	HealingFountainCount *int
-	ResourceCount        *int
+	PlaceCount             *int
+	MonsterCount           *int
+	BossEncounterCount     *int
+	RaidEncounterCount     *int
+	InputEncounterCount    *int
+	OptionEncounterCount   *int
+	TreasureChestCount     *int
+	HealingFountainCount   *int
+	HerbalismResourceCount *int
+	MiningResourceCount    *int
+	ResourceCount          *int
 }
 
 type zoneSeedCurrentContentSnapshot struct {
@@ -147,8 +149,18 @@ func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (z
 	if overrides.HealingFountainCount, err = copyCount(requestBody.HealingFountainCount, "healingFountainCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
+	if overrides.HerbalismResourceCount, err = copyCount(requestBody.HerbalismResourceCount, "herbalismResourceCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
+	if overrides.MiningResourceCount, err = copyCount(requestBody.MiningResourceCount, "miningResourceCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
 	if overrides.ResourceCount, err = copyCount(requestBody.ResourceCount, "resourceCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
+	}
+	if overrides.ResourceCount != nil &&
+		(overrides.HerbalismResourceCount != nil || overrides.MiningResourceCount != nil) {
+		return zoneSeedDraftCountOverrides{}, fmt.Errorf("resourceCount cannot be combined with herbalismResourceCount or miningResourceCount")
 	}
 
 	return overrides, nil
@@ -181,9 +193,15 @@ func zoneSeedResolvedCountsFromOverrides(overrides zoneSeedDraftCountOverrides) 
 		counts.HealingFountainCount = *overrides.HealingFountainCount
 	}
 	if overrides.ResourceCount != nil {
-		counts.ResourceCount = *overrides.ResourceCount
+		counts.HerbalismResourceCount, counts.MiningResourceCount = models.SplitZoneSeedResourceCount(*overrides.ResourceCount)
 	}
-	return counts
+	if overrides.HerbalismResourceCount != nil {
+		counts.HerbalismResourceCount = *overrides.HerbalismResourceCount
+	}
+	if overrides.MiningResourceCount != nil {
+		counts.MiningResourceCount = *overrides.MiningResourceCount
+	}
+	return counts.WithLegacyResourceCount()
 }
 
 func zoneSeedApplyCountOverrides(
@@ -216,9 +234,15 @@ func zoneSeedApplyCountOverrides(
 		counts.HealingFountainCount = *overrides.HealingFountainCount
 	}
 	if overrides.ResourceCount != nil {
-		counts.ResourceCount = *overrides.ResourceCount
+		counts.HerbalismResourceCount, counts.MiningResourceCount = models.SplitZoneSeedResourceCount(*overrides.ResourceCount)
 	}
-	return counts
+	if overrides.HerbalismResourceCount != nil {
+		counts.HerbalismResourceCount = *overrides.HerbalismResourceCount
+	}
+	if overrides.MiningResourceCount != nil {
+		counts.MiningResourceCount = *overrides.MiningResourceCount
+	}
+	return counts.WithLegacyResourceCount()
 }
 
 func zoneSeedCountsToNormalizedRequest(
@@ -231,23 +255,26 @@ func zoneSeedCountsToNormalizedRequest(
 	autoSeedAudit models.ZoneSeedAutoAudit,
 	countAudit models.ZoneSeedCountAudit,
 ) *normalizedZoneSeedDraftRequest {
+	counts = counts.WithLegacyResourceCount()
 	return &normalizedZoneSeedDraftRequest{
-		SeedMode:             mode,
-		CountMode:            countMode,
-		ZoneKind:             zoneKind,
-		PlaceCount:           counts.PlaceCount,
-		MonsterCount:         counts.MonsterCount,
-		BossEncounterCount:   counts.BossEncounterCount,
-		RaidEncounterCount:   counts.RaidEncounterCount,
-		InputEncounterCount:  counts.InputEncounterCount,
-		OptionEncounterCount: counts.OptionEncounterCount,
-		TreasureChestCount:   counts.TreasureChestCount,
-		HealingFountainCount: counts.HealingFountainCount,
-		ResourceCount:        counts.ResourceCount,
-		RequiredPlaceTags:    requiredTags,
-		ShopkeeperItemTags:   shopkeeperTags,
-		AutoSeedAudit:        autoSeedAudit,
-		CountAudit:           countAudit,
+		SeedMode:               mode,
+		CountMode:              countMode,
+		ZoneKind:               zoneKind,
+		PlaceCount:             counts.PlaceCount,
+		MonsterCount:           counts.MonsterCount,
+		BossEncounterCount:     counts.BossEncounterCount,
+		RaidEncounterCount:     counts.RaidEncounterCount,
+		InputEncounterCount:    counts.InputEncounterCount,
+		OptionEncounterCount:   counts.OptionEncounterCount,
+		TreasureChestCount:     counts.TreasureChestCount,
+		HealingFountainCount:   counts.HealingFountainCount,
+		HerbalismResourceCount: counts.HerbalismResourceCount,
+		MiningResourceCount:    counts.MiningResourceCount,
+		ResourceCount:          counts.ResourceCount,
+		RequiredPlaceTags:      requiredTags,
+		ShopkeeperItemTags:     shopkeeperTags,
+		AutoSeedAudit:          autoSeedAudit,
+		CountAudit:             countAudit,
 	}
 }
 
@@ -256,16 +283,18 @@ func zoneSeedCountsFromNormalizedRequest(settings *normalizedZoneSeedDraftReques
 		return models.ZoneSeedResolvedCounts{}
 	}
 	return models.ZoneSeedResolvedCounts{
-		PlaceCount:           settings.PlaceCount,
-		MonsterCount:         settings.MonsterCount,
-		BossEncounterCount:   settings.BossEncounterCount,
-		RaidEncounterCount:   settings.RaidEncounterCount,
-		InputEncounterCount:  settings.InputEncounterCount,
-		OptionEncounterCount: settings.OptionEncounterCount,
-		TreasureChestCount:   settings.TreasureChestCount,
-		HealingFountainCount: settings.HealingFountainCount,
-		ResourceCount:        settings.ResourceCount,
-	}
+		PlaceCount:             settings.PlaceCount,
+		MonsterCount:           settings.MonsterCount,
+		BossEncounterCount:     settings.BossEncounterCount,
+		RaidEncounterCount:     settings.RaidEncounterCount,
+		InputEncounterCount:    settings.InputEncounterCount,
+		OptionEncounterCount:   settings.OptionEncounterCount,
+		TreasureChestCount:     settings.TreasureChestCount,
+		HealingFountainCount:   settings.HealingFountainCount,
+		HerbalismResourceCount: settings.HerbalismResourceCount,
+		MiningResourceCount:    settings.MiningResourceCount,
+		ResourceCount:          settings.ResourceCount,
+	}.WithLegacyResourceCount()
 }
 
 func zoneSeedSubtractExistingCounts(
@@ -280,16 +309,17 @@ func zoneSeedSubtractExistingCounts(
 	}
 
 	return models.ZoneSeedResolvedCounts{
-		PlaceCount:           clamp(target.PlaceCount - existing.PlaceCount),
-		MonsterCount:         clamp(target.MonsterCount - existing.MonsterCount),
-		BossEncounterCount:   clamp(target.BossEncounterCount - existing.BossEncounterCount),
-		RaidEncounterCount:   clamp(target.RaidEncounterCount - existing.RaidEncounterCount),
-		InputEncounterCount:  clamp(target.InputEncounterCount - existing.InputEncounterCount),
-		OptionEncounterCount: clamp(target.OptionEncounterCount - existing.OptionEncounterCount),
-		TreasureChestCount:   clamp(target.TreasureChestCount - existing.TreasureChestCount),
-		HealingFountainCount: clamp(target.HealingFountainCount - existing.HealingFountainCount),
-		ResourceCount:        clamp(target.ResourceCount - existing.ResourceCount),
-	}
+		PlaceCount:             clamp(target.PlaceCount - existing.PlaceCount),
+		MonsterCount:           clamp(target.MonsterCount - existing.MonsterCount),
+		BossEncounterCount:     clamp(target.BossEncounterCount - existing.BossEncounterCount),
+		RaidEncounterCount:     clamp(target.RaidEncounterCount - existing.RaidEncounterCount),
+		InputEncounterCount:    clamp(target.InputEncounterCount - existing.InputEncounterCount),
+		OptionEncounterCount:   clamp(target.OptionEncounterCount - existing.OptionEncounterCount),
+		TreasureChestCount:     clamp(target.TreasureChestCount - existing.TreasureChestCount),
+		HealingFountainCount:   clamp(target.HealingFountainCount - existing.HealingFountainCount),
+		HerbalismResourceCount: clamp(target.HerbalismResourceCount - existing.HerbalismResourceCount),
+		MiningResourceCount:    clamp(target.MiningResourceCount - existing.MiningResourceCount),
+	}.WithLegacyResourceCount()
 }
 
 func zoneSeedCurrentAwareWarnings(
@@ -313,7 +343,8 @@ func zoneSeedCurrentAwareWarnings(
 		{label: "option scenarios", target: target.OptionEncounterCount, existing: existing.OptionEncounterCount, queued: queued.OptionEncounterCount},
 		{label: "treasure chests", target: target.TreasureChestCount, existing: existing.TreasureChestCount, queued: queued.TreasureChestCount},
 		{label: "healing fountains", target: target.HealingFountainCount, existing: existing.HealingFountainCount, queued: queued.HealingFountainCount},
-		{label: "resources", target: target.ResourceCount, existing: existing.ResourceCount, queued: queued.ResourceCount},
+		{label: "herbalism resources", target: target.HerbalismResourceCount, existing: existing.HerbalismResourceCount, queued: queued.HerbalismResourceCount},
+		{label: "mining resources", target: target.MiningResourceCount, existing: existing.MiningResourceCount, queued: queued.MiningResourceCount},
 	}
 
 	warnings := models.StringArray{}
@@ -381,17 +412,20 @@ func zoneSeedInferAutoCounts(
 	areaAcres float64,
 	requiredTags []string,
 ) (models.ZoneSeedResolvedCounts, models.StringArray) {
+	totalResourceCount := zoneSeedAutoCurveCount(areaAcres, 1.6)
+	herbalismResourceCount, miningResourceCount := models.SplitZoneSeedResourceCount(totalResourceCount)
 	counts := models.ZoneSeedResolvedCounts{
-		PlaceCount:           zoneSeedAutoCurveCount(areaAcres, 2.75),
-		MonsterCount:         zoneSeedAutoCurveCount(areaAcres, 1.9),
-		BossEncounterCount:   zoneSeedAutoCurveCount(areaAcres, 0.85),
-		RaidEncounterCount:   zoneSeedAutoCurveCount(areaAcres, 0.55),
-		InputEncounterCount:  zoneSeedAutoCurveCount(areaAcres, 1.1),
-		OptionEncounterCount: zoneSeedAutoCurveCount(areaAcres, 1.1),
-		TreasureChestCount:   zoneSeedAutoCurveCount(areaAcres, 1.35),
-		HealingFountainCount: zoneSeedAutoCurveCount(areaAcres, 0.75),
-		ResourceCount:        zoneSeedAutoCurveCount(areaAcres, 1.6),
-	}
+		PlaceCount:             zoneSeedAutoCurveCount(areaAcres, 2.75),
+		MonsterCount:           zoneSeedAutoCurveCount(areaAcres, 1.9),
+		BossEncounterCount:     zoneSeedAutoCurveCount(areaAcres, 0.85),
+		RaidEncounterCount:     zoneSeedAutoCurveCount(areaAcres, 0.55),
+		InputEncounterCount:    zoneSeedAutoCurveCount(areaAcres, 1.1),
+		OptionEncounterCount:   zoneSeedAutoCurveCount(areaAcres, 1.1),
+		TreasureChestCount:     zoneSeedAutoCurveCount(areaAcres, 1.35),
+		HealingFountainCount:   zoneSeedAutoCurveCount(areaAcres, 0.75),
+		HerbalismResourceCount: herbalismResourceCount,
+		MiningResourceCount:    miningResourceCount,
+	}.WithLegacyResourceCount()
 
 	warnings := models.StringArray{}
 	if len(requiredTags) > counts.PlaceCount {
@@ -971,7 +1005,6 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 		PlaceCount:           len(pointsOfInterest),
 		TreasureChestCount:   len(treasureChests),
 		HealingFountainCount: len(healingFountains),
-		ResourceCount:        len(resources),
 	}
 
 	for _, encounter := range encounters {
@@ -992,6 +1025,16 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 			counts.OptionEncounterCount++
 		}
 	}
+
+	for _, resource := range resources {
+		switch models.NormalizeZoneKind(resource.ResourceType.Slug) {
+		case "herbalism":
+			counts.HerbalismResourceCount++
+		case "mining":
+			counts.MiningResourceCount++
+		}
+	}
+	counts = counts.WithLegacyResourceCount()
 
 	return zoneSeedCurrentContentSnapshot{
 		ExistingCounts:             counts,

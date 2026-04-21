@@ -85,32 +85,34 @@ const (
 )
 
 type ZoneSeedJob struct {
-	ID                   uuid.UUID          `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt            time.Time          `json:"createdAt"`
-	UpdatedAt            time.Time          `json:"updatedAt"`
-	ZoneID               uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
-	ZoneKind             string             `json:"zoneKind" gorm:"column:zone_kind"`
-	Status               string             `json:"status"`
-	SeedMode             string             `json:"seedMode"`
-	CountMode            string             `json:"countMode"`
-	ErrorMessage         *string            `json:"errorMessage,omitempty"`
-	PlaceCount           int                `json:"placeCount"`
-	CharacterCount       int                `json:"characterCount"`
-	QuestCount           int                `json:"questCount"`
-	MainQuestCount       int                `json:"mainQuestCount"`
-	MonsterCount         int                `json:"monsterCount"`
-	BossEncounterCount   int                `json:"bossEncounterCount"`
-	RaidEncounterCount   int                `json:"raidEncounterCount"`
-	InputEncounterCount  int                `json:"inputEncounterCount"`
-	OptionEncounterCount int                `json:"optionEncounterCount"`
-	TreasureChestCount   int                `json:"treasureChestCount"`
-	HealingFountainCount int                `json:"healingFountainCount"`
-	ResourceCount        int                `json:"resourceCount"`
-	RequiredPlaceTags    StringArray        `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
-	ShopkeeperItemTags   StringArray        `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
-	AutoSeedAudit        ZoneSeedAutoAudit  `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`
-	CountAudit           ZoneSeedCountAudit `json:"countAudit,omitempty" gorm:"type:jsonb"`
-	Draft                ZoneSeedDraft      `json:"draft" gorm:"type:jsonb"`
+	ID                     uuid.UUID          `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt              time.Time          `json:"createdAt"`
+	UpdatedAt              time.Time          `json:"updatedAt"`
+	ZoneID                 uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
+	ZoneKind               string             `json:"zoneKind" gorm:"column:zone_kind"`
+	Status                 string             `json:"status"`
+	SeedMode               string             `json:"seedMode"`
+	CountMode              string             `json:"countMode"`
+	ErrorMessage           *string            `json:"errorMessage,omitempty"`
+	PlaceCount             int                `json:"placeCount"`
+	CharacterCount         int                `json:"characterCount"`
+	QuestCount             int                `json:"questCount"`
+	MainQuestCount         int                `json:"mainQuestCount"`
+	MonsterCount           int                `json:"monsterCount"`
+	BossEncounterCount     int                `json:"bossEncounterCount"`
+	RaidEncounterCount     int                `json:"raidEncounterCount"`
+	InputEncounterCount    int                `json:"inputEncounterCount"`
+	OptionEncounterCount   int                `json:"optionEncounterCount"`
+	TreasureChestCount     int                `json:"treasureChestCount"`
+	HealingFountainCount   int                `json:"healingFountainCount"`
+	HerbalismResourceCount int                `json:"herbalismResourceCount" gorm:"column:herbalism_resource_count"`
+	MiningResourceCount    int                `json:"miningResourceCount" gorm:"column:mining_resource_count"`
+	ResourceCount          int                `json:"resourceCount"`
+	RequiredPlaceTags      StringArray        `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
+	ShopkeeperItemTags     StringArray        `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
+	AutoSeedAudit          ZoneSeedAutoAudit  `json:"autoSeedAudit,omitempty" gorm:"type:jsonb"`
+	CountAudit             ZoneSeedCountAudit `json:"countAudit,omitempty" gorm:"type:jsonb"`
+	Draft                  ZoneSeedDraft      `json:"draft" gorm:"type:jsonb"`
 }
 
 func (ZoneSeedJob) TableName() string {
@@ -196,7 +198,27 @@ type ZoneSeedMainQuestNodeDraft struct {
 
 func (j *ZoneSeedJob) BeforeSave(tx *gorm.DB) error {
 	j.ZoneKind = NormalizeZoneKind(j.ZoneKind)
+	if j.HerbalismResourceCount == 0 && j.MiningResourceCount == 0 && j.ResourceCount > 0 {
+		j.HerbalismResourceCount, j.MiningResourceCount = SplitZoneSeedResourceCount(j.ResourceCount)
+	}
+	j.ResourceCount = j.HerbalismResourceCount + j.MiningResourceCount
 	return nil
+}
+
+func (j ZoneSeedJob) EffectiveHerbalismResourceCount() int {
+	if j.HerbalismResourceCount == 0 && j.MiningResourceCount == 0 && j.ResourceCount > 0 {
+		herbalism, _ := SplitZoneSeedResourceCount(j.ResourceCount)
+		return herbalism
+	}
+	return j.HerbalismResourceCount
+}
+
+func (j ZoneSeedJob) EffectiveMiningResourceCount() int {
+	if j.HerbalismResourceCount == 0 && j.MiningResourceCount == 0 && j.ResourceCount > 0 {
+		_, mining := SplitZoneSeedResourceCount(j.ResourceCount)
+		return mining
+	}
+	return j.MiningResourceCount
 }
 
 func (d ZoneSeedDraft) Value() (driver.Value, error) {

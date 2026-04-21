@@ -13,7 +13,8 @@ type ZoneKindRatioField = {
     | 'optionEncounterCountRatio'
     | 'treasureChestCountRatio'
     | 'healingFountainCountRatio'
-    | 'resourceCountRatio';
+    | 'herbalismResourceCountRatio'
+    | 'miningResourceCountRatio';
   label: string;
   description: string;
 };
@@ -31,7 +32,8 @@ type ZoneKindFormState = {
   optionEncounterCountRatio: string;
   treasureChestCountRatio: string;
   healingFountainCountRatio: string;
-  resourceCountRatio: string;
+  herbalismResourceCountRatio: string;
+  miningResourceCountRatio: string;
 };
 
 const ratioFields: ZoneKindRatioField[] = [
@@ -76,9 +78,14 @@ const ratioFields: ZoneKindRatioField[] = [
     description: 'Restorative nodes',
   },
   {
-    key: 'resourceCountRatio',
-    label: 'Resources',
-    description: 'Gatherable node density',
+    key: 'herbalismResourceCountRatio',
+    label: 'Herbalism',
+    description: 'Herb and forage node density',
+  },
+  {
+    key: 'miningResourceCountRatio',
+    label: 'Mining',
+    description: 'Ore and mineral node density',
   },
 ];
 
@@ -97,7 +104,8 @@ const emptyForm = (): ZoneKindFormState => ({
   optionEncounterCountRatio: '1',
   treasureChestCountRatio: '1',
   healingFountainCountRatio: '1',
-  resourceCountRatio: '1',
+  herbalismResourceCountRatio: '1',
+  miningResourceCountRatio: '1',
 });
 
 const normalizeSlugDraft = (value: string) =>
@@ -146,7 +154,12 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
   optionEncounterCountRatio: String(zoneKind.optionEncounterCountRatio ?? 1),
   treasureChestCountRatio: String(zoneKind.treasureChestCountRatio ?? 1),
   healingFountainCountRatio: String(zoneKind.healingFountainCountRatio ?? 1),
-  resourceCountRatio: String(zoneKind.resourceCountRatio ?? 1),
+  herbalismResourceCountRatio: String(
+    zoneKind.herbalismResourceCountRatio ?? zoneKind.resourceCountRatio ?? 1
+  ),
+  miningResourceCountRatio: String(
+    zoneKind.miningResourceCountRatio ?? zoneKind.resourceCountRatio ?? 1
+  ),
 });
 
 const parseZoneKindForm = (
@@ -173,6 +186,8 @@ const parseZoneKindForm = (
     optionEncounterCountRatio: 1,
     treasureChestCountRatio: 1,
     healingFountainCountRatio: 1,
+    herbalismResourceCountRatio: 1,
+    miningResourceCountRatio: 1,
     resourceCountRatio: 1,
   };
 
@@ -192,6 +207,9 @@ const parseZoneKindForm = (
     }
     payload[field.key] = parsed;
   }
+  payload.resourceCountRatio =
+    (payload.herbalismResourceCountRatio + payload.miningResourceCountRatio) /
+    2;
 
   return { payload };
 };

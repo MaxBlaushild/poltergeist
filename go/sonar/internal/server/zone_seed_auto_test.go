@@ -36,6 +36,8 @@ func TestZoneSeedInferAutoCountsAppliesMinimumFloors(t *testing.T) {
 		counts.OptionEncounterCount != 1 ||
 		counts.TreasureChestCount != 1 ||
 		counts.HealingFountainCount != 1 ||
+		counts.HerbalismResourceCount != 1 ||
+		counts.MiningResourceCount != 0 ||
 		counts.ResourceCount != 1 {
 		t.Fatalf("expected minimum floor of 1 for every count, got %+v", counts)
 	}
@@ -97,27 +99,31 @@ func TestNormalizeZoneSeedDraftCountModeDefaultsToAbsolute(t *testing.T) {
 
 func TestZoneSeedResolveCurrentAwareCountsSubtractsExisting(t *testing.T) {
 	target := models.ZoneSeedResolvedCounts{
-		PlaceCount:           15,
-		MonsterCount:         6,
-		BossEncounterCount:   2,
-		RaidEncounterCount:   1,
-		InputEncounterCount:  4,
-		OptionEncounterCount: 3,
-		TreasureChestCount:   5,
-		HealingFountainCount: 2,
-		ResourceCount:        7,
+		PlaceCount:             15,
+		MonsterCount:           6,
+		BossEncounterCount:     2,
+		RaidEncounterCount:     1,
+		InputEncounterCount:    4,
+		OptionEncounterCount:   3,
+		TreasureChestCount:     5,
+		HealingFountainCount:   2,
+		HerbalismResourceCount: 4,
+		MiningResourceCount:    3,
+		ResourceCount:          7,
 	}
 	snapshot := zoneSeedCurrentContentSnapshot{
 		ExistingCounts: models.ZoneSeedResolvedCounts{
-			PlaceCount:           3,
-			MonsterCount:         1,
-			BossEncounterCount:   1,
-			RaidEncounterCount:   0,
-			InputEncounterCount:  1,
-			OptionEncounterCount: 2,
-			TreasureChestCount:   4,
-			HealingFountainCount: 1,
-			ResourceCount:        2,
+			PlaceCount:             3,
+			MonsterCount:           1,
+			BossEncounterCount:     1,
+			RaidEncounterCount:     0,
+			InputEncounterCount:    1,
+			OptionEncounterCount:   2,
+			TreasureChestCount:     4,
+			HealingFountainCount:   1,
+			HerbalismResourceCount: 1,
+			MiningResourceCount:    1,
+			ResourceCount:          2,
 		},
 	}
 
@@ -131,6 +137,8 @@ func TestZoneSeedResolveCurrentAwareCountsSubtractsExisting(t *testing.T) {
 		queued.OptionEncounterCount != 1 ||
 		queued.TreasureChestCount != 1 ||
 		queued.HealingFountainCount != 1 ||
+		queued.HerbalismResourceCount != 3 ||
+		queued.MiningResourceCount != 2 ||
 		queued.ResourceCount != 5 {
 		t.Fatalf("unexpected queued counts: %+v", queued)
 	}

@@ -61,9 +61,9 @@ class QuestLogService {
     );
   }
 
-  /// DELETE /sonar/quests/:questId/acceptance
+  /// DELETE /sonar/questAcceptances/:questId
   Future<void> forgetQuest(String questId) async {
-    await _api.delete<dynamic>('/sonar/quests/$questId/acceptance');
+    await _api.delete<dynamic>('/sonar/questAcceptances/$questId');
   }
 
   /// POST /sonar/questNodes/:id/submit

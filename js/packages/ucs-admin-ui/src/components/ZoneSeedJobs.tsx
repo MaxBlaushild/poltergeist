@@ -54,6 +54,8 @@ type ZoneSeedCounts = {
   optionEncounterCount: number;
   treasureChestCount: number;
   healingFountainCount: number;
+  herbalismResourceCount: number;
+  miningResourceCount: number;
   resourceCount: number;
 };
 
@@ -96,6 +98,8 @@ type ZoneSeedJob = {
   optionEncounterCount: number;
   treasureChestCount?: number;
   healingFountainCount?: number;
+  herbalismResourceCount?: number;
+  miningResourceCount?: number;
   resourceCount?: number;
   requiredPlaceTags?: string[];
   shopkeeperItemTags?: string[];
@@ -129,6 +133,8 @@ const defaultSeedCountInputs: SeedCountInputMap = {
   optionEncounterCount: '0',
   treasureChestCount: '0',
   healingFountainCount: '0',
+  herbalismResourceCount: '0',
+  miningResourceCount: '0',
   resourceCount: '0',
 };
 
@@ -178,9 +184,14 @@ const seedCountFields: Array<{
     description: 'Random healing fountain placements',
   },
   {
-    key: 'resourceCount',
-    label: 'Resources',
-    description: 'Random resource nodes across resource types',
+    key: 'herbalismResourceCount',
+    label: 'Herbalism resources',
+    description: 'Random herb and forage nodes',
+  },
+  {
+    key: 'miningResourceCount',
+    label: 'Mining resources',
+    description: 'Random ore and mineral nodes',
   },
 ];
 
@@ -614,11 +625,22 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
   optionEncounterCount: job.optionEncounterCount ?? 0,
   treasureChestCount: job.treasureChestCount ?? 0,
   healingFountainCount: job.healingFountainCount ?? 0,
-  resourceCount: job.resourceCount ?? 0,
+  herbalismResourceCount:
+    job.herbalismResourceCount ??
+    splitLegacyResourceCount(job.resourceCount ?? 0).herbalismResourceCount,
+  miningResourceCount:
+    job.miningResourceCount ??
+    splitLegacyResourceCount(job.resourceCount ?? 0).miningResourceCount,
+  resourceCount:
+    (job.herbalismResourceCount ?? 0) +
+      (job.miningResourceCount ?? 0) >
+    0
+      ? (job.herbalismResourceCount ?? 0) + (job.miningResourceCount ?? 0)
+      : job.resourceCount ?? 0,
 });
 
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
-  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.resourceCount} resources`;
+  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
 
 const formatCountMode = (mode?: CountMode) => {
   switch (mode) {
@@ -689,6 +711,11 @@ const inferAutoCount = (areaAcres: number, multiplier: number) => {
   return Math.max(1, count);
 };
 
+const splitLegacyResourceCount = (total: number) => ({
+  herbalismResourceCount: Math.max(0, Math.floor((total + 1) / 2)),
+  miningResourceCount: Math.max(0, Math.floor(total / 2)),
+});
+
 const inferAutoSeedCounts = (
   areaSquareFeet?: number | null,
   requiredPlaceTags: string[] = []
@@ -702,6 +729,9 @@ const inferAutoSeedCounts = (
     inferAutoCount(areaAcres, 2.75),
     requiredPlaceTags.length
   );
+  const totalResourceCount = inferAutoCount(areaAcres, 1.6);
+  const { herbalismResourceCount, miningResourceCount } =
+    splitLegacyResourceCount(totalResourceCount);
 
   return {
     placeCount,
@@ -712,7 +742,9 @@ const inferAutoSeedCounts = (
     optionEncounterCount: inferAutoCount(areaAcres, 1.1),
     treasureChestCount: inferAutoCount(areaAcres, 1.35),
     healingFountainCount: inferAutoCount(areaAcres, 0.75),
-    resourceCount: inferAutoCount(areaAcres, 1.6),
+    herbalismResourceCount,
+    miningResourceCount,
+    resourceCount: totalResourceCount,
   };
 };
 
@@ -2493,7 +2525,18 @@ export const ZoneSeedJobs = () => {
                                 fountains
                               </div>
                               <div>
-                                {job.resourceCount ?? 0} random resources
+                                {job.herbalismResourceCount ??
+                                  splitLegacyResourceCount(
+                                    job.resourceCount ?? 0
+                                  ).herbalismResourceCount}{' '}
+                                random herbalism resources
+                              </div>
+                              <div>
+                                {job.miningResourceCount ??
+                                  splitLegacyResourceCount(
+                                    job.resourceCount ?? 0
+                                  ).miningResourceCount}{' '}
+                                random mining resources
                               </div>
                               {job.zoneKind && (
                                 <div>Zone kind set to {job.zoneKind}</div>

@@ -15,19 +15,21 @@ import (
 var errZoneKindSlugExists = stdErrors.New("zone kind slug already exists")
 
 type zoneKindPayload struct {
-	Name                      string  `json:"name"`
-	Slug                      string  `json:"slug"`
-	Description               string  `json:"description"`
-	OverlayColor              string  `json:"overlayColor"`
-	PlaceCountRatio           float64 `json:"placeCountRatio"`
-	MonsterCountRatio         float64 `json:"monsterCountRatio"`
-	BossEncounterCountRatio   float64 `json:"bossEncounterCountRatio"`
-	RaidEncounterCountRatio   float64 `json:"raidEncounterCountRatio"`
-	InputEncounterCountRatio  float64 `json:"inputEncounterCountRatio"`
-	OptionEncounterCountRatio float64 `json:"optionEncounterCountRatio"`
-	TreasureChestCountRatio   float64 `json:"treasureChestCountRatio"`
-	HealingFountainCountRatio float64 `json:"healingFountainCountRatio"`
-	ResourceCountRatio        float64 `json:"resourceCountRatio"`
+	Name                        string  `json:"name"`
+	Slug                        string  `json:"slug"`
+	Description                 string  `json:"description"`
+	OverlayColor                string  `json:"overlayColor"`
+	PlaceCountRatio             float64 `json:"placeCountRatio"`
+	MonsterCountRatio           float64 `json:"monsterCountRatio"`
+	BossEncounterCountRatio     float64 `json:"bossEncounterCountRatio"`
+	RaidEncounterCountRatio     float64 `json:"raidEncounterCountRatio"`
+	InputEncounterCountRatio    float64 `json:"inputEncounterCountRatio"`
+	OptionEncounterCountRatio   float64 `json:"optionEncounterCountRatio"`
+	TreasureChestCountRatio     float64 `json:"treasureChestCountRatio"`
+	HealingFountainCountRatio   float64 `json:"healingFountainCountRatio"`
+	HerbalismResourceCountRatio float64 `json:"herbalismResourceCountRatio"`
+	MiningResourceCountRatio    float64 `json:"miningResourceCountRatio"`
+	ResourceCountRatio          float64 `json:"resourceCountRatio"`
 }
 
 func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
@@ -48,21 +50,30 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 	if strings.TrimSpace(body.OverlayColor) != "" && overlayColor == "" {
 		return nil, fmt.Errorf("overlayColor must be a valid hex color like #5f7d68")
 	}
+	herbalismRatio := body.HerbalismResourceCountRatio
+	miningRatio := body.MiningResourceCountRatio
+	if herbalismRatio == 0 && miningRatio == 0 && body.ResourceCountRatio > 0 {
+		herbalismRatio = body.ResourceCountRatio
+		miningRatio = body.ResourceCountRatio
+	}
+	legacyResourceRatio := (herbalismRatio + miningRatio) / 2
 
 	return &models.ZoneKind{
-		Name:                      name,
-		Slug:                      slug,
-		Description:               strings.TrimSpace(body.Description),
-		OverlayColor:              overlayColor,
-		PlaceCountRatio:           body.PlaceCountRatio,
-		MonsterCountRatio:         body.MonsterCountRatio,
-		BossEncounterCountRatio:   body.BossEncounterCountRatio,
-		RaidEncounterCountRatio:   body.RaidEncounterCountRatio,
-		InputEncounterCountRatio:  body.InputEncounterCountRatio,
-		OptionEncounterCountRatio: body.OptionEncounterCountRatio,
-		TreasureChestCountRatio:   body.TreasureChestCountRatio,
-		HealingFountainCountRatio: body.HealingFountainCountRatio,
-		ResourceCountRatio:        body.ResourceCountRatio,
+		Name:                        name,
+		Slug:                        slug,
+		Description:                 strings.TrimSpace(body.Description),
+		OverlayColor:                overlayColor,
+		PlaceCountRatio:             body.PlaceCountRatio,
+		MonsterCountRatio:           body.MonsterCountRatio,
+		BossEncounterCountRatio:     body.BossEncounterCountRatio,
+		RaidEncounterCountRatio:     body.RaidEncounterCountRatio,
+		InputEncounterCountRatio:    body.InputEncounterCountRatio,
+		OptionEncounterCountRatio:   body.OptionEncounterCountRatio,
+		TreasureChestCountRatio:     body.TreasureChestCountRatio,
+		HealingFountainCountRatio:   body.HealingFountainCountRatio,
+		HerbalismResourceCountRatio: herbalismRatio,
+		MiningResourceCountRatio:    miningRatio,
+		ResourceCountRatio:          legacyResourceRatio,
 	}, nil
 }
 

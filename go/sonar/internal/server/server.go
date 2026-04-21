@@ -579,7 +579,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
-	r.DELETE("/sonar/quests/:questId/acceptance", middleware.WithAuthentication(s.authClient, s.livenessClient, s.forgetQuest))
+	r.DELETE("/sonar/questAcceptances/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.forgetQuest))
 	r.POST("/sonar/quests/close/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.closeQuest))
 	r.POST("/sonar/quests/:id/debrief", middleware.WithAuthentication(s.authClient, s.livenessClient, s.debriefQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
@@ -6436,39 +6436,43 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 }
 
 type zoneSeedDraftRequest struct {
-	SeedMode             string   `json:"seedMode"`
-	CountMode            string   `json:"countMode"`
-	ZoneKind             string   `json:"zoneKind"`
-	PlaceCount           *int     `json:"placeCount"`
-	MonsterCount         *int     `json:"monsterCount"`
-	BossEncounterCount   *int     `json:"bossEncounterCount"`
-	RaidEncounterCount   *int     `json:"raidEncounterCount"`
-	InputEncounterCount  *int     `json:"inputEncounterCount"`
-	OptionEncounterCount *int     `json:"optionEncounterCount"`
-	TreasureChestCount   *int     `json:"treasureChestCount"`
-	HealingFountainCount *int     `json:"healingFountainCount"`
-	ResourceCount        *int     `json:"resourceCount"`
-	RequiredPlaceTags    []string `json:"requiredPlaceTags"`
-	ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
+	SeedMode               string   `json:"seedMode"`
+	CountMode              string   `json:"countMode"`
+	ZoneKind               string   `json:"zoneKind"`
+	PlaceCount             *int     `json:"placeCount"`
+	MonsterCount           *int     `json:"monsterCount"`
+	BossEncounterCount     *int     `json:"bossEncounterCount"`
+	RaidEncounterCount     *int     `json:"raidEncounterCount"`
+	InputEncounterCount    *int     `json:"inputEncounterCount"`
+	OptionEncounterCount   *int     `json:"optionEncounterCount"`
+	TreasureChestCount     *int     `json:"treasureChestCount"`
+	HealingFountainCount   *int     `json:"healingFountainCount"`
+	HerbalismResourceCount *int     `json:"herbalismResourceCount"`
+	MiningResourceCount    *int     `json:"miningResourceCount"`
+	ResourceCount          *int     `json:"resourceCount"`
+	RequiredPlaceTags      []string `json:"requiredPlaceTags"`
+	ShopkeeperItemTags     []string `json:"shopkeeperItemTags"`
 }
 
 type normalizedZoneSeedDraftRequest struct {
-	SeedMode             string
-	CountMode            string
-	ZoneKind             string
-	PlaceCount           int
-	MonsterCount         int
-	BossEncounterCount   int
-	RaidEncounterCount   int
-	InputEncounterCount  int
-	OptionEncounterCount int
-	TreasureChestCount   int
-	HealingFountainCount int
-	ResourceCount        int
-	RequiredPlaceTags    []string
-	ShopkeeperItemTags   []string
-	AutoSeedAudit        models.ZoneSeedAutoAudit
-	CountAudit           models.ZoneSeedCountAudit
+	SeedMode               string
+	CountMode              string
+	ZoneKind               string
+	PlaceCount             int
+	MonsterCount           int
+	BossEncounterCount     int
+	RaidEncounterCount     int
+	InputEncounterCount    int
+	OptionEncounterCount   int
+	TreasureChestCount     int
+	HealingFountainCount   int
+	HerbalismResourceCount int
+	MiningResourceCount    int
+	ResourceCount          int
+	RequiredPlaceTags      []string
+	ShopkeeperItemTags     []string
+	AutoSeedAudit          models.ZoneSeedAutoAudit
+	CountAudit             models.ZoneSeedCountAudit
 }
 
 func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalizedZoneSeedDraftRequest, error) {
@@ -6501,22 +6505,24 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	}
 
 	return &normalizedZoneSeedDraftRequest{
-		SeedMode:             mode,
-		CountMode:            countMode,
-		ZoneKind:             models.NormalizeZoneKind(requestBody.ZoneKind),
-		PlaceCount:           counts.PlaceCount,
-		MonsterCount:         counts.MonsterCount,
-		BossEncounterCount:   counts.BossEncounterCount,
-		RaidEncounterCount:   counts.RaidEncounterCount,
-		InputEncounterCount:  counts.InputEncounterCount,
-		OptionEncounterCount: counts.OptionEncounterCount,
-		TreasureChestCount:   counts.TreasureChestCount,
-		HealingFountainCount: counts.HealingFountainCount,
-		ResourceCount:        counts.ResourceCount,
-		RequiredPlaceTags:    requiredPlaceTags,
-		ShopkeeperItemTags:   shopkeeperItemTags,
-		AutoSeedAudit:        models.ZoneSeedAutoAudit{},
-		CountAudit:           models.ZoneSeedCountAudit{},
+		SeedMode:               mode,
+		CountMode:              countMode,
+		ZoneKind:               models.NormalizeZoneKind(requestBody.ZoneKind),
+		PlaceCount:             counts.PlaceCount,
+		MonsterCount:           counts.MonsterCount,
+		BossEncounterCount:     counts.BossEncounterCount,
+		RaidEncounterCount:     counts.RaidEncounterCount,
+		InputEncounterCount:    counts.InputEncounterCount,
+		OptionEncounterCount:   counts.OptionEncounterCount,
+		TreasureChestCount:     counts.TreasureChestCount,
+		HealingFountainCount:   counts.HealingFountainCount,
+		HerbalismResourceCount: counts.HerbalismResourceCount,
+		MiningResourceCount:    counts.MiningResourceCount,
+		ResourceCount:          counts.ResourceCount,
+		RequiredPlaceTags:      requiredPlaceTags,
+		ShopkeeperItemTags:     shopkeeperItemTags,
+		AutoSeedAudit:          models.ZoneSeedAutoAudit{},
+		CountAudit:             models.ZoneSeedCountAudit{},
 	}, nil
 }
 
@@ -6530,30 +6536,32 @@ func (s *server) createAndEnqueueZoneSeedJob(
 	}
 
 	job := &models.ZoneSeedJob{
-		ID:                   uuid.New(),
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
-		ZoneID:               zoneID,
-		ZoneKind:             settings.ZoneKind,
-		Status:               models.ZoneSeedStatusQueued,
-		SeedMode:             settings.SeedMode,
-		CountMode:            settings.CountMode,
-		PlaceCount:           settings.PlaceCount,
-		CharacterCount:       0,
-		QuestCount:           0,
-		MainQuestCount:       0,
-		MonsterCount:         settings.MonsterCount,
-		BossEncounterCount:   settings.BossEncounterCount,
-		RaidEncounterCount:   settings.RaidEncounterCount,
-		InputEncounterCount:  settings.InputEncounterCount,
-		OptionEncounterCount: settings.OptionEncounterCount,
-		TreasureChestCount:   settings.TreasureChestCount,
-		HealingFountainCount: settings.HealingFountainCount,
-		ResourceCount:        settings.ResourceCount,
-		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
-		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
-		AutoSeedAudit:        settings.AutoSeedAudit,
-		CountAudit:           settings.CountAudit,
+		ID:                     uuid.New(),
+		CreatedAt:              time.Now(),
+		UpdatedAt:              time.Now(),
+		ZoneID:                 zoneID,
+		ZoneKind:               settings.ZoneKind,
+		Status:                 models.ZoneSeedStatusQueued,
+		SeedMode:               settings.SeedMode,
+		CountMode:              settings.CountMode,
+		PlaceCount:             settings.PlaceCount,
+		CharacterCount:         0,
+		QuestCount:             0,
+		MainQuestCount:         0,
+		MonsterCount:           settings.MonsterCount,
+		BossEncounterCount:     settings.BossEncounterCount,
+		RaidEncounterCount:     settings.RaidEncounterCount,
+		InputEncounterCount:    settings.InputEncounterCount,
+		OptionEncounterCount:   settings.OptionEncounterCount,
+		TreasureChestCount:     settings.TreasureChestCount,
+		HealingFountainCount:   settings.HealingFountainCount,
+		HerbalismResourceCount: settings.HerbalismResourceCount,
+		MiningResourceCount:    settings.MiningResourceCount,
+		ResourceCount:          settings.ResourceCount,
+		RequiredPlaceTags:      models.StringArray(settings.RequiredPlaceTags),
+		ShopkeeperItemTags:     models.StringArray(settings.ShopkeeperItemTags),
+		AutoSeedAudit:          settings.AutoSeedAudit,
+		CountAudit:             settings.CountAudit,
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 		return nil, err

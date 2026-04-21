@@ -778,6 +778,19 @@ type zoneSeedResourcePool struct {
 	inventoryItems []models.InventoryItem
 }
 
+const (
+	zoneSeedHerbalismResourceTypeSlug = "herbalism"
+	zoneSeedMiningResourceTypeSlug    = "mining"
+)
+
+func zoneSeedNormalizeResourceTypeSlug(resourceType models.ResourceType) string {
+	slug := strings.TrimSpace(resourceType.Slug)
+	if slug == "" {
+		slug = strings.TrimSpace(resourceType.Name)
+	}
+	return models.NormalizeZoneKind(slug)
+}
+
 func zoneSeedBuildResourcePools(
 	resourceTypes []models.ResourceType,
 	inventoryItems []models.InventoryItem,
@@ -815,31 +828,36 @@ func zoneSeedBuildResourcePools(
 	return pools
 }
 
-func (p *ApplyZoneSeedDraftProcessor) seedResourcesForZone(
+func zoneSeedBuildResourcePoolsBySlug(
+	resourceTypes []models.ResourceType,
+	inventoryItems []models.InventoryItem,
+) map[string][]zoneSeedResourcePool {
+	poolsBySlug := map[string][]zoneSeedResourcePool{}
+	for _, pool := range zoneSeedBuildResourcePools(resourceTypes, inventoryItems) {
+		slug := zoneSeedNormalizeResourceTypeSlug(pool.resourceType)
+		if slug == "" {
+			continue
+		}
+		poolsBySlug[slug] = append(poolsBySlug[slug], pool)
+	}
+	return poolsBySlug
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedResourceNodesForZone(
 	ctx context.Context,
 	zone *models.Zone,
-	job *models.ZoneSeedJob,
+	resourcePools []zoneSeedResourcePool,
+	resourceCount int,
+	resourceLabel string,
+	fallbackLocations []zoneSeedScenarioLocation,
 ) error {
-	resourceCount := job.ResourceCount
 	if resourceCount <= 0 {
 		return nil
 	}
-
-	resourceTypes, err := p.dbClient.ResourceType().FindAll(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load resource types: %w", err)
-	}
-	activeInventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load active inventory items: %w", err)
-	}
-
-	resourcePools := zoneSeedBuildResourcePools(resourceTypes, activeInventoryItems)
 	if len(resourcePools) == 0 {
-		return fmt.Errorf("no eligible resource types with active inventory items are available")
+		return fmt.Errorf("no eligible %s resource types with active inventory items are available", resourceLabel)
 	}
 
-	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
 	poolOrder := []int{}
 	for i := 0; i < resourceCount; i++ {
 		if len(poolOrder) == 0 {
@@ -860,13 +878,60 @@ func (p *ApplyZoneSeedDraftProcessor) seedResourcesForZone(
 		}
 		if err := p.dbClient.Resource().Create(ctx, resource); err != nil {
 			return fmt.Errorf(
-				"failed to create resource %d/%d for type %s: %w",
+				"failed to create %s resource %d/%d for type %s: %w",
+				resourceLabel,
 				i+1,
 				resourceCount,
 				strings.TrimSpace(pool.resourceType.Name),
 				err,
 			)
 		}
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedResourcesForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	herbalismResourceCount := job.EffectiveHerbalismResourceCount()
+	miningResourceCount := job.EffectiveMiningResourceCount()
+	if herbalismResourceCount <= 0 && miningResourceCount <= 0 {
+		return nil
+	}
+
+	resourceTypes, err := p.dbClient.ResourceType().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load resource types: %w", err)
+	}
+	activeInventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load active inventory items: %w", err)
+	}
+
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	resourcePoolsBySlug := zoneSeedBuildResourcePoolsBySlug(resourceTypes, activeInventoryItems)
+	if err := p.seedResourceNodesForZone(
+		ctx,
+		zone,
+		resourcePoolsBySlug[zoneSeedHerbalismResourceTypeSlug],
+		herbalismResourceCount,
+		zoneSeedHerbalismResourceTypeSlug,
+		fallbackLocations,
+	); err != nil {
+		return err
+	}
+	if err := p.seedResourceNodesForZone(
+		ctx,
+		zone,
+		resourcePoolsBySlug[zoneSeedMiningResourceTypeSlug],
+		miningResourceCount,
+		zoneSeedMiningResourceTypeSlug,
+		fallbackLocations,
+	); err != nil {
+		return err
 	}
 
 	return nil

@@ -3064,36 +3064,42 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _previewTrackedQuestPoi(
     PointOfInterest poi, {
     double zoom = _trackedQuestOverlayFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
   }) {
+    final pulse = pulseMarker ?? _pulseTrackedQuestOverlayPreview;
     final lat = double.tryParse(poi.lat) ?? 0.0;
     final lng = double.tryParse(poi.lng) ?? 0.0;
     _selectZoneForPoiIfDifferent(poi);
     _flyToLocation(lat, lng, zoom: zoom);
-    unawaited(_pulsePoi(lat, lng));
+    unawaited(pulse(lat, lng));
   }
 
   void _focusTutorialScenarioFromTrackedOverlay({
     double zoom = _trackedQuestOverlayFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
   }) {
+    final pulse = pulseMarker ?? _pulsePoi;
     final scenarioId = _tutorialStatus?.scenarioId?.trim() ?? '';
     if (scenarioId.isEmpty) return;
     final scenario = _scenarioById(scenarioId);
     if (scenario == null) return;
     _selectZoneByIdIfDifferent(scenario.zoneId);
     _flyToLocation(scenario.latitude, scenario.longitude, zoom: zoom);
-    unawaited(_pulsePoi(scenario.latitude, scenario.longitude));
+    unawaited(pulse(scenario.latitude, scenario.longitude));
   }
 
   void _focusTutorialMonsterFromTrackedOverlay({
     double zoom = _trackedQuestOverlayFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
   }) {
+    final pulse = pulseMarker ?? _pulsePoi;
     final encounterId = _tutorialStatus?.monsterEncounterId?.trim() ?? '';
     if (encounterId.isEmpty) return;
     final encounter = _monsterById(encounterId);
     if (encounter == null) return;
     _selectZoneByIdIfDifferent(encounter.zoneId);
     _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
-    unawaited(_pulsePoi(encounter.latitude, encounter.longitude));
+    unawaited(pulse(encounter.latitude, encounter.longitude));
   }
 
   String _tutorialScenarioOverlayTitle(TutorialStatus? status) {
@@ -3133,8 +3139,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return encounter.encounterTypeLabel;
   }
 
-  void _focusQuestTurnIn(Quest quest, {double zoom = _defaultMapFocusZoom}) {
-    unawaited(_focusQuestTurnInFlow(quest, zoom: zoom));
+  void _focusQuestTurnIn(
+    Quest quest, {
+    double zoom = _defaultMapFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
+  }) {
+    unawaited(
+      _focusQuestTurnInFlow(quest, zoom: zoom, pulseMarker: pulseMarker),
+    );
   }
 
   void _returnToPlayerFromTrackedQuestOverlay() {
@@ -3262,7 +3274,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Future<void> _focusQuestTurnInFlow(
     Quest quest, {
     double zoom = _defaultMapFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
   }) async {
+    final pulse = pulseMarker ?? _pulsePoi;
     final questReceiver = _questReceiverCharacterForQuest(quest);
     final questReceiverPoi = _questReceiverPoiForQuest(quest);
 
@@ -3282,12 +3296,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           focusLocation.longitude,
           zoom: zoom,
         );
-        unawaited(_pulsePoi(focusLocation.latitude, focusLocation.longitude));
+        unawaited(pulse(focusLocation.latitude, focusLocation.longitude));
       } else if (questReceiverPoi != null) {
         final lat = double.tryParse(questReceiverPoi.lat) ?? 0.0;
         final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
         _flyToLocation(lat, lng, zoom: zoom);
-        unawaited(_pulsePoi(lat, lng));
+        unawaited(pulse(lat, lng));
       }
       return;
     }
@@ -3300,17 +3314,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final lng = double.tryParse(questReceiverPoi.lng) ?? 0.0;
     _selectZoneForPoiIfDifferent(questReceiverPoi);
     _flyToLocation(lat, lng, zoom: zoom);
-    unawaited(_pulsePoi(lat, lng));
+    unawaited(pulse(lat, lng));
   }
 
-  void _focusQuestNode(QuestNode node, {double zoom = _defaultMapFocusZoom}) {
+  void _focusQuestNode(
+    QuestNode node, {
+    double zoom = _defaultMapFocusZoom,
+    Future<void> Function(double lat, double lng)? pulseMarker,
+  }) {
+    final pulse = pulseMarker ?? _pulsePoi;
     _selectZoneForQuestNodeIfDifferent(node);
     final poi = node.pointOfInterest;
     if (poi != null) {
       final lat = double.tryParse(poi.lat) ?? 0.0;
       final lng = double.tryParse(poi.lng) ?? 0.0;
       _flyToLocation(lat, lng, zoom: zoom);
-      _pulsePoi(lat, lng);
+      unawaited(pulse(lat, lng));
       return;
     }
     final fetchCharacter = _questNodeFetchCharacter(node);
@@ -3322,7 +3341,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           focusLocation.longitude,
           zoom: zoom,
         );
-        _pulsePoi(focusLocation.latitude, focusLocation.longitude);
+        unawaited(pulse(focusLocation.latitude, focusLocation.longitude));
         return;
       }
     }
@@ -3331,7 +3350,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final scenario = _scenarioById(scenarioId);
       if (scenario != null) {
         _flyToLocation(scenario.latitude, scenario.longitude, zoom: zoom);
-        _pulsePoi(scenario.latitude, scenario.longitude);
+        unawaited(pulse(scenario.latitude, scenario.longitude));
         return;
       }
     }
@@ -3340,7 +3359,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final exposition = _expositionById(expositionId);
       if (exposition != null) {
         _flyToLocation(exposition.latitude, exposition.longitude, zoom: zoom);
-        _pulsePoi(exposition.latitude, exposition.longitude);
+        unawaited(pulse(exposition.latitude, exposition.longitude));
         return;
       }
     }
@@ -3349,7 +3368,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final encounter = _monsterById(encounterId);
       if (encounter != null) {
         _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
-        _pulsePoi(encounter.latitude, encounter.longitude);
+        unawaited(pulse(encounter.latitude, encounter.longitude));
         return;
       }
     }
@@ -3358,7 +3377,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final encounter = _monsterEncounterByMemberMonsterId(monsterId);
       if (encounter != null) {
         _flyToLocation(encounter.latitude, encounter.longitude, zoom: zoom);
-        _pulsePoi(encounter.latitude, encounter.longitude);
+        unawaited(pulse(encounter.latitude, encounter.longitude));
         return;
       }
     }
@@ -3371,7 +3390,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         if (challenge.hasPolygon) {
           _pulsePolygon(challenge.polygonPoints);
         } else {
-          _pulsePoi(anchor.latitude, anchor.longitude);
+          unawaited(pulse(anchor.latitude, anchor.longitude));
         }
         return;
       }
@@ -3818,36 +3837,53 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   Future<void> _pulsePoi(double lat, double lng) async {
-    await _animateFeatheredPulse(
+    await _pulseMapMarker(
       lat,
       lng,
-      pulseKey: _pulseKeyForCoordinates('poi', lat, lng),
+      pulseKeyPrefix: 'poi',
       coreColor: _questPulseCoreColor,
       mistColor: _questPulseMistColor,
       ringColor: _questPulseRingColor,
-      coreStartRadius: 8,
-      coreEndRadius: 26,
-      mistStartRadius: 18,
-      mistEndRadius: 52,
-      ringStartRadius: 14,
-      ringEndRadius: 58,
-      maxCoreOpacity: 0.18,
-      maxMistOpacity: 0.16,
-      maxRingOpacity: 0.22,
-      initialStrokeWidth: 2.6,
-      steps: 14,
-      frameDelay: const Duration(milliseconds: 55),
+    );
+  }
+
+  Future<void> _pulseTrackedQuestOverlayPreview(double lat, double lng) async {
+    await _pulseMapMarker(
+      lat,
+      lng,
+      pulseKeyPrefix: 'tracked_quest_overlay',
+      coreColor: _mainStoryPulseCoreColor,
+      mistColor: _mainStoryPulseMistColor,
+      ringColor: _mainStoryPulseRingColor,
     );
   }
 
   Future<void> _pulseMainStoryLeadFocus(double lat, double lng) async {
-    await _animateFeatheredPulse(
+    await _pulseMapMarker(
       lat,
       lng,
-      pulseKey: _pulseKeyForCoordinates('main_story_lead', lat, lng),
+      pulseKeyPrefix: 'main_story_lead',
       coreColor: _mainStoryPulseCoreColor,
       mistColor: _mainStoryPulseMistColor,
       ringColor: _mainStoryPulseRingColor,
+    );
+  }
+
+  Future<void> _pulseMapMarker(
+    double lat,
+    double lng, {
+    required String pulseKeyPrefix,
+    required String coreColor,
+    required String mistColor,
+    required String ringColor,
+  }) async {
+    await _animateFeatheredPulse(
+      lat,
+      lng,
+      pulseKey: _pulseKeyForCoordinates(pulseKeyPrefix, lat, lng),
+      coreColor: coreColor,
+      mistColor: mistColor,
+      ringColor: ringColor,
       coreStartRadius: 8,
       coreEndRadius: 26,
       mistStartRadius: 18,
@@ -8483,14 +8519,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       if (currentZone?.id == updatedZone.id) {
         context.read<ZoneProvider>().setSelectedZone(updatedZone);
       }
-    } on DioException catch (error) {
-      debugPrint('SinglePlayer: zone discovery failed: $error');
-      debugPrint(
-        'SinglePlayer: zone discovery response=${error.response?.data}',
-      );
-    } catch (error, stackTrace) {
-      debugPrint('SinglePlayer: zone discovery error: $error');
-      debugPrint('SinglePlayer: zone discovery stack: $stackTrace');
+    } on DioException {
+      // Discovery failures are non-fatal; the next location update can retry.
+    } catch (_) {
+      // Discovery failures are non-fatal; the next location update can retry.
     } finally {
       _zoneDiscoveryInFlightIds.remove(zoneId);
     }
@@ -12580,10 +12612,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                           onPreviewNode: (node) => _focusQuestNode(
                             node,
                             zoom: _trackedQuestOverlayFocusZoom,
+                            pulseMarker: _pulseTrackedQuestOverlayPreview,
                           ),
                           onPreviewTurnInQuest: (quest) => _focusQuestTurnIn(
                             quest,
                             zoom: _trackedQuestOverlayFocusZoom,
+                            pulseMarker: _pulseTrackedQuestOverlayPreview,
                           ),
                           resolveQuestReceiverCharacter:
                               _questReceiverCharacterForQuest,
@@ -12606,6 +12640,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                               ? null
                               : () => _focusTutorialScenarioFromTrackedOverlay(
                                   zoom: _trackedQuestOverlayFocusZoom,
+                                  pulseMarker: _pulseTrackedQuestOverlayPreview,
                                 ),
                           tutorialMonsterTitle: _tutorialMonsterOverlayTitle(
                             tutorialStatus,
@@ -12626,6 +12661,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                               ? null
                               : () => _focusTutorialMonsterFromTrackedOverlay(
                                   zoom: _trackedQuestOverlayFocusZoom,
+                                  pulseMarker: _pulseTrackedQuestOverlayPreview,
                                 ),
                           onCloseOverlay:
                               _returnToPlayerFromTrackedQuestOverlay,

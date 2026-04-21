@@ -12,22 +12,24 @@ import (
 const defaultZoneKindRatio = 1.0
 
 type ZoneKind struct {
-	ID                        uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt                 time.Time `json:"createdAt"`
-	UpdatedAt                 time.Time `json:"updatedAt"`
-	Slug                      string    `json:"slug" gorm:"column:slug"`
-	Name                      string    `json:"name"`
-	Description               string    `json:"description"`
-	OverlayColor              string    `json:"overlayColor" gorm:"column:overlay_color"`
-	PlaceCountRatio           float64   `json:"placeCountRatio" gorm:"column:place_count_ratio"`
-	MonsterCountRatio         float64   `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
-	BossEncounterCountRatio   float64   `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
-	RaidEncounterCountRatio   float64   `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
-	InputEncounterCountRatio  float64   `json:"inputEncounterCountRatio" gorm:"column:input_encounter_count_ratio"`
-	OptionEncounterCountRatio float64   `json:"optionEncounterCountRatio" gorm:"column:option_encounter_count_ratio"`
-	TreasureChestCountRatio   float64   `json:"treasureChestCountRatio" gorm:"column:treasure_chest_count_ratio"`
-	HealingFountainCountRatio float64   `json:"healingFountainCountRatio" gorm:"column:healing_fountain_count_ratio"`
-	ResourceCountRatio        float64   `json:"resourceCountRatio" gorm:"column:resource_count_ratio"`
+	ID                          uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt                   time.Time `json:"createdAt"`
+	UpdatedAt                   time.Time `json:"updatedAt"`
+	Slug                        string    `json:"slug" gorm:"column:slug"`
+	Name                        string    `json:"name"`
+	Description                 string    `json:"description"`
+	OverlayColor                string    `json:"overlayColor" gorm:"column:overlay_color"`
+	PlaceCountRatio             float64   `json:"placeCountRatio" gorm:"column:place_count_ratio"`
+	MonsterCountRatio           float64   `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
+	BossEncounterCountRatio     float64   `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
+	RaidEncounterCountRatio     float64   `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
+	InputEncounterCountRatio    float64   `json:"inputEncounterCountRatio" gorm:"column:input_encounter_count_ratio"`
+	OptionEncounterCountRatio   float64   `json:"optionEncounterCountRatio" gorm:"column:option_encounter_count_ratio"`
+	TreasureChestCountRatio     float64   `json:"treasureChestCountRatio" gorm:"column:treasure_chest_count_ratio"`
+	HealingFountainCountRatio   float64   `json:"healingFountainCountRatio" gorm:"column:healing_fountain_count_ratio"`
+	HerbalismResourceCountRatio float64   `json:"herbalismResourceCountRatio" gorm:"column:herbalism_resource_count_ratio"`
+	MiningResourceCountRatio    float64   `json:"miningResourceCountRatio" gorm:"column:mining_resource_count_ratio"`
+	ResourceCountRatio          float64   `json:"resourceCountRatio" gorm:"column:resource_count_ratio"`
 }
 
 func (ZoneKind) TableName() string {
@@ -96,6 +98,8 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.OptionEncounterCountRatio = normalizeZoneKindRatio(z.OptionEncounterCountRatio)
 	z.TreasureChestCountRatio = normalizeZoneKindRatio(z.TreasureChestCountRatio)
 	z.HealingFountainCountRatio = normalizeZoneKindRatio(z.HealingFountainCountRatio)
+	z.HerbalismResourceCountRatio = normalizeZoneKindRatio(z.HerbalismResourceCountRatio)
+	z.MiningResourceCountRatio = normalizeZoneKindRatio(z.MiningResourceCountRatio)
 	z.ResourceCountRatio = normalizeZoneKindRatio(z.ResourceCountRatio)
 	return nil
 }
@@ -109,14 +113,15 @@ func (z ZoneKind) ApplyToCounts(counts ZoneSeedResolvedCounts) ZoneSeedResolvedC
 	}
 
 	return ZoneSeedResolvedCounts{
-		PlaceCount:           apply(counts.PlaceCount, z.PlaceCountRatio),
-		MonsterCount:         apply(counts.MonsterCount, z.MonsterCountRatio),
-		BossEncounterCount:   apply(counts.BossEncounterCount, z.BossEncounterCountRatio),
-		RaidEncounterCount:   apply(counts.RaidEncounterCount, z.RaidEncounterCountRatio),
-		InputEncounterCount:  apply(counts.InputEncounterCount, z.InputEncounterCountRatio),
-		OptionEncounterCount: apply(counts.OptionEncounterCount, z.OptionEncounterCountRatio),
-		TreasureChestCount:   apply(counts.TreasureChestCount, z.TreasureChestCountRatio),
-		HealingFountainCount: apply(counts.HealingFountainCount, z.HealingFountainCountRatio),
-		ResourceCount:        apply(counts.ResourceCount, z.ResourceCountRatio),
-	}
+		PlaceCount:             apply(counts.PlaceCount, z.PlaceCountRatio),
+		MonsterCount:           apply(counts.MonsterCount, z.MonsterCountRatio),
+		BossEncounterCount:     apply(counts.BossEncounterCount, z.BossEncounterCountRatio),
+		RaidEncounterCount:     apply(counts.RaidEncounterCount, z.RaidEncounterCountRatio),
+		InputEncounterCount:    apply(counts.InputEncounterCount, z.InputEncounterCountRatio),
+		OptionEncounterCount:   apply(counts.OptionEncounterCount, z.OptionEncounterCountRatio),
+		TreasureChestCount:     apply(counts.TreasureChestCount, z.TreasureChestCountRatio),
+		HealingFountainCount:   apply(counts.HealingFountainCount, z.HealingFountainCountRatio),
+		HerbalismResourceCount: apply(counts.HerbalismResourceCount, z.HerbalismResourceCountRatio),
+		MiningResourceCount:    apply(counts.MiningResourceCount, z.MiningResourceCountRatio),
+	}.WithLegacyResourceCount()
 }

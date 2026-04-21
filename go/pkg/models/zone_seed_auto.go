@@ -7,15 +7,17 @@ import (
 )
 
 type ZoneSeedResolvedCounts struct {
-	PlaceCount           int `json:"placeCount"`
-	MonsterCount         int `json:"monsterCount"`
-	BossEncounterCount   int `json:"bossEncounterCount"`
-	RaidEncounterCount   int `json:"raidEncounterCount"`
-	InputEncounterCount  int `json:"inputEncounterCount"`
-	OptionEncounterCount int `json:"optionEncounterCount"`
-	TreasureChestCount   int `json:"treasureChestCount"`
-	HealingFountainCount int `json:"healingFountainCount"`
-	ResourceCount        int `json:"resourceCount"`
+	PlaceCount             int `json:"placeCount"`
+	MonsterCount           int `json:"monsterCount"`
+	BossEncounterCount     int `json:"bossEncounterCount"`
+	RaidEncounterCount     int `json:"raidEncounterCount"`
+	InputEncounterCount    int `json:"inputEncounterCount"`
+	OptionEncounterCount   int `json:"optionEncounterCount"`
+	TreasureChestCount     int `json:"treasureChestCount"`
+	HealingFountainCount   int `json:"healingFountainCount"`
+	HerbalismResourceCount int `json:"herbalismResourceCount"`
+	MiningResourceCount    int `json:"miningResourceCount"`
+	ResourceCount          int `json:"resourceCount"`
 }
 
 func (c ZoneSeedResolvedCounts) HasContent() bool {
@@ -27,7 +29,21 @@ func (c ZoneSeedResolvedCounts) HasContent() bool {
 		c.OptionEncounterCount != 0 ||
 		c.TreasureChestCount != 0 ||
 		c.HealingFountainCount != 0 ||
+		c.HerbalismResourceCount != 0 ||
+		c.MiningResourceCount != 0 ||
 		c.ResourceCount != 0
+}
+
+func SplitZoneSeedResourceCount(total int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	return (total + 1) / 2, total / 2
+}
+
+func (c ZoneSeedResolvedCounts) WithLegacyResourceCount() ZoneSeedResolvedCounts {
+	c.ResourceCount = c.HerbalismResourceCount + c.MiningResourceCount
+	return c
 }
 
 type ZoneSeedAutoAudit struct {

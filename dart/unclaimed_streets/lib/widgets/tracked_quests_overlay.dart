@@ -985,47 +985,45 @@ class _TrackedQuestObjectiveTile extends StatelessWidget {
         .where((line) => line.trim() != normalizedTitle)
         .toList();
 
-    return _TrackedQuestObjectivePulseFrame(
-      child: _TrackedQuestTileFrame(
+    return _TrackedQuestTileFrame(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      leading: QuestObjectiveIcon(
+        node: node,
+        discoveredPoiIds: discoveredIds,
+        size: 40,
+        borderRadius: 10,
+        iconColor: const Color(0xFFF1D597),
+        backgroundColor: const Color(0x33F1D597),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        leading: QuestObjectiveIcon(
-          node: node,
-          discoveredPoiIds: discoveredIds,
-          size: 40,
-          borderRadius: 10,
-          iconColor: const Color(0xFFF1D597),
-          backgroundColor: const Color(0x33F1D597),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              normalizedTitle,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
+        children: [
+          Text(
+            normalizedTitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
             ),
-            if (challengeLabel != null) ...[
-              const SizedBox(height: 6),
-              QuestObjectiveChallengeBadge(node: node),
-            ],
-            if (detailLines.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              ...detailLines.map(
-                (line) => Padding(
-                  padding: const EdgeInsets.only(top: 2, bottom: 2),
-                  child: Text(
-                    line,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                  ),
+          ),
+          if (challengeLabel != null) ...[
+            const SizedBox(height: 6),
+            QuestObjectiveChallengeBadge(node: node),
+          ],
+          if (detailLines.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...detailLines.map(
+              (line) => Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Text(
+                  line,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1059,96 +1057,6 @@ class _TrackedQuestTileFrame extends StatelessWidget {
           Expanded(child: child),
         ],
       ),
-    );
-  }
-}
-
-class _TrackedQuestObjectivePulseFrame extends StatefulWidget {
-  const _TrackedQuestObjectivePulseFrame({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_TrackedQuestObjectivePulseFrame> createState() =>
-      _TrackedQuestObjectivePulseFrameState();
-}
-
-class _TrackedQuestObjectivePulseFrameState
-    extends State<_TrackedQuestObjectivePulseFrame>
-    with SingleTickerProviderStateMixin {
-  static const _pulseCoreColor = Color(0xFFB53A4B);
-  static const _pulseMistColor = Color(0xFFF3CBD2);
-  static const _pulseRingColor = Color(0xFF7A1823);
-
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Widget _buildPulseLayer(double progress) {
-    final curved = Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
-    final scale = 1.0 + (0.045 * curved);
-    final opacity = (1.0 - curved).clamp(0.0, 1.0);
-    return Transform.scale(
-      scale: scale,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: _pulseCoreColor.withValues(alpha: 0.05 * opacity),
-          border: Border.all(
-            color: _pulseRingColor.withValues(alpha: 0.68 * opacity),
-            width: 1.4,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _pulseCoreColor.withValues(alpha: 0.2 * opacity),
-              blurRadius: 18 + (curved * 14),
-              spreadRadius: 1.2 + (curved * 2.6),
-            ),
-            BoxShadow(
-              color: _pulseMistColor.withValues(alpha: 0.14 * opacity),
-              blurRadius: 22 + (curved * 16),
-              spreadRadius: 0.8 + (curved * 1.8),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      child: widget.child,
-      builder: (context, child) {
-        final primaryProgress = _controller.value.clamp(0.0, 1.0);
-        final secondaryProgress = (primaryProgress + 0.5) % 1.0;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(child: _buildPulseLayer(secondaryProgress)),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(child: _buildPulseLayer(primaryProgress)),
-            ),
-            if (child != null) child,
-          ],
-        );
-      },
     );
   }
 }
