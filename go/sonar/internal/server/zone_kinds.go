@@ -18,6 +18,7 @@ type zoneKindPayload struct {
 	Name                      string  `json:"name"`
 	Slug                      string  `json:"slug"`
 	Description               string  `json:"description"`
+	OverlayColor              string  `json:"overlayColor"`
 	PlaceCountRatio           float64 `json:"placeCountRatio"`
 	MonsterCountRatio         float64 `json:"monsterCountRatio"`
 	BossEncounterCountRatio   float64 `json:"bossEncounterCountRatio"`
@@ -43,11 +44,16 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 	if slug == "" {
 		return nil, fmt.Errorf("slug is required")
 	}
+	overlayColor := models.NormalizeHexColor(body.OverlayColor)
+	if strings.TrimSpace(body.OverlayColor) != "" && overlayColor == "" {
+		return nil, fmt.Errorf("overlayColor must be a valid hex color like #5f7d68")
+	}
 
 	return &models.ZoneKind{
 		Name:                      name,
 		Slug:                      slug,
 		Description:               strings.TrimSpace(body.Description),
+		OverlayColor:              overlayColor,
 		PlaceCountRatio:           body.PlaceCountRatio,
 		MonsterCountRatio:         body.MonsterCountRatio,
 		BossEncounterCountRatio:   body.BossEncounterCountRatio,

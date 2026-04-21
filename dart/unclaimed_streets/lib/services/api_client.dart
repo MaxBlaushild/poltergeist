@@ -164,20 +164,33 @@ class ApiClient {
   }
 
   /// PUT raw bytes to a URL (e.g. presigned S3). No baseUrl.
-  Future<void> putRaw(String url, List<int> body, String contentType) async {
-    await Dio(
-      BaseOptions(
-        connectTimeout: _connectTimeout,
-        receiveTimeout: _receiveTimeout,
-        sendTimeout: _sendTimeout,
-      ),
-    ).put<String>(
-      url,
-      data: body,
-      options: Options(
-        contentType: contentType,
-        headers: {'Content-Type': contentType},
-      ),
-    );
+  Future<Response<String>> putRaw(
+    String url,
+    List<int> body,
+    String contentType, {
+    void Function(int sent, int total)? onSendProgress,
+    Duration? overallTimeout,
+  }) async {
+    final request =
+        Dio(
+          BaseOptions(
+            connectTimeout: _connectTimeout,
+            receiveTimeout: _receiveTimeout,
+            sendTimeout: _sendTimeout,
+          ),
+        ).put<String>(
+          url,
+          data: body,
+          onSendProgress: onSendProgress,
+          options: Options(
+            responseType: ResponseType.plain,
+            contentType: contentType,
+            headers: {'Content-Type': contentType},
+          ),
+        );
+    if (overallTimeout == null) {
+      return request;
+    }
+    return request.timeout(overallTimeout);
   }
 }

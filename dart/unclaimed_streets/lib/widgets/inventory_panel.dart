@@ -951,9 +951,11 @@ class _InventoryPanelState extends State<InventoryPanel>
       final ext = _extensionFromMime(captured.mimeType, captured.name);
       final key =
           'selfies/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final uploadLabel = 'outfit-selfie:${owned.id}';
       final presigned = await mediaService.getPresignedUploadUrl(
         ApiConstants.crewProfileBucket,
         key,
+        debugLabel: uploadLabel,
       );
       if (presigned == null) {
         if (mounted) {
@@ -964,16 +966,19 @@ class _InventoryPanelState extends State<InventoryPanel>
         }
         return;
       }
-      final ok = await mediaService.uploadToPresigned(
+      final uploadResult = await mediaService.uploadToPresigned(
         presigned,
         Uint8List.fromList(captured.bytes),
         captured.mimeType ?? 'image/jpeg',
+        debugLabel: uploadLabel,
       );
-      if (!ok) {
+      if (!uploadResult.success) {
         if (mounted) {
           setState(() {
             _using = false;
-            _outfitError = 'Failed to upload selfie.';
+            _outfitError = uploadResult.timedOut
+                ? 'Selfie upload timed out. Please try again.'
+                : 'Failed to upload selfie.';
           });
         }
         return;

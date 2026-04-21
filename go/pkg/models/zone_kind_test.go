@@ -72,3 +72,26 @@ func TestZoneKindApplyToCounts(t *testing.T) {
 		t.Fatalf("ApplyToCounts() = %+v, want %+v", got, want)
 	}
 }
+
+func TestNormalizeHexColor(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "blank", input: "   ", want: ""},
+		{name: "six digit", input: "#A1B2C3", want: "#a1b2c3"},
+		{name: "without hash", input: "445566", want: "#445566"},
+		{name: "three digit", input: "#abc", want: "#aabbcc"},
+		{name: "invalid length", input: "#abcd", want: ""},
+		{name: "invalid character", input: "#zzzzzz", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := NormalizeHexColor(test.input); got != test.want {
+				t.Fatalf("NormalizeHexColor(%q) = %q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+}

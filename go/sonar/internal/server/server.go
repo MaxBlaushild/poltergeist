@@ -11855,6 +11855,16 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	requestlogger.Printf(
+		ctx,
+		"submitStandaloneChallenge: received challengeId=%s userId=%s hasText=%t textLen=%d hasImage=%t hasVideo=%t",
+		challengeID.String(),
+		user.ID.String(),
+		strings.TrimSpace(requestBody.TextSubmission) != "",
+		len(strings.TrimSpace(requestBody.TextSubmission)),
+		strings.TrimSpace(requestBody.ImageSubmissionUrl) != "",
+		strings.TrimSpace(requestBody.VideoSubmissionUrl) != "",
+	)
 
 	challenge, err := s.dbClient.Challenge().FindByID(ctx, challengeID)
 	if err != nil {
@@ -12347,6 +12357,16 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	requestlogger.Printf(
+		ctx,
+		"submitQuestNode: received nodeId=%s userId=%s hasText=%t textLen=%d hasImage=%t hasVideo=%t",
+		nodeID.String(),
+		user.ID.String(),
+		strings.TrimSpace(requestBody.TextSubmission) != "",
+		len(strings.TrimSpace(requestBody.TextSubmission)),
+		strings.TrimSpace(requestBody.ImageSubmissionUrl) != "",
+		strings.TrimSpace(requestBody.VideoSubmissionUrl) != "",
+	)
 
 	node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
 	if err != nil {
@@ -12764,14 +12784,36 @@ func (s *server) getPresignedUploadUrl(ctx *gin.Context) {
 		})
 		return
 	}
+	startedAt := time.Now()
+	requestlogger.Printf(
+		ctx,
+		"getPresignedUploadUrl: requested bucket=%s key=%s",
+		requestBody.Bucket,
+		requestBody.Key,
+	)
 
 	url, err := s.awsClient.GeneratePresignedUploadURL(requestBody.Bucket, requestBody.Key, time.Hour)
 	if err != nil {
+		requestlogger.Printf(
+			ctx,
+			"getPresignedUploadUrl: failed bucket=%s key=%s duration=%s err=%v",
+			requestBody.Bucket,
+			requestBody.Key,
+			time.Since(startedAt),
+			err,
+		)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
+	requestlogger.Printf(
+		ctx,
+		"getPresignedUploadUrl: success bucket=%s key=%s duration=%s",
+		requestBody.Bucket,
+		requestBody.Key,
+		time.Since(startedAt),
+	)
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"url": url,

@@ -22,6 +22,7 @@ export type Zone = {
     updatedAt: string;
     description: string;
     kind: string;
+    kindOverlayColor?: string;
     internalTags?: string[];
     zoneImportId?: string | null;
     boundary: number[][];

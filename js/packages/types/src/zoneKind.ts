@@ -5,6 +5,7 @@ export type ZoneKind = {
   slug: string;
   name: string;
   description: string;
+  overlayColor: string;
   placeCountRatio: number;
   monsterCountRatio: number;
   bossEncounterCountRatio: number;

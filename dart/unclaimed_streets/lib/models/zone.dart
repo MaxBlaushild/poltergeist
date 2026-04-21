@@ -58,6 +58,8 @@ class Zone {
   final String id;
   final String name;
   final String? description;
+  final String? kind;
+  final String? kindOverlayColor;
   final double latitude;
   final double longitude;
   final bool discovered;
@@ -71,6 +73,8 @@ class Zone {
     required this.id,
     required this.name,
     this.description,
+    this.kind,
+    this.kindOverlayColor,
     required this.latitude,
     required this.longitude,
     this.discovered = false,
@@ -86,6 +90,8 @@ class Zone {
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
       description: json['description'] as String?,
+      kind: json['kind']?.toString(),
+      kindOverlayColor: json['kindOverlayColor']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       discovered: json['discovered'] == true,
@@ -115,6 +121,8 @@ class Zone {
     String? id,
     String? name,
     String? description,
+    String? kind,
+    String? kindOverlayColor,
     double? latitude,
     double? longitude,
     bool? discovered,
@@ -128,6 +136,8 @@ class Zone {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      kind: kind ?? this.kind,
+      kindOverlayColor: kindOverlayColor ?? this.kindOverlayColor,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       discovered: discovered ?? this.discovered,
@@ -141,18 +151,17 @@ class Zone {
 
   /// Ordered ring (lat/lng) for polygon outline.
   ///
-  /// Prefer the server-normalized boundary geometry so client hit-testing
-  /// matches backend discovery checks. Raw points are only a fallback because
-  /// they may not describe the same polygon shape.
+  /// Prefer raw boundary points first because they have historically been the
+  /// most reliable source for player-facing zone rendering in this client.
   List<LatLngCoords>? get ring {
+    if (points != null && points!.isNotEmpty) {
+      return _orderPointsByAngle(points!);
+    }
     if (boundaryCoords != null && boundaryCoords!.isNotEmpty) {
       return boundaryCoords;
     }
     final coords = _parseBoundaryWkt(boundary);
     if (coords != null && coords.isNotEmpty) return coords;
-    if (points != null && points!.isNotEmpty) {
-      return _orderPointsByAngle(points!);
-    }
     return null;
   }
 

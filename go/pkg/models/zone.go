@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log"
+	"math"
 	mathrand "math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,8 +72,11 @@ func (z *Zone) BeforeSave(tx *gorm.DB) error {
 }
 
 func (z *Zone) AfterFind(tx *gorm.DB) (err error) {
+	if err := z.LoadPoints(tx); err != nil {
+		return err
+	}
 	z.BoundaryCoords = z.GetBoundary()
-	return z.LoadPoints(tx)
+	return nil
 }
 
 func (z *Zone) LoadPoints(db *gorm.DB) error {
@@ -101,17 +106,10 @@ func (z *Zone) GetPolygon() orb.Polygon {
 
 	var polygonFromPoints orb.Polygon
 	if len(z.Points) > 0 {
-		// Create a ring from the sorted points
-		ring := make(orb.Ring, len(z.Points))
-		for i, point := range z.Points {
-			ring[i] = orb.Point{point.Longitude, point.Latitude}
+		ring := orderedBoundaryRingFromPoints(z.Points)
+		if len(ring) > 0 {
+			polygonFromPoints = orb.Polygon{ring}
 		}
-
-		// Close the ring by adding the first point at the end if needed
-		if len(ring) > 0 && !ring[0].Equal(ring[len(ring)-1]) {
-			ring = append(ring, ring[0])
-		}
-		polygonFromPoints = orb.Polygon{ring}
 	}
 
 	if len(polygonFromPoints) > 0 {
@@ -131,12 +129,12 @@ func (z *Zone) GetPolygon() orb.Polygon {
 
 	var chosen orb.Polygon
 	if hasCenter {
-		if isPolygonUsable(polygonFromBoundary, centerLat, centerLng) {
-			log.Printf("Zone %s (%s): using boundary geometry", z.ID, z.Name)
-			chosen = polygonFromBoundary
-		} else if isPolygonUsable(polygonFromPoints, centerLat, centerLng) {
-			log.Printf("Zone %s (%s): boundary geometry unusable; using boundary points", z.ID, z.Name)
+		if isPolygonUsable(polygonFromPoints, centerLat, centerLng) {
+			log.Printf("Zone %s (%s): using boundary points", z.ID, z.Name)
 			chosen = polygonFromPoints
+		} else if isPolygonUsable(polygonFromBoundary, centerLat, centerLng) {
+			log.Printf("Zone %s (%s): boundary points unusable; using boundary geometry", z.ID, z.Name)
+			chosen = polygonFromBoundary
 		}
 	}
 
@@ -293,14 +291,7 @@ func calculateCentroid(polygon orb.Polygon) orb.Point {
 }
 
 func (z *Zone) GetBoundary() []Location {
-	centerLat, centerLng, hasCenter := z.centerForPolygon()
-	polygon := z.decodeBoundaryPolygon()
-	if len(polygon) > 0 {
-		polygon = z.normalizePolygon(polygon, "boundary geometry", centerLat, centerLng, hasCenter)
-	}
-	if len(polygon) == 0 {
-		polygon = z.GetPolygon()
-	}
+	polygon := z.GetPolygon()
 	if polygon == nil {
 		return nil
 	}
@@ -315,6 +306,44 @@ func (z *Zone) GetBoundary() []Location {
 	}
 
 	return points
+}
+
+func orderedBoundaryRingFromPoints(points []Point) orb.Ring {
+	if len(points) == 0 {
+		return nil
+	}
+
+	ordered := append([]Point(nil), points...)
+	if len(ordered) > 2 {
+		var sumLat float64
+		var sumLng float64
+		for _, point := range ordered {
+			sumLat += point.Latitude
+			sumLng += point.Longitude
+		}
+		centerLat := sumLat / float64(len(ordered))
+		centerLng := sumLng / float64(len(ordered))
+		sort.SliceStable(ordered, func(i, j int) bool {
+			angleI := math.Atan2(
+				ordered[i].Latitude-centerLat,
+				ordered[i].Longitude-centerLng,
+			)
+			angleJ := math.Atan2(
+				ordered[j].Latitude-centerLat,
+				ordered[j].Longitude-centerLng,
+			)
+			return angleI < angleJ
+		})
+	}
+
+	ring := make(orb.Ring, len(ordered))
+	for i, point := range ordered {
+		ring[i] = orb.Point{point.Longitude, point.Latitude}
+	}
+	if len(ring) > 0 && !ring[0].Equal(ring[len(ring)-1]) {
+		ring = append(ring, ring[0])
+	}
+	return ring
 }
 
 func (z *Zone) decodeBoundaryPolygon() orb.Polygon {

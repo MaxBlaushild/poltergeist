@@ -879,6 +879,14 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               );
                               return;
                             }
+                            final submissionLogLabel = 'quest-node:${node.id}';
+                            void logSubmission(String message) {
+                              debugPrint(
+                                '[challenge-submission][$submissionLogLabel] '
+                                '$message',
+                              );
+                            }
+
                             final startedAt = DateTime.now();
                             setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
@@ -898,6 +906,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   : 'Sending answer to the Dungeonmaster...',
                             );
                             try {
+                              logSubmission(
+                                'starting submission '
+                                'type=$submissionType '
+                                'hasText=${trimmedText.isNotEmpty} '
+                                'hasPhoto=${capturedImage != null} '
+                                'hasVideo=${capturedVideo != null}',
+                              );
                               String? imageSubmissionUrl;
                               String? videoSubmissionUrl;
                               if (isPhotoSubmission && capturedImage != null) {
@@ -909,13 +924,23 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                     'jpg';
                                 final key =
                                     'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                logSubmission(
+                                  'requesting photo upload URL '
+                                  'bytes=${capturedImage!.bytes.length} '
+                                  'mime=${capturedImage!.mimeType ?? 'image/jpeg'} '
+                                  'key=$key',
+                                );
                                 updateLoadingStep('Preparing photo upload...');
                                 final url = await mediaService
                                     .getPresignedUploadUrl(
                                       ApiConstants.crewPointsOfInterestBucket,
                                       key,
+                                      debugLabel: '$submissionLogLabel:photo',
                                     );
                                 if (url == null) {
+                                  logSubmission(
+                                    'failed to prepare photo upload',
+                                  );
                                   final elapsed = DateTime.now().difference(
                                     startedAt,
                                   );
@@ -932,12 +957,21 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   return;
                                 }
                                 updateLoadingStep('Uploading photo...');
-                                final ok = await mediaService.uploadToPresigned(
-                                  url,
-                                  Uint8List.fromList(capturedImage!.bytes),
-                                  capturedImage!.mimeType ?? 'image/jpeg',
-                                );
-                                if (!ok) {
+                                final uploadResult = await mediaService
+                                    .uploadToPresigned(
+                                      url,
+                                      Uint8List.fromList(capturedImage!.bytes),
+                                      capturedImage!.mimeType ?? 'image/jpeg',
+                                      debugLabel: '$submissionLogLabel:photo',
+                                    );
+                                if (!uploadResult.success) {
+                                  logSubmission(
+                                    'photo upload failed '
+                                    'timedOut=${uploadResult.timedOut} '
+                                    'status=${uploadResult.statusCode} '
+                                    'duration=${uploadResult.duration} '
+                                    'error=${uploadResult.errorDescription}',
+                                  );
                                   final elapsed = DateTime.now().difference(
                                     startedAt,
                                   );
@@ -949,11 +983,17 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   }
                                   widget.onQuestSubmissionState?.call(
                                     QuestSubmissionOverlayPhase.failure,
-                                    message: 'Failed to upload photo.',
+                                    message: uploadResult.timedOut
+                                        ? 'Photo upload timed out. Please try again.'
+                                        : 'Failed to upload photo.',
                                   );
                                   return;
                                 }
                                 imageSubmissionUrl = url.split('?').first;
+                                logSubmission(
+                                  'photo upload complete '
+                                  'objectUrl=$imageSubmissionUrl',
+                                );
                               }
                               if (isVideoSubmission && capturedVideo != null) {
                                 final ext =
@@ -964,13 +1004,23 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                     'mp4';
                                 final key =
                                     'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                logSubmission(
+                                  'requesting video upload URL '
+                                  'bytes=${capturedVideo!.bytes?.length ?? 0} '
+                                  'mime=${_mimeTypeFromFile(capturedVideo!) ?? 'video/mp4'} '
+                                  'key=$key',
+                                );
                                 updateLoadingStep('Preparing video upload...');
                                 final url = await mediaService
                                     .getPresignedUploadUrl(
                                       ApiConstants.crewPointsOfInterestBucket,
                                       key,
+                                      debugLabel: '$submissionLogLabel:video',
                                     );
                                 if (url == null) {
+                                  logSubmission(
+                                    'failed to prepare video upload',
+                                  );
                                   final elapsed = DateTime.now().difference(
                                     startedAt,
                                   );
@@ -1004,13 +1054,22 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   return;
                                 }
                                 updateLoadingStep('Uploading video...');
-                                final ok = await mediaService.uploadToPresigned(
-                                  url,
-                                  Uint8List.fromList(bytes),
-                                  _mimeTypeFromFile(capturedVideo!) ??
-                                      'video/mp4',
-                                );
-                                if (!ok) {
+                                final uploadResult = await mediaService
+                                    .uploadToPresigned(
+                                      url,
+                                      Uint8List.fromList(bytes),
+                                      _mimeTypeFromFile(capturedVideo!) ??
+                                          'video/mp4',
+                                      debugLabel: '$submissionLogLabel:video',
+                                    );
+                                if (!uploadResult.success) {
+                                  logSubmission(
+                                    'video upload failed '
+                                    'timedOut=${uploadResult.timedOut} '
+                                    'status=${uploadResult.statusCode} '
+                                    'duration=${uploadResult.duration} '
+                                    'error=${uploadResult.errorDescription}',
+                                  );
                                   final elapsed = DateTime.now().difference(
                                     startedAt,
                                   );
@@ -1022,14 +1081,26 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   }
                                   widget.onQuestSubmissionState?.call(
                                     QuestSubmissionOverlayPhase.failure,
-                                    message: 'Failed to upload video.',
+                                    message: uploadResult.timedOut
+                                        ? 'Video upload timed out. Please try again.'
+                                        : 'Failed to upload video.',
                                   );
                                   return;
                                 }
                                 videoSubmissionUrl = url.split('?').first;
+                                logSubmission(
+                                  'video upload complete '
+                                  'objectUrl=$videoSubmissionUrl',
+                                );
                               }
                               updateLoadingStep(
                                 'Waiting for the Dungeonmaster to judge your submission...',
+                              );
+                              logSubmission(
+                                'sending quest node submission '
+                                'hasText=${isTextSubmission ? trimmedText.isNotEmpty : false} '
+                                'hasImageUrl=${imageSubmissionUrl != null} '
+                                'hasVideoUrl=${videoSubmissionUrl != null}',
                               );
                               final resp = await questLogProvider
                                   .submitQuestNode(
@@ -1072,6 +1143,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                   : (reason.isNotEmpty
                                         ? reason
                                         : 'Submission failed');
+                              logSubmission(
+                                'submission complete '
+                                'success=$success '
+                                'reason="$reason" '
+                                'score=$score '
+                                'duration=${DateTime.now().difference(startedAt)}',
+                              );
                               widget.onQuestSubmissionState?.call(
                                 success
                                     ? QuestSubmissionOverlayPhase.success
@@ -1083,7 +1161,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                 statTags: statTags,
                                 statValues: statValues,
                               );
-                            } catch (error) {
+                            } catch (error, stackTrace) {
+                              logSubmission(
+                                'submission threw error '
+                                'duration=${DateTime.now().difference(startedAt)} '
+                                'error=$error',
+                              );
+                              debugPrintStack(stackTrace: stackTrace);
                               final elapsed = DateTime.now().difference(
                                 startedAt,
                               );

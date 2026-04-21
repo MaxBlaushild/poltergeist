@@ -18,6 +18,7 @@ type ZoneKind struct {
 	Slug                      string    `json:"slug" gorm:"column:slug"`
 	Name                      string    `json:"name"`
 	Description               string    `json:"description"`
+	OverlayColor              string    `json:"overlayColor" gorm:"column:overlay_color"`
 	PlaceCountRatio           float64   `json:"placeCountRatio" gorm:"column:place_count_ratio"`
 	MonsterCountRatio         float64   `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
 	BossEncounterCountRatio   float64   `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
@@ -43,6 +44,42 @@ func normalizeZoneKindRatio(value float64) float64 {
 	return value
 }
 
+func NormalizeHexColor(raw string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(raw))
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		trimmed = trimmed[1:]
+	}
+	switch len(trimmed) {
+	case 3:
+		var expanded strings.Builder
+		expanded.Grow(6)
+		for _, char := range trimmed {
+			if !isHexColorRune(char) {
+				return ""
+			}
+			expanded.WriteRune(char)
+			expanded.WriteRune(char)
+		}
+		trimmed = expanded.String()
+	case 6:
+		for _, char := range trimmed {
+			if !isHexColorRune(char) {
+				return ""
+			}
+		}
+	default:
+		return ""
+	}
+	return "#" + trimmed
+}
+
+func isHexColorRune(char rune) bool {
+	return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')
+}
+
 func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.Name = strings.TrimSpace(z.Name)
 	z.Description = strings.TrimSpace(z.Description)
@@ -50,6 +87,7 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	if z.Slug == "" {
 		z.Slug = NormalizeZoneKind(z.Name)
 	}
+	z.OverlayColor = NormalizeHexColor(z.OverlayColor)
 	z.PlaceCountRatio = normalizeZoneKindRatio(z.PlaceCountRatio)
 	z.MonsterCountRatio = normalizeZoneKindRatio(z.MonsterCountRatio)
 	z.BossEncounterCountRatio = normalizeZoneKindRatio(z.BossEncounterCountRatio)

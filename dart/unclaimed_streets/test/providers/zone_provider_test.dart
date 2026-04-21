@@ -4,7 +4,7 @@ import 'package:unclaimed_streets/providers/zone_provider.dart';
 
 void main() {
   test(
-    'findZoneAtCoordinate prefers boundaryCoords over raw points when both exist',
+    'findZoneAtCoordinate prefers raw points over boundaryCoords when both exist',
     () {
       final provider = ZoneProvider();
       const zone = Zone(
@@ -28,9 +28,11 @@ void main() {
 
       provider.setZones(const <Zone>[zone]);
 
-      final foundZone = provider.findZoneAtCoordinate(5, 5);
+      final foundZone = provider.findZoneAtCoordinate(24, 25);
+      final boundaryOnlyZone = provider.findZoneAtCoordinate(5, 5);
 
       expect(foundZone?.id, zone.id);
+      expect(boundaryOnlyZone, isNull);
     },
   );
 

@@ -22,6 +22,7 @@ type ZoneKindFormState = {
   name: string;
   slug: string;
   description: string;
+  overlayColor: string;
   placeCountRatio: string;
   monsterCountRatio: string;
   bossEncounterCountRatio: string;
@@ -81,10 +82,13 @@ const ratioFields: ZoneKindRatioField[] = [
   },
 ];
 
+const defaultZoneKindOverlayColor = '#5f7d68';
+
 const emptyForm = (): ZoneKindFormState => ({
   name: '',
   slug: '',
   description: '',
+  overlayColor: defaultZoneKindOverlayColor,
   placeCountRatio: '1',
   monsterCountRatio: '1',
   bossEncounterCountRatio: '1',
@@ -104,6 +108,15 @@ const normalizeSlugDraft = (value: string) =>
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
+const normalizeOverlayColorDraft = (value?: string | null) => {
+  const trimmed = (value || '').trim().toLowerCase();
+  if (!trimmed) {
+    return '';
+  }
+  const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : '';
+};
+
 const formatRatio = (value: number) =>
   `${value.toFixed(Number.isInteger(value) ? 1 : 2)}x`;
 
@@ -122,6 +135,9 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
   name: zoneKind.name,
   slug: zoneKind.slug,
   description: zoneKind.description || '',
+  overlayColor:
+    normalizeOverlayColorDraft(zoneKind.overlayColor) ||
+    defaultZoneKindOverlayColor,
   placeCountRatio: String(zoneKind.placeCountRatio ?? 1),
   monsterCountRatio: String(zoneKind.monsterCountRatio ?? 1),
   bossEncounterCountRatio: String(zoneKind.bossEncounterCountRatio ?? 1),
@@ -148,6 +164,7 @@ const parseZoneKindForm = (
     name,
     slug: normalizeSlugDraft(form.slug || name),
     description: form.description.trim(),
+    overlayColor: '',
     placeCountRatio: 1,
     monsterCountRatio: 1,
     bossEncounterCountRatio: 1,
@@ -158,6 +175,13 @@ const parseZoneKindForm = (
     healingFountainCountRatio: 1,
     resourceCountRatio: 1,
   };
+
+  const overlayColor =
+    normalizeOverlayColorDraft(form.overlayColor) || defaultZoneKindOverlayColor;
+  if (!overlayColor) {
+    return { error: 'Overlay color must be a valid hex color.' };
+  }
+  payload.overlayColor = overlayColor;
 
   for (const field of ratioFields) {
     const parsed = Number.parseFloat(form[field.key]);
@@ -495,6 +519,34 @@ export const ZoneKinds = () => {
                 placeholder="High-herbalism wilderness with more beasts, shrines, and restorative nodes."
               />
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                Map overlay color
+              </label>
+              <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-slate-50 px-3 py-3">
+                <input
+                  type="color"
+                  className="h-11 w-14 cursor-pointer rounded-md border border-gray-300 bg-white p-1"
+                  value={
+                    normalizeOverlayColorDraft(createForm.overlayColor) ||
+                    defaultZoneKindOverlayColor
+                  }
+                  onChange={(event) =>
+                    setCreateField('overlayColor', event.target.value)
+                  }
+                />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-900">
+                    {normalizeOverlayColorDraft(createForm.overlayColor) ||
+                      defaultZoneKindOverlayColor}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Used for the player map zone overlay. New kinds start with a
+                    grounded default tone.
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               {ratioFields.map((field) => (
@@ -562,6 +614,16 @@ export const ZoneKinds = () => {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className="h-4 w-4 rounded-full border border-black/10 shadow-sm"
+                            style={{
+                              backgroundColor:
+                                normalizeOverlayColorDraft(
+                                  zoneKind.overlayColor
+                                ) || defaultZoneKindOverlayColor,
+                            }}
+                            aria-hidden="true"
+                          />
                           <h3 className="text-base font-semibold text-gray-900">
                             {zoneKind.name}
                           </h3>
@@ -571,6 +633,11 @@ export const ZoneKinds = () => {
                           <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
                             {assignedZones.length} assigned zone
                             {assignedZones.length === 1 ? '' : 's'}
+                          </span>
+                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                            Overlay{' '}
+                            {normalizeOverlayColorDraft(zoneKind.overlayColor) ||
+                              defaultZoneKindOverlayColor}
                           </span>
                         </div>
                         {zoneKind.description && (
@@ -684,6 +751,37 @@ export const ZoneKinds = () => {
                                 setEditField('description', event.target.value)
                               }
                             />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Map overlay color
+                            </label>
+                            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-slate-50 px-3 py-3">
+                              <input
+                                type="color"
+                                className="h-11 w-14 cursor-pointer rounded-md border border-gray-300 bg-white p-1"
+                                value={
+                                  normalizeOverlayColorDraft(
+                                    editForm.overlayColor
+                                  ) || defaultZoneKindOverlayColor
+                                }
+                                onChange={(event) =>
+                                  setEditField('overlayColor', event.target.value)
+                                }
+                              />
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {normalizeOverlayColorDraft(
+                                    editForm.overlayColor
+                                  ) || defaultZoneKindOverlayColor}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Applied to the player map overlay for zones
+                                  using this kind.
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
                           <div className="grid gap-3 sm:grid-cols-2">
@@ -806,9 +904,20 @@ export const ZoneKinds = () => {
                           ? 'bg-amber-100 text-amber-800'
                           : zone.kind
                             ? 'bg-slate-100 text-slate-700'
-                            : 'bg-gray-100 text-gray-500'
+                          : 'bg-gray-100 text-gray-500'
                       }`}
                     >
+                      {matchedKind && (
+                        <span
+                          className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                          style={{
+                            backgroundColor:
+                              normalizeOverlayColorDraft(
+                                matchedKind.overlayColor
+                              ) || defaultZoneKindOverlayColor,
+                          }}
+                        />
+                      )}
                       {currentKindLabel}
                     </span>
                   </div>

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' show Point;
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10250,7 +10249,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       saturation / 100,
       lightness / 100,
     ).toColor();
-    final hex = color.value.toRadixString(16).padLeft(8, '0').substring(2);
+    final hex = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
     return '#$hex';
   }
 
@@ -10279,9 +10278,52 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return '#$hex';
   }
 
+  Color? _parseHexColor(String? raw) {
+    final trimmed = raw?.trim().toLowerCase() ?? '';
+    if (!RegExp(r'^#[0-9a-f]{6}$').hasMatch(trimmed)) {
+      return null;
+    }
+    final value = int.tryParse(trimmed.substring(1), radix: 16);
+    if (value == null) {
+      return null;
+    }
+    return Color(0xFF000000 | value);
+  }
+
+  String _hexFromColor(Color color) {
+    final hex = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
+    return '#$hex';
+  }
+
+  Color? _zoneKindBaseColor(Zone zone) => _parseHexColor(zone.kindOverlayColor);
+
+  String _zoneKindShroudedFillColor(Color baseColor) {
+    final hsl = HSLColor.fromColor(baseColor);
+    final shrouded = hsl
+        .withSaturation((hsl.saturation * 0.34).clamp(0.08, 0.24).toDouble())
+        .withLightness((hsl.lightness * 0.4).clamp(0.13, 0.23).toDouble())
+        .toColor();
+    return _hexFromColor(shrouded);
+  }
+
+  String _zoneKindInnerAccentColor(Color baseColor) {
+    final hsl = HSLColor.fromColor(baseColor);
+    final accent = hsl
+        .withSaturation((hsl.saturation * 1.08).clamp(0.2, 0.78).toDouble())
+        .withLightness((hsl.lightness * 0.58).clamp(0.18, 0.34).toDouble())
+        .toColor();
+    return _hexFromColor(accent);
+  }
+
   bool _isUndiscoveredZone(Zone zone) => !zone.discovered;
 
   String _zoneFillColor(Zone zone, {int salt = 0}) {
+    final kindColor = _zoneKindBaseColor(zone);
+    if (kindColor != null) {
+      return _isUndiscoveredZone(zone)
+          ? _zoneKindShroudedFillColor(kindColor)
+          : _hexFromColor(kindColor);
+    }
     if (_isUndiscoveredZone(zone)) {
       return _shroudedToneForZone(zone, salt: salt);
     }
@@ -10309,7 +10351,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   String _zoneInnerLineColor(Zone zone) {
-    return _isUndiscoveredZone(zone) ? '#d8c28b' : '#000000';
+    if (_isUndiscoveredZone(zone)) {
+      return '#d8c28b';
+    }
+    final kindColor = _zoneKindBaseColor(zone);
+    if (kindColor != null) {
+      return _zoneKindInnerAccentColor(kindColor);
+    }
+    return '#000000';
   }
 
   double _zoneInnerLineOpacity(Zone zone) {
@@ -11516,6 +11565,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 }
                               } catch (_) {}
                             }
+                            final submissionLogLabel =
+                                standaloneChallengeId == null
+                                ? 'quest-node:${node.id}'
+                                : 'challenge:$standaloneChallengeId';
+                            void logSubmission(String message) {
+                              debugPrint(
+                                '[challenge-submission][$submissionLogLabel] '
+                                '$message',
+                              );
+                            }
+
                             final startedAt = DateTime.now();
                             setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
@@ -11533,6 +11593,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                   ? 'Preparing video upload...'
                                   : 'Sending answer to the Dungeonmaster...',
                             );
+                            logSubmission(
+                              'starting submission '
+                              'type=$submissionType '
+                              'hasText=${trimmedText.isNotEmpty} '
+                              'hasPhoto=${capturedImage != null} '
+                              'hasVideo=${capturedVideo != null}',
+                            );
                             String? imageSubmissionUrl;
                             String? videoSubmissionUrl;
                             if (isPhotoSubmission && capturedImage != null) {
@@ -11544,13 +11611,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                   'jpg';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              logSubmission(
+                                'requesting photo upload URL '
+                                'bytes=${capturedImage!.bytes.length} '
+                                'mime=${capturedImage!.mimeType ?? 'image/jpeg'} '
+                                'key=$key',
+                              );
                               updateLoadingStep('Preparing photo upload...');
                               final url = await mediaService
                                   .getPresignedUploadUrl(
                                     ApiConstants.crewPointsOfInterestBucket,
                                     key,
+                                    debugLabel: '$submissionLogLabel:photo',
                                   );
                               if (url == null) {
+                                logSubmission('failed to prepare photo upload');
                                 final elapsed = DateTime.now().difference(
                                   startedAt,
                                 );
@@ -11567,12 +11642,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 return;
                               }
                               updateLoadingStep('Uploading photo...');
-                              final ok = await mediaService.uploadToPresigned(
-                                url,
-                                Uint8List.fromList(capturedImage!.bytes),
-                                capturedImage!.mimeType ?? 'image/jpeg',
-                              );
-                              if (!ok) {
+                              final uploadResult = await mediaService
+                                  .uploadToPresigned(
+                                    url,
+                                    Uint8List.fromList(capturedImage!.bytes),
+                                    capturedImage!.mimeType ?? 'image/jpeg',
+                                    debugLabel: '$submissionLogLabel:photo',
+                                  );
+                              if (!uploadResult.success) {
+                                logSubmission(
+                                  'photo upload failed '
+                                  'timedOut=${uploadResult.timedOut} '
+                                  'status=${uploadResult.statusCode} '
+                                  'duration=${uploadResult.duration} '
+                                  'error=${uploadResult.errorDescription}',
+                                );
                                 final elapsed = DateTime.now().difference(
                                   startedAt,
                                 );
@@ -11584,11 +11668,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 }
                                 _setQuestSubmissionOverlay(
                                   QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to upload photo.',
+                                  message: uploadResult.timedOut
+                                      ? 'Photo upload timed out. Please try again.'
+                                      : 'Failed to upload photo.',
                                 );
                                 return;
                               }
                               imageSubmissionUrl = url.split('?').first;
+                              logSubmission(
+                                'photo upload complete objectUrl=$imageSubmissionUrl',
+                              );
                             }
                             if (isVideoSubmission && capturedVideo != null) {
                               final ext =
@@ -11599,13 +11688,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                   'mp4';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              logSubmission(
+                                'requesting video upload URL '
+                                'bytes=${capturedVideo!.bytes?.length ?? 0} '
+                                'mime=${_mimeTypeFromFile(capturedVideo!) ?? 'video/mp4'} '
+                                'key=$key',
+                              );
                               updateLoadingStep('Preparing video upload...');
                               final url = await mediaService
                                   .getPresignedUploadUrl(
                                     ApiConstants.crewPointsOfInterestBucket,
                                     key,
+                                    debugLabel: '$submissionLogLabel:video',
                                   );
                               if (url == null) {
+                                logSubmission('failed to prepare video upload');
                                 final elapsed = DateTime.now().difference(
                                   startedAt,
                                 );
@@ -11639,13 +11736,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 return;
                               }
                               updateLoadingStep('Uploading video...');
-                              final ok = await mediaService.uploadToPresigned(
-                                url,
-                                Uint8List.fromList(bytes),
-                                _mimeTypeFromFile(capturedVideo!) ??
-                                    'video/mp4',
-                              );
-                              if (!ok) {
+                              final uploadResult = await mediaService
+                                  .uploadToPresigned(
+                                    url,
+                                    Uint8List.fromList(bytes),
+                                    _mimeTypeFromFile(capturedVideo!) ??
+                                        'video/mp4',
+                                    debugLabel: '$submissionLogLabel:video',
+                                  );
+                              if (!uploadResult.success) {
+                                logSubmission(
+                                  'video upload failed '
+                                  'timedOut=${uploadResult.timedOut} '
+                                  'status=${uploadResult.statusCode} '
+                                  'duration=${uploadResult.duration} '
+                                  'error=${uploadResult.errorDescription}',
+                                );
                                 final elapsed = DateTime.now().difference(
                                   startedAt,
                                 );
@@ -11657,11 +11763,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 }
                                 _setQuestSubmissionOverlay(
                                   QuestSubmissionOverlayPhase.failure,
-                                  message: 'Failed to upload video.',
+                                  message: uploadResult.timedOut
+                                      ? 'Video upload timed out. Please try again.'
+                                      : 'Failed to upload video.',
                                 );
                                 return;
                               }
                               videoSubmissionUrl = url.split('?').first;
+                              logSubmission(
+                                'video upload complete objectUrl=$videoSubmissionUrl',
+                              );
                             }
                             late final Map<String, dynamic> resp;
                             final previousLevel = context
@@ -11669,6 +11780,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 .level;
                             updateLoadingStep(
                               'Waiting for the Dungeonmaster to judge your submission...',
+                            );
+                            logSubmission(
+                              'sending submission '
+                              'hasText=${isTextSubmission ? trimmedText.isNotEmpty : false} '
+                              'hasImageUrl=${imageSubmissionUrl != null} '
+                              'hasVideoUrl=${videoSubmissionUrl != null} '
+                              'standaloneChallengeId=$standaloneChallengeId',
                             );
                             try {
                               resp = standaloneChallengeId == null
@@ -11689,6 +11807,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                       videoSubmissionUrl: videoSubmissionUrl,
                                     );
                             } catch (error) {
+                              logSubmission(
+                                'submission failed '
+                                'duration=${DateTime.now().difference(startedAt)} '
+                                'error=$error',
+                              );
                               final elapsed = DateTime.now().difference(
                                 startedAt,
                               );
@@ -11747,6 +11870,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                                 : (reason.isNotEmpty
                                       ? reason
                                       : 'Submission failed');
+                            logSubmission(
+                              'submission complete '
+                              'success=$success '
+                              'reason="$reason" '
+                              'score=$score '
+                              'duration=${DateTime.now().difference(startedAt)}',
+                            );
                             if (mounted) {
                               _dismissQuestSubmissionOverlay();
                             }
