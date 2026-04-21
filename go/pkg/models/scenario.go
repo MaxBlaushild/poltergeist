@@ -13,6 +13,7 @@ type Scenario struct {
 	CreatedAt                 time.Time                      `json:"createdAt"`
 	UpdatedAt                 time.Time                      `json:"updatedAt"`
 	ZoneID                    uuid.UUID                      `json:"zoneId"`
+	ZoneKind                  string                         `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone                      Zone                           `json:"zone"`
 	OwnerUserID               *uuid.UUID                     `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
 	OwnerUser                 *User                          `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`

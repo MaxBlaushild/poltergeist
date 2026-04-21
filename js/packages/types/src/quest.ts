@@ -50,6 +50,7 @@ export interface Quest {
   acceptanceDialogue?: DialogueMessage[];
   imageUrl?: string;
   zoneId?: string | null;
+  zoneKind?: string;
   questArchetypeId?: string | null;
   questGiverCharacterId?: string | null;
   closurePolicy?: QuestClosurePolicy;

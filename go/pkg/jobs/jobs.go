@@ -59,6 +59,7 @@ const (
 	SeedDistrictTaskType                           = "seed_district"
 	ApplyZoneSeedDraftTaskType                     = "apply_zone_seed_draft"
 	ShuffleZoneSeedChallengeTaskType               = "shuffle_zone_seed_challenge"
+	BackfillContentZoneKindsTaskType               = "backfill_content_zone_kinds"
 )
 
 const (
@@ -86,6 +87,15 @@ const (
 	MonsterTemplateProgressionResetStatusFailed     = "failed"
 
 	MonsterTemplateProgressionResetStatusTTL = 24 * time.Hour
+)
+
+const (
+	ZoneKindBackfillStatusQueued     = "queued"
+	ZoneKindBackfillStatusInProgress = "in_progress"
+	ZoneKindBackfillStatusCompleted  = "completed"
+	ZoneKindBackfillStatusFailed     = "failed"
+
+	ZoneKindBackfillStatusTTL = 24 * time.Hour
 )
 
 const (
@@ -380,6 +390,33 @@ type MonsterTemplateProgressionResetStatus struct {
 	UpdatedAt    time.Time   `json:"updatedAt"`
 }
 
+type ZoneKindBackfillResult struct {
+	ContentType    string `json:"contentType"`
+	MissingCount   int    `json:"missingCount"`
+	AssignedCount  int    `json:"assignedCount"`
+	AmbiguousCount int    `json:"ambiguousCount"`
+	SkippedCount   int    `json:"skippedCount"`
+}
+
+type ZoneKindBackfillSummary struct {
+	Results        []ZoneKindBackfillResult `json:"results"`
+	MissingCount   int                      `json:"missingCount"`
+	AssignedCount  int                      `json:"assignedCount"`
+	AmbiguousCount int                      `json:"ambiguousCount"`
+	SkippedCount   int                      `json:"skippedCount"`
+}
+
+type ZoneKindBackfillStatus struct {
+	JobID       uuid.UUID               `json:"jobId"`
+	Status      string                  `json:"status"`
+	Summary     ZoneKindBackfillSummary `json:"summary"`
+	Error       string                  `json:"error,omitempty"`
+	QueuedAt    *time.Time              `json:"queuedAt,omitempty"`
+	StartedAt   *time.Time              `json:"startedAt,omitempty"`
+	CompletedAt *time.Time              `json:"completedAt,omitempty"`
+	UpdatedAt   time.Time               `json:"updatedAt"`
+}
+
 type GenerateCharacterImageTaskPayload struct {
 	CharacterID uuid.UUID `json:"characterId"`
 	Name        string    `json:"name"`
@@ -459,6 +496,10 @@ type ShuffleZoneSeedChallengeTaskPayload struct {
 	MainQuestNodeDraftID *uuid.UUID `json:"mainQuestNodeDraftId,omitempty"`
 }
 
+type BackfillContentZoneKindsTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
 func MonsterTemplateBulkStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:monster-templates:bulk:%s", jobID.String())
 }
@@ -469,6 +510,10 @@ func MonsterTemplateAffinityRefreshStatusKey(jobID uuid.UUID) string {
 
 func MonsterTemplateProgressionResetStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:monster-templates:progression-reset:%s", jobID.String())
+}
+
+func ZoneKindBackfillStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:zone-kinds:content-backfill:%s", jobID.String())
 }
 
 func SpellBulkStatusKey(jobID uuid.UUID) string {

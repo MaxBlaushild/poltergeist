@@ -36,7 +36,17 @@ func (h *movementPatternHandler) FindAll(ctx context.Context) ([]*models.Movemen
 }
 
 func (h *movementPatternHandler) Update(ctx context.Context, id uuid.UUID, updates *models.MovementPattern) error {
-	return h.db.WithContext(ctx).Model(&models.MovementPattern{}).Where("id = ?", id).Updates(updates).Error
+	if updates == nil {
+		return nil
+	}
+	payload := map[string]interface{}{
+		"movement_pattern_type": updates.MovementPatternType,
+		"zone_id":               updates.ZoneID,
+		"starting_latitude":     updates.StartingLatitude,
+		"starting_longitude":    updates.StartingLongitude,
+		"path":                  updates.Path,
+	}
+	return h.db.WithContext(ctx).Model(&models.MovementPattern{}).Where("id = ?", id).Updates(payload).Error
 }
 
 func (h *movementPatternHandler) Delete(ctx context.Context, id uuid.UUID) error {

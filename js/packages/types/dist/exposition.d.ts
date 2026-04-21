@@ -25,6 +25,7 @@ export interface Exposition {
     createdAt?: Date | string;
     updatedAt?: Date | string;
     zoneId: string;
+    zoneKind?: string;
     pointOfInterestId?: string | null;
     pointOfInterest?: PointOfInterest | null;
     latitude: number;

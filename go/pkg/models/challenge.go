@@ -19,6 +19,7 @@ type Challenge struct {
 	CreatedAt            time.Time                   `json:"createdAt"`
 	UpdatedAt            time.Time                   `json:"updatedAt"`
 	ZoneID               uuid.UUID                   `json:"zoneId" gorm:"column:zone_id"`
+	ZoneKind             string                      `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone                 Zone                        `json:"zone"`
 	PointOfInterestID    *uuid.UUID                  `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
 	PointOfInterest      *PointOfInterest            `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`

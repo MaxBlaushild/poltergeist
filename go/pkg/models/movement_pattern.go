@@ -55,6 +55,7 @@ type MovementPattern struct {
 	UpdatedAt           time.Time           `json:"updatedAt"`
 	MovementPatternType MovementPatternType `json:"movementPatternType"`
 	ZoneID              *uuid.UUID          `json:"zoneId" gorm:"type:uuid"`
+	ZoneKind            string              `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	StartingLatitude    float64             `json:"startingLatitude"`
 	StartingLongitude   float64             `json:"startingLongitude"`
 	Path                LocationPath        `json:"path" gorm:"type:jsonb"`

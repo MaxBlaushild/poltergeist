@@ -57,6 +57,7 @@ import '../utils/poi_image_util.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
 import '../constants/gameplay_constants.dart';
+import '../constants/zone_kind_visuals.dart';
 import '../widgets/activity_feed_panel.dart';
 import '../widgets/base_panel.dart';
 import '../widgets/celebration_modal_manager.dart';
@@ -10328,6 +10329,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   Color? _zoneKindBaseColor(Zone zone) => _parseHexColor(zone.kindOverlayColor);
+  ZoneKindVisualProfile _zoneKindVisuals(Zone zone) =>
+      zoneKindVisualProfileForSlug(zone.kind);
 
   String _zoneKindShroudedFillColor(Color baseColor) {
     final hsl = HSLColor.fromColor(baseColor);
@@ -10336,6 +10339,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         .withLightness((hsl.lightness * 0.4).clamp(0.13, 0.23).toDouble())
         .toColor();
     return _hexFromColor(shrouded);
+  }
+
+  Color _zoneKindOuterAccentFromColor(
+    Color baseColor, {
+    required bool shrouded,
+  }) {
+    final hsl = HSLColor.fromColor(baseColor);
+    return (shrouded
+            ? hsl
+                  .withSaturation(
+                    (hsl.saturation * 0.22).clamp(0.08, 0.2).toDouble(),
+                  )
+                  .withLightness(
+                    (hsl.lightness * 0.28).clamp(0.08, 0.16).toDouble(),
+                  )
+            : hsl
+                  .withSaturation(
+                    (hsl.saturation * 0.45).clamp(0.12, 0.42).toDouble(),
+                  )
+                  .withLightness(
+                    (hsl.lightness * 0.24).clamp(0.08, 0.2).toDouble(),
+                  ))
+        .toColor();
   }
 
   String _zoneKindInnerAccentColor(Color baseColor) {
@@ -10363,42 +10389,89 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zoneFillOpacity(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 0.68 : 0.4;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone)
+        ? visuals.undiscoveredFillOpacity
+        : visuals.discoveredFillOpacity;
   }
 
   String _zoneOuterLineColor(Zone zone) {
-    return _isUndiscoveredZone(zone) ? '#0d1218' : '#000000';
+    final kindColor = _zoneKindBaseColor(zone);
+    if (kindColor != null) {
+      return _hexFromColor(
+        _zoneKindOuterAccentFromColor(
+          kindColor,
+          shrouded: _isUndiscoveredZone(zone),
+        ),
+      );
+    }
+    final visuals = _zoneKindVisuals(zone);
+    final fallback = Color.lerp(
+      visuals.panelBorder,
+      Colors.black,
+      _isUndiscoveredZone(zone) ? 0.68 : 0.58,
+    );
+    return _hexFromColor(fallback ?? Colors.black);
   }
 
   double _zoneOuterLineOpacity(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 0.42 : 0.18;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone)
+        ? visuals.undiscoveredOuterLineOpacity
+        : visuals.outerLineOpacity;
   }
 
   double _zoneOuterLineWidth(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 8.0 : 7.0;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone)
+        ? visuals.undiscoveredOuterLineWidth
+        : visuals.outerLineWidth;
   }
 
   double _zoneOuterLineBlur(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 2.1 : 1.6;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone)
+        ? visuals.undiscoveredOuterLineBlur
+        : visuals.outerLineBlur;
   }
 
   String _zoneInnerLineColor(Zone zone) {
-    if (_isUndiscoveredZone(zone)) {
-      return '#d8c28b';
-    }
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {
+      if (_isUndiscoveredZone(zone)) {
+        final visuals = _zoneKindVisuals(zone);
+        final shroudedAccent = Color.lerp(
+          _parseHexColor(_zoneKindInnerAccentColor(kindColor)),
+          visuals.panelAccent,
+          0.45,
+        );
+        return _hexFromColor(shroudedAccent ?? visuals.panelAccent);
+      }
       return _zoneKindInnerAccentColor(kindColor);
     }
-    return '#000000';
+    final visuals = _zoneKindVisuals(zone);
+    return _hexFromColor(
+      _isUndiscoveredZone(zone)
+          ? Color.lerp(visuals.panelAccent, Colors.white, 0.08) ??
+                visuals.panelAccent
+          : visuals.panelAccent,
+    );
   }
 
   double _zoneInnerLineOpacity(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 0.9 : 0.95;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone) ? 0.9 : visuals.innerLineOpacity;
   }
 
   double _zoneInnerLineWidth(Zone zone) {
-    return _isUndiscoveredZone(zone) ? 2.2 : 2.8;
+    final visuals = _zoneKindVisuals(zone);
+    return _isUndiscoveredZone(zone)
+        ? visuals.undiscoveredInnerLineWidth
+        : visuals.innerLineWidth;
+  }
+
+  String _zoneLineJoin(Zone zone) {
+    return _zoneKindVisuals(zone).lineJoin;
   }
 
   Future<void> _addZoneBoundaries() {
@@ -10460,7 +10533,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           lineWidth: _zoneOuterLineWidth(z),
           lineOpacity: _zoneOuterLineOpacity(z),
           lineBlur: _zoneOuterLineBlur(z),
-          lineJoin: 'round',
+          lineJoin: _zoneLineJoin(z),
         ),
       );
       lineData.add({'type': 'zone', 'id': z.id});
@@ -10470,7 +10543,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           lineColor: _zoneInnerLineColor(z),
           lineWidth: _zoneInnerLineWidth(z),
           lineOpacity: _zoneInnerLineOpacity(z),
-          lineJoin: 'round',
+          lineJoin: _zoneLineJoin(z),
         ),
       );
       lineData.add({'type': 'zone', 'id': z.id});

@@ -30,6 +30,16 @@ type AdminUserResourcesResponse = {
   materials?: AdminMaterialBalance[] | null;
 };
 
+type AdminUserZoneDiscoveryResponse = {
+  message?: string;
+  totalZones?: number;
+  discoveredZones?: number;
+  createdCount?: number;
+  deletedCount?: number;
+  existingCount?: number;
+  skippedRewards?: boolean;
+};
+
 type CharacterProficiency = {
   proficiency: string;
   level: number;
@@ -208,6 +218,13 @@ export const Users = () => {
   const [resourceSubmitting, setResourceSubmitting] = useState(false);
   const [resourceMessage, setResourceMessage] = useState<string | null>(null);
   const [resourceMessageKind, setResourceMessageKind] = useState<
+    'success' | 'error' | null
+  >(null);
+  const [zoneDiscoverySubmitting, setZoneDiscoverySubmitting] = useState(false);
+  const [zoneDiscoveryMessage, setZoneDiscoveryMessage] = useState<
+    string | null
+  >(null);
+  const [zoneDiscoveryMessageKind, setZoneDiscoveryMessageKind] = useState<
     'success' | 'error' | null
   >(null);
   const [selectedUserProfile, setSelectedUserProfile] =
@@ -451,6 +468,8 @@ export const Users = () => {
     setMaterialGrantAmounts(createEmptyMaterialGrantAmounts());
     setResourceMessage(null);
     setResourceMessageKind(null);
+    setZoneDiscoveryMessage(null);
+    setZoneDiscoveryMessageKind(null);
     setResourceStats(null);
     setMaterialBalances([]);
     setSelectedUserProfile(null);
@@ -512,6 +531,63 @@ export const Users = () => {
       setResourceMessageKind('error');
     } finally {
       setGrantingLevelUp(false);
+    }
+  };
+
+  const discoverAllZonesForUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setZoneDiscoverySubmitting(true);
+      setZoneDiscoveryMessage(null);
+      setZoneDiscoveryMessageKind(null);
+
+      const response = await apiClient.post<AdminUserZoneDiscoveryResponse>(
+        `/sonar/admin/users/${selectedUser.id}/zone-discoveries/discover-all`,
+        {}
+      );
+      const createdCount = response?.createdCount ?? 0;
+      const discoveredZones = response?.discoveredZones ?? 0;
+      const totalZones = response?.totalZones ?? 0;
+      setZoneDiscoveryMessage(
+        createdCount > 0
+          ? `Discovered ${createdCount} new zones for ${selectedUser.name || selectedUser.username || selectedUser.id}. Now at ${discoveredZones}/${totalZones} zones. No XP or rewards granted.`
+          : `No new zones were added. ${selectedUser.name || selectedUser.username || selectedUser.id} is already at ${discoveredZones}/${totalZones} zones. No XP or rewards granted.`
+      );
+      setZoneDiscoveryMessageKind('success');
+    } catch (error) {
+      console.error('Error discovering all zones for user:', error);
+      setZoneDiscoveryMessage('Failed to discover all zones for this user.');
+      setZoneDiscoveryMessageKind('error');
+    } finally {
+      setZoneDiscoverySubmitting(false);
+    }
+  };
+
+  const undiscoverAllZonesForUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setZoneDiscoverySubmitting(true);
+      setZoneDiscoveryMessage(null);
+      setZoneDiscoveryMessageKind(null);
+
+      const response = await apiClient.delete<AdminUserZoneDiscoveryResponse>(
+        `/sonar/admin/users/${selectedUser.id}/zone-discoveries`
+      );
+      const deletedCount = response?.deletedCount ?? 0;
+      setZoneDiscoveryMessage(
+        deletedCount > 0
+          ? `Removed ${deletedCount} zone discoveries for ${selectedUser.name || selectedUser.username || selectedUser.id}. No XP or rewards were changed.`
+          : `This user had no zone discoveries to remove.`
+      );
+      setZoneDiscoveryMessageKind('success');
+    } catch (error) {
+      console.error('Error clearing all zone discoveries for user:', error);
+      setZoneDiscoveryMessage('Failed to clear zone discoveries for this user.');
+      setZoneDiscoveryMessageKind('error');
+    } finally {
+      setZoneDiscoverySubmitting(false);
     }
   };
 
@@ -1570,6 +1646,64 @@ export const Users = () => {
                         }`}
                       >
                         Grant Materials
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold">
+                      Zone Discovery Testing
+                    </h3>
+                  </div>
+                  <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm text-gray-600">
+                      Use these controls to force this user into a fully
+                      discovered or fully undiscovered zone state for visual QA.
+                      These actions only update zone discovery records and
+                      intentionally skip experience, rewards, and level-up
+                      logic.
+                    </p>
+
+                    {zoneDiscoveryMessage && (
+                      <div
+                        className={`rounded-md border px-3 py-2 text-sm ${
+                          zoneDiscoveryMessageKind === 'success'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-rose-200 bg-rose-50 text-rose-800'
+                        }`}
+                      >
+                        {zoneDiscoveryMessage}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={discoverAllZonesForUser}
+                        disabled={zoneDiscoverySubmitting}
+                        className={`px-4 py-2 rounded text-white ${
+                          zoneDiscoverySubmitting
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
+                      >
+                        {zoneDiscoverySubmitting
+                          ? 'Updating Zones...'
+                          : 'Discover All Zones'}
+                      </button>
+                      <button
+                        onClick={undiscoverAllZonesForUser}
+                        disabled={zoneDiscoverySubmitting}
+                        className={`px-4 py-2 rounded text-white ${
+                          zoneDiscoverySubmitting
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-slate-700 hover:bg-slate-800'
+                        }`}
+                      >
+                        {zoneDiscoverySubmitting
+                          ? 'Updating Zones...'
+                          : 'Undiscover All Zones'}
                       </button>
                     </div>
                   </div>

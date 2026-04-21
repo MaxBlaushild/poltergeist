@@ -207,6 +207,10 @@ func (s *server) updateZoneKind(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if _, err := s.dbClient.ZoneKind().ReplaceReferences(ctx, oldSlug, updated.Slug); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusOK, updated)
@@ -234,6 +238,10 @@ func (s *server) deleteZoneKind(ctx *gin.Context) {
 		return
 	}
 	if _, err := s.dbClient.ZoneSeedJob().ReplaceZoneKind(ctx, existing.Slug, ""); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := s.dbClient.ZoneKind().ReplaceReferences(ctx, existing.Slug, ""); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

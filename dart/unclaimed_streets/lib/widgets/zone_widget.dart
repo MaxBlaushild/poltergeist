@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants/zone_kind_visuals.dart';
 import '../models/zone.dart';
 import '../models/user_zone_reputation.dart';
 import '../providers/location_provider.dart';
@@ -184,18 +185,40 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final displayedZone = selectedZone ?? undiscoveredZone;
         final showingUndiscovered = undiscoveredZone != null;
         final theme = Theme.of(context);
-        final surfaceColor = showingUndiscovered
-            ? const Color(0xFF1C2430).withValues(alpha: 0.96)
-            : theme.colorScheme.surface.withValues(alpha: 0.95);
-        final borderColor = showingUndiscovered
-            ? const Color(0xFFD3BF88)
-            : theme.colorScheme.outlineVariant;
-        final primaryTextColor = showingUndiscovered
-            ? const Color(0xFFF6E7B8)
+        final zoneVisuals = displayedZone != null
+            ? zoneKindVisualProfileForSlug(displayedZone.kind)
+            : null;
+        final surfaceColor = zoneVisuals != null
+            ? zoneVisuals
+                  .surfaceColor(undiscovered: showingUndiscovered)
+                  .withValues(alpha: showingUndiscovered ? 0.97 : 0.95)
+            : (showingUndiscovered
+                  ? const Color(0xFF1C2430).withValues(alpha: 0.96)
+                  : theme.colorScheme.surface.withValues(alpha: 0.95));
+        final borderColor = zoneVisuals != null
+            ? zoneVisuals.borderColor(undiscovered: showingUndiscovered)
+            : (showingUndiscovered
+                  ? const Color(0xFFD3BF88)
+                  : theme.colorScheme.outlineVariant);
+        final accentColor = zoneVisuals != null
+            ? zoneVisuals.accentColor(undiscovered: showingUndiscovered)
+            : borderColor;
+        final chipBackgroundColor = zoneVisuals != null
+            ? zoneVisuals.chipBackgroundColor(undiscovered: showingUndiscovered)
+            : theme.colorScheme.surfaceContainerHighest;
+        final chipTextColor = zoneVisuals != null
+            ? zoneVisuals.chipTextColor(undiscovered: showingUndiscovered)
             : theme.colorScheme.onSurface;
-        final secondaryTextColor = showingUndiscovered
-            ? const Color(0xFFD7DDE8)
-            : theme.colorScheme.onSurface;
+        final primaryTextColor =
+            zoneVisuals?.panelText ??
+            (showingUndiscovered
+                ? const Color(0xFFF6E7B8)
+                : theme.colorScheme.onSurface);
+        final secondaryTextColor =
+            zoneVisuals?.panelSubtext ??
+            (showingUndiscovered
+                ? const Color(0xFFD7DDE8)
+                : theme.colorScheme.onSurface);
         final textStyle = theme.textTheme.bodyMedium?.copyWith(
           color: primaryTextColor,
           fontWeight: FontWeight.w600,
@@ -203,6 +226,8 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final subTextStyle = theme.textTheme.bodySmall?.copyWith(
           color: secondaryTextColor,
         );
+        final zoneKindLabel =
+            zoneVisuals?.label ?? humanizeZoneKindSlug(displayedZone?.kind);
         final genreScoresPreview = _genreScoresPreview();
         final expandUpwards = widget.expandUpwards;
         final expandedHeight = widget.expandedHeight;
@@ -214,11 +239,28 @@ class _ZoneWidgetState extends State<ZoneWidget> {
             : (expandUpwards
                   ? Icons.keyboard_arrow_up
                   : Icons.keyboard_arrow_down);
+        final headerLeading = showingUndiscovered
+            ? Icon(Icons.explore_off, size: 16, color: primaryTextColor)
+            : zoneVisuals != null
+            ? Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: chipBackgroundColor,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: accentColor.withValues(alpha: 0.28),
+                    width: 1,
+                  ),
+                ),
+                child: Icon(zoneVisuals.icon, size: 13, color: chipTextColor),
+              )
+            : null;
         final header = Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            if (showingUndiscovered) ...[
-              Icon(Icons.explore_off, size: 16, color: primaryTextColor),
+            if (headerLeading != null) ...[
+              headerLeading,
               const SizedBox(width: 8),
             ],
             Expanded(
@@ -247,12 +289,10 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF0F1722,
-                          ).withValues(alpha: 0.72),
+                          color: chipBackgroundColor.withValues(alpha: 0.78),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: const Color(0x80D3BF88),
+                            color: accentColor.withValues(alpha: 0.44),
                             width: 1,
                           ),
                         ),
@@ -271,35 +311,70 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                           ],
                         ),
                       ),
-                    ] else if (_reputation != null) ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Reputation: ${_capitalize(_reputation!.name.name)}',
-                            style: textStyle?.copyWith(fontSize: 14),
-                          ),
-                          Text(
-                            '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
-                            style: subTextStyle,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: _reputation!.reputationToNextLevel > 0
-                              ? _reputation!.reputationOnLevel /
-                                    _reputation!.reputationToNextLevel
-                              : 0.0,
-                          backgroundColor:
-                              theme.colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            theme.colorScheme.primary,
+                    ] else ...[
+                      if (zoneVisuals != null) ...[
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _ZoneMetaChip(
+                              icon: zoneVisuals.icon,
+                              label: zoneKindLabel,
+                              backgroundColor: chipBackgroundColor,
+                              textColor: chipTextColor,
+                              borderColor: accentColor.withValues(alpha: 0.32),
+                            ),
+                            _ZoneMetaChip(
+                              label: zoneVisuals.focusLabel,
+                              backgroundColor: chipBackgroundColor.withValues(
+                                alpha: 0.9,
+                              ),
+                              textColor: chipTextColor,
+                              borderColor: accentColor.withValues(alpha: 0.18),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          zoneVisuals.atmosphereLabel,
+                          style: subTextStyle?.copyWith(
+                            color: secondaryTextColor.withValues(alpha: 0.9),
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (_reputation != null) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Reputation: ${_capitalize(_reputation!.name.name)}',
+                              style: textStyle?.copyWith(fontSize: 14),
+                            ),
+                            Text(
+                              '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
+                              style: subTextStyle,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: _reputation!.reputationToNextLevel > 0
+                                ? _reputation!.reputationOnLevel /
+                                      _reputation!.reputationToNextLevel
+                                : 0.0,
+                            backgroundColor: chipBackgroundColor.withValues(
+                              alpha: 0.8,
+                            ),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              accentColor,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                     if (!showingUndiscovered &&
                         _reputation != null &&
@@ -325,13 +400,14 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    theme.colorScheme.surfaceContainerHighest,
+                                color: chipBackgroundColor,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
                                 '${entry.name} ${entry.score}',
-                                style: subTextStyle,
+                                style: subTextStyle?.copyWith(
+                                  color: chipTextColor,
+                                ),
                               ),
                             ),
                           ),
@@ -343,13 +419,14 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    theme.colorScheme.surfaceContainerHighest,
+                                color: chipBackgroundColor,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
                                 '+${(displayedZone?.genreScores.length ?? 0) - genreScoresPreview.length} more',
-                                style: subTextStyle,
+                                style: subTextStyle?.copyWith(
+                                  color: chipTextColor,
+                                ),
                               ),
                             ),
                         ],
@@ -374,13 +451,17 @@ class _ZoneWidgetState extends State<ZoneWidget> {
           decoration: BoxDecoration(
             color: surfaceColor,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor, width: 1.5),
+            border: Border.all(color: borderColor, width: 1.6),
             boxShadow: [
               BoxShadow(
-                color: showingUndiscovered
-                    ? const Color(0x44101723)
-                    : const Color(0x332D2416),
-                blurRadius: showingUndiscovered ? 16 : 10,
+                color:
+                    zoneVisuals?.shadowColor(
+                      undiscovered: showingUndiscovered,
+                    ) ??
+                    (showingUndiscovered
+                        ? const Color(0x44101723)
+                        : const Color(0x332D2416)),
+                blurRadius: showingUndiscovered ? 18 : 12,
                 offset: const Offset(0, 4),
               ),
             ],
@@ -434,6 +515,50 @@ class ZoneWidgetController {
   void open() => _setOpen?.call(true);
   void close() => _setOpen?.call(false);
   void toggle() => _setOpen?.call(!isOpen);
+}
+
+class _ZoneMetaChip extends StatelessWidget {
+  final IconData? icon;
+  final String label;
+  final Color backgroundColor;
+  final Color textColor;
+  final Color borderColor;
+
+  const _ZoneMetaChip({
+    required this.label,
+    required this.backgroundColor,
+    required this.textColor,
+    required this.borderColor,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: textColor),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _GenrePreviewEntry {

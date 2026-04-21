@@ -16,6 +16,7 @@ type HealingFountain struct {
 	Description  string    `json:"description"`
 	ThumbnailURL string    `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
 	ZoneID       uuid.UUID `json:"zoneId"`
+	ZoneKind     string    `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone         Zone      `json:"zone"`
 	Latitude     float64   `json:"latitude"`
 	Longitude    float64   `json:"longitude"`

@@ -18,6 +18,7 @@ type InventoryItem struct {
 	RarityTier                               string                         `json:"rarityTier" gorm:"column:rarity_tier"`
 	ResourceTypeID                           *uuid.UUID                     `json:"resourceTypeId" gorm:"column:resource_type_id"`
 	ResourceType                             *ResourceType                  `json:"resourceType,omitempty" gorm:"foreignKey:ResourceTypeID"`
+	ZoneKind                                 string                         `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	GenreID                                  uuid.UUID                      `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre                                    *ZoneGenre                     `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	IsCaptureType                            bool                           `json:"isCaptureType" gorm:"column:is_capture_type"`

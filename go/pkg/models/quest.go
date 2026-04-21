@@ -77,6 +77,7 @@ type Quest struct {
 	OwnerUserID                    *uuid.UUID                 `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
 	Ephemeral                      bool                       `json:"ephemeral" gorm:"column:ephemeral"`
 	ZoneID                         *uuid.UUID                 `json:"zoneId" gorm:"type:uuid"`
+	ZoneKind                       string                     `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	QuestArchetypeID               *uuid.UUID                 `json:"questArchetypeId" gorm:"type:uuid"`
 	QuestGiverCharacterID          *uuid.UUID                 `json:"questGiverCharacterId" gorm:"type:uuid"`
 	MainStoryPreviousQuestID       *uuid.UUID                 `json:"mainStoryPreviousQuestId,omitempty" gorm:"column:main_story_previous_quest_id;type:uuid"`

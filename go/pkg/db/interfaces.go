@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 )
@@ -753,6 +754,8 @@ type ZoneKindHandle interface {
 	FindBySlug(ctx context.Context, slug string) (*models.ZoneKind, error)
 	FindAll(ctx context.Context) ([]models.ZoneKind, error)
 	Update(ctx context.Context, zoneKind *models.ZoneKind) error
+	ReplaceReferences(ctx context.Context, currentKind string, nextKind string) (int, error)
+	BackfillMissingContentKinds(ctx context.Context) (*jobs.ZoneKindBackfillSummary, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

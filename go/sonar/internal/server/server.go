@@ -371,6 +371,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/users/:id/level-up", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminGrantUserLevelUp))
 	r.GET("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminUserResources))
 	r.POST("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAdjustUserResources))
+	r.POST("/sonar/admin/users/:id/zone-discoveries/discover-all", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminDiscoverAllZonesForUser))
+	r.DELETE("/sonar/admin/users/:id/zone-discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUndiscoverAllZonesForUser))
 	r.GET("/sonar/admin/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterTemplates))
 	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsters))
 	r.GET("/sonar/admin/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterEncounters))
@@ -403,6 +405,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneKind))
 	r.DELETE("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneKind))
 	r.POST("/sonar/zoneKinds/assign-zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.assignZoneKindToZones))
+	r.POST("/sonar/zoneKinds/backfill-content-kinds", middleware.WithAuthentication(s.authClient, s.livenessClient, s.backfillContentZoneKinds))
+	r.GET("/sonar/zoneKinds/backfill-content-kinds/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBackfillContentZoneKindsStatus))
 	r.POST("/sonar/admin/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneGenre))
 	r.PATCH("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneGenre))
 	r.DELETE("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneGenre))
@@ -14832,6 +14836,145 @@ func (s *server) adminAdjustUserResources(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) adminDiscoverAllZonesForUser(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	zones, err := s.dbClient.Zone().FindAdminSummaries(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch zones: " + err.Error()})
+		return
+	}
+
+	liveZoneIDs := make(map[uuid.UUID]struct{}, len(zones))
+	for _, zone := range zones {
+		if zone.ID == uuid.Nil {
+			continue
+		}
+		liveZoneIDs[zone.ID] = struct{}{}
+	}
+
+	discoveries, err := s.dbClient.ZoneDiscovery().GetDiscoveriesForUser(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch zone discoveries: " + err.Error()})
+		return
+	}
+
+	existingByZone := make(map[uuid.UUID]struct{}, len(discoveries))
+	for _, discovery := range discoveries {
+		if _, ok := liveZoneIDs[discovery.ZoneID]; !ok {
+			continue
+		}
+		existingByZone[discovery.ZoneID] = struct{}{}
+	}
+
+	createdCount := 0
+	for _, zone := range zones {
+		if zone.ID == uuid.Nil {
+			continue
+		}
+		if _, exists := existingByZone[zone.ID]; exists {
+			continue
+		}
+
+		discovery := &models.ZoneDiscovery{
+			UserID: userID,
+			ZoneID: zone.ID,
+		}
+		if err := s.dbClient.ZoneDiscovery().Create(ctx, discovery); err != nil {
+			lowerErr := strings.ToLower(err.Error())
+			if strings.Contains(lowerErr, "duplicate") ||
+				strings.Contains(lowerErr, "unique") ||
+				strings.Contains(lowerErr, "zone_discoveries_user_zone_unique") {
+				existingByZone[zone.ID] = struct{}{}
+				continue
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create zone discovery: " + err.Error()})
+			return
+		}
+		existingByZone[zone.ID] = struct{}{}
+		createdCount++
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":         fmt.Sprintf("Discovered %d additional zones without granting rewards or experience.", createdCount),
+		"totalZones":      len(liveZoneIDs),
+		"discoveredZones": len(existingByZone),
+		"createdCount":    createdCount,
+		"existingCount":   len(existingByZone) - createdCount,
+		"skippedRewards":  true,
+	})
+}
+
+func (s *server) adminUndiscoverAllZonesForUser(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	discoveries, err := s.dbClient.ZoneDiscovery().GetDiscoveriesForUser(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch zone discoveries: " + err.Error()})
+		return
+	}
+	deletedCount := len(discoveries)
+
+	if err := s.dbClient.ZoneDiscovery().DeleteByUserID(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete zone discoveries: " + err.Error()})
+		return
+	}
+
+	zones, err := s.dbClient.Zone().FindAdminSummaries(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch zones: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":         fmt.Sprintf("Removed %d zone discoveries without affecting rewards or experience.", deletedCount),
+		"totalZones":      len(zones),
+		"discoveredZones": 0,
+		"deletedCount":    deletedCount,
+		"skippedRewards":  true,
+	})
 }
 
 func (s *server) deleteUsers(ctx *gin.Context) {

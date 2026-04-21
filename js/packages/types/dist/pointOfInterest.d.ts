@@ -47,6 +47,7 @@ export interface PointOfInterest {
     pointOfInterestChallenges: PointOfInterestChallenge[];
     genreId: string;
     genre?: ZoneGenre | null;
+    zoneKind?: string;
     tags: Tag[];
     googleMapsPlaceId: string;
     googleMapsPlaceName?: string | null;

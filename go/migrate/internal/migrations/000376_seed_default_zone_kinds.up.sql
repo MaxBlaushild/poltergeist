@@ -1,3 +1,23 @@
+-- Starter zone kinds and their visual language are currently paired by slug.
+-- Keep this seeded set aligned with:
+-- dart/unclaimed_streets/lib/constants/zone_kind_visuals.dart
+--
+-- city: skyline sigil, crisp/miter outline, brass-accent panel
+-- village: cottage sigil, rounded outline, warm wood panel
+-- academy: book sigil, glowing round outline, vellum-violet panel
+-- forest: park sigil, organic round outline, mossed green panel
+-- swamp: water sigil, hazy round outline, tarnished marsh panel
+-- badlands: mesa sigil, fractured bevel outline, sunbaked panel
+-- farmland: wheat sigil, tidy miter outline, linen field panel
+-- highlands: peak sigil, airy round outline, stone-green panel
+-- mountain: ridge sigil, sharp miter outline, slate panel
+-- ruins: temple sigil, broken bevel outline, chipped stone panel
+-- graveyard: moon sigil, spectral round outline, iron-blue panel
+-- industrial: gear sigil, hard miter outline, steel-and-rust panel
+-- desert: sun sigil, wind-soft round outline, sandstone panel
+-- temple-grounds: shrine sigil, sacred round outline, ivory-and-gold panel
+-- volcanic: ember sigil, jagged bevel outline, obsidian-copper panel
+
 INSERT INTO zone_kinds (
   name,
   slug,

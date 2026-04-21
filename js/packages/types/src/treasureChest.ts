@@ -23,6 +23,7 @@ export interface TreasureChest {
   latitude: number;
   longitude: number;
   zoneId: string;
+  zoneKind?: string;
   zone: Zone;
   rewardMode: 'explicit' | 'random';
   randomRewardSize: 'small' | 'medium' | 'large';

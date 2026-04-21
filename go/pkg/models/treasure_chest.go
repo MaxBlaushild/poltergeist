@@ -15,6 +15,7 @@ type TreasureChest struct {
 	Latitude         float64             `json:"latitude"`
 	Longitude        float64             `json:"longitude"`
 	ZoneID           uuid.UUID           `json:"zoneId"`
+	ZoneKind         string              `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone             Zone                `json:"zone"`
 	RewardMode       RewardMode          `json:"rewardMode" gorm:"column:reward_mode"`
 	RandomRewardSize RandomRewardSize    `json:"randomRewardSize" gorm:"column:random_reward_size"`

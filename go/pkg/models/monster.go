@@ -21,6 +21,7 @@ type Monster struct {
 	OwnerUser                   *User               `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
 	Ephemeral                   bool                `json:"ephemeral" gorm:"column:ephemeral"`
 	ZoneID                      uuid.UUID           `json:"zoneId" gorm:"column:zone_id"`
+	ZoneKind                    string              `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone                        Zone                `json:"zone"`
 	GenreID                     uuid.UUID           `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre                       *ZoneGenre          `json:"genre,omitempty" gorm:"foreignKey:GenreID"`

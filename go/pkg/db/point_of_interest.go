@@ -215,7 +215,19 @@ func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name str
 		return err
 	}
 
-	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(pointOfInterest).Error
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"name":                 pointOfInterest.Name,
+		"description":          pointOfInterest.Description,
+		"lat":                  pointOfInterest.Lat,
+		"lng":                  pointOfInterest.Lng,
+		"unlock_tier":          pointOfInterest.UnlockTier,
+		"clue":                 pointOfInterest.Clue,
+		"image_url":            pointOfInterest.ImageUrl,
+		"original_name":        pointOfInterest.OriginalName,
+		"google_maps_place_id": pointOfInterest.GoogleMapsPlaceID,
+		"geometry":             pointOfInterest.Geometry,
+		"updated_at":           pointOfInterest.UpdatedAt,
+	}).Error
 }
 
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {

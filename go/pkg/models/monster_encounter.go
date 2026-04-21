@@ -85,6 +85,7 @@ type MonsterEncounter struct {
 	NextRecurrenceAt            *time.Time                  `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
 	RetiredAt                   *time.Time                  `json:"retiredAt,omitempty" gorm:"column:retired_at"`
 	ZoneID                      uuid.UUID                   `json:"zoneId" gorm:"column:zone_id"`
+	ZoneKind                    string                      `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Zone                        Zone                        `json:"zone"`
 	RequiredStoryFlags          StringArray                 `json:"requiredStoryFlags" gorm:"column:required_story_flags;type:jsonb;default:'[]'"`
 	PointOfInterestID           *uuid.UUID                  `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`

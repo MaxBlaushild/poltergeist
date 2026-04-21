@@ -36,6 +36,33 @@ type ZoneKindFormState = {
   miningResourceCountRatio: string;
 };
 
+type ZoneKindBackfillResult = {
+  contentType: string;
+  missingCount: number;
+  assignedCount: number;
+  ambiguousCount: number;
+  skippedCount: number;
+};
+
+type ZoneKindBackfillSummary = {
+  results: ZoneKindBackfillResult[];
+  missingCount: number;
+  assignedCount: number;
+  ambiguousCount: number;
+  skippedCount: number;
+};
+
+type ZoneKindBackfillStatus = {
+  jobId: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  summary: ZoneKindBackfillSummary;
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt: string;
+};
+
 const ratioFields: ZoneKindRatioField[] = [
   {
     key: 'placeCountRatio',
@@ -90,6 +117,39 @@ const ratioFields: ZoneKindRatioField[] = [
 ];
 
 const defaultZoneKindOverlayColor = '#5f7d68';
+
+const zoneKindBackfillContentLabels: Record<string, string> = {
+  quests: 'Quests',
+  challenges: 'Challenges',
+  scenarios: 'Scenarios',
+  expositions: 'Expositions',
+  monsters: 'Monsters',
+  monster_encounters: 'Monster Encounters',
+  treasure_chests: 'Treasure Chests',
+  healing_fountains: 'Healing Fountains',
+  resources: 'Resources',
+  movement_patterns: 'Movement Patterns',
+  points_of_interest: 'Points of Interest',
+  inventory_items: 'Inventory Items',
+};
+
+const isZoneKindBackfillPending = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
+const formatZoneKindBackfillStatus = (status?: string | null) => {
+  switch (status) {
+    case 'queued':
+      return 'Queued';
+    case 'in_progress':
+      return 'Running';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Idle';
+  }
+};
 
 const emptyForm = (): ZoneKindFormState => ({
   name: '',
@@ -229,6 +289,9 @@ export const ZoneKinds = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ZoneKindFormState>(emptyForm());
   const [editSlugTouched, setEditSlugTouched] = useState(false);
+  const [backfillStarting, setBackfillStarting] = useState(false);
+  const [backfillStatus, setBackfillStatus] =
+    useState<ZoneKindBackfillStatus | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -438,6 +501,54 @@ export const ZoneKinds = () => {
     }
   };
 
+  const pollBackfillStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const nextStatus = await apiClient.get<ZoneKindBackfillStatus>(
+          `/sonar/zoneKinds/backfill-content-kinds/${jobId}/status`
+        );
+        setBackfillStatus(nextStatus);
+      } catch (err) {
+        console.error('Failed to poll zone kind backfill status', err);
+      }
+    },
+    [apiClient]
+  );
+
+  useEffect(() => {
+    if (
+      !backfillStatus?.jobId ||
+      !isZoneKindBackfillPending(backfillStatus.status)
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void pollBackfillStatus(backfillStatus.jobId);
+    }, 2000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [backfillStatus, pollBackfillStatus]);
+
+  const handleBackfillContentKinds = async () => {
+    setBackfillStarting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const status = await apiClient.post<ZoneKindBackfillStatus>(
+        '/sonar/zoneKinds/backfill-content-kinds',
+        {}
+      );
+      setBackfillStatus(status);
+      setSuccess('Queued the missing content zone kind backfill job.');
+    } catch (err) {
+      console.error('Failed to queue zone kind backfill job', err);
+      setError('Unable to queue the content zone kind backfill.');
+    } finally {
+      setBackfillStarting(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-6 text-gray-500">Loading zone kinds...</div>;
   }
@@ -474,6 +585,128 @@ export const ZoneKinds = () => {
           )}
         </div>
       )}
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Fill missing content kinds
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-gray-500">
+              Backfill empty content and inventory item zone kinds from their
+              linked zones and reward relationships. Existing assignments stay
+              untouched.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            onClick={handleBackfillContentKinds}
+            disabled={
+              backfillStarting ||
+              isZoneKindBackfillPending(backfillStatus?.status)
+            }
+          >
+            {backfillStarting || isZoneKindBackfillPending(backfillStatus?.status)
+              ? 'Running...'
+              : 'Backfill Missing Kinds'}
+          </button>
+        </div>
+
+        {backfillStatus && (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Latest job
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  {backfillStatus.jobId}
+                </div>
+              </div>
+              <span
+                className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-medium ${
+                  backfillStatus.status === 'failed'
+                    ? 'bg-red-100 text-red-700'
+                    : backfillStatus.status === 'completed'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {formatZoneKindBackfillStatus(backfillStatus.status)}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-white bg-white px-3 py-3 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Missing
+                </div>
+                <div className="mt-1 text-lg font-semibold text-gray-900">
+                  {backfillStatus.summary.missingCount ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white bg-white px-3 py-3 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Assigned
+                </div>
+                <div className="mt-1 text-lg font-semibold text-emerald-700">
+                  {backfillStatus.summary.assignedCount ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white bg-white px-3 py-3 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Ambiguous
+                </div>
+                <div className="mt-1 text-lg font-semibold text-amber-700">
+                  {backfillStatus.summary.ambiguousCount ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white bg-white px-3 py-3 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Skipped
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-700">
+                  {backfillStatus.summary.skippedCount ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {backfillStatus.error && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {backfillStatus.error}
+              </div>
+            )}
+
+            {(backfillStatus.summary.results?.length ?? 0) > 0 && (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200">
+                <div className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.8fr))] gap-4 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div>Content type</div>
+                  <div>Missing</div>
+                  <div>Assigned</div>
+                  <div>Ambiguous</div>
+                  <div>Skipped</div>
+                </div>
+                {backfillStatus.summary.results.map((result) => (
+                  <div
+                    key={result.contentType}
+                    className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.8fr))] gap-4 border-t border-gray-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                  >
+                    <div className="font-medium text-slate-900">
+                      {zoneKindBackfillContentLabels[result.contentType] ??
+                        result.contentType}
+                    </div>
+                    <div>{result.missingCount}</div>
+                    <div>{result.assignedCount}</div>
+                    <div>{result.ambiguousCount}</div>
+                    <div>{result.skippedCount}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">

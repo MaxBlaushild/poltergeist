@@ -16,6 +16,7 @@ export type ResourceGatherRequirement = {
 export type Resource = {
   id: string;
   zoneId: string;
+  zoneKind?: string;
   resourceTypeId: string;
   resourceType: ResourceType;
   gatherRequirements?: ResourceGatherRequirement[];

@@ -58,6 +58,7 @@ export type InventoryItem = {
     rarityTier: Rarity | string;
     resourceTypeId?: string | null;
     resourceType?: ResourceType | null;
+    zoneKind?: string;
     isCaptureType: boolean;
     buyPrice?: number;
     unlockTier?: number;
