@@ -55,6 +55,8 @@ import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
 import '../utils/poi_image_util.dart';
 import '../utils/camera_capture.dart';
+import '../utils/zone_kind_pattern_asset.dart';
+import '../utils/zone_kind_pattern_tiles.dart';
 import '../constants/api_constants.dart';
 import '../constants/gameplay_constants.dart';
 import '../constants/zone_kind_visuals.dart';
@@ -69,6 +71,8 @@ import '../widgets/monster_battle_dialog.dart';
 import '../widgets/monster_panel.dart';
 import '../widgets/new_item_modal.dart';
 import '../widgets/point_of_interest_panel.dart';
+import '../widgets/quest_objective_display.dart';
+import '../widgets/quest_turn_in_target.dart';
 import '../widgets/resource_panel.dart';
 import '../widgets/rpg_dialogue_modal.dart';
 import '../widgets/scenario_panel.dart';
@@ -112,6 +116,8 @@ const _discoveredCharactersPrefsKeyPrefix =
     'single_player_discovered_characters';
 const _tutorialGuideButtonAcknowledgedPrefsKeyPrefix =
     'single_player_tutorial_guide_button_acknowledged';
+const _trackedQuestOverlaySelectedItemPrefsKeyPrefix =
+    'single_player_tracked_quest_overlay_selected_item';
 const _mapThumbnailVersion = 'v14';
 const _standardMarkerThumbnailSize = 0.75;
 const _baseMarkerSizeScale = 0.75;
@@ -207,6 +213,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   List<Challenge> _challenges = [];
   List<Line> _zoneLines = [];
   List<Fill> _zoneFills = [];
+  List<Fill> _zonePatternFills = [];
   final Map<String, Fill> _zoneFillById = {};
   String? _renderedSelectedZoneId;
   List<Line> _questLines = [];
@@ -219,6 +226,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   List<Circle> _questPoiHighlightCircles = [];
   List<Symbol> _mainStoryPoiHighlightSymbols = [];
   List<Circle> _mainStoryPoiHighlightCircles = [];
+  _TrackedQuestOverlayPulseTarget? _trackedQuestOverlayPulseTarget;
   final Set<String> _activePulseKeys = <String>{};
   List<Symbol> _characterSymbols = [];
   final Map<String, List<Symbol>> _characterSymbolsById = {};
@@ -385,6 +393,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Character? _tutorialGuideDockCharacter;
   String _tutorialGuideDockExcerpt = '';
   bool _tutorialGuideButtonAcknowledged = false;
+  String? _trackedQuestOverlaySelectedItemId;
   String _lastTutorialQuestSyncSignature = '';
   Set<String> _lastAcceptedTrackedTutorialQuestIds = <String>{};
   bool _hasAcceptedTrackedTutorialQuestSnapshot = false;
@@ -441,6 +450,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _basePlacementProvider?.addListener(_onBasePlacementRequested);
       _lastAuthenticatedUserId =
           context.read<AuthProvider>().user?.id.trim() ?? '';
+      unawaited(_restoreTrackedQuestOverlaySelectedItem());
       unawaited(_restoreTutorialGuideButtonAcknowledgement());
       context.read<TutorialReplayProvider>().addListener(
         _onTutorialReplayRequested,
@@ -656,6 +666,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _tutorialGuideButtonAcknowledged = false;
       _lastAcceptedTrackedTutorialQuestIds = <String>{};
       _hasAcceptedTrackedTutorialQuestSnapshot = false;
+      _applyTrackedQuestOverlaySelectedItemId(
+        null,
+        persist: false,
+        pulseImmediately: false,
+      );
+      unawaited(_restoreTrackedQuestOverlaySelectedItem());
       unawaited(_restoreTutorialGuideButtonAcknowledgement());
     }
     if (auth.loading || !auth.isAuthenticated) {
@@ -1190,6 +1206,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return '$_discoveredCharactersPrefsKeyPrefix:$userId';
   }
 
+  String _trackedQuestOverlaySelectedItemPrefsKey(String userId) {
+    return '${_trackedQuestOverlaySelectedItemPrefsKeyPrefix}_$userId';
+  }
+
   Future<void> _restoreDefeatedMonsterIds({bool refreshMap = false}) async {
     final auth = context.read<AuthProvider>();
     if (auth.loading) return;
@@ -1265,6 +1285,87 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
+  String? _normalizeTrackedQuestOverlaySelectedItemId(String? itemId) {
+    final trimmed = itemId?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<void> _restoreTrackedQuestOverlaySelectedItem() async {
+    if (!mounted) return;
+    final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (userId.isEmpty) {
+      _applyTrackedQuestOverlaySelectedItemId(
+        null,
+        persist: false,
+        pulseImmediately: false,
+      );
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final currentUserId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (currentUserId != userId) return;
+    final storedItemId = _normalizeTrackedQuestOverlaySelectedItemId(
+      prefs.getString(_trackedQuestOverlaySelectedItemPrefsKey(userId)),
+    );
+    _applyTrackedQuestOverlaySelectedItemId(
+      storedItemId,
+      persist: false,
+      pulseImmediately: false,
+    );
+  }
+
+  Future<void> _persistTrackedQuestOverlaySelectedItem(String? itemId) async {
+    final userId = context.read<AuthProvider>().user?.id.trim() ?? '';
+    if (userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = _normalizeTrackedQuestOverlaySelectedItemId(itemId);
+    final key = _trackedQuestOverlaySelectedItemPrefsKey(userId);
+    if (normalized == null) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(key, normalized);
+  }
+
+  void _applyTrackedQuestOverlaySelectedItemId(
+    String? itemId, {
+    required bool persist,
+    required bool pulseImmediately,
+  }) {
+    final normalized = _normalizeTrackedQuestOverlaySelectedItemId(itemId);
+    final changed = _trackedQuestOverlaySelectedItemId != normalized;
+    void update() {
+      _trackedQuestOverlaySelectedItemId = normalized;
+    }
+
+    if (changed) {
+      if (mounted) {
+        setState(update);
+      } else {
+        update();
+      }
+    } else {
+      update();
+    }
+
+    _syncTrackedQuestOverlayPulseTargetFromSelectedItem(
+      pulseImmediately: pulseImmediately,
+    );
+    if (persist) {
+      unawaited(_persistTrackedQuestOverlaySelectedItem(normalized));
+    }
+  }
+
+  void _handleTrackedQuestOverlaySelectedItemChanged(String? itemId) {
+    _applyTrackedQuestOverlaySelectedItemId(
+      itemId,
+      persist: true,
+      pulseImmediately: false,
+    );
+  }
+
   Future<void> _markCharacterDiscovered(String characterId) async {
     final normalized = characterId.trim();
     if (normalized.isEmpty) return;
@@ -1328,6 +1429,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     _openTrackedQuestsForTutorialQuestAwards(questLog);
     _openTrackedQuestsForObjectiveUpdates(questLog);
+    _syncTrackedQuestOverlayPulseTargetFromSelectedItem();
     _applyQuestLogOverlaysIfChanged();
     if (_skipQuestLogMapRefreshCount > 0) {
       _skipQuestLogMapRefreshCount -= 1;
@@ -2449,6 +2551,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _challengeMysteryThumbnailAdded = false;
       _zoneLines = [];
       _zoneFills = [];
+      _zonePatternFills = [];
       _zoneFillById.clear();
       _mapImageIds.clear();
       _renderedSelectedZoneId = null;
@@ -3138,6 +3241,300 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final encounter = _monsterById(encounterId);
     if (encounter == null) return 'Monster Encounter';
     return encounter.encounterTypeLabel;
+  }
+
+  bool _isValidTrackedQuestOverlayPulseCoordinate(double lat, double lng) {
+    if (!lat.isFinite || !lng.isFinite) return false;
+    if (lat.abs() > 90 || lng.abs() > 180) return false;
+    return lat != 0 || lng != 0;
+  }
+
+  _TrackedQuestOverlayPulseTarget? _trackedQuestOverlayPulseTargetForPoi(
+    PointOfInterest poi,
+  ) {
+    final lat = double.tryParse(poi.lat) ?? 0.0;
+    final lng = double.tryParse(poi.lng) ?? 0.0;
+    if (!_isValidTrackedQuestOverlayPulseCoordinate(lat, lng)) return null;
+    return _TrackedQuestOverlayPulseTarget(
+      type: 'poi',
+      id: poi.id,
+      latitude: lat,
+      longitude: lng,
+    );
+  }
+
+  _TrackedQuestOverlayPulseTarget?
+  _trackedQuestOverlayPulseTargetForQuestTurnIn(Quest quest) {
+    final questReceiver = _questReceiverCharacterForQuest(quest);
+    final questReceiverPoi = _questReceiverPoiForQuest(quest);
+    if (questReceiver != null) {
+      final focusLocation = _questNodeFetchCharacterLocation(questReceiver);
+      if (focusLocation != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            focusLocation.latitude,
+            focusLocation.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'character',
+          id: questReceiver.id.trim(),
+          latitude: focusLocation.latitude,
+          longitude: focusLocation.longitude,
+        );
+      }
+    }
+    if (questReceiverPoi == null) return null;
+    return _trackedQuestOverlayPulseTargetForPoi(questReceiverPoi);
+  }
+
+  _TrackedQuestOverlayPulseTarget? _trackedQuestOverlayPulseTargetForQuestNode(
+    QuestNode node,
+  ) {
+    final poi = node.pointOfInterest;
+    if (poi != null) {
+      return _trackedQuestOverlayPulseTargetForPoi(poi);
+    }
+
+    final fetchCharacter = _questNodeFetchCharacter(node);
+    if (fetchCharacter != null) {
+      final focusLocation = _questNodeFetchCharacterLocation(fetchCharacter);
+      if (focusLocation != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            focusLocation.latitude,
+            focusLocation.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'character',
+          id: fetchCharacter.id.trim(),
+          latitude: focusLocation.latitude,
+          longitude: focusLocation.longitude,
+        );
+      }
+    }
+
+    final scenarioId = node.scenarioId?.trim() ?? '';
+    if (scenarioId.isNotEmpty) {
+      final scenario = _scenarioById(scenarioId);
+      if (scenario != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            scenario.latitude,
+            scenario.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'scenario',
+          id: scenario.id,
+          latitude: scenario.latitude,
+          longitude: scenario.longitude,
+        );
+      }
+    }
+
+    final expositionId = node.expositionId?.trim() ?? '';
+    if (expositionId.isNotEmpty) {
+      final exposition = _expositionById(expositionId);
+      if (exposition != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            exposition.latitude,
+            exposition.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'exposition',
+          id: exposition.id,
+          latitude: exposition.latitude,
+          longitude: exposition.longitude,
+        );
+      }
+    }
+
+    final encounterId = node.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isNotEmpty) {
+      final encounter = _monsterById(encounterId);
+      if (encounter != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            encounter.latitude,
+            encounter.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'monster',
+          id: encounter.id,
+          latitude: encounter.latitude,
+          longitude: encounter.longitude,
+        );
+      }
+    }
+
+    final monsterId = node.monsterId?.trim() ?? '';
+    if (monsterId.isNotEmpty) {
+      final encounter = _monsterEncounterByMemberMonsterId(monsterId);
+      if (encounter != null &&
+          _isValidTrackedQuestOverlayPulseCoordinate(
+            encounter.latitude,
+            encounter.longitude,
+          )) {
+        return _TrackedQuestOverlayPulseTarget(
+          type: 'monster',
+          id: encounter.id,
+          latitude: encounter.latitude,
+          longitude: encounter.longitude,
+        );
+      }
+    }
+
+    final challengeId = node.challengeId?.trim() ?? '';
+    if (challengeId.isNotEmpty) {
+      final challenge = _challengeById(challengeId);
+      if (challenge != null) {
+        final anchor = _challengeProximityAnchor(challenge);
+        if (_isValidTrackedQuestOverlayPulseCoordinate(
+          anchor.latitude,
+          anchor.longitude,
+        )) {
+          return _TrackedQuestOverlayPulseTarget(
+            type: 'challenge',
+            id: challenge.id,
+            latitude: anchor.latitude,
+            longitude: anchor.longitude,
+          );
+        }
+      }
+    }
+
+    if (node.polygon.isEmpty) return null;
+    final center = _polygonCenter(node.polygon);
+    if (!_isValidTrackedQuestOverlayPulseCoordinate(
+      center.latitude,
+      center.longitude,
+    )) {
+      return null;
+    }
+    return _TrackedQuestOverlayPulseTarget(
+      type: 'quest_polygon',
+      id: _hashQuestPolygons([node.polygon]).toString(),
+      latitude: center.latitude,
+      longitude: center.longitude,
+    );
+  }
+
+  _TrackedQuestOverlayPulseTarget?
+  _trackedQuestOverlayPulseTargetForTutorialScenario() {
+    final scenarioId = _tutorialStatus?.scenarioId?.trim() ?? '';
+    if (scenarioId.isEmpty) return null;
+    final scenario = _scenarioById(scenarioId);
+    if (scenario == null ||
+        !_isValidTrackedQuestOverlayPulseCoordinate(
+          scenario.latitude,
+          scenario.longitude,
+        )) {
+      return null;
+    }
+    return _TrackedQuestOverlayPulseTarget(
+      type: 'scenario',
+      id: scenario.id,
+      latitude: scenario.latitude,
+      longitude: scenario.longitude,
+    );
+  }
+
+  _TrackedQuestOverlayPulseTarget?
+  _trackedQuestOverlayPulseTargetForTutorialMonster() {
+    final encounterId = _tutorialStatus?.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isEmpty) return null;
+    final encounter = _monsterById(encounterId);
+    if (encounter == null ||
+        !_isValidTrackedQuestOverlayPulseCoordinate(
+          encounter.latitude,
+          encounter.longitude,
+        )) {
+      return null;
+    }
+    return _TrackedQuestOverlayPulseTarget(
+      type: 'monster',
+      id: encounter.id,
+      latitude: encounter.latitude,
+      longitude: encounter.longitude,
+    );
+  }
+
+  _TrackedQuestOverlayPulseTarget?
+  _trackedQuestOverlayPulseTargetForSelectedItemId(String? itemId) {
+    final normalized = _normalizeTrackedQuestOverlaySelectedItemId(itemId);
+    if (normalized == null) return null;
+    if (normalized == 'tutorial:scenario') {
+      return _trackedQuestOverlayPulseTargetForTutorialScenario();
+    }
+    if (normalized == 'tutorial:monster') {
+      return _trackedQuestOverlayPulseTargetForTutorialMonster();
+    }
+    if (!normalized.startsWith('quest:')) return null;
+
+    final questId = normalized.substring('quest:'.length).trim();
+    if (questId.isEmpty) return null;
+    final questLog = context.read<QuestLogProvider>();
+    if (!questLog.trackedQuestIds.contains(questId)) return null;
+    Quest? selectedQuest;
+    for (final quest in questLog.quests) {
+      if (quest.id == questId) {
+        selectedQuest = quest;
+        break;
+      }
+    }
+    if (selectedQuest == null) return null;
+    if (questIsAwaitingTurnIn(selectedQuest)) {
+      return _trackedQuestOverlayPulseTargetForQuestTurnIn(selectedQuest);
+    }
+    final poi = selectedQuest.currentNode?.pointOfInterest;
+    if (poi != null) {
+      return _trackedQuestOverlayPulseTargetForPoi(poi);
+    }
+    final node = selectedQuest.currentNode;
+    if (node == null || !questNodeHasDirectFocusTarget(node)) {
+      return null;
+    }
+    return _trackedQuestOverlayPulseTargetForQuestNode(node);
+  }
+
+  bool _trackedQuestOverlayPulseTargetUsesMainStoryHighlight(
+    _TrackedQuestOverlayPulseTarget target,
+  ) {
+    for (final symbol in _mainStoryPoiHighlightSymbols) {
+      if (target.matchesAnnotation(symbol.data, symbol.options.geometry)) {
+        return true;
+      }
+    }
+    for (final circle in _mainStoryPoiHighlightCircles) {
+      if (target.matchesAnnotation(circle.data, circle.options.geometry)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _setTrackedQuestOverlayPulseTarget(
+    _TrackedQuestOverlayPulseTarget? target, {
+    bool pulseImmediately = true,
+  }) {
+    final changed = _trackedQuestOverlayPulseTarget != target;
+    _trackedQuestOverlayPulseTarget = target;
+    _ensureQuestPoiPulseTimer();
+    if (!pulseImmediately || !changed || target == null) return;
+    if (_trackedQuestOverlayPulseTargetUsesMainStoryHighlight(target)) return;
+    unawaited(
+      _pulseTrackedQuestOverlayPreview(target.latitude, target.longitude),
+    );
+  }
+
+  void _clearTrackedQuestOverlayPulseTarget() {
+    _setTrackedQuestOverlayPulseTarget(null, pulseImmediately: false);
+  }
+
+  void _syncTrackedQuestOverlayPulseTargetFromSelectedItem({
+    bool pulseImmediately = false,
+  }) {
+    _setTrackedQuestOverlayPulseTarget(
+      _trackedQuestOverlayPulseTargetForSelectedItemId(
+        _trackedQuestOverlaySelectedItemId,
+      ),
+      pulseImmediately: pulseImmediately,
+    );
   }
 
   void _focusQuestTurnIn(
@@ -4147,6 +4544,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     _syncTutorialInventorySession(status);
     _syncTutorialGuideButtonPulse(status);
+    _syncTrackedQuestOverlayPulseTargetFromSelectedItem();
     _openTrackedQuestsForTutorialObjectiveUpdates(status);
     if (_tutorialReplayPending &&
         (status.character == null || status.dialogue.isEmpty)) {
@@ -10395,6 +10793,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         : visuals.discoveredFillOpacity;
   }
 
+  double _selectedZoneFillOpacity(Zone zone) {
+    final baseOpacity = _zoneFillOpacity(zone);
+    return (baseOpacity * 0.28).clamp(0.08, 0.16).toDouble();
+  }
+
   String _zoneOuterLineColor(Zone zone) {
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {
@@ -10474,6 +10877,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _zoneKindVisuals(zone).lineJoin;
   }
 
+  FillOptions _zoneBaseFillOptions(
+    Zone zone,
+    List<LatLng> ring,
+    int zoneIndex, {
+    required bool selected,
+  }) {
+    return FillOptions(
+      geometry: [ring],
+      fillColor: _zoneFillColor(zone, salt: zoneIndex),
+      fillOpacity: selected
+          ? _selectedZoneFillOpacity(zone)
+          : _zoneFillOpacity(zone),
+    );
+  }
+
   Future<void> _addZoneBoundaries() {
     _zoneBoundaryRefreshSequence = _zoneBoundaryRefreshSequence.then((_) async {
       try {
@@ -10508,6 +10926,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _zoneFills.clear();
       _zoneFillById.clear();
     }
+    if (_zonePatternFills.isNotEmpty) {
+      try {
+        await c.removeFills(_zonePatternFills);
+      } catch (_) {}
+      if (!mounted) return;
+      _zonePatternFills.clear();
+    }
     final options = <LineOptions>[];
     final lineData = <Map>[];
     final fillOptions = <FillOptions>[];
@@ -10516,16 +10941,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final z = _zones[i];
       final ring = _zoneRing(z);
       if (ring.length < 2) continue;
-      if (selectedZoneId == null || selectedZoneId != z.id) {
-        fillOptions.add(
-          FillOptions(
-            geometry: [ring],
-            fillColor: _zoneFillColor(z, salt: i),
-            fillOpacity: _zoneFillOpacity(z),
-          ),
-        );
-        fillData.add({'type': 'zone', 'id': z.id});
-      }
+      final isSelected = selectedZoneId != null && selectedZoneId == z.id;
+      fillOptions.add(_zoneBaseFillOptions(z, ring, i, selected: isSelected));
+      fillData.add({'type': 'zone', 'id': z.id});
       options.add(
         LineOptions(
           geometry: ring,
@@ -10562,6 +10980,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _zoneFillById[zoneId] = fills[i];
       }
     }
+    await _renderZonePatternFills(c, selectedZoneId: selectedZoneId);
     final lines = await c.addLines(options, lineData);
     if (!mounted) return;
     _zoneLines.addAll(lines);
@@ -10576,52 +10995,52 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     final previousZoneId = _renderedSelectedZoneId;
     if (previousZoneId != null && previousZoneId.isNotEmpty) {
-      await _ensureZoneFill(previousZoneId);
+      await _upsertZoneFill(previousZoneId, selected: false);
     }
     if (selectedZoneId != null && selectedZoneId.isNotEmpty) {
-      await _removeZoneFill(selectedZoneId);
+      await _upsertZoneFill(selectedZoneId, selected: true);
     }
+    await _renderZonePatternFills(c, selectedZoneId: selectedZoneId);
     _renderedSelectedZoneId = selectedZoneId;
   }
 
-  Future<void> _ensureZoneFill(String zoneId) async {
+  Future<void> _upsertZoneFill(String zoneId, {required bool selected}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    if (_zoneFillById.containsKey(zoneId)) return;
     final zoneIndex = _zones.indexWhere((zone) => zone.id == zoneId);
     if (zoneIndex < 0) return;
     final zone = _zones[zoneIndex];
     final ring = _zoneRing(zone);
     if (ring.length < 2) return;
-    try {
-      final fills = await c.addFills(
-        [
-          FillOptions(
-            geometry: [ring],
-            fillColor: _zoneFillColor(zone, salt: zoneIndex),
-            fillOpacity: _zoneFillOpacity(zone),
-          ),
-        ],
-        [
-          {'type': 'zone', 'id': zone.id},
-        ],
-      );
-      if (!mounted || fills.isEmpty) return;
-      final fill = fills.first;
-      _zoneFills.add(fill);
-      _zoneFillById[zone.id] = fill;
-    } catch (_) {}
-  }
-
-  Future<void> _removeZoneFill(String zoneId) async {
-    final c = _mapController;
-    if (c == null || !_styleLoaded) return;
-    final fill = _zoneFillById.remove(zoneId);
-    if (fill == null) return;
-    _zoneFills.remove(fill);
-    try {
-      await c.removeFills([fill]);
-    } catch (_) {}
+    final fillOptions = _zoneBaseFillOptions(
+      zone,
+      ring,
+      zoneIndex,
+      selected: selected,
+    );
+    final existingFill = _zoneFillById[zoneId];
+    if (existingFill != null) {
+      try {
+        await c.updateFill(existingFill, fillOptions);
+      } catch (_) {
+        _zoneFillById.remove(zoneId);
+        _zoneFills.remove(existingFill);
+      }
+    }
+    if (!_zoneFillById.containsKey(zoneId)) {
+      try {
+        final fills = await c.addFills(
+          [fillOptions],
+          [
+            {'type': 'zone', 'id': zone.id},
+          ],
+        );
+        if (!mounted || fills.isEmpty) return;
+        final fill = fills.first;
+        _zoneFills.add(fill);
+        _zoneFillById[zone.id] = fill;
+      } catch (_) {}
+    }
   }
 
   Future<void> _addQuestPolygons() async {
@@ -10778,7 +11197,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (_questPoiHighlightSymbols.isEmpty &&
         _questPoiHighlightCircles.isEmpty &&
         _mainStoryPoiHighlightSymbols.isEmpty &&
-        _mainStoryPoiHighlightCircles.isEmpty) {
+        _mainStoryPoiHighlightCircles.isEmpty &&
+        _trackedQuestOverlayPulseTarget == null) {
       _questPoiPulseTimer?.cancel();
       _questPoiPulseTimer = null;
       return;
@@ -10786,18 +11206,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (_questPoiPulseTimer != null) return;
 
     Future<void> pulseTrackedAnnotations() async {
+      final overlayTarget = _trackedQuestOverlayPulseTarget;
       final symbolSnapshot = List<Symbol>.from(_questPoiHighlightSymbols);
       for (final symbol in symbolSnapshot) {
         final geometry = symbol.options.geometry;
         final opacity = symbol.options.iconOpacity ?? 1.0;
-        if (geometry == null || opacity <= 0.05) continue;
+        if (geometry == null ||
+            opacity <= 0.05 ||
+            overlayTarget?.matchesAnnotation(symbol.data, geometry) == true) {
+          continue;
+        }
         unawaited(_pulsePoi(geometry.latitude, geometry.longitude));
       }
       final circleSnapshot = List<Circle>.from(_questPoiHighlightCircles);
       for (final circle in circleSnapshot) {
         final geometry = circle.options.geometry;
         final opacity = circle.options.circleOpacity ?? 1.0;
-        if (geometry == null || opacity <= 0.05) continue;
+        if (geometry == null ||
+            opacity <= 0.05 ||
+            overlayTarget?.matchesAnnotation(circle.data, geometry) == true) {
+          continue;
+        }
         unawaited(_pulsePoi(geometry.latitude, geometry.longitude));
       }
       final mainStorySymbolSnapshot = List<Symbol>.from(
@@ -10820,6 +11249,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         if (geometry == null || opacity <= 0.05) continue;
         unawaited(
           _pulseMainStoryLeadFocus(geometry.latitude, geometry.longitude),
+        );
+      }
+      if (overlayTarget != null &&
+          !_trackedQuestOverlayPulseTargetUsesMainStoryHighlight(
+            overlayTarget,
+          )) {
+        unawaited(
+          _pulseTrackedQuestOverlayPreview(
+            overlayTarget.latitude,
+            overlayTarget.longitude,
+          ),
         );
       }
     }
@@ -12199,6 +12639,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         questLog.quests.any(
           (quest) => questLog.trackedQuestIds.contains(quest.id),
         );
+    if (!hasTrackedQuestOverlay && _trackedQuestOverlayPulseTarget != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _trackedQuestOverlayPulseTarget == null) return;
+        _clearTrackedQuestOverlayPulseTarget();
+      });
+    }
     final polygonActionBottom =
         MediaQuery.paddingOf(context).bottom +
         bottomOverlayPadding +
@@ -12666,32 +13112,63 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                           controller: _trackedQuestsController,
                           expandUpwards: true,
                           collapsedHeight: trackedQuestOverlayCollapsedHeight,
-                          onFocusPoI: (poi) => _focusQuestPoI(
-                            poi,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                          ),
-                          onFocusNode: (node) => _focusQuestNode(
-                            node,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                          ),
-                          onFocusTurnInQuest: (quest) => _focusQuestTurnIn(
-                            quest,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                          ),
-                          onPreviewPoI: (poi) => _previewTrackedQuestPoi(
-                            poi,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                          ),
-                          onPreviewNode: (node) => _focusQuestNode(
-                            node,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                            pulseMarker: _pulseTrackedQuestOverlayPreview,
-                          ),
-                          onPreviewTurnInQuest: (quest) => _focusQuestTurnIn(
-                            quest,
-                            zoom: _trackedQuestOverlayFocusZoom,
-                            pulseMarker: _pulseTrackedQuestOverlayPreview,
-                          ),
+                          initialSelectedItemId:
+                              _trackedQuestOverlaySelectedItemId,
+                          onFocusPoI: (poi) {
+                            _focusQuestPoI(
+                              poi,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                            );
+                          },
+                          onFocusNode: (node) {
+                            _focusQuestNode(
+                              node,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                            );
+                          },
+                          onFocusTurnInQuest: (quest) {
+                            _focusQuestTurnIn(
+                              quest,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                            );
+                          },
+                          onPreviewPoI: (poi) {
+                            _setTrackedQuestOverlayPulseTarget(
+                              _trackedQuestOverlayPulseTargetForPoi(poi),
+                              pulseImmediately: false,
+                            );
+                            _previewTrackedQuestPoi(
+                              poi,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                            );
+                          },
+                          onPreviewNode: (node) {
+                            _setTrackedQuestOverlayPulseTarget(
+                              _trackedQuestOverlayPulseTargetForQuestNode(node),
+                              pulseImmediately: false,
+                            );
+                            _focusQuestNode(
+                              node,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                              pulseMarker: _pulseTrackedQuestOverlayPreview,
+                            );
+                          },
+                          onPreviewTurnInQuest: (quest) {
+                            _setTrackedQuestOverlayPulseTarget(
+                              _trackedQuestOverlayPulseTargetForQuestTurnIn(
+                                quest,
+                              ),
+                              pulseImmediately: false,
+                            );
+                            _focusQuestTurnIn(
+                              quest,
+                              zoom: _trackedQuestOverlayFocusZoom,
+                              pulseMarker: _pulseTrackedQuestOverlayPreview,
+                            );
+                          },
+                          onClearPreview: _clearTrackedQuestOverlayPulseTarget,
+                          onSelectedItemChanged:
+                              _handleTrackedQuestOverlaySelectedItemChanged,
                           resolveQuestReceiverCharacter:
                               _questReceiverCharacterForQuest,
                           resolveQuestReceiverPoi: _questReceiverPoiForQuest,
@@ -12705,16 +13182,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                           onFocusTutorialScenario:
                               tutorialScenarioTrackedObjective.isEmpty
                               ? null
-                              : () => _focusTutorialScenarioFromTrackedOverlay(
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                ),
+                              : () {
+                                  _focusTutorialScenarioFromTrackedOverlay(
+                                    zoom: _trackedQuestOverlayFocusZoom,
+                                  );
+                                },
                           onPreviewTutorialScenario:
                               tutorialScenarioTrackedObjective.isEmpty
                               ? null
-                              : () => _focusTutorialScenarioFromTrackedOverlay(
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                  pulseMarker: _pulseTrackedQuestOverlayPreview,
-                                ),
+                              : () {
+                                  _setTrackedQuestOverlayPulseTarget(
+                                    _trackedQuestOverlayPulseTargetForTutorialScenario(),
+                                    pulseImmediately: false,
+                                  );
+                                  _focusTutorialScenarioFromTrackedOverlay(
+                                    zoom: _trackedQuestOverlayFocusZoom,
+                                    pulseMarker:
+                                        _pulseTrackedQuestOverlayPreview,
+                                  );
+                                },
                           tutorialMonsterTitle: _tutorialMonsterOverlayTitle(
                             tutorialStatus,
                           ),
@@ -12726,16 +13212,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                           onFocusTutorialMonster:
                               tutorialMonsterTrackedObjective.isEmpty
                               ? null
-                              : () => _focusTutorialMonsterFromTrackedOverlay(
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                ),
+                              : () {
+                                  _focusTutorialMonsterFromTrackedOverlay(
+                                    zoom: _trackedQuestOverlayFocusZoom,
+                                  );
+                                },
                           onPreviewTutorialMonster:
                               tutorialMonsterTrackedObjective.isEmpty
                               ? null
-                              : () => _focusTutorialMonsterFromTrackedOverlay(
-                                  zoom: _trackedQuestOverlayFocusZoom,
-                                  pulseMarker: _pulseTrackedQuestOverlayPreview,
-                                ),
+                              : () {
+                                  _setTrackedQuestOverlayPulseTarget(
+                                    _trackedQuestOverlayPulseTargetForTutorialMonster(),
+                                    pulseImmediately: false,
+                                  );
+                                  _focusTutorialMonsterFromTrackedOverlay(
+                                    zoom: _trackedQuestOverlayFocusZoom,
+                                    pulseMarker:
+                                        _pulseTrackedQuestOverlayPreview,
+                                  );
+                                },
                           onCloseOverlay:
                               _returnToPlayerFromTrackedQuestOverlay,
                         ),
@@ -15099,6 +15594,95 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
+  double _zonePatternFillOpacity(Zone zone, {required bool selected}) {
+    final baseOpacity = _isUndiscoveredZone(zone) ? 0.2 : 0.28;
+    if (!selected) {
+      return baseOpacity;
+    }
+    return (baseOpacity * 0.34).clamp(0.06, 0.11).toDouble();
+  }
+
+  Future<String?> _zonePatternImageIdForZone(
+    MapLibreMapController controller,
+    Zone zone,
+  ) async {
+    final remoteUrl = zone.kindPatternTileUrl?.trim() ?? '';
+    if (remoteUrl.isNotEmpty) {
+      final remoteBytes = await loadZoneKindPatternTile(remoteUrl);
+      if (remoteBytes != null && remoteBytes.isNotEmpty) {
+        final imageId = zoneKindPatternAssetImageId(zone.kind, remoteUrl);
+        await _ensureMapImage(controller, imageId, remoteBytes);
+        return imageId;
+      }
+    }
+
+    final fallbackBytes = zoneKindPatternTileBytes(zone.kind);
+    if (fallbackBytes.isEmpty) {
+      return null;
+    }
+    final fallbackImageId = zoneKindPatternImageId(zone.kind);
+    await _ensureMapImage(controller, fallbackImageId, fallbackBytes);
+    return fallbackImageId;
+  }
+
+  FillOptions _zonePatternFillOptions(
+    Zone zone,
+    List<LatLng> ring, {
+    required bool selected,
+    required String imageId,
+  }) {
+    return FillOptions(
+      geometry: [ring],
+      fillPattern: imageId,
+      fillColor: '#ffffff',
+      fillOpacity: _zonePatternFillOpacity(zone, selected: selected),
+    );
+  }
+
+  Future<void> _renderZonePatternFills(
+    MapLibreMapController controller, {
+    String? selectedZoneId,
+  }) async {
+    if (_zonePatternFills.isNotEmpty) {
+      try {
+        await controller.removeFills(_zonePatternFills);
+      } catch (_) {}
+      if (!mounted) return;
+      _zonePatternFills.clear();
+    }
+
+    final options = <FillOptions>[];
+    final fillData = <Map>[];
+    for (final zone in _zones) {
+      final ring = _zoneRing(zone);
+      if (ring.length < 3) {
+        continue;
+      }
+      final imageId = await _zonePatternImageIdForZone(controller, zone);
+      if (imageId == null || imageId.isEmpty) {
+        continue;
+      }
+      final isSelected = selectedZoneId != null && selectedZoneId == zone.id;
+      options.add(
+        _zonePatternFillOptions(
+          zone,
+          ring,
+          selected: isSelected,
+          imageId: imageId,
+        ),
+      );
+      fillData.add({'type': 'zonePattern', 'id': zone.id});
+    }
+
+    if (options.isEmpty) {
+      return;
+    }
+
+    final fills = await controller.addFills(options, fillData);
+    if (!mounted) return;
+    _zonePatternFills.addAll(fills);
+  }
+
   Future<MonsterEncounter> _hydrateMonsterEncounterForBattle(
     MonsterEncounter encounter,
     String battleMonsterId,
@@ -15899,6 +16483,47 @@ class _MapPinSelectionCandidate {
   final double distance;
   final bool useBaseDiamondMarker;
   final bool isCurrentUserBase;
+}
+
+class _TrackedQuestOverlayPulseTarget {
+  const _TrackedQuestOverlayPulseTarget({
+    required this.type,
+    required this.id,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  static const _coordinateMatchTolerance = 0.00001;
+
+  final String type;
+  final String id;
+  final double latitude;
+  final double longitude;
+
+  bool matchesAnnotation(dynamic raw, LatLng? geometry) {
+    if (geometry == null) return false;
+    if ((geometry.latitude - latitude).abs() > _coordinateMatchTolerance ||
+        (geometry.longitude - longitude).abs() > _coordinateMatchTolerance) {
+      return false;
+    }
+    if (id.isEmpty) return true;
+    if (raw == null || raw is! Map) return false;
+    final data = Map<String, dynamic>.from(raw);
+    return data['type']?.toString() == type && data['id']?.toString() == id;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _TrackedQuestOverlayPulseTarget &&
+        other.type == type &&
+        other.id == id &&
+        other.latitude == latitude &&
+        other.longitude == longitude;
+  }
+
+  @override
+  int get hashCode => Object.hash(type, id, latitude, longitude);
 }
 
 class _PoiSymbolRequest {

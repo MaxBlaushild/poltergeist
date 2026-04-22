@@ -23,6 +23,7 @@ export type Zone = {
     description: string;
     kind: string;
     kindOverlayColor?: string;
+    kindPatternTileUrl?: string;
     internalTags?: string[];
     zoneImportId?: string | null;
     boundary: number[][];

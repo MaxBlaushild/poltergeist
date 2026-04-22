@@ -188,37 +188,31 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final zoneVisuals = displayedZone != null
             ? zoneKindVisualProfileForSlug(displayedZone.kind)
             : null;
-        final surfaceColor = zoneVisuals != null
-            ? zoneVisuals
-                  .surfaceColor(undiscovered: showingUndiscovered)
-                  .withValues(alpha: showingUndiscovered ? 0.97 : 0.95)
-            : (showingUndiscovered
-                  ? const Color(0xFF1C2430).withValues(alpha: 0.96)
-                  : theme.colorScheme.surface.withValues(alpha: 0.95));
-        final borderColor = zoneVisuals != null
-            ? zoneVisuals.borderColor(undiscovered: showingUndiscovered)
-            : (showingUndiscovered
-                  ? const Color(0xFFD3BF88)
-                  : theme.colorScheme.outlineVariant);
+        final surfaceColor = showingUndiscovered
+            ? const Color(0xFF1C2430).withValues(alpha: 0.96)
+            : theme.colorScheme.surface.withValues(alpha: 0.95);
+        final borderColor = showingUndiscovered
+            ? const Color(0xFFD3BF88)
+            : theme.colorScheme.outlineVariant;
         final accentColor = zoneVisuals != null
             ? zoneVisuals.accentColor(undiscovered: showingUndiscovered)
             : borderColor;
         final chipBackgroundColor = zoneVisuals != null
             ? zoneVisuals.chipBackgroundColor(undiscovered: showingUndiscovered)
-            : theme.colorScheme.surfaceContainerHighest;
+            : (showingUndiscovered
+                  ? const Color(0xFF0F1722).withValues(alpha: 0.72)
+                  : theme.colorScheme.surfaceContainerHighest);
         final chipTextColor = zoneVisuals != null
             ? zoneVisuals.chipTextColor(undiscovered: showingUndiscovered)
+            : (showingUndiscovered
+                  ? const Color(0xFFF6E7B8)
+                  : theme.colorScheme.onSurface);
+        final primaryTextColor = showingUndiscovered
+            ? const Color(0xFFF6E7B8)
             : theme.colorScheme.onSurface;
-        final primaryTextColor =
-            zoneVisuals?.panelText ??
-            (showingUndiscovered
-                ? const Color(0xFFF6E7B8)
-                : theme.colorScheme.onSurface);
-        final secondaryTextColor =
-            zoneVisuals?.panelSubtext ??
-            (showingUndiscovered
-                ? const Color(0xFFD7DDE8)
-                : theme.colorScheme.onSurface);
+        final secondaryTextColor = showingUndiscovered
+            ? const Color(0xFFD7DDE8)
+            : theme.colorScheme.onSurface;
         final textStyle = theme.textTheme.bodyMedium?.copyWith(
           color: primaryTextColor,
           fontWeight: FontWeight.w600,
@@ -454,14 +448,10 @@ class _ZoneWidgetState extends State<ZoneWidget> {
             border: Border.all(color: borderColor, width: 1.6),
             boxShadow: [
               BoxShadow(
-                color:
-                    zoneVisuals?.shadowColor(
-                      undiscovered: showingUndiscovered,
-                    ) ??
-                    (showingUndiscovered
-                        ? const Color(0x44101723)
-                        : const Color(0x332D2416)),
-                blurRadius: showingUndiscovered ? 18 : 12,
+                color: showingUndiscovered
+                    ? const Color(0x44101723)
+                    : const Color(0x332D2416),
+                blurRadius: showingUndiscovered ? 16 : 10,
                 offset: const Offset(0, 4),
               ),
             ],

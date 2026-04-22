@@ -63,6 +63,17 @@ type ZoneKindBackfillStatus = {
   updatedAt: string;
 };
 
+type ZoneKindPayload = Omit<
+  ZoneKind,
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'patternTileUrl'
+  | 'patternTilePrompt'
+  | 'patternTileGenerationStatus'
+  | 'patternTileGenerationError'
+>;
+
 const ratioFields: ZoneKindRatioField[] = [
   {
     key: 'placeCountRatio',
@@ -151,6 +162,138 @@ const formatZoneKindBackfillStatus = (status?: string | null) => {
   }
 };
 
+const isZoneKindPatternTilePending = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
+const formatZoneKindPatternTileStatus = (status?: string | null) => {
+  switch (status) {
+    case 'queued':
+      return 'Queued';
+    case 'in_progress':
+      return 'Generating';
+    case 'complete':
+      return 'Ready';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Idle';
+  }
+};
+
+const zoneKindPatternMotifs = (slug: string) => {
+  switch (normalizeSlugDraft(slug)) {
+    case 'forest':
+      return 'leaf clusters, canopy blotches, branch forks, trail scratches';
+    case 'swamp':
+      return 'reed strokes, puddle curves, marsh ripples, hanging moss';
+    case 'volcanic':
+      return 'lava cracks, ember seams, ash flecks, broken magma lines';
+    case 'graveyard':
+      return 'worn stone hash marks, grave glyphs, crosshatched weathering';
+    case 'desert':
+      return 'wind-carved dune lines, grit speckle, drifting wave contours';
+    case 'temple-grounds':
+      return 'sacred rings, shrine geometry, halo lines, ceremonial inlay';
+    case 'city':
+      return 'street grids, masonry blocks, alley runs, civic linework';
+    case 'industrial':
+      return 'rivet grids, pipe runs, hazard striping, forged plate seams';
+    case 'farmland':
+      return 'furrow stripes, field parcels, stitched paths, crop rows';
+    case 'academy':
+      return 'arcane circles, star-compass marks, inked diagram lines';
+    case 'village':
+      return 'cottage roof rhythms, lantern marks, fence lines, paths';
+    case 'badlands':
+      return 'sun-baked fractures, mesa ridges, eroded gullies';
+    case 'highlands':
+      return 'wind-swept contours, cairn-like marks, ridge bands';
+    case 'mountain':
+      return 'rock strata, sharp peak silhouettes, mineral seams';
+    case 'ruins':
+      return 'cracked tiles, broken arch fragments, chipped stone patterns';
+    default:
+      return 'subtle fantasy map texture marks, organic linework, exploratory symbols';
+  }
+};
+
+const zoneKindPatternCueLabels = (zoneKind: ZoneKind) => {
+  const cues = [
+    { label: 'place-rich', value: zoneKind.placeCountRatio },
+    { label: 'monster-heavy', value: zoneKind.monsterCountRatio },
+    { label: 'boss-dangerous', value: zoneKind.bossEncounterCountRatio },
+    { label: 'raid-heavy', value: zoneKind.raidEncounterCountRatio },
+    {
+      label: 'scenario-rich',
+      value: Math.max(
+        zoneKind.inputEncounterCountRatio,
+        zoneKind.optionEncounterCountRatio
+      ),
+    },
+    { label: 'treasure-rich', value: zoneKind.treasureChestCountRatio },
+    { label: 'restorative', value: zoneKind.healingFountainCountRatio },
+    {
+      label: 'herbalism-rich',
+      value: zoneKind.herbalismResourceCountRatio,
+    },
+    { label: 'mining-rich', value: zoneKind.miningResourceCountRatio },
+  ]
+    .sort((left, right) => right.value - left.value)
+    .filter((entry) => entry.value > 1.05)
+    .slice(0, 3)
+    .map((entry) => entry.label);
+
+  return cues.length > 0 ? cues : ['mixed frontier'];
+};
+
+const buildDefaultZoneKindPatternPrompt = (zoneKind: ZoneKind) => {
+  const name = zoneKind.name.trim() || 'Frontier';
+  const slug = normalizeSlugDraft(zoneKind.slug || zoneKind.name);
+  const description =
+    zoneKind.description.trim() ||
+    'A fantasy zone texture used as a subtle map overlay.';
+  const overlayColor =
+    normalizeOverlayColorDraft(zoneKind.overlayColor) ||
+    defaultZoneKindOverlayColor;
+
+  return `Create a seamless repeating square texture tile for a fantasy RPG world map overlay.
+
+Zone kind:
+- name: ${name}
+- slug: ${slug}
+- description: ${description}
+- dominant gameplay cues: ${zoneKindPatternCueLabels(zoneKind).join(', ')}
+- palette anchor: ${overlayColor}
+- motif direction: ${zoneKindPatternMotifs(slug)}
+
+Requirements:
+- The tile must repeat seamlessly on all four edges.
+- This is not a full scene, landscape illustration, or diorama. It should read like an ornamental map texture.
+- Use a subtle, game-ready pattern that can sit on top of a watercolor fantasy map without overwhelming it.
+- Prefer transparent or near-transparent negative space between marks so the basemap can still show through.
+- Keep the motifs medium-scale and legible when repeated across a polygon.
+- No border, no frame, no text, no logos, no single centered subject.
+- Square composition only.
+- Top-down graphic texture language, never perspective or isometric.
+- Fantasy RPG tone, handcrafted, slightly stylized, polished, tasteful.
+- Avoid photorealism.`;
+};
+
+const resolveZoneKindPatternPrompt = (
+  zoneKind: ZoneKind,
+  draft?: string | null
+) => {
+  const nextDraft = draft?.trim();
+  if (nextDraft) {
+    return nextDraft;
+  }
+  const savedPrompt = zoneKind.patternTilePrompt?.trim();
+  if (savedPrompt) {
+    return savedPrompt;
+  }
+  return buildDefaultZoneKindPatternPrompt(zoneKind);
+};
+
 const emptyForm = (): ZoneKindFormState => ({
   name: '',
   slug: '',
@@ -225,7 +368,7 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
 const parseZoneKindForm = (
   form: ZoneKindFormState
 ): {
-  payload?: Omit<ZoneKind, 'id' | 'createdAt' | 'updatedAt'>;
+  payload?: ZoneKindPayload;
   error?: string;
 } => {
   const name = form.name.trim();
@@ -233,7 +376,7 @@ const parseZoneKindForm = (
     return { error: 'Name is required.' };
   }
 
-  const payload: Omit<ZoneKind, 'id' | 'createdAt' | 'updatedAt'> = {
+  const payload: ZoneKindPayload = {
     name,
     slug: normalizeSlugDraft(form.slug || name),
     description: form.description.trim(),
@@ -292,6 +435,12 @@ export const ZoneKinds = () => {
   const [backfillStarting, setBackfillStarting] = useState(false);
   const [backfillStatus, setBackfillStatus] =
     useState<ZoneKindBackfillStatus | null>(null);
+  const [patternPromptDrafts, setPatternPromptDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [generatingPatternKindId, setGeneratingPatternKindId] = useState<
+    string | null
+  >(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -530,6 +679,32 @@ export const ZoneKinds = () => {
     return () => window.clearTimeout(timeoutId);
   }, [backfillStatus, pollBackfillStatus]);
 
+  const pendingPatternGenerationKey = useMemo(
+    () =>
+      zoneKinds
+        .filter((zoneKind) =>
+          isZoneKindPatternTilePending(zoneKind.patternTileGenerationStatus)
+        )
+        .map(
+          (zoneKind) =>
+            `${zoneKind.id}:${zoneKind.patternTileGenerationStatus}:${zoneKind.updatedAt}`
+        )
+        .join('|'),
+    [zoneKinds]
+  );
+
+  useEffect(() => {
+    if (!pendingPatternGenerationKey) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadData();
+    }, 2200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadData, pendingPatternGenerationKey]);
+
   const handleBackfillContentKinds = async () => {
     setBackfillStarting(true);
     setError(null);
@@ -546,6 +721,46 @@ export const ZoneKinds = () => {
       setError('Unable to queue the content zone kind backfill.');
     } finally {
       setBackfillStarting(false);
+    }
+  };
+
+  const handleGeneratePatternTile = async (zoneKind: ZoneKind) => {
+    const prompt = resolveZoneKindPatternPrompt(
+      zoneKind,
+      patternPromptDrafts[zoneKind.id]
+    );
+    if (prompt.length < 24) {
+      setError('Pattern tile prompts must be at least 24 characters.');
+      return;
+    }
+    if (prompt.length > 8000) {
+      setError('Pattern tile prompts must be at most 8000 characters.');
+      return;
+    }
+
+    setGeneratingPatternKindId(zoneKind.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await apiClient.post<ZoneKind>(
+        `/sonar/zoneKinds/${zoneKind.id}/generate-pattern-tile`,
+        { prompt }
+      );
+      setZoneKinds((prev) =>
+        prev
+          .map((entry) => (entry.id === updated.id ? updated : entry))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setPatternPromptDrafts((prev) => ({
+        ...prev,
+        [zoneKind.id]: updated.patternTilePrompt || prompt,
+      }));
+      setSuccess(`Queued pattern tile generation for ${zoneKind.name}.`);
+    } catch (err) {
+      console.error('Failed to queue zone kind pattern tile job', err);
+      setError('Unable to queue that zone kind pattern tile job.');
+    } finally {
+      setGeneratingPatternKindId(null);
     }
   };
 
@@ -935,6 +1150,137 @@ export const ZoneKinds = () => {
                           </div>
                         </div>
                       ))}
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Pattern Tile
+                            </h4>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                                zoneKind.patternTileGenerationStatus === 'failed'
+                                  ? 'bg-red-100 text-red-700'
+                                  : zoneKind.patternTileGenerationStatus === 'complete'
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : isZoneKindPatternTilePending(
+                                          zoneKind.patternTileGenerationStatus
+                                        )
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {formatZoneKindPatternTileStatus(
+                                zoneKind.patternTileGenerationStatus
+                              )}
+                            </span>
+                          </div>
+                          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+                            Generate a seamless, S3-hosted pattern tile that
+                            the mobile client can use as the zone fill texture.
+                          </p>
+                          {zoneKind.patternTileUrl ? (
+                            <a
+                              href={zoneKind.patternTileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-900"
+                            >
+                              Open current tile asset
+                            </a>
+                          ) : null}
+                          {zoneKind.patternTileGenerationError ? (
+                            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                              {zoneKind.patternTileGenerationError}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-start gap-4">
+                          <div
+                            className="relative h-28 w-28 overflow-hidden rounded-2xl border border-slate-200 shadow-inner"
+                            style={{
+                              backgroundColor:
+                                normalizeOverlayColorDraft(
+                                  zoneKind.overlayColor
+                                ) || defaultZoneKindOverlayColor,
+                            }}
+                          >
+                            {zoneKind.patternTileUrl ? (
+                              <div
+                                className="absolute inset-0"
+                                style={{
+                                  backgroundImage: `url(${zoneKind.patternTileUrl})`,
+                                  backgroundRepeat: 'repeat',
+                                  backgroundSize: '96px 96px',
+                                  opacity: 0.7,
+                                  mixBlendMode: 'multiply',
+                                }}
+                              />
+                            ) : (
+                              <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] font-medium uppercase tracking-wide text-white/80">
+                                No tile yet
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Boilerplate prompt
+                        </label>
+                        <textarea
+                          className="min-h-[184px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          value={resolveZoneKindPatternPrompt(
+                            zoneKind,
+                            patternPromptDrafts[zoneKind.id]
+                          )}
+                          onChange={(event) =>
+                            setPatternPromptDrafts((prev) => ({
+                              ...prev,
+                              [zoneKind.id]: event.target.value,
+                            }))
+                          }
+                          spellCheck={false}
+                        />
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            onClick={() => void handleGeneratePatternTile(zoneKind)}
+                            disabled={
+                              saving ||
+                              generatingPatternKindId === zoneKind.id ||
+                              isZoneKindPatternTilePending(
+                                zoneKind.patternTileGenerationStatus
+                              )
+                            }
+                          >
+                            {generatingPatternKindId === zoneKind.id ||
+                            isZoneKindPatternTilePending(
+                              zoneKind.patternTileGenerationStatus
+                            )
+                              ? 'Queueing...'
+                              : 'Generate Tile Job'}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                            onClick={() =>
+                              setPatternPromptDrafts((prev) => ({
+                                ...prev,
+                                [zoneKind.id]:
+                                  buildDefaultZoneKindPatternPrompt(zoneKind),
+                              }))
+                            }
+                          >
+                            Use Boilerplate
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {assignedZones.length > 0 && (

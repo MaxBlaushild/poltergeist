@@ -565,12 +565,12 @@ String humanizeZoneKindSlug(String? rawSlug) {
 
 ZoneKindVisualProfile zoneKindVisualProfileForSlug(String? rawSlug) {
   final normalized = normalizeZoneKindSlug(rawSlug);
+  if (normalized.isEmpty) {
+    return defaultZoneKindVisualProfile;
+  }
   final profile = _zoneKindVisualProfiles[normalized];
   if (profile != null) {
     return profile;
-  }
-  if (normalized.isEmpty) {
-    return defaultZoneKindVisualProfile;
   }
   return defaultZoneKindVisualProfile.copyWith(
     label: humanizeZoneKindSlug(normalized),

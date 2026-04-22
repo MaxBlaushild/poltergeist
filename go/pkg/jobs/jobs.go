@@ -41,6 +41,7 @@ const (
 	ProcessMainStoryDistrictRunTaskType            = "process_main_story_district_run"
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateZoneTagsTaskType                       = "generate_zone_tags"
+	GenerateZoneKindPatternTileTaskType            = "generate_zone_kind_pattern_tile"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
 	GenerateBaseStructureLevelImageTaskType        = "generate_base_structure_level_image"
 	GenerateBaseStructureLevelTopDownImageTaskType = "generate_base_structure_level_top_down_image"
@@ -465,6 +466,11 @@ type GenerateChallengeTemplatesTaskPayload struct {
 
 type GenerateZoneFlavorTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateZoneKindPatternTileTaskPayload struct {
+	ZoneKindID uuid.UUID `json:"zoneKindId"`
+	Prompt     string    `json:"prompt"`
 }
 
 type GenerateImageThumbnailTaskPayload struct {

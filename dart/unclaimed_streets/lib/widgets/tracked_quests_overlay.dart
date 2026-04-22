@@ -33,10 +33,13 @@ class TrackedQuestsOverlay extends StatefulWidget {
     super.key,
     required this.onFocusPoI,
     required this.onFocusNode,
+    this.initialSelectedItemId,
     this.onFocusTurnInQuest,
     this.onPreviewPoI,
     this.onPreviewNode,
     this.onPreviewTurnInQuest,
+    this.onClearPreview,
+    this.onSelectedItemChanged,
     this.resolveQuestReceiverCharacter,
     this.resolveQuestReceiverPoi,
     this.controller,
@@ -59,10 +62,13 @@ class TrackedQuestsOverlay extends StatefulWidget {
   /// When user taps a POI: focus that quest target on the map.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
+  final String? initialSelectedItemId;
   final void Function(Quest quest)? onFocusTurnInQuest;
   final void Function(PointOfInterest poi)? onPreviewPoI;
   final void Function(QuestNode node)? onPreviewNode;
   final void Function(Quest quest)? onPreviewTurnInQuest;
+  final VoidCallback? onClearPreview;
+  final ValueChanged<String?>? onSelectedItemChanged;
   final Character? Function(Quest quest)? resolveQuestReceiverCharacter;
   final PointOfInterest? Function(Quest quest)? resolveQuestReceiverPoi;
   final TrackedQuestsOverlayController? controller;
@@ -107,6 +113,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   @override
   void initState() {
     super.initState();
+    _applyInitialSelectedItemId(widget.initialSelectedItemId, force: true);
     _controller = widget.controller;
     _controller?.addListener(_handleController);
   }
@@ -114,6 +121,12 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   @override
   void didUpdateWidget(covariant TrackedQuestsOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSelectedItemId != widget.initialSelectedItemId) {
+      _applyInitialSelectedItemId(
+        widget.initialSelectedItemId,
+        previousItemId: oldWidget.initialSelectedItemId,
+      );
+    }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller?.removeListener(_handleController);
       _controller = widget.controller;
@@ -180,6 +193,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   }
 
   void _collapse() {
+    _rememberCarouselItemAt(_resolvedItemIndex(_carouselItems.length));
     setState(() {
       _expanded = false;
       _showContent = false;
@@ -210,6 +224,34 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     return _carouselItems.indexWhere((item) => item.id == itemId);
   }
 
+  String? _normalizeItemId(String? itemId) {
+    final trimmed = itemId?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  void _applyInitialSelectedItemId(
+    String? itemId, {
+    String? previousItemId,
+    bool force = false,
+  }) {
+    final normalized = _normalizeItemId(itemId);
+    final previousNormalized = _normalizeItemId(previousItemId);
+    if (!force &&
+        _lastViewedCarouselItemId != null &&
+        _lastViewedCarouselItemId != previousNormalized) {
+      return;
+    }
+    _lastViewedCarouselItemId = normalized;
+    if (normalized == null) {
+      return;
+    }
+    _preferredOpenCarouselItemId = normalized;
+    if (_expanded) {
+      _pendingOpenCarouselItemId = normalized;
+      _previewCurrentItemAfterBuild = true;
+    }
+  }
+
   int _resolvedDisplayItemIndex() {
     if (_carouselItems.isEmpty) return 0;
 
@@ -236,11 +278,17 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
     if (index < 0 || index >= _carouselItems.length) return;
     _lastViewedCarouselItemId = _carouselItems[index].id;
     _preferredOpenCarouselItemId = null;
+    widget.onSelectedItemChanged?.call(_lastViewedCarouselItemId);
   }
 
   void _previewCarouselItem(int index) {
     if (index < 0 || index >= _carouselItems.length) return;
-    _carouselItems[index].onPreview?.call();
+    final onPreview = _carouselItems[index].onPreview;
+    if (onPreview == null) {
+      widget.onClearPreview?.call();
+      return;
+    }
+    onPreview();
   }
 
   VoidCallback? _buildQuestPreviewCallback(Quest quest) {

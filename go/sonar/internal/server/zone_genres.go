@@ -49,28 +49,30 @@ func serializeZone(
 	zoneScores map[uuid.UUID]int,
 	discovery *models.ZoneDiscovery,
 	kindOverlayColor string,
+	kindPatternTileURL string,
 ) gin.H {
 	if zone == nil {
 		return gin.H{}
 	}
 	discovered := discovery != nil && discovery.ID != uuid.Nil
 	return gin.H{
-		"id":               zone.ID,
-		"createdAt":        zone.CreatedAt,
-		"updatedAt":        zone.UpdatedAt,
-		"name":             zone.Name,
-		"description":      zone.Description,
-		"kind":             zone.Kind,
-		"kindOverlayColor": strings.TrimSpace(kindOverlayColor),
-		"internalTags":     zone.InternalTags,
-		"latitude":         zone.Latitude,
-		"longitude":        zone.Longitude,
-		"zoneImportId":     zone.ZoneImportID,
-		"boundary":         zone.Boundary,
-		"boundaryCoords":   zone.BoundaryCoords,
-		"points":           zone.Points,
-		"genreScores":      serializeZoneGenreScores(genres, zoneScores),
-		"discovered":       discovered,
+		"id":                 zone.ID,
+		"createdAt":          zone.CreatedAt,
+		"updatedAt":          zone.UpdatedAt,
+		"name":               zone.Name,
+		"description":        zone.Description,
+		"kind":               zone.Kind,
+		"kindOverlayColor":   strings.TrimSpace(kindOverlayColor),
+		"kindPatternTileUrl": strings.TrimSpace(kindPatternTileURL),
+		"internalTags":       zone.InternalTags,
+		"latitude":           zone.Latitude,
+		"longitude":          zone.Longitude,
+		"zoneImportId":       zone.ZoneImportID,
+		"boundary":           zone.Boundary,
+		"boundaryCoords":     zone.BoundaryCoords,
+		"points":             zone.Points,
+		"genreScores":        serializeZoneGenreScores(genres, zoneScores),
+		"discovered":         discovered,
 		"discoveredAt": func() interface{} {
 			if !discovered {
 				return nil
@@ -136,6 +138,7 @@ func (s *server) serializeZonesWithGenresAndDiscoveries(
 		scoreMapByZone = zoneGenreScoreIndex(scores)
 	}
 	zoneKindOverlayColors := map[string]string{}
+	zoneKindPatternTileURLs := map[string]string{}
 	zoneKinds, err := s.dbClient.ZoneKind().FindAll(ctx)
 	if err != nil {
 		return nil, err
@@ -146,6 +149,7 @@ func (s *server) serializeZonesWithGenresAndDiscoveries(
 			continue
 		}
 		zoneKindOverlayColors[slug] = strings.TrimSpace(zoneKind.OverlayColor)
+		zoneKindPatternTileURLs[slug] = strings.TrimSpace(zoneKind.PatternTileURL)
 	}
 
 	serialized := make([]gin.H, 0, len(zones))
@@ -161,6 +165,7 @@ func (s *server) serializeZonesWithGenresAndDiscoveries(
 				scoreMapByZone[zone.ID],
 				discoveryByZone[zone.ID],
 				zoneKindOverlayColors[models.NormalizeZoneKind(zone.Kind)],
+				zoneKindPatternTileURLs[models.NormalizeZoneKind(zone.Kind)],
 			),
 		)
 	}

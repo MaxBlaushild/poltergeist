@@ -11,6 +11,14 @@ import (
 
 const defaultZoneKindRatio = 1.0
 
+const (
+	ZoneKindPatternTileGenerationStatusNone       = "none"
+	ZoneKindPatternTileGenerationStatusQueued     = "queued"
+	ZoneKindPatternTileGenerationStatusInProgress = "in_progress"
+	ZoneKindPatternTileGenerationStatusComplete   = "complete"
+	ZoneKindPatternTileGenerationStatusFailed     = "failed"
+)
+
 type ZoneKind struct {
 	ID                          uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt                   time.Time `json:"createdAt"`
@@ -19,6 +27,10 @@ type ZoneKind struct {
 	Name                        string    `json:"name"`
 	Description                 string    `json:"description"`
 	OverlayColor                string    `json:"overlayColor" gorm:"column:overlay_color"`
+	PatternTileURL              string    `json:"patternTileUrl" gorm:"column:pattern_tile_url"`
+	PatternTilePrompt           string    `json:"patternTilePrompt" gorm:"column:pattern_tile_prompt"`
+	PatternTileGenerationStatus string    `json:"patternTileGenerationStatus" gorm:"column:pattern_tile_generation_status"`
+	PatternTileGenerationError  string    `json:"patternTileGenerationError" gorm:"column:pattern_tile_generation_error"`
 	PlaceCountRatio             float64   `json:"placeCountRatio" gorm:"column:place_count_ratio"`
 	MonsterCountRatio           float64   `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
 	BossEncounterCountRatio     float64   `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
@@ -82,6 +94,21 @@ func isHexColorRune(char rune) bool {
 	return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')
 }
 
+func normalizeZoneKindPatternTileGenerationStatus(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case ZoneKindPatternTileGenerationStatusQueued:
+		return ZoneKindPatternTileGenerationStatusQueued
+	case ZoneKindPatternTileGenerationStatusInProgress:
+		return ZoneKindPatternTileGenerationStatusInProgress
+	case ZoneKindPatternTileGenerationStatusComplete:
+		return ZoneKindPatternTileGenerationStatusComplete
+	case ZoneKindPatternTileGenerationStatusFailed:
+		return ZoneKindPatternTileGenerationStatusFailed
+	default:
+		return ZoneKindPatternTileGenerationStatusNone
+	}
+}
+
 func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.Name = strings.TrimSpace(z.Name)
 	z.Description = strings.TrimSpace(z.Description)
@@ -90,6 +117,10 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 		z.Slug = NormalizeZoneKind(z.Name)
 	}
 	z.OverlayColor = NormalizeHexColor(z.OverlayColor)
+	z.PatternTileURL = strings.TrimSpace(z.PatternTileURL)
+	z.PatternTilePrompt = strings.TrimSpace(z.PatternTilePrompt)
+	z.PatternTileGenerationError = strings.TrimSpace(z.PatternTileGenerationError)
+	z.PatternTileGenerationStatus = normalizeZoneKindPatternTileGenerationStatus(z.PatternTileGenerationStatus)
 	z.PlaceCountRatio = normalizeZoneKindRatio(z.PlaceCountRatio)
 	z.MonsterCountRatio = normalizeZoneKindRatio(z.MonsterCountRatio)
 	z.BossEncounterCountRatio = normalizeZoneKindRatio(z.BossEncounterCountRatio)

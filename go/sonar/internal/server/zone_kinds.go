@@ -1,14 +1,18 @@
 package server
 
 import (
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
@@ -75,6 +79,134 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 		MiningResourceCountRatio:    miningRatio,
 		ResourceCountRatio:          legacyResourceRatio,
 	}, nil
+}
+
+type zoneKindPatternCue struct {
+	label string
+	value float64
+}
+
+func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
+	candidates := []zoneKindPatternCue{
+		{label: "place-rich", value: zoneKind.PlaceCountRatio},
+		{label: "monster-heavy", value: zoneKind.MonsterCountRatio},
+		{label: "boss-dangerous", value: zoneKind.BossEncounterCountRatio},
+		{label: "raid-heavy", value: zoneKind.RaidEncounterCountRatio},
+		{label: "scenario-rich", value: max(zoneKind.InputEncounterCountRatio, zoneKind.OptionEncounterCountRatio)},
+		{label: "treasure-rich", value: zoneKind.TreasureChestCountRatio},
+		{label: "restorative", value: zoneKind.HealingFountainCountRatio},
+		{label: "herbalism-rich", value: zoneKind.HerbalismResourceCountRatio},
+		{label: "mining-rich", value: zoneKind.MiningResourceCountRatio},
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].value > candidates[j].value
+	})
+
+	cues := make([]string, 0, 3)
+	for _, candidate := range candidates {
+		if candidate.value <= 1.05 {
+			continue
+		}
+		cues = append(cues, candidate.label)
+		if len(cues) == 3 {
+			break
+		}
+	}
+	if len(cues) == 0 {
+		cues = append(cues, "mixed frontier")
+	}
+	return cues
+}
+
+func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
+	switch models.NormalizeZoneKind(zoneKind.Slug) {
+	case "forest":
+		return "leaf clusters, canopy blotches, branch forks, trail scratches"
+	case "swamp":
+		return "reed strokes, puddle curves, marsh ripples, hanging moss"
+	case "volcanic":
+		return "lava cracks, ember seams, ash flecks, broken magma lines"
+	case "graveyard":
+		return "worn stone hash marks, grave glyphs, crosshatched weathering"
+	case "desert":
+		return "wind-carved dune lines, grit speckle, drifting wave contours"
+	case "temple-grounds":
+		return "sacred rings, shrine geometry, halo lines, ceremonial inlay"
+	case "city":
+		return "street grids, masonry blocks, alley runs, civic linework"
+	case "industrial":
+		return "rivet grids, pipe runs, hazard striping, forged plate seams"
+	case "farmland":
+		return "furrow stripes, field parcels, stitched paths, crop rows"
+	case "academy":
+		return "arcane circles, star-compass marks, inked diagram lines"
+	case "village":
+		return "cottage roof rhythms, lantern marks, fence lines, paths"
+	case "badlands":
+		return "sun-baked fractures, mesa ridges, eroded gullies"
+	case "highlands":
+		return "wind-swept contours, cairn-like marks, ridge bands"
+	case "mountain":
+		return "rock strata, sharp peak silhouettes, mineral seams"
+	case "ruins":
+		return "cracked tiles, broken arch fragments, chipped stone patterns"
+	default:
+		return "subtle fantasy map texture marks, organic linework, exploratory symbols"
+	}
+}
+
+func zoneKindPatternPaletteAnchor(zoneKind models.ZoneKind) string {
+	overlayColor := strings.TrimSpace(zoneKind.OverlayColor)
+	if overlayColor != "" {
+		return overlayColor
+	}
+	return "#5f7d68"
+}
+
+func defaultZoneKindPatternTilePrompt(zoneKind models.ZoneKind) string {
+	name := strings.TrimSpace(zoneKind.Name)
+	if name == "" {
+		name = "Frontier"
+	}
+	slug := models.NormalizeZoneKind(zoneKind.Slug)
+	if slug == "" {
+		slug = models.NormalizeZoneKind(name)
+	}
+	description := strings.TrimSpace(zoneKind.Description)
+	if description == "" {
+		description = "A fantasy zone texture used as a subtle map overlay."
+	}
+
+	return fmt.Sprintf(
+		`Create a seamless repeating square texture tile for a fantasy RPG world map overlay.
+
+Zone kind:
+- name: %s
+- slug: %s
+- description: %s
+- dominant gameplay cues: %s
+- palette anchor: %s
+- motif direction: %s
+
+Requirements:
+- The tile must repeat seamlessly on all four edges.
+- This is not a full scene, landscape illustration, or diorama. It should read like an ornamental map texture.
+- Use a subtle, game-ready pattern that can sit on top of a watercolor fantasy map without overwhelming it.
+- Prefer transparent or near-transparent negative space between marks so the basemap can still show through.
+- Keep the motifs medium-scale and legible when repeated across a polygon.
+- No border, no frame, no text, no logos, no single centered subject.
+- Square composition only.
+- Top-down graphic texture language, never perspective or isometric.
+- Fantasy RPG tone, handcrafted, slightly stylized, polished, tasteful.
+- Avoid photorealism.
+`,
+		name,
+		slug,
+		description,
+		strings.Join(zoneKindPatternCues(zoneKind), ", "),
+		zoneKindPatternPaletteAnchor(zoneKind),
+		zoneKindPatternMotifs(zoneKind),
+	)
 }
 
 func (s *server) ensureZoneKindSlugAvailable(ctx *gin.Context, slug string, currentID *uuid.UUID) error {
@@ -182,6 +314,10 @@ func (s *server) updateZoneKind(ctx *gin.Context) {
 	}
 	updated.ID = existing.ID
 	updated.CreatedAt = existing.CreatedAt
+	updated.PatternTileURL = existing.PatternTileURL
+	updated.PatternTilePrompt = existing.PatternTilePrompt
+	updated.PatternTileGenerationStatus = existing.PatternTileGenerationStatus
+	updated.PatternTileGenerationError = existing.PatternTileGenerationError
 	oldSlug := existing.Slug
 
 	if err := s.ensureZoneKindSlugAvailable(ctx, updated.Slug, &existing.ID); err != nil {
@@ -291,4 +427,70 @@ func (s *server) assignZoneKindToZones(ctx *gin.Context) {
 		"updatedCount": updatedCount,
 		"kind":         normalizedKind,
 	})
+}
+
+func (s *server) generateZoneKindPatternTile(ctx *gin.Context) {
+	id, err := uuid.Parse(strings.TrimSpace(ctx.Param("id")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone kind ID"})
+		return
+	}
+
+	zoneKind, err := s.dbClient.ZoneKind().FindByID(ctx, id)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "zone kind not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	prompt := strings.TrimSpace(requestBody.Prompt)
+	if prompt == "" {
+		prompt = defaultZoneKindPatternTilePrompt(*zoneKind)
+	}
+	if len(prompt) < 24 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "prompt must be at least 24 characters"})
+		return
+	}
+	if len(prompt) > 8000 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "prompt must be at most 8000 characters"})
+		return
+	}
+
+	zoneKind.PatternTilePrompt = prompt
+	zoneKind.PatternTileGenerationStatus = models.ZoneKindPatternTileGenerationStatusQueued
+	zoneKind.PatternTileGenerationError = ""
+	if err := s.dbClient.ZoneKind().Update(ctx, zoneKind); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateZoneKindPatternTileTaskPayload{
+		ZoneKindID: zoneKind.ID,
+		Prompt:     prompt,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateZoneKindPatternTileTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		zoneKind.PatternTileGenerationStatus = models.ZoneKindPatternTileGenerationStatusFailed
+		zoneKind.PatternTileGenerationError = errMsg
+		_ = s.dbClient.ZoneKind().Update(ctx, zoneKind)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, zoneKind)
 }

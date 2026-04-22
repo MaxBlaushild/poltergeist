@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -45,6 +46,7 @@ func (h *movementPatternHandler) Update(ctx context.Context, id uuid.UUID, updat
 		"starting_latitude":     updates.StartingLatitude,
 		"starting_longitude":    updates.StartingLongitude,
 		"path":                  updates.Path,
+		"updated_at":            time.Now(),
 	}
 	return h.db.WithContext(ctx).Model(&models.MovementPattern{}).Where("id = ?", id).Updates(payload).Error
 }

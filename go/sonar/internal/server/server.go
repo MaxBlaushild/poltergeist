@@ -404,6 +404,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/zoneKinds", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneKind))
 	r.PATCH("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneKind))
 	r.DELETE("/sonar/zoneKinds/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneKind))
+	r.POST("/sonar/zoneKinds/:id/generate-pattern-tile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateZoneKindPatternTile))
 	r.POST("/sonar/zoneKinds/assign-zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.assignZoneKindToZones))
 	r.POST("/sonar/zoneKinds/backfill-content-kinds", middleware.WithAuthentication(s.authClient, s.livenessClient, s.backfillContentZoneKinds))
 	r.GET("/sonar/zoneKinds/backfill-content-kinds/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBackfillContentZoneKindsStatus))

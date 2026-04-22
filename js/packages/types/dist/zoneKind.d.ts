@@ -6,6 +6,10 @@ export type ZoneKind = {
     name: string;
     description: string;
     overlayColor: string;
+    patternTileUrl: string;
+    patternTilePrompt: string;
+    patternTileGenerationStatus: string;
+    patternTileGenerationError: string;
     placeCountRatio: number;
     monsterCountRatio: number;
     bossEncounterCountRatio: number;
