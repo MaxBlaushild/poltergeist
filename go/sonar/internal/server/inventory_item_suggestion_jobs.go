@@ -38,6 +38,7 @@ type inventoryItemUpsertRequest struct {
 	Name                                     string                         `json:"name"`
 	Archived                                 *bool                          `json:"archived"`
 	GenreID                                  string                         `json:"genreId"`
+	ZoneKind                                 *string                        `json:"zoneKind"`
 	ImageURL                                 string                         `json:"imageUrl"`
 	FlavorText                               string                         `json:"flavorText"`
 	EffectText                               string                         `json:"effectText"`
@@ -108,6 +109,7 @@ type inventoryItemUpsertRequest struct {
 type inventoryItemSuggestionJobRequest struct {
 	Count        int      `json:"count"`
 	GenreID      string   `json:"genreId"`
+	ZoneKind     string   `json:"zoneKind"`
 	ThemePrompt  string   `json:"themePrompt"`
 	Categories   []string `json:"categories"`
 	RarityTiers  []string `json:"rarityTiers"`
@@ -150,6 +152,15 @@ func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	zoneKindSlug := ""
+	if zoneKind != nil {
+		zoneKindSlug = models.NormalizeZoneKind(zoneKind.Slug)
+	}
 
 	job := &models.InventoryItemSuggestionJob{
 		ID:           uuid.New(),
@@ -157,6 +168,7 @@ func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
 		UpdatedAt:    time.Now(),
 		GenreID:      genre.ID,
 		Genre:        genre,
+		ZoneKind:     zoneKindSlug,
 		Status:       models.InventoryItemSuggestionJobStatusQueued,
 		Count:        body.Count,
 		ThemePrompt:  strings.TrimSpace(body.ThemePrompt),
@@ -562,16 +574,21 @@ func clearGeneratedInventoryUnlockLocksStrength(item *models.InventoryItem) {
 func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inventoryItemUpsertRequest {
 	var resourceTypeID *string
 	var genreID string
+	var zoneKind *string
 	if item.ResourceTypeID != nil {
 		resourceTypeID = stringPtr(item.ResourceTypeID.String())
 	}
 	if item.GenreID != uuid.Nil {
 		genreID = item.GenreID.String()
 	}
+	if normalizedZoneKind := models.NormalizeZoneKind(item.ZoneKind); normalizedZoneKind != "" {
+		zoneKind = stringPtr(normalizedZoneKind)
+	}
 	clearGeneratedInventoryUnlockLocksStrength(&item)
 	return inventoryItemUpsertRequest{
 		Name:                                     item.Name,
 		GenreID:                                  genreID,
+		ZoneKind:                                 zoneKind,
 		ImageURL:                                 item.ImageURL,
 		FlavorText:                               item.FlavorText,
 		EffectText:                               item.EffectText,
@@ -1040,6 +1057,16 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 		resourceTypeID = resolvedResourceTypeID
 		resourceType = resolvedResourceType
 	}
+	resolvedZoneKindValue := ""
+	if requestBody.ZoneKind != nil {
+		resolvedZoneKind, err := s.resolveOptionalZoneKind(ctx, *requestBody.ZoneKind)
+		if err != nil {
+			return nil, err
+		}
+		if resolvedZoneKind != nil {
+			resolvedZoneKindValue = models.NormalizeZoneKind(resolvedZoneKind.Slug)
+		}
+	}
 	if requestBody.UnlockLocksStrength != nil &&
 		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
 		return nil, fmt.Errorf("unlockLocksStrength must be between 1 and 100")
@@ -1136,12 +1163,21 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 			archived = *requestBody.Archived
 		}
 	}
+	existingZoneKind := ""
+	if existingItem != nil {
+		existingZoneKind = existingItem.ZoneKind
+	}
+	zoneKindRequest := requestBody.ZoneKind
+	if requestBody.ZoneKind != nil {
+		zoneKindRequest = &resolvedZoneKindValue
+	}
 
 	item := &models.InventoryItem{
 		Archived:                                 archived,
 		Name:                                     requestBody.Name,
 		GenreID:                                  genreID,
 		Genre:                                    genre,
+		ZoneKind:                                 mergeZoneKindRequest(zoneKindRequest, existingZoneKind),
 		ImageURL:                                 requestBody.ImageURL,
 		FlavorText:                               requestBody.FlavorText,
 		EffectText:                               requestBody.EffectText,

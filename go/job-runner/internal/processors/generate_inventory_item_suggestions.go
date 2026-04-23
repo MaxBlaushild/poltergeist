@@ -19,6 +19,7 @@ import (
 const inventoryItemSuggestionPromptTemplate = `
 You are designing draft inventory items for Unclaimed Streets, an urban fantasy MMORPG.
 %s
+%s
 
 Generate exactly %d item drafts.
 
@@ -47,6 +48,7 @@ Return JSON only:
         "name": "string",
         "flavorText": "1-3 sentences of evocative item description",
         "effectText": "one short sentence describing the gameplay effect",
+        "zoneKind": "one allowed zone kind slug",
         "rarityTier": "Common|Uncommon|Epic|Mythic|Not Droppable",
         "itemLevel": 1,
         "buyPrice": 10,
@@ -115,6 +117,7 @@ Rules:
 - Output JSON only. No markdown.
 - Keep the tone urban fantasy, tactile, and gameable.
 - Drafts should feel materially distinct from one another.
+- Each draft item must include zoneKind.
 - Bias toward items that support recognizable builds, professions, exploration, or social play.
 - If stat tags are requested, strongly prefer items whose actual gameplay bonuses clearly support those stats.
 - If benefit tags are requested, strongly prefer items whose gameplay effects clearly match those requested benefits.
@@ -200,10 +203,19 @@ func (p *GenerateInventoryItemSuggestionsProcessor) generateDrafts(
 	if err != nil {
 		return fmt.Errorf("failed to load inventory items: %w", err)
 	}
+	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load zone kinds: %w", err)
+	}
+	preferredZoneKind, err := loadOptionalZoneKind(ctx, p.dbClient, job.ZoneKind)
+	if err != nil {
+		return fmt.Errorf("failed to resolve preferred zone kind: %w", err)
+	}
 
 	prompt := fmt.Sprintf(
 		inventoryItemSuggestionPromptTemplate,
 		inventoryItemSuggestionGenreInstructionBlock(job.Genre),
+		buildInventoryItemZoneKindInstructionBlock(zoneKinds, preferredZoneKind),
 		maxInt(1, job.Count),
 		quotedOrNone(strings.TrimSpace(job.ThemePrompt)),
 		renderTagList(job.Categories),
@@ -242,7 +254,7 @@ func (p *GenerateInventoryItemSuggestionsProcessor) generateDrafts(
 	localNames := map[string]struct{}{}
 	createdCount := 0
 	for _, spec := range generated.Drafts {
-		draft := sanitizeInventoryItemSuggestionDraft(spec, job, existingNames, localNames)
+		draft := sanitizeInventoryItemSuggestionDraft(spec, job, zoneKinds, existingNames, localNames)
 		draft.JobID = job.ID
 		draft.Status = models.InventoryItemSuggestionDraftStatusSuggested
 		if err := p.dbClient.InventoryItemSuggestionDraft().Create(ctx, draft); err != nil {
@@ -314,6 +326,7 @@ func buildInventoryItemSuggestionAvoidance(items []models.InventoryItem, limit i
 func sanitizeInventoryItemSuggestionDraft(
 	spec inventoryItemSuggestionDraftPayload,
 	job *models.InventoryItemSuggestionJob,
+	zoneKinds []models.ZoneKind,
 	existingNames map[string]struct{},
 	localNames map[string]struct{},
 ) *models.InventoryItemSuggestionDraft {
@@ -388,6 +401,19 @@ func sanitizeInventoryItemSuggestionDraft(
 	item.ConsumeStatusesToRemove = normalizeInventorySuggestionTags(item.ConsumeStatusesToRemove, nil)
 	if item.ConsumeStatusesToAdd == nil {
 		item.ConsumeStatusesToAdd = models.ScenarioFailureStatusTemplates{}
+	}
+	item.ZoneKind = normalizeInventoryItemSuggestionZoneKind(item.ZoneKind, zoneKinds, job.ZoneKind)
+	if item.ZoneKind == "" {
+		item.ZoneKind = deriveInventoryItemSuggestionZoneKindHeuristically(
+			zoneKinds,
+			job.ZoneKind,
+			item.Name,
+			item.FlavorText,
+			item.EffectText,
+			category,
+			strings.Join(item.InternalTags, " "),
+			job.ThemePrompt,
+		)
 	}
 
 	nameKey := normalizeInventoryItemSuggestionNameKey(item.Name)

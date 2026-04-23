@@ -7,6 +7,7 @@ export interface InventoryItemSuggestionJob {
   updatedAt: string;
   genreId: string;
   genre?: ZoneGenre | null;
+  zoneKind?: string | null;
   status: string;
   count: number;
   themePrompt: string;

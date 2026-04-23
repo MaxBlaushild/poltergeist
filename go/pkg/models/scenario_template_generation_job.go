@@ -19,6 +19,7 @@ type ScenarioTemplateGenerationJob struct {
 	UpdatedAt    time.Time  `json:"updatedAt"`
 	GenreID      uuid.UUID  `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre        *ZoneGenre `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
+	ZoneKind     string     `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Status       string     `json:"status"`
 	Count        int        `json:"count"`
 	OpenEnded    bool       `json:"openEnded" gorm:"column:open_ended"`

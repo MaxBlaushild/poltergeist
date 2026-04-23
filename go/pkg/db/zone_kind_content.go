@@ -16,6 +16,8 @@ var zoneKindReferenceTables = []string{
 	"scenarios",
 	"expositions",
 	"monsters",
+	"monster_templates",
+	"scenario_templates",
 	"monster_encounters",
 	"treasure_chests",
 	"healing_fountains",
@@ -165,7 +167,7 @@ counts AS (
   WHERE e.inventory_item_id IS NOT NULL
     AND COALESCE(e.zone_kind, '') <> ''
     AND COALESCE(ii.zone_kind, '') = ''
-  GROUP BY inventory_item_id, zone_kind
+  GROUP BY e.inventory_item_id, e.zone_kind
 ),
 ranked AS (
   SELECT

@@ -37,6 +37,7 @@ type challengeTemplateUpsertRequest struct {
 type challengeTemplateGenerationJobRequest struct {
 	LocationArchetypeID string `json:"locationArchetypeId"`
 	Count               int    `json:"count"`
+	ZoneKind            string `json:"zoneKind"`
 }
 
 func (s *server) parseChallengeTemplateUpsertRequest(body challengeTemplateUpsertRequest) (*models.ChallengeTemplate, error) {
@@ -285,15 +286,24 @@ func (s *server) createChallengeTemplateGenerationJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "location archetype not found"})
 		return
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.ChallengeTemplateGenerationJob{
 		ID:                  uuid.New(),
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 		LocationArchetypeID: locationArchetypeID,
+		ZoneKind:            models.NormalizeZoneKind(body.ZoneKind),
 		Status:              models.ChallengeTemplateGenerationStatusQueued,
 		Count:               body.Count,
 		CreatedCount:        0,
+	}
+	if zoneKind != nil {
+		job.ZoneKind = zoneKind.Slug
 	}
 	if err := s.dbClient.ChallengeTemplateGenerationJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

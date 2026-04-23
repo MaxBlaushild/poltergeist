@@ -7,6 +7,13 @@ import React, {
 } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
 import { Spell, ZoneGenre } from '@poltergeist/types';
+import ContentDashboard from './ContentDashboard.tsx';
+import {
+  countBy,
+  difficultyBandLabel,
+  useAdminAggregateDataset,
+} from './contentDashboardUtils.ts';
+import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 
 type ScenarioFailureDrainType = 'none' | 'flat' | 'percent';
 type ScenarioFailurePenaltyMode = 'shared' | 'individual';
@@ -16,6 +23,7 @@ type ScenarioTemplateRecord = {
   id: string;
   genreId: string;
   genre?: ZoneGenre;
+  zoneKind?: string;
   prompt: string;
   imageUrl: string;
   thumbnailUrl: string;
@@ -52,6 +60,7 @@ type ScenarioTemplateGenerationJob = {
   id: string;
   genreId: string;
   genre?: ZoneGenre;
+  zoneKind?: string;
   status: string;
   count: number;
   openEnded: boolean;
@@ -63,6 +72,7 @@ type ScenarioTemplateGenerationJob = {
 
 type ScenarioTemplateFormState = {
   genreId: string;
+  zoneKind: string;
   prompt: string;
   imageUrl: string;
   thumbnailUrl: string;
@@ -96,6 +106,7 @@ type ScenarioTemplateFormState = {
 type ScenarioTemplateGenerationFormState = {
   count: string;
   genreId: string;
+  zoneKind: string;
   openEnded: boolean;
 };
 
@@ -157,6 +168,7 @@ const PaginationControls = ({
 
 const emptyFormState = (): ScenarioTemplateFormState => ({
   genreId: '',
+  zoneKind: '',
   prompt: '',
   imageUrl: '',
   thumbnailUrl: '',
@@ -190,6 +202,7 @@ const emptyFormState = (): ScenarioTemplateFormState => ({
 const emptyGenerationForm = (): ScenarioTemplateGenerationFormState => ({
   count: '6',
   genreId: '',
+  zoneKind: '',
   openEnded: false,
 });
 
@@ -222,6 +235,7 @@ const formFromRecord = (
   record: ScenarioTemplateRecord
 ): ScenarioTemplateFormState => ({
   genreId: record.genreId ?? record.genre?.id ?? '',
+  zoneKind: record.zoneKind?.trim() ?? '',
   prompt: record.prompt ?? '',
   imageUrl: record.imageUrl ?? '',
   thumbnailUrl: record.thumbnailUrl ?? '',
@@ -283,6 +297,7 @@ const parseJsonField = <T,>(label: string, value: string): T => {
 
 const buildPayloadFromForm = (form: ScenarioTemplateFormState) => ({
   genreId: form.genreId.trim(),
+  zoneKind: form.zoneKind.trim(),
   prompt: form.prompt,
   imageUrl: form.imageUrl,
   thumbnailUrl: form.thumbnailUrl,
@@ -341,6 +356,7 @@ const jobStatusClassName = (status: string): string => {
 export const ScenarioTemplates = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [spells, setSpells] = useState<Spell[]>([]);
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [records, setRecords] = useState<ScenarioTemplateRecord[]>([]);
@@ -443,6 +459,91 @@ export const ScenarioTemplates = () => {
         .join(', '),
     [spells]
   );
+  const dashboardParams = useMemo(
+    () => ({
+      query: deferredQuery.trim(),
+      genreId: genreFilter === 'all' ? '' : genreFilter,
+    }),
+    [deferredQuery, genreFilter]
+  );
+  const {
+    items: dashboardRecords,
+    loading: dashboardLoading,
+    error: dashboardError,
+  } = useAdminAggregateDataset<ScenarioTemplateRecord>(
+    '/sonar/admin/scenario-templates',
+    dashboardParams
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalTemplates = dashboardRecords.length;
+    const openEndedCount = dashboardRecords.filter(
+      (record) => record.openEnded
+    ).length;
+    const explicitRewardCount = dashboardRecords.filter(
+      (record) => record.rewardMode === 'explicit'
+    ).length;
+    const scaledCount = dashboardRecords.filter(
+      (record) => record.scaleWithUserLevel
+    ).length;
+
+    return [
+      { label: 'Templates', value: totalTemplates },
+      {
+        label: 'Open-ended',
+        value: openEndedCount,
+        note: `${Math.max(0, totalTemplates - openEndedCount)} choice-based`,
+      },
+      { label: 'Explicit Rewards', value: explicitRewardCount },
+      { label: 'Scaled Difficulty', value: scaledCount },
+    ];
+  }, [dashboardRecords]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Genre Mix',
+        note: 'Reusable scenario templates grouped by story genre.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) =>
+            formatGenreLabel(
+              record.genre ??
+                genres.find((genre) => genre.id === record.genreId) ??
+                null
+            ),
+          { emptyLabel: 'Fantasy' }
+        ),
+      },
+      {
+        title: 'Zone Kind Coverage',
+        note: 'Which environments the current template pool is tagged to support.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) =>
+            record.zoneKind?.trim()
+              ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
+              : 'Unassigned',
+          { emptyLabel: 'Unassigned' }
+        ),
+      },
+      {
+        title: 'Difficulty Bands',
+        note: 'How hard the current template pool skews.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) => difficultyBandLabel(record.difficulty),
+          { limit: 4 }
+        ),
+      },
+      {
+        title: 'Reward Model',
+        note: 'Whether templates carry explicit or randomized rewards.',
+        buckets: countBy(dashboardRecords, (record) =>
+          record.rewardMode === 'explicit' ? 'Explicit rewards' : 'Randomized'
+        ),
+      },
+    ],
+    [dashboardRecords, genres, zoneKindBySlug]
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -530,6 +631,7 @@ export const ScenarioTemplates = () => {
       await apiClient.post('/sonar/admin/scenario-template-generation-jobs', {
         count,
         genreId: generationForm.genreId.trim(),
+        zoneKind: generationForm.zoneKind,
         openEnded: generationForm.openEnded,
       });
       await load(true);
@@ -559,6 +661,20 @@ export const ScenarioTemplates = () => {
         </button>
       </div>
 
+      <ContentDashboard
+        title="Scenario Template Dashboard"
+        subtitle="Aggregate template coverage for the current search and genre filters."
+        status={
+          query.trim() || genreFilter !== 'all'
+            ? 'Reflects current filters'
+            : 'All reusable templates'
+        }
+        loading={dashboardLoading}
+        error={dashboardError}
+        metrics={dashboardMetrics}
+        sections={dashboardSections}
+      />
+
       <section className="rounded-lg border bg-white p-4 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -568,7 +684,7 @@ export const ScenarioTemplates = () => {
             </p>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <label className="block text-sm">
             Count
             <input
@@ -604,6 +720,29 @@ export const ScenarioTemplates = () => {
                   </option>
                 ))
               )}
+            </select>
+          </label>
+          <label className="block text-sm">
+            Zone Kind
+            <select
+              value={generationForm.zoneKind}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  zoneKind: event.target.value,
+                }))
+              }
+              className="mt-1 w-full rounded border p-2"
+            >
+              <option value="">Any zone kind</option>
+              {zoneKinds.map((zoneKind) => (
+                <option
+                  key={`template-generation-kind-${zoneKind.id}`}
+                  value={zoneKind.slug}
+                >
+                  {zoneKind.name}
+                </option>
+              ))}
             </select>
           </label>
           <label className="flex items-center gap-2 text-sm mt-6">
@@ -653,7 +792,10 @@ export const ScenarioTemplates = () => {
                       {formatGenreLabel(
                         job.genre ??
                           genres.find((genre) => genre.id === job.genreId)
-                      )}{' '}
+                      )}
+                      {job.zoneKind ? (
+                        <> • {zoneKindLabel(job.zoneKind, zoneKindBySlug)}</>
+                      ) : null}{' '}
                       • Created {job.createdCount} • queued{' '}
                       {formatDate(job.createdAt)}
                     </div>
@@ -714,6 +856,10 @@ export const ScenarioTemplates = () => {
                         record.genre ??
                           genres.find((genre) => genre.id === record.genreId)
                       )}{' '}
+                      • Zone kind:{' '}
+                      {record.zoneKind?.trim()
+                        ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
+                        : 'Unassigned'}{' '}
                       •{' '}
                       {record.openEnded ? 'Open ended' : 'Choice based'} •
                       difficulty {record.difficulty}
@@ -795,6 +941,29 @@ export const ScenarioTemplates = () => {
                       </option>
                     ))
                   )}
+                </select>
+              </label>
+              <label className="block text-sm">
+                Zone Kind
+                <select
+                  value={form.zoneKind}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      zoneKind: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded border p-2"
+                >
+                  <option value="">Unassigned</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`template-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="block text-sm md:col-span-2">

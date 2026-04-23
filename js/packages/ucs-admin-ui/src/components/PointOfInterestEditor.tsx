@@ -2,8 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAPI, useMediaContext, useZoneContext } from '@poltergeist/contexts';
 import { Character, PointOfInterest, ZoneGenre } from '@poltergeist/types';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindSelectPlaceholderLabel,
+} from './zoneKindHelpers.ts';
 
-const buildCharacterPayload = (character: Character, pointOfInterestId: string | null) => {
+const buildCharacterPayload = (
+  character: Character,
+  pointOfInterestId: string | null
+) => {
   return {
     name: character.name,
     description: character.description,
@@ -18,8 +26,10 @@ export const PointOfInterestEditor = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
+  const { zoneKindBySlug, zoneKinds } = useZoneKinds();
 
-  const [pointOfInterest, setPointOfInterest] = useState<PointOfInterest | null>(null);
+  const [pointOfInterest, setPointOfInterest] =
+    useState<PointOfInterest | null>(null);
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string>('');
@@ -34,6 +44,7 @@ export const PointOfInterestEditor = () => {
 
   const [formData, setFormData] = useState({
     genreId: '',
+    zoneKind: '',
     name: '',
     description: '',
     clue: '',
@@ -50,6 +61,10 @@ export const PointOfInterestEditor = () => {
     );
     return fantasyGenre?.id ?? genres[0]?.id ?? '';
   }, [genres]);
+  const selectedZoneDefaultKind = useMemo(
+    () => zones.find((zone) => zone.id === selectedZoneId)?.kind?.trim() ?? '',
+    [selectedZoneId, zones]
+  );
 
   const formatGenerationStatus = (status?: string) => {
     switch (status) {
@@ -70,7 +85,9 @@ export const PointOfInterestEditor = () => {
 
   const assignedCharacters = useMemo(() => {
     if (!pointOfInterest) return [];
-    return characters.filter(character => character.pointOfInterestId === pointOfInterest.id);
+    return characters.filter(
+      (character) => character.pointOfInterestId === pointOfInterest.id
+    );
   }, [characters, pointOfInterest]);
 
   useEffect(() => {
@@ -82,8 +99,10 @@ export const PointOfInterestEditor = () => {
 
     const fetchPointOfInterest = async () => {
       try {
-        const points = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
-        const selected = points.find(point => point.id === id) || null;
+        const points = await apiClient.get<PointOfInterest[]>(
+          '/sonar/pointsOfInterest'
+        );
+        const selected = points.find((point) => point.id === id) || null;
         if (!selected) {
           setError('Point of interest not found.');
           setLoading(false);
@@ -92,6 +111,7 @@ export const PointOfInterestEditor = () => {
         setPointOfInterest(selected);
         setFormData({
           genreId: selected.genreId ?? selected.genre?.id ?? '',
+          zoneKind: selected.zoneKind ?? '',
           name: selected.name ?? '',
           description: selected.description ?? '',
           clue: selected.clue ?? '',
@@ -100,7 +120,8 @@ export const PointOfInterestEditor = () => {
           imageURL: selected.imageURL ?? '',
           originalName: selected.originalName ?? '',
           googleMapsPlaceId: selected.googleMapsPlaceId ?? '',
-          unlockTier: selected.unlockTier != null ? String(selected.unlockTier) : '',
+          unlockTier:
+            selected.unlockTier != null ? String(selected.unlockTier) : '',
         });
       } catch (err) {
         console.error('Error loading point of interest:', err);
@@ -132,7 +153,9 @@ export const PointOfInterestEditor = () => {
 
     const fetchZoneForPoint = async () => {
       try {
-        const zone = await apiClient.get<{ id: string }>(`/sonar/pointOfInterest/${id}/zone`);
+        const zone = await apiClient.get<{ id: string }>(
+          `/sonar/pointOfInterest/${id}/zone`
+        );
         if (zone?.id) {
           setSelectedZoneId(zone.id);
         }
@@ -157,10 +180,12 @@ export const PointOfInterestEditor = () => {
   }, [defaultGenreId]);
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0] || null;
     setImageFile(file);
     if (!file) {
@@ -179,7 +204,10 @@ export const PointOfInterestEditor = () => {
   const uploadImageIfNeeded = async () => {
     if (!imageFile || !id) return null;
     const imageKey = `points-of-interest/${id}-${imageFile.name.toLowerCase().replace(/\s+/g, '-')}`;
-    const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+    const presignedUrl = await getPresignedUploadURL(
+      'crew-points-of-interest',
+      imageKey
+    );
     if (!presignedUrl) {
       throw new Error('Failed to get upload URL');
     }
@@ -203,6 +231,7 @@ export const PointOfInterestEditor = () => {
 
       await apiClient.patch(`/sonar/pointsOfInterest/${id}`, {
         genreId: formData.genreId,
+        zoneKind: formData.zoneKind,
         name: formData.name,
         description: formData.description,
         clue: formData.clue,
@@ -211,16 +240,19 @@ export const PointOfInterestEditor = () => {
         imageUrl,
         originalName: formData.originalName,
         googleMapsPlaceId: formData.googleMapsPlaceId,
-        unlockTier: formData.unlockTier === '' ? null : Number(formData.unlockTier),
+        unlockTier:
+          formData.unlockTier === '' ? null : Number(formData.unlockTier),
       });
 
-      setFormData(prev => ({ ...prev, imageURL: imageUrl }));
+      setFormData((prev) => ({ ...prev, imageURL: imageUrl }));
       setPointOfInterest((prev) => {
         if (!prev) return prev;
-        const genre = genres.find((entry) => entry.id === formData.genreId) ?? null;
+        const genre =
+          genres.find((entry) => entry.id === formData.genreId) ?? null;
         return {
           ...prev,
           genreId: formData.genreId,
+          zoneKind: formData.zoneKind,
           genre,
           name: formData.name,
           description: formData.description,
@@ -249,11 +281,14 @@ export const PointOfInterestEditor = () => {
     setRefreshingImage(true);
     setError(null);
     try {
-      const updated = await apiClient.post<PointOfInterest>('/sonar/pointOfInterest/image/refresh', {
-        pointOfInterestID: id,
-      });
+      const updated = await apiClient.post<PointOfInterest>(
+        '/sonar/pointOfInterest/image/refresh',
+        {
+          pointOfInterestID: id,
+        }
+      );
       setPointOfInterest(updated);
-      setFormData(prev => ({ ...prev, imageURL: updated.imageURL ?? '' }));
+      setFormData((prev) => ({ ...prev, imageURL: updated.imageURL ?? '' }));
       setImageFile(null);
       setImagePreview(updated.imageURL ?? null);
     } catch (err) {
@@ -269,10 +304,14 @@ export const PointOfInterestEditor = () => {
     setSelectedZoneId(nextZoneId);
     try {
       if (selectedZoneId) {
-        await apiClient.delete(`/sonar/zones/${selectedZoneId}/pointOfInterest/${id}`);
+        await apiClient.delete(
+          `/sonar/zones/${selectedZoneId}/pointOfInterest/${id}`
+        );
       }
       if (nextZoneId) {
-        await apiClient.post(`/sonar/zones/${nextZoneId}/pointOfInterest/${id}`);
+        await apiClient.post(
+          `/sonar/zones/${nextZoneId}/pointOfInterest/${id}`
+        );
       }
     } catch (err) {
       console.error('Error updating zone assignment:', err);
@@ -282,13 +321,18 @@ export const PointOfInterestEditor = () => {
 
   const assignCharacter = async () => {
     if (!selectedCharacterId || !pointOfInterest) return;
-    const character = characters.find(c => c.id === selectedCharacterId);
+    const character = characters.find((c) => c.id === selectedCharacterId);
     if (!character) return;
 
     try {
       const payload = buildCharacterPayload(character, pointOfInterest.id);
-      const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${character.id}`, payload);
-      setCharacters(prev => prev.map(c => c.id === updatedCharacter.id ? updatedCharacter : c));
+      const updatedCharacter = await apiClient.put<Character>(
+        `/sonar/characters/${character.id}`,
+        payload
+      );
+      setCharacters((prev) =>
+        prev.map((c) => (c.id === updatedCharacter.id ? updatedCharacter : c))
+      );
       setSelectedCharacterId('');
     } catch (err) {
       console.error('Error assigning character:', err);
@@ -300,8 +344,13 @@ export const PointOfInterestEditor = () => {
     if (!pointOfInterest) return;
     try {
       const payload = buildCharacterPayload(character, null);
-      const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${character.id}`, payload);
-      setCharacters(prev => prev.map(c => c.id === updatedCharacter.id ? updatedCharacter : c));
+      const updatedCharacter = await apiClient.put<Character>(
+        `/sonar/characters/${character.id}`,
+        payload
+      );
+      setCharacters((prev) =>
+        prev.map((c) => (c.id === updatedCharacter.id ? updatedCharacter : c))
+      );
     } catch (err) {
       console.error('Error removing character:', err);
       setError('Failed to remove character.');
@@ -327,7 +376,10 @@ export const PointOfInterestEditor = () => {
           <h1 className="text-3xl font-bold">Edit Point of Interest</h1>
           <p className="text-gray-600">{pointOfInterest.name}</p>
         </div>
-        <Link to="/points-of-interest" className="text-blue-600 hover:underline">
+        <Link
+          to="/points-of-interest"
+          className="text-blue-600 hover:underline"
+        >
           Back to list
         </Link>
       </div>
@@ -335,7 +387,9 @@ export const PointOfInterestEditor = () => {
       <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Name
+            </label>
             <input
               type="text"
               value={formData.name}
@@ -344,16 +398,22 @@ export const PointOfInterestEditor = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Original Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Original Name
+            </label>
             <input
               type="text"
               value={formData.originalName}
-              onChange={(e) => handleInputChange('originalName', e.target.value)}
+              onChange={(e) =>
+                handleInputChange('originalName', e.target.value)
+              }
               className="w-full border border-gray-300 rounded-md px-3 py-2"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Genre
+            </label>
             <select
               value={formData.genreId}
               onChange={(e) => handleInputChange('genreId', e.target.value)}
@@ -368,7 +428,47 @@ export const PointOfInterestEditor = () => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Zone Kind
+            </label>
+            <select
+              value={formData.zoneKind}
+              onChange={(e) => handleInputChange('zoneKind', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">
+                {zoneKindSelectPlaceholderLabel(
+                  selectedZoneDefaultKind,
+                  zoneKindBySlug
+                )}
+              </option>
+              {zoneKinds.map((zoneKind) => (
+                <option
+                  key={`poi-editor-zone-kind-${zoneKind.id}`}
+                  value={zoneKind.slug}
+                >
+                  {zoneKind.name}
+                </option>
+              ))}
+            </select>
+            {zoneKindDescription(
+              formData.zoneKind,
+              selectedZoneDefaultKind,
+              zoneKindBySlug
+            ) ? (
+              <div className="mt-1 text-xs text-gray-500">
+                {zoneKindDescription(
+                  formData.zoneKind,
+                  selectedZoneDefaultKind,
+                  zoneKindBySlug
+                )}
+              </div>
+            ) : null}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Latitude
+            </label>
             <input
               type="text"
               value={formData.lat}
@@ -377,7 +477,9 @@ export const PointOfInterestEditor = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Longitude
+            </label>
             <input
               type="text"
               value={formData.lng}
@@ -386,7 +488,9 @@ export const PointOfInterestEditor = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Unlock Tier</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Unlock Tier
+            </label>
             <input
               type="number"
               value={formData.unlockTier}
@@ -396,18 +500,24 @@ export const PointOfInterestEditor = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Google Maps Place ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Google Maps Place ID
+            </label>
             <input
               type="text"
               value={formData.googleMapsPlaceId}
-              onChange={(e) => handleInputChange('googleMapsPlaceId', e.target.value)}
+              onChange={(e) =>
+                handleInputChange('googleMapsPlaceId', e.target.value)
+              }
               className="w-full border border-gray-300 rounded-md px-3 py-2"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Description
+          </label>
           <textarea
             value={formData.description}
             onChange={(e) => handleInputChange('description', e.target.value)}
@@ -417,7 +527,9 @@ export const PointOfInterestEditor = () => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Clue</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Clue
+          </label>
           <textarea
             value={formData.clue}
             onChange={(e) => handleInputChange('clue', e.target.value)}
@@ -428,7 +540,9 @@ export const PointOfInterestEditor = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Image URL
+            </label>
             <input
               type="text"
               value={formData.imageURL}
@@ -437,7 +551,9 @@ export const PointOfInterestEditor = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload New Image</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Upload New Image
+            </label>
             <input
               type="file"
               accept="image/*"
@@ -453,18 +569,25 @@ export const PointOfInterestEditor = () => {
               />
             )}
             <p className="mt-2 text-sm text-gray-600">
-              Image Status: {formatGenerationStatus(pointOfInterest.imageGenerationStatus)}
+              Image Status:{' '}
+              {formatGenerationStatus(pointOfInterest.imageGenerationStatus)}
             </p>
-            {pointOfInterest.imageGenerationStatus === 'failed' && pointOfInterest.imageGenerationError && (
-              <p className="mt-1 text-xs text-red-600">
-                Error: {pointOfInterest.imageGenerationError}
-              </p>
-            )}
+            {pointOfInterest.imageGenerationStatus === 'failed' &&
+              pointOfInterest.imageGenerationError && (
+                <p className="mt-1 text-xs text-red-600">
+                  Error: {pointOfInterest.imageGenerationError}
+                </p>
+              )}
             <div className="mt-2">
               <button
                 type="button"
                 onClick={handleRefreshImage}
-                disabled={refreshingImage || ['queued', 'in_progress'].includes(pointOfInterest.imageGenerationStatus || '')}
+                disabled={
+                  refreshingImage ||
+                  ['queued', 'in_progress'].includes(
+                    pointOfInterest.imageGenerationStatus || ''
+                  )
+                }
                 className="px-3 py-2 bg-yellow-500 text-white rounded-md disabled:bg-gray-300"
               >
                 {refreshingImage ? 'Refreshing Image...' : 'Refresh Image'}
@@ -475,14 +598,16 @@ export const PointOfInterestEditor = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Zone</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Zone
+            </label>
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2"
               value={selectedZoneId}
               onChange={(e) => handleZoneChange(e.target.value)}
             >
               <option value="">No zone</option>
-              {zones.map(zone => (
+              {zones.map((zone) => (
                 <option key={zone.id} value={zone.id}>
                   {zone.name}
                 </option>
@@ -491,7 +616,9 @@ export const PointOfInterestEditor = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Assign Character</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Assign Character
+            </label>
             <div className="flex gap-2">
               <select
                 className="flex-1 border border-gray-300 rounded-md px-3 py-2"
@@ -500,8 +627,11 @@ export const PointOfInterestEditor = () => {
               >
                 <option value="">Select character</option>
                 {characters
-                  .filter(character => character.pointOfInterestId !== pointOfInterest.id)
-                  .map(character => (
+                  .filter(
+                    (character) =>
+                      character.pointOfInterestId !== pointOfInterest.id
+                  )
+                  .map((character) => (
                     <option key={character.id} value={character.id}>
                       {character.name}
                     </option>
@@ -520,13 +650,20 @@ export const PointOfInterestEditor = () => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Characters</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Assigned Characters
+          </label>
           <div className="space-y-2">
             {assignedCharacters.length === 0 && (
-              <div className="text-sm text-gray-500">No characters assigned.</div>
+              <div className="text-sm text-gray-500">
+                No characters assigned.
+              </div>
             )}
-            {assignedCharacters.map(character => (
-              <div key={character.id} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
+            {assignedCharacters.map((character) => (
+              <div
+                key={character.id}
+                className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded"
+              >
                 <span>{character.name}</span>
                 <button
                   type="button"

@@ -329,6 +329,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Set<String> _lastTrackedQuestIds = <String>{};
   DateTime? _lastFeatureTapAt;
   Point<double>? _lastFeatureTapPoint;
+  DateTime? _lastOpenedMapPinAt;
+  String? _lastOpenedMapPinKey;
   Set<String> _lastQuestTurnInCharacterIds = <String>{};
   String? _lastFeaturedMainStoryPulsePoiId;
   String? _lastFeaturedMainStoryPulseCharacterId;
@@ -7919,16 +7921,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   void _setupTapHandlers(MapLibreMapController c) {
-    c.onFeatureTapped.add((point, _, _, _, annotation) {
-      unawaited(_handleFeatureTap(point, annotation));
+    c.onFeatureTapped.add((point, _, id, _, annotation) {
+      unawaited(_handleFeatureTap(point, id, annotation));
     });
+    c.onSymbolTapped.add(_handleDirectAnnotationTap);
+    c.onCircleTapped.add(_handleDirectAnnotationTap);
+    c.onFillTapped.add(_handleDirectAnnotationTap);
+    c.onLineTapped.add(_handleDirectAnnotationTap);
   }
 
   Future<void> _handleFeatureTap(
     Point<double> point,
+    String? annotationId,
     Annotation? annotation,
   ) async {
-    final data = _annotationData(annotation);
+    final resolvedAnnotation =
+        annotation ?? _annotationByMapLibreId(annotationId?.trim() ?? '');
+    final data = _annotationData(resolvedAnnotation);
     if (data == null || data.isEmpty) return;
     final type = data['type']?.toString();
     final idStr = data['id']?.toString();
@@ -7942,6 +7951,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         point,
         preferredType: type,
         preferredId: idStr,
+        directOpenPreferred: type == 'poi' || type == 'poiBorder',
       );
       if (handled || !mounted) return;
     }
@@ -7959,6 +7969,88 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     };
     if (raw is! Map) return null;
     return Map<String, dynamic>.from(raw);
+  }
+
+  Annotation? _annotationByMapLibreId(String annotationId) {
+    if (annotationId.isEmpty) return null;
+
+    Annotation? findById<T extends Annotation>(Iterable<T> annotations) {
+      for (final annotation in annotations) {
+        if (annotation.id == annotationId) {
+          return annotation;
+        }
+      }
+      return null;
+    }
+
+    Annotation? singleById(Annotation? annotation) {
+      if (annotation?.id == annotationId) {
+        return annotation;
+      }
+      return null;
+    }
+
+    return findById(_poiSymbols) ??
+        findById(_characterSymbols) ??
+        findById(_chestSymbols) ??
+        findById(_chestCircles) ??
+        findById(_healingFountainSymbols) ??
+        findById(_healingFountainCircles) ??
+        findById(_resourceSymbols) ??
+        findById(_resourceCircles) ??
+        findById(_baseSymbols) ??
+        findById(_baseCircles) ??
+        findById(_scenarioSymbols) ??
+        findById(_scenarioCircles) ??
+        findById(_expositionSymbols) ??
+        findById(_expositionCircles) ??
+        findById(_monsterSymbols) ??
+        findById(_monsterCircles) ??
+        findById(_challengeSymbols) ??
+        findById(_challengeCircles) ??
+        findById(_zoneFills) ??
+        findById(_zoneLines) ??
+        findById(_questFills) ??
+        findById(_questLines) ??
+        findById(_challengePolygonFills) ??
+        findById(_challengePolygonLines) ??
+        singleById(_playerPresenceSymbol) ??
+        singleById(_playerPresenceAuraCircle) ??
+        singleById(_playerPresencePulseCircle) ??
+        singleById(_playerPresenceConeFill) ??
+        singleById(_playerPresenceConeLine);
+  }
+
+  void _handleDirectAnnotationTap(Annotation annotation) {
+    final data = _annotationData(annotation);
+    if (data == null || data.isEmpty) return;
+    final type = data['type']?.toString();
+    final idStr = data['id']?.toString();
+    if (type == null || idStr == null || idStr.isEmpty) return;
+    if (type != 'poi' && type != 'poiBorder') return;
+    final geometry = switch (annotation) {
+      Symbol symbol => symbol.options.geometry,
+      Circle circle => circle.options.geometry,
+      Fill _ => null,
+      Line _ => null,
+      _ => null,
+    };
+    final controller = _mapController;
+    if (geometry != null && controller != null) {
+      unawaited(
+        controller
+            .toScreenLocation(geometry)
+            .then(
+              (screenPoint) => _registerFeatureTap(
+                Point<double>(
+                  screenPoint.x.toDouble(),
+                  screenPoint.y.toDouble(),
+                ),
+              ),
+            ),
+      );
+    }
+    _openMapPinByTypeAndId(type, idStr);
   }
 
   void _registerFeatureTap(Point<double> point) {
@@ -8115,13 +8207,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     Point<double> point, {
     String? preferredType,
     String? preferredId,
+    bool directOpenPreferred = false,
   }) async {
     final candidates = await _pinSelectionCandidatesForPoint(
       point,
       preferredType: preferredType,
       preferredId: preferredId,
     );
-    return _openPinSelectionCandidates(candidates);
+    return _openPinSelectionCandidates(
+      candidates,
+      preferredType: preferredType,
+      preferredId: preferredId,
+      directOpenPreferred: directOpenPreferred,
+    );
   }
 
   List<_MapPinAnnotationSeed> _selectablePinAnnotationSeeds() {
@@ -8330,8 +8428,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
-  bool _openPinSelectionCandidates(List<_MapPinSelectionCandidate> candidates) {
+  _MapPinSelectionCandidate? _preferredPinSelectionCandidate(
+    List<_MapPinSelectionCandidate> candidates, {
+    String? preferredType,
+    String? preferredId,
+  }) {
+    if (preferredType == null ||
+        preferredId == null ||
+        preferredType.isEmpty ||
+        preferredId.isEmpty) {
+      return null;
+    }
+    for (final candidate in candidates) {
+      if (candidate.type == preferredType && candidate.id == preferredId) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  bool _openPinSelectionCandidates(
+    List<_MapPinSelectionCandidate> candidates, {
+    String? preferredType,
+    String? preferredId,
+    bool directOpenPreferred = false,
+  }) {
     if (!mounted || candidates.isEmpty) return false;
+    if (directOpenPreferred) {
+      final preferred = _preferredPinSelectionCandidate(
+        candidates,
+        preferredType: preferredType,
+        preferredId: preferredId,
+      );
+      if (preferred != null) {
+        _openMapPinByTypeAndId(preferred.type, preferred.id);
+        return true;
+      }
+    }
     if (candidates.length == 1) {
       _openMapPinByTypeAndId(candidates.first.type, candidates.first.id);
       return true;
@@ -8707,6 +8840,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   void _openMapPinByTypeAndId(String type, String idStr) {
     if (!mounted || idStr.isEmpty) return;
+    final normalizedType = type.trim();
+    final dedupeKey = '$normalizedType:$idStr';
+    final lastOpenedAt = _lastOpenedMapPinAt;
+    if (_lastOpenedMapPinKey == dedupeKey &&
+        lastOpenedAt != null &&
+        DateTime.now().difference(lastOpenedAt) <=
+            const Duration(milliseconds: 250)) {
+      return;
+    }
+    _lastOpenedMapPinAt = DateTime.now();
+    _lastOpenedMapPinKey = dedupeKey;
     if (type == 'zone') {
       _selectZoneById(idStr);
       return;
@@ -10729,14 +10873,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Color? _zoneKindBaseColor(Zone zone) => _parseHexColor(zone.kindOverlayColor);
   ZoneKindVisualProfile _zoneKindVisuals(Zone zone) =>
       zoneKindVisualProfileForSlug(zone.kind);
+  ZoneKindVisualProfile get _neutralZoneVisuals => defaultZoneKindVisualProfile;
 
-  String _zoneKindShroudedFillColor(Color baseColor) {
+  String _zoneKindFillColor(Color baseColor) {
     final hsl = HSLColor.fromColor(baseColor);
-    final shrouded = hsl
-        .withSaturation((hsl.saturation * 0.34).clamp(0.08, 0.24).toDouble())
-        .withLightness((hsl.lightness * 0.4).clamp(0.13, 0.23).toDouble())
+    final expressive = hsl
+        .withSaturation((hsl.saturation * 1.18).clamp(0.28, 0.92).toDouble())
+        .withLightness((hsl.lightness * 0.96).clamp(0.22, 0.62).toDouble())
         .toColor();
-    return _hexFromColor(shrouded);
+    return _hexFromColor(expressive);
   }
 
   Color _zoneKindOuterAccentFromColor(
@@ -10774,31 +10919,49 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   bool _isUndiscoveredZone(Zone zone) => !zone.discovered;
 
   String _zoneFillColor(Zone zone, {int salt = 0}) {
-    final kindColor = _zoneKindBaseColor(zone);
-    if (kindColor != null) {
-      return _isUndiscoveredZone(zone)
-          ? _zoneKindShroudedFillColor(kindColor)
-          : _hexFromColor(kindColor);
-    }
     if (_isUndiscoveredZone(zone)) {
       return _shroudedToneForZone(zone, salt: salt);
+    }
+    final kindColor = _zoneKindBaseColor(zone);
+    if (kindColor != null) {
+      return _zoneKindFillColor(kindColor);
     }
     return _earthToneForZone(zone, salt: salt);
   }
 
   double _zoneFillOpacity(Zone zone) {
+    if (_isUndiscoveredZone(zone)) {
+      return _neutralZoneVisuals.undiscoveredFillOpacity;
+    }
     final visuals = _zoneKindVisuals(zone);
-    return _isUndiscoveredZone(zone)
-        ? visuals.undiscoveredFillOpacity
-        : visuals.discoveredFillOpacity;
+    final baseOpacity = visuals.discoveredFillOpacity;
+    if (_zoneKindBaseColor(zone) != null) {
+      return (baseOpacity * 1.18).clamp(0.34, 0.82).toDouble();
+    }
+    return baseOpacity;
   }
 
   double _selectedZoneFillOpacity(Zone zone) {
+    if (_isUndiscoveredZone(zone)) {
+      final baseOpacity = _neutralZoneVisuals.undiscoveredFillOpacity;
+      return (baseOpacity * 0.28).clamp(0.08, 0.16).toDouble();
+    }
     final baseOpacity = _zoneFillOpacity(zone);
+    if (_zoneKindBaseColor(zone) != null) {
+      return (baseOpacity * 0.42).clamp(0.12, 0.22).toDouble();
+    }
     return (baseOpacity * 0.28).clamp(0.08, 0.16).toDouble();
   }
 
   String _zoneOuterLineColor(Zone zone) {
+    if (_isUndiscoveredZone(zone)) {
+      final fallback = Color.lerp(
+        _neutralZoneVisuals.panelBorder,
+        Colors.black,
+        0.68,
+      );
+      return _hexFromColor(fallback ?? Colors.black);
+    }
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {
       return _hexFromColor(
@@ -10839,26 +11002,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   String _zoneInnerLineColor(Zone zone) {
+    if (_isUndiscoveredZone(zone)) {
+      return _hexFromColor(
+        Color.lerp(_neutralZoneVisuals.panelAccent, Colors.white, 0.08) ??
+            _neutralZoneVisuals.panelAccent,
+      );
+    }
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {
-      if (_isUndiscoveredZone(zone)) {
-        final visuals = _zoneKindVisuals(zone);
-        final shroudedAccent = Color.lerp(
-          _parseHexColor(_zoneKindInnerAccentColor(kindColor)),
-          visuals.panelAccent,
-          0.45,
-        );
-        return _hexFromColor(shroudedAccent ?? visuals.panelAccent);
-      }
       return _zoneKindInnerAccentColor(kindColor);
     }
     final visuals = _zoneKindVisuals(zone);
-    return _hexFromColor(
-      _isUndiscoveredZone(zone)
-          ? Color.lerp(visuals.panelAccent, Colors.white, 0.08) ??
-                visuals.panelAccent
-          : visuals.panelAccent,
-    );
+    return _hexFromColor(visuals.panelAccent);
   }
 
   double _zoneInnerLineOpacity(Zone zone) {
@@ -10874,6 +11029,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   String _zoneLineJoin(Zone zone) {
+    if (_isUndiscoveredZone(zone)) {
+      return 'round';
+    }
     return _zoneKindVisuals(zone).lineJoin;
   }
 
@@ -12745,6 +12903,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             initialCameraPosition: initialPosition,
             styleString: _stamenWatercolorStyle,
             gestureRecognizers: _mapGestureRecognizers,
+            annotationOrder: const [
+              AnnotationType.fill,
+              AnnotationType.line,
+              AnnotationType.circle,
+              AnnotationType.symbol,
+            ],
+            annotationConsumeTapEvents: const [
+              AnnotationType.symbol,
+              AnnotationType.circle,
+            ],
             scrollGesturesEnabled: true,
             zoomGesturesEnabled: true,
             rotateGesturesEnabled: true,
@@ -15595,17 +15763,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zonePatternFillOpacity(Zone zone, {required bool selected}) {
-    final baseOpacity = _isUndiscoveredZone(zone) ? 0.2 : 0.28;
+    final baseOpacity = _isUndiscoveredZone(zone) ? 0.36 : 0.5;
     if (!selected) {
       return baseOpacity;
     }
-    return (baseOpacity * 0.34).clamp(0.06, 0.11).toDouble();
+    return (baseOpacity * 0.82).clamp(0.26, 0.42).toDouble();
   }
 
   Future<String?> _zonePatternImageIdForZone(
     MapLibreMapController controller,
     Zone zone,
   ) async {
+    if (_isUndiscoveredZone(zone)) {
+      return null;
+    }
     final remoteUrl = zone.kindPatternTileUrl?.trim() ?? '';
     if (remoteUrl.isNotEmpty) {
       final remoteBytes = await loadZoneKindPatternTile(remoteUrl);

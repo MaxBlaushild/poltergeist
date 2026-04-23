@@ -111,6 +111,10 @@ func (p *GenerateChallengeTemplatesProcessor) generateChallengeTemplates(ctx con
 	if locationArchetype == nil {
 		return fmt.Errorf("location archetype not found")
 	}
+	zoneKind, err := loadOptionalZoneKind(ctx, p.dbClient, job.ZoneKind)
+	if err != nil {
+		return fmt.Errorf("failed to load challenge template zone kind: %w", err)
+	}
 
 	prompt := fmt.Sprintf(
 		challengeTemplateGenerationPromptTemplate,
@@ -122,6 +126,9 @@ func (p *GenerateChallengeTemplatesProcessor) generateChallengeTemplates(ctx con
 		p.buildRecentChallengeTemplateAvoidance(ctx, job.LocationArchetypeID, 12),
 		job.Count,
 	)
+	if zoneKindBlock := zoneKindInstructionBlock(zoneKind); zoneKindBlock != "" {
+		prompt = strings.TrimSpace(zoneKindBlock + "\n\n" + prompt)
+	}
 	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
 		return fmt.Errorf("failed to generate challenge templates: %w", err)

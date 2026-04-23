@@ -1,6 +1,12 @@
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import { TreasureChest } from '@poltergeist/types';
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, {
+  useCallback,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
@@ -9,6 +15,15 @@ import {
   normalizeMaterialRewards,
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import ContentDashboard from './ContentDashboard.tsx';
+import { countBy } from './contentDashboardUtils.ts';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -77,6 +92,7 @@ export const TreasureChests = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [chests, setChests] = useState<TreasureChest[]>([]);
   const [filteredChests, setFilteredChests] = useState<TreasureChest[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,8 +110,7 @@ export const TreasureChests = () => {
   const [seeding, setSeeding] = useState(false);
   const [showDistributionControls, setShowDistributionControls] =
     useState(false);
-  const [redistributingLockTiers, setRedistributingLockTiers] =
-    useState(false);
+  const [redistributingLockTiers, setRedistributingLockTiers] = useState(false);
   const [distributionForm, setDistributionForm] = useState({
     unlockedPercentage: '10',
     tier1To10Percentage: '20',
@@ -113,11 +128,9 @@ export const TreasureChests = () => {
   const [treasureChestIconUrl, setTreasureChestIconUrl] = useState(
     defaultTreasureChestMapIconUrl
   );
-  const [treasureChestIconStatus, setTreasureChestIconStatus] = useState(
-    'unknown'
-  );
-  const [treasureChestIconExists, setTreasureChestIconExists] =
-    useState(false);
+  const [treasureChestIconStatus, setTreasureChestIconStatus] =
+    useState('unknown');
+  const [treasureChestIconExists, setTreasureChestIconExists] = useState(false);
   const [treasureChestIconRequestedAt, setTreasureChestIconRequestedAt] =
     useState<string | null>(null);
   const [treasureChestIconLastModified, setTreasureChestIconLastModified] =
@@ -138,6 +151,7 @@ export const TreasureChests = () => {
     latitude: '',
     longitude: '',
     zoneId: '',
+    zoneKind: '',
     unlockTier: '' as string | number,
     rewardMode: 'random' as 'explicit' | 'random',
     randomRewardSize: 'small' as 'small' | 'medium' | 'large',
@@ -157,6 +171,7 @@ export const TreasureChests = () => {
       latitude: coords ? coords.latitude.toFixed(6) : '',
       longitude: coords ? coords.longitude.toFixed(6) : '',
       zoneId: '',
+      zoneKind: '',
       unlockTier: '',
       rewardMode: 'random',
       randomRewardSize: 'small',
@@ -330,6 +345,7 @@ export const TreasureChests = () => {
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
         zoneId: formData.zoneId,
+        zoneKind: formData.zoneKind,
         unlockTier:
           formData.unlockTier === ''
             ? undefined
@@ -378,6 +394,7 @@ export const TreasureChests = () => {
       if (formData.longitude)
         submitData.longitude = parseFloat(formData.longitude);
       if (formData.zoneId) submitData.zoneId = formData.zoneId;
+      submitData.zoneKind = formData.zoneKind;
       submitData.unlockTier =
         formData.unlockTier === ''
           ? undefined
@@ -545,7 +562,11 @@ export const TreasureChests = () => {
       tier76To100Percentage,
     ];
 
-    if (percentages.some((value) => Number.isNaN(value) || value < 0 || value > 100)) {
+    if (
+      percentages.some(
+        (value) => Number.isNaN(value) || value < 0 || value > 100
+      )
+    ) {
       alert('Each percentage must be a whole number between 0 and 100.');
       return;
     }
@@ -558,18 +579,17 @@ export const TreasureChests = () => {
 
     setRedistributingLockTiers(true);
     try {
-      const response =
-        await apiClient.post<TreasureChestDistributionResponse>(
-          '/sonar/admin/treasure-chests/reconfigure-lock-distribution',
-          {
-            unlockedPercentage,
-            tier1To10Percentage,
-            tier11To25Percentage,
-            tier26To50Percentage,
-            tier51To75Percentage,
-            tier76To100Percentage,
-          }
-        );
+      const response = await apiClient.post<TreasureChestDistributionResponse>(
+        '/sonar/admin/treasure-chests/reconfigure-lock-distribution',
+        {
+          unlockedPercentage,
+          tier1To10Percentage,
+          tier11To25Percentage,
+          tier26To50Percentage,
+          tier51To75Percentage,
+          tier76To100Percentage,
+        }
+      );
       await fetchChests();
       alert(
         `Updated ${response.updatedCount} treasure chests. ` +
@@ -577,7 +597,10 @@ export const TreasureChests = () => {
           `Reward sizes now map to Small: ${response.rewardSizes.small}, Medium: ${response.rewardSizes.medium}, Large: ${response.rewardSizes.large}.`
       );
     } catch (error) {
-      console.error('Error reconfiguring treasure chest lock distribution:', error);
+      console.error(
+        'Error reconfiguring treasure chest lock distribution:',
+        error
+      );
       alert('Error reconfiguring treasure chest lock distribution.');
     } finally {
       setRedistributingLockTiers(false);
@@ -591,6 +614,7 @@ export const TreasureChests = () => {
       latitude: chest.latitude.toString(),
       longitude: chest.longitude.toString(),
       zoneId: chest.zoneId,
+      zoneKind: chest.zoneKind ?? '',
       unlockTier:
         chest.unlockTier !== null && chest.unlockTier !== undefined
           ? chest.unlockTier.toString()
@@ -615,6 +639,91 @@ export const TreasureChests = () => {
     });
     setZoneQuery(zoneName);
   };
+
+  const zoneDefaultKindByID = useMemo(() => {
+    const map = new Map<string, string>();
+    zones.forEach((zone) => map.set(zone.id, zone.kind?.trim() ?? ''));
+    return map;
+  }, [zones]);
+  const selectedChestZoneDefaultKind = useMemo(
+    () => zoneDefaultKindByID.get(formData.zoneId) ?? '',
+    [formData.zoneId, zoneDefaultKindByID]
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalChests = filteredChests.length;
+    const unlockedCount = filteredChests.filter(
+      (chest) => !chest.unlockTier || chest.unlockTier <= 0
+    ).length;
+    const lockedCount = totalChests - unlockedCount;
+    const coveredZones = new Set(filteredChests.map((chest) => chest.zoneId))
+      .size;
+
+    return [
+      { label: 'Visible Chests', value: totalChests },
+      { label: 'Unlocked', value: unlockedCount },
+      { label: 'Locked', value: lockedCount },
+      { label: 'Zones Covered', value: coveredZones },
+    ];
+  }, [filteredChests]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Zone Kinds',
+        note: 'Effective treasure chest placement by zone kind.',
+        buckets: countBy(filteredChests, (chest) =>
+          zoneKindLabel(
+            chest.zoneKind?.trim() || zoneDefaultKindByID.get(chest.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Lock Strength',
+        note: 'How chest locks are distributed right now.',
+        buckets: countBy(filteredChests, (chest) => {
+          const unlockTier = chest.unlockTier ?? 0;
+          if (unlockTier <= 0) {
+            return 'Unlocked';
+          }
+          if (unlockTier <= 10) {
+            return '1-10';
+          }
+          if (unlockTier <= 25) {
+            return '11-25';
+          }
+          if (unlockTier <= 50) {
+            return '26-50';
+          }
+          if (unlockTier <= 75) {
+            return '51-75';
+          }
+          return '76-100';
+        }),
+      },
+      {
+        title: 'Reward Model',
+        note: 'Explicit versus random reward chest distribution.',
+        buckets: countBy(filteredChests, (chest) =>
+          chest.rewardMode === 'explicit' ? 'Explicit rewards' : 'Randomized'
+        ),
+      },
+      {
+        title: 'Reward Size',
+        note: 'Current random reward size mix in the visible chest set.',
+        buckets: countBy(filteredChests, (chest) => {
+          if (chest.rewardMode === 'explicit') {
+            return 'Explicit reward pool';
+          }
+          return chest.randomRewardSize === 'large'
+            ? 'Large'
+            : chest.randomRewardSize === 'medium'
+              ? 'Medium'
+              : 'Small';
+        }),
+      },
+    ],
+    [filteredChests, zoneDefaultKindByID, zoneKindBySlug]
+  );
 
   const addItem = () => {
     setFormData({
@@ -769,15 +878,27 @@ export const TreasureChests = () => {
           </button>
           <button
             className="bg-amber-600 text-white px-4 py-2 rounded-md"
-            onClick={() =>
-              setShowDistributionControls((current) => !current)
-            }
+            onClick={() => setShowDistributionControls((current) => !current)}
           >
             {showDistributionControls
               ? 'Hide Lock Distribution'
               : 'Reconfigure Lock Tiers'}
           </button>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <ContentDashboard
+          title="Treasure Chest Dashboard"
+          subtitle="Aggregate chest coverage for the current visible result set."
+          status={
+            searchQuery.trim()
+              ? 'Reflects current zone search'
+              : 'All treasure chests'
+          }
+          metrics={dashboardMetrics}
+          sections={dashboardSections}
+        />
       </div>
 
       {showDistributionControls && (
@@ -790,8 +911,7 @@ export const TreasureChests = () => {
             Chests can also remain fully unlocked. Locked chests get a real lock
             strength inside one of these bands: 1-10, 11-25, 26-50, 51-75, or
             76-100. Random reward sizes are then derived from the resulting
-            strength: unlocked and 1-25 small, 26-50 medium,
-            51-100 large.
+            strength: unlocked and 1-25 small, 26-50 medium, 51-100 large.
           </p>
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
             <label className="text-sm text-amber-900">
@@ -926,7 +1046,9 @@ export const TreasureChests = () => {
               onClick={() => void refreshTreasureChestIconStatus(true)}
               disabled={treasureChestIconStatusLoading}
             >
-              {treasureChestIconStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+              {treasureChestIconStatusLoading
+                ? 'Refreshing…'
+                : 'Refresh Status'}
             </button>
             <button
               type="button"
@@ -1079,6 +1201,28 @@ export const TreasureChests = () => {
               </p>
 
               <p style={{ margin: '5px 0', color: '#666' }}>
+                Zone Kind:{' '}
+                {zoneKindSummaryLabel(
+                  chest.zoneKind,
+                  zoneDefaultKindByID.get(chest.zoneId) ?? '',
+                  zoneKindBySlug
+                )}
+              </p>
+
+              {chest.zoneKind?.trim() &&
+              (zoneDefaultKindByID.get(chest.zoneId) ?? '') &&
+              chest.zoneKind.trim() !==
+                (zoneDefaultKindByID.get(chest.zoneId) ?? '') ? (
+                <p style={{ margin: '5px 0', color: '#999', fontSize: '12px' }}>
+                  Zone default:{' '}
+                  {zoneKindLabel(
+                    zoneDefaultKindByID.get(chest.zoneId) ?? '',
+                    zoneKindBySlug
+                  )}
+                </p>
+              ) : null}
+
+              <p style={{ margin: '5px 0', color: '#666' }}>
                 Location: {chest.latitude.toFixed(6)},{' '}
                 {chest.longitude.toFixed(6)}
               </p>
@@ -1127,25 +1271,25 @@ export const TreasureChests = () => {
                 )}
 
               {chest.items && chest.items.length > 0 && (
-                  <div style={{ marginTop: '10px' }}>
-                    <strong style={{ color: '#666' }}>Items:</strong>
-                    <ul
-                      style={{
-                        margin: '5px 0',
-                        paddingLeft: '20px',
-                        color: '#666',
-                      }}
-                    >
-                      {chest.items.map((item, idx) => (
-                        <li key={idx}>
-                          {item.inventoryItem?.name ||
-                            `Item ${item.inventoryItemId}`}{' '}
-                          x{item.quantity}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                <div style={{ marginTop: '10px' }}>
+                  <strong style={{ color: '#666' }}>Items:</strong>
+                  <ul
+                    style={{
+                      margin: '5px 0',
+                      paddingLeft: '20px',
+                      color: '#666',
+                    }}
+                  >
+                    {chest.items.map((item, idx) => (
+                      <li key={idx}>
+                        {item.inventoryItem?.name ||
+                          `Item ${item.inventoryItemId}`}{' '}
+                        x{item.quantity}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div style={{ marginTop: '15px' }}>
                 <button
@@ -1276,6 +1420,54 @@ export const TreasureChests = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Zone Kind:
+              </label>
+              <select
+                value={formData.zoneKind}
+                onChange={(e) =>
+                  setFormData({ ...formData, zoneKind: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                <option value="">
+                  {zoneKindSelectPlaceholderLabel(
+                    selectedChestZoneDefaultKind,
+                    zoneKindBySlug
+                  )}
+                </option>
+                {zoneKinds.map((zoneKind) => (
+                  <option
+                    key={`treasure-chest-zone-kind-${zoneKind.id}`}
+                    value={zoneKind.slug}
+                  >
+                    {zoneKind.name}
+                  </option>
+                ))}
+              </select>
+              {zoneKindDescription(
+                formData.zoneKind,
+                selectedChestZoneDefaultKind,
+                zoneKindBySlug
+              ) ? (
+                <div
+                  style={{ marginTop: '6px', fontSize: '12px', color: '#999' }}
+                >
+                  {zoneKindDescription(
+                    formData.zoneKind,
+                    selectedChestZoneDefaultKind,
+                    zoneKindBySlug
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '8px' }}>
                 Placement *:
               </label>
@@ -1371,9 +1563,7 @@ export const TreasureChests = () => {
                   setFormData({
                     ...formData,
                     unlockTier:
-                      e.target.value === ''
-                        ? ''
-                        : parseInt(e.target.value, 10),
+                      e.target.value === '' ? '' : parseInt(e.target.value, 10),
                   })
                 }
                 placeholder="Leave empty if the chest is not locked"
@@ -1507,8 +1697,15 @@ export const TreasureChests = () => {
                 </button>
               </div>
               {formData.rewardMode === 'random' && (
-                <div style={{ marginBottom: '10px', fontSize: '12px', color: '#666' }}>
-                  Random chests still roll their scaled reward. Items listed here are guaranteed too.
+                <div
+                  style={{
+                    marginBottom: '10px',
+                    fontSize: '12px',
+                    color: '#666',
+                  }}
+                >
+                  Random chests still roll their scaled reward. Items listed
+                  here are guaranteed too.
                 </div>
               )}
               {formData.items.map((item, index) => (

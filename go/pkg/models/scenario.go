@@ -67,6 +67,7 @@ func (s *Scenario) TableName() string {
 }
 
 func (s *Scenario) BeforeSave(tx *gorm.DB) error {
+	s.ZoneKind = NormalizeZoneKind(s.ZoneKind)
 	if s.InternalTags == nil {
 		s.InternalTags = StringArray{}
 	}

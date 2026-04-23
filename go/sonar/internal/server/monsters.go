@@ -27,6 +27,7 @@ import (
 type monsterTemplateUpsertRequest struct {
 	Archived                      *bool    `json:"archived"`
 	MonsterType                   string   `json:"monsterType"`
+	ZoneKind                      string   `json:"zoneKind"`
 	GenreID                       string   `json:"genreId"`
 	Name                          string   `json:"name"`
 	Description                   string   `json:"description"`
@@ -68,6 +69,7 @@ type bulkGenerateMonsterTemplatesRequest struct {
 	Count       int    `json:"count"`
 	MonsterType string `json:"monsterType"`
 	GenreID     string `json:"genreId"`
+	ZoneKind    string `json:"zoneKind"`
 }
 
 type dndMonsterTemplateSeed struct {
@@ -100,12 +102,14 @@ Hard constraints:
 - Keep descriptions concise and practical (8-18 words), focused on monster behavior/combat role.
 - Do not reference DnD, tabletop, or copyrighted franchises.
 - All base stats must be integers from 1 to 20.
+- Every template must include a "zoneKind" slug chosen from the allowed zone kinds.
 - Return JSON only.
 
 Respond as:
 {
   "templates": [
     {
+      "zoneKind": "string",
       "name": "string",
       "description": "string",
       "baseStrength": 10,
@@ -137,12 +141,14 @@ Hard constraints:
 - Keep descriptions concise and practical (8-18 words), focused on monster behavior/combat role.
 - Do not reference DnD, tabletop, or copyrighted franchises.
 - All base stats must be integers from 1 to 20.
+- Every template must include a "zoneKind" slug chosen from the allowed zone kinds.
 - Return JSON only.
 
 Respond as:
 {
   "templates": [
     {
+      "zoneKind": "string",
       "name": "string",
       "description": "string",
       "baseStrength": 10,
@@ -384,6 +390,7 @@ type monsterUpsertRequest struct {
 	ImageURL                    string                      `json:"imageUrl"`
 	ThumbnailURL                string                      `json:"thumbnailUrl"`
 	ZoneID                      string                      `json:"zoneId"`
+	ZoneKind                    *string                     `json:"zoneKind"`
 	Latitude                    float64                     `json:"latitude"`
 	Longitude                   float64                     `json:"longitude"`
 	TemplateID                  string                      `json:"templateId"`
@@ -414,6 +421,7 @@ type monsterEncounterUpsertRequest struct {
 	ScaleWithUserLevel  bool                        `json:"scaleWithUserLevel"`
 	RecurrenceFrequency *string                     `json:"recurrenceFrequency"`
 	ZoneID              string                      `json:"zoneId"`
+	ZoneKind            *string                     `json:"zoneKind"`
 	PointOfInterestID   string                      `json:"pointOfInterestId"`
 	Latitude            float64                     `json:"latitude"`
 	Longitude           float64                     `json:"longitude"`
@@ -435,6 +443,7 @@ type monsterTemplateResponse struct {
 	UpdatedAt             time.Time                            `json:"updatedAt"`
 	Archived              bool                                 `json:"archived"`
 	MonsterType           string                               `json:"monsterType"`
+	ZoneKind              string                               `json:"zoneKind,omitempty"`
 	GenreID               uuid.UUID                            `json:"genreId"`
 	Genre                 *models.ZoneGenre                    `json:"genre,omitempty"`
 	Name                  string                               `json:"name"`
@@ -470,6 +479,7 @@ type monsterResponse struct {
 	ImageURL                    string                     `json:"imageUrl"`
 	ThumbnailURL                string                     `json:"thumbnailUrl"`
 	ZoneID                      uuid.UUID                  `json:"zoneId"`
+	ZoneKind                    string                     `json:"zoneKind,omitempty"`
 	Zone                        models.Zone                `json:"zone"`
 	GenreID                     uuid.UUID                  `json:"genreId"`
 	Genre                       *models.ZoneGenre          `json:"genre,omitempty"`
@@ -553,6 +563,7 @@ type monsterEncounterResponse struct {
 	RecurrenceFrequency         *string                          `json:"recurrenceFrequency,omitempty"`
 	NextRecurrenceAt            *time.Time                       `json:"nextRecurrenceAt,omitempty"`
 	ZoneID                      uuid.UUID                        `json:"zoneId"`
+	ZoneKind                    string                           `json:"zoneKind,omitempty"`
 	Zone                        models.Zone                      `json:"zone"`
 	PointOfInterestID           *uuid.UUID                       `json:"pointOfInterestId,omitempty"`
 	Latitude                    float64                          `json:"latitude"`
@@ -917,6 +928,7 @@ func (s *server) monsterEncounterResponseFrom(
 		RecurrenceFrequency:         encounter.RecurrenceFrequency,
 		NextRecurrenceAt:            encounter.NextRecurrenceAt,
 		ZoneID:                      encounter.ZoneID,
+		ZoneKind:                    encounter.ZoneKind,
 		Zone:                        encounter.Zone,
 		PointOfInterestID:           encounter.PointOfInterestID,
 		Latitude:                    encounter.Latitude,
@@ -970,6 +982,7 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		UpdatedAt:             template.UpdatedAt,
 		Archived:              template.Archived,
 		MonsterType:           string(models.NormalizeMonsterTemplateType(string(template.MonsterType))),
+		ZoneKind:              models.NormalizeZoneKind(template.ZoneKind),
 		GenreID:               template.GenreID,
 		Genre:                 template.Genre,
 		Name:                  template.Name,
@@ -1160,6 +1173,7 @@ func monsterResponseFrom(
 		ImageURL:                    imageURL,
 		ThumbnailURL:                thumbnailURL,
 		ZoneID:                      monster.ZoneID,
+		ZoneKind:                    monster.ZoneKind,
 		Zone:                        monster.Zone,
 		GenreID:                     genreID,
 		Genre:                       genre,
@@ -1492,6 +1506,10 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	progressions := []models.MonsterTemplateProgression{}
 	seenProgressionIDs := map[uuid.UUID]bool{}
@@ -1538,6 +1556,7 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	template := &models.MonsterTemplate{
 		Archived:                      body.Archived != nil && *body.Archived,
 		MonsterType:                   monsterType,
+		ZoneKind:                      models.NormalizeZoneKind(body.ZoneKind),
 		GenreID:                       genre.ID,
 		Genre:                         genre,
 		Name:                          name,
@@ -1572,6 +1591,9 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 		ArcaneResistancePercent:       body.ArcaneResistancePercent,
 		HolyResistancePercent:         body.HolyResistancePercent,
 		ShadowResistancePercent:       body.ShadowResistancePercent,
+	}
+	if zoneKind != nil {
+		template.ZoneKind = zoneKind.Slug
 	}
 	if template.ThumbnailURL == "" && template.ImageURL != "" {
 		template.ThumbnailURL = template.ImageURL
@@ -1720,6 +1742,7 @@ func (s *server) parseMonsterUpsertRequest(
 		ImageURL:                    imageURL,
 		ThumbnailURL:                thumbnailURL,
 		ZoneID:                      zoneID,
+		ZoneKind:                    normalizeZoneKindRequest(body.ZoneKind),
 		GenreID:                     template.GenreID,
 		Genre:                       template.Genre,
 		Latitude:                    body.Latitude,
@@ -1901,6 +1924,7 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		ItemRewards:        itemRewards,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
 		ZoneID:             zoneID,
+		ZoneKind:           normalizeZoneKindRequest(body.ZoneKind),
 		PointOfInterestID:  resolvedPointOfInterestID,
 		Latitude:           resolvedLatitude,
 		Longitude:          resolvedLongitude,
@@ -2132,14 +2156,107 @@ func monsterTemplateTypePromptGuidance(monsterType models.MonsterTemplateType) s
 	}
 }
 
+func monsterTemplatePromptZoneKinds(
+	zoneKinds []models.ZoneKind,
+	preferred *models.ZoneKind,
+) []models.ZoneKind {
+	choices := make([]models.ZoneKind, 0, len(zoneKinds)+1)
+	seen := map[string]struct{}{}
+	appendChoice := func(choice models.ZoneKind) {
+		slug := models.NormalizeZoneKind(choice.Slug)
+		if slug == "" {
+			return
+		}
+		if _, exists := seen[slug]; exists {
+			return
+		}
+		choice.Slug = slug
+		seen[slug] = struct{}{}
+		choices = append(choices, choice)
+	}
+	for _, zoneKind := range zoneKinds {
+		appendChoice(zoneKind)
+	}
+	if preferred != nil {
+		appendChoice(*preferred)
+	}
+	return choices
+}
+
+func monsterZoneKindInstructionBlock(
+	preferred *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
+) string {
+	choices := monsterTemplatePromptZoneKinds(zoneKinds, preferred)
+	if len(choices) == 0 {
+		return ""
+	}
+
+	preferredLine := "- No preferred zone kind was requested. Pick the single most likely fit."
+	label := ""
+	slug := ""
+	seed := ""
+	if preferred != nil {
+		label = strings.TrimSpace(models.ZoneKindPromptLabel(preferred))
+		slug = strings.TrimSpace(models.ZoneKindPromptSlug(preferred))
+		seed = strings.TrimSpace(models.ZoneKindPromptSeed(preferred))
+		if label == "" {
+			label = slug
+		}
+		preferredLine = fmt.Sprintf(
+			"- Preferred zone kind: %s (%s). Most templates should plausibly fit this kind unless another allowed kind is clearly better.",
+			label,
+			slug,
+		)
+	}
+
+	var extraDirection strings.Builder
+	if seed != "" && label != "" {
+		extraDirection.WriteString("\nCreative direction:\n")
+		extraDirection.WriteString(fmt.Sprintf(
+			"- Let %s zone cues influence silhouette, materials, movement, combat role, and naming.\n- Seed: %s\n",
+			strings.ToLower(label),
+			seed,
+		))
+	}
+
+	return fmt.Sprintf(
+		`Zone kind classification:
+Pick the single most likely zone kind for each monster template.
+
+Allowed zone kinds:
+%s
+
+Preference:
+%s%s
+
+Additional rules:
+- Every template must include a "zoneKind" slug.
+- Use one of the allowed slugs exactly as written.
+- Choose the zone kind where players would be most likely to encounter the monster in a reusable content library.
+`,
+		models.ZoneKindsPromptOptions(choices),
+		preferredLine,
+		extraDirection.String(),
+	)
+}
+
 func buildMonsterTemplateGenerationPrompt(
 	count int,
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
 	denyList []string,
 ) string {
+	var instructionBlocks []string
+	if zoneKindBlock := monsterZoneKindInstructionBlock(zoneKind, zoneKinds); zoneKindBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindBlock)
+	}
+
+	var base string
 	if isBaselineFantasyMonsterGenre(genre) {
-		return fmt.Sprintf(
+		base = fmt.Sprintf(
 			generateMonsterTemplatesPromptTemplate,
 			count,
 			monsterTemplateTypePromptLabel(monsterType),
@@ -2147,26 +2264,29 @@ func buildMonsterTemplateGenerationPrompt(
 			formatMonsterTemplateNamesForPrompt(denyList),
 			count,
 		)
-	}
-
-	genreDirection := monsterGenrePromptSeed(genre)
-	if genreDirection == "" {
-		genreDirection = fmt.Sprintf(
-			"Lean into %s fiction, aesthetics, vocabulary, and creature logic while still fitting an action RPG combat loop.",
+	} else {
+		genreDirection := monsterGenrePromptSeed(genre)
+		if genreDirection == "" {
+			genreDirection = fmt.Sprintf(
+				"Lean into %s fiction, aesthetics, vocabulary, and creature logic while still fitting an action RPG combat loop.",
+				monsterGenrePromptLabel(genre),
+			)
+		}
+		base = fmt.Sprintf(
+			generateMonsterTemplatesWithGenrePromptTemplate,
+			count,
+			monsterTemplateTypePromptLabel(monsterType),
 			monsterGenrePromptLabel(genre),
+			genreDirection,
+			monsterTemplateTypePromptGuidance(monsterType),
+			formatMonsterTemplateNamesForPrompt(denyList),
+			count,
 		)
 	}
-
-	return fmt.Sprintf(
-		generateMonsterTemplatesWithGenrePromptTemplate,
-		count,
-		monsterTemplateTypePromptLabel(monsterType),
-		monsterGenrePromptLabel(genre),
-		genreDirection,
-		monsterTemplateTypePromptGuidance(monsterType),
-		formatMonsterTemplateNamesForPrompt(denyList),
-		count,
-	)
+	if len(instructionBlocks) == 0 {
+		return base
+	}
+	return strings.TrimSpace(strings.Join(instructionBlocks, "\n\n") + "\n\n" + base)
 }
 
 func buildBulkMonsterTemplateSpecsFromSeeds(
@@ -2174,6 +2294,7 @@ func buildBulkMonsterTemplateSpecsFromSeeds(
 	usedNames map[string]struct{},
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
 ) []jobs.MonsterTemplateCreationSpec {
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
 	if count <= 0 {
@@ -2190,6 +2311,7 @@ func buildBulkMonsterTemplateSpecsFromSeeds(
 	if genre != nil {
 		genreID = genre.ID.String()
 	}
+	preferredZoneKind := models.ZoneKindPromptSlug(zoneKind)
 	for i := 0; i < count; i++ {
 		seed := seedPool[i%len(seedPool)]
 		name := strings.TrimSpace(seed.Name)
@@ -2202,9 +2324,17 @@ func buildBulkMonsterTemplateSpecsFromSeeds(
 				monsterGenrePromptLabel(genre),
 			)
 		}
+		if zoneKind != nil && strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind)) != "" {
+			description = fmt.Sprintf(
+				"%s Naturally suited to %s zones.",
+				description,
+				strings.ToLower(models.ZoneKindPromptLabel(zoneKind)),
+			)
+		}
 		specs = append(specs, jobs.MonsterTemplateCreationSpec{
 			MonsterType:      string(monsterType),
 			GenreID:          genreID,
+			ZoneKind:         preferredZoneKind,
 			Name:             nextUniqueMonsterTemplateName(name, usedNames),
 			Description:      description,
 			BaseStrength:     seed.BaseStrength,
@@ -2220,6 +2350,7 @@ func buildBulkMonsterTemplateSpecsFromSeeds(
 
 func sanitizeMonsterTemplateSpec(spec jobs.MonsterTemplateCreationSpec) jobs.MonsterTemplateCreationSpec {
 	spec.MonsterType = string(models.NormalizeMonsterTemplateType(spec.MonsterType))
+	spec.ZoneKind = models.NormalizeZoneKind(spec.ZoneKind)
 	spec.Name = strings.TrimSpace(spec.Name)
 	spec.Description = strings.TrimSpace(spec.Description)
 	if spec.Description == "" {
@@ -2232,6 +2363,26 @@ func sanitizeMonsterTemplateSpec(spec jobs.MonsterTemplateCreationSpec) jobs.Mon
 	spec.BaseWisdom = clampMonsterTemplateStat(spec.BaseWisdom)
 	spec.BaseCharisma = clampMonsterTemplateStat(spec.BaseCharisma)
 	return spec
+}
+
+func normalizeGeneratedMonsterTemplateZoneKind(
+	raw string,
+	zoneKinds []models.ZoneKind,
+	preferred *models.ZoneKind,
+) string {
+	normalized := models.NormalizeZoneKind(raw)
+	if normalized == "" {
+		return models.ZoneKindPromptSlug(preferred)
+	}
+	if len(zoneKinds) == 0 {
+		return normalized
+	}
+	for _, zoneKind := range zoneKinds {
+		if models.NormalizeZoneKind(zoneKind.Slug) == normalized {
+			return normalized
+		}
+	}
+	return models.ZoneKindPromptSlug(preferred)
 }
 
 func clampMonsterTemplateStat(value int) int {
@@ -2341,6 +2492,8 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 	existingNames []string,
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
 ) ([]jobs.MonsterTemplateCreationSpec, string, error) {
 	if count <= 0 {
 		return []jobs.MonsterTemplateCreationSpec{}, "none", nil
@@ -2356,6 +2509,8 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 			existingNames,
 			monsterType,
 			genre,
+			zoneKind,
+			zoneKinds,
 		)
 		if err == nil && len(aiSpecs) > 0 {
 			specs = append(specs, aiSpecs...)
@@ -2369,6 +2524,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 			usedNames,
 			monsterType,
 			genre,
+			zoneKind,
 		)
 		specs = append(specs, fallback...)
 		if source == "ai_generated" {
@@ -2392,6 +2548,8 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 	existingNames []string,
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
 ) ([]jobs.MonsterTemplateCreationSpec, error) {
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
 	if count <= 0 {
@@ -2411,6 +2569,8 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 			remaining,
 			monsterType,
 			genre,
+			zoneKind,
+			zoneKinds,
 			denyList,
 		)
 		answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{
@@ -2434,6 +2594,11 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 			if genre != nil {
 				candidate.GenreID = genre.ID.String()
 			}
+			candidate.ZoneKind = normalizeGeneratedMonsterTemplateZoneKind(
+				candidate.ZoneKind,
+				zoneKinds,
+				zoneKind,
+			)
 			if candidate.Name == "" {
 				continue
 			}
@@ -2591,6 +2756,16 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, requestBody.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	zoneKinds, err := s.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
 		return
@@ -2629,6 +2804,8 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		existingNames,
 		monsterType,
 		genre,
+		zoneKind,
+		zoneKinds,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2642,10 +2819,15 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		Status:       jobs.MonsterTemplateBulkStatusQueued,
 		Source:       source,
 		MonsterType:  string(monsterType),
+		GenreID:      genre.ID.String(),
+		ZoneKind:     models.NormalizeZoneKind(requestBody.ZoneKind),
 		TotalCount:   len(templateSpecs),
 		CreatedCount: 0,
 		QueuedAt:     &queuedAt,
 		UpdatedAt:    queuedAt,
+	}
+	if zoneKind != nil {
+		status.ZoneKind = zoneKind.Slug
 	}
 	if err := s.setMonsterTemplateBulkStatus(ctx.Request.Context(), status); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2656,6 +2838,8 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		JobID:       jobID,
 		Source:      source,
 		MonsterType: string(monsterType),
+		GenreID:     genre.ID.String(),
+		ZoneKind:    status.ZoneKind,
 		TotalCount:  len(templateSpecs),
 		Templates:   templateSpecs,
 	}

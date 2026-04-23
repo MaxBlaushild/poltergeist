@@ -40,6 +40,7 @@ type resourceTypeUpsertRequest struct {
 
 type resourceUpsertRequest struct {
 	ZoneID             string                                   `json:"zoneId"`
+	ZoneKind           *string                                  `json:"zoneKind"`
 	ResourceTypeID     string                                   `json:"resourceTypeId"`
 	GatherRequirements []resourceGatherRequirementUpsertRequest `json:"gatherRequirements"`
 	Quantity           *int                                     `json:"quantity"`
@@ -1433,6 +1434,7 @@ func (s *server) createResource(ctx *gin.Context) {
 
 	resource := &models.Resource{
 		ZoneID:         zoneID,
+		ZoneKind:       normalizeZoneKindRequest(requestBody.ZoneKind),
 		ResourceTypeID: resourceType.ID,
 		Quantity:       *requestBody.Quantity,
 		Latitude:       *requestBody.Latitude,
@@ -1529,6 +1531,7 @@ func (s *server) updateResource(ctx *gin.Context) {
 
 	updates := &models.Resource{
 		ZoneID:         zoneID,
+		ZoneKind:       mergeZoneKindRequest(requestBody.ZoneKind, existing.ZoneKind),
 		ResourceTypeID: resourceType.ID,
 		Quantity:       quantity,
 		Latitude:       latitude,

@@ -36,6 +36,7 @@ var challengeValidStatTags = map[string]struct{}{
 
 type challengeUpsertRequest struct {
 	ZoneID              string                      `json:"zoneId"`
+	ZoneKind            *string                     `json:"zoneKind"`
 	PointOfInterestID   string                      `json:"pointOfInterestId"`
 	Latitude            float64                     `json:"latitude"`
 	Longitude           float64                     `json:"longitude"`
@@ -166,6 +167,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 
 	challenge := &models.Challenge{
 		ZoneID:             zoneID,
+		ZoneKind:           normalizeZoneKindRequest(body.ZoneKind),
 		Question:           question,
 		Description:        description,
 		ImageURL:           imageURL,

@@ -62,6 +62,11 @@ func (p *RefreshMonsterTemplateAffinitiesProcessor) ProcessTask(ctx context.Cont
 		p.markFailed(ctx, statusKey, status, err)
 		return fmt.Errorf("failed to load monster templates: %w", err)
 	}
+	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		p.markFailed(ctx, statusKey, status, err)
+		return fmt.Errorf("failed to load zone kinds: %w", err)
+	}
 
 	selected := make(map[uuid.UUID]struct{}, len(payload.MonsterTemplateIDs))
 	for _, id := range payload.MonsterTemplateIDs {
@@ -92,10 +97,12 @@ func (p *RefreshMonsterTemplateAffinitiesProcessor) ProcessTask(ctx context.Cont
 			continue
 		}
 		template := templates[index]
+		profile := scoreMonsterTemplateProfile(ctx, &template, zoneKinds, p.deepPriest)
 		applyAffinityBonusesToMonsterTemplate(
 			&template,
-			scoreMonsterTemplateAffinities(ctx, &template, p.deepPriest),
+			profile.AffinityBonuses,
 		)
+		template.ZoneKind = profile.ZoneKind
 		if err := p.dbClient.MonsterTemplate().Update(ctx, template.ID, &template); err != nil {
 			p.markFailed(ctx, statusKey, status, err)
 			return fmt.Errorf("failed to update monster template %s affinities: %w", template.ID, err)

@@ -323,6 +323,7 @@ type GenerateMonsterTemplateImageTaskPayload struct {
 type MonsterTemplateCreationSpec struct {
 	MonsterType      string `json:"monsterType"`
 	GenreID          string `json:"genreId,omitempty"`
+	ZoneKind         string `json:"zoneKind,omitempty"`
 	Name             string `json:"name"`
 	Description      string `json:"description"`
 	BaseStrength     int    `json:"baseStrength"`
@@ -347,6 +348,8 @@ type GenerateMonsterTemplatesBulkTaskPayload struct {
 	JobID       uuid.UUID                     `json:"jobId"`
 	Source      string                        `json:"source"`
 	MonsterType string                        `json:"monsterType"`
+	GenreID     string                        `json:"genreId,omitempty"`
+	ZoneKind    string                        `json:"zoneKind,omitempty"`
 	TotalCount  int                           `json:"totalCount"`
 	Templates   []MonsterTemplateCreationSpec `json:"templates"`
 }
@@ -356,6 +359,8 @@ type MonsterTemplateBulkStatus struct {
 	Status       string     `json:"status"`
 	Source       string     `json:"source"`
 	MonsterType  string     `json:"monsterType"`
+	GenreID      string     `json:"genreId,omitempty"`
+	ZoneKind     string     `json:"zoneKind,omitempty"`
 	TotalCount   int        `json:"totalCount"`
 	CreatedCount int        `json:"createdCount"`
 	Error        string     `json:"error,omitempty"`

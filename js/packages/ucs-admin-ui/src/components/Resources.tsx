@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import { InventoryItem, Resource, ResourceType } from '@poltergeist/types';
+import ContentDashboard from './ContentDashboard.tsx';
+import { countBy } from './contentDashboardUtils.ts';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 type ResourceTypeRecord = ResourceType;
 type ResourceRecord = Resource;
@@ -48,10 +57,7 @@ const makeRequirementRow = (
   requiredInventoryItemId: values.requiredInventoryItemId ?? '',
 });
 
-const extractApiErrorMessage = (
-  error: unknown,
-  fallback: string
-): string => {
+const extractApiErrorMessage = (error: unknown, fallback: string): string => {
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -61,7 +67,8 @@ const extractApiErrorMessage = (
     const response = (error as { response?: { data?: unknown } }).response;
     const data = response?.data;
     if (typeof data === 'object' && data !== null) {
-      const maybeMessage = (data as { error?: unknown; message?: unknown }).error;
+      const maybeMessage = (data as { error?: unknown; message?: unknown })
+        .error;
       if (typeof maybeMessage === 'string' && maybeMessage.trim() !== '') {
         return maybeMessage;
       }
@@ -122,6 +129,7 @@ const emptyResourceTypeForm = () => ({
 
 const emptyResourceForm = () => ({
   zoneId: '',
+  zoneKind: '',
   resourceTypeId: '',
   quantity: '1',
   latitude: '',
@@ -145,6 +153,7 @@ const resourceTypeToForm = (resourceType: ResourceTypeRecord) => ({
 
 const resourceToForm = (resource: ResourceRecord) => ({
   zoneId: resource.zoneId,
+  zoneKind: resource.zoneKind ?? '',
   resourceTypeId: resource.resourceTypeId,
   quantity: resource.quantity.toString(),
   latitude: resource.latitude.toString(),
@@ -178,7 +187,10 @@ const parseGatherRequirementRows = (
         error: `Gather requirement ${index + 1} needs a max level greater than or equal to its min level.`,
       };
     }
-    if (!Number.isFinite(requiredInventoryItemId) || requiredInventoryItemId < 1) {
+    if (
+      !Number.isFinite(requiredInventoryItemId) ||
+      requiredInventoryItemId < 1
+    ) {
       return {
         gatherRequirements: [],
         error: `Gather requirement ${index + 1} needs a required inventory item.`,
@@ -197,6 +209,7 @@ export const Resources = () => {
   const { apiClient } = useAPI();
   const { inventoryItems, refreshInventoryItems } = useInventory();
   const { zones } = useZoneContext();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [resourceTypes, setResourceTypes] = useState<ResourceTypeRecord[]>([]);
   const [resources, setResources] = useState<ResourceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,7 +226,9 @@ export const Resources = () => {
 
   const resourceTypeById = useMemo(() => {
     const map = new Map<string, ResourceTypeRecord>();
-    resourceTypes.forEach((resourceType) => map.set(resourceType.id, resourceType));
+    resourceTypes.forEach((resourceType) =>
+      map.set(resourceType.id, resourceType)
+    );
     return map;
   }, [resourceTypes]);
 
@@ -222,6 +237,70 @@ export const Resources = () => {
     zones.forEach((zone) => map.set(zone.id, zone.name || zone.id));
     return map;
   }, [zones]);
+  const zoneDefaultKindById = useMemo(() => {
+    const map = new Map<string, string>();
+    zones.forEach((zone) => map.set(zone.id, zone.kind?.trim() ?? ''));
+    return map;
+  }, [zones]);
+  const selectedResourceZoneDefaultKind = useMemo(
+    () => zoneDefaultKindById.get(resourceForm.zoneId) ?? '',
+    [resourceForm.zoneId, zoneDefaultKindById]
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalTypes = resourceTypes.length;
+    const totalNodes = resources.length;
+    const invalidatedNodes = resources.filter((resource) => resource.invalidated)
+      .length;
+    const coveredZones = new Set(resources.map((resource) => resource.zoneId))
+      .size;
+
+    return [
+      { label: 'Resource Types', value: totalTypes },
+      { label: 'Resource Nodes', value: totalNodes },
+      { label: 'Invalidated Nodes', value: invalidatedNodes },
+      { label: 'Zones Covered', value: coveredZones },
+    ];
+  }, [resourceTypes, resources]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Nodes by Zone Kind',
+        note: 'Effective resource placement grouped by zone kind.',
+        buckets: countBy(resources, (resource) =>
+          zoneKindLabel(
+            resource.zoneKind?.trim() || zoneDefaultKindById.get(resource.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Nodes by Resource Type',
+        note: 'Which gatherable types currently have the most live nodes.',
+        buckets: countBy(resources, (resource) =>
+          resource.resourceType?.name ||
+          resourceTypeById.get(resource.resourceTypeId)?.name ||
+          'Unknown type'
+        ),
+      },
+      {
+        title: 'Type Icon Coverage',
+        note: 'How complete the resource type icon library is.',
+        buckets: countBy(resourceTypes, (resourceType) =>
+          resourceType.mapIconUrl?.trim() ? 'Has map icon' : 'Missing map icon'
+        ),
+      },
+      {
+        title: 'Requirement Coverage',
+        note: 'Whether types already define level-banded gathering requirements.',
+        buckets: countBy(resourceTypes, (resourceType) =>
+          (resourceType.gatherRequirements?.length ?? 0) > 0
+            ? 'Has requirement bands'
+            : 'No requirement bands'
+        ),
+      },
+    ],
+    [resourceTypeById, resourceTypes, resources, zoneDefaultKindById, zoneKindBySlug]
+  );
 
   const resourceCountByTypeId = useMemo(() => {
     const map = new Map<string, number>();
@@ -315,7 +394,10 @@ export const Resources = () => {
         );
         setMessage('Resource type updated.');
       } else {
-        await apiClient.post<ResourceTypeRecord>('/sonar/resource-types', payload);
+        await apiClient.post<ResourceTypeRecord>(
+          '/sonar/resource-types',
+          payload
+        );
         setMessage('Resource type created.');
       }
       await fetchResourceTypes();
@@ -336,12 +418,15 @@ export const Resources = () => {
     resourceTypeForm,
   ]);
 
-  const handleEditResourceType = useCallback((resourceType: ResourceTypeRecord) => {
-    setEditingResourceTypeId(resourceType.id);
-    setResourceTypeForm(resourceTypeToForm(resourceType));
-    setError(null);
-    setMessage(null);
-  }, []);
+  const handleEditResourceType = useCallback(
+    (resourceType: ResourceTypeRecord) => {
+      setEditingResourceTypeId(resourceType.id);
+      setResourceTypeForm(resourceTypeToForm(resourceType));
+      setError(null);
+      setMessage(null);
+    },
+    []
+  );
 
   const handleDeleteResourceType = useCallback(
     async (resourceType: ResourceTypeRecord) => {
@@ -371,7 +456,12 @@ export const Resources = () => {
         setBusy(false);
       }
     },
-    [apiClient, editingResourceTypeId, fetchResourceTypes, resetResourceTypeForm]
+    [
+      apiClient,
+      editingResourceTypeId,
+      fetchResourceTypes,
+      resetResourceTypeForm,
+    ]
   );
 
   const handleGenerateMapIcon = useCallback(
@@ -400,14 +490,21 @@ export const Resources = () => {
         setBusy(false);
       }
     },
-    [apiClient, editingResourceTypeId, fetchResourceTypes, resourceTypeForm.mapIconPrompt]
+    [
+      apiClient,
+      editingResourceTypeId,
+      fetchResourceTypes,
+      resourceTypeForm.mapIconPrompt,
+    ]
   );
 
   const handleGenerateRequirementItemsForType = useCallback(
     async (resourceType: ResourceTypeRecord) => {
       const resourceCount = resourceCountByTypeId.get(resourceType.id) || 0;
       const nodeSummary =
-        resourceCount === 1 ? '1 resource node' : `${resourceCount} resource nodes`;
+        resourceCount === 1
+          ? '1 resource node'
+          : `${resourceCount} resource nodes`;
       if (
         !window.confirm(
           `Generate the recommended required items for ${resourceType.name} and apply the default requirement bands to ${nodeSummary}?`
@@ -535,6 +632,7 @@ export const Resources = () => {
     try {
       const payload = {
         zoneId: resourceForm.zoneId,
+        zoneKind: resourceForm.zoneKind,
         resourceTypeId: resourceForm.resourceTypeId,
         quantity,
         latitude,
@@ -594,7 +692,9 @@ export const Resources = () => {
         }
       } catch (nextError) {
         console.error('Failed to delete resource:', nextError);
-        setError(extractApiErrorMessage(nextError, 'Failed to delete resource.'));
+        setError(
+          extractApiErrorMessage(nextError, 'Failed to delete resource.')
+        );
       } finally {
         setBusy(false);
       }
@@ -679,6 +779,14 @@ export const Resources = () => {
 
   return (
     <div className="space-y-8">
+      <ContentDashboard
+        title="Resource Dashboard"
+        subtitle="Aggregate coverage across resource types and live gatherable nodes."
+        status="All resource data"
+        metrics={dashboardMetrics}
+        sections={dashboardSections}
+      />
+
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
@@ -747,7 +855,9 @@ export const Resources = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void handleDeleteResourceType(resourceType)}
+                      onClick={() =>
+                        void handleDeleteResourceType(resourceType)
+                      }
                       className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600"
                     >
                       Delete
@@ -820,7 +930,9 @@ export const Resources = () => {
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold text-slate-900">
-                {editingResourceTypeId ? 'Edit Resource Type' : 'New Resource Type'}
+                {editingResourceTypeId
+                  ? 'Edit Resource Type'
+                  : 'New Resource Type'}
               </h3>
               {editingResourceTypeId && (
                 <button
@@ -835,7 +947,9 @@ export const Resources = () => {
 
             <div className="space-y-3">
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Name</span>
+                <span className="mb-1 block font-medium text-slate-700">
+                  Name
+                </span>
                 <input
                   value={resourceTypeForm.name}
                   onChange={(event) =>
@@ -850,7 +964,9 @@ export const Resources = () => {
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Slug</span>
+                <span className="mb-1 block font-medium text-slate-700">
+                  Slug
+                </span>
                 <input
                   value={resourceTypeForm.slug}
                   onChange={(event) =>
@@ -1013,7 +1129,9 @@ export const Resources = () => {
                 className="w-full rounded-md bg-emerald-600 px-4 py-2 font-medium text-white"
                 disabled={busy}
               >
-                {editingResourceTypeId ? 'Save Resource Type' : 'Create Resource Type'}
+                {editingResourceTypeId
+                  ? 'Save Resource Type'
+                  : 'Create Resource Type'}
               </button>
             </div>
           </div>
@@ -1072,8 +1190,29 @@ export const Resources = () => {
                         {resource.resourceType?.name ||
                           resourceTypeById.get(resource.resourceTypeId)?.name ||
                           'Unknown type'}{' '}
-                        in {zoneNameById.get(resource.zoneId) || resource.zoneId}
+                        in{' '}
+                        {zoneNameById.get(resource.zoneId) || resource.zoneId}
                       </p>
+                      <p className="text-xs text-slate-500">
+                        Zone Kind:{' '}
+                        {zoneKindSummaryLabel(
+                          resource.zoneKind,
+                          zoneDefaultKindById.get(resource.zoneId) ?? '',
+                          zoneKindBySlug
+                        )}
+                      </p>
+                      {resource.zoneKind?.trim() &&
+                      (zoneDefaultKindById.get(resource.zoneId) ?? '') &&
+                      resource.zoneKind.trim() !==
+                        (zoneDefaultKindById.get(resource.zoneId) ?? '') ? (
+                        <p className="text-xs text-slate-400">
+                          Zone default:{' '}
+                          {zoneKindLabel(
+                            zoneDefaultKindById.get(resource.zoneId) ?? '',
+                            zoneKindBySlug
+                          )}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1150,7 +1289,9 @@ export const Resources = () => {
 
             <div className="space-y-3">
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Zone</span>
+                <span className="mb-1 block font-medium text-slate-700">
+                  Zone
+                </span>
                 <select
                   value={resourceForm.zoneId}
                   onChange={(event) =>
@@ -1168,6 +1309,50 @@ export const Resources = () => {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-slate-700">
+                  Zone Kind
+                </span>
+                <select
+                  value={resourceForm.zoneKind}
+                  onChange={(event) =>
+                    setResourceForm((current) => ({
+                      ...current,
+                      zoneKind: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-md border border-slate-300 px-3 py-2"
+                >
+                  <option value="">
+                    {zoneKindSelectPlaceholderLabel(
+                      selectedResourceZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`resource-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                {zoneKindDescription(
+                  resourceForm.zoneKind,
+                  selectedResourceZoneDefaultKind,
+                  zoneKindBySlug
+                ) ? (
+                  <div className="mt-1 text-xs text-slate-500">
+                    {zoneKindDescription(
+                      resourceForm.zoneKind,
+                      selectedResourceZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </div>
+                ) : null}
               </label>
 
               <label className="block text-sm">

@@ -16,9 +16,19 @@ import {
   MaterialRewardForm,
   normalizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import ContentDashboard from './ContentDashboard.tsx';
+import { countBy } from './contentDashboardUtils.ts';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 type ExpositionFormState = {
   zoneId: string;
+  zoneKind: string;
   locationMode: 'poi' | 'coordinates';
   pointOfInterestId: string;
   latitude: string;
@@ -47,6 +57,7 @@ type StaticThumbnailResponse = {
 
 const emptyExpositionForm = (): ExpositionFormState => ({
   zoneId: '',
+  zoneKind: '',
   locationMode: 'coordinates',
   pointOfInterestId: '',
   latitude: '',
@@ -67,6 +78,7 @@ const emptyExpositionForm = (): ExpositionFormState => ({
 
 const buildFormFromExposition = (record: Exposition): ExpositionFormState => ({
   zoneId: record.zoneId ?? '',
+  zoneKind: record.zoneKind ?? '',
   locationMode: record.pointOfInterestId ? 'poi' : 'coordinates',
   pointOfInterestId: record.pointOfInterestId ?? '',
   latitude: String(record.latitude ?? ''),
@@ -137,6 +149,7 @@ export const Expositions: React.FC = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [searchParams, setSearchParams] = useSearchParams();
   const [records, setRecords] = useState<Exposition[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
@@ -204,6 +217,78 @@ export const Expositions: React.FC = () => {
         })
       ),
     [records]
+  );
+  const zoneDefaultKindById = useMemo(() => {
+    const map = new Map<string, string>();
+    zones.forEach((zone) => map.set(zone.id, zone.kind?.trim() ?? ''));
+    return map;
+  }, [zones]);
+  const selectedExpositionZoneDefaultKind = useMemo(
+    () => zoneDefaultKindById.get(form.zoneId) ?? '',
+    [form.zoneId, zoneDefaultKindById]
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalExpositions = records.length;
+    const pointOfInterestCount = records.filter((record) =>
+      Boolean(record.pointOfInterestId)
+    ).length;
+    const explicitRewardCount = records.filter(
+      (record) => record.rewardMode === 'explicit'
+    ).length;
+    const dialogueLineCount = records.reduce(
+      (total, record) => total + (record.dialogue?.length ?? 0),
+      0
+    );
+
+    return [
+      { label: 'Expositions', value: totalExpositions },
+      { label: 'POI-linked', value: pointOfInterestCount },
+      { label: 'Explicit Rewards', value: explicitRewardCount },
+      { label: 'Dialogue Lines', value: dialogueLineCount },
+    ];
+  }, [records]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Zone Kinds',
+        note: 'Effective exposition placement by zone kind.',
+        buckets: countBy(records, (record) =>
+          zoneKindLabel(
+            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Placement',
+        note: 'Whether the exposition anchors to a point of interest or free coordinates.',
+        buckets: countBy(records, (record) =>
+          record.pointOfInterestId ? 'Point of interest' : 'Coordinates'
+        ),
+      },
+      {
+        title: 'Reward Model',
+        note: 'Explicit versus randomized exposition rewards.',
+        buckets: countBy(records, (record) =>
+          record.rewardMode === 'explicit' ? 'Explicit rewards' : 'Randomized'
+        ),
+      },
+      {
+        title: 'Dialogue Size',
+        note: 'A quick sense of how heavy each exposition is conversationally.',
+        buckets: countBy(records, (record) => {
+          const lineCount = record.dialogue?.length ?? 0;
+          if (lineCount <= 3) {
+            return 'Short (1-3 lines)';
+          }
+          if (lineCount <= 8) {
+            return 'Medium (4-8 lines)';
+          }
+          return 'Long (9+ lines)';
+        }),
+      },
+    ],
+    [records, zoneDefaultKindById, zoneKindBySlug]
   );
 
   const refreshExpositionIconStatus = useCallback(
@@ -412,6 +497,7 @@ export const Expositions: React.FC = () => {
 
   const buildPayload = () => ({
     zoneId: form.zoneId,
+    zoneKind: form.zoneKind,
     pointOfInterestId:
       form.locationMode === 'poi' ? form.pointOfInterestId || null : null,
     latitude:
@@ -441,13 +527,12 @@ export const Expositions: React.FC = () => {
       form.rewardMode === 'explicit'
         ? normalizeMaterialRewards(form.materialRewards)
         : [],
-    itemRewards:
-      form.itemRewards
-        .filter((reward) => reward.inventoryItemId)
-        .map((reward) => ({
-          inventoryItemId: Number.parseInt(reward.inventoryItemId, 10) || 0,
-          quantity: parsePositiveInt(String(reward.quantity), 1),
-        })),
+    itemRewards: form.itemRewards
+      .filter((reward) => reward.inventoryItemId)
+      .map((reward) => ({
+        inventoryItemId: Number.parseInt(reward.inventoryItemId, 10) || 0,
+        quantity: parsePositiveInt(String(reward.quantity), 1),
+      })),
     spellRewards:
       form.rewardMode === 'explicit'
         ? form.spellRewards
@@ -677,6 +762,14 @@ export const Expositions: React.FC = () => {
         </div>
       </div>
 
+      <ContentDashboard
+        title="Exposition Dashboard"
+        subtitle="Aggregate coverage across all authored exposition encounters."
+        status="All expositions"
+        metrics={dashboardMetrics}
+        sections={dashboardSections}
+      />
+
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -802,6 +895,8 @@ export const Expositions: React.FC = () => {
                 const zoneName =
                   zones.find((zone) => zone.id === record.zoneId)?.name ??
                   record.zoneId;
+                const zoneDefaultKind =
+                  zoneDefaultKindById.get(record.zoneId) ?? '';
                 return (
                   <button
                     key={record.id}
@@ -823,6 +918,29 @@ export const Expositions: React.FC = () => {
                     >
                       {zoneName}
                     </div>
+                    <div
+                      className={`mt-1 text-xs ${
+                        active ? 'text-slate-200' : 'text-slate-500'
+                      }`}
+                    >
+                      {zoneKindSummaryLabel(
+                        record.zoneKind,
+                        zoneDefaultKind,
+                        zoneKindBySlug
+                      )}
+                    </div>
+                    {record.zoneKind?.trim() &&
+                    zoneDefaultKind &&
+                    record.zoneKind.trim() !== zoneDefaultKind ? (
+                      <div
+                        className={`mt-1 text-[11px] ${
+                          active ? 'text-slate-300' : 'text-slate-400'
+                        }`}
+                      >
+                        Zone default:{' '}
+                        {zoneKindLabel(zoneDefaultKind, zoneKindBySlug)}
+                      </div>
+                    ) : null}
                     <div
                       className={`mt-2 text-xs ${
                         active ? 'text-slate-200' : 'text-slate-600'
@@ -859,6 +977,48 @@ export const Expositions: React.FC = () => {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="block text-sm">
+              Zone Kind
+              <select
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                value={form.zoneKind}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    zoneKind: event.target.value,
+                  }))
+                }
+              >
+                <option value="">
+                  {zoneKindSelectPlaceholderLabel(
+                    selectedExpositionZoneDefaultKind,
+                    zoneKindBySlug
+                  )}
+                </option>
+                {zoneKinds.map((zoneKind) => (
+                  <option
+                    key={`exposition-zone-kind-${zoneKind.id}`}
+                    value={zoneKind.slug}
+                  >
+                    {zoneKind.name}
+                  </option>
+                ))}
+              </select>
+              {zoneKindDescription(
+                form.zoneKind,
+                selectedExpositionZoneDefaultKind,
+                zoneKindBySlug
+              ) ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  {zoneKindDescription(
+                    form.zoneKind,
+                    selectedExpositionZoneDefaultKind,
+                    zoneKindBySlug
+                  )}
+                </p>
+              ) : null}
             </label>
 
             <label className="block text-sm">

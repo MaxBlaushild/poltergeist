@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory } from '@poltergeist/contexts';
+import ContentDashboard from './ContentDashboard.tsx';
+import {
+  countBy,
+  countManyBy,
+  difficultyBandLabel,
+} from './contentDashboardUtils.ts';
+import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 
 type LocationArchetypeRecord = {
   id: string;
@@ -32,6 +39,7 @@ type ChallengeTemplateRecord = {
 type ChallengeTemplateGenerationJob = {
   id: string;
   locationArchetypeId: string;
+  zoneKind?: string;
   status: string;
   count: number;
   createdCount: number;
@@ -62,6 +70,7 @@ type ChallengeTemplateFormState = {
 type ChallengeTemplateGenerationFormState = {
   locationArchetypeId: string;
   count: string;
+  zoneKind: string;
 };
 
 const emptyFormState = (): ChallengeTemplateFormState => ({
@@ -86,6 +95,7 @@ const emptyFormState = (): ChallengeTemplateFormState => ({
 const emptyGenerationForm = (): ChallengeTemplateGenerationFormState => ({
   locationArchetypeId: '',
   count: '6',
+  zoneKind: '',
 });
 
 const parseInteger = (value: string, fallback = 0): number => {
@@ -179,6 +189,7 @@ const jobStatusClassName = (status: string): string => {
 export const ChallengeTemplates = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [locationArchetypes, setLocationArchetypes] = useState<LocationArchetypeRecord[]>([]);
   const [records, setRecords] = useState<ChallengeTemplateRecord[]>([]);
   const [jobs, setJobs] = useState<ChallengeTemplateGenerationJob[]>([]);
@@ -238,6 +249,69 @@ export const ChallengeTemplates = () => {
     locationArchetypes.forEach((archetype) => map.set(archetype.id, archetype.name));
     return map;
   }, [locationArchetypes]);
+  const dashboardMetrics = useMemo(() => {
+    const totalTemplates = records.length;
+    const photoCount = records.filter(
+      (record) => record.submissionType === 'photo'
+    ).length;
+    const explicitRewardCount = records.filter(
+      (record) => record.rewardMode === 'explicit'
+    ).length;
+    const scaledCount = records.filter(
+      (record) => record.scaleWithUserLevel
+    ).length;
+
+    return [
+      { label: 'Templates', value: totalTemplates },
+      { label: 'Photo Challenges', value: photoCount },
+      { label: 'Explicit Rewards', value: explicitRewardCount },
+      { label: 'Scaled Difficulty', value: scaledCount },
+    ];
+  }, [records]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Location Archetypes',
+        note: 'Which reusable place patterns are getting the most template coverage.',
+        buckets: countBy(
+          records,
+          (record) =>
+            record.locationArchetype?.name ??
+            archetypeNameById.get(record.locationArchetypeId) ??
+            'Unknown archetype'
+        ),
+      },
+      {
+        title: 'Submission Types',
+        note: 'How players are expected to complete each template.',
+        buckets: countBy(records, (record) =>
+          record.submissionType === 'photo'
+            ? 'Photo'
+            : record.submissionType === 'text'
+              ? 'Text'
+              : 'Video'
+        ),
+      },
+      {
+        title: 'Difficulty Bands',
+        note: 'Current spread of reusable challenge difficulty.',
+        buckets: countBy(
+          records,
+          (record) => difficultyBandLabel(record.difficulty),
+          { limit: 4 }
+        ),
+      },
+      {
+        title: 'Stat Tags',
+        note: 'The most common character stats these templates exercise.',
+        buckets: countManyBy(records, (record) => record.statTags ?? [], {
+          includeEmpty: false,
+        }),
+        emptyLabel: 'No stat tags yet.',
+      },
+    ],
+    [archetypeNameById, records]
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -336,6 +410,7 @@ export const ChallengeTemplates = () => {
       await apiClient.post('/sonar/admin/challenge-template-generation-jobs', {
         locationArchetypeId: generationForm.locationArchetypeId,
         count,
+        zoneKind: generationForm.zoneKind,
       });
       await load(true);
     } catch (error) {
@@ -387,9 +462,17 @@ export const ChallengeTemplates = () => {
         </button>
       </div>
 
+      <ContentDashboard
+        title="Challenge Template Dashboard"
+        subtitle="Aggregate coverage across the reusable challenge library."
+        status="All challenge templates"
+        metrics={dashboardMetrics}
+        sections={dashboardSections}
+      />
+
       <section className="rounded-lg border bg-white p-4 shadow-sm space-y-4">
         <h2 className="text-lg font-semibold">Generate Templates</h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <label className="block text-sm">
             Location Archetype
             <select
@@ -420,6 +503,29 @@ export const ChallengeTemplates = () => {
               className="mt-1 w-full rounded border p-2"
             />
           </label>
+          <label className="block text-sm">
+            Zone Kind
+            <select
+              value={generationForm.zoneKind}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  zoneKind: event.target.value,
+                }))
+              }
+              className="mt-1 w-full rounded border p-2"
+            >
+              <option value="">Any zone kind</option>
+              {zoneKinds.map((zoneKind) => (
+                <option
+                  key={`challenge-template-kind-${zoneKind.id}`}
+                  value={zoneKind.slug}
+                >
+                  {zoneKind.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex items-end">
             <button
               type="button"
@@ -446,6 +552,11 @@ export const ChallengeTemplates = () => {
                       {archetypeNameById.get(job.locationArchetypeId) ?? 'Unknown archetype'} x {job.count}
                     </div>
                     <div className="text-gray-500">
+                      {job.zoneKind ? (
+                        <>
+                          {zoneKindLabel(job.zoneKind, zoneKindBySlug)} •{' '}
+                        </>
+                      ) : null}
                       Created {job.createdCount} • queued {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (

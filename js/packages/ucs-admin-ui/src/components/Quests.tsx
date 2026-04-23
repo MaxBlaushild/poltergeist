@@ -38,6 +38,12 @@ import {
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 import './questArchetypeTheme.css';
 import './questsTheme.css';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 type PointOfInterestImport = {
   id: string;
@@ -220,6 +226,7 @@ const emptyQuestForm = {
   acceptanceDialogue: [] as DialogueMessage[],
   imageUrl: '',
   zoneId: '',
+  zoneKind: '',
   questGiverCharacterId: '',
   questArchetypeId: '',
   mainStoryPreviousQuestId: '',
@@ -281,8 +288,7 @@ const mergeCharacters = (
           character.locations && character.locations.length > 0
             ? character.locations
             : existing.locations,
-        pointOfInterest:
-          character.pointOfInterest ?? existing.pointOfInterest,
+        pointOfInterest: character.pointOfInterest ?? existing.pointOfInterest,
         pointOfInterestId:
           character.pointOfInterestId ?? existing.pointOfInterestId,
       });
@@ -315,6 +321,7 @@ const buildQuestFormFromQuest = (quest: Quest) => {
     acceptanceDialogue: quest.acceptanceDialogue ?? [],
     imageUrl: quest.imageUrl ?? '',
     zoneId: quest.zoneId ?? '',
+    zoneKind: quest.zoneKind ?? '',
     questGiverCharacterId: quest.questGiverCharacterId ?? '',
     questArchetypeId: quest.questArchetypeId ?? '',
     mainStoryPreviousQuestId: quest.mainStoryPreviousQuestId ?? '',
@@ -482,7 +489,7 @@ const SearchableSelect = ({
     });
   }, [options, query]);
 
-  const displayValue = open ? query : selected?.label ?? '';
+  const displayValue = open ? query : (selected?.label ?? '');
 
   return (
     <div className="relative">
@@ -712,7 +719,7 @@ const resolveLinkedQuestScenario = (
 ): ResolvedQuestNodeScenario | null =>
   (node.scenario as ResolvedQuestNodeScenario | null | undefined) ??
   (node.scenarioId
-    ? scenarios.find((scenario) => scenario.id === node.scenarioId) ?? null
+    ? (scenarios.find((scenario) => scenario.id === node.scenarioId) ?? null)
     : null);
 
 const resolveLinkedQuestExposition = (
@@ -721,8 +728,8 @@ const resolveLinkedQuestExposition = (
 ): ResolvedQuestNodeExposition | null =>
   (node.exposition as ResolvedQuestNodeExposition | null | undefined) ??
   (node.expositionId
-    ? expositions.find((exposition) => exposition.id === node.expositionId) ??
-      null
+    ? (expositions.find((exposition) => exposition.id === node.expositionId) ??
+      null)
     : null);
 
 const resolveLinkedQuestMonsterEncounter = (
@@ -791,7 +798,8 @@ const resolveLinkedQuestChallenge = (
 ): ResolvedQuestNodeChallenge | null =>
   (node.challenge as ResolvedQuestNodeChallenge | null | undefined) ??
   (node.challengeId
-    ? challenges.find((challenge) => challenge.id === node.challengeId) ?? null
+    ? (challenges.find((challenge) => challenge.id === node.challengeId) ??
+      null)
     : null);
 
 const getLinkedQuestNodePoiId = (
@@ -829,7 +837,7 @@ const resolveLinkedQuestNodePoi = (
   );
   const linkedPoi =
     (linkedPoiId
-      ? pointsOfInterest.find((poi) => poi.id === linkedPoiId) ?? null
+      ? (pointsOfInterest.find((poi) => poi.id === linkedPoiId) ?? null)
       : null) ??
     linkedChallenge?.pointOfInterest ??
     linkedExposition?.pointOfInterest ??
@@ -949,6 +957,7 @@ export const Quests = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const { tagGroups } = useTagContext();
   const { locationArchetypes } = useQuestArchetypes();
   const [quests, setQuests] = useState<Quest[]>([]);
@@ -1136,6 +1145,10 @@ export const Quests = () => {
     () => zones.find((zone) => zone.id === questForm.zoneId) ?? null,
     [questForm.zoneId, zones]
   );
+  const selectedQuestZoneDefaultKind = useMemo(
+    () => selectedQuestZone?.kind?.trim() ?? '',
+    [selectedQuestZone]
+  );
   const selectedQuestGiver = useMemo(
     () =>
       questGiverCharacters.find(
@@ -1177,7 +1190,9 @@ export const Quests = () => {
     if (!quests.length) {
       return;
     }
-    const matchingQuest = quests.find((quest) => quest.id === deepLinkedQuestId);
+    const matchingQuest = quests.find(
+      (quest) => quest.id === deepLinkedQuestId
+    );
     if (matchingQuest) {
       setActiveQuestId(matchingQuest.id);
       return;
@@ -1284,12 +1299,16 @@ export const Quests = () => {
     let isMounted = true;
     const loadSupportingData = async () => {
       const results = await Promise.allSettled([
-        apiClient.get<PointOfInterestWithCharacters[]>('/sonar/pointsOfInterest'),
+        apiClient.get<PointOfInterestWithCharacters[]>(
+          '/sonar/pointsOfInterest'
+        ),
         apiClient.get<Character[]>('/sonar/characters'),
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
-        apiClient.get<{ items: ExpositionNodeOption[] }>('/sonar/admin/expositions'),
+        apiClient.get<{ items: ExpositionNodeOption[] }>(
+          '/sonar/admin/expositions'
+        ),
         apiClient.get<MonsterRecord[]>('/sonar/monsters'),
         apiClient.get<MonsterNodeOption[]>('/sonar/monster-encounters'),
         apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
@@ -1440,7 +1459,10 @@ export const Quests = () => {
   }, [questForm.zoneId]);
 
   useEffect(() => {
-    if (!characterZoneFilterId || zoneCharacterPinsById[characterZoneFilterId]) {
+    if (
+      !characterZoneFilterId ||
+      zoneCharacterPinsById[characterZoneFilterId]
+    ) {
       return;
     }
 
@@ -1999,9 +2021,9 @@ export const Quests = () => {
         ? '/scenarios'
         : type === 'exposition'
           ? '/expositions'
-        : type === 'challenge'
-          ? '/challenges'
-          : '/monsters';
+          : type === 'challenge'
+            ? '/challenges'
+            : '/monsters';
     return `${basePath}?id=${encodeURIComponent(id)}`;
   };
 
@@ -2497,6 +2519,7 @@ export const Quests = () => {
           questForm.acceptanceDialogue
         ),
         zoneId: questForm.zoneId || null,
+        zoneKind: questForm.zoneKind,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         mainStoryPreviousQuestId:
@@ -2527,15 +2550,14 @@ export const Quests = () => {
           questForm.rewardMode === 'explicit'
             ? normalizeMaterialRewards(questForm.materialRewards)
             : [],
-        itemRewards:
-          questForm.itemRewards
-            .map((reward) => ({
-              inventoryItemId: Number(reward.inventoryItemId) || 0,
-              quantity: Number(reward.quantity) || 0,
-            }))
-            .filter(
-              (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-            ),
+        itemRewards: questForm.itemRewards
+          .map((reward) => ({
+            inventoryItemId: Number(reward.inventoryItemId) || 0,
+            quantity: Number(reward.quantity) || 0,
+          }))
+          .filter(
+            (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
+          ),
         spellRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.spellRewards
@@ -2566,6 +2588,7 @@ export const Quests = () => {
           questForm.acceptanceDialogue
         ),
         zoneId: questForm.zoneId || null,
+        zoneKind: questForm.zoneKind,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         mainStoryPreviousQuestId:
@@ -2596,15 +2619,14 @@ export const Quests = () => {
           questForm.rewardMode === 'explicit'
             ? normalizeMaterialRewards(questForm.materialRewards)
             : [],
-        itemRewards:
-          questForm.itemRewards
-            .map((reward) => ({
-              inventoryItemId: Number(reward.inventoryItemId) || 0,
-              quantity: Number(reward.quantity) || 0,
-            }))
-            .filter(
-              (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
-            ),
+        itemRewards: questForm.itemRewards
+          .map((reward) => ({
+            inventoryItemId: Number(reward.inventoryItemId) || 0,
+            quantity: Number(reward.quantity) || 0,
+          }))
+          .filter(
+            (reward) => reward.inventoryItemId > 0 && reward.quantity > 0
+          ),
         spellRewards:
           questForm.rewardMode === 'explicit'
             ? questForm.spellRewards
@@ -3216,6 +3238,7 @@ export const Quests = () => {
         ScenarioNodeOption & { attemptedByUser?: boolean }
       >('/sonar/scenarios', {
         zoneId: questForm.zoneId,
+        zoneKind: questForm.zoneKind,
         latitude,
         longitude,
         prompt: quickCreateScenarioForm.prompt.trim(),
@@ -3286,6 +3309,7 @@ export const Quests = () => {
         '/sonar/challenges',
         {
           zoneId: questForm.zoneId,
+          zoneKind: questForm.zoneKind,
           pointOfInterestId: pointOfInterestId || null,
           latitude,
           longitude,
@@ -3368,6 +3392,7 @@ export const Quests = () => {
         scaleWithUserLevel: quickCreateMonsterEncounterForm.scaleWithUserLevel,
         recurrenceFrequency: '',
         zoneId: questForm.zoneId,
+        zoneKind: questForm.zoneKind,
         latitude,
         longitude,
         monsterIds: quickCreateMonsterEncounterForm.monsterIds,
@@ -3663,14 +3688,17 @@ export const Quests = () => {
                   ? { ...character, locations: nextCharacterLocations }
                   : character
               ),
-              pointsOfInterest: payload.pointsOfInterest.map((pointOfInterest) => ({
-                ...pointOfInterest,
-                characters: (pointOfInterest.characters ?? []).map((character) =>
-                  character.id === questForm.questGiverCharacterId
-                    ? { ...character, locations: nextCharacterLocations }
-                    : character
-                ),
-              })),
+              pointsOfInterest: payload.pointsOfInterest.map(
+                (pointOfInterest) => ({
+                  ...pointOfInterest,
+                  characters: (pointOfInterest.characters ?? []).map(
+                    (character) =>
+                      character.id === questForm.questGiverCharacterId
+                        ? { ...character, locations: nextCharacterLocations }
+                        : character
+                  ),
+                })
+              ),
             },
           ])
         )
@@ -3834,6 +3862,49 @@ export const Quests = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Zone Kind
+                </label>
+                <select
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={questForm.zoneKind}
+                  onChange={(e) =>
+                    setQuestForm((prev) => ({
+                      ...prev,
+                      zoneKind: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">
+                    {zoneKindSelectPlaceholderLabel(
+                      selectedQuestZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`quest-create-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                {zoneKindDescription(
+                  questForm.zoneKind,
+                  selectedQuestZoneDefaultKind,
+                  zoneKindBySlug
+                ) ? (
+                  <div className="mt-1 text-xs text-gray-500">
+                    {zoneKindDescription(
+                      questForm.zoneKind,
+                      selectedQuestZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </div>
+                ) : null}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -4512,6 +4583,16 @@ export const Quests = () => {
                       </div>
                     </div>
                     <div className="qa-stat">
+                      <div className="qa-stat-label">Zone Kind</div>
+                      <div className="qa-stat-value">
+                        {zoneKindSummaryLabel(
+                          questForm.zoneKind,
+                          selectedQuestZoneDefaultKind,
+                          zoneKindBySlug
+                        )}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
                       <div className="qa-stat-label">Quest Giver</div>
                       <div className="qa-stat-value">
                         {selectedQuestGiver?.name ?? 'Unassigned'}
@@ -4775,6 +4856,49 @@ export const Quests = () => {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Zone Kind
+                      </label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={questForm.zoneKind}
+                        onChange={(e) =>
+                          setQuestForm((prev) => ({
+                            ...prev,
+                            zoneKind: e.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">
+                          {zoneKindSelectPlaceholderLabel(
+                            selectedQuestZoneDefaultKind,
+                            zoneKindBySlug
+                          )}
+                        </option>
+                        {zoneKinds.map((zoneKind) => (
+                          <option
+                            key={`quest-edit-zone-kind-${zoneKind.id}`}
+                            value={zoneKind.slug}
+                          >
+                            {zoneKind.name}
+                          </option>
+                        ))}
+                      </select>
+                      {zoneKindDescription(
+                        questForm.zoneKind,
+                        selectedQuestZoneDefaultKind,
+                        zoneKindBySlug
+                      ) ? (
+                        <div className="mt-1 text-xs text-gray-500">
+                          {zoneKindDescription(
+                            questForm.zoneKind,
+                            selectedQuestZoneDefaultKind,
+                            zoneKindBySlug
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">
@@ -5809,7 +5933,10 @@ export const Quests = () => {
                             >
                               <option value="">Select an exposition</option>
                               {filteredExpositions.map((exposition) => (
-                                <option key={exposition.id} value={exposition.id}>
+                                <option
+                                  key={exposition.id}
+                                  value={exposition.id}
+                                >
                                   {exposition.title || exposition.id}
                                 </option>
                               ))}
@@ -6842,7 +6969,7 @@ export const Quests = () => {
                           linkedChallenge
                         );
                         const linkedPoiArchetype = linkedPoi
-                          ? archetypeByPoiId[linkedPoi.id] ?? null
+                          ? (archetypeByPoiId[linkedPoi.id] ?? null)
                           : null;
                         const linkedPoiAliases =
                           getPointOfInterestAliases(linkedPoi);
@@ -6873,17 +7000,17 @@ export const Quests = () => {
                                   linkedExposition.latitude,
                                   linkedExposition.longitude
                                 )
-                            : linkedMonsterEncounter
-                              ? formatNodeCoordinatePair(
-                                  linkedMonsterEncounter.latitude,
-                                  linkedMonsterEncounter.longitude
-                                )
-                              : linkedChallenge
+                              : linkedMonsterEncounter
                                 ? formatNodeCoordinatePair(
-                                    linkedChallenge.latitude,
-                                    linkedChallenge.longitude
+                                    linkedMonsterEncounter.latitude,
+                                    linkedMonsterEncounter.longitude
                                   )
-                                : null;
+                                : linkedChallenge
+                                  ? formatNodeCoordinatePair(
+                                      linkedChallenge.latitude,
+                                      linkedChallenge.longitude
+                                    )
+                                  : null;
                         const hasLegacyChallengeOverrides =
                           usesLinkedObjective &&
                           nodeObjectivePrompts.length > 0;
@@ -6906,16 +7033,16 @@ export const Quests = () => {
                                         ? `Scenario: ${summarizeScenarioPrompt(linkedScenario?.prompt ?? '')}`
                                         : node.expositionId
                                           ? `Exposition: ${linkedExposition?.title ?? node.expositionId}`
-                                        : node.monsterEncounterId ||
-                                            node.monsterId
-                                          ? `Monster Encounter: ${
-                                              linkedMonsterEncounter?.name ??
-                                              node.monsterEncounterId ??
+                                          : node.monsterEncounterId ||
                                               node.monsterId
-                                            }`
-                                          : node.challengeId
-                                            ? `Challenge Objective: ${linkedChallenge?.question ?? node.challengeId}`
-                                            : 'Polygon'}
+                                            ? `Monster Encounter: ${
+                                                linkedMonsterEncounter?.name ??
+                                                node.monsterEncounterId ??
+                                                node.monsterId
+                                              }`
+                                            : node.challengeId
+                                              ? `Challenge Objective: ${linkedChallenge?.question ?? node.challengeId}`
+                                              : 'Polygon'}
                                   </span>
                                   {node.scenarioId ? (
                                     <Link

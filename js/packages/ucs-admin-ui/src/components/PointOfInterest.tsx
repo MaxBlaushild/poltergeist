@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAPI, useMediaContext, useTagContext, useZoneContext } from '@poltergeist/contexts';
+import {
+  useAPI,
+  useMediaContext,
+  useTagContext,
+  useZoneContext,
+} from '@poltergeist/contexts';
 import { useCandidates, usePointOfInterestGroups } from '@poltergeist/hooks';
 import {
   Candidate,
@@ -8,6 +13,11 @@ import {
   Tag,
   ZoneGenre,
 } from '@poltergeist/types';
+import {
+  useZoneKinds,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+} from './zoneKindHelpers.ts';
 
 type PointOfInterestImport = {
   id: string;
@@ -47,7 +57,7 @@ type PoiMarkerCategoryIconState = PoiMarkerCategoryIconResponse & {
 };
 
 const flattenTags = (tagGroups: { tags: Tag[] }[]): Tag[] => {
-  return tagGroups.flatMap(group => group.tags);
+  return tagGroups.flatMap((group) => group.tags);
 };
 
 const defaultPoiUndiscoveredIconPrompt =
@@ -58,8 +68,7 @@ const staticStatusClassName = (status?: string) => {
   if (normalized === 'completed') return 'bg-emerald-600';
   if (normalized === 'queued' || normalized === 'in_progress')
     return 'bg-indigo-600';
-  if (normalized === 'failed' || normalized === 'missing')
-    return 'bg-red-600';
+  if (normalized === 'failed' || normalized === 'missing') return 'bg-red-600';
   return 'bg-gray-500';
 };
 
@@ -70,10 +79,7 @@ const formatDate = (value?: string | null) => {
   return parsed.toLocaleString();
 };
 
-const extractApiErrorMessage = (
-  error: unknown,
-  fallback: string
-): string => {
+const extractApiErrorMessage = (error: unknown, fallback: string): string => {
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -83,7 +89,8 @@ const extractApiErrorMessage = (
     const response = (error as { response?: { data?: unknown } }).response;
     const data = response?.data;
     if (typeof data === 'object' && data !== null) {
-      const maybeMessage = (data as { error?: unknown; message?: unknown }).error;
+      const maybeMessage = (data as { error?: unknown; message?: unknown })
+        .error;
       if (typeof maybeMessage === 'string' && maybeMessage.trim() !== '') {
         return maybeMessage;
       }
@@ -103,10 +110,13 @@ export const PointOfInterest = () => {
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { zones } = useZoneContext();
+  const { zoneKindBySlug, zoneKinds } = useZoneKinds();
   const { tagGroups } = useTagContext();
   const { pointOfInterestGroups } = usePointOfInterestGroups();
 
-  const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterestType[]>([]);
+  const [pointsOfInterest, setPointsOfInterest] = useState<
+    PointOfInterestType[]
+  >([]);
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,32 +132,30 @@ export const PointOfInterest = () => {
   const [poiUndiscoveredBusy, setPoiUndiscoveredBusy] = useState(false);
   const [poiUndiscoveredStatusLoading, setPoiUndiscoveredStatusLoading] =
     useState(false);
-  const [poiUndiscoveredError, setPoiUndiscoveredError] = useState<string | null>(
-    null
-  );
+  const [poiUndiscoveredError, setPoiUndiscoveredError] = useState<
+    string | null
+  >(null);
   const [poiUndiscoveredMessage, setPoiUndiscoveredMessage] = useState<
     string | null
   >(null);
   const [poiUndiscoveredUrl, setPoiUndiscoveredUrl] = useState(
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png'
   );
-  const [poiUndiscoveredStatus, setPoiUndiscoveredStatus] =
-    useState('unknown');
+  const [poiUndiscoveredStatus, setPoiUndiscoveredStatus] = useState('unknown');
   const [poiUndiscoveredExists, setPoiUndiscoveredExists] = useState(false);
   const [poiUndiscoveredRequestedAt, setPoiUndiscoveredRequestedAt] = useState<
     string | null
   >(null);
-  const [poiUndiscoveredLastModified, setPoiUndiscoveredLastModified] = useState<
-    string | null
-  >(null);
+  const [poiUndiscoveredLastModified, setPoiUndiscoveredLastModified] =
+    useState<string | null>(null);
   const [poiUndiscoveredPreviewNonce, setPoiUndiscoveredPreviewNonce] =
     useState(Date.now());
   const [poiUndiscoveredPrompt, setPoiUndiscoveredPrompt] = useState(
     defaultPoiUndiscoveredIconPrompt
   );
-  const [poiMarkerCategoryOrder, setPoiMarkerCategoryOrder] = useState<string[]>(
-    []
-  );
+  const [poiMarkerCategoryOrder, setPoiMarkerCategoryOrder] = useState<
+    string[]
+  >([]);
   const [poiMarkerCategoryStates, setPoiMarkerCategoryStates] = useState<
     Record<string, PoiMarkerCategoryIconState>
   >({});
@@ -158,6 +166,7 @@ export const PointOfInterest = () => {
   >(null);
   const [createForm, setCreateForm] = useState({
     genreId: '',
+    zoneKind: '',
     name: '',
     description: '',
     clue: '',
@@ -168,10 +177,14 @@ export const PointOfInterest = () => {
     groupId: '',
   });
   const [createImageFile, setCreateImageFile] = useState<File | null>(null);
-  const [createImagePreview, setCreateImagePreview] = useState<string | null>(null);
+  const [createImagePreview, setCreateImagePreview] = useState<string | null>(
+    null
+  );
 
   const [importQuery, setImportQuery] = useState('');
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
+    null
+  );
   const [importZoneId, setImportZoneId] = useState('');
   const [importGenreId, setImportGenreId] = useState('');
   const { candidates } = useCandidates(importQuery);
@@ -179,7 +192,9 @@ export const PointOfInterest = () => {
   const [importPolling, setImportPolling] = useState(false);
   const [importToasts, setImportToasts] = useState<string[]>([]);
   const [, setNotifiedImportIds] = useState<Set<string>>(new Set());
-  const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set());
+  const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(
+    new Set()
+  );
   const [deletingPointId, setDeletingPointId] = useState<string | null>(null);
   const [bulkDeletingPoints, setBulkDeletingPoints] = useState(false);
 
@@ -191,10 +206,7 @@ export const PointOfInterest = () => {
     return fantasyGenre?.id ?? genres[0]?.id ?? '';
   }, [genres]);
   const genreNameById = useMemo(
-    () =>
-      new Map(
-        genres.map((genre) => [genre.id, genre.name])
-      ),
+    () => new Map(genres.map((genre) => [genre.id, genre.name])),
     [genres]
   );
   const orderedPoiMarkerCategoryStates = useMemo(
@@ -253,7 +265,7 @@ export const PointOfInterest = () => {
   }, [defaultGenreId]);
 
   const toggleTag = (tagId: string) => {
-    setSelectedTagIds(prev => {
+    setSelectedTagIds((prev) => {
       const next = new Set(prev);
       if (next.has(tagId)) {
         next.delete(tagId);
@@ -270,10 +282,12 @@ export const PointOfInterest = () => {
     const query = nameQuery.trim().toLowerCase();
     const selectedTags = Array.from(selectedTagIds);
 
-    return pointsOfInterest.filter(point => {
-      const matchesName = query.length === 0
-        || point.name.toLowerCase().includes(query)
-        || (point.originalName && point.originalName.toLowerCase().includes(query));
+    return pointsOfInterest.filter((point) => {
+      const matchesName =
+        query.length === 0 ||
+        point.name.toLowerCase().includes(query) ||
+        (point.originalName &&
+          point.originalName.toLowerCase().includes(query));
 
       if (!matchesName) {
         return false;
@@ -288,19 +302,20 @@ export const PointOfInterest = () => {
         return true;
       }
 
-      const pointTagIds = point.tags?.map(tag => tag.id) ?? [];
-      return selectedTags.every(tagId => pointTagIds.includes(tagId));
+      const pointTagIds = point.tags?.map((tag) => tag.id) ?? [];
+      return selectedTags.every((tagId) => pointTagIds.includes(tagId));
     });
   }, [pointsOfInterest, nameQuery, selectedGenreId, selectedTagIds]);
 
   const allFilteredPointsSelected = useMemo(() => {
     if (filteredPoints.length === 0) return false;
-    return filteredPoints.every(point => selectedPointIds.has(point.id));
+    return filteredPoints.every((point) => selectedPointIds.has(point.id));
   }, [filteredPoints, selectedPointIds]);
 
   const resetCreateForm = () => {
     setCreateForm({
       genreId: defaultGenreId,
+      zoneKind: '',
       name: '',
       description: '',
       clue: '',
@@ -719,8 +734,7 @@ export const PointOfInterest = () => {
   useEffect(() => {
     if (
       !orderedPoiMarkerCategoryStates.some(
-        (state) =>
-          state.status === 'queued' || state.status === 'in_progress'
+        (state) => state.status === 'queued' || state.status === 'in_progress'
       )
     ) {
       return;
@@ -731,7 +745,9 @@ export const PointOfInterest = () => {
     return () => window.clearInterval(interval);
   }, [fetchPoiMarkerCategoryIcons, orderedPoiMarkerCategoryStates]);
 
-  const handleCreateImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCreateImageChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0] ?? null;
     setCreateImageFile(file);
     if (!file) {
@@ -748,7 +764,10 @@ export const PointOfInterest = () => {
   const uploadCreateImage = async () => {
     if (!createImageFile) return null;
     const imageKey = `points-of-interest/${createImageFile.name.toLowerCase().replace(/\s+/g, '-')}`;
-    const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+    const presignedUrl = await getPresignedUploadURL(
+      'crew-points-of-interest',
+      imageKey
+    );
     if (!presignedUrl) {
       throw new Error('Failed to get upload URL');
     }
@@ -789,16 +808,22 @@ export const PointOfInterest = () => {
         return;
       }
 
-      await apiClient.post(`/sonar/pointsOfInterest/group/${createForm.groupId}`, {
-        genreId: createForm.genreId,
-        name: createForm.name,
-        description: createForm.description,
-        latitude: createForm.lat,
-        longitude: createForm.lng,
-        imageUrl,
-        clue: createForm.clue,
-        unlockTier: createForm.unlockTier ? Number(createForm.unlockTier) : null,
-      });
+      await apiClient.post(
+        `/sonar/pointsOfInterest/group/${createForm.groupId}`,
+        {
+          genreId: createForm.genreId,
+          zoneKind: createForm.zoneKind,
+          name: createForm.name,
+          description: createForm.description,
+          latitude: createForm.lat,
+          longitude: createForm.lng,
+          imageUrl,
+          clue: createForm.clue,
+          unlockTier: createForm.unlockTier
+            ? Number(createForm.unlockTier)
+            : null,
+        }
+      );
 
       setShowCreateModal(false);
       resetCreateForm();
@@ -824,11 +849,14 @@ export const PointOfInterest = () => {
       return;
     }
     try {
-      const importItem = await apiClient.post<PointOfInterestImport>('/sonar/pointOfInterest/import', {
-        placeID: selectedCandidate.place_id,
-        zoneID: importZoneId,
-        genreId: importGenreId,
-      });
+      const importItem = await apiClient.post<PointOfInterestImport>(
+        '/sonar/pointOfInterest/import',
+        {
+          placeID: selectedCandidate.place_id,
+          zoneID: importZoneId,
+          genreId: importGenreId,
+        }
+      );
       setImportJobs((prev) => [importItem, ...prev]);
       setImportPolling(true);
     } catch (err) {
@@ -843,11 +871,14 @@ export const PointOfInterest = () => {
     genreId: string
   ) => {
     try {
-      const importItem = await apiClient.post<PointOfInterestImport>('/sonar/pointOfInterest/import', {
-        placeID: placeId,
-        zoneID: zoneId,
-        genreId,
-      });
+      const importItem = await apiClient.post<PointOfInterestImport>(
+        '/sonar/pointOfInterest/import',
+        {
+          placeID: placeId,
+          zoneID: zoneId,
+          genreId,
+        }
+      );
       setImportJobs((prev) => [importItem, ...prev]);
       setImportPolling(true);
     } catch (err) {
@@ -856,20 +887,27 @@ export const PointOfInterest = () => {
     }
   };
 
-  const fetchImportJobs = useCallback(async (zoneId?: string) => {
-    try {
-      const url = zoneId ? `/sonar/pointOfInterest/imports?zoneId=${zoneId}` : '/sonar/pointOfInterest/imports';
-      const response = await apiClient.get<PointOfInterestImport[]>(url);
-      setImportJobs(response);
-      const hasPending = response.some((item) => item.status === 'queued' || item.status === 'in_progress');
-      setImportPolling(hasPending);
-      if (!hasPending) {
-        fetchPointsOfInterest();
+  const fetchImportJobs = useCallback(
+    async (zoneId?: string) => {
+      try {
+        const url = zoneId
+          ? `/sonar/pointOfInterest/imports?zoneId=${zoneId}`
+          : '/sonar/pointOfInterest/imports';
+        const response = await apiClient.get<PointOfInterestImport[]>(url);
+        setImportJobs(response);
+        const hasPending = response.some(
+          (item) => item.status === 'queued' || item.status === 'in_progress'
+        );
+        setImportPolling(hasPending);
+        if (!hasPending) {
+          fetchPointsOfInterest();
+        }
+      } catch (err) {
+        console.error('Error fetching import status:', err);
       }
-    } catch (err) {
-      console.error('Error fetching import status:', err);
-    }
-  }, [apiClient, fetchPointsOfInterest]);
+    },
+    [apiClient, fetchPointsOfInterest]
+  );
 
   useEffect(() => {
     if (!showImportModal) return;
@@ -886,7 +924,9 @@ export const PointOfInterest = () => {
 
   useEffect(() => {
     if (importJobs.length === 0) return;
-    const completed = importJobs.filter((job) => job.status === 'completed' && job.pointOfInterestId);
+    const completed = importJobs.filter(
+      (job) => job.status === 'completed' && job.pointOfInterestId
+    );
     if (completed.length === 0) return;
 
     setNotifiedImportIds((prev) => {
@@ -896,7 +936,9 @@ export const PointOfInterest = () => {
         if (!next.has(job.id)) {
           next.add(job.id);
           hasNew = true;
-          setImportToasts((existing) => [`Import complete: ${job.placeId}`, ...existing].slice(0, 3));
+          setImportToasts((existing) =>
+            [`Import complete: ${job.placeId}`, ...existing].slice(0, 3)
+          );
         }
       });
       return hasNew ? next : prev;
@@ -1003,7 +1045,10 @@ export const PointOfInterest = () => {
         if (result.status === 'fulfilled') {
           deletedIds.add(pointId);
         } else {
-          console.error(`Failed to delete point of interest ${pointId}`, result.reason);
+          console.error(
+            `Failed to delete point of interest ${pointId}`,
+            result.reason
+          );
           failedIds.push(pointId);
         }
       });
@@ -1296,9 +1341,7 @@ export const PointOfInterest = () => {
                   </div>
                 ) : null}
                 {state.error ? (
-                  <div className="text-sm text-red-600 mt-2">
-                    {state.error}
-                  </div>
+                  <div className="text-sm text-red-600 mt-2">{state.error}</div>
                 ) : null}
               </div>
             ))}
@@ -1322,7 +1365,9 @@ export const PointOfInterest = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Search</label>
+                <label className="text-sm font-medium text-gray-700">
+                  Search
+                </label>
                 <input
                   type="text"
                   placeholder="Search by name..."
@@ -1333,14 +1378,16 @@ export const PointOfInterest = () => {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Zone</label>
+                <label className="text-sm font-medium text-gray-700">
+                  Zone
+                </label>
                 <select
                   className="border border-gray-300 rounded-md px-3 py-2"
                   value={selectedZoneId}
                   onChange={(e) => setSelectedZoneId(e.target.value)}
                 >
                   <option value="">All zones</option>
-                  {zones.map(zone => (
+                  {zones.map((zone) => (
                     <option key={zone.id} value={zone.id}>
                       {zone.name}
                     </option>
@@ -1349,7 +1396,9 @@ export const PointOfInterest = () => {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Genre</label>
+                <label className="text-sm font-medium text-gray-700">
+                  Genre
+                </label>
                 <select
                   className="border border-gray-300 rounded-md px-3 py-2"
                   value={selectedGenreId}
@@ -1365,9 +1414,11 @@ export const PointOfInterest = () => {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Tags</label>
+                <label className="text-sm font-medium text-gray-700">
+                  Tags
+                </label>
                 <div className="flex flex-wrap gap-2">
-                  {allTags.map(tag => {
+                  {allTags.map((tag) => {
                     const isSelected = selectedTagIds.has(tag.id);
                     return (
                       <button
@@ -1385,7 +1436,9 @@ export const PointOfInterest = () => {
                     );
                   })}
                   {allTags.length === 0 && (
-                    <span className="text-sm text-gray-500">No tags available</span>
+                    <span className="text-sm text-gray-500">
+                      No tags available
+                    </span>
                   )}
                 </div>
                 {selectedTagIds.size > 0 && (
@@ -1401,7 +1454,8 @@ export const PointOfInterest = () => {
             </div>
 
             <div className="mt-4 text-sm text-gray-600">
-              Showing {filteredPoints.length} of {pointsOfInterest.length} points
+              Showing {filteredPoints.length} of {pointsOfInterest.length}{' '}
+              points
               {selectedTagIds.size > 0 && ' (matches all selected tags)'}
             </div>
           </>
@@ -1448,19 +1502,22 @@ export const PointOfInterest = () => {
       {loading && (
         <div className="text-gray-600">Loading points of interest...</div>
       )}
-      {error && (
-        <div className="text-red-600">{error}</div>
-      )}
+      {error && <div className="text-red-600">{error}</div>}
 
       {!loading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredPoints.map(point => {
+          {filteredPoints.map((point) => {
             const isDeleting = deletingPointId === point.id;
 
             return (
-              <div key={point.id} className="bg-white rounded-lg shadow-md p-4 h-full">
+              <div
+                key={point.id}
+                className="bg-white rounded-lg shadow-md p-4 h-full"
+              >
                 <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="text-xs text-gray-500 break-all">{point.id}</div>
+                  <div className="text-xs text-gray-500 break-all">
+                    {point.id}
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -1480,7 +1537,10 @@ export const PointOfInterest = () => {
                   </div>
                 </div>
 
-                <Link to={`/points-of-interest/${point.id}`} className="block hover:opacity-90 transition-opacity">
+                <Link
+                  to={`/points-of-interest/${point.id}`}
+                  className="block hover:opacity-90 transition-opacity"
+                >
                   {point.imageURL && (
                     <img
                       src={point.imageURL}
@@ -1495,15 +1555,28 @@ export const PointOfInterest = () => {
                       'Unknown genre'}
                   </p>
                   {point.originalName && (
-                    <p className="text-sm text-gray-500 mb-2">{point.originalName}</p>
+                    <p className="text-sm text-gray-500 mb-2">
+                      {point.originalName}
+                    </p>
                   )}
-                  <p className="text-sm text-gray-700 mb-2">{point.description}</p>
+                  <p className="text-sm text-gray-700 mb-2">
+                    {point.description}
+                  </p>
                   <div className="text-sm text-gray-600 space-y-1">
+                    <div>
+                      Zone Kind Override:{' '}
+                      {point.zoneKind
+                        ? zoneKindLabel(point.zoneKind, zoneKindBySlug)
+                        : 'None'}
+                    </div>
                     <div>Latitude: {point.lat}</div>
                     <div>Longitude: {point.lng}</div>
                     <div>Clue: {point.clue || 'None'}</div>
                     <div>
-                      Tags: {point.tags?.length ? point.tags.map(tag => tag.name).join(', ') : 'None'}
+                      Tags:{' '}
+                      {point.tags?.length
+                        ? point.tags.map((tag) => tag.name).join(', ')
+                        : 'None'}
                     </div>
                   </div>
                 </Link>
@@ -1538,14 +1611,18 @@ export const PointOfInterest = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Group
+                </label>
                 <select
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.groupId}
-                  onChange={(e) => setCreateForm({ ...createForm, groupId: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, groupId: e.target.value })
+                  }
                 >
                   <option value="">Select a group</option>
-                  {(pointOfInterestGroups ?? []).map(group => (
+                  {(pointOfInterestGroups ?? []).map((group) => (
                     <option key={group.id} value={group.id}>
                       {group.name}
                     </option>
@@ -1553,7 +1630,9 @@ export const PointOfInterest = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Genre
+                </label>
                 <select
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.genreId}
@@ -1570,78 +1649,140 @@ export const PointOfInterest = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Zone Kind
+                </label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  value={createForm.zoneKind}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, zoneKind: e.target.value })
+                  }
+                >
+                  <option value="">
+                    {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
+                  </option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`poi-create-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name
+                </label>
                 <input
                   type="text"
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.name}
-                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Latitude
+                </label>
                 <input
                   type="text"
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.lat}
-                  onChange={(e) => setCreateForm({ ...createForm, lat: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, lat: e.target.value })
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Longitude
+                </label>
                 <input
                   type="text"
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.lng}
-                  onChange={(e) => setCreateForm({ ...createForm, lng: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, lng: e.target.value })
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Unlock Tier</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Unlock Tier
+                </label>
                 <input
                   type="number"
                   min="1"
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.unlockTier}
-                  onChange={(e) => setCreateForm({ ...createForm, unlockTier: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, unlockTier: e.target.value })
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Image URL
+                </label>
                 <input
                   type="text"
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   value={createForm.imageUrl}
-                  onChange={(e) => setCreateForm({ ...createForm, imageUrl: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, imageUrl: e.target.value })
+                  }
                 />
               </div>
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description
+              </label>
               <textarea
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
                 rows={3}
                 value={createForm.description}
-                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, description: e.target.value })
+                }
               />
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Clue</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Clue
+              </label>
               <textarea
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
                 rows={2}
                 value={createForm.clue}
-                onChange={(e) => setCreateForm({ ...createForm, clue: e.target.value })}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, clue: e.target.value })
+                }
               />
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Upload Image</label>
-              <input type="file" accept="image/*" onChange={handleCreateImageChange} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Upload Image
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleCreateImageChange}
+              />
               {createImagePreview && (
-                <img src={createImagePreview} alt="Preview" className="mt-2 h-32 w-full object-cover rounded" />
+                <img
+                  src={createImagePreview}
+                  alt="Preview"
+                  className="mt-2 h-32 w-full object-cover rounded"
+                />
               )}
             </div>
 
@@ -1678,14 +1819,16 @@ export const PointOfInterest = () => {
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Zone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Zone
+              </label>
               <select
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
                 value={importZoneId}
                 onChange={(e) => setImportZoneId(e.target.value)}
               >
                 <option value="">Select a zone</option>
-                {zones.map(zone => (
+                {zones.map((zone) => (
                   <option key={zone.id} value={zone.id}>
                     {zone.name}
                   </option>
@@ -1694,7 +1837,9 @@ export const PointOfInterest = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Genre</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Genre
+              </label>
               <select
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
                 value={importGenreId}
@@ -1710,7 +1855,9 @@ export const PointOfInterest = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Google Maps</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Search Google Maps
+              </label>
               <input
                 type="text"
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
@@ -1724,17 +1871,21 @@ export const PointOfInterest = () => {
               {candidates.length === 0 && (
                 <div className="p-4 text-sm text-gray-500">No results yet.</div>
               )}
-              {candidates.map(candidate => (
+              {candidates.map((candidate) => (
                 <button
                   key={candidate.place_id}
                   type="button"
                   className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
-                    selectedCandidate?.place_id === candidate.place_id ? 'bg-blue-50' : ''
+                    selectedCandidate?.place_id === candidate.place_id
+                      ? 'bg-blue-50'
+                      : ''
                   }`}
                   onClick={() => setSelectedCandidate(candidate)}
                 >
                   <div className="font-medium">{candidate.name}</div>
-                  <div className="text-xs text-gray-500">{candidate.formatted_address}</div>
+                  <div className="text-xs text-gray-500">
+                    {candidate.formatted_address}
+                  </div>
                 </button>
               ))}
             </div>
@@ -1752,10 +1903,15 @@ export const PointOfInterest = () => {
               </div>
               <div className="border border-gray-200 rounded-md max-h-40 overflow-y-auto">
                 {importJobs.length === 0 && (
-                  <div className="p-3 text-xs text-gray-500">No import activity yet.</div>
+                  <div className="p-3 text-xs text-gray-500">
+                    No import activity yet.
+                  </div>
                 )}
                 {importJobs.map((job) => (
-                  <div key={job.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-xs">
+                  <div
+                    key={job.id}
+                    className="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-xs"
+                  >
                     <div>
                       <div className="font-medium">{job.placeId}</div>
                       <div className="text-gray-500">
@@ -1769,13 +1925,19 @@ export const PointOfInterest = () => {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="uppercase text-[10px] text-gray-600">{job.status}</div>
+                      <div className="uppercase text-[10px] text-gray-600">
+                        {job.status}
+                      </div>
                       {job.status === 'failed' && (
                         <button
                           type="button"
                           className="rounded-md border border-gray-300 px-2 py-1 text-[10px] text-gray-700"
                           onClick={() =>
-                            handleRetryImport(job.placeId, job.zoneId, job.genreId)
+                            handleRetryImport(
+                              job.placeId,
+                              job.zoneId,
+                              job.genreId
+                            )
                           }
                         >
                           Retry

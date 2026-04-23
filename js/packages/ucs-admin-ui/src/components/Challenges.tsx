@@ -15,10 +15,25 @@ import {
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
 import { useSearchParams } from 'react-router-dom';
+import ContentDashboard from './ContentDashboard.tsx';
+import {
+  countBy,
+  countManyBy,
+  difficultyBandLabel,
+  useAdminAggregateDataset,
+} from './contentDashboardUtils.ts';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 type ChallengeRecord = {
   id: string;
   zoneId: string;
+  zoneKind?: string;
   pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
@@ -44,6 +59,7 @@ type ChallengeRecord = {
 
 type ChallengeFormState = {
   zoneId: string;
+  zoneKind: string;
   locationMode: 'poi' | 'coordinates' | 'polygon';
   pointOfInterestId: string;
   latitude: string;
@@ -192,7 +208,7 @@ const SearchableSelect = ({
     });
   }, [options, query]);
 
-  const displayValue = open ? query : selected?.label ?? '';
+  const displayValue = open ? query : (selected?.label ?? '');
 
   return (
     <div className="relative">
@@ -341,6 +357,7 @@ const polygonCenter = (
 
 const emptyForm = (): ChallengeFormState => ({
   zoneId: '',
+  zoneKind: '',
   locationMode: 'coordinates',
   pointOfInterestId: '',
   latitude: '',
@@ -385,6 +402,7 @@ const challengeGenerationStatusBadgeClass = (status: string): string => {
 
 const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   zoneId: record.zoneId ?? '',
+  zoneKind: record.zoneKind ?? '',
   locationMode:
     record.polygonPoints && record.polygonPoints.length >= 3
       ? 'polygon'
@@ -432,6 +450,7 @@ export const Challenges = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [zonePointOfInterestMap, setZonePointOfInterestMap] = useState<
     Record<string, PointOfInterestOption[]>
   >({});
@@ -468,23 +487,35 @@ export const Challenges = () => {
   const [selectedChallengeIds, setSelectedChallengeIds] = useState<Set<string>>(
     new Set()
   );
+  const zoneDefaultKindById = useMemo(() => {
+    const map = new Map<string, string>();
+    zones.forEach((zone) => map.set(zone.id, zone.kind?.trim() ?? ''));
+    return map;
+  }, [zones]);
+  const selectedChallengeZoneDefaultKind = useMemo(
+    () => zoneDefaultKindById.get(form.zoneId) ?? '',
+    [form.zoneId, zoneDefaultKindById]
+  );
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
   const didHydrateDeepLinkedChallengeRef = React.useRef(false);
   const deepLinkedChallengeId = searchParams.get('id')?.trim() ?? '';
-  const replaceDeepLinkedChallengeId = useCallback((challengeId?: string | null) => {
-    const normalizedChallengeId = (challengeId ?? '').trim();
-    const currentChallengeId = searchParams.get('id')?.trim() ?? '';
-    if (normalizedChallengeId === currentChallengeId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (normalizedChallengeId) {
-      next.set('id', normalizedChallengeId);
-    } else {
-      next.delete('id');
-    }
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const replaceDeepLinkedChallengeId = useCallback(
+    (challengeId?: string | null) => {
+      const normalizedChallengeId = (challengeId ?? '').trim();
+      const currentChallengeId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedChallengeId === currentChallengeId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedChallengeId) {
+        next.set('id', normalizedChallengeId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
@@ -497,6 +528,96 @@ export const Challenges = () => {
   >([]);
   const deferredQuery = useDeferredValue(query);
   const deferredZoneQuery = useDeferredValue(zoneQuery);
+  const dashboardParams = useMemo(
+    () => ({
+      query: deferredQuery.trim(),
+      zoneQuery: deferredZoneQuery.trim(),
+    }),
+    [deferredQuery, deferredZoneQuery]
+  );
+  const {
+    items: dashboardRecords,
+    loading: dashboardLoading,
+    error: dashboardError,
+  } = useAdminAggregateDataset<ChallengeRecord>(
+    '/sonar/admin/challenges',
+    dashboardParams
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalChallenges = dashboardRecords.length;
+    const pointOfInterestCount = dashboardRecords.filter((record) =>
+      Boolean(record.pointOfInterestId)
+    ).length;
+    const polygonCount = dashboardRecords.filter(
+      (record) => (record.polygonPoints?.length ?? 0) >= 3
+    ).length;
+    const recurringCount = dashboardRecords.filter((record) =>
+      Boolean(record.recurrenceFrequency?.trim())
+    ).length;
+
+    return [
+      { label: 'Challenges', value: totalChallenges },
+      { label: 'POI-linked', value: pointOfInterestCount },
+      { label: 'Area-based', value: polygonCount },
+      { label: 'Recurring', value: recurringCount },
+    ];
+  }, [dashboardRecords]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Zone Kinds',
+        note: 'Effective challenge placement across zone kinds.',
+        buckets: countBy(dashboardRecords, (record) =>
+          zoneKindLabel(
+            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Submission Types',
+        note: 'How players complete the current challenge set.',
+        buckets: countBy(dashboardRecords, (record) =>
+          record.submissionType === 'photo'
+            ? 'Photo'
+            : record.submissionType === 'text'
+              ? 'Text'
+              : 'Video'
+        ),
+      },
+      {
+        title: 'Difficulty Bands',
+        note: 'Challenge difficulty spread for the current filters.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) => difficultyBandLabel(record.difficulty),
+          { limit: 4 }
+        ),
+      },
+      {
+        title: 'Placement',
+        note: 'Whether challenges use POIs, points, or polygon areas.',
+        buckets: countBy(dashboardRecords, (record) => {
+          if ((record.polygonPoints?.length ?? 0) >= 3) {
+            return 'Polygon area';
+          }
+          if (record.pointOfInterestId) {
+            return 'Point of interest';
+          }
+          return 'Coordinates';
+        }),
+      },
+      {
+        title: 'Stat Tags',
+        note: 'The stat checks most frequently represented in live challenges.',
+        buckets: countManyBy(dashboardRecords, (record) => record.statTags, {
+          includeEmpty: false,
+        }),
+        emptyLabel: 'No stat tags yet.',
+      },
+    ],
+    [dashboardRecords, zoneDefaultKindById, zoneKindBySlug]
+  );
 
   const loadPointsOfInterestForZone = useCallback(
     async (zoneId: string) => {
@@ -808,7 +929,9 @@ export const Challenges = () => {
           return;
         }
         setRecords((prev) => {
-          const withoutExisting = prev.filter((entry) => entry.id !== record.id);
+          const withoutExisting = prev.filter(
+            (entry) => entry.id !== record.id
+          );
           return [record, ...withoutExisting];
         });
         openEdit(record);
@@ -823,7 +946,9 @@ export const Challenges = () => {
     if (!didHydrateDeepLinkedChallengeRef.current) {
       return;
     }
-    replaceDeepLinkedChallengeId(showModal ? editingChallenge?.id ?? null : null);
+    replaceDeepLinkedChallengeId(
+      showModal ? (editingChallenge?.id ?? null) : null
+    );
   }, [editingChallenge, replaceDeepLinkedChallengeId, showModal]);
 
   const closeModal = () => {
@@ -961,7 +1086,7 @@ export const Challenges = () => {
       ensurePolygonDraftLayers(map);
       const draftPoints =
         formLocationModeRef.current === 'polygon'
-          ? parsePolygonPoints(form.polygonPoints, 1) ?? []
+          ? (parsePolygonPoints(form.polygonPoints, 1) ?? [])
           : [];
       const lineSource = map.getSource(
         'challenge-draft-line'
@@ -1169,6 +1294,7 @@ export const Challenges = () => {
           : null;
       const payload = {
         zoneId: form.zoneId.trim(),
+        zoneKind: form.zoneKind,
         pointOfInterestId:
           form.locationMode === 'poi' ? form.pointOfInterestId.trim() : '',
         latitude:
@@ -1423,6 +1549,22 @@ export const Challenges = () => {
         </button>
       </div>
 
+      <div className="mb-6">
+        <ContentDashboard
+          title="Challenge Dashboard"
+          subtitle="Aggregate challenge coverage for the current search and zone filters."
+          status={
+            query.trim() || zoneQuery.trim()
+              ? 'Reflects current filters'
+              : 'All live challenges'
+          }
+          loading={dashboardLoading}
+          error={dashboardError}
+          metrics={dashboardMetrics}
+          sections={dashboardSections}
+        />
+      </div>
+
       <div className="mb-4">
         <div className="flex flex-wrap gap-3">
           <input
@@ -1656,7 +1798,28 @@ export const Challenges = () => {
                     ) : null}
                   </td>
                   <td className="p-2 border-b align-top">
-                    {zoneNameById.get(record.zoneId) ?? record.zoneId}
+                    <div>
+                      {zoneNameById.get(record.zoneId) ?? record.zoneId}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {zoneKindSummaryLabel(
+                        record.zoneKind,
+                        zoneDefaultKindById.get(record.zoneId) ?? '',
+                        zoneKindBySlug
+                      )}
+                    </div>
+                    {record.zoneKind?.trim() &&
+                    (zoneDefaultKindById.get(record.zoneId) ?? '') &&
+                    record.zoneKind.trim() !==
+                      (zoneDefaultKindById.get(record.zoneId) ?? '') ? (
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        Zone default:{' '}
+                        {zoneKindLabel(
+                          zoneDefaultKindById.get(record.zoneId) ?? '',
+                          zoneKindBySlug
+                        )}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="p-2 border-b align-top">
                     {record.submissionType}
@@ -1816,6 +1979,48 @@ export const Challenges = () => {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className="text-sm">
+                Zone Kind
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={form.zoneKind}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      zoneKind: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">
+                    {zoneKindSelectPlaceholderLabel(
+                      selectedChallengeZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`challenge-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                {zoneKindDescription(
+                  form.zoneKind,
+                  selectedChallengeZoneDefaultKind,
+                  zoneKindBySlug
+                ) ? (
+                  <div className="mt-1 text-xs text-gray-500">
+                    {zoneKindDescription(
+                      form.zoneKind,
+                      selectedChallengeZoneDefaultKind,
+                      zoneKindBySlug
+                    )}
+                  </div>
+                ) : null}
               </label>
 
               <label className="text-sm">

@@ -8,8 +8,19 @@ import React, {
 } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { PointOfInterest, Spell, ZoneGenre } from '@poltergeist/types';
+import {
+  PointOfInterest,
+  Spell,
+  ZoneGenre,
+  ZoneKind,
+} from '@poltergeist/types';
 import { useSearchParams } from 'react-router-dom';
+import ContentDashboard from './ContentDashboard.tsx';
+import {
+  countBy,
+  difficultyBandLabel,
+  useAdminAggregateDataset,
+} from './contentDashboardUtils.ts';
 import {
   MaterialRewardsEditor,
   MaterialRewardForm,
@@ -98,6 +109,7 @@ type ScenarioOption = {
 type ScenarioRecord = {
   id: string;
   zoneId: string;
+  zoneKind?: string;
   genreId: string;
   genre?: ZoneGenre;
   pointOfInterestId?: string | null;
@@ -139,6 +151,7 @@ type ScenarioRecord = {
 
 type ScenarioFormState = {
   zoneId: string;
+  zoneKind: string;
   genreId: string;
   pointOfInterestId: string;
   latitude: string;
@@ -394,6 +407,7 @@ const emptyOption = (): ScenarioOption => ({
 
 const emptyFormState = (): ScenarioFormState => ({
   zoneId: '',
+  zoneKind: '',
   genreId: '',
   pointOfInterestId: '',
   latitude: '',
@@ -448,6 +462,15 @@ const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
 
 const formatGenreLabel = (genre?: ZoneGenre | null): string =>
   genre?.name?.trim() || 'Fantasy';
+
+const zoneKindLabel = (
+  slug: string | null | undefined,
+  zoneKindBySlug: Map<string, ZoneKind>
+): string => {
+  const normalizedSlug = (slug ?? '').trim();
+  if (!normalizedSlug) return 'Unassigned';
+  return zoneKindBySlug.get(normalizedSlug)?.name?.trim() || normalizedSlug;
+};
 
 const recurrenceOptions = [
   { value: '', label: 'No Recurrence' },
@@ -679,6 +702,7 @@ export const Scenarios = () => {
   const { inventoryItems } = useInventory();
   const [spells, setSpells] = useState<Spell[]>([]);
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
+  const [zoneKinds, setZoneKinds] = useState<ZoneKind[]>([]);
   const [zonePointOfInterestMap, setZonePointOfInterestMap] = useState<
     Record<string, PointOfInterestOption[]>
   >({});
@@ -742,6 +766,111 @@ export const Scenarios = () => {
     () => defaultGenreIdFromList(genres),
     [genres]
   );
+  const zoneKindBySlug = useMemo(() => {
+    const next = new Map<string, ZoneKind>();
+    zoneKinds.forEach((zoneKind) => {
+      next.set(zoneKind.slug, zoneKind);
+    });
+    return next;
+  }, [zoneKinds]);
+  const zoneDefaultKindById = useMemo(() => {
+    const next = new Map<string, string>();
+    zones.forEach((zone) => {
+      next.set(zone.id, zone.kind?.trim() ?? '');
+    });
+    return next;
+  }, [zones]);
+  const dashboardParams = useMemo(
+    () => ({
+      query: deferredQuery.trim(),
+      zoneQuery: deferredZoneQuery.trim(),
+      genreId: genreFilter === 'all' ? '' : genreFilter,
+    }),
+    [deferredQuery, deferredZoneQuery, genreFilter]
+  );
+  const {
+    items: dashboardRecords,
+    loading: dashboardLoading,
+    error: dashboardError,
+  } = useAdminAggregateDataset<ScenarioRecord>(
+    '/sonar/admin/scenarios',
+    dashboardParams
+  );
+  const dashboardMetrics = useMemo(() => {
+    const totalScenarios = dashboardRecords.length;
+    const openEndedCount = dashboardRecords.filter(
+      (record) => record.openEnded
+    ).length;
+    const pointOfInterestCount = dashboardRecords.filter((record) =>
+      Boolean(record.pointOfInterestId)
+    ).length;
+    const recurringCount = dashboardRecords.filter((record) =>
+      Boolean(record.recurrenceFrequency?.trim())
+    ).length;
+
+    return [
+      { label: 'Scenarios', value: totalScenarios },
+      {
+        label: 'Open-ended',
+        value: openEndedCount,
+        note: `${Math.max(0, totalScenarios - openEndedCount)} choice-based`,
+      },
+      { label: 'POI-linked', value: pointOfInterestCount },
+      { label: 'Recurring', value: recurringCount },
+    ];
+  }, [dashboardRecords]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Zone Kinds',
+        note: 'Effective scenario placement by zone kind.',
+        buckets: countBy(dashboardRecords, (record) =>
+          zoneKindLabel(
+            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Genre Mix',
+        note: 'Current scenario coverage across zone genres.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) =>
+            formatGenreLabel(
+              record.genre ??
+                genres.find((genre) => genre.id === record.genreId) ??
+                null
+            ),
+          { emptyLabel: 'Fantasy' }
+        ),
+      },
+      {
+        title: 'Difficulty Bands',
+        note: 'Aggregate scenario difficulty for the current filter set.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) => difficultyBandLabel(record.difficulty),
+          { limit: 4 }
+        ),
+      },
+      {
+        title: 'Placement',
+        note: 'How scenarios are anchored in the world.',
+        buckets: countBy(dashboardRecords, (record) =>
+          record.pointOfInterestId ? 'Point of interest' : 'Coordinate-placed'
+        ),
+      },
+      {
+        title: 'Reward Model',
+        note: 'Explicit vs randomized reward distribution.',
+        buckets: countBy(dashboardRecords, (record) =>
+          record.rewardMode === 'explicit' ? 'Explicit rewards' : 'Randomized'
+        ),
+      },
+    ],
+    [dashboardRecords, genres, zoneDefaultKindById, zoneKindBySlug]
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -773,20 +902,23 @@ export const Scenarios = () => {
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
   const didHydrateDeepLinkedScenarioRef = React.useRef(false);
   const deepLinkedScenarioId = searchParams.get('id')?.trim() ?? '';
-  const replaceDeepLinkedScenarioId = useCallback((scenarioId?: string | null) => {
-    const normalizedScenarioId = (scenarioId ?? '').trim();
-    const currentScenarioId = searchParams.get('id')?.trim() ?? '';
-    if (normalizedScenarioId === currentScenarioId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (normalizedScenarioId) {
-      next.set('id', normalizedScenarioId);
-    } else {
-      next.delete('id');
-    }
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const replaceDeepLinkedScenarioId = useCallback(
+    (scenarioId?: string | null) => {
+      const normalizedScenarioId = (scenarioId ?? '').trim();
+      const currentScenarioId = searchParams.get('id')?.trim() ?? '';
+      if (normalizedScenarioId === currentScenarioId) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      if (normalizedScenarioId) {
+        next.set('id', normalizedScenarioId);
+      } else {
+        next.delete('id');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const loadPointsOfInterestForZone = useCallback(
     async (zoneId: string) => {
@@ -918,6 +1050,24 @@ export const Scenarios = () => {
       }
     };
     void loadGenres();
+    return () => {
+      active = false;
+    };
+  }, [apiClient]);
+
+  useEffect(() => {
+    let active = true;
+    const loadZoneKinds = async () => {
+      try {
+        const response = await apiClient.get<ZoneKind[]>('/sonar/zoneKinds');
+        if (!active) return;
+        setZoneKinds(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Error loading zone kinds:', err);
+        if (active) setZoneKinds([]);
+      }
+    };
+    void loadZoneKinds();
     return () => {
       active = false;
     };
@@ -1344,6 +1494,16 @@ export const Scenarios = () => {
   const pointsOfInterestForFormZone = useMemo(() => {
     return zonePointOfInterestMap[form.zoneId] ?? [];
   }, [form.zoneId, zonePointOfInterestMap]);
+  const selectedFormZone = useMemo(
+    () => zones.find((zone) => zone.id === form.zoneId) ?? null,
+    [form.zoneId, zones]
+  );
+  const selectedFormZoneDefaultKind = selectedFormZone?.kind?.trim() ?? '';
+  const effectiveFormZoneKind =
+    form.zoneKind.trim() || selectedFormZoneDefaultKind;
+  const effectiveFormZoneKindDetails = effectiveFormZoneKind
+    ? (zoneKindBySlug.get(effectiveFormZoneKind) ?? null)
+    : null;
   const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
 
   useEffect(() => {
@@ -1381,6 +1541,7 @@ export const Scenarios = () => {
     setEditingId(record.id);
     setForm({
       zoneId: record.zoneId,
+      zoneKind: record.zoneKind?.trim() ?? '',
       genreId: record.genreId ?? record.genre?.id ?? '',
       pointOfInterestId: record.pointOfInterestId ?? '',
       latitude: record.latitude.toString(),
@@ -1504,7 +1665,9 @@ export const Scenarios = () => {
           return;
         }
         setRecords((prev) => {
-          const withoutExisting = prev.filter((entry) => entry.id !== record.id);
+          const withoutExisting = prev.filter(
+            (entry) => entry.id !== record.id
+          );
           return [record, ...withoutExisting];
         });
         openEdit(record);
@@ -1567,6 +1730,7 @@ export const Scenarios = () => {
 
     return {
       zoneId: form.zoneId,
+      zoneKind: form.zoneKind.trim(),
       genreId: form.genreId.trim(),
       pointOfInterestId: form.pointOfInterestId.trim(),
       latitude: parseFloatValue(form.latitude),
@@ -1675,9 +1839,7 @@ export const Scenarios = () => {
               .filter((reward) => reward.spellId.length > 0),
           })),
       itemRewards:
-        form.rewardMode === 'random' || form.openEnded
-          ? form.itemRewards
-          : [],
+        form.rewardMode === 'random' || form.openEnded ? form.itemRewards : [],
       spellRewards:
         form.openEnded && form.rewardMode === 'explicit'
           ? form.spellRewards
@@ -2963,6 +3125,22 @@ export const Scenarios = () => {
         </button>
       </div>
 
+      <div className="mb-6">
+        <ContentDashboard
+          title="Scenario Dashboard"
+          subtitle="Aggregate scenario coverage for the current search, zone, and genre filters."
+          status={
+            query.trim() || zoneQuery.trim() || genreFilter !== 'all'
+              ? 'Reflects current filters'
+              : 'All live scenarios'
+          }
+          loading={dashboardLoading}
+          error={dashboardError}
+          metrics={dashboardMetrics}
+          sections={dashboardSections}
+        />
+      </div>
+
       <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-lg font-semibold">Undiscovered Scenario Icon</h2>
@@ -3416,6 +3594,14 @@ export const Scenarios = () => {
           const zoneName =
             zones.find((zone) => zone.id === record.zoneId)?.name ??
             record.zoneId;
+          const zoneDefaultKind =
+            zones.find((zone) => zone.id === record.zoneId)?.kind?.trim() ?? '';
+          const explicitZoneKind = record.zoneKind?.trim() ?? '';
+          const zoneKindSummary = explicitZoneKind
+            ? zoneKindLabel(explicitZoneKind, zoneKindBySlug)
+            : zoneDefaultKind
+              ? `${zoneKindLabel(zoneDefaultKind, zoneKindBySlug)} (zone default)`
+              : 'Unassigned';
           return (
             <div
               key={record.id}
@@ -3437,6 +3623,16 @@ export const Scenarios = () => {
                 {record.openEnded ? 'Open-Ended' : 'Choice'} Scenario
               </div>
               <div className="text-sm text-gray-700 mb-1">Zone: {zoneName}</div>
+              <div className="text-sm text-gray-700 mb-1">
+                Zone Kind: {zoneKindSummary}
+              </div>
+              {explicitZoneKind &&
+              zoneDefaultKind &&
+              explicitZoneKind !== zoneDefaultKind ? (
+                <div className="text-xs text-gray-500 mb-1">
+                  Zone default: {zoneKindLabel(zoneDefaultKind, zoneKindBySlug)}
+                </div>
+              ) : null}
               <div className="text-sm text-gray-700 mb-1">
                 Genre:{' '}
                 {formatGenreLabel(
@@ -3557,6 +3753,43 @@ export const Scenarios = () => {
                 </select>
               </label>
               <label className="text-sm">
+                Zone Kind
+                <select
+                  value={form.zoneKind}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      zoneKind: e.target.value,
+                    }))
+                  }
+                  className="w-full border rounded-md p-2"
+                >
+                  <option value="">
+                    {selectedFormZoneDefaultKind
+                      ? `Use zone default (${zoneKindLabel(
+                          selectedFormZoneDefaultKind,
+                          zoneKindBySlug
+                        )})`
+                      : 'No zone kind'}
+                  </option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option
+                      key={`scenario-zone-kind-${zoneKind.id}`}
+                      value={zoneKind.slug}
+                    >
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                {effectiveFormZoneKindDetails?.description?.trim() ? (
+                  <div className="mt-1 text-xs text-gray-500">
+                    {form.zoneKind.trim()
+                      ? effectiveFormZoneKindDetails.description
+                      : `Using zone default: ${effectiveFormZoneKindDetails.description}`}
+                  </div>
+                ) : null}
+              </label>
+              <label className="text-sm">
                 Genre
                 <select
                   value={form.genreId}
@@ -3572,7 +3805,10 @@ export const Scenarios = () => {
                     <option value="">Fantasy</option>
                   ) : (
                     genres.map((genre) => (
-                      <option key={`scenario-genre-${genre.id}`} value={genre.id}>
+                      <option
+                        key={`scenario-genre-${genre.id}`}
+                        value={genre.id}
+                      >
                         {formatGenreLabel(genre)}
                         {genre.active === false ? ' (inactive)' : ''}
                       </option>
@@ -3797,8 +4033,8 @@ export const Scenarios = () => {
                   className="w-full border rounded-md p-2 min-h-[72px]"
                 />
                 <span className="mt-1 block text-xs text-gray-500">
-                  Optional story bridge for how the quest thread continues
-                  after failure.
+                  Optional story bridge for how the quest thread continues after
+                  failure.
                 </span>
               </label>
             </div>
@@ -3888,8 +4124,8 @@ export const Scenarios = () => {
             </div>
             {form.rewardMode === 'random' ? (
               <div className="text-xs text-gray-500 mb-4">
-                Random rewards still grant scaled XP and gold. Guaranteed
-                items below are awarded too; material and spell rewards stay
+                Random rewards still grant scaled XP and gold. Guaranteed items
+                below are awarded too; material and spell rewards stay
                 explicit-only.
               </div>
             ) : null}

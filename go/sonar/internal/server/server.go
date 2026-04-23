@@ -4363,6 +4363,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		AcceptanceDialogue             []models.DialogueMessage           `json:"acceptanceDialogue"`
 		ImageURL                       string                             `json:"imageUrl"`
 		ZoneID                         *uuid.UUID                         `json:"zoneId"`
+		ZoneKind                       *string                            `json:"zoneKind"`
 		QuestArchetypeID               *uuid.UUID                         `json:"questArchetypeId"`
 		QuestGiverCharacterID          *uuid.UUID                         `json:"questGiverCharacterId"`
 		MainStoryPreviousQuestID       *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
@@ -4452,6 +4453,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		AcceptanceDialogue:          acceptanceDialogue,
 		ImageURL:                    requestBody.ImageURL,
 		ZoneID:                      requestBody.ZoneID,
+		ZoneKind:                    normalizeZoneKindRequest(requestBody.ZoneKind),
 		QuestArchetypeID:            requestBody.QuestArchetypeID,
 		QuestGiverCharacterID:       requestBody.QuestGiverCharacterID,
 		MainStoryPreviousQuestID:    requestBody.MainStoryPreviousQuestID,
@@ -4607,6 +4609,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		AcceptanceDialogue             *[]models.DialogueMessage          `json:"acceptanceDialogue"`
 		ImageURL                       string                             `json:"imageUrl"`
 		ZoneID                         *uuid.UUID                         `json:"zoneId"`
+		ZoneKind                       *string                            `json:"zoneKind"`
 		QuestArchetypeID               *uuid.UUID                         `json:"questArchetypeId"`
 		QuestGiverCharacterID          *uuid.UUID                         `json:"questGiverCharacterId"`
 		MainStoryPreviousQuestID       *uuid.UUID                         `json:"mainStoryPreviousQuestId"`
@@ -4698,6 +4701,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	}
 	quest.ImageURL = requestBody.ImageURL
 	quest.ZoneID = requestBody.ZoneID
+	quest.ZoneKind = mergeZoneKindRequest(requestBody.ZoneKind, quest.ZoneKind)
 	quest.QuestArchetypeID = requestBody.QuestArchetypeID
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
 	quest.MainStoryPreviousQuestID = requestBody.MainStoryPreviousQuestID
@@ -7912,6 +7916,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		Description       string                       `binding:"required" json:"description"`
 		Lat               string                       `binding:"required" json:"lat"`
 		Lng               string                       `binding:"required" json:"lng"`
+		ZoneKind          *string                      `json:"zoneKind"`
 		UnlockTier        *int                         `json:"unlockTier"`
 		Clue              string                       `json:"clue"`
 		ImageUrl          string                       `json:"imageUrl"`
@@ -7977,6 +7982,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		Description:           requestBody.Description,
 		Lat:                   requestBody.Lat,
 		Lng:                   requestBody.Lng,
+		ZoneKind:              mergeZoneKindRequest(requestBody.ZoneKind, existingPoi.ZoneKind),
 		UnlockTier:            requestBody.UnlockTier,
 		Clue:                  requestBody.Clue,
 		ImageUrl:              requestBody.ImageUrl,
@@ -8327,6 +8333,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		Longitude        string                       `binding:"required" json:"longitude"`
 		ImageUrl         string                       `binding:"required" json:"imageUrl"`
 		Clue             string                       `binding:"required" json:"clue"`
+		ZoneKind         *string                      `json:"zoneKind"`
 		UnlockTier       *int                         `json:"unlockTier"`
 		RewardMode       string                       `json:"rewardMode"`
 		RandomRewardSize string                       `json:"randomRewardSize"`
@@ -8373,6 +8380,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		Lng:              request.Longitude,
 		ImageUrl:         request.ImageUrl,
 		Clue:             request.Clue,
+		ZoneKind:         normalizeZoneKindRequest(request.ZoneKind),
 		GenreID:          genre.ID,
 		UnlockTier:       request.UnlockTier,
 		RewardMode:       rewardConfig.RewardMode,
@@ -11450,6 +11458,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	updates := map[string]interface{}{
 		"archived":                                       item.Archived,
 		"name":                                           item.Name,
+		"zone_kind":                                      item.ZoneKind,
 		"image_url":                                      item.ImageURL,
 		"flavor_text":                                    item.FlavorText,
 		"effect_text":                                    item.EffectText,
@@ -16646,6 +16655,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		Latitude         float64                     `json:"latitude" binding:"required"`
 		Longitude        float64                     `json:"longitude" binding:"required"`
 		ZoneID           string                      `json:"zoneId" binding:"required"`
+		ZoneKind         *string                     `json:"zoneKind"`
 		UnlockTier       *int                        `json:"unlockTier"`
 		RewardMode       string                      `json:"rewardMode"`
 		RandomRewardSize string                      `json:"randomRewardSize"`
@@ -16700,6 +16710,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		Latitude:         requestBody.Latitude,
 		Longitude:        requestBody.Longitude,
 		ZoneID:           zoneID,
+		ZoneKind:         normalizeZoneKindRequest(requestBody.ZoneKind),
 		UnlockTier:       requestBody.UnlockTier,
 		RewardMode:       rewardMode,
 		RandomRewardSize: randomRewardSize,
@@ -16754,6 +16765,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		Latitude         *float64                    `json:"latitude"`
 		Longitude        *float64                    `json:"longitude"`
 		ZoneID           *string                     `json:"zoneId"`
+		ZoneKind         *string                     `json:"zoneKind"`
 		UnlockTier       *int                        `json:"unlockTier"`
 		RewardMode       string                      `json:"rewardMode"`
 		RandomRewardSize string                      `json:"randomRewardSize"`
@@ -16783,6 +16795,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	updates := &models.TreasureChest{
 		ID:               treasureChestID,
 		Invalidated:      existingChest.Invalidated,
+		ZoneKind:         mergeZoneKindRequest(requestBody.ZoneKind, existingChest.ZoneKind),
 		UnlockTier:       existingChest.UnlockTier,
 		RewardMode:       existingChest.RewardMode,
 		RandomRewardSize: existingChest.RandomRewardSize,
@@ -17289,6 +17302,7 @@ type scenarioFailureStatusPayload struct {
 
 type scenarioUpsertRequest struct {
 	ZoneID                    string                         `json:"zoneId"`
+	ZoneKind                  string                         `json:"zoneKind"`
 	PointOfInterestID         string                         `json:"pointOfInterestId"`
 	GenreID                   string                         `json:"genreId"`
 	Latitude                  float64                        `json:"latitude"`
@@ -18386,6 +18400,7 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 
 	scenario := &models.Scenario{
 		ZoneID:                    zoneID,
+		ZoneKind:                  models.NormalizeZoneKind(body.ZoneKind),
 		PointOfInterestID:         resolvedPointOfInterestID,
 		GenreID:                   genre.ID,
 		Genre:                     genre,

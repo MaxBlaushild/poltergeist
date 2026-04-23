@@ -251,7 +251,7 @@ const buildDefaultZoneKindPatternPrompt = (zoneKind: ZoneKind) => {
   const slug = normalizeSlugDraft(zoneKind.slug || zoneKind.name);
   const description =
     zoneKind.description.trim() ||
-    'A fantasy zone texture used as a subtle map overlay.';
+    'A fantasy zone texture used as a readable map overlay.';
   const overlayColor =
     normalizeOverlayColorDraft(zoneKind.overlayColor) ||
     defaultZoneKindOverlayColor;
@@ -269,14 +269,16 @@ Zone kind:
 Requirements:
 - The tile must repeat seamlessly on all four edges.
 - This is not a full scene, landscape illustration, or diorama. It should read like an ornamental map texture.
-- Use a subtle, game-ready pattern that can sit on top of a watercolor fantasy map without overwhelming it.
-- Prefer transparent or near-transparent negative space between marks so the basemap can still show through.
-- Keep the motifs medium-scale and legible when repeated across a polygon.
+- Use a bold, game-ready pattern with clear motif language that will still read on top of a watercolor fantasy map.
+- Keep enough negative space for the basemap to show through, but do not make the marks timid or faint.
+- Keep the motifs medium-scale, high-contrast, and clearly legible when repeated across a polygon.
+- Aim for a retro fantasy RPG feel: adventure-manual map art, classic JRPG overworld texture language, hand-inked symbols, weathered parchment energy, and old-school exploratory charm.
+- Favor stylized 16-bit / early-32-bit era fantasy sensibilities over modern glossy concept-art polish.
 - No border, no frame, no text, no logos, no single centered subject.
 - Square composition only.
 - Top-down graphic texture language, never perspective or isometric.
 - Fantasy RPG tone, handcrafted, slightly stylized, polished, tasteful.
-- Avoid photorealism.`;
+- Avoid photorealism, modern UI gradients, and sterile vector-flat design.`;
 };
 
 const resolveZoneKindPatternPrompt = (

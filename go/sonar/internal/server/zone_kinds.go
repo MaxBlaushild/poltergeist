@@ -86,13 +86,26 @@ type zoneKindPatternCue struct {
 	value float64
 }
 
+func maxZoneKindPatternCueValue(a float64, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
 	candidates := []zoneKindPatternCue{
 		{label: "place-rich", value: zoneKind.PlaceCountRatio},
 		{label: "monster-heavy", value: zoneKind.MonsterCountRatio},
 		{label: "boss-dangerous", value: zoneKind.BossEncounterCountRatio},
 		{label: "raid-heavy", value: zoneKind.RaidEncounterCountRatio},
-		{label: "scenario-rich", value: max(zoneKind.InputEncounterCountRatio, zoneKind.OptionEncounterCountRatio)},
+		{
+			label: "scenario-rich",
+			value: maxZoneKindPatternCueValue(
+				zoneKind.InputEncounterCountRatio,
+				zoneKind.OptionEncounterCountRatio,
+			),
+		},
 		{label: "treasure-rich", value: zoneKind.TreasureChestCountRatio},
 		{label: "restorative", value: zoneKind.HealingFountainCountRatio},
 		{label: "herbalism-rich", value: zoneKind.HerbalismResourceCountRatio},
@@ -174,7 +187,7 @@ func defaultZoneKindPatternTilePrompt(zoneKind models.ZoneKind) string {
 	}
 	description := strings.TrimSpace(zoneKind.Description)
 	if description == "" {
-		description = "A fantasy zone texture used as a subtle map overlay."
+		description = "A fantasy zone texture used as a readable map overlay."
 	}
 
 	return fmt.Sprintf(
@@ -191,14 +204,16 @@ Zone kind:
 Requirements:
 - The tile must repeat seamlessly on all four edges.
 - This is not a full scene, landscape illustration, or diorama. It should read like an ornamental map texture.
-- Use a subtle, game-ready pattern that can sit on top of a watercolor fantasy map without overwhelming it.
-- Prefer transparent or near-transparent negative space between marks so the basemap can still show through.
-- Keep the motifs medium-scale and legible when repeated across a polygon.
+- Use a bold, game-ready pattern with clear motif language that will still read on top of a watercolor fantasy map.
+- Keep enough negative space for the basemap to show through, but do not make the marks timid or faint.
+- Keep the motifs medium-scale, high-contrast, and clearly legible when repeated across a polygon.
+- Aim for a retro fantasy RPG feel: adventure-manual map art, classic JRPG overworld texture language, hand-inked symbols, weathered parchment energy, and old-school exploratory charm.
+- Favor stylized 16-bit / early-32-bit era fantasy sensibilities over modern glossy concept-art polish.
 - No border, no frame, no text, no logos, no single centered subject.
 - Square composition only.
 - Top-down graphic texture language, never perspective or isometric.
 - Fantasy RPG tone, handcrafted, slightly stylized, polished, tasteful.
-- Avoid photorealism.
+- Avoid photorealism, modern UI gradients, and sterile vector-flat design.
 `,
 		name,
 		slug,

@@ -34,6 +34,7 @@ type healingFountainUpsertRequest struct {
 	Description  string   `json:"description"`
 	ThumbnailURL string   `json:"thumbnailUrl"`
 	ZoneID       string   `json:"zoneId"`
+	ZoneKind     *string  `json:"zoneKind"`
 	Latitude     *float64 `json:"latitude"`
 	Longitude    *float64 `json:"longitude"`
 }
@@ -212,6 +213,7 @@ func (s *server) createHealingFountain(ctx *gin.Context) {
 		Description:  description,
 		ThumbnailURL: thumbnailURL,
 		ZoneID:       zoneID,
+		ZoneKind:     normalizeZoneKindRequest(body.ZoneKind),
 		Latitude:     *body.Latitude,
 		Longitude:    *body.Longitude,
 		Invalidated:  false,
@@ -296,6 +298,7 @@ func (s *server) updateHealingFountain(ctx *gin.Context) {
 		Description:  description,
 		ThumbnailURL: thumbnailURL,
 		ZoneID:       zoneID,
+		ZoneKind:     mergeZoneKindRequest(body.ZoneKind, existing.ZoneKind),
 		Latitude:     latitude,
 		Longitude:    longitude,
 		Invalidated:  existing.Invalidated,

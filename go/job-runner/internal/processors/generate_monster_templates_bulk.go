@@ -63,6 +63,8 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 		Status:       jobs.MonsterTemplateBulkStatusInProgress,
 		Source:       strings.TrimSpace(payload.Source),
 		MonsterType:  string(models.NormalizeMonsterTemplateType(payload.MonsterType)),
+		GenreID:      strings.TrimSpace(payload.GenreID),
+		ZoneKind:     models.NormalizeZoneKind(payload.ZoneKind),
 		TotalCount:   payload.TotalCount,
 		CreatedCount: 0,
 		StartedAt:    &now,
@@ -87,11 +89,17 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 		p.markFailed(ctx, statusKey, status, err)
 		return fmt.Errorf("failed to load abilities for template assignment: %w", err)
 	}
+	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		p.markFailed(ctx, statusKey, status, err)
+		return fmt.Errorf("failed to load zone kinds for template classification: %w", err)
+	}
 
 	for index, spec := range payload.Templates {
 		emptyError := ""
 		template := &models.MonsterTemplate{
 			MonsterType:           models.NormalizeMonsterTemplateType(spec.MonsterType),
+			ZoneKind:              models.NormalizeZoneKind(spec.ZoneKind),
 			Name:                  strings.TrimSpace(spec.Name),
 			Description:           strings.TrimSpace(spec.Description),
 			BaseStrength:          spec.BaseStrength,
@@ -115,10 +123,14 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 		if template.Name == "" {
 			template.Name = fmt.Sprintf("Monster Template %d", index+1)
 		}
+		profile := scoreMonsterTemplateProfile(ctx, template, zoneKinds, p.deepPriest)
 		applyAffinityBonusesToMonsterTemplate(
 			template,
-			scoreMonsterTemplateAffinities(ctx, template, p.deepPriest),
+			profile.AffinityBonuses,
 		)
+		if template.ZoneKind == "" {
+			template.ZoneKind = profile.ZoneKind
+		}
 
 		if err := p.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
 			p.markFailed(ctx, statusKey, status, err)

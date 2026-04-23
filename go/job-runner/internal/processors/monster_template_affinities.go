@@ -11,7 +11,7 @@ import (
 )
 
 const monsterTemplateAffinityPromptTemplate = `
-You are tuning combat affinity stats for a fantasy RPG monster template.
+You are tuning combat affinity stats and classifying the most likely zone kind for a fantasy RPG monster template.
 
 Monster template:
 - Type: %s
@@ -23,9 +23,14 @@ Monster template:
 - Intelligence: %d
 - Wisdom: %d
 - Charisma: %d
+- Current zone kind: %s
+
+Allowed zone kinds:
+%s
 
 Return JSON only:
 {
+  "zoneKind": "forest",
   "affinityDamageBonuses": {
     "fire": 0
   },
@@ -35,6 +40,9 @@ Return JSON only:
 }
 
 Hard rules:
+- zoneKind must be one of the allowed slugs exactly as written.
+- Choose the single most likely zone kind where players would naturally expect to encounter this monster template in a reusable content library.
+- If the current zone kind is still a strong fit, keep it.
 - Use only these affinities: physical, piercing, slashing, bludgeoning, fire, ice, lightning, poison, arcane, holy, shadow.
 - Values are integer percentages.
 - Most affinities should stay at 0. Prefer 1-3 meaningful bonuses and 1-3 meaningful resistances.
@@ -49,8 +57,33 @@ Hard rules:
 `
 
 type generatedMonsterTemplateAffinityPayload struct {
+	ZoneKind              string         `json:"zoneKind"`
 	AffinityDamageBonuses map[string]int `json:"affinityDamageBonuses"`
 	AffinityResistances   map[string]int `json:"affinityResistances"`
+}
+
+type monsterTemplateProfile struct {
+	AffinityBonuses models.CharacterStatBonuses
+	ZoneKind        string
+}
+
+type monsterZoneKindCueRule struct {
+	monsterKeywords []string
+	zoneCues        []string
+}
+
+var monsterZoneKindCueRules = []monsterZoneKindCueRule{
+	{monsterKeywords: []string{"forest", "wood", "briar", "thorn", "moss", "elk", "wolf", "bear"}, zoneCues: []string{"forest", "wood", "grove", "wild", "jungle"}},
+	{monsterKeywords: []string{"swamp", "bog", "mire", "ooze", "frog", "toad", "marsh"}, zoneCues: []string{"swamp", "bog", "marsh", "wetland", "mire"}},
+	{monsterKeywords: []string{"desert", "dune", "sand", "scorpion", "sun", "vulture"}, zoneCues: []string{"desert", "dune", "sand", "waste", "arid"}},
+	{monsterKeywords: []string{"mountain", "peak", "stone", "cliff", "goat", "eagle"}, zoneCues: []string{"mountain", "peak", "highland", "cliff", "rock"}},
+	{monsterKeywords: []string{"cave", "cavern", "mine", "burrow", "tunnel", "deep"}, zoneCues: []string{"cave", "cavern", "underground", "mine", "tunnel"}},
+	{monsterKeywords: []string{"crypt", "grave", "tomb", "bone", "undead", "wraith", "specter", "spectre"}, zoneCues: []string{"crypt", "grave", "tomb", "cemetery", "catacomb", "ruin"}},
+	{monsterKeywords: []string{"coast", "reef", "shore", "tide", "sea", "ocean", "kraken"}, zoneCues: []string{"coast", "reef", "shore", "sea", "ocean", "water"}},
+	{monsterKeywords: []string{"river", "lake", "torrent", "flood"}, zoneCues: []string{"river", "lake", "water", "wetland"}},
+	{monsterKeywords: []string{"ice", "frost", "snow", "glacier", "winter"}, zoneCues: []string{"ice", "snow", "tundra", "glacier", "winter"}},
+	{monsterKeywords: []string{"fire", "ember", "cinder", "magma", "lava", "ash", "volcan"}, zoneCues: []string{"volcan", "lava", "magma", "ash", "fire"}},
+	{monsterKeywords: []string{"city", "clockwork", "guard", "bandit", "assassin"}, zoneCues: []string{"city", "urban", "street", "ruin", "fort"}},
 }
 
 func scoreMonsterTemplateAffinities(
@@ -58,29 +91,45 @@ func scoreMonsterTemplateAffinities(
 	template *models.MonsterTemplate,
 	priest deep_priest.DeepPriest,
 ) models.CharacterStatBonuses {
+	return scoreMonsterTemplateProfile(ctx, template, nil, priest).AffinityBonuses
+}
+
+func scoreMonsterTemplateProfile(
+	ctx context.Context,
+	template *models.MonsterTemplate,
+	zoneKinds []models.ZoneKind,
+	priest deep_priest.DeepPriest,
+) monsterTemplateProfile {
 	if template == nil {
-		return models.CharacterStatBonuses{}
+		return monsterTemplateProfile{}
 	}
 
 	if priest != nil {
-		if generated, err := generateMonsterTemplateAffinitiesWithLLM(ctx, template, priest); err == nil {
+		if generated, err := generateMonsterTemplateProfileWithLLM(ctx, template, zoneKinds, priest); err == nil {
 			return generated
 		}
 	}
 
-	return deriveMonsterTemplateAffinitiesHeuristically(template)
+	return monsterTemplateProfile{
+		AffinityBonuses: deriveMonsterTemplateAffinitiesHeuristically(template),
+		ZoneKind:        deriveMonsterTemplateZoneKindHeuristically(template, zoneKinds),
+	}
 }
 
-func generateMonsterTemplateAffinitiesWithLLM(
+func generateMonsterTemplateProfileWithLLM(
 	_ context.Context,
 	template *models.MonsterTemplate,
+	zoneKinds []models.ZoneKind,
 	priest deep_priest.DeepPriest,
-) (models.CharacterStatBonuses, error) {
+) (monsterTemplateProfile, error) {
 	if template == nil {
-		return models.CharacterStatBonuses{}, fmt.Errorf("template missing")
+		return monsterTemplateProfile{}, fmt.Errorf("template missing")
 	}
 	if priest == nil {
-		return models.CharacterStatBonuses{}, fmt.Errorf("deep priest unavailable")
+		return monsterTemplateProfile{}, fmt.Errorf("deep priest unavailable")
+	}
+	if len(zoneKinds) == 0 {
+		return monsterTemplateProfile{}, fmt.Errorf("zone kinds unavailable")
 	}
 
 	prompt := fmt.Sprintf(
@@ -94,29 +143,60 @@ func generateMonsterTemplateAffinitiesWithLLM(
 		template.BaseIntelligence,
 		template.BaseWisdom,
 		template.BaseCharisma,
+		strings.TrimSpace(models.NormalizeZoneKind(template.ZoneKind)),
+		models.ZoneKindsPromptOptions(zoneKinds),
 	)
 
 	answer, err := priest.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
-		return models.CharacterStatBonuses{}, err
+		return monsterTemplateProfile{}, err
 	}
 
 	var payload generatedMonsterTemplateAffinityPayload
 	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &payload); err != nil {
-		return models.CharacterStatBonuses{}, err
+		return monsterTemplateProfile{}, err
 	}
-	return sanitizeMonsterTemplateAffinityPayload(payload), nil
+	profile := sanitizeMonsterTemplateProfilePayload(payload, zoneKinds, template.ZoneKind)
+	if profile.ZoneKind == "" {
+		profile.ZoneKind = deriveMonsterTemplateZoneKindHeuristically(template, zoneKinds)
+	}
+	return profile, nil
 }
 
-func sanitizeMonsterTemplateAffinityPayload(payload generatedMonsterTemplateAffinityPayload) models.CharacterStatBonuses {
-	bonuses := models.CharacterStatBonuses{}
+func sanitizeMonsterTemplateProfilePayload(
+	payload generatedMonsterTemplateAffinityPayload,
+	zoneKinds []models.ZoneKind,
+	currentZoneKind string,
+) monsterTemplateProfile {
+	profile := monsterTemplateProfile{
+		AffinityBonuses: models.CharacterStatBonuses{},
+		ZoneKind: normalizeMonsterTemplateProfileZoneKind(
+			payload.ZoneKind,
+			zoneKinds,
+			currentZoneKind,
+		),
+	}
 	for key, value := range payload.AffinityDamageBonuses {
-		setAffinityDamageBonusPercent(&bonuses, key, normalizeAffinityPercent(value, -25, 60))
+		setAffinityDamageBonusPercent(
+			&profile.AffinityBonuses,
+			key,
+			normalizeAffinityPercent(value, -25, 60),
+		)
 	}
 	for key, value := range payload.AffinityResistances {
-		setAffinityResistancePercent(&bonuses, key, normalizeAffinityPercent(value, -50, 60))
+		setAffinityResistancePercent(
+			&profile.AffinityBonuses,
+			key,
+			normalizeAffinityPercent(value, -50, 60),
+		)
 	}
-	return bonuses
+	return profile
+}
+
+func sanitizeMonsterTemplateAffinityPayload(
+	payload generatedMonsterTemplateAffinityPayload,
+) models.CharacterStatBonuses {
+	return sanitizeMonsterTemplateProfilePayload(payload, nil, "").AffinityBonuses
 }
 
 func normalizeAffinityPercent(value int, minValue int, maxValue int) int {
@@ -241,6 +321,100 @@ func hasMeaningfulMagicalDamageBonus(bonuses models.CharacterStatBonuses) bool {
 		bonuses.ArcaneDamageBonusPercent > 0 ||
 		bonuses.HolyDamageBonusPercent > 0 ||
 		bonuses.ShadowDamageBonusPercent > 0
+}
+
+func normalizeMonsterTemplateProfileZoneKind(
+	raw string,
+	zoneKinds []models.ZoneKind,
+	fallback string,
+) string {
+	normalized := models.NormalizeZoneKind(raw)
+	if normalized != "" {
+		if len(zoneKinds) == 0 || zoneKindsContainSlug(zoneKinds, normalized) {
+			return normalized
+		}
+	}
+	fallback = models.NormalizeZoneKind(fallback)
+	if fallback != "" {
+		if len(zoneKinds) == 0 || zoneKindsContainSlug(zoneKinds, fallback) {
+			return fallback
+		}
+	}
+	return ""
+}
+
+func zoneKindsContainSlug(zoneKinds []models.ZoneKind, slug string) bool {
+	normalized := models.NormalizeZoneKind(slug)
+	if normalized == "" {
+		return false
+	}
+	for _, zoneKind := range zoneKinds {
+		if models.NormalizeZoneKind(zoneKind.Slug) == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func deriveMonsterTemplateZoneKindHeuristically(
+	template *models.MonsterTemplate,
+	zoneKinds []models.ZoneKind,
+) string {
+	if template == nil {
+		return ""
+	}
+
+	existing := models.NormalizeZoneKind(template.ZoneKind)
+	if existing != "" && (len(zoneKinds) == 0 || zoneKindsContainSlug(zoneKinds, existing)) {
+		return existing
+	}
+	if len(zoneKinds) == 0 {
+		return existing
+	}
+	if len(zoneKinds) == 1 {
+		return models.NormalizeZoneKind(zoneKinds[0].Slug)
+	}
+
+	text := strings.ToLower(strings.TrimSpace(template.Name + " " + template.Description))
+	bestSlug := ""
+	bestScore := 0
+	for _, zoneKind := range zoneKinds {
+		slug := models.NormalizeZoneKind(zoneKind.Slug)
+		if slug == "" {
+			continue
+		}
+		haystack := strings.ToLower(strings.TrimSpace(zoneKind.Name + " " + zoneKind.Description + " " + slug))
+		score := 0
+
+		for _, rule := range monsterZoneKindCueRules {
+			if !containsAnyMonsterKeyword(text, rule.monsterKeywords) {
+				continue
+			}
+			if containsAnyMonsterKeyword(haystack, rule.zoneCues) {
+				score += 3
+			}
+		}
+
+		for _, token := range strings.FieldsFunc(text, func(char rune) bool {
+			return (char < 'a' || char > 'z') && (char < '0' || char > '9')
+		}) {
+			if len(token) < 4 {
+				continue
+			}
+			if strings.Contains(haystack, token) {
+				score++
+			}
+		}
+
+		if score > bestScore || (score == bestScore && score > 0 && slug < bestSlug) {
+			bestScore = score
+			bestSlug = slug
+		}
+	}
+	if bestSlug != "" {
+		return bestSlug
+	}
+	return ""
 }
 
 func clampAffinityPercent(value int, minValue int, maxValue int) int {

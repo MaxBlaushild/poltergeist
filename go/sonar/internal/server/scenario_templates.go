@@ -26,6 +26,7 @@ type paginatedScenarioTemplateResponse struct {
 
 type scenarioTemplateUpsertRequest struct {
 	GenreID                   string                         `json:"genreId"`
+	ZoneKind                  string                         `json:"zoneKind"`
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl"`
 	ThumbnailURL              string                         `json:"thumbnailUrl"`
@@ -60,6 +61,7 @@ type scenarioTemplateGenerationJobRequest struct {
 	Count     int    `json:"count"`
 	OpenEnded bool   `json:"openEnded"`
 	GenreID   string `json:"genreId"`
+	ZoneKind  string `json:"zoneKind"`
 }
 
 func (s *server) parseScenarioTemplateUpsertRequest(
@@ -266,6 +268,10 @@ func (s *server) parseScenarioTemplateUpsertRequest(
 	if err != nil {
 		return nil, err
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		return nil, err
+	}
 
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
@@ -274,9 +280,10 @@ func (s *server) parseScenarioTemplateUpsertRequest(
 		}
 	}
 
-	return &models.ScenarioTemplate{
+	template := &models.ScenarioTemplate{
 		GenreID:                   genre.ID,
 		Genre:                     genre,
+		ZoneKind:                  models.NormalizeZoneKind(body.ZoneKind),
 		Prompt:                    prompt,
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
@@ -305,7 +312,11 @@ func (s *server) parseScenarioTemplateUpsertRequest(
 		ItemRewards:               itemRewards,
 		ItemChoiceRewards:         itemChoiceRewards,
 		SpellRewards:              spellRewards,
-	}, nil
+	}
+	if zoneKind != nil {
+		template.ZoneKind = zoneKind.Slug
+	}
+	return template, nil
 }
 
 func scenarioRewardPayloadsToTemplateRewards(payloads []scenarioRewardItemPayload) models.ScenarioTemplateRewards {
@@ -484,6 +495,11 @@ func (s *server) createScenarioTemplateGenerationJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	job := &models.ScenarioTemplateGenerationJob{
 		ID:           uuid.New(),
@@ -491,10 +507,14 @@ func (s *server) createScenarioTemplateGenerationJob(ctx *gin.Context) {
 		UpdatedAt:    time.Now(),
 		GenreID:      genre.ID,
 		Genre:        genre,
+		ZoneKind:     models.NormalizeZoneKind(body.ZoneKind),
 		Status:       models.ScenarioTemplateGenerationStatusQueued,
 		Count:        body.Count,
 		OpenEnded:    body.OpenEnded,
 		CreatedCount: 0,
+	}
+	if zoneKind != nil {
+		job.ZoneKind = zoneKind.Slug
 	}
 	if err := s.dbClient.ScenarioTemplateGenerationJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

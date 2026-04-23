@@ -15,6 +15,7 @@ type inventoryItemSuggestionJobHandle struct {
 func (h *inventoryItemSuggestionJobHandle) Create(ctx context.Context, job *models.InventoryItemSuggestionJob) error {
 	if job != nil {
 		job.Status = models.NormalizeInventoryItemSuggestionJobStatus(job.Status)
+		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
 		resolvedGenreID, err := resolveInventoryItemSuggestionJobGenreID(ctx, h.db, job)
 		if err != nil {
 			return err
@@ -27,6 +28,7 @@ func (h *inventoryItemSuggestionJobHandle) Create(ctx context.Context, job *mode
 func (h *inventoryItemSuggestionJobHandle) Update(ctx context.Context, job *models.InventoryItemSuggestionJob) error {
 	if job != nil {
 		job.Status = models.NormalizeInventoryItemSuggestionJobStatus(job.Status)
+		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
 		resolvedGenreID, err := resolveInventoryItemSuggestionJobGenreID(ctx, h.db, job)
 		if err != nil {
 			return err

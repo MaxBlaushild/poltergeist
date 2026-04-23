@@ -211,3 +211,24 @@ func TestParseMonsterTemplateUpsertRequestNormalizesMonsterType(t *testing.T) {
 		t.Fatalf("expected normalized raid monster type, got %q", template.MonsterType)
 	}
 }
+
+func TestParseMonsterTemplateUpsertRequestNormalizesZoneKind(t *testing.T) {
+	s := &server{}
+
+	template, _, _, err := s.parseMonsterTemplateUpsertRequest(nil, monsterTemplateUpsertRequest{
+		ZoneKind:         " Ancient Forest ",
+		Name:             "Canopy Stalker",
+		BaseStrength:     10,
+		BaseDexterity:    10,
+		BaseConstitution: 10,
+		BaseIntelligence: 10,
+		BaseWisdom:       10,
+		BaseCharisma:     10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if template.ZoneKind != "ancient-forest" {
+		t.Fatalf("expected normalized zone kind, got %q", template.ZoneKind)
+	}
+}

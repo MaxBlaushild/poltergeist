@@ -26,6 +26,11 @@ import {
   type CraftingRecipeReference,
   type CraftingStationKey,
 } from './inventoryCrafting.ts';
+import {
+  useZoneKinds,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+} from './zoneKindHelpers.ts';
 
 type SelectOption = {
   value: string;
@@ -239,6 +244,7 @@ const recipeMaterialSignalTokensByStation: Record<
 type InventorySuggestionFormState = {
   count: string;
   genreId: string;
+  zoneKind: string;
   themePrompt: string;
   categoriesText: string;
   rarityTiersText: string;
@@ -549,6 +555,7 @@ const emptyInventorySuggestionForm = (
 ): InventorySuggestionFormState => ({
   count: '12',
   genreId,
+  zoneKind: '',
   themePrompt: '',
   categoriesText: 'equippable, consumable, material',
   rarityTiersText: 'Common, Uncommon, Epic',
@@ -729,7 +736,7 @@ const SearchableSelect = ({
     });
   }, [options, query]);
 
-  const displayValue = open ? query : selected?.label ?? '';
+  const displayValue = open ? query : (selected?.label ?? '');
 
   return (
     <div className="relative">
@@ -1140,6 +1147,7 @@ export const InventoryItems = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
+  const { zoneKindBySlug, zoneKinds } = useZoneKinds();
   const { users } = useUsers();
   const [items, setItems] = useState<InventoryItemRecord[]>([]);
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
@@ -1306,6 +1314,7 @@ export const InventoryItems = () => {
   const [formData, setFormData] = useState({
     name: '',
     genreId: '',
+    zoneKind: '',
     imageUrl: '',
     flavorText: '',
     effectText: '',
@@ -1804,6 +1813,7 @@ export const InventoryItems = () => {
         {
           count: Math.max(1, parseInt(suggestionForm.count, 10) || 1),
           genreId: suggestionForm.genreId.trim(),
+          zoneKind: suggestionForm.zoneKind.trim() || undefined,
           themePrompt: suggestionForm.themePrompt.trim(),
           categories: parseCommaValues(suggestionForm.categoriesText),
           rarityTiers: parseCommaValues(suggestionForm.rarityTiersText),
@@ -1925,6 +1935,7 @@ export const InventoryItems = () => {
     setFormData({
       name: '',
       genreId: defaultGenreId,
+      zoneKind: '',
       imageUrl: '',
       flavorText: '',
       effectText: '',
@@ -3348,6 +3359,7 @@ export const InventoryItems = () => {
     setFormData({
       name: item.name,
       genreId: item.genreId ?? item.genre?.id ?? defaultGenreId,
+      zoneKind: item.zoneKind ?? '',
       imageUrl: item.imageUrl,
       flavorText: item.flavorText,
       effectText: item.effectText,
@@ -4420,7 +4432,10 @@ export const InventoryItems = () => {
 
       if (query && !haystack.includes(query)) return false;
 
-      if (filters.genre && (item.genreId ?? item.genre?.id ?? '') !== filters.genre)
+      if (
+        filters.genre &&
+        (item.genreId ?? item.genre?.id ?? '') !== filters.genre
+      )
         return false;
       if (filters.rarity && item.rarityTier !== filters.rarity) return false;
       if (
@@ -4697,7 +4712,7 @@ export const InventoryItems = () => {
   const editingItemCraftingRelationship = useMemo(
     () =>
       editingItem
-        ? craftingGraph.relationshipsByItemId.get(editingItem.id) ?? null
+        ? (craftingGraph.relationshipsByItemId.get(editingItem.id) ?? null)
         : null,
     [craftingGraph.relationshipsByItemId, editingItem]
   );
@@ -4857,7 +4872,10 @@ export const InventoryItems = () => {
                   className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                 >
                   {genres.map((genre) => (
-                    <option key={`seed-pack-genre-${genre.id}`} value={genre.id}>
+                    <option
+                      key={`seed-pack-genre-${genre.id}`}
+                      value={genre.id}
+                    >
                       {formatGenreLabel(genre)}
                     </option>
                   ))}
@@ -5092,7 +5110,9 @@ export const InventoryItems = () => {
                   </label>
                   <select
                     value={setFamilyGenreId}
-                    onChange={(event) => setSetFamilyGenreId(event.target.value)}
+                    onChange={(event) =>
+                      setSetFamilyGenreId(event.target.value)
+                    }
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                   >
                     {genres.map((genre) => (
@@ -5491,11 +5511,45 @@ export const InventoryItems = () => {
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                   >
                     {genres.map((genre) => (
-                      <option key={`suggestion-genre-${genre.id}`} value={genre.id}>
+                      <option
+                        key={`suggestion-genre-${genre.id}`}
+                        value={genre.id}
+                      >
                         {formatGenreLabel(genre)}
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Preferred Zone Kind
+                  </label>
+                  <select
+                    value={suggestionForm.zoneKind}
+                    onChange={(event) =>
+                      setSuggestionForm((current) => ({
+                        ...current,
+                        zoneKind: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">
+                      {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
+                    </option>
+                    {zoneKinds.map((zoneKind) => (
+                      <option
+                        key={`suggestion-zone-kind-${zoneKind.id}`}
+                        value={zoneKind.slug}
+                      >
+                        {zoneKind.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-xs text-slate-500">
+                    The model will still choose the best-fit zone kind per
+                    item, but it will lean toward this when it fits.
+                  </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -5673,7 +5727,9 @@ export const InventoryItems = () => {
                 <button
                   type="button"
                   onClick={() =>
-                    setSuggestionForm(emptyInventorySuggestionForm(defaultGenreId))
+                    setSuggestionForm(
+                      emptyInventorySuggestionForm(defaultGenreId)
+                    )
                   }
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
                 >
@@ -5738,6 +5794,10 @@ export const InventoryItems = () => {
                           job.genre ??
                             genres.find((genre) => genre.id === job.genreId)
                         )}{' '}
+                        {job.zoneKind
+                          ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
+                          : ''}
+                        {' '}
                         · {job.createdCount}/{job.count} drafts · levels{' '}
                         {job.minItemLevel}-{job.maxItemLevel}
                       </div>
@@ -5785,11 +5845,15 @@ export const InventoryItems = () => {
                       {formatGenreLabel(
                         selectedSuggestionJob.genre ??
                           genres.find(
-                            (genre) => genre.id === selectedSuggestionJob.genreId
+                            (genre) =>
+                              genre.id === selectedSuggestionJob.genreId
                           )
                       )}{' '}
-                      ·{' '}
-                      {selectedSuggestionJob.createdCount} draft
+                      {selectedSuggestionJob.zoneKind
+                        ? `· ${zoneKindLabel(selectedSuggestionJob.zoneKind, zoneKindBySlug)} `
+                        : ''}
+                      {' '}
+                      · {selectedSuggestionJob.createdCount} draft
                       {selectedSuggestionJob.createdCount === 1
                         ? ''
                         : 's'} ·{' '}
@@ -5866,6 +5930,14 @@ export const InventoryItems = () => {
                               )
                           )}
                         </span>
+                        {draft.payload.item.zoneKind && (
+                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                            {zoneKindLabel(
+                              draft.payload.item.zoneKind,
+                              zoneKindBySlug
+                            )}
+                          </span>
+                        )}
                         {draft.equipSlot && (
                           <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
                             {draft.equipSlot}
@@ -6039,7 +6111,10 @@ export const InventoryItems = () => {
                     >
                       <option value="">All genres</option>
                       {genres.map((genre) => (
-                        <option key={`genre-filter-${genre.id}`} value={genre.id}>
+                        <option
+                          key={`genre-filter-${genre.id}`}
+                          value={genre.id}
+                        >
                           {formatGenreLabel(genre)}
                         </option>
                       ))}
@@ -7030,6 +7105,19 @@ export const InventoryItems = () => {
                         <strong>Effect:</strong> {item.effectText || '—'}
                       </p>
 
+                      <p
+                        style={{
+                          margin: '10px 0',
+                          color: '#666',
+                          fontSize: '14px',
+                        }}
+                      >
+                        <strong>Zone Kind:</strong>{' '}
+                        {item.zoneKind
+                          ? zoneKindLabel(item.zoneKind, zoneKindBySlug)
+                          : 'None'}
+                      </p>
+
                       <div style={{ marginTop: '15px' }}>
                         <button
                           onClick={() => handleEditItem(item)}
@@ -7319,6 +7407,36 @@ export const InventoryItems = () => {
                 {genres.map((genre) => (
                   <option key={`item-form-genre-${genre.id}`} value={genre.id}>
                     {formatGenreLabel(genre)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Zone Kind:
+              </label>
+              <select
+                value={formData.zoneKind}
+                onChange={(e) =>
+                  setFormData({ ...formData, zoneKind: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              >
+                <option value="">
+                  {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
+                </option>
+                {zoneKinds.map((zoneKind) => (
+                  <option
+                    key={`inventory-item-zone-kind-${zoneKind.id}`}
+                    value={zoneKind.slug}
+                  >
+                    {zoneKind.name}
                   </option>
                 ))}
               </select>

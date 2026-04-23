@@ -138,6 +138,8 @@ func prepareZoneKindPatternTile(imageBytes []byte) ([]byte, error) {
 	}
 
 	tile := imaging.Fill(decoded, zoneKindPatternTileSize, zoneKindPatternTileSize, imaging.Center, imaging.Lanczos)
+	tile = imaging.AdjustContrast(tile, 18)
+	tile = imaging.AdjustSaturation(tile, 20)
 	out := imaging.Clone(tile)
 	bounds := out.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -148,11 +150,16 @@ func prepareZoneKindPatternTile(imageBytes []byte) ([]byte, error) {
 			}
 			luma := (int(rgba.R)*299 + int(rgba.G)*587 + int(rgba.B)*114) / 1000
 			darkness := 255 - luma
-			if darkness < 18 {
+			if darkness < 10 {
 				out.SetNRGBA(x, y, color.NRGBA{R: rgba.R, G: rgba.G, B: rgba.B, A: 0})
 				continue
 			}
-			alpha := clampZoneKindPatternAlpha(max(42, min(190, darkness*2)))
+			alpha := clampZoneKindPatternAlpha(
+				maxZoneKindPatternTileInt(
+					84,
+					minZoneKindPatternTileInt(236, darkness*3),
+				),
+			)
 			if int(rgba.A) < alpha {
 				alpha = int(rgba.A)
 			}
@@ -176,6 +183,20 @@ func clampZoneKindPatternAlpha(value int) int {
 	default:
 		return value
 	}
+}
+
+func maxZoneKindPatternTileInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minZoneKindPatternTileInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (p *GenerateZoneKindPatternTileProcessor) uploadImage(

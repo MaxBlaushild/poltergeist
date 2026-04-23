@@ -53,6 +53,7 @@ type MonsterTemplate struct {
 	UpdatedAt                     time.Time                    `json:"updatedAt"`
 	Archived                      bool                         `json:"archived" gorm:"column:archived;default:false"`
 	MonsterType                   MonsterTemplateType          `json:"monsterType" gorm:"column:monster_type"`
+	ZoneKind                      string                       `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	GenreID                       uuid.UUID                    `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre                         *ZoneGenre                   `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	Name                          string                       `json:"name"`
@@ -169,6 +170,7 @@ func (m *Monster) BeforeSave(tx *gorm.DB) error {
 
 func (m *MonsterTemplate) BeforeSave(tx *gorm.DB) error {
 	m.MonsterType = NormalizeMonsterTemplateType(string(m.MonsterType))
+	m.ZoneKind = NormalizeZoneKind(m.ZoneKind)
 	return nil
 }
 

@@ -5,7 +5,7 @@ import 'package:image/image.dart' as img;
 
 import '../constants/zone_kind_visuals.dart';
 
-const _zoneKindPatternVersion = 'v2';
+const _zoneKindPatternVersion = 'v3';
 const _zoneKindPatternTileSize = 32;
 
 final Map<String, Uint8List> _zoneKindPatternTileCache = <String, Uint8List>{};
@@ -155,17 +155,17 @@ class _ZonePatternPalette {
       ink: _imgColor(
         Color.lerp(profile.panelAccent, Colors.white, 0.14) ??
             profile.panelAccent,
-        alphaMultiplier: 0.98,
+        alphaMultiplier: 1.0,
       ),
       highlight: _imgColor(
-        Color.lerp(profile.panelChipText, Colors.white, 0.08) ??
+        Color.lerp(profile.panelChipText, Colors.white, 0.18) ??
             profile.panelChipText,
-        alphaMultiplier: 0.84,
+        alphaMultiplier: 1.0,
       ),
       shadow: _imgColor(
-        Color.lerp(profile.panelAccent, Colors.black, 0.28) ??
+        Color.lerp(profile.panelAccent, Colors.black, 0.18) ??
             profile.panelAccent,
-        alphaMultiplier: 0.62,
+        alphaMultiplier: 0.86,
       ),
     );
   }

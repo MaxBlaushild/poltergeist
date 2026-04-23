@@ -20,6 +20,7 @@ import (
 
 type expositionUpsertRequest struct {
 	ZoneID            string                       `json:"zoneId"`
+	ZoneKind          *string                      `json:"zoneKind"`
 	PointOfInterestID string                       `json:"pointOfInterestId"`
 	Latitude          float64                      `json:"latitude"`
 	Longitude         float64                      `json:"longitude"`
@@ -173,6 +174,7 @@ func (s *server) parseExpositionUpsertRequest(
 
 	exposition := &models.Exposition{
 		ZoneID:            zoneID,
+		ZoneKind:          normalizeZoneKindRequest(body.ZoneKind),
 		PointOfInterestID: resolvedPointOfInterestID,
 		Latitude:          resolvedLatitude,
 		Longitude:         resolvedLongitude,

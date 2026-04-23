@@ -18,6 +18,7 @@ type ChallengeTemplateGenerationJob struct {
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
 	LocationArchetypeID uuid.UUID `json:"locationArchetypeId" gorm:"column:location_archetype_id;type:uuid"`
+	ZoneKind            string    `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Status              string    `json:"status"`
 	Count               int       `json:"count"`
 	CreatedCount        int       `json:"createdCount" gorm:"column:created_count"`

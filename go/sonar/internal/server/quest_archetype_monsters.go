@@ -27,6 +27,9 @@ Quest context:
 - Encounter tone tags: %s
 - Seed hints: %s
 
+Zone kind classification:
+%s
+
 Template role guidance:
 %s
 
@@ -40,12 +43,14 @@ Hard constraints:
 - Make the monsters feel naturally suited to the quest context, place type, and encounter tone.
 - Do not reference DnD, tabletop, or copyrighted franchises.
 - All base stats must be integers from 1 to 20.
+- Every template must include a "zoneKind" slug chosen from the allowed zone kinds.
 - Return JSON only.
 
 Respond as:
 {
   "templates": [
     {
+      "zoneKind": "string",
       "name": "string",
       "description": "string",
       "baseStrength": 10,
@@ -232,7 +237,7 @@ func (s *server) createQuestSpecificMonsterTemplates(
 		existingNames = append(existingNames, name)
 	}
 
-	specs, err := s.buildQuestSpecificMonsterTemplateSpecs(count, usedNames, existingNames, request)
+	specs, err := s.buildQuestSpecificMonsterTemplateSpecs(ctx, count, usedNames, existingNames, request)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +252,7 @@ func (s *server) createQuestSpecificMonsterTemplates(
 			UpdatedAt:             now,
 			Archived:              false,
 			MonsterType:           models.NormalizeMonsterTemplateType(spec.MonsterType),
+			ZoneKind:              models.NormalizeZoneKind(spec.ZoneKind),
 			Name:                  strings.TrimSpace(spec.Name),
 			Description:           strings.TrimSpace(spec.Description),
 			BaseStrength:          spec.BaseStrength,
@@ -276,6 +282,7 @@ func (s *server) createQuestSpecificMonsterTemplates(
 }
 
 func (s *server) buildQuestSpecificMonsterTemplateSpecs(
+	ctx context.Context,
 	count int,
 	usedNames map[string]struct{},
 	existingNames []string,
@@ -289,6 +296,10 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, request.Count)
 	if s.deepPriest != nil {
+		zoneKinds, err := s.dbClient.ZoneKind().FindAll(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load zone kinds for monster template generation: %w", err)
+		}
 		prompt := fmt.Sprintf(
 			questSpecificMonsterTemplatesPromptTemplate,
 			request.Count,
@@ -300,6 +311,7 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 			questMonsterPromptLocationTypes(request.LocationArchetype),
 			questMonsterPromptList(request.EncounterTone),
 			questMonsterPromptList(request.SeedHints),
+			models.ZoneKindsPromptOptions(zoneKinds),
 			monsterTemplateTypePromptGuidance(request.MonsterType),
 			formatMonsterTemplateNamesForPrompt(existingNames),
 			request.Count,
@@ -314,6 +326,11 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 					}
 					candidate = sanitizeMonsterTemplateSpec(candidate)
 					candidate.MonsterType = string(request.MonsterType)
+					candidate.ZoneKind = normalizeGeneratedMonsterTemplateZoneKind(
+						candidate.ZoneKind,
+						zoneKinds,
+						nil,
+					)
 					if candidate.Name == "" {
 						continue
 					}
@@ -334,6 +351,7 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 			remaining,
 			usedNames,
 			request.MonsterType,
+			nil,
 			nil,
 		)
 		specs = append(specs, fallback...)

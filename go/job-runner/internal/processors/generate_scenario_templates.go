@@ -26,6 +26,7 @@ Return JSON only:
 {
   "templates": [
     {
+      "zoneKind": "forest",
       "prompt": "2-4 vivid sentences",
       "difficulty": 0-40,
       "rewardExperience": 0-120,
@@ -39,6 +40,8 @@ Return JSON only:
 
 Rules:
 - Output exactly %d templates.
+- zoneKind must be one of the allowed slugs exactly as written.
+- Choose the single best-fit zone kind for where each template would most naturally belong.
 - These are generic templates, not tied to any specific zone, city, landmark, or coordinates.
 - Each prompt should describe a clear fantasy conflict or opportunity that could fit many places.
 - Keep the scenarios materially distinct from one another and from the recent templates list.
@@ -57,6 +60,7 @@ Return JSON only:
 {
   "templates": [
     {
+      "zoneKind": "forest",
       "prompt": "2-4 vivid sentences",
       "difficulty": 0-40,
       "options": [
@@ -80,6 +84,8 @@ Return JSON only:
 
 Rules:
 - Output exactly %d templates.
+- zoneKind must be one of the allowed slugs exactly as written.
+- Choose the single best-fit zone kind for where each template would most naturally belong.
 - These are generic templates, not tied to any specific zone, city, landmark, or coordinates.
 - Each template prompt should describe a reusable fantasy situation with 3 distinct player options.
 - Keep templates materially distinct from one another and from the recent templates list.
@@ -90,6 +96,7 @@ Rules:
 `
 
 type openEndedScenarioTemplatePayload struct {
+	ZoneKind         string                            `json:"zoneKind"`
 	Prompt           string                            `json:"prompt"`
 	Difficulty       *int                              `json:"difficulty"`
 	RewardExperience int                               `json:"rewardExperience"`
@@ -102,6 +109,7 @@ type openEndedScenarioTemplatesResponse struct {
 }
 
 type choiceScenarioTemplatePayload struct {
+	ZoneKind   string                                  `json:"zoneKind"`
 	Prompt     string                                  `json:"prompt"`
 	Difficulty *int                                    `json:"difficulty"`
 	Options    []choiceScenarioGenerationOptionPayload `json:"options"`
@@ -163,6 +171,14 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 	if err != nil {
 		return fmt.Errorf("failed to load scenario template genre: %w", err)
 	}
+	zoneKind, err := loadOptionalZoneKind(ctx, p.dbClient, job.ZoneKind)
+	if err != nil {
+		return fmt.Errorf("failed to load scenario template zone kind: %w", err)
+	}
+	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load zone kinds for scenario template classification: %w", err)
+	}
 	inventoryItems, err := p.dbClient.InventoryItem().FindAllActiveInventoryItems(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load inventory items: %w", err)
@@ -181,6 +197,8 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 			recentAvoidance,
 			allowedItemsPrompt,
 			genre,
+			zoneKind,
+			zoneKinds,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -192,8 +210,18 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 		}
 		for _, spec := range generated.Templates {
 			template := &models.ScenarioTemplate{
-				GenreID:                  genre.ID,
-				Genre:                    genre,
+				GenreID: genre.ID,
+				Genre:   genre,
+				ZoneKind: normalizeScenarioGeneratedZoneKind(
+					spec.ZoneKind,
+					zoneKinds,
+					deriveScenarioZoneKindHeuristically(
+						zoneKinds,
+						job.ZoneKind,
+						spec.Prompt,
+						scenarioGenrePromptLabel(genre),
+					),
+				),
 				Prompt:                   sanitizeScenarioPrompt(spec.Prompt),
 				ScaleWithUserLevel:       false,
 				RewardMode:               models.RewardModeExplicit,
@@ -230,6 +258,8 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 			recentAvoidance,
 			allowedItemsPrompt,
 			genre,
+			zoneKind,
+			zoneKinds,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -245,8 +275,18 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 				options = append(options, fallbackScenarioOption())
 			}
 			template := &models.ScenarioTemplate{
-				GenreID:                  genre.ID,
-				Genre:                    genre,
+				GenreID: genre.ID,
+				Genre:   genre,
+				ZoneKind: normalizeScenarioGeneratedZoneKind(
+					spec.ZoneKind,
+					zoneKinds,
+					deriveScenarioZoneKindHeuristically(
+						zoneKinds,
+						job.ZoneKind,
+						spec.Prompt,
+						scenarioGenrePromptLabel(genre),
+					),
+				),
 				Prompt:                   sanitizeScenarioPrompt(spec.Prompt),
 				ScaleWithUserLevel:       false,
 				RewardMode:               models.RewardModeRandom,
@@ -337,6 +377,8 @@ func buildOpenEndedScenarioTemplatePrompt(
 	recentAvoidance string,
 	allowedItemsPrompt string,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
 ) string {
 	base := fmt.Sprintf(
 		openEndedScenarioTemplatePromptTemplate,
@@ -345,10 +387,27 @@ func buildOpenEndedScenarioTemplatePrompt(
 		count,
 		allowedItemsPrompt,
 	)
-	if isBaselineFantasyScenarioGenre(genre) {
+	var instructionBlocks []string
+	if zoneKindSelectionBlock := buildScenarioZoneKindInstructionBlock(
+		zoneKinds,
+		zoneKind,
+		"requested zone kind direction",
+	); zoneKindSelectionBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindSelectionBlock)
+	}
+	if zoneKindBlock := zoneKindInstructionBlock(zoneKind); zoneKindBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindBlock)
+	}
+	if !isBaselineFantasyScenarioGenre(genre) {
+		instructionBlocks = append(
+			instructionBlocks,
+			scenarioGenreInstructionBlock(genre),
+		)
+	}
+	if len(instructionBlocks) == 0 {
 		return base
 	}
-	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+	return strings.TrimSpace(strings.Join(instructionBlocks, "\n\n") + "\n\n" + base)
 }
 
 func buildChoiceScenarioTemplatePrompt(
@@ -356,6 +415,8 @@ func buildChoiceScenarioTemplatePrompt(
 	recentAvoidance string,
 	allowedItemsPrompt string,
 	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+	zoneKinds []models.ZoneKind,
 ) string {
 	base := fmt.Sprintf(
 		choiceScenarioTemplatePromptTemplate,
@@ -364,10 +425,27 @@ func buildChoiceScenarioTemplatePrompt(
 		count,
 		allowedItemsPrompt,
 	)
-	if isBaselineFantasyScenarioGenre(genre) {
+	var instructionBlocks []string
+	if zoneKindSelectionBlock := buildScenarioZoneKindInstructionBlock(
+		zoneKinds,
+		zoneKind,
+		"requested zone kind direction",
+	); zoneKindSelectionBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindSelectionBlock)
+	}
+	if zoneKindBlock := zoneKindInstructionBlock(zoneKind); zoneKindBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindBlock)
+	}
+	if !isBaselineFantasyScenarioGenre(genre) {
+		instructionBlocks = append(
+			instructionBlocks,
+			scenarioGenreInstructionBlock(genre),
+		)
+	}
+	if len(instructionBlocks) == 0 {
 		return base
 	}
-	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+	return strings.TrimSpace(strings.Join(instructionBlocks, "\n\n") + "\n\n" + base)
 }
 
 func scenarioItemRewardsToTemplateRewards(rewards []models.ScenarioItemReward) models.ScenarioTemplateRewards {

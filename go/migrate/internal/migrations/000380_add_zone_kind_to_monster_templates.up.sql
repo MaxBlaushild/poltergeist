@@ -1,0 +1,2 @@
+ALTER TABLE monster_templates
+  ADD COLUMN IF NOT EXISTS zone_kind TEXT NOT NULL DEFAULT '';

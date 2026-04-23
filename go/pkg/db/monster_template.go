@@ -37,6 +37,7 @@ func (h *monsterTemplateHandle) Create(ctx context.Context, template *models.Mon
 	}
 	template.UpdatedAt = now
 	template.MonsterType = models.NormalizeMonsterTemplateType(string(template.MonsterType))
+	template.ZoneKind = models.NormalizeZoneKind(template.ZoneKind)
 	resolvedGenreID, err := resolveMonsterTemplateGenreID(ctx, h.db, template)
 	if err != nil {
 		return err
@@ -197,6 +198,7 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
 	updates.MonsterType = models.NormalizeMonsterTemplateType(string(updates.MonsterType))
+	updates.ZoneKind = models.NormalizeZoneKind(updates.ZoneKind)
 	resolvedGenreID, err := resolveMonsterTemplateGenreID(ctx, h.db, updates)
 	if err != nil {
 		return err
@@ -205,6 +207,7 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 	payload := map[string]interface{}{
 		"archived":                         updates.Archived,
 		"monster_type":                     updates.MonsterType,
+		"zone_kind":                        updates.ZoneKind,
 		"genre_id":                         updates.GenreID,
 		"name":                             updates.Name,
 		"description":                      updates.Description,

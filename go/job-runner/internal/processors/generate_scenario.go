@@ -51,6 +51,7 @@ Create an OPEN-ENDED scenario (free-text response from player).
 
 Return JSON only:
 {
+  "zoneKind": "forest",
   "prompt": "2-4 vivid sentences",
   "difficulty": 0-40,
   "rewardExperience": 0-120,
@@ -58,6 +59,8 @@ Return JSON only:
 }
 
 Rules:
+- zoneKind must be one of the allowed slugs exactly as written.
+- Choose the single best-fit zone kind for this generated scenario.
 - Prompt must be specific to this zone and location, with a clear conflict/opportunity.
 - The scenario must feel materially different from the recent scenarios listed above.
 - Keep tone adventurous and grounded in physical surroundings.
@@ -84,6 +87,7 @@ Create a CHOICE-BASED scenario with 3 options.
 
 Return JSON only:
 {
+  "zoneKind": "forest",
   "prompt": "2-4 vivid sentences",
   "difficulty": 0-40,
   "options": [
@@ -101,6 +105,8 @@ Return JSON only:
 }
 
 Rules:
+- zoneKind must be one of the allowed slugs exactly as written.
+- Choose the single best-fit zone kind for this generated scenario.
 - Prompt must be specific to this zone and location, with a clear conflict/opportunity.
 - The scenario must feel materially different from the recent scenarios listed above.
 - options must contain exactly 3 entries and each option should feel distinct.
@@ -168,6 +174,7 @@ type scenarioGenerationRewardPayload struct {
 }
 
 type openEndedScenarioGenerationResponse struct {
+	ZoneKind         string                            `json:"zoneKind"`
 	Prompt           string                            `json:"prompt"`
 	Difficulty       *int                              `json:"difficulty"`
 	RewardExperience int                               `json:"rewardExperience"`
@@ -188,6 +195,7 @@ type choiceScenarioGenerationOptionPayload struct {
 }
 
 type choiceScenarioGenerationResponse struct {
+	ZoneKind   string                                  `json:"zoneKind"`
 	Prompt     string                                  `json:"prompt"`
 	Difficulty *int                                    `json:"difficulty"`
 	Options    []choiceScenarioGenerationOptionPayload `json:"options"`
@@ -255,6 +263,11 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 	if err != nil {
 		return fmt.Errorf("failed to load scenario genre: %w", err)
 	}
+	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load zone kinds for scenario classification: %w", err)
+	}
+	parentZoneKind := findZoneKindBySlug(zoneKinds, zone.Kind)
 
 	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
 
@@ -300,6 +313,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			varianceSalt,
 			recentScenarioAvoidance,
 			genre,
+			zoneKinds,
+			parentZoneKind,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -314,6 +329,18 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		scenario.Difficulty = sanitizeScenarioDifficulty(generated.Difficulty, 24)
 		scenario.RewardExperience = clampInt(generated.RewardExperience, 0, 120)
 		scenario.RewardGold = clampInt(generated.RewardGold, 0, 120)
+		scenario.ZoneKind = normalizeScenarioGeneratedZoneKind(
+			generated.ZoneKind,
+			zoneKinds,
+			deriveScenarioZoneKindHeuristically(
+				zoneKinds,
+				zone.Kind,
+				zoneName,
+				zoneDescription,
+				scenario.Prompt,
+				scenarioGenrePromptLabel(genre),
+			),
+		)
 	} else {
 		prompt := buildChoiceScenarioGenerationPrompt(
 			zoneName,
@@ -323,6 +350,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			varianceSalt,
 			recentScenarioAvoidance,
 			genre,
+			zoneKinds,
+			parentZoneKind,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 		if err != nil {
@@ -339,6 +368,18 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		if len(options) == 0 {
 			options = append(options, fallbackScenarioOption())
 		}
+		scenario.ZoneKind = normalizeScenarioGeneratedZoneKind(
+			generated.ZoneKind,
+			zoneKinds,
+			deriveScenarioZoneKindHeuristically(
+				zoneKinds,
+				zone.Kind,
+				zoneName,
+				zoneDescription,
+				scenario.Prompt,
+				scenarioGenrePromptLabel(genre),
+			),
+		)
 	}
 
 	if err := p.dbClient.Scenario().Create(ctx, scenario); err != nil {
@@ -490,6 +531,8 @@ func buildOpenEndedScenarioGenerationPrompt(
 	varianceSalt string,
 	recentScenarioAvoidance string,
 	genre *models.ZoneGenre,
+	zoneKinds []models.ZoneKind,
+	parentZoneKind *models.ZoneKind,
 ) string {
 	base := fmt.Sprintf(
 		openEndedScenarioGenerationPromptTemplate,
@@ -500,10 +543,24 @@ func buildOpenEndedScenarioGenerationPrompt(
 		varianceSalt,
 		recentScenarioAvoidance,
 	)
-	if isBaselineFantasyScenarioGenre(genre) {
+	instructionBlocks := []string{}
+	if zoneKindBlock := buildScenarioZoneKindInstructionBlock(
+		zoneKinds,
+		parentZoneKind,
+		"parent zone kind",
+	); zoneKindBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindBlock)
+	}
+	if !isBaselineFantasyScenarioGenre(genre) {
+		instructionBlocks = append(
+			instructionBlocks,
+			scenarioGenreInstructionBlock(genre),
+		)
+	}
+	if len(instructionBlocks) == 0 {
 		return base
 	}
-	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+	return strings.TrimSpace(strings.Join(instructionBlocks, "\n\n") + "\n\n" + base)
 }
 
 func buildChoiceScenarioGenerationPrompt(
@@ -514,6 +571,8 @@ func buildChoiceScenarioGenerationPrompt(
 	varianceSalt string,
 	recentScenarioAvoidance string,
 	genre *models.ZoneGenre,
+	zoneKinds []models.ZoneKind,
+	parentZoneKind *models.ZoneKind,
 ) string {
 	base := fmt.Sprintf(
 		choiceScenarioGenerationPromptTemplate,
@@ -524,10 +583,24 @@ func buildChoiceScenarioGenerationPrompt(
 		varianceSalt,
 		recentScenarioAvoidance,
 	)
-	if isBaselineFantasyScenarioGenre(genre) {
+	instructionBlocks := []string{}
+	if zoneKindBlock := buildScenarioZoneKindInstructionBlock(
+		zoneKinds,
+		parentZoneKind,
+		"parent zone kind",
+	); zoneKindBlock != "" {
+		instructionBlocks = append(instructionBlocks, zoneKindBlock)
+	}
+	if !isBaselineFantasyScenarioGenre(genre) {
+		instructionBlocks = append(
+			instructionBlocks,
+			scenarioGenreInstructionBlock(genre),
+		)
+	}
+	if len(instructionBlocks) == 0 {
 		return base
 	}
-	return strings.TrimSpace(scenarioGenreInstructionBlock(genre) + "\n" + base)
+	return strings.TrimSpace(strings.Join(instructionBlocks, "\n\n") + "\n\n" + base)
 }
 
 func buildScenarioVarianceSalt(job *models.ScenarioGenerationJob, zoneName string) string {

@@ -24,7 +24,7 @@ func TestSanitizeInventoryItemSuggestionDraftClearsLinkedFieldsAndInfersCategory
 		},
 	}
 
-	draft := sanitizeInventoryItemSuggestionDraft(spec, job, map[string]struct{}{}, map[string]struct{}{})
+	draft := sanitizeInventoryItemSuggestionDraft(spec, job, nil, map[string]struct{}{}, map[string]struct{}{})
 	if draft.Category != "consumable" {
 		t.Fatalf("expected consumable category, got %q", draft.Category)
 	}
@@ -60,11 +60,33 @@ func TestSanitizeInventoryItemSuggestionDraftClearsUnlockLocksStrength(t *testin
 		},
 	}
 
-	draft := sanitizeInventoryItemSuggestionDraft(spec, job, map[string]struct{}{}, map[string]struct{}{})
+	draft := sanitizeInventoryItemSuggestionDraft(spec, job, nil, map[string]struct{}{}, map[string]struct{}{})
 	if draft.Payload.Item.UnlockLocksStrength != nil {
 		t.Fatalf("expected unlock locks strength to be cleared, got %v", *draft.Payload.Item.UnlockLocksStrength)
 	}
 	if draft.Category != "material" {
 		t.Fatalf("expected cleared draft to fall back to material category, got %q", draft.Category)
+	}
+}
+
+func TestSanitizeInventoryItemSuggestionDraftNormalizesZoneKind(t *testing.T) {
+	job := &models.InventoryItemSuggestionJob{
+		MinItemLevel: 1,
+		MaxItemLevel: 10,
+	}
+	spec := inventoryItemSuggestionDraftPayload{
+		Item: models.InventoryItem{
+			Name:     "Bogglass Tonic",
+			ZoneKind: "Swamp Bog",
+		},
+	}
+	zoneKinds := []models.ZoneKind{
+		{Slug: "swamp_bog", Name: "Swamp Bog"},
+		{Slug: "city_streets", Name: "City Streets"},
+	}
+
+	draft := sanitizeInventoryItemSuggestionDraft(spec, job, zoneKinds, map[string]struct{}{}, map[string]struct{}{})
+	if draft.Payload.Item.ZoneKind != "swamp-bog" {
+		t.Fatalf("expected normalized zone kind, got %q", draft.Payload.Item.ZoneKind)
 	}
 }

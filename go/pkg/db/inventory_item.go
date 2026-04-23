@@ -246,6 +246,7 @@ func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *mo
 		if item.ItemLevel <= 0 {
 			item.ItemLevel = 1
 		}
+		item.ZoneKind = models.NormalizeZoneKind(item.ZoneKind)
 		if item.ConsumeTeachRecipeIDs == nil {
 			item.ConsumeTeachRecipeIDs = models.StringArray{}
 		}
@@ -307,6 +308,18 @@ func (h *inventoryItemHandler) FindAllActiveInventoryItems(ctx context.Context) 
 func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error {
 	if updates == nil {
 		return nil
+	}
+	if value, exists := updates["zone_kind"]; exists {
+		switch typed := value.(type) {
+		case string:
+			updates["zone_kind"] = models.NormalizeZoneKind(typed)
+		case *string:
+			if typed == nil {
+				updates["zone_kind"] = ""
+			} else {
+				updates["zone_kind"] = models.NormalizeZoneKind(*typed)
+			}
+		}
 	}
 	if value, exists := updates["consume_statuses_to_remove"]; exists && value == nil {
 		updates["consume_statuses_to_remove"] = models.StringArray{}

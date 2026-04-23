@@ -162,6 +162,7 @@ func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) 
 	scenario.ID = uuid.New()
 	scenario.CreatedAt = time.Now()
 	scenario.UpdatedAt = time.Now()
+	scenario.ZoneKind = models.NormalizeZoneKind(scenario.ZoneKind)
 	if scenario.InternalTags == nil {
 		scenario.InternalTags = models.StringArray{}
 	}
@@ -335,6 +336,7 @@ func (h *scenarioHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zo
 func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	updates.ZoneKind = models.NormalizeZoneKind(updates.ZoneKind)
 	resolvedGenreID, err := resolveScenarioGenreIDForUpdate(ctx, h.db, id, updates)
 	if err != nil {
 		return err
@@ -347,6 +349,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 
 	payload := map[string]interface{}{
 		"zone_id":                      updates.ZoneID,
+		"zone_kind":                    updates.ZoneKind,
 		"point_of_interest_id":         updates.PointOfInterestID,
 		"genre_id":                     updates.GenreID,
 		"latitude":                     updates.Latitude,

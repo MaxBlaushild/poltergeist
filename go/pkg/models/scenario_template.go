@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type ScenarioTemplateReward struct {
@@ -128,6 +129,7 @@ type ScenarioTemplate struct {
 	UpdatedAt                 time.Time                      `json:"updatedAt"`
 	GenreID                   uuid.UUID                      `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre                     *ZoneGenre                     `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
+	ZoneKind                  string                         `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL              string                         `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
@@ -160,4 +162,9 @@ type ScenarioTemplate struct {
 
 func (ScenarioTemplate) TableName() string {
 	return "scenario_templates"
+}
+
+func (s *ScenarioTemplate) BeforeSave(tx *gorm.DB) error {
+	s.ZoneKind = NormalizeZoneKind(s.ZoneKind)
+	return nil
 }

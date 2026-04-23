@@ -14,7 +14,19 @@ import {
   MaterialRewardForm,
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import ContentDashboard from './ContentDashboard.tsx';
+import {
+  countBy,
+  useAdminAggregateDataset,
+} from './contentDashboardUtils.ts';
 import type { ZoneGenre } from '@poltergeist/types';
+import {
+  useZoneKinds,
+  zoneKindDescription,
+  zoneKindLabel,
+  zoneKindSelectPlaceholderLabel,
+  zoneKindSummaryLabel,
+} from './zoneKindHelpers.ts';
 
 type MonsterEncounterType = 'monster' | 'boss' | 'raid';
 type MonsterTemplateType = 'monster' | 'boss' | 'raid';
@@ -25,6 +37,7 @@ type MonsterTemplateRecord = {
   updatedAt: string;
   archived?: boolean;
   monsterType: MonsterTemplateType;
+  zoneKind?: string;
   genreId: string;
   genre?: ZoneGenre;
   name: string;
@@ -77,6 +90,7 @@ type MonsterRecord = {
   imageUrl: string;
   thumbnailUrl: string;
   zoneId: string;
+  zoneKind?: string;
   genreId: string;
   genre?: ZoneGenre;
   latitude: number;
@@ -140,6 +154,7 @@ type MonsterEncounterRecord = {
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;
   zoneId: string;
+  zoneKind?: string;
   latitude: number;
   longitude: number;
   monsterCount: number;
@@ -181,6 +196,8 @@ type BulkMonsterTemplateStatus = {
   status: string;
   source?: string;
   monsterType?: MonsterTemplateType;
+  genreId?: string;
+  zoneKind?: string;
   totalCount: number;
   createdCount: number;
   error?: string;
@@ -248,6 +265,7 @@ type EncounterIconState = {
 
 type MonsterTemplateFormState = {
   monsterType: MonsterTemplateType;
+  zoneKind: string;
   genreId: string;
   name: string;
   description: string;
@@ -296,6 +314,7 @@ type MonsterFormState = {
   imageUrl: string;
   thumbnailUrl: string;
   zoneId: string;
+  zoneKind: string;
   latitude: string;
   longitude: string;
   templateId: string;
@@ -325,6 +344,7 @@ type MonsterEncounterFormState = {
   scaleWithUserLevel: boolean;
   recurrenceFrequency: string;
   zoneId: string;
+  zoneKind: string;
   latitude: string;
   longitude: string;
   monsterIds: string[];
@@ -538,6 +558,7 @@ const PaginationControls = ({
 
 const emptyTemplateForm = (genreId = ''): MonsterTemplateFormState => ({
   monsterType: 'monster',
+  zoneKind: '',
   genreId,
   name: '',
   description: '',
@@ -579,6 +600,7 @@ const templateFormFromRecord = (
   template: MonsterTemplateRecord
 ): MonsterTemplateFormState => ({
   monsterType: template.monsterType ?? 'monster',
+  zoneKind: template.zoneKind ?? '',
   genreId: template.genreId ?? template.genre?.id ?? '',
   name: template.name ?? '',
   description: template.description ?? '',
@@ -646,6 +668,7 @@ const templateFormFromRecord = (
 
 const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
   monsterType: form.monsterType,
+  zoneKind: form.zoneKind,
   genreId: form.genreId.trim(),
   name: form.name.trim(),
   description: form.description.trim(),
@@ -699,6 +722,7 @@ const emptyMonsterForm = (): MonsterFormState => ({
   imageUrl: '',
   thumbnailUrl: '',
   zoneId: '',
+  zoneKind: '',
   latitude: '',
   longitude: '',
   templateId: '',
@@ -719,6 +743,7 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
   imageUrl: monster.imageUrl ?? '',
   thumbnailUrl: monster.thumbnailUrl ?? '',
   zoneId: monster.zoneId ?? '',
+  zoneKind: monster.zoneKind ?? '',
   latitude: String(monster.latitude ?? ''),
   longitude: String(monster.longitude ?? ''),
   templateId: monster.templateId ?? monster.template?.id ?? '',
@@ -760,6 +785,7 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   imageUrl: form.imageUrl.trim(),
   thumbnailUrl: form.thumbnailUrl.trim(),
   zoneId: form.zoneId.trim(),
+  zoneKind: form.zoneKind,
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
   templateId: form.templateId.trim(),
@@ -800,6 +826,7 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   scaleWithUserLevel: false,
   recurrenceFrequency: '',
   zoneId: '',
+  zoneKind: '',
   latitude: '',
   longitude: '',
   monsterIds: [],
@@ -832,6 +859,7 @@ const monsterEncounterFormFromRecord = (
   scaleWithUserLevel: Boolean(encounter.scaleWithUserLevel),
   recurrenceFrequency: encounter.recurrenceFrequency ?? '',
   zoneId: encounter.zoneId ?? '',
+  zoneKind: encounter.zoneKind ?? '',
   latitude: String(encounter.latitude ?? ''),
   longitude: String(encounter.longitude ?? ''),
   monsterIds: (encounter.members ?? [])
@@ -863,6 +891,7 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   scaleWithUserLevel: form.scaleWithUserLevel,
   recurrenceFrequency: form.recurrenceFrequency,
   zoneId: form.zoneId.trim(),
+  zoneKind: form.zoneKind,
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
   monsterIds: Array.from(
@@ -988,6 +1017,7 @@ mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 export const Monsters = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
 
   const [loading, setLoading] = useState(true);
   const [referenceLoading, setReferenceLoading] = useState(true);
@@ -1069,6 +1099,7 @@ export const Monsters = () => {
   const [bulkTemplateType, setBulkTemplateType] =
     useState<MonsterTemplateType>('monster');
   const [bulkTemplateGenreId, setBulkTemplateGenreId] = useState('');
+  const [bulkTemplateZoneKind, setBulkTemplateZoneKind] = useState('');
   const [genreFilter, setGenreFilter] = useState('all');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<
     'all' | MonsterTemplateType
@@ -1375,6 +1406,165 @@ export const Monsters = () => {
     }
     return map;
   }, [zones]);
+  const zoneDefaultKindById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const zone of zones) {
+      map.set(zone.id, zone.kind?.trim() ?? '');
+    }
+    return map;
+  }, [zones]);
+  const selectedMonsterZoneDefaultKind = useMemo(
+    () => zoneDefaultKindById.get(monsterForm.zoneId) ?? '',
+    [monsterForm.zoneId, zoneDefaultKindById]
+  );
+  const selectedEncounterZoneDefaultKind = useMemo(
+    () => zoneDefaultKindById.get(encounterForm.zoneId) ?? '',
+    [encounterForm.zoneId, zoneDefaultKindById]
+  );
+  const sharedDashboardParams = useMemo(
+    () => ({
+      query: deferredQuery.trim(),
+      zoneQuery: deferredZoneQuery.trim(),
+      genreId: genreFilter === 'all' ? '' : genreFilter,
+    }),
+    [deferredQuery, deferredZoneQuery, genreFilter]
+  );
+  const templateDashboardParams = useMemo(
+    () => ({
+      ...sharedDashboardParams,
+      archived: templateTab === 'archived' ? 'true' : 'false',
+      monsterType: templateTypeFilter === 'all' ? '' : templateTypeFilter,
+    }),
+    [sharedDashboardParams, templateTab, templateTypeFilter]
+  );
+  const {
+    items: dashboardTemplates,
+    loading: dashboardTemplatesLoading,
+    error: dashboardTemplatesError,
+  } = useAdminAggregateDataset<MonsterTemplateRecord>(
+    '/sonar/admin/monster-templates',
+    templateDashboardParams
+  );
+  const {
+    items: dashboardMonsters,
+    loading: dashboardMonstersLoading,
+    error: dashboardMonstersError,
+  } = useAdminAggregateDataset<MonsterRecord>(
+    '/sonar/admin/monsters',
+    sharedDashboardParams
+  );
+  const {
+    items: dashboardEncounters,
+    loading: dashboardEncountersLoading,
+    error: dashboardEncountersError,
+  } = useAdminAggregateDataset<MonsterEncounterRecord>(
+    '/sonar/admin/monster-encounters',
+    sharedDashboardParams
+  );
+  const dashboardLoading =
+    dashboardTemplatesLoading ||
+    dashboardMonstersLoading ||
+    dashboardEncountersLoading;
+  const dashboardError =
+    dashboardTemplatesError || dashboardMonstersError || dashboardEncountersError;
+  const dashboardMetrics = useMemo(() => {
+    return [
+      { label: 'Visible Templates', value: dashboardTemplates.length },
+      { label: 'Active Templates', value: activeTemplateCount },
+      { label: 'Archived Templates', value: archivedTemplateCount },
+      { label: 'Placed Monsters', value: dashboardMonsters.length },
+      { label: 'Encounters', value: dashboardEncounters.length },
+    ];
+  }, [
+    activeTemplateCount,
+    archivedTemplateCount,
+    dashboardEncounters.length,
+    dashboardMonsters.length,
+    dashboardTemplates.length,
+  ]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Template Genres',
+        note: 'Genre mix for the currently visible template pool.',
+        buckets: countBy(
+          dashboardTemplates,
+          (template) =>
+            formatGenreLabel(
+              template.genre ??
+                genres.find((genre) => genre.id === template.genreId) ??
+                null
+            ),
+          { emptyLabel: 'Fantasy' }
+        ),
+      },
+      {
+        title: 'Template Types',
+        note: 'How the template pool splits across monster roles.',
+        buckets: countBy(dashboardTemplates, (template) =>
+          formatMonsterTemplateTypeLabel(template.monsterType)
+        ),
+      },
+      {
+        title: 'Template Zone Kinds',
+        note: 'Likely habitat classification across the current template pool.',
+        buckets: countBy(dashboardTemplates, (template) =>
+          zoneKindLabel(template.zoneKind, zoneKindBySlug)
+        ),
+      },
+      {
+        title: 'Monster Zone Kinds',
+        note: 'Effective zone kind coverage for placed monsters.',
+        buckets: countBy(dashboardMonsters, (monster) =>
+          zoneKindLabel(
+            monster.zoneKind?.trim() || zoneDefaultKindById.get(monster.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Monster Genres',
+        note: 'Genre spread across concrete placed monsters.',
+        buckets: countBy(
+          dashboardMonsters,
+          (monster) =>
+            formatGenreLabel(
+              monster.genre ??
+                monster.template?.genre ??
+                genres.find((genre) => genre.id === monster.genreId) ??
+                null
+            ),
+          { emptyLabel: 'Fantasy' }
+        ),
+      },
+      {
+        title: 'Encounter Zone Kinds',
+        note: 'Where grouped encounters are concentrated.',
+        buckets: countBy(dashboardEncounters, (encounter) =>
+          zoneKindLabel(
+            encounter.zoneKind?.trim() ||
+              zoneDefaultKindById.get(encounter.zoneId),
+            zoneKindBySlug
+          )
+        ),
+      },
+      {
+        title: 'Encounter Types',
+        note: 'Distribution of standard, boss, and raid encounters.',
+        buckets: countBy(dashboardEncounters, (encounter) =>
+          formatMonsterEncounterTypeLabel(encounter.encounterType)
+        ),
+      },
+    ],
+    [
+      dashboardEncounters,
+      dashboardMonsters,
+      dashboardTemplates,
+      genres,
+      zoneDefaultKindById,
+      zoneKindBySlug,
+    ]
+  );
 
   const templateNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1702,6 +1892,7 @@ export const Monsters = () => {
           count,
           monsterType: bulkTemplateType,
           genreId: bulkTemplateGenreId,
+          zoneKind: bulkTemplateZoneKind,
         }
       );
       setBulkTemplateJob(response);
@@ -1747,6 +1938,7 @@ export const Monsters = () => {
           count: 1,
           monsterType,
           genreId: bulkTemplateGenreId,
+          zoneKind: bulkTemplateZoneKind,
         }
       );
       setBulkTemplateJob(response);
@@ -1786,7 +1978,7 @@ export const Monsters = () => {
           setAffinityRefreshBusy(false);
           setAffinityRefreshError(null);
           setAffinityRefreshMessage(
-            `Refreshed affinities for ${status.updatedCount} template${
+            `Refreshed affinities and zone kinds for ${status.updatedCount} template${
               status.updatedCount === 1 ? '' : 's'
             }.`
           );
@@ -1827,7 +2019,7 @@ export const Monsters = () => {
       if (response.status === 'completed') {
         setAffinityRefreshBusy(false);
         setAffinityRefreshMessage(
-          `Refreshed affinities for ${response.updatedCount} template${
+          `Refreshed affinities and zone kinds for ${response.updatedCount} template${
             response.updatedCount === 1 ? '' : 's'
           }.`
         );
@@ -2857,6 +3049,24 @@ export const Monsters = () => {
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
+        <ContentDashboard
+          title="Monster Dashboard"
+          subtitle="Aggregate monster coverage for the current query, zone, genre, and template filters."
+          status={
+            query.trim() ||
+            zoneQuery.trim() ||
+            genreFilter !== 'all' ||
+            templateTypeFilter !== 'all' ||
+            templateTab === 'archived'
+              ? 'Reflects current filters and template view'
+              : 'All live monster content'
+          }
+          loading={dashboardLoading}
+          error={dashboardError}
+          metrics={dashboardMetrics}
+          sections={dashboardSections}
+        />
+
         <div className="qa-card">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -2897,6 +3107,21 @@ export const Monsters = () => {
                     </option>
                   ))
                 )}
+              </select>
+              <select
+                value={bulkTemplateZoneKind}
+                onChange={(event) =>
+                  setBulkTemplateZoneKind(event.target.value)
+                }
+                className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk template zone kind"
+              >
+                <option value="">Any zone kind</option>
+                {zoneKinds.map((zoneKind) => (
+                  <option key={zoneKind.id} value={zoneKind.slug}>
+                    {zoneKind.name}
+                  </option>
+                ))}
               </select>
               <input
                 type="number"
@@ -2970,9 +3195,19 @@ export const Monsters = () => {
               <span>
                 Genre:{' '}
                 {formatGenreLabel(
-                  genres.find((genre) => genre.id === bulkTemplateGenreId)
+                  genres.find(
+                    (genre) =>
+                      genre.id ===
+                      (bulkTemplateJob.genreId ?? bulkTemplateGenreId)
+                  )
                 )}
               </span>
+              {bulkTemplateJob.zoneKind ? (
+                <span>
+                  Zone Kind:{' '}
+                  {zoneKindLabel(bulkTemplateJob.zoneKind, zoneKindBySlug)}
+                </span>
+              ) : null}
               <span>Job: {bulkTemplateJob.jobId}</span>
               <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
             </div>
@@ -3224,10 +3459,10 @@ export const Monsters = () => {
                   onClick={() => void handleRefreshTemplateAffinities()}
                 >
                   {affinityRefreshBusy
-                    ? 'Refreshing Affinities...'
+                    ? 'Refreshing Classification...'
                     : selectedTemplateIds.size > 0
-                      ? `Refresh Selected Affinities (${selectedTemplateIds.size})`
-                      : 'Refresh All Template Affinities'}
+                      ? `Refresh Selected Affinities + Zone Kinds (${selectedTemplateIds.size})`
+                      : 'Refresh All Template Affinities + Zone Kinds'}
                 </button>
                 <button
                   className="qa-btn qa-btn-secondary"
@@ -3361,6 +3596,10 @@ export const Monsters = () => {
                             </p>
                             <p className="text-sm text-gray-500 mt-1">
                               Genre: {formatGenreLabel(template.genre)}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Likely Zone Kind:{' '}
+                              {zoneKindLabel(template.zoneKind, zoneKindBySlug)}
                             </p>
                             {template.description ? (
                               <p className="text-sm text-gray-600 mt-1">
@@ -3558,6 +3797,27 @@ export const Monsters = () => {
                                 monster.zoneId}{' '}
                               · Level {monster.level}
                             </p>
+                            <p className="text-sm text-gray-600">
+                              Zone Kind:{' '}
+                              {zoneKindSummaryLabel(
+                                monster.zoneKind,
+                                zoneDefaultKindById.get(monster.zoneId) ?? '',
+                                zoneKindBySlug
+                              )}
+                            </p>
+                            {monster.zoneKind?.trim() &&
+                            (zoneDefaultKindById.get(monster.zoneId) ?? '') &&
+                            monster.zoneKind.trim() !==
+                              (zoneDefaultKindById.get(monster.zoneId) ??
+                                '') ? (
+                              <p className="text-xs text-gray-500">
+                                Zone default:{' '}
+                                {zoneKindLabel(
+                                  zoneDefaultKindById.get(monster.zoneId) ?? '',
+                                  zoneKindBySlug
+                                )}
+                              </p>
+                            ) : null}
                             <p className="text-sm text-gray-600">
                               Template:{' '}
                               {monster.template?.name ??
@@ -3794,6 +4054,28 @@ export const Monsters = () => {
                                 encounter.zoneId}
                             </p>
                             <p className="text-sm text-gray-600">
+                              Zone Kind:{' '}
+                              {zoneKindSummaryLabel(
+                                encounter.zoneKind,
+                                zoneDefaultKindById.get(encounter.zoneId) ?? '',
+                                zoneKindBySlug
+                              )}
+                            </p>
+                            {encounter.zoneKind?.trim() &&
+                            (zoneDefaultKindById.get(encounter.zoneId) ?? '') &&
+                            encounter.zoneKind.trim() !==
+                              (zoneDefaultKindById.get(encounter.zoneId) ??
+                                '') ? (
+                              <p className="text-xs text-gray-500">
+                                Zone default:{' '}
+                                {zoneKindLabel(
+                                  zoneDefaultKindById.get(encounter.zoneId) ??
+                                    '',
+                                  zoneKindBySlug
+                                )}
+                              </p>
+                            ) : null}
+                            <p className="text-sm text-gray-600">
                               Monsters:{' '}
                               {encounter.monsterCount ||
                                 encounter.members?.length ||
@@ -3945,6 +4227,41 @@ export const Monsters = () => {
                       ))
                     )}
                   </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Likely Zone Kind</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.zoneKind}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        zoneKind: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">
+                      {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
+                    </option>
+                    {zoneKinds.map((zoneKind) => (
+                      <option key={zoneKind.id} value={zoneKind.slug}>
+                        {zoneKind.name}
+                      </option>
+                    ))}
+                  </select>
+                  {zoneKindDescription(
+                    templateForm.zoneKind,
+                    '',
+                    zoneKindBySlug
+                  ) ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {zoneKindDescription(
+                        templateForm.zoneKind,
+                        '',
+                        zoneKindBySlug
+                      )}
+                    </p>
+                  ) : null}
                 </label>
                 <label className="block">
                   <span className="block text-sm mb-1">Name</span>
@@ -4212,7 +4529,7 @@ export const Monsters = () => {
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="block text-sm mb-1">Name (optional)</span>
                   <input
@@ -4245,6 +4562,47 @@ export const Monsters = () => {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Zone Kind</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.zoneKind}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        zoneKind: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">
+                      {zoneKindSelectPlaceholderLabel(
+                        selectedEncounterZoneDefaultKind,
+                        zoneKindBySlug
+                      )}
+                    </option>
+                    {zoneKinds.map((zoneKind) => (
+                      <option
+                        key={`monster-encounter-zone-kind-${zoneKind.id}`}
+                        value={zoneKind.slug}
+                      >
+                        {zoneKind.name}
+                      </option>
+                    ))}
+                  </select>
+                  {zoneKindDescription(
+                    encounterForm.zoneKind,
+                    selectedEncounterZoneDefaultKind,
+                    zoneKindBySlug
+                  ) ? (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {zoneKindDescription(
+                        encounterForm.zoneKind,
+                        selectedEncounterZoneDefaultKind,
+                        zoneKindBySlug
+                      )}
+                    </div>
+                  ) : null}
                 </label>
               </div>
 
@@ -4285,6 +4643,47 @@ export const Monsters = () => {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Zone Kind</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={monsterForm.zoneKind}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        zoneKind: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">
+                      {zoneKindSelectPlaceholderLabel(
+                        selectedMonsterZoneDefaultKind,
+                        zoneKindBySlug
+                      )}
+                    </option>
+                    {zoneKinds.map((zoneKind) => (
+                      <option
+                        key={`monster-zone-kind-${zoneKind.id}`}
+                        value={zoneKind.slug}
+                      >
+                        {zoneKind.name}
+                      </option>
+                    ))}
+                  </select>
+                  {zoneKindDescription(
+                    monsterForm.zoneKind,
+                    selectedMonsterZoneDefaultKind,
+                    zoneKindBySlug
+                  ) ? (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {zoneKindDescription(
+                        monsterForm.zoneKind,
+                        selectedMonsterZoneDefaultKind,
+                        zoneKindBySlug
+                      )}
+                    </div>
+                  ) : null}
                 </label>
                 <label className="block">
                   <span className="block text-sm mb-1">Dominant Hand</span>

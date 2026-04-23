@@ -31,6 +31,7 @@ func (h *scenarioTemplateHandle) Create(ctx context.Context, template *models.Sc
 	template.ID = uuid.New()
 	template.CreatedAt = time.Now()
 	template.UpdatedAt = template.CreatedAt
+	template.ZoneKind = models.NormalizeZoneKind(template.ZoneKind)
 	resolvedGenreID, err := resolveScenarioTemplateGenreID(ctx, h.db, template)
 	if err != nil {
 		return err
@@ -161,6 +162,7 @@ func (h *scenarioTemplateHandle) Update(ctx context.Context, id uuid.UUID, updat
 		return nil
 	}
 	updates.UpdatedAt = time.Now()
+	updates.ZoneKind = models.NormalizeZoneKind(updates.ZoneKind)
 	resolvedGenreID, err := resolveScenarioTemplateGenreIDForUpdate(ctx, h.db, id, updates)
 	if err != nil {
 		return err
@@ -168,6 +170,7 @@ func (h *scenarioTemplateHandle) Update(ctx context.Context, id uuid.UUID, updat
 	updates.GenreID = resolvedGenreID
 	payload := map[string]interface{}{
 		"genre_id":                     updates.GenreID,
+		"zone_kind":                    updates.ZoneKind,
 		"prompt":                       updates.Prompt,
 		"image_url":                    updates.ImageURL,
 		"thumbnail_url":                updates.ThumbnailURL,

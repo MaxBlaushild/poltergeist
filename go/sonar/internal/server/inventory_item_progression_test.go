@@ -65,11 +65,15 @@ func TestRemapTeachRecipeIDsUsesClonedRecipeIDs(t *testing.T) {
 func TestInventoryItemUpsertRequestFromDraftPayloadClearsUnlockLocksStrength(t *testing.T) {
 	request := inventoryItemUpsertRequestFromDraftPayload(models.InventoryItem{
 		Name:                "Latchspike",
+		ZoneKind:            "Haunted Streets",
 		UnlockLocksStrength: intPtr(42),
 	})
 
 	if request.UnlockLocksStrength != nil {
 		t.Fatalf("expected generated draft conversion to clear unlock locks strength")
+	}
+	if request.ZoneKind == nil || *request.ZoneKind != "haunted-streets" {
+		t.Fatalf("expected generated draft conversion to preserve normalized zone kind, got %v", request.ZoneKind)
 	}
 }
 
