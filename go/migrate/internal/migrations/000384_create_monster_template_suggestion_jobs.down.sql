@@ -1,0 +1,8 @@
+DROP INDEX IF EXISTS idx_monster_template_suggestion_drafts_monster_template_id;
+DROP INDEX IF EXISTS idx_monster_template_suggestion_drafts_status;
+DROP INDEX IF EXISTS idx_monster_template_suggestion_drafts_job_id_created_at;
+DROP TABLE IF EXISTS monster_template_suggestion_drafts;
+
+DROP INDEX IF EXISTS idx_monster_template_suggestion_jobs_status_created_at;
+DROP INDEX IF EXISTS idx_monster_template_suggestion_jobs_created_at;
+DROP TABLE IF EXISTS monster_template_suggestion_jobs;

@@ -17,6 +17,8 @@ var zoneKindReferenceTables = []string{
 	"expositions",
 	"monsters",
 	"monster_templates",
+	"monster_template_suggestion_jobs",
+	"monster_template_suggestion_drafts",
 	"scenario_templates",
 	"monster_encounters",
 	"treasure_chests",

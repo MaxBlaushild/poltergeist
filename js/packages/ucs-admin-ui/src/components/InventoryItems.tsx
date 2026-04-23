@@ -248,6 +248,7 @@ type InventorySuggestionFormState = {
   count: string;
   genreId: string;
   zoneKind: string;
+  resourceZoneKinds: string[];
   resourceTypeId: string;
   themePrompt: string;
   categoriesText: string;
@@ -561,6 +562,7 @@ const emptyInventorySuggestionForm = (
   count: '12',
   genreId,
   zoneKind: '',
+  resourceZoneKinds: [],
   resourceTypeId: '',
   themePrompt: '',
   categoriesText: 'equippable, consumable, material',
@@ -586,6 +588,9 @@ const formatGenreLabel = (genre?: ZoneGenre | null): string =>
 
 const isSuggestionJobPending = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
+
+const inventorySuggestionDraftsPerPage = 24;
+const inventorySuggestionJobsPerPage = 20;
 
 const isResourceProgressionSuggestionJob = (
   jobKind?: string | null
@@ -1290,16 +1295,24 @@ export const InventoryItems = () => {
   const [suggestionJobs, setSuggestionJobs] = useState<
     InventoryItemSuggestionJob[]
   >([]);
+  const [suggestionJobsPage, setSuggestionJobsPage] = useState(1);
+  const [suggestionJobsHasMore, setSuggestionJobsHasMore] = useState(false);
+  const [suggestionJobsLoadedLimit, setSuggestionJobsLoadedLimit] = useState(
+    inventorySuggestionJobsPerPage
+  );
   const [selectedSuggestionJobId, setSelectedSuggestionJobId] = useState('');
   const [suggestionDrafts, setSuggestionDrafts] = useState<
     InventoryItemSuggestionDraft[]
   >([]);
+  const [suggestionDraftPage, setSuggestionDraftPage] = useState(1);
   const [loadingSuggestionJobs, setLoadingSuggestionJobs] = useState(false);
   const [loadingSuggestionDrafts, setLoadingSuggestionDrafts] = useState(false);
   const [queueingSuggestionJob, setQueueingSuggestionJob] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [convertingSuggestionDraftId, setConvertingSuggestionDraftId] =
     useState<string | null>(null);
+  const [convertingAllSuggestionDrafts, setConvertingAllSuggestionDrafts] =
+    useState(false);
   const [deletingSuggestionDraftId, setDeletingSuggestionDraftId] = useState<
     string | null
   >(null);
@@ -1470,6 +1483,71 @@ export const InventoryItems = () => {
     () =>
       suggestionJobs.find((job) => job.id === selectedSuggestionJobId) ?? null,
     [selectedSuggestionJobId, suggestionJobs]
+  );
+
+  const visibleSuggestionJobs = useMemo(() => {
+    const startIndex = (suggestionJobsPage - 1) * inventorySuggestionJobsPerPage;
+    return suggestionJobs.slice(
+      startIndex,
+      startIndex + inventorySuggestionJobsPerPage
+    );
+  }, [suggestionJobs, suggestionJobsPage]);
+
+  const suggestionJobsLoadedPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(suggestionJobs.length / inventorySuggestionJobsPerPage)
+      ),
+    [suggestionJobs.length]
+  );
+
+  const suggestionJobsCanAdvance =
+    suggestionJobsPage < suggestionJobsLoadedPages || suggestionJobsHasMore;
+
+  const visibleSuggestionJobsRangeStart =
+    visibleSuggestionJobs.length === 0
+      ? 0
+      : (suggestionJobsPage - 1) * inventorySuggestionJobsPerPage + 1;
+
+  const visibleSuggestionJobsRangeEnd =
+    visibleSuggestionJobs.length === 0
+      ? 0
+      : visibleSuggestionJobsRangeStart + visibleSuggestionJobs.length - 1;
+
+  const unconvertedSuggestionDrafts = useMemo(
+    () => suggestionDrafts.filter((draft) => draft.status !== 'converted'),
+    [suggestionDrafts]
+  );
+
+  const suggestionDraftTotalPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(
+          suggestionDrafts.length / inventorySuggestionDraftsPerPage
+        )
+      ),
+    [suggestionDrafts.length]
+  );
+
+  const paginatedSuggestionDrafts = useMemo(() => {
+    const startIndex =
+      (suggestionDraftPage - 1) * inventorySuggestionDraftsPerPage;
+    return suggestionDrafts.slice(
+      startIndex,
+      startIndex + inventorySuggestionDraftsPerPage
+    );
+  }, [suggestionDraftPage, suggestionDrafts]);
+
+  const suggestionDraftRangeStart =
+    suggestionDrafts.length === 0
+      ? 0
+      : (suggestionDraftPage - 1) * inventorySuggestionDraftsPerPage + 1;
+
+  const suggestionDraftRangeEnd = Math.min(
+    suggestionDrafts.length,
+    suggestionDraftPage * inventorySuggestionDraftsPerPage
   );
 
   const resourceTypeOptions = useMemo<SelectOption[]>(
@@ -1672,16 +1750,21 @@ export const InventoryItems = () => {
     setLoadingSuggestionJobs(true);
     try {
       const response = await apiClient.get<InventoryItemSuggestionJob[]>(
-        '/sonar/inventory-item-suggestion-jobs?limit=20'
+        `/sonar/inventory-item-suggestion-jobs?limit=${
+          suggestionJobsLoadedLimit + 1
+        }`
       );
       const jobs = Array.isArray(response) ? response : [];
-      setSuggestionJobs(jobs);
+      const hasMore = jobs.length > suggestionJobsLoadedLimit;
+      const loadedJobs = hasMore ? jobs.slice(0, suggestionJobsLoadedLimit) : jobs;
+      setSuggestionJobs(loadedJobs);
+      setSuggestionJobsHasMore(hasMore);
       setSuggestionError(null);
       setSelectedSuggestionJobId((current) => {
-        if (current && jobs.some((job) => job.id === current)) {
+        if (current && loadedJobs.some((job) => job.id === current)) {
           return current;
         }
-        return jobs[0]?.id ?? '';
+        return loadedJobs[0]?.id ?? '';
       });
     } catch (error) {
       console.error('Error fetching inventory item suggestion jobs:', error);
@@ -1694,7 +1777,7 @@ export const InventoryItems = () => {
     } finally {
       setLoadingSuggestionJobs(false);
     }
-  }, [apiClient]);
+  }, [apiClient, suggestionJobsLoadedLimit]);
 
   const fetchSuggestionDrafts = useCallback(
     async (jobId: string) => {
@@ -1799,6 +1882,37 @@ export const InventoryItems = () => {
   }, [fetchSuggestionDrafts, selectedSuggestionJobId]);
 
   useEffect(() => {
+    setSuggestionDraftPage(1);
+  }, [selectedSuggestionJobId]);
+
+  useEffect(() => {
+    setSuggestionDraftPage((current) =>
+      Math.min(current, suggestionDraftTotalPages)
+    );
+  }, [suggestionDraftTotalPages]);
+
+  useEffect(() => {
+    const requiredJobCount = suggestionJobsPage * inventorySuggestionJobsPerPage;
+    if (
+      requiredJobCount > suggestionJobsLoadedLimit &&
+      (suggestionJobsHasMore || suggestionJobs.length < requiredJobCount)
+    ) {
+      setSuggestionJobsLoadedLimit(requiredJobCount);
+    }
+  }, [
+    suggestionJobs.length,
+    suggestionJobsHasMore,
+    suggestionJobsLoadedLimit,
+    suggestionJobsPage,
+  ]);
+
+  useEffect(() => {
+    setSuggestionJobsPage((current) =>
+      Math.min(current, suggestionJobsLoadedPages)
+    );
+  }, [suggestionJobsLoadedPages]);
+
+  useEffect(() => {
     const hasPendingSuggestionJob = suggestionJobs.some((job) =>
       isSuggestionJobPending(job.status)
     );
@@ -1826,51 +1940,75 @@ export const InventoryItems = () => {
       const isResourceProgression = isResourceProgressionSuggestionJob(
         suggestionForm.jobKind
       );
-      const created = await apiClient.post<InventoryItemSuggestionJob>(
-        '/sonar/inventory-item-suggestion-jobs',
-        {
-          jobKind: suggestionForm.jobKind,
-          count: isResourceProgression
-            ? 10
-            : Math.max(1, parseInt(suggestionForm.count, 10) || 1),
-          genreId: suggestionForm.genreId.trim(),
-          zoneKind: suggestionForm.zoneKind.trim() || undefined,
-          resourceTypeId: isResourceProgression
-            ? suggestionForm.resourceTypeId.trim() || undefined
-            : undefined,
-          themePrompt: suggestionForm.themePrompt.trim(),
-          categories: isResourceProgression
-            ? ['material']
-            : parseCommaValues(suggestionForm.categoriesText),
-          rarityTiers: isResourceProgression
-            ? ['Common', 'Uncommon', 'Epic', 'Mythic']
-            : parseCommaValues(suggestionForm.rarityTiersText),
-          equipSlots: isResourceProgression
-            ? []
-            : parseCommaValues(suggestionForm.equipSlotsText),
-          statTags: isResourceProgression
-            ? []
-            : parseCommaValues(suggestionForm.statTagsText),
-          benefitTags: isResourceProgression
-            ? []
-            : parseCommaValues(suggestionForm.benefitTagsText),
-          statusNames: isResourceProgression
-            ? []
-            : parseCommaValues(suggestionForm.statusNamesText),
-          internalTags: parseInternalTagsInput(suggestionForm.internalTagsText),
-          minItemLevel: isResourceProgression
-            ? 1
-            : Math.max(1, parseInt(suggestionForm.minItemLevel, 10) || 1),
-          maxItemLevel: isResourceProgression
-            ? 100
-            : Math.max(1, parseInt(suggestionForm.maxItemLevel, 10) || 1),
-        }
-      );
+      const zoneKindsToQueue = isResourceProgression
+        ? suggestionForm.resourceZoneKinds
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [suggestionForm.zoneKind.trim()].filter(Boolean);
+      if (isResourceProgression && zoneKindsToQueue.length === 0) {
+        setSuggestionError(
+          'Pick at least one zone kind for a resource progression job.'
+        );
+        return;
+      }
+
+      const createdJobs: InventoryItemSuggestionJob[] = [];
+      for (const zoneKind of isResourceProgression
+        ? zoneKindsToQueue
+        : [suggestionForm.zoneKind.trim()]) {
+        const created = await apiClient.post<InventoryItemSuggestionJob>(
+          '/sonar/inventory-item-suggestion-jobs',
+          {
+            jobKind: suggestionForm.jobKind,
+            count: isResourceProgression
+              ? 10
+              : Math.max(1, parseInt(suggestionForm.count, 10) || 1),
+            genreId: suggestionForm.genreId.trim(),
+            zoneKind: zoneKind || undefined,
+            resourceTypeId: isResourceProgression
+              ? suggestionForm.resourceTypeId.trim() || undefined
+              : undefined,
+            themePrompt: suggestionForm.themePrompt.trim(),
+            categories: isResourceProgression
+              ? ['material']
+              : parseCommaValues(suggestionForm.categoriesText),
+            rarityTiers: isResourceProgression
+              ? ['Common', 'Uncommon', 'Epic', 'Mythic']
+              : parseCommaValues(suggestionForm.rarityTiersText),
+            equipSlots: isResourceProgression
+              ? []
+              : parseCommaValues(suggestionForm.equipSlotsText),
+            statTags: isResourceProgression
+              ? []
+              : parseCommaValues(suggestionForm.statTagsText),
+            benefitTags: isResourceProgression
+              ? []
+              : parseCommaValues(suggestionForm.benefitTagsText),
+            statusNames: isResourceProgression
+              ? []
+              : parseCommaValues(suggestionForm.statusNamesText),
+            internalTags: parseInternalTagsInput(
+              suggestionForm.internalTagsText
+            ),
+            minItemLevel: isResourceProgression
+              ? 1
+              : Math.max(1, parseInt(suggestionForm.minItemLevel, 10) || 1),
+            maxItemLevel: isResourceProgression
+              ? 100
+              : Math.max(1, parseInt(suggestionForm.maxItemLevel, 10) || 1),
+          }
+        );
+        createdJobs.push(created);
+      }
+
       setSuggestionJobs((current) => [
-        created,
-        ...current.filter((job) => job.id !== created.id),
+        ...createdJobs.slice().reverse(),
+        ...current.filter(
+          (job) => !createdJobs.some((created) => created.id === job.id)
+        ),
       ]);
-      setSelectedSuggestionJobId(created.id);
+      setSuggestionJobsPage(1);
+      setSelectedSuggestionJobId(createdJobs[createdJobs.length - 1]?.id ?? '');
       setSuggestionDrafts([]);
     } catch (error) {
       console.error('Failed to queue inventory item suggestion job:', error);
@@ -1910,6 +2048,48 @@ export const InventoryItems = () => {
       );
     } finally {
       setConvertingSuggestionDraftId(null);
+    }
+  };
+
+  const handleConvertAllSuggestionDrafts = async () => {
+    if (!selectedSuggestionJobId || unconvertedSuggestionDrafts.length === 0) {
+      return;
+    }
+
+    setConvertingAllSuggestionDrafts(true);
+    setSuggestionError(null);
+    let convertedCount = 0;
+    let failedCount = 0;
+
+    try {
+      for (const draft of unconvertedSuggestionDrafts) {
+        try {
+          await apiClient.post(
+            `/sonar/inventory-item-suggestion-drafts/${draft.id}/convert`,
+            {}
+          );
+          convertedCount += 1;
+        } catch (error) {
+          failedCount += 1;
+          console.error(
+            'Failed to convert inventory item suggestion draft during bulk convert:',
+            error
+          );
+        }
+      }
+
+      await fetchItems();
+      await fetchSuggestionDrafts(selectedSuggestionJobId);
+
+      if (failedCount > 0) {
+        setSuggestionError(
+          `Converted ${convertedCount} draft${
+            convertedCount === 1 ? '' : 's'
+          }, but ${failedCount} failed. You can retry the remaining drafts individually.`
+        );
+      }
+    } finally {
+      setConvertingAllSuggestionDrafts(false);
     }
   };
 
@@ -5583,36 +5763,100 @@ export const InventoryItems = () => {
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
                     {isResourceProgressionSuggestionJob(suggestionForm.jobKind)
-                      ? 'Zone Kind'
+                      ? 'Zone Kinds'
                       : 'Preferred Zone Kind'}
                   </label>
-                  <select
-                    value={suggestionForm.zoneKind}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        zoneKind: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">
-                      {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
-                    </option>
-                    {zoneKinds.map((zoneKind) => (
-                      <option
-                        key={`suggestion-zone-kind-${zoneKind.id}`}
-                        value={zoneKind.slug}
-                      >
-                        {zoneKind.name}
+                  {isResourceProgressionSuggestionJob(suggestionForm.jobKind) ? (
+                    <div className="rounded-md border border-slate-300 bg-white p-3">
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSuggestionForm((current) => ({
+                              ...current,
+                              resourceZoneKinds: zoneKinds.map(
+                                (zoneKind) => zoneKind.slug
+                              ),
+                            }))
+                          }
+                          className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSuggestionForm((current) => ({
+                              ...current,
+                              resourceZoneKinds: [],
+                            }))
+                          }
+                          className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700"
+                        >
+                          Clear
+                        </button>
+                        <span className="px-1 py-1 text-xs text-slate-500">
+                          {suggestionForm.resourceZoneKinds.length} selected
+                        </span>
+                      </div>
+                      <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+                        {zoneKinds.map((zoneKind) => (
+                          <label
+                            key={`suggestion-zone-kind-${zoneKind.id}`}
+                            className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={suggestionForm.resourceZoneKinds.includes(
+                                zoneKind.slug
+                              )}
+                              onChange={(event) =>
+                                setSuggestionForm((current) => ({
+                                  ...current,
+                                  resourceZoneKinds: Array.from(
+                                    toggleStringSetValue(
+                                      new Set(current.resourceZoneKinds),
+                                      zoneKind.slug,
+                                      event.target.checked
+                                    )
+                                  ),
+                                }))
+                              }
+                            />
+                            {zoneKind.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      value={suggestionForm.zoneKind}
+                      onChange={(event) =>
+                        setSuggestionForm((current) => ({
+                          ...current,
+                          zoneKind: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">
+                        {zoneKindSelectPlaceholderLabel('', zoneKindBySlug)}
                       </option>
-                    ))}
-                  </select>
+                      {zoneKinds.map((zoneKind) => (
+                        <option
+                          key={`suggestion-zone-kind-${zoneKind.id}`}
+                          value={zoneKind.slug}
+                        >
+                          {zoneKind.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <div className="mt-1 text-xs text-slate-500">
                     {isResourceProgressionSuggestionJob(
                       suggestionForm.jobKind
                     )
-                      ? 'Every generated material in this progression will be branded to this zone kind.'
+                      ? 'Queueing will create one resource progression job per selected zone kind.'
                       : 'The model will still choose the best-fit zone kind per item, but it will lean toward this when it fits.'}
                   </div>
                 </div>
@@ -5857,12 +6101,46 @@ export const InventoryItems = () => {
 
             <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-800">
-                  Recent Draft Jobs
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    Recent Draft Jobs
+                  </div>
+                  {suggestionJobs.length > 0 && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      Showing {visibleSuggestionJobsRangeStart}-
+                      {visibleSuggestionJobsRangeEnd} of {suggestionJobs.length}
+                      {suggestionJobsHasMore ? '+' : ''} loaded jobs · Page{' '}
+                      {suggestionJobsPage}
+                    </div>
+                  )}
                 </div>
-                {loadingSuggestionJobs && (
-                  <div className="text-xs text-slate-500">Refreshing...</div>
-                )}
+                <div className="flex items-center gap-2">
+                  {loadingSuggestionJobs && (
+                    <div className="text-xs text-slate-500">Refreshing...</div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionJobsPage((current) =>
+                        Math.max(1, current - 1)
+                      )
+                    }
+                    disabled={loadingSuggestionJobs || suggestionJobsPage <= 1}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionJobsPage((current) => current + 1)
+                    }
+                    disabled={loadingSuggestionJobs || !suggestionJobsCanAdvance}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
                 {suggestionJobs.length === 0 && !loadingSuggestionJobs && (
@@ -5870,7 +6148,7 @@ export const InventoryItems = () => {
                     No draft jobs yet.
                   </div>
                 )}
-                {suggestionJobs.map((job) => {
+                {visibleSuggestionJobs.map((job) => {
                   const selected = job.id === selectedSuggestionJobId;
                   return (
                     <button
@@ -6029,10 +6307,71 @@ export const InventoryItems = () => {
                   </div>
                 )}
               </div>
-              {loadingSuggestionDrafts && (
-                <div className="text-xs text-slate-500">Loading drafts...</div>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedSuggestionJob && (
+                  <button
+                    type="button"
+                    onClick={() => void handleConvertAllSuggestionDrafts()}
+                    disabled={
+                      loadingSuggestionDrafts ||
+                      convertingAllSuggestionDrafts ||
+                      convertingSuggestionDraftId !== null ||
+                      unconvertedSuggestionDrafts.length === 0
+                    }
+                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {convertingAllSuggestionDrafts
+                      ? 'Converting all...'
+                      : `Convert All to Items${
+                          unconvertedSuggestionDrafts.length > 0
+                            ? ` (${unconvertedSuggestionDrafts.length})`
+                            : ''
+                        }`}
+                  </button>
+                )}
+                {loadingSuggestionDrafts && (
+                  <div className="text-xs text-slate-500">
+                    Loading drafts...
+                  </div>
+                )}
+              </div>
             </div>
+
+            {suggestionDrafts.length > 0 && (
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                <div>
+                  Showing {suggestionDraftRangeStart}-{suggestionDraftRangeEnd}{' '}
+                  of {suggestionDrafts.length} drafts · Page{' '}
+                  {suggestionDraftPage} of {suggestionDraftTotalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionDraftPage((current) =>
+                        Math.max(1, current - 1)
+                      )
+                    }
+                    disabled={suggestionDraftPage <= 1}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionDraftPage((current) =>
+                        Math.min(suggestionDraftTotalPages, current + 1)
+                      )
+                    }
+                    disabled={suggestionDraftPage >= suggestionDraftTotalPages}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {suggestionDrafts.length === 0 && !loadingSuggestionDrafts && (
@@ -6042,7 +6381,7 @@ export const InventoryItems = () => {
                     : 'Select a draft job to review its generated items.'}
                 </div>
               )}
-              {suggestionDrafts.map((draft) => (
+              {paginatedSuggestionDrafts.map((draft) => (
                 <div
                   key={draft.id}
                   className="rounded-lg border border-slate-200 bg-slate-50 p-4"
@@ -6151,12 +6490,15 @@ export const InventoryItems = () => {
                       }
                       disabled={
                         draft.status === 'converted' ||
-                        convertingSuggestionDraftId === draft.id
+                        convertingSuggestionDraftId === draft.id ||
+                        convertingAllSuggestionDrafts
                       }
                       className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {draft.status === 'converted'
                         ? 'Converted'
+                        : convertingAllSuggestionDrafts
+                          ? 'Bulk converting...'
                         : convertingSuggestionDraftId === draft.id
                           ? 'Converting...'
                           : 'Convert to Item'}
@@ -6166,7 +6508,8 @@ export const InventoryItems = () => {
                       onClick={() => void handleDeleteSuggestionDraft(draft.id)}
                       disabled={
                         draft.status === 'converted' ||
-                        deletingSuggestionDraftId === draft.id
+                        deletingSuggestionDraftId === draft.id ||
+                        convertingAllSuggestionDrafts
                       }
                       className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
@@ -6178,6 +6521,42 @@ export const InventoryItems = () => {
                 </div>
               ))}
             </div>
+
+            {suggestionDrafts.length > 0 && suggestionDraftTotalPages > 1 && (
+              <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                <div>
+                  Showing {suggestionDraftRangeStart}-{suggestionDraftRangeEnd}{' '}
+                  of {suggestionDrafts.length} drafts · Page{' '}
+                  {suggestionDraftPage} of {suggestionDraftTotalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionDraftPage((current) =>
+                        Math.max(1, current - 1)
+                      )
+                    }
+                    disabled={suggestionDraftPage <= 1}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSuggestionDraftPage((current) =>
+                        Math.min(suggestionDraftTotalPages, current + 1)
+                      )
+                    }
+                    disabled={suggestionDraftPage >= suggestionDraftTotalPages}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

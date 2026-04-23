@@ -52,6 +52,8 @@ type client struct {
 	inventoryItemHandle                  *inventoryItemHandler
 	inventoryItemSuggestionJobHandle     *inventoryItemSuggestionJobHandle
 	inventoryItemSuggestionDraftHandle   *inventoryItemSuggestionDraftHandle
+	monsterTemplateSuggestionJobHandle   *monsterTemplateSuggestionJobHandle
+	monsterTemplateSuggestionDraftHandle *monsterTemplateSuggestionDraftHandle
 	userLearnedRecipeHandle              *userLearnedRecipeHandle
 	newUserStarterConfigHandle           *newUserStarterConfigHandle
 	tutorialHandle                       *tutorialHandle
@@ -236,6 +238,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		inventoryItemHandle:                  &inventoryItemHandler{db: db},
 		inventoryItemSuggestionJobHandle:     &inventoryItemSuggestionJobHandle{db: db},
 		inventoryItemSuggestionDraftHandle:   &inventoryItemSuggestionDraftHandle{db: db},
+		monsterTemplateSuggestionJobHandle:   &monsterTemplateSuggestionJobHandle{db: db},
+		monsterTemplateSuggestionDraftHandle: &monsterTemplateSuggestionDraftHandle{db: db},
 		userLearnedRecipeHandle:              &userLearnedRecipeHandle{db: db},
 		newUserStarterConfigHandle:           &newUserStarterConfigHandle{db: db},
 		tutorialHandle:                       &tutorialHandle{db: db},
@@ -596,6 +600,14 @@ func (c *client) InventoryItemSuggestionJob() InventoryItemSuggestionJobHandle {
 
 func (c *client) InventoryItemSuggestionDraft() InventoryItemSuggestionDraftHandle {
 	return c.inventoryItemSuggestionDraftHandle
+}
+
+func (c *client) MonsterTemplateSuggestionJob() MonsterTemplateSuggestionJobHandle {
+	return c.monsterTemplateSuggestionJobHandle
+}
+
+func (c *client) MonsterTemplateSuggestionDraft() MonsterTemplateSuggestionDraftHandle {
+	return c.monsterTemplateSuggestionDraftHandle
 }
 
 func (c *client) UserLearnedRecipe() UserLearnedRecipeHandle {

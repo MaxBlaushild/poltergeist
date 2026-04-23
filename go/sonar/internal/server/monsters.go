@@ -2746,129 +2746,12 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if requestBody.Count < 1 || requestBody.Count > 100 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
-		return
-	}
-	monsterType := models.NormalizeMonsterTemplateType(requestBody.MonsterType)
-	genre, err := s.resolveMonsterGenre(ctx, requestBody.GenreID)
+	job, statusCode, err := s.createMonsterTemplateSuggestionJobRecord(ctx, requestBody)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
-	zoneKind, err := s.resolveOptionalZoneKind(ctx, requestBody.ZoneKind)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	zoneKinds, err := s.dbClient.ZoneKind().FindAll(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if s.asyncClient == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
-		return
-	}
-	if s.redisClient == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
-		return
-	}
-
-	existingTemplates, err := s.dbClient.MonsterTemplate().FindAll(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	usedNames := make(map[string]struct{}, len(existingTemplates)+requestBody.Count)
-	for _, template := range existingTemplates {
-		normalized := strings.ToLower(strings.TrimSpace(template.Name))
-		if normalized == "" {
-			continue
-		}
-		usedNames[normalized] = struct{}{}
-	}
-
-	existingNames := make([]string, 0, len(existingTemplates))
-	for _, template := range existingTemplates {
-		name := strings.TrimSpace(template.Name)
-		if name == "" {
-			continue
-		}
-		existingNames = append(existingNames, name)
-	}
-
-	templateSpecs, source, err := s.buildBulkMonsterTemplateSpecs(
-		requestBody.Count,
-		usedNames,
-		existingNames,
-		monsterType,
-		genre,
-		zoneKind,
-		zoneKinds,
-	)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	jobID := uuid.New()
-	queuedAt := time.Now().UTC()
-	status := jobs.MonsterTemplateBulkStatus{
-		JobID:        jobID,
-		Status:       jobs.MonsterTemplateBulkStatusQueued,
-		Source:       source,
-		MonsterType:  string(monsterType),
-		GenreID:      genre.ID.String(),
-		ZoneKind:     models.NormalizeZoneKind(requestBody.ZoneKind),
-		TotalCount:   len(templateSpecs),
-		CreatedCount: 0,
-		QueuedAt:     &queuedAt,
-		UpdatedAt:    queuedAt,
-	}
-	if zoneKind != nil {
-		status.ZoneKind = zoneKind.Slug
-	}
-	if err := s.setMonsterTemplateBulkStatus(ctx.Request.Context(), status); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	payload := jobs.GenerateMonsterTemplatesBulkTaskPayload{
-		JobID:       jobID,
-		Source:      source,
-		MonsterType: string(monsterType),
-		GenreID:     genre.ID.String(),
-		ZoneKind:    status.ZoneKind,
-		TotalCount:  len(templateSpecs),
-		Templates:   templateSpecs,
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplatesBulkTaskType, payloadBytes)); err != nil {
-		failedAt := time.Now().UTC()
-		status.Status = jobs.MonsterTemplateBulkStatusFailed
-		status.Error = err.Error()
-		status.CompletedAt = &failedAt
-		status.UpdatedAt = failedAt
-		_ = s.setMonsterTemplateBulkStatus(ctx.Request.Context(), status)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusAccepted, gin.H{
-		"jobId":        status.JobID,
-		"status":       status.Status,
-		"source":       status.Source,
-		"monsterType":  status.MonsterType,
-		"totalCount":   status.TotalCount,
-		"createdCount": status.CreatedCount,
-		"queuedAt":     status.QueuedAt,
-		"updatedAt":    status.UpdatedAt,
-	})
+	ctx.JSON(http.StatusAccepted, monsterTemplateSuggestionJobToBulkStatus(job))
 }
 
 func (s *server) getBulkGenerateMonsterTemplatesStatus(ctx *gin.Context) {
@@ -2883,17 +2766,17 @@ func (s *server) getBulkGenerateMonsterTemplatesStatus(ctx *gin.Context) {
 		return
 	}
 
-	status, err := s.getMonsterTemplateBulkStatus(ctx.Request.Context(), jobID)
+	job, err := s.dbClient.MonsterTemplateSuggestionJob().FindByID(ctx, jobID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if status == nil {
+	if job == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "bulk generation job not found"})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, status)
+	ctx.JSON(http.StatusOK, monsterTemplateSuggestionJobToBulkStatus(job))
 }
 
 func (s *server) refreshMonsterTemplateAffinities(ctx *gin.Context) {

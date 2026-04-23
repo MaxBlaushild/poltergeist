@@ -239,6 +239,60 @@ type BulkMonsterTemplateStatus = {
   updatedAt?: string;
 };
 
+type MonsterTemplateSuggestionPayload = {
+  monsterType: MonsterTemplateType;
+  genreId: string;
+  zoneKind?: string;
+  name: string;
+  description: string;
+  baseStrength: number;
+  baseDexterity: number;
+  baseConstitution: number;
+  baseIntelligence: number;
+  baseWisdom: number;
+  baseCharisma: number;
+  physicalDamageBonusPercent: number;
+  piercingDamageBonusPercent: number;
+  slashingDamageBonusPercent: number;
+  bludgeoningDamageBonusPercent: number;
+  fireDamageBonusPercent: number;
+  iceDamageBonusPercent: number;
+  lightningDamageBonusPercent: number;
+  poisonDamageBonusPercent: number;
+  arcaneDamageBonusPercent: number;
+  holyDamageBonusPercent: number;
+  shadowDamageBonusPercent: number;
+  physicalResistancePercent: number;
+  piercingResistancePercent: number;
+  slashingResistancePercent: number;
+  bludgeoningResistancePercent: number;
+  fireResistancePercent: number;
+  iceResistancePercent: number;
+  lightningResistancePercent: number;
+  poisonResistancePercent: number;
+  arcaneResistancePercent: number;
+  holyResistancePercent: number;
+  shadowResistancePercent: number;
+};
+
+type MonsterTemplateSuggestionDraft = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  jobId: string;
+  status: string;
+  monsterType: MonsterTemplateType;
+  genreId: string;
+  genre?: ZoneGenre;
+  zoneKind?: string;
+  name: string;
+  description: string;
+  payload: MonsterTemplateSuggestionPayload;
+  monsterTemplateId?: string;
+  monsterTemplate?: MonsterTemplateRecord;
+  convertedAt?: string;
+};
+
 type MonsterTemplateAffinityRefreshStatus = {
   jobId: string;
   status: string;
@@ -536,6 +590,8 @@ const formatGenreLabel = (genre?: ZoneGenre | null): string =>
   genre?.name?.trim() || 'Fantasy';
 
 const monsterListPageSize = 25;
+const monsterTemplateSuggestionDraftsPerPage = 12;
+const monsterTemplateSuggestionJobsPerPage = 10;
 
 type PaginationControlsProps = {
   page: number;
@@ -963,6 +1019,38 @@ const summarizeAffinityMap = (
   return parts.length > 0 ? parts.join(' · ') : 'None';
 };
 
+const monsterTemplateSuggestionDamageMap = (
+  payload?: MonsterTemplateSuggestionPayload
+): Record<string, number> => ({
+  physical: payload?.physicalDamageBonusPercent ?? 0,
+  piercing: payload?.piercingDamageBonusPercent ?? 0,
+  slashing: payload?.slashingDamageBonusPercent ?? 0,
+  bludgeoning: payload?.bludgeoningDamageBonusPercent ?? 0,
+  fire: payload?.fireDamageBonusPercent ?? 0,
+  ice: payload?.iceDamageBonusPercent ?? 0,
+  lightning: payload?.lightningDamageBonusPercent ?? 0,
+  poison: payload?.poisonDamageBonusPercent ?? 0,
+  arcane: payload?.arcaneDamageBonusPercent ?? 0,
+  holy: payload?.holyDamageBonusPercent ?? 0,
+  shadow: payload?.shadowDamageBonusPercent ?? 0,
+});
+
+const monsterTemplateSuggestionResistanceMap = (
+  payload?: MonsterTemplateSuggestionPayload
+): Record<string, number> => ({
+  physical: payload?.physicalResistancePercent ?? 0,
+  piercing: payload?.piercingResistancePercent ?? 0,
+  slashing: payload?.slashingResistancePercent ?? 0,
+  bludgeoning: payload?.bludgeoningResistancePercent ?? 0,
+  fire: payload?.fireResistancePercent ?? 0,
+  ice: payload?.iceResistancePercent ?? 0,
+  lightning: payload?.lightningResistancePercent ?? 0,
+  poison: payload?.poisonResistancePercent ?? 0,
+  arcane: payload?.arcaneResistancePercent ?? 0,
+  holy: payload?.holyResistancePercent ?? 0,
+  shadow: payload?.shadowResistancePercent ?? 0,
+});
+
 const formatMonsterEncounterTypeLabel = (
   encounterType?: string | null
 ): string => {
@@ -1145,6 +1233,38 @@ export const Monsters = () => {
   const [bulkTemplateMessage, setBulkTemplateMessage] = useState<string | null>(
     null
   );
+  const [templateSuggestionJobs, setTemplateSuggestionJobs] = useState<
+    BulkMonsterTemplateStatus[]
+  >([]);
+  const [templateSuggestionJobsPage, setTemplateSuggestionJobsPage] =
+    useState(1);
+  const [templateSuggestionJobsHasMore, setTemplateSuggestionJobsHasMore] =
+    useState(false);
+  const [templateSuggestionJobsLoadedLimit, setTemplateSuggestionJobsLoadedLimit] =
+    useState(monsterTemplateSuggestionJobsPerPage);
+  const [selectedTemplateSuggestionJobId, setSelectedTemplateSuggestionJobId] =
+    useState('');
+  const [templateSuggestionDrafts, setTemplateSuggestionDrafts] = useState<
+    MonsterTemplateSuggestionDraft[]
+  >([]);
+  const [templateSuggestionDraftPage, setTemplateSuggestionDraftPage] =
+    useState(1);
+  const [loadingTemplateSuggestionJobs, setLoadingTemplateSuggestionJobs] =
+    useState(false);
+  const [loadingTemplateSuggestionDrafts, setLoadingTemplateSuggestionDrafts] =
+    useState(false);
+  const [
+    convertingTemplateSuggestionDraftId,
+    setConvertingTemplateSuggestionDraftId,
+  ] = useState<string | null>(null);
+  const [
+    deletingTemplateSuggestionDraftId,
+    setDeletingTemplateSuggestionDraftId,
+  ] = useState<string | null>(null);
+  const [
+    convertingAllTemplateSuggestionDrafts,
+    setConvertingAllTemplateSuggestionDrafts,
+  ] = useState(false);
   const [affinityRefreshBusy, setAffinityRefreshBusy] = useState(false);
   const [affinityRefreshJob, setAffinityRefreshJob] =
     useState<MonsterTemplateAffinityRefreshStatus | null>(null);
@@ -1294,6 +1414,107 @@ export const Monsters = () => {
     ]
   );
 
+  const fetchTemplateSuggestionJobs = useCallback(async () => {
+    try {
+      setLoadingTemplateSuggestionJobs(true);
+      const requestedLimit =
+        Math.max(
+          monsterTemplateSuggestionJobsPerPage,
+          templateSuggestionJobsLoadedLimit
+        ) + 1;
+      const response = await apiClient.get<BulkMonsterTemplateStatus[]>(
+        '/sonar/monster-template-suggestion-jobs',
+        { limit: requestedLimit }
+      );
+      const jobs = Array.isArray(response) ? response : [];
+      const hasMore = jobs.length > templateSuggestionJobsLoadedLimit;
+      const loadedJobs = hasMore
+        ? jobs.slice(0, templateSuggestionJobsLoadedLimit)
+        : jobs;
+      setTemplateSuggestionJobs(loadedJobs);
+      setTemplateSuggestionJobsHasMore(hasMore);
+      setSelectedTemplateSuggestionJobId((current) => {
+        if (current && loadedJobs.some((job) => job.jobId === current)) {
+          return current;
+        }
+        return loadedJobs[0]?.jobId ?? '';
+      });
+    } catch (err) {
+      console.error('Failed to load monster template suggestion jobs', err);
+    } finally {
+      setLoadingTemplateSuggestionJobs(false);
+    }
+  }, [apiClient, templateSuggestionJobsLoadedLimit]);
+
+  const fetchTemplateSuggestionDrafts = useCallback(
+    async (jobId: string) => {
+      const trimmedJobId = (jobId || '').trim();
+      if (!trimmedJobId) {
+        setTemplateSuggestionDrafts([]);
+        return;
+      }
+      try {
+        setLoadingTemplateSuggestionDrafts(true);
+        const response = await apiClient.get<MonsterTemplateSuggestionDraft[]>(
+          `/sonar/monster-template-suggestion-jobs/${trimmedJobId}/drafts`
+        );
+        setTemplateSuggestionDrafts(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Failed to load monster template suggestion drafts', err);
+        setTemplateSuggestionDrafts([]);
+      } finally {
+        setLoadingTemplateSuggestionDrafts(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const refreshBulkTemplateJobStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status = await apiClient.get<BulkMonsterTemplateStatus>(
+          `/sonar/monster-templates/bulk-generate/${jobId}/status`
+        );
+        setBulkTemplateJob(status);
+        if (status.status === 'completed') {
+          setBulkTemplateBusy(false);
+          setBulkTemplateError(null);
+          const typeLabel = formatMonsterTemplateTypeLabel(
+            status.monsterType ?? bulkTemplateType
+          );
+          setBulkTemplateMessage(
+            `Prepared ${status.createdCount} ${typeLabel} draft${
+              status.createdCount === 1 ? '' : 's'
+            }.`
+          );
+          setSelectedTemplateSuggestionJobId(status.jobId);
+          await fetchTemplateSuggestionJobs();
+          await fetchTemplateSuggestionDrafts(status.jobId);
+        } else if (status.status === 'failed') {
+          setBulkTemplateBusy(false);
+          setBulkTemplateMessage(null);
+          setBulkTemplateError(
+            status.error || 'Bulk template generation failed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh bulk monster template status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to refresh bulk template generation status.';
+        setBulkTemplateError(message);
+        setBulkTemplateBusy(false);
+      }
+    },
+    [
+      apiClient,
+      bulkTemplateType,
+      fetchTemplateSuggestionDrafts,
+      fetchTemplateSuggestionJobs,
+    ]
+  );
+
   useEffect(() => {
     void loadReferenceData();
   }, [loadReferenceData]);
@@ -1316,6 +1537,57 @@ export const Monsters = () => {
   useEffect(() => {
     void loadPagedData();
   }, [loadPagedData]);
+
+  useEffect(() => {
+    void fetchTemplateSuggestionJobs();
+  }, [fetchTemplateSuggestionJobs]);
+
+  useEffect(() => {
+    if (!selectedTemplateSuggestionJobId) {
+      setTemplateSuggestionDrafts([]);
+      return;
+    }
+    void fetchTemplateSuggestionDrafts(selectedTemplateSuggestionJobId);
+  }, [fetchTemplateSuggestionDrafts, selectedTemplateSuggestionJobId]);
+
+  useEffect(() => {
+    setTemplateSuggestionDraftPage(1);
+  }, [selectedTemplateSuggestionJobId]);
+
+  useEffect(() => {
+    const requiredJobCount =
+      templateSuggestionJobsPage * monsterTemplateSuggestionJobsPerPage;
+    if (
+      requiredJobCount > templateSuggestionJobsLoadedLimit &&
+      (templateSuggestionJobsHasMore ||
+        templateSuggestionJobs.length < requiredJobCount)
+    ) {
+      setTemplateSuggestionJobsLoadedLimit(requiredJobCount);
+    }
+  }, [
+    templateSuggestionJobs.length,
+    templateSuggestionJobsHasMore,
+    templateSuggestionJobsLoadedLimit,
+    templateSuggestionJobsPage,
+  ]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(templateSuggestionJobs.length / monsterTemplateSuggestionJobsPerPage)
+    );
+    setTemplateSuggestionJobsPage((current) => Math.min(current, totalPages));
+  }, [templateSuggestionJobs.length]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(
+        templateSuggestionDrafts.length / monsterTemplateSuggestionDraftsPerPage
+      )
+    );
+    setTemplateSuggestionDraftPage((current) => Math.min(current, totalPages));
+  }, [templateSuggestionDrafts.length]);
 
   useEffect(() => {
     const hasPendingMonsterGeneration = records.some((record) =>
@@ -1684,6 +1956,84 @@ export const Monsters = () => {
       selectedEncounterIds.has(encounter.id)
     );
   }, [filteredEncounters, selectedEncounterIds]);
+  const selectedTemplateSuggestionJob = useMemo(
+    () =>
+      templateSuggestionJobs.find(
+        (job) => job.jobId === selectedTemplateSuggestionJobId
+      ) ?? null,
+    [selectedTemplateSuggestionJobId, templateSuggestionJobs]
+  );
+  const visibleTemplateSuggestionJobs = useMemo(() => {
+    const startIndex =
+      (templateSuggestionJobsPage - 1) * monsterTemplateSuggestionJobsPerPage;
+    return templateSuggestionJobs.slice(
+      startIndex,
+      startIndex + monsterTemplateSuggestionJobsPerPage
+    );
+  }, [templateSuggestionJobs, templateSuggestionJobsPage]);
+  const templateSuggestionJobsLoadedPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(
+          templateSuggestionJobs.length / monsterTemplateSuggestionJobsPerPage
+        )
+      ),
+    [templateSuggestionJobs.length]
+  );
+  const templateSuggestionJobsCanAdvance =
+    templateSuggestionJobsPage < templateSuggestionJobsLoadedPages ||
+    templateSuggestionJobsHasMore;
+  const visibleTemplateSuggestionJobsRangeStart =
+    templateSuggestionJobs.length === 0
+      ? 0
+      : (templateSuggestionJobsPage - 1) * monsterTemplateSuggestionJobsPerPage +
+        1;
+  const visibleTemplateSuggestionJobsRangeEnd =
+    templateSuggestionJobs.length === 0
+      ? 0
+      : Math.min(
+          templateSuggestionJobs.length,
+          templateSuggestionJobsPage * monsterTemplateSuggestionJobsPerPage
+        );
+  const templateSuggestionDraftTotalPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(
+          templateSuggestionDrafts.length / monsterTemplateSuggestionDraftsPerPage
+        )
+      ),
+    [templateSuggestionDrafts.length]
+  );
+  const paginatedTemplateSuggestionDrafts = useMemo(() => {
+    const startIndex =
+      (templateSuggestionDraftPage - 1) * monsterTemplateSuggestionDraftsPerPage;
+    return templateSuggestionDrafts.slice(
+      startIndex,
+      startIndex + monsterTemplateSuggestionDraftsPerPage
+    );
+  }, [templateSuggestionDraftPage, templateSuggestionDrafts]);
+  const templateSuggestionDraftRangeStart =
+    templateSuggestionDrafts.length === 0
+      ? 0
+      : (templateSuggestionDraftPage - 1) *
+          monsterTemplateSuggestionDraftsPerPage +
+        1;
+  const templateSuggestionDraftRangeEnd =
+    templateSuggestionDrafts.length === 0
+      ? 0
+      : Math.min(
+          templateSuggestionDrafts.length,
+          templateSuggestionDraftPage * monsterTemplateSuggestionDraftsPerPage
+        );
+  const unconvertedTemplateSuggestionDrafts = useMemo(
+    () =>
+      templateSuggestionDrafts.filter(
+        (draft) => (draft.status || '').trim().toLowerCase() !== 'converted'
+      ),
+    [templateSuggestionDrafts]
+  );
 
   const encounterMonsterOptions = useMemo(() => {
     if (!encounterForm.zoneId) {
@@ -1820,45 +2170,6 @@ export const Monsters = () => {
     }
   };
 
-  const refreshBulkTemplateJobStatus = useCallback(
-    async (jobId: string) => {
-      try {
-        const status = await apiClient.get<BulkMonsterTemplateStatus>(
-          `/sonar/monster-templates/bulk-generate/${jobId}/status`
-        );
-        setBulkTemplateJob(status);
-        if (status.status === 'completed') {
-          setBulkTemplateBusy(false);
-          setBulkTemplateError(null);
-          const typeLabel = formatMonsterTemplateTypeLabel(
-            status.monsterType ?? bulkTemplateType
-          );
-          setBulkTemplateMessage(
-            `Created ${status.createdCount} ${typeLabel}${
-              status.createdCount === 1 ? '' : 's'
-            }.`
-          );
-          await loadPagedData(true);
-        } else if (status.status === 'failed') {
-          setBulkTemplateBusy(false);
-          setBulkTemplateMessage(null);
-          setBulkTemplateError(
-            status.error || 'Bulk template generation failed.'
-          );
-        }
-      } catch (err) {
-        console.error('Failed to refresh bulk monster template status', err);
-        const message =
-          err instanceof Error
-            ? err.message
-            : 'Failed to refresh bulk template generation status.';
-        setBulkTemplateError(message);
-        setBulkTemplateBusy(false);
-      }
-    },
-    [apiClient, bulkTemplateType, loadPagedData]
-  );
-
   const handleBulkGenerateTemplates = async () => {
     const count = Number.parseInt(bulkTemplateCount, 10);
     if (!Number.isFinite(count) || count < 1 || count > 100) {
@@ -1886,11 +2197,14 @@ export const Monsters = () => {
           response.monsterType ?? bulkTemplateType
         );
         setBulkTemplateMessage(
-          `Created ${response.createdCount} ${typeLabel}${
+          `Prepared ${response.createdCount} ${typeLabel} draft${
             response.createdCount === 1 ? '' : 's'
           }.`
         );
-        await loadPagedData(true);
+        setSelectedTemplateSuggestionJobId(response.jobId);
+        setTemplateSuggestionJobsPage(1);
+        await fetchTemplateSuggestionJobs();
+        await fetchTemplateSuggestionDrafts(response.jobId);
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -1930,9 +2244,12 @@ export const Monsters = () => {
       if (response.status === 'completed') {
         setBulkTemplateBusy(false);
         setBulkTemplateMessage(
-          `Created 1 ${formatMonsterTemplateTypeLabel(monsterType)}.`
+          `Prepared 1 ${formatMonsterTemplateTypeLabel(monsterType)} draft.`
         );
-        await loadPagedData(true);
+        setSelectedTemplateSuggestionJobId(response.jobId);
+        setTemplateSuggestionJobsPage(1);
+        await fetchTemplateSuggestionJobs();
+        await fetchTemplateSuggestionDrafts(response.jobId);
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -1947,6 +2264,80 @@ export const Monsters = () => {
           : `Failed to generate ${monsterType} template.`;
       setBulkTemplateError(message);
       setBulkTemplateBusy(false);
+    }
+  };
+
+  const handleConvertTemplateSuggestionDraft = async (draftId: string) => {
+    try {
+      setConvertingTemplateSuggestionDraftId(draftId);
+      await apiClient.post<MonsterTemplateRecord>(
+        `/sonar/monster-template-suggestion-drafts/${draftId}/convert`,
+        {}
+      );
+      if (selectedTemplateSuggestionJobId) {
+        await fetchTemplateSuggestionDrafts(selectedTemplateSuggestionJobId);
+      }
+      await loadPagedData(true);
+    } catch (err) {
+      console.error('Failed to convert monster template suggestion draft', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to convert monster template suggestion draft.';
+      alert(message);
+    } finally {
+      setConvertingTemplateSuggestionDraftId(null);
+    }
+  };
+
+  const handleDeleteTemplateSuggestionDraft = async (draftId: string) => {
+    try {
+      setDeletingTemplateSuggestionDraftId(draftId);
+      await apiClient.delete(`/sonar/monster-template-suggestion-drafts/${draftId}`);
+      if (selectedTemplateSuggestionJobId) {
+        await fetchTemplateSuggestionDrafts(selectedTemplateSuggestionJobId);
+      }
+    } catch (err) {
+      console.error('Failed to delete monster template suggestion draft', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete monster template suggestion draft.';
+      alert(message);
+    } finally {
+      setDeletingTemplateSuggestionDraftId(null);
+    }
+  };
+
+  const handleConvertAllTemplateSuggestionDrafts = async () => {
+    if (
+      !selectedTemplateSuggestionJobId ||
+      unconvertedTemplateSuggestionDrafts.length === 0
+    ) {
+      return;
+    }
+    try {
+      setConvertingAllTemplateSuggestionDrafts(true);
+      for (const draft of unconvertedTemplateSuggestionDrafts) {
+        await apiClient.post<MonsterTemplateRecord>(
+          `/sonar/monster-template-suggestion-drafts/${draft.id}/convert`,
+          {}
+        );
+      }
+      await fetchTemplateSuggestionDrafts(selectedTemplateSuggestionJobId);
+      await loadPagedData(true);
+    } catch (err) {
+      console.error(
+        'Failed to bulk convert monster template suggestion drafts',
+        err
+      );
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to convert all monster template suggestion drafts.';
+      alert(message);
+    } finally {
+      setConvertingAllTemplateSuggestionDrafts(false);
     }
   };
 
@@ -2982,6 +3373,7 @@ export const Monsters = () => {
     return () => window.clearInterval(interval);
   }, [encounterIconStates, refreshEncounterIconStatus]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!bulkTemplateJob?.jobId) {
       return;
@@ -3121,21 +3513,21 @@ export const Monsters = () => {
                 onClick={handleBulkGenerateTemplates}
                 disabled={bulkTemplateBusy}
               >
-                {bulkTemplateBusy ? 'Generating...' : 'Generate Templates'}
+                {bulkTemplateBusy ? 'Generating...' : 'Generate Drafts'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={() => handleGenerateSingleTypedTemplate('boss')}
                 disabled={bulkTemplateBusy}
               >
-                Generate Boss Template
+                Generate Boss Draft
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={() => handleGenerateSingleTypedTemplate('raid')}
                 disabled={bulkTemplateBusy}
               >
-                Generate Raid Template
+                Generate Raid Draft
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
@@ -3167,7 +3559,7 @@ export const Monsters = () => {
                 {formatBulkTemplateStatus(bulkTemplateJob.status)}
               </span>
               <span>
-                Progress: {bulkTemplateJob.createdCount}/
+                Drafts: {bulkTemplateJob.createdCount}/
                 {bulkTemplateJob.totalCount}
               </span>
               <span>
@@ -3204,6 +3596,417 @@ export const Monsters = () => {
           {bulkTemplateError && (
             <p className="mt-2 text-sm text-red-700">{bulkTemplateError}</p>
           )}
+        </div>
+
+        <div className="qa-card">
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Template Drafts</h2>
+              <p className="text-sm text-gray-600">
+                Review generated monster template drafts, approve the keepers,
+                and only materialize real templates once they look worth
+                keeping.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
+              Recent jobs: {templateSuggestionJobs.length}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    Recent Draft Jobs
+                  </div>
+                  {templateSuggestionJobs.length > 0 && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      Showing {visibleTemplateSuggestionJobsRangeStart}-
+                      {visibleTemplateSuggestionJobsRangeEnd} of{' '}
+                      {templateSuggestionJobs.length}
+                      {templateSuggestionJobsHasMore ? '+' : ''} loaded jobs ·
+                      {' '}Page {templateSuggestionJobsPage}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {loadingTemplateSuggestionJobs && (
+                    <div className="text-xs text-slate-500">Refreshing...</div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTemplateSuggestionJobsPage((current) =>
+                        Math.max(1, current - 1)
+                      )
+                    }
+                    disabled={
+                      loadingTemplateSuggestionJobs ||
+                      templateSuggestionJobsPage <= 1
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTemplateSuggestionJobsPage((current) => current + 1)
+                    }
+                    disabled={
+                      loadingTemplateSuggestionJobs ||
+                      !templateSuggestionJobsCanAdvance
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {templateSuggestionJobs.length === 0 &&
+                  !loadingTemplateSuggestionJobs && (
+                    <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+                      No monster template draft jobs yet.
+                    </div>
+                  )}
+                {visibleTemplateSuggestionJobs.map((job) => {
+                  const selected = job.jobId === selectedTemplateSuggestionJobId;
+                  return (
+                    <button
+                      key={job.jobId}
+                      type="button"
+                      onClick={() => setSelectedTemplateSuggestionJobId(job.jobId)}
+                      className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                        selected
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium text-slate-900">
+                          {formatMonsterTemplateTypeLabel(job.monsterType)} ·{' '}
+                          {job.totalCount} draft
+                          {job.totalCount === 1 ? '' : 's'}
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                            job.status === 'completed'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : job.status === 'failed'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {job.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        Genre:{' '}
+                        {formatGenreLabel(
+                          genres.find((genre) => genre.id === job.genreId)
+                        )}{' '}
+                        {job.zoneKind
+                          ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
+                          : ''}
+                        · {job.createdCount}/{job.totalCount} ready
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        {[
+                          job.source
+                            ? job.source.replace(/_/g, ' ')
+                            : 'generated',
+                          job.updatedAt
+                            ? `Updated ${formatDate(job.updatedAt)}`
+                            : null,
+                        ]
+                          .filter((entry): entry is string => Boolean(entry))
+                          .map((entry) => (
+                            <span
+                              key={`${job.jobId}-${entry}`}
+                              className="rounded-full bg-white/80 px-2 py-1"
+                            >
+                              {entry}
+                            </span>
+                          ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    {selectedTemplateSuggestionJob
+                      ? `Drafts for ${formatMonsterTemplateTypeLabel(
+                          selectedTemplateSuggestionJob.monsterType
+                        )}`
+                      : 'Generated Drafts'}
+                  </div>
+                  {selectedTemplateSuggestionJob && (
+                    <div className="space-y-1 text-xs text-slate-500">
+                      <div>
+                        Genre:{' '}
+                        {formatGenreLabel(
+                          genres.find(
+                            (genre) =>
+                              genre.id === selectedTemplateSuggestionJob.genreId
+                          )
+                        )}{' '}
+                        {selectedTemplateSuggestionJob.zoneKind
+                          ? `· ${zoneKindLabel(
+                              selectedTemplateSuggestionJob.zoneKind,
+                              zoneKindBySlug
+                            )} `
+                          : ''}
+                        · {selectedTemplateSuggestionJob.createdCount} draft
+                        {selectedTemplateSuggestionJob.createdCount === 1
+                          ? ''
+                          : 's'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedTemplateSuggestionJob && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleConvertAllTemplateSuggestionDrafts()
+                      }
+                      disabled={
+                        loadingTemplateSuggestionDrafts ||
+                        convertingAllTemplateSuggestionDrafts ||
+                        convertingTemplateSuggestionDraftId !== null ||
+                        unconvertedTemplateSuggestionDrafts.length === 0
+                      }
+                      className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {convertingAllTemplateSuggestionDrafts
+                        ? 'Converting all...'
+                        : `Convert All to Templates${
+                            unconvertedTemplateSuggestionDrafts.length > 0
+                              ? ` (${unconvertedTemplateSuggestionDrafts.length})`
+                              : ''
+                          }`}
+                    </button>
+                  )}
+                  {loadingTemplateSuggestionDrafts && (
+                    <div className="text-xs text-slate-500">
+                      Loading drafts...
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {templateSuggestionDrafts.length > 0 && (
+                <div className="mb-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    Showing {templateSuggestionDraftRangeStart}-
+                    {templateSuggestionDraftRangeEnd} of{' '}
+                    {templateSuggestionDrafts.length} drafts · Page{' '}
+                    {templateSuggestionDraftPage} of{' '}
+                    {templateSuggestionDraftTotalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTemplateSuggestionDraftPage((current) =>
+                          Math.max(1, current - 1)
+                        )
+                      }
+                      disabled={templateSuggestionDraftPage <= 1}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTemplateSuggestionDraftPage((current) =>
+                          Math.min(templateSuggestionDraftTotalPages, current + 1)
+                        )
+                      }
+                      disabled={
+                        templateSuggestionDraftPage >=
+                        templateSuggestionDraftTotalPages
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {templateSuggestionDrafts.length === 0 &&
+                  !loadingTemplateSuggestionDrafts && (
+                    <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
+                      {selectedTemplateSuggestionJob
+                        ? 'This job has not produced any drafts yet.'
+                        : 'Select a draft job to review its generated templates.'}
+                    </div>
+                  )}
+                {paginatedTemplateSuggestionDrafts.map((draft) => (
+                  <div
+                    key={draft.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-lg font-semibold text-slate-900">
+                          {draft.name}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                            {formatMonsterTemplateTypeLabel(
+                              draft.monsterType || draft.payload.monsterType
+                            )}
+                          </span>
+                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                            {formatGenreLabel(
+                              draft.genre ??
+                                genres.find(
+                                  (genre) => genre.id === draft.genreId
+                                ) ??
+                                null
+                            )}
+                          </span>
+                          {draft.zoneKind && (
+                            <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                              {zoneKindLabel(draft.zoneKind, zoneKindBySlug)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          draft.status === 'converted'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-indigo-100 text-indigo-700'
+                        }`}
+                      >
+                        {draft.status}
+                      </span>
+                    </div>
+                    {draft.description && (
+                      <p className="mt-3 text-sm text-slate-700">
+                        {draft.description}
+                      </p>
+                    )}
+                    <p className="mt-3 text-sm text-slate-600">
+                      STR {draft.payload.baseStrength} · DEX{' '}
+                      {draft.payload.baseDexterity} · CON{' '}
+                      {draft.payload.baseConstitution} · INT{' '}
+                      {draft.payload.baseIntelligence} · WIS{' '}
+                      {draft.payload.baseWisdom} · CHA{' '}
+                      {draft.payload.baseCharisma}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Damage Bonuses:{' '}
+                      {summarizeAffinityMap(
+                        monsterTemplateSuggestionDamageMap(draft.payload),
+                        damageBonusFieldOptions
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Resistances:{' '}
+                      {summarizeAffinityMap(
+                        monsterTemplateSuggestionResistanceMap(draft.payload),
+                        resistanceFieldOptions
+                      )}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleConvertTemplateSuggestionDraft(draft.id)
+                        }
+                        disabled={
+                          draft.status === 'converted' ||
+                          convertingTemplateSuggestionDraftId === draft.id ||
+                          convertingAllTemplateSuggestionDrafts
+                        }
+                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {draft.status === 'converted'
+                          ? 'Converted'
+                          : convertingAllTemplateSuggestionDrafts
+                            ? 'Bulk converting...'
+                            : convertingTemplateSuggestionDraftId === draft.id
+                              ? 'Converting...'
+                              : 'Convert to Template'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleDeleteTemplateSuggestionDraft(draft.id)
+                        }
+                        disabled={
+                          draft.status === 'converted' ||
+                          deletingTemplateSuggestionDraftId === draft.id ||
+                          convertingAllTemplateSuggestionDrafts
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                      >
+                        {deletingTemplateSuggestionDraftId === draft.id
+                          ? 'Deleting...'
+                          : 'Delete Draft'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {templateSuggestionDrafts.length > 0 &&
+                templateSuggestionDraftTotalPages > 1 && (
+                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      Showing {templateSuggestionDraftRangeStart}-
+                      {templateSuggestionDraftRangeEnd} of{' '}
+                      {templateSuggestionDrafts.length} drafts · Page{' '}
+                      {templateSuggestionDraftPage} of{' '}
+                      {templateSuggestionDraftTotalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTemplateSuggestionDraftPage((current) =>
+                            Math.max(1, current - 1)
+                          )
+                        }
+                        disabled={templateSuggestionDraftPage <= 1}
+                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTemplateSuggestionDraftPage((current) =>
+                            Math.min(templateSuggestionDraftTotalPages, current + 1)
+                          )
+                        }
+                        disabled={
+                          templateSuggestionDraftPage >=
+                          templateSuggestionDraftTotalPages
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+            </div>
+          </div>
         </div>
 
         <div className="qa-card">

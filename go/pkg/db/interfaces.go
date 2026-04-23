@@ -50,6 +50,8 @@ type DbClient interface {
 	InventoryItem() InventoryItemHandle
 	InventoryItemSuggestionJob() InventoryItemSuggestionJobHandle
 	InventoryItemSuggestionDraft() InventoryItemSuggestionDraftHandle
+	MonsterTemplateSuggestionJob() MonsterTemplateSuggestionJobHandle
+	MonsterTemplateSuggestionDraft() MonsterTemplateSuggestionDraftHandle
 	UserLearnedRecipe() UserLearnedRecipeHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	Tutorial() TutorialHandle
@@ -597,6 +599,21 @@ type InventoryItemSuggestionDraftHandle interface {
 	Update(ctx context.Context, draft *models.InventoryItemSuggestionDraft) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.InventoryItemSuggestionDraft, error)
 	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.InventoryItemSuggestionDraft, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type MonsterTemplateSuggestionJobHandle interface {
+	Create(ctx context.Context, job *models.MonsterTemplateSuggestionJob) error
+	Update(ctx context.Context, job *models.MonsterTemplateSuggestionJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterTemplateSuggestionJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.MonsterTemplateSuggestionJob, error)
+}
+
+type MonsterTemplateSuggestionDraftHandle interface {
+	Create(ctx context.Context, draft *models.MonsterTemplateSuggestionDraft) error
+	Update(ctx context.Context, draft *models.MonsterTemplateSuggestionDraft) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterTemplateSuggestionDraft, error)
+	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.MonsterTemplateSuggestionDraft, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
