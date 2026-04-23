@@ -47,6 +47,7 @@ func monsterTemplateSuggestionJobToBulkStatus(
 		status.GenreID = job.GenreID.String()
 	}
 	status.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
+	status.YeetIt = job.YeetIt
 	status.TotalCount = job.Count
 	status.CreatedCount = job.CreatedCount
 	if job.ErrorMessage != nil {
@@ -115,6 +116,7 @@ func (s *server) createMonsterTemplateSuggestionJobRecord(
 		GenreID:      genre.ID,
 		Genre:        genre,
 		ZoneKind:     models.NormalizeZoneKind(requestBody.ZoneKind),
+		YeetIt:       requestBody.YeetIt,
 		Source:       "seed_generated",
 		Count:        requestBody.Count,
 		CreatedCount: 0,
@@ -151,22 +153,35 @@ func (s *server) createMonsterTemplateSuggestionJobRecord(
 	job.Source = source
 	for _, spec := range templateSpecs {
 		payload := buildMonsterTemplateSuggestionPayload(spec, genre, zoneKinds, zoneKind)
-		draft := &models.MonsterTemplateSuggestionDraft{
-			ID:          uuid.New(),
-			CreatedAt:   time.Now().UTC(),
-			UpdatedAt:   time.Now().UTC(),
-			JobID:       job.ID,
-			Status:      models.MonsterTemplateSuggestionDraftStatusSuggested,
-			MonsterType: models.NormalizeMonsterTemplateType(payload.MonsterType),
-			GenreID:     payload.GenreID,
-			Genre:       genre,
-			ZoneKind:    models.NormalizeZoneKind(payload.ZoneKind),
-			Name:        strings.TrimSpace(payload.Name),
-			Description: strings.TrimSpace(payload.Description),
-			Payload:     models.MonsterTemplateSuggestionPayloadValue(payload),
-		}
-		if err := s.dbClient.MonsterTemplateSuggestionDraft().Create(ctx, draft); err != nil {
-			return failJob(err, http.StatusInternalServerError)
+		if job.YeetIt {
+			template := monsterTemplateFromSuggestionPayload(&models.MonsterTemplateSuggestionDraft{
+				MonsterType: models.NormalizeMonsterTemplateType(payload.MonsterType),
+				GenreID:     payload.GenreID,
+				Genre:       genre,
+				ZoneKind:    models.NormalizeZoneKind(payload.ZoneKind),
+				Payload:     models.MonsterTemplateSuggestionPayloadValue(payload),
+			})
+			if err := s.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
+				return failJob(err, http.StatusInternalServerError)
+			}
+		} else {
+			draft := &models.MonsterTemplateSuggestionDraft{
+				ID:          uuid.New(),
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+				JobID:       job.ID,
+				Status:      models.MonsterTemplateSuggestionDraftStatusSuggested,
+				MonsterType: models.NormalizeMonsterTemplateType(payload.MonsterType),
+				GenreID:     payload.GenreID,
+				Genre:       genre,
+				ZoneKind:    models.NormalizeZoneKind(payload.ZoneKind),
+				Name:        strings.TrimSpace(payload.Name),
+				Description: strings.TrimSpace(payload.Description),
+				Payload:     models.MonsterTemplateSuggestionPayloadValue(payload),
+			}
+			if err := s.dbClient.MonsterTemplateSuggestionDraft().Create(ctx, draft); err != nil {
+				return failJob(err, http.StatusInternalServerError)
+			}
 		}
 		job.CreatedCount++
 	}

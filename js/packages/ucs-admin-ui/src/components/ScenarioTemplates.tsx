@@ -61,6 +61,7 @@ type ScenarioTemplateGenerationJob = {
   genreId: string;
   genre?: ZoneGenre;
   zoneKind?: string;
+  yeetIt: boolean;
   status: string;
   count: number;
   openEnded: boolean;
@@ -164,6 +165,7 @@ type ScenarioTemplateGenerationFormState = {
   genreId: string;
   zoneKind: string;
   openEnded: boolean;
+  yeetIt: boolean;
 };
 
 type PaginatedResponse<T> = {
@@ -260,6 +262,7 @@ const emptyGenerationForm = (): ScenarioTemplateGenerationFormState => ({
   genreId: '',
   zoneKind: '',
   openEnded: false,
+  yeetIt: false,
 });
 
 const defaultGenreIdFromList = (genres: ZoneGenre[]): string => {
@@ -780,12 +783,17 @@ export const ScenarioTemplates = () => {
           genreId: generationForm.genreId.trim(),
           zoneKind: generationForm.zoneKind,
           openEnded: generationForm.openEnded,
+          yeetIt: generationForm.yeetIt,
         }
       );
       await load(true);
-      if (response?.id) {
+      if (response?.id && !response.yeetIt) {
         setSelectedJobId(response.id);
         await fetchDrafts(response.id);
+      } else if (response?.id) {
+        setSelectedJobId(response.id);
+        setDrafts([]);
+        setDraftError('');
       }
     } catch (error) {
       console.error('Failed to queue scenario template generation', error);
@@ -888,7 +896,7 @@ export const ScenarioTemplates = () => {
             </p>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <label className="block text-sm">
             Count
             <input
@@ -962,6 +970,19 @@ export const ScenarioTemplates = () => {
             />
             Open ended
           </label>
+          <label className="flex items-center gap-2 text-sm mt-6">
+            <input
+              type="checkbox"
+              checked={generationForm.yeetIt}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  yeetIt: event.target.checked,
+                }))
+              }
+            />
+            Yeet it
+          </label>
           <div className="flex items-end">
             <button
               type="button"
@@ -1000,7 +1021,9 @@ export const ScenarioTemplates = () => {
                       {job.zoneKind ? (
                         <> • {zoneKindLabel(job.zoneKind, zoneKindBySlug)}</>
                       ) : null}{' '}
-                      • Generated {job.createdCount} drafts • queued{' '}
+                      • {job.yeetIt ? 'Yeet mode' : 'Draft mode'} • Generated{' '}
+                      {job.createdCount} {job.yeetIt ? 'live templates' : 'drafts'}{' '}
+                      • queued{' '}
                       {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (
@@ -1017,7 +1040,13 @@ export const ScenarioTemplates = () => {
                           : 'hover:bg-gray-50'
                       }`}
                     >
-                      {selectedJobId === job.id ? 'Viewing drafts' : 'Review drafts'}
+                      {job.yeetIt
+                        ? selectedJobId === job.id
+                          ? 'Viewing result'
+                          : 'View result'
+                        : selectedJobId === job.id
+                          ? 'Viewing drafts'
+                          : 'Review drafts'}
                     </button>
                     <span
                       className={`rounded px-2 py-1 text-xs font-semibold text-white ${jobStatusClassName(
@@ -1038,13 +1067,15 @@ export const ScenarioTemplates = () => {
               <h3 className="text-base font-semibold">Generated Drafts</h3>
               <p className="text-sm text-gray-600">
                 Review generated scenario templates before converting them into
-                live reusable templates.
+                live reusable templates, or inspect yeeted jobs that skipped
+                drafts entirely.
               </p>
             </div>
             {selectedJob ? (
               <div className="text-sm text-gray-500">
                 Inspecting {selectedJob.openEnded ? 'open-ended' : 'choice-based'}{' '}
-                job queued {formatDate(selectedJob.createdAt)}
+                {selectedJob.yeetIt ? 'yeet' : 'draft'} job queued{' '}
+                {formatDate(selectedJob.createdAt)}
               </div>
             ) : null}
           </div>
@@ -1060,7 +1091,9 @@ export const ScenarioTemplates = () => {
               <p className="text-sm text-gray-500">Loading drafts...</p>
             ) : drafts.length === 0 ? (
               <p className="text-sm text-gray-500">
-                {['queued', 'in_progress'].includes(selectedJob.status)
+                {selectedJob.yeetIt
+                  ? 'This job created live templates directly, so there are no drafts to review below. Use the template list to inspect the results.'
+                  : ['queued', 'in_progress'].includes(selectedJob.status)
                   ? 'This job has not produced any drafts yet.'
                   : 'No drafts for this job yet.'}
               </p>

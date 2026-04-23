@@ -70,6 +70,7 @@ type bulkGenerateMonsterTemplatesRequest struct {
 	MonsterType string `json:"monsterType"`
 	GenreID     string `json:"genreId"`
 	ZoneKind    string `json:"zoneKind"`
+	YeetIt      bool   `json:"yeetIt"`
 }
 
 type dndMonsterTemplateSeed struct {

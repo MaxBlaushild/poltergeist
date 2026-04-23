@@ -246,7 +246,12 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 			if template.RewardExperience == 0 && template.RewardGold == 0 && len(template.ItemRewards) == 0 {
 				template.RewardMode = models.RewardModeRandom
 			}
-			if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
+			if job.YeetIt {
+				if err := p.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+					job.CreatedCount = createdCount
+					return fmt.Errorf("failed to create scenario template: %w", err)
+				}
+			} else if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
 				job.CreatedCount = createdCount
 				return fmt.Errorf("failed to create scenario template draft: %w", err)
 			}
@@ -308,7 +313,12 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 				ItemChoiceRewards:        models.ScenarioTemplateRewards{},
 				SpellRewards:             models.ScenarioTemplateSpellRewards{},
 			}
-			if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
+			if job.YeetIt {
+				if err := p.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+					job.CreatedCount = createdCount
+					return fmt.Errorf("failed to create scenario template: %w", err)
+				}
+			} else if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
 				job.CreatedCount = createdCount
 				return fmt.Errorf("failed to create scenario template draft: %w", err)
 			}

@@ -62,6 +62,7 @@ type scenarioTemplateGenerationJobRequest struct {
 	OpenEnded bool   `json:"openEnded"`
 	GenreID   string `json:"genreId"`
 	ZoneKind  string `json:"zoneKind"`
+	YeetIt    bool   `json:"yeetIt"`
 }
 
 func (s *server) parseScenarioTemplateUpsertRequest(
@@ -530,6 +531,7 @@ func (s *server) createScenarioTemplateGenerationJob(ctx *gin.Context) {
 		GenreID:      genre.ID,
 		Genre:        genre,
 		ZoneKind:     models.NormalizeZoneKind(body.ZoneKind),
+		YeetIt:       body.YeetIt,
 		Status:       models.ScenarioTemplateGenerationStatusQueued,
 		Count:        body.Count,
 		OpenEnded:    body.OpenEnded,

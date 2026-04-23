@@ -88,6 +88,7 @@ type MonsterTemplateSuggestionJob struct {
 	GenreID      uuid.UUID           `json:"genreId" gorm:"column:genre_id;type:uuid"`
 	Genre        *ZoneGenre          `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
 	ZoneKind     string              `json:"zoneKind" gorm:"column:zone_kind"`
+	YeetIt       bool                `json:"yeetIt" gorm:"column:yeet_it"`
 	Source       string              `json:"source"`
 	Count        int                 `json:"count"`
 	CreatedCount int                 `json:"createdCount" gorm:"column:created_count"`

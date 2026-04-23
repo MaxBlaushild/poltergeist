@@ -230,6 +230,7 @@ type BulkMonsterTemplateStatus = {
   monsterType?: MonsterTemplateType;
   genreId?: string;
   zoneKind?: string;
+  yeetIt?: boolean;
   totalCount: number;
   createdCount: number;
   error?: string;
@@ -1220,6 +1221,7 @@ export const Monsters = () => {
     useState<MonsterTemplateType>('monster');
   const [bulkTemplateGenreId, setBulkTemplateGenreId] = useState('');
   const [bulkTemplateZoneKind, setBulkTemplateZoneKind] = useState('');
+  const [bulkTemplateYeetIt, setBulkTemplateYeetIt] = useState(false);
   const [genreFilter, setGenreFilter] = useState('all');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<
     'all' | MonsterTemplateType
@@ -1483,13 +1485,19 @@ export const Monsters = () => {
             status.monsterType ?? bulkTemplateType
           );
           setBulkTemplateMessage(
-            `Prepared ${status.createdCount} ${typeLabel} draft${
+            `${status.yeetIt ? 'Created' : 'Prepared'} ${status.createdCount} ${typeLabel} ${
+              status.yeetIt ? 'template' : 'draft'
+            }${
               status.createdCount === 1 ? '' : 's'
-            }.`
+            }${status.yeetIt ? ' live.' : '.'}`
           );
           setSelectedTemplateSuggestionJobId(status.jobId);
           await fetchTemplateSuggestionJobs();
-          await fetchTemplateSuggestionDrafts(status.jobId);
+          if (status.yeetIt) {
+            setTemplateSuggestionDrafts([]);
+          } else {
+            await fetchTemplateSuggestionDrafts(status.jobId);
+          }
         } else if (status.status === 'failed') {
           setBulkTemplateBusy(false);
           setBulkTemplateMessage(null);
@@ -2188,6 +2196,7 @@ export const Monsters = () => {
           monsterType: bulkTemplateType,
           genreId: bulkTemplateGenreId,
           zoneKind: bulkTemplateZoneKind,
+          yeetIt: bulkTemplateYeetIt,
         }
       );
       setBulkTemplateJob(response);
@@ -2197,14 +2206,20 @@ export const Monsters = () => {
           response.monsterType ?? bulkTemplateType
         );
         setBulkTemplateMessage(
-          `Prepared ${response.createdCount} ${typeLabel} draft${
+          `${response.yeetIt ? 'Created' : 'Prepared'} ${response.createdCount} ${typeLabel} ${
+            response.yeetIt ? 'template' : 'draft'
+          }${
             response.createdCount === 1 ? '' : 's'
-          }.`
+          }${response.yeetIt ? ' live.' : '.'}`
         );
         setSelectedTemplateSuggestionJobId(response.jobId);
         setTemplateSuggestionJobsPage(1);
         await fetchTemplateSuggestionJobs();
-        await fetchTemplateSuggestionDrafts(response.jobId);
+        if (response.yeetIt) {
+          setTemplateSuggestionDrafts([]);
+        } else {
+          await fetchTemplateSuggestionDrafts(response.jobId);
+        }
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -2237,6 +2252,7 @@ export const Monsters = () => {
           monsterType,
           genreId: bulkTemplateGenreId,
           zoneKind: bulkTemplateZoneKind,
+          yeetIt: bulkTemplateYeetIt,
         }
       );
       setBulkTemplateJob(response);
@@ -2244,12 +2260,18 @@ export const Monsters = () => {
       if (response.status === 'completed') {
         setBulkTemplateBusy(false);
         setBulkTemplateMessage(
-          `Prepared 1 ${formatMonsterTemplateTypeLabel(monsterType)} draft.`
+          `${response.yeetIt ? 'Created' : 'Prepared'} 1 ${formatMonsterTemplateTypeLabel(monsterType)} ${
+            response.yeetIt ? 'template' : 'draft'
+          }${response.yeetIt ? ' live.' : '.'}`
         );
         setSelectedTemplateSuggestionJobId(response.jobId);
         setTemplateSuggestionJobsPage(1);
         await fetchTemplateSuggestionJobs();
-        await fetchTemplateSuggestionDrafts(response.jobId);
+        if (response.yeetIt) {
+          setTemplateSuggestionDrafts([]);
+        } else {
+          await fetchTemplateSuggestionDrafts(response.jobId);
+        }
       } else if (response.status === 'failed') {
         setBulkTemplateBusy(false);
         setBulkTemplateError(
@@ -3508,26 +3530,40 @@ export const Monsters = () => {
                 className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
                 aria-label="Bulk template count"
               />
+              <label className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={bulkTemplateYeetIt}
+                  onChange={(event) =>
+                    setBulkTemplateYeetIt(event.target.checked)
+                  }
+                />
+                Yeet it
+              </label>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={handleBulkGenerateTemplates}
                 disabled={bulkTemplateBusy}
               >
-                {bulkTemplateBusy ? 'Generating...' : 'Generate Drafts'}
+                {bulkTemplateBusy
+                  ? 'Generating...'
+                  : bulkTemplateYeetIt
+                    ? 'Generate Live Templates'
+                    : 'Generate Drafts'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={() => handleGenerateSingleTypedTemplate('boss')}
                 disabled={bulkTemplateBusy}
               >
-                Generate Boss Draft
+                {bulkTemplateYeetIt ? 'Generate Live Boss' : 'Generate Boss Draft'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={() => handleGenerateSingleTypedTemplate('raid')}
                 disabled={bulkTemplateBusy}
               >
-                Generate Raid Draft
+                {bulkTemplateYeetIt ? 'Generate Live Raid' : 'Generate Raid Draft'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
@@ -3559,7 +3595,8 @@ export const Monsters = () => {
                 {formatBulkTemplateStatus(bulkTemplateJob.status)}
               </span>
               <span>
-                Drafts: {bulkTemplateJob.createdCount}/
+                {bulkTemplateJob.yeetIt ? 'Templates' : 'Drafts'}:{' '}
+                {bulkTemplateJob.createdCount}/
                 {bulkTemplateJob.totalCount}
               </span>
               <span>
@@ -3584,6 +3621,7 @@ export const Monsters = () => {
                   {zoneKindLabel(bulkTemplateJob.zoneKind, zoneKindBySlug)}
                 </span>
               ) : null}
+              <span>{bulkTemplateJob.yeetIt ? 'Yeet mode' : 'Draft mode'}</span>
               <span>Job: {bulkTemplateJob.jobId}</span>
               <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
             </div>
@@ -3605,7 +3643,8 @@ export const Monsters = () => {
               <p className="text-sm text-gray-600">
                 Review generated monster template drafts, approve the keepers,
                 and only materialize real templates once they look worth
-                keeping.
+                keeping. Yeeted jobs skip this review step and go live
+                immediately.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
@@ -3687,7 +3726,7 @@ export const Monsters = () => {
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium text-slate-900">
                           {formatMonsterTemplateTypeLabel(job.monsterType)} ·{' '}
-                          {job.totalCount} draft
+                          {job.totalCount} {job.yeetIt ? 'template' : 'draft'}
                           {job.totalCount === 1 ? '' : 's'}
                         </div>
                         <span
@@ -3710,6 +3749,7 @@ export const Monsters = () => {
                         {job.zoneKind
                           ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
                           : ''}
+                        · {job.yeetIt ? 'yeet mode' : 'draft mode'} 
                         · {job.createdCount}/{job.totalCount} ready
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
@@ -3742,7 +3782,7 @@ export const Monsters = () => {
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
                     {selectedTemplateSuggestionJob
-                      ? `Drafts for ${formatMonsterTemplateTypeLabel(
+                      ? `${selectedTemplateSuggestionJob.yeetIt ? 'Results' : 'Drafts'} for ${formatMonsterTemplateTypeLabel(
                           selectedTemplateSuggestionJob.monsterType
                         )}`
                       : 'Generated Drafts'}
@@ -3763,16 +3803,24 @@ export const Monsters = () => {
                               zoneKindBySlug
                             )} `
                           : ''}
-                        · {selectedTemplateSuggestionJob.createdCount} draft
+                        · {selectedTemplateSuggestionJob.createdCount}{' '}
+                        {selectedTemplateSuggestionJob.yeetIt
+                          ? 'template'
+                          : 'draft'}
                         {selectedTemplateSuggestionJob.createdCount === 1
                           ? ''
                           : 's'}
+                        {' '}·{' '}
+                        {selectedTemplateSuggestionJob.yeetIt
+                          ? 'yeet mode'
+                          : 'draft mode'}
                       </div>
                     </div>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {selectedTemplateSuggestionJob && (
+                  {selectedTemplateSuggestionJob &&
+                    !selectedTemplateSuggestionJob.yeetIt && (
                     <button
                       type="button"
                       onClick={() =>
@@ -3849,7 +3897,9 @@ export const Monsters = () => {
                   !loadingTemplateSuggestionDrafts && (
                     <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
                       {selectedTemplateSuggestionJob
-                        ? 'This job has not produced any drafts yet.'
+                        ? selectedTemplateSuggestionJob.yeetIt
+                          ? 'This job yeeted its generated monsters straight into live templates, so there are no drafts to review here.'
+                          : 'This job has not produced any drafts yet.'
                         : 'Select a draft job to review its generated templates.'}
                     </div>
                   )}

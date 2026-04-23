@@ -361,6 +361,7 @@ type MonsterTemplateBulkStatus struct {
 	MonsterType  string     `json:"monsterType"`
 	GenreID      string     `json:"genreId,omitempty"`
 	ZoneKind     string     `json:"zoneKind,omitempty"`
+	YeetIt       bool       `json:"yeetIt"`
 	TotalCount   int        `json:"totalCount"`
 	CreatedCount int        `json:"createdCount"`
 	Error        string     `json:"error,omitempty"`
