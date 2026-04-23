@@ -10955,12 +10955,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   String _zoneOuterLineColor(Zone zone) {
     if (_isUndiscoveredZone(zone)) {
-      final fallback = Color.lerp(
-        _neutralZoneVisuals.panelBorder,
-        Colors.black,
-        0.68,
-      );
-      return _hexFromColor(fallback ?? Colors.black);
+      return _hexFromColor(Colors.black);
     }
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {
@@ -11003,10 +10998,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   String _zoneInnerLineColor(Zone zone) {
     if (_isUndiscoveredZone(zone)) {
-      return _hexFromColor(
-        Color.lerp(_neutralZoneVisuals.panelAccent, Colors.white, 0.08) ??
-            _neutralZoneVisuals.panelAccent,
-      );
+      return _hexFromColor(const Color(0xFF0A1018));
     }
     final kindColor = _zoneKindBaseColor(zone);
     if (kindColor != null) {

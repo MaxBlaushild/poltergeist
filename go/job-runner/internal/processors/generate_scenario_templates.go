@@ -246,9 +246,9 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 			if template.RewardExperience == 0 && template.RewardGold == 0 && len(template.ItemRewards) == 0 {
 				template.RewardMode = models.RewardModeRandom
 			}
-			if err := p.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+			if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
 				job.CreatedCount = createdCount
-				return fmt.Errorf("failed to create scenario template: %w", err)
+				return fmt.Errorf("failed to create scenario template draft: %w", err)
 			}
 			createdCount++
 		}
@@ -308,9 +308,9 @@ func (p *GenerateScenarioTemplatesProcessor) generateScenarioTemplates(ctx conte
 				ItemChoiceRewards:        models.ScenarioTemplateRewards{},
 				SpellRewards:             models.ScenarioTemplateSpellRewards{},
 			}
-			if err := p.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+			if err := p.createGeneratedScenarioTemplateDraft(ctx, job, template); err != nil {
 				job.CreatedCount = createdCount
-				return fmt.Errorf("failed to create scenario template: %w", err)
+				return fmt.Errorf("failed to create scenario template draft: %w", err)
 			}
 			createdCount++
 		}
@@ -533,4 +533,32 @@ func scenarioOptionSpellRewardsToTemplateRewards(rewards []models.ScenarioOption
 		})
 	}
 	return out
+}
+
+func (p *GenerateScenarioTemplatesProcessor) createGeneratedScenarioTemplateDraft(
+	ctx context.Context,
+	job *models.ScenarioTemplateGenerationJob,
+	template *models.ScenarioTemplate,
+) error {
+	if job == nil || template == nil {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	payload := models.ScenarioTemplateGenerationDraftPayloadFromTemplate(template)
+	draft := &models.ScenarioTemplateGenerationDraft{
+		ID:         uuid.New(),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		JobID:      job.ID,
+		Status:     models.ScenarioTemplateGenerationDraftStatusSuggested,
+		GenreID:    template.GenreID,
+		Genre:      template.Genre,
+		ZoneKind:   payload.ZoneKind,
+		Prompt:     payload.Prompt,
+		OpenEnded:  payload.OpenEnded,
+		Difficulty: payload.Difficulty,
+		Payload:    payload,
+	}
+	return p.dbClient.ScenarioTemplateGenerationDraft().Create(ctx, draft)
 }

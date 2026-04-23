@@ -41,6 +41,7 @@ type DbClient interface {
 	CharacterTemplate() CharacterTemplateHandle
 	ExpositionTemplate() ExpositionTemplateHandle
 	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
+	ScenarioTemplateGenerationDraft() ScenarioTemplateGenerationDraftHandle
 	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
 	ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle
 	ZoneTagGenerationJob() ZoneTagGenerationJobHandle
@@ -511,6 +512,14 @@ type ScenarioTemplateGenerationJobHandle interface {
 	Update(ctx context.Context, job *models.ScenarioTemplateGenerationJob) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplateGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioTemplateGenerationJob, error)
+}
+
+type ScenarioTemplateGenerationDraftHandle interface {
+	Create(ctx context.Context, draft *models.ScenarioTemplateGenerationDraft) error
+	Update(ctx context.Context, draft *models.ScenarioTemplateGenerationDraft) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioTemplateGenerationDraft, error)
+	FindByJobID(ctx context.Context, jobID uuid.UUID) ([]models.ScenarioTemplateGenerationDraft, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type ChallengeTemplateGenerationJobHandle interface {

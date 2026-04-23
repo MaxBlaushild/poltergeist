@@ -345,6 +345,28 @@ func scenarioSpellPayloadsToTemplateRewards(payloads []scenarioRewardSpellPayloa
 	return rewards
 }
 
+func scenarioTemplateFromGenerationDraft(
+	draft *models.ScenarioTemplateGenerationDraft,
+) *models.ScenarioTemplate {
+	if draft == nil {
+		return nil
+	}
+	template := models.ScenarioTemplateFromGenerationDraftPayload(draft.Payload)
+	if draft.GenreID != uuid.Nil {
+		template.GenreID = draft.GenreID
+		template.Genre = draft.Genre
+	}
+	if zoneKind := models.NormalizeZoneKind(draft.ZoneKind); zoneKind != "" {
+		template.ZoneKind = zoneKind
+	}
+	if prompt := strings.TrimSpace(draft.Prompt); prompt != "" {
+		template.Prompt = prompt
+	}
+	template.OpenEnded = draft.OpenEnded
+	template.Difficulty = draft.Difficulty
+	return template
+}
+
 func (s *server) getScenarioTemplates(ctx *gin.Context) {
 	templates, err := s.dbClient.ScenarioTemplate().FindAll(ctx)
 	if err != nil {
@@ -569,4 +591,95 @@ func (s *server) getScenarioTemplateGenerationJob(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) getScenarioTemplateGenerationDrafts(ctx *gin.Context) {
+	jobID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario template generation job ID"})
+		return
+	}
+	drafts, err := s.dbClient.ScenarioTemplateGenerationDraft().FindByJobID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, drafts)
+}
+
+func (s *server) convertScenarioTemplateGenerationDraft(ctx *gin.Context) {
+	draftID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario template generation draft ID"})
+		return
+	}
+	draft, err := s.dbClient.ScenarioTemplateGenerationDraft().FindByID(ctx, draftID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if draft == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario template generation draft not found"})
+		return
+	}
+	if draft.ScenarioTemplateID != nil && *draft.ScenarioTemplateID != uuid.Nil {
+		existing, findErr := s.dbClient.ScenarioTemplate().FindByID(ctx, *draft.ScenarioTemplateID)
+		if findErr != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": findErr.Error()})
+			return
+		}
+		if existing != nil {
+			ctx.JSON(http.StatusOK, existing)
+			return
+		}
+	}
+
+	template := scenarioTemplateFromGenerationDraft(draft)
+	if err := s.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	convertedAt := time.Now().UTC()
+	draft.Status = models.ScenarioTemplateGenerationDraftStatusConverted
+	draft.ScenarioTemplateID = &template.ID
+	draft.ConvertedAt = &convertedAt
+	draft.UpdatedAt = convertedAt
+	if err := s.dbClient.ScenarioTemplateGenerationDraft().Update(ctx, draft); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	created, err := s.dbClient.ScenarioTemplate().FindByID(ctx, template.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, created)
+}
+
+func (s *server) deleteScenarioTemplateGenerationDraft(ctx *gin.Context) {
+	draftID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario template generation draft ID"})
+		return
+	}
+	draft, err := s.dbClient.ScenarioTemplateGenerationDraft().FindByID(ctx, draftID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if draft == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario template generation draft not found"})
+		return
+	}
+	if draft.ScenarioTemplateID != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "converted drafts cannot be deleted"})
+		return
+	}
+	if err := s.dbClient.ScenarioTemplateGenerationDraft().Delete(ctx, draftID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "scenario template generation draft deleted"})
 }

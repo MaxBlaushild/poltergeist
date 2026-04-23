@@ -70,6 +70,62 @@ type ScenarioTemplateGenerationJob = {
   updatedAt?: string;
 };
 
+type ScenarioTemplateGenerationDraftPayload = {
+  genreId: string;
+  zoneKind?: string;
+  prompt: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  scaleWithUserLevel: boolean;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
+  difficulty: number;
+  rewardExperience: number;
+  rewardGold: number;
+  openEnded: boolean;
+  successHandoffText?: string;
+  failureHandoffText?: string;
+  failurePenaltyMode: ScenarioFailurePenaltyMode;
+  failureHealthDrainType: ScenarioFailureDrainType;
+  failureHealthDrainValue: number;
+  failureManaDrainType: ScenarioFailureDrainType;
+  failureManaDrainValue: number;
+  failureStatuses: unknown[];
+  successRewardMode: ScenarioSuccessRewardMode;
+  successHealthRestoreType: ScenarioFailureDrainType;
+  successHealthRestoreValue: number;
+  successManaRestoreType: ScenarioFailureDrainType;
+  successManaRestoreValue: number;
+  successStatuses: unknown[];
+  options: Array<{
+    optionText?: string;
+    successText?: string;
+    failureText?: string;
+    statTag?: string;
+  }>;
+  itemRewards: unknown[];
+  itemChoiceRewards: unknown[];
+  spellRewards: unknown[];
+};
+
+type ScenarioTemplateGenerationDraft = {
+  id: string;
+  jobId: string;
+  genreId: string;
+  genre?: ZoneGenre;
+  zoneKind?: string;
+  prompt: string;
+  openEnded: boolean;
+  difficulty: number;
+  status: string;
+  payload: ScenarioTemplateGenerationDraftPayload;
+  scenarioTemplateId?: string | null;
+  scenarioTemplate?: ScenarioTemplateRecord;
+  convertedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type ScenarioTemplateFormState = {
   genreId: string;
   zoneKind: string;
@@ -231,6 +287,9 @@ const formatDate = (value?: string | null): string => {
   return parsed.toLocaleString();
 };
 
+const errorMessageFromUnknown = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+
 const formFromRecord = (
   record: ScenarioTemplateRecord
 ): ScenarioTemplateFormState => ({
@@ -353,6 +412,15 @@ const jobStatusClassName = (status: string): string => {
   }
 };
 
+const draftStatusClassName = (status: string): string => {
+  switch (status) {
+    case 'converted':
+      return 'bg-indigo-600';
+    default:
+      return 'bg-slate-600';
+  }
+};
+
 export const ScenarioTemplates = () => {
   const { apiClient } = useAPI();
   const { inventoryItems } = useInventory();
@@ -361,13 +429,21 @@ export const ScenarioTemplates = () => {
   const [genres, setGenres] = useState<ZoneGenre[]>([]);
   const [records, setRecords] = useState<ScenarioTemplateRecord[]>([]);
   const [jobs, setJobs] = useState<ScenarioTemplateGenerationJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState('');
+  const [drafts, setDrafts] = useState<ScenarioTemplateGenerationDraft[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [query, setQuery] = useState('');
   const [genreFilter, setGenreFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const [convertingDraftId, setConvertingDraftId] = useState<string | null>(
+    null
+  );
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<ScenarioTemplateRecord | null>(null);
   const [form, setForm] = useState<ScenarioTemplateFormState>(emptyFormState());
@@ -442,6 +518,71 @@ export const ScenarioTemplates = () => {
     }, 5000);
     return () => clearInterval(interval);
   }, [jobs, load]);
+
+  const fetchDrafts = useCallback(
+    async (jobId: string) => {
+      const trimmedJobId = jobId.trim();
+      if (!trimmedJobId) {
+        setDrafts([]);
+        setDraftError('');
+        return;
+      }
+      try {
+        setLoadingDrafts(true);
+        setDraftError('');
+        const response = await apiClient.get<ScenarioTemplateGenerationDraft[]>(
+          `/sonar/admin/scenario-template-generation-jobs/${trimmedJobId}/drafts`
+        );
+        setDrafts(Array.isArray(response) ? response : []);
+      } catch (error) {
+        console.error(
+          'Failed to load scenario template generation drafts',
+          error
+        );
+        setDrafts([]);
+        setDraftError(
+          errorMessageFromUnknown(
+            error,
+            'Failed to load generated scenario template drafts.'
+          )
+        );
+      } finally {
+        setLoadingDrafts(false);
+      }
+    },
+    [apiClient]
+  );
+
+  useEffect(() => {
+    if (jobs.length === 0) {
+      setSelectedJobId('');
+      setDrafts([]);
+      setDraftError('');
+      return;
+    }
+    if (!selectedJobId || !jobs.some((job) => job.id === selectedJobId)) {
+      setSelectedJobId(jobs[0]?.id ?? '');
+    }
+  }, [jobs, selectedJobId]);
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setDrafts([]);
+      setDraftError('');
+      return;
+    }
+    void fetchDrafts(selectedJobId);
+  }, [fetchDrafts, selectedJobId]);
+
+  useEffect(() => {
+    const selectedJob = jobs.find((job) => job.id === selectedJobId);
+    if (!selectedJob || !['queued', 'in_progress'].includes(selectedJob.status))
+      return;
+    const interval = window.setInterval(() => {
+      void fetchDrafts(selectedJob.id);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchDrafts, jobs, selectedJobId]);
 
   const inventoryHint = useMemo(
     () =>
@@ -544,6 +685,10 @@ export const ScenarioTemplates = () => {
     ],
     [dashboardRecords, genres, zoneKindBySlug]
   );
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === selectedJobId) ?? null,
+    [jobs, selectedJobId]
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -628,18 +773,77 @@ export const ScenarioTemplates = () => {
     }
     try {
       setGenerating(true);
-      await apiClient.post('/sonar/admin/scenario-template-generation-jobs', {
-        count,
-        genreId: generationForm.genreId.trim(),
-        zoneKind: generationForm.zoneKind,
-        openEnded: generationForm.openEnded,
-      });
+      const response = await apiClient.post<ScenarioTemplateGenerationJob>(
+        '/sonar/admin/scenario-template-generation-jobs',
+        {
+          count,
+          genreId: generationForm.genreId.trim(),
+          zoneKind: generationForm.zoneKind,
+          openEnded: generationForm.openEnded,
+        }
+      );
       await load(true);
+      if (response?.id) {
+        setSelectedJobId(response.id);
+        await fetchDrafts(response.id);
+      }
     } catch (error) {
       console.error('Failed to queue scenario template generation', error);
-      alert('Failed to queue scenario template generation.');
+      alert(
+        errorMessageFromUnknown(
+          error,
+          'Failed to queue scenario template generation.'
+        )
+      );
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleConvertDraft = async (draftId: string) => {
+    try {
+      setConvertingDraftId(draftId);
+      await apiClient.post(
+        `/sonar/admin/scenario-template-generation-drafts/${draftId}/convert`,
+        {}
+      );
+      await load(true);
+      if (selectedJobId) {
+        await fetchDrafts(selectedJobId);
+      }
+    } catch (error) {
+      console.error('Failed to convert scenario template draft', error);
+      alert(
+        errorMessageFromUnknown(
+          error,
+          'Failed to convert scenario template draft.'
+        )
+      );
+    } finally {
+      setConvertingDraftId(null);
+    }
+  };
+
+  const handleDeleteDraft = async (draftId: string) => {
+    try {
+      setDeletingDraftId(draftId);
+      await apiClient.delete(
+        `/sonar/admin/scenario-template-generation-drafts/${draftId}`
+      );
+      if (selectedJobId) {
+        await fetchDrafts(selectedJobId);
+      }
+      await load(true);
+    } catch (error) {
+      console.error('Failed to delete scenario template draft', error);
+      alert(
+        errorMessageFromUnknown(
+          error,
+          'Failed to delete scenario template draft.'
+        )
+      );
+    } finally {
+      setDeletingDraftId(null);
     }
   };
 
@@ -796,24 +1000,191 @@ export const ScenarioTemplates = () => {
                       {job.zoneKind ? (
                         <> • {zoneKindLabel(job.zoneKind, zoneKindBySlug)}</>
                       ) : null}{' '}
-                      • Created {job.createdCount} • queued{' '}
+                      • Generated {job.createdCount} drafts • queued{' '}
                       {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (
                       <div className="text-red-600">{job.errorMessage}</div>
                     ) : null}
                   </div>
-                  <span
-                    className={`rounded px-2 py-1 text-xs font-semibold text-white ${jobStatusClassName(
-                      job.status
-                    )}`}
-                  >
-                    {job.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedJobId(job.id)}
+                      className={`rounded border px-3 py-2 text-sm ${
+                        selectedJobId === job.id
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      {selectedJobId === job.id ? 'Viewing drafts' : 'Review drafts'}
+                    </button>
+                    <span
+                      className={`rounded px-2 py-1 text-xs font-semibold text-white ${jobStatusClassName(
+                        job.status
+                      )}`}
+                    >
+                      {job.status}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))
           )}
+        </div>
+        <div className="rounded-lg border border-dashed bg-gray-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold">Generated Drafts</h3>
+              <p className="text-sm text-gray-600">
+                Review generated scenario templates before converting them into
+                live reusable templates.
+              </p>
+            </div>
+            {selectedJob ? (
+              <div className="text-sm text-gray-500">
+                Inspecting {selectedJob.openEnded ? 'open-ended' : 'choice-based'}{' '}
+                job queued {formatDate(selectedJob.createdAt)}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {!selectedJob ? (
+              <p className="text-sm text-gray-500">
+                Pick a generation job to inspect its drafts.
+              </p>
+            ) : draftError ? (
+              <p className="text-sm text-red-600">{draftError}</p>
+            ) : loadingDrafts ? (
+              <p className="text-sm text-gray-500">Loading drafts...</p>
+            ) : drafts.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                {['queued', 'in_progress'].includes(selectedJob.status)
+                  ? 'This job has not produced any drafts yet.'
+                  : 'No drafts for this job yet.'}
+              </p>
+            ) : (
+              drafts.map((draft) => {
+                const payload = draft.payload;
+                const options = Array.isArray(payload?.options)
+                  ? payload.options
+                  : [];
+                const sharedItemRewardCount = Array.isArray(payload?.itemRewards)
+                  ? payload.itemRewards.length
+                  : 0;
+                const sharedItemChoiceCount = Array.isArray(
+                  payload?.itemChoiceRewards
+                )
+                  ? payload.itemChoiceRewards.length
+                  : 0;
+                const sharedSpellRewardCount = Array.isArray(payload?.spellRewards)
+                  ? payload.spellRewards.length
+                  : 0;
+                const draftZoneKind = draft.zoneKind?.trim() || payload.zoneKind;
+                return (
+                  <div
+                    key={draft.id}
+                    className="rounded-lg border bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="space-y-2">
+                        <div className="text-sm text-gray-500">
+                          {formatGenreLabel(
+                            draft.genre ??
+                              genres.find((genre) => genre.id === draft.genreId)
+                          )}{' '}
+                          • Zone kind:{' '}
+                          {draftZoneKind?.trim()
+                            ? zoneKindLabel(draftZoneKind, zoneKindBySlug)
+                            : 'Unassigned'}{' '}
+                          •{' '}
+                          {draft.openEnded ? 'Open ended' : 'Choice based'} •
+                          difficulty {draft.difficulty} • created{' '}
+                          {formatDate(draft.createdAt)}
+                          {draft.convertedAt ? (
+                            <> • converted {formatDate(draft.convertedAt)}</>
+                          ) : null}
+                        </div>
+                        <div className="font-medium whitespace-pre-wrap">
+                          {draft.prompt}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Shared rewards: {payload.rewardExperience ?? 0} XP •{' '}
+                          {payload.rewardGold ?? 0} gold • {sharedItemRewardCount}{' '}
+                          item rewards • {sharedItemChoiceCount} item choices •{' '}
+                          {sharedSpellRewardCount} spell rewards
+                        </div>
+                        {!draft.openEnded && options.length > 0 ? (
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                              Options
+                            </div>
+                            <div className="space-y-2">
+                              {options.map((option, index) => (
+                                <div
+                                  key={`${draft.id}-option-${index}`}
+                                  className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+                                >
+                                  <div className="font-medium">
+                                    {option.optionText?.trim() ||
+                                      `Option ${index + 1}`}
+                                  </div>
+                                  <div className="text-gray-500">
+                                    {option.statTag?.trim()
+                                      ? `Stat: ${option.statTag}`
+                                      : 'No explicit stat tag'}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2">
+                        <span
+                          className={`rounded px-2 py-1 text-xs font-semibold text-white ${draftStatusClassName(
+                            draft.status
+                          )}`}
+                        >
+                          {draft.status}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleConvertDraft(draft.id)}
+                          disabled={
+                            draft.status === 'converted' ||
+                            convertingDraftId === draft.id
+                          }
+                          className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {draft.status === 'converted'
+                            ? 'Converted'
+                            : convertingDraftId === draft.id
+                              ? 'Converting...'
+                              : 'Convert to Template'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteDraft(draft.id)}
+                          disabled={
+                            draft.status === 'converted' ||
+                            deletingDraftId === draft.id
+                          }
+                          className="rounded border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingDraftId === draft.id
+                            ? 'Deleting...'
+                            : 'Delete Draft'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </section>
 

@@ -117,3 +117,19 @@ func resolveScenarioTemplateGenerationJobGenreID(
 	}
 	return defaultScenarioGenreID(ctx, database)
 }
+
+func resolveScenarioTemplateGenerationDraftGenreID(
+	ctx context.Context,
+	database *gorm.DB,
+	draft *models.ScenarioTemplateGenerationDraft,
+) (uuid.UUID, error) {
+	if draft != nil {
+		if draft.GenreID != uuid.Nil {
+			return draft.GenreID, nil
+		}
+		if draft.Payload.GenreID != uuid.Nil {
+			return draft.Payload.GenreID, nil
+		}
+	}
+	return defaultScenarioGenreID(ctx, database)
+}
