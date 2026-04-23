@@ -24,6 +24,7 @@ var zoneKindReferenceTables = []string{
 	"resources",
 	"movement_patterns",
 	"inventory_items",
+	"inventory_item_suggestion_jobs",
 }
 
 var zoneKindDirectZoneTables = []string{

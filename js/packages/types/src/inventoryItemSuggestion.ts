@@ -1,13 +1,17 @@
 import { InventoryItem } from './inventoryItem';
+import type { ResourceType } from './resourceType';
 import type { ZoneGenre } from './zone';
 
 export interface InventoryItemSuggestionJob {
   id: string;
   createdAt: string;
   updatedAt: string;
+  jobKind: string;
   genreId: string;
   genre?: ZoneGenre | null;
   zoneKind?: string | null;
+  resourceTypeId?: string | null;
+  resourceType?: ResourceType | null;
   status: string;
   count: number;
   themePrompt: string;

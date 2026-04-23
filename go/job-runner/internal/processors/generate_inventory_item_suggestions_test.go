@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 )
 
 func TestSanitizeInventoryItemSuggestionDraftClearsLinkedFieldsAndInfersCategory(t *testing.T) {
@@ -88,5 +89,70 @@ func TestSanitizeInventoryItemSuggestionDraftNormalizesZoneKind(t *testing.T) {
 	draft := sanitizeInventoryItemSuggestionDraft(spec, job, zoneKinds, map[string]struct{}{}, map[string]struct{}{})
 	if draft.Payload.Item.ZoneKind != "swamp-bog" {
 		t.Fatalf("expected normalized zone kind, got %q", draft.Payload.Item.ZoneKind)
+	}
+}
+
+func TestEnforceInventoryResourceProgressionDraftNormalizesMaterialFields(t *testing.T) {
+	resourceTypeID := uuid.New()
+	job := &models.InventoryItemSuggestionJob{
+		JobKind:        models.InventoryItemSuggestionJobKindResourceProgression,
+		ZoneKind:       "volcanic-caldera",
+		ResourceTypeID: &resourceTypeID,
+	}
+	resourceType := &models.ResourceType{
+		ID:   resourceTypeID,
+		Name: "Mining",
+		Slug: "mining",
+	}
+	draft := &models.InventoryItemSuggestionDraft{
+		Category:   "equippable",
+		RarityTier: "Common",
+		ItemLevel:  12,
+		EquipSlot:  stringPtr("dominant_hand"),
+		Payload: models.InventoryItemSuggestionPayloadValue{
+			Category: "equippable",
+			Item: models.InventoryItem{
+				Name:                "Caldera Pick",
+				EquipSlot:           stringPtr("dominant_hand"),
+				StrengthMod:         4,
+				ConsumeHealthDelta:  10,
+				UnlockLocksStrength: intPtr(20),
+			},
+		},
+	}
+
+	enforceInventoryResourceProgressionDraft(
+		draft,
+		job,
+		resourceType,
+		inventoryResourceProgressionTarget{Label: "Apex", Level: 100, RarityTier: "Mythic"},
+	)
+
+	if draft.Category != "material" {
+		t.Fatalf("expected resource progression category to be material, got %q", draft.Category)
+	}
+	if draft.Payload.Item.EquipSlot != nil {
+		t.Fatalf("expected equip slot to be cleared")
+	}
+	if draft.Payload.Item.StrengthMod != 0 {
+		t.Fatalf("expected combat stats to be cleared, got %d", draft.Payload.Item.StrengthMod)
+	}
+	if draft.Payload.Item.ConsumeHealthDelta != 0 {
+		t.Fatalf("expected consume effects to be cleared, got %d", draft.Payload.Item.ConsumeHealthDelta)
+	}
+	if draft.Payload.Item.ResourceTypeID == nil || *draft.Payload.Item.ResourceTypeID != resourceTypeID {
+		t.Fatalf("expected resource type id to be applied, got %+v", draft.Payload.Item.ResourceTypeID)
+	}
+	if draft.Payload.Item.ZoneKind != "volcanic-caldera" {
+		t.Fatalf("expected zone kind to be enforced, got %q", draft.Payload.Item.ZoneKind)
+	}
+	if draft.Payload.Item.ItemLevel != 100 {
+		t.Fatalf("expected target level to be enforced, got %d", draft.Payload.Item.ItemLevel)
+	}
+	if draft.Payload.Item.RarityTier != "Mythic" {
+		t.Fatalf("expected target rarity to be enforced, got %q", draft.Payload.Item.RarityTier)
+	}
+	if len(draft.Warnings) == 0 {
+		t.Fatalf("expected normalization warning for non-material inputs")
 	}
 }

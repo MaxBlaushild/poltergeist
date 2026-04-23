@@ -124,7 +124,7 @@ func main() {
 	seedDistrictProcessor := processors.NewSeedDistrictProcessor(dbClient, deepPriestClient, dungeonmasterClient, locationSeederClient, client)
 	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, client)
 	shuffleZoneSeedChallengeProcessor := processors.NewShuffleZoneSeedChallengeProcessor(dbClient)
-	backfillContentZoneKindsProcessor := processors.NewBackfillContentZoneKindsProcessor(dbClient, redisClient)
+	backfillContentZoneKindsProcessor := processors.NewBackfillContentZoneKindsProcessor(dbClient, redisClient, deepPriestClient)
 
 	// logPolymarketConfiguration(cfg)
 	// polymarketConfigHint := buildPolymarketConfigHint(cfg)

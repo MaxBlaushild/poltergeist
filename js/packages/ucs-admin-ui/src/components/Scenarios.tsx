@@ -149,6 +149,17 @@ type ScenarioRecord = {
   attemptedByUser?: boolean;
 };
 
+type ScenarioTemplateDashboardRecord = {
+  id: string;
+  genreId: string;
+  genre?: ZoneGenre;
+  zoneKind?: string;
+  difficulty: number;
+  scaleWithUserLevel: boolean;
+  rewardMode?: 'explicit' | 'random';
+  openEnded: boolean;
+};
+
 type ScenarioFormState = {
   zoneId: string;
   zoneKind: string;
@@ -773,27 +784,19 @@ export const Scenarios = () => {
     });
     return next;
   }, [zoneKinds]);
-  const zoneDefaultKindById = useMemo(() => {
-    const next = new Map<string, string>();
-    zones.forEach((zone) => {
-      next.set(zone.id, zone.kind?.trim() ?? '');
-    });
-    return next;
-  }, [zones]);
   const dashboardParams = useMemo(
     () => ({
       query: deferredQuery.trim(),
-      zoneQuery: deferredZoneQuery.trim(),
       genreId: genreFilter === 'all' ? '' : genreFilter,
     }),
-    [deferredQuery, deferredZoneQuery, genreFilter]
+    [deferredQuery, genreFilter]
   );
   const {
     items: dashboardRecords,
     loading: dashboardLoading,
     error: dashboardError,
-  } = useAdminAggregateDataset<ScenarioRecord>(
-    '/sonar/admin/scenarios',
+  } = useAdminAggregateDataset<ScenarioTemplateDashboardRecord>(
+    '/sonar/admin/scenario-templates',
     dashboardParams
   );
   const dashboardMetrics = useMemo(() => {
@@ -801,39 +804,29 @@ export const Scenarios = () => {
     const openEndedCount = dashboardRecords.filter(
       (record) => record.openEnded
     ).length;
-    const pointOfInterestCount = dashboardRecords.filter((record) =>
-      Boolean(record.pointOfInterestId)
+    const explicitRewardCount = dashboardRecords.filter(
+      (record) => record.rewardMode === 'explicit'
     ).length;
-    const recurringCount = dashboardRecords.filter((record) =>
-      Boolean(record.recurrenceFrequency?.trim())
+    const scaledCount = dashboardRecords.filter((record) =>
+      record.scaleWithUserLevel
     ).length;
 
     return [
-      { label: 'Scenarios', value: totalScenarios },
+      { label: 'Templates', value: totalScenarios },
       {
         label: 'Open-ended',
         value: openEndedCount,
         note: `${Math.max(0, totalScenarios - openEndedCount)} choice-based`,
       },
-      { label: 'POI-linked', value: pointOfInterestCount },
-      { label: 'Recurring', value: recurringCount },
+      { label: 'Explicit Rewards', value: explicitRewardCount },
+      { label: 'Scaled Difficulty', value: scaledCount },
     ];
   }, [dashboardRecords]);
   const dashboardSections = useMemo(
     () => [
       {
-        title: 'Zone Kinds',
-        note: 'Effective scenario placement by zone kind.',
-        buckets: countBy(dashboardRecords, (record) =>
-          zoneKindLabel(
-            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
-            zoneKindBySlug
-          )
-        ),
-      },
-      {
         title: 'Genre Mix',
-        note: 'Current scenario coverage across zone genres.',
+        note: 'Reusable scenario templates grouped by story genre.',
         buckets: countBy(
           dashboardRecords,
           (record) =>
@@ -846,8 +839,20 @@ export const Scenarios = () => {
         ),
       },
       {
+        title: 'Zone Kind Coverage',
+        note: 'Which environments the current template pool is tagged to support.',
+        buckets: countBy(
+          dashboardRecords,
+          (record) =>
+            record.zoneKind?.trim()
+              ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
+              : 'Unassigned',
+          { emptyLabel: 'Unassigned' }
+        ),
+      },
+      {
         title: 'Difficulty Bands',
-        note: 'Aggregate scenario difficulty for the current filter set.',
+        note: 'How hard the current template pool skews.',
         buckets: countBy(
           dashboardRecords,
           (record) => difficultyBandLabel(record.difficulty),
@@ -855,21 +860,14 @@ export const Scenarios = () => {
         ),
       },
       {
-        title: 'Placement',
-        note: 'How scenarios are anchored in the world.',
-        buckets: countBy(dashboardRecords, (record) =>
-          record.pointOfInterestId ? 'Point of interest' : 'Coordinate-placed'
-        ),
-      },
-      {
         title: 'Reward Model',
-        note: 'Explicit vs randomized reward distribution.',
+        note: 'Whether templates carry explicit or randomized rewards.',
         buckets: countBy(dashboardRecords, (record) =>
           record.rewardMode === 'explicit' ? 'Explicit rewards' : 'Randomized'
         ),
       },
     ],
-    [dashboardRecords, genres, zoneDefaultKindById, zoneKindBySlug]
+    [dashboardRecords, genres, zoneKindBySlug]
   );
 
   const [showModal, setShowModal] = useState(false);
@@ -3128,11 +3126,13 @@ export const Scenarios = () => {
       <div className="mb-6">
         <ContentDashboard
           title="Scenario Dashboard"
-          subtitle="Aggregate scenario coverage for the current search, zone, and genre filters."
+          subtitle="Aggregate scenario template coverage for the current search and genre filters."
           status={
-            query.trim() || zoneQuery.trim() || genreFilter !== 'all'
-              ? 'Reflects current filters'
-              : 'All live scenarios'
+            zoneQuery.trim()
+              ? 'Template counts reflect search and genre filters; zone search still applies to the scenario list below'
+              : query.trim() || genreFilter !== 'all'
+                ? 'Reflects current template-oriented search and genre filters'
+                : 'All reusable scenario templates'
           }
           loading={dashboardLoading}
           error={dashboardError}

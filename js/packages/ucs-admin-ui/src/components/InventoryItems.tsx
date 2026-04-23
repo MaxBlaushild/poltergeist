@@ -125,6 +125,8 @@ type RecipeBuilderMaterialOption = {
 
 type ResourceTypeRecord = ResourceType;
 
+type InventorySuggestionJobKind = 'draft_batch' | 'resource_progression';
+
 type InventorySetGenerationResponse = {
   sourceItemId?: number;
   setTheme: string;
@@ -242,9 +244,11 @@ const recipeMaterialSignalTokensByStation: Record<
 };
 
 type InventorySuggestionFormState = {
+  jobKind: InventorySuggestionJobKind;
   count: string;
   genreId: string;
   zoneKind: string;
+  resourceTypeId: string;
   themePrompt: string;
   categoriesText: string;
   rarityTiersText: string;
@@ -553,9 +557,11 @@ const renderSuggestionFacetLabel = (
 const emptyInventorySuggestionForm = (
   genreId = ''
 ): InventorySuggestionFormState => ({
+  jobKind: 'draft_batch',
   count: '12',
   genreId,
   zoneKind: '',
+  resourceTypeId: '',
   themePrompt: '',
   categoriesText: 'equippable, consumable, material',
   rarityTiersText: 'Common, Uncommon, Epic',
@@ -580,6 +586,15 @@ const formatGenreLabel = (genre?: ZoneGenre | null): string =>
 
 const isSuggestionJobPending = (status?: string | null) =>
   status === 'queued' || status === 'in_progress';
+
+const isResourceProgressionSuggestionJob = (
+  jobKind?: string | null
+): jobKind is 'resource_progression' => jobKind === 'resource_progression';
+
+const formatSuggestionJobKindLabel = (jobKind?: string | null) =>
+  isResourceProgressionSuggestionJob(jobKind)
+    ? 'Resource progression'
+    : 'Draft batch';
 
 const extractApiErrorMessage = (error: unknown, fallback: string) => {
   if (
@@ -1808,28 +1823,47 @@ export const InventoryItems = () => {
     setQueueingSuggestionJob(true);
     setSuggestionError(null);
     try {
+      const isResourceProgression = isResourceProgressionSuggestionJob(
+        suggestionForm.jobKind
+      );
       const created = await apiClient.post<InventoryItemSuggestionJob>(
         '/sonar/inventory-item-suggestion-jobs',
         {
-          count: Math.max(1, parseInt(suggestionForm.count, 10) || 1),
+          jobKind: suggestionForm.jobKind,
+          count: isResourceProgression
+            ? 10
+            : Math.max(1, parseInt(suggestionForm.count, 10) || 1),
           genreId: suggestionForm.genreId.trim(),
           zoneKind: suggestionForm.zoneKind.trim() || undefined,
+          resourceTypeId: isResourceProgression
+            ? suggestionForm.resourceTypeId.trim() || undefined
+            : undefined,
           themePrompt: suggestionForm.themePrompt.trim(),
-          categories: parseCommaValues(suggestionForm.categoriesText),
-          rarityTiers: parseCommaValues(suggestionForm.rarityTiersText),
-          equipSlots: parseCommaValues(suggestionForm.equipSlotsText),
-          statTags: parseCommaValues(suggestionForm.statTagsText),
-          benefitTags: parseCommaValues(suggestionForm.benefitTagsText),
-          statusNames: parseCommaValues(suggestionForm.statusNamesText),
+          categories: isResourceProgression
+            ? ['material']
+            : parseCommaValues(suggestionForm.categoriesText),
+          rarityTiers: isResourceProgression
+            ? ['Common', 'Uncommon', 'Epic', 'Mythic']
+            : parseCommaValues(suggestionForm.rarityTiersText),
+          equipSlots: isResourceProgression
+            ? []
+            : parseCommaValues(suggestionForm.equipSlotsText),
+          statTags: isResourceProgression
+            ? []
+            : parseCommaValues(suggestionForm.statTagsText),
+          benefitTags: isResourceProgression
+            ? []
+            : parseCommaValues(suggestionForm.benefitTagsText),
+          statusNames: isResourceProgression
+            ? []
+            : parseCommaValues(suggestionForm.statusNamesText),
           internalTags: parseInternalTagsInput(suggestionForm.internalTagsText),
-          minItemLevel: Math.max(
-            1,
-            parseInt(suggestionForm.minItemLevel, 10) || 1
-          ),
-          maxItemLevel: Math.max(
-            1,
-            parseInt(suggestionForm.maxItemLevel, 10) || 1
-          ),
+          minItemLevel: isResourceProgression
+            ? 1
+            : Math.max(1, parseInt(suggestionForm.minItemLevel, 10) || 1),
+          maxItemLevel: isResourceProgression
+            ? 100
+            : Math.max(1, parseInt(suggestionForm.maxItemLevel, 10) || 1),
         }
       );
       setSuggestionJobs((current) => [
@@ -5463,8 +5497,9 @@ export const InventoryItems = () => {
                 Agent-first inventory ideation
               </div>
               <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                Queue batches of draft items, review the generated concepts, and
-                convert only the ones that feel worth keeping.
+                Queue open-ended draft batches or fixed 10-step resource
+                progressions, review the generated concepts, and convert only
+                the ones that feel worth keeping.
               </p>
             </div>
             <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-600">
@@ -5475,26 +5510,31 @@ export const InventoryItems = () => {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-lg border border-white/70 bg-white p-4 shadow-sm">
               <div className="mb-3 text-sm font-semibold text-slate-800">
-                Queue Draft Batch
+                {isResourceProgressionSuggestionJob(suggestionForm.jobKind)
+                  ? 'Queue Resource Progression'
+                  : 'Queue Draft Batch'}
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Batch Size
+                    Generator
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={suggestionForm.count}
+                  <select
+                    value={suggestionForm.jobKind}
                     onChange={(event) =>
                       setSuggestionForm((current) => ({
                         ...current,
-                        count: event.target.value,
+                        jobKind: event.target
+                          .value as InventorySuggestionJobKind,
                       }))
                     }
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
+                  >
+                    <option value="draft_batch">Draft Batch</option>
+                    <option value="resource_progression">
+                      Resource Progression
+                    </option>
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -5520,9 +5560,31 @@ export const InventoryItems = () => {
                     ))}
                   </select>
                 </div>
+                {!isResourceProgressionSuggestionJob(suggestionForm.jobKind) && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Batch Size
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={suggestionForm.count}
+                      onChange={(event) =>
+                        setSuggestionForm((current) => ({
+                          ...current,
+                          count: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Preferred Zone Kind
+                    {isResourceProgressionSuggestionJob(suggestionForm.jobKind)
+                      ? 'Zone Kind'
+                      : 'Preferred Zone Kind'}
                   </label>
                   <select
                     value={suggestionForm.zoneKind}
@@ -5547,43 +5609,78 @@ export const InventoryItems = () => {
                     ))}
                   </select>
                   <div className="mt-1 text-xs text-slate-500">
-                    The model will still choose the best-fit zone kind per
-                    item, but it will lean toward this when it fits.
+                    {isResourceProgressionSuggestionJob(
+                      suggestionForm.jobKind
+                    )
+                      ? 'Every generated material in this progression will be branded to this zone kind.'
+                      : 'The model will still choose the best-fit zone kind per item, but it will lean toward this when it fits.'}
                   </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Level Band
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      value={suggestionForm.minItemLevel}
+                {isResourceProgressionSuggestionJob(suggestionForm.jobKind) ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Resource Type
+                    </label>
+                    <select
+                      value={suggestionForm.resourceTypeId}
                       onChange={(event) =>
                         setSuggestionForm((current) => ({
                           ...current,
-                          minItemLevel: event.target.value,
+                          resourceTypeId: event.target.value,
                         }))
                       }
-                      placeholder="Min"
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      value={suggestionForm.maxItemLevel}
-                      onChange={(event) =>
-                        setSuggestionForm((current) => ({
-                          ...current,
-                          maxItemLevel: event.target.value,
-                        }))
-                      }
-                      placeholder="Max"
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    />
+                    >
+                      <option value="">Select resource type</option>
+                      {resourceTypeOptions.map((option) => (
+                        <option
+                          key={`suggestion-resource-type-${option.value}`}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Generates a 10-step material ladder from level 1 through
+                      level 100 for this profession/resource family.
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Level Band
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        value={suggestionForm.minItemLevel}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            minItemLevel: event.target.value,
+                          }))
+                        }
+                        placeholder="Min"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        value={suggestionForm.maxItemLevel}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            maxItemLevel: event.target.value,
+                          }))
+                        }
+                        placeholder="Max"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="md:col-span-2">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
                     Theme Prompt
@@ -5597,106 +5694,114 @@ export const InventoryItems = () => {
                         themePrompt: event.target.value,
                       }))
                     }
-                    placeholder="Low-level occult street gear, scavenger kits, and odd consumables for night exploration."
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Categories
-                  </label>
-                  <input
-                    value={suggestionForm.categoriesText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        categoriesText: event.target.value,
-                      }))
+                    placeholder={
+                      isResourceProgressionSuggestionJob(suggestionForm.jobKind)
+                        ? 'Volcanic mining line with emberglass, cinderstone, and magma-veined late-game materials.'
+                        : 'Low-level occult street gear, scavenger kits, and odd consumables for night exploration.'
                     }
-                    placeholder="equippable, consumable, material"
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Rarity Tiers
-                  </label>
-                  <input
-                    value={suggestionForm.rarityTiersText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        rarityTiersText: event.target.value,
-                      }))
-                    }
-                    placeholder="Common, Uncommon, Epic"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Equip Slots
-                  </label>
-                  <input
-                    value={suggestionForm.equipSlotsText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        equipSlotsText: event.target.value,
-                      }))
-                    }
-                    placeholder="hat, necklace, dominant_hand"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Stat Tags
-                  </label>
-                  <input
-                    value={suggestionForm.statTagsText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        statTagsText: event.target.value,
-                      }))
-                    }
-                    placeholder="strength, intelligence, wisdom"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Benefit Tags
-                  </label>
-                  <input
-                    value={suggestionForm.benefitTagsText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        benefitTagsText: event.target.value,
-                      }))
-                    }
-                    placeholder="healing, mana, fire damage, resistances"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Status Names
-                  </label>
-                  <input
-                    value={suggestionForm.statusNamesText}
-                    onChange={(event) =>
-                      setSuggestionForm((current) => ({
-                        ...current,
-                        statusNamesText: event.target.value,
-                      }))
-                    }
-                    placeholder="Blessed, Guarded, Regenerating"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </div>
+                {!isResourceProgressionSuggestionJob(suggestionForm.jobKind) && (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Categories
+                      </label>
+                      <input
+                        value={suggestionForm.categoriesText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            categoriesText: event.target.value,
+                          }))
+                        }
+                        placeholder="equippable, consumable, material"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Rarity Tiers
+                      </label>
+                      <input
+                        value={suggestionForm.rarityTiersText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            rarityTiersText: event.target.value,
+                          }))
+                        }
+                        placeholder="Common, Uncommon, Epic"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Equip Slots
+                      </label>
+                      <input
+                        value={suggestionForm.equipSlotsText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            equipSlotsText: event.target.value,
+                          }))
+                        }
+                        placeholder="hat, necklace, dominant_hand"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Stat Tags
+                      </label>
+                      <input
+                        value={suggestionForm.statTagsText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            statTagsText: event.target.value,
+                          }))
+                        }
+                        placeholder="strength, intelligence, wisdom"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Benefit Tags
+                      </label>
+                      <input
+                        value={suggestionForm.benefitTagsText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            benefitTagsText: event.target.value,
+                          }))
+                        }
+                        placeholder="healing, mana, fire damage, resistances"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Status Names
+                      </label>
+                      <input
+                        value={suggestionForm.statusNamesText}
+                        onChange={(event) =>
+                          setSuggestionForm((current) => ({
+                            ...current,
+                            statusNamesText: event.target.value,
+                          }))
+                        }
+                        placeholder="Blessed, Guarded, Regenerating"
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
                     Internal Tags
@@ -5722,7 +5827,13 @@ export const InventoryItems = () => {
                   disabled={queueingSuggestionJob}
                   className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  {queueingSuggestionJob ? 'Queueing...' : 'Queue Draft Job'}
+                  {queueingSuggestionJob
+                    ? 'Queueing...'
+                    : isResourceProgressionSuggestionJob(
+                          suggestionForm.jobKind
+                        )
+                      ? 'Queue Progression Job'
+                      : 'Queue Draft Job'}
                 </button>
                 <button
                   type="button"
@@ -5789,11 +5900,19 @@ export const InventoryItems = () => {
                         </span>
                       </div>
                       <div className="mt-2 text-xs text-slate-500">
-                        Genre:{' '}
+                        {formatSuggestionJobKindLabel(job.jobKind)} · Genre:{' '}
                         {formatGenreLabel(
                           job.genre ??
                             genres.find((genre) => genre.id === job.genreId)
                         )}{' '}
+                        {job.resourceType
+                          ? `· ${formatInventoryResourceType(job.resourceType)} `
+                          : job.resourceTypeId
+                            ? `· ${
+                                resourceTypeNameByID.get(job.resourceTypeId) ??
+                                'Unknown resource type'
+                              } `
+                            : ''}
                         {job.zoneKind
                           ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
                           : ''}
@@ -5803,6 +5922,9 @@ export const InventoryItems = () => {
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                         {[
+                          isResourceProgressionSuggestionJob(job.jobKind)
+                            ? '10-step 1-100 progression'
+                            : null,
                           renderSuggestionFacetLabel('stats', job.statTags),
                           renderSuggestionFacetLabel(
                             'benefits',
@@ -5841,7 +5963,10 @@ export const InventoryItems = () => {
                 {selectedSuggestionJob && (
                   <div className="space-y-1 text-xs text-slate-500">
                     <div>
-                      Genre:{' '}
+                      {formatSuggestionJobKindLabel(
+                        selectedSuggestionJob.jobKind
+                      )}{' '}
+                      · Genre:{' '}
                       {formatGenreLabel(
                         selectedSuggestionJob.genre ??
                           genres.find(
@@ -5849,6 +5974,17 @@ export const InventoryItems = () => {
                               genre.id === selectedSuggestionJob.genreId
                           )
                       )}{' '}
+                      {selectedSuggestionJob.resourceType
+                        ? `· ${formatInventoryResourceType(
+                            selectedSuggestionJob.resourceType
+                          )} `
+                        : selectedSuggestionJob.resourceTypeId
+                          ? `· ${
+                              resourceTypeNameByID.get(
+                                selectedSuggestionJob.resourceTypeId
+                              ) ?? 'Unknown resource type'
+                            } `
+                          : ''}
                       {selectedSuggestionJob.zoneKind
                         ? `· ${zoneKindLabel(selectedSuggestionJob.zoneKind, zoneKindBySlug)} `
                         : ''}
@@ -5862,6 +5998,11 @@ export const InventoryItems = () => {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {[
+                        isResourceProgressionSuggestionJob(
+                          selectedSuggestionJob.jobKind
+                        )
+                          ? '10-step level ladder'
+                          : null,
                         renderSuggestionFacetLabel(
                           'Stat focus',
                           selectedSuggestionJob.statTags
@@ -5936,6 +6077,18 @@ export const InventoryItems = () => {
                               draft.payload.item.zoneKind,
                               zoneKindBySlug
                             )}
+                          </span>
+                        )}
+                        {(draft.payload.item.resourceType ||
+                          draft.payload.item.resourceTypeId) && (
+                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                            {formatInventoryResourceType(
+                              draft.payload.item.resourceType
+                            ) ||
+                              resourceTypeNameByID.get(
+                                draft.payload.item.resourceTypeId ?? ''
+                              ) ||
+                              'Unknown resource type'}
                           </span>
                         )}
                         {draft.equipSlot && (

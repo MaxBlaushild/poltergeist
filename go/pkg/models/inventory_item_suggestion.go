@@ -16,6 +16,9 @@ const (
 	InventoryItemSuggestionJobStatusCompleted  = "completed"
 	InventoryItemSuggestionJobStatusFailed     = "failed"
 
+	InventoryItemSuggestionJobKindDraftBatch          = "draft_batch"
+	InventoryItemSuggestionJobKindResourceProgression = "resource_progression"
+
 	InventoryItemSuggestionDraftStatusSuggested = "suggested"
 	InventoryItemSuggestionDraftStatusConverted = "converted"
 )
@@ -50,26 +53,29 @@ func (p *InventoryItemSuggestionPayloadValue) Scan(value interface{}) error {
 }
 
 type InventoryItemSuggestionJob struct {
-	ID           uuid.UUID   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt    time.Time   `json:"createdAt"`
-	UpdatedAt    time.Time   `json:"updatedAt"`
-	GenreID      uuid.UUID   `json:"genreId" gorm:"column:genre_id;type:uuid"`
-	Genre        *ZoneGenre  `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
-	ZoneKind     string      `json:"zoneKind" gorm:"column:zone_kind"`
-	Status       string      `json:"status"`
-	Count        int         `json:"count"`
-	ThemePrompt  string      `json:"themePrompt" gorm:"column:theme_prompt"`
-	Categories   StringArray `json:"categories" gorm:"type:jsonb"`
-	RarityTiers  StringArray `json:"rarityTiers" gorm:"column:rarity_tiers;type:jsonb"`
-	EquipSlots   StringArray `json:"equipSlots" gorm:"column:equip_slots;type:jsonb"`
-	StatTags     StringArray `json:"statTags" gorm:"column:stat_tags;type:jsonb"`
-	BenefitTags  StringArray `json:"benefitTags" gorm:"column:benefit_tags;type:jsonb"`
-	StatusNames  StringArray `json:"statusNames" gorm:"column:status_names;type:jsonb"`
-	InternalTags StringArray `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
-	MinItemLevel int         `json:"minItemLevel" gorm:"column:min_item_level"`
-	MaxItemLevel int         `json:"maxItemLevel" gorm:"column:max_item_level"`
-	CreatedCount int         `json:"createdCount" gorm:"column:created_count"`
-	ErrorMessage *string     `json:"errorMessage,omitempty" gorm:"column:error_message"`
+	ID             uuid.UUID     `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt      time.Time     `json:"createdAt"`
+	UpdatedAt      time.Time     `json:"updatedAt"`
+	JobKind        string        `json:"jobKind" gorm:"column:job_kind"`
+	GenreID        uuid.UUID     `json:"genreId" gorm:"column:genre_id;type:uuid"`
+	Genre          *ZoneGenre    `json:"genre,omitempty" gorm:"foreignKey:GenreID"`
+	ZoneKind       string        `json:"zoneKind" gorm:"column:zone_kind"`
+	ResourceTypeID *uuid.UUID    `json:"resourceTypeId,omitempty" gorm:"column:resource_type_id;type:uuid"`
+	ResourceType   *ResourceType `json:"resourceType,omitempty" gorm:"foreignKey:ResourceTypeID"`
+	Status         string        `json:"status"`
+	Count          int           `json:"count"`
+	ThemePrompt    string        `json:"themePrompt" gorm:"column:theme_prompt"`
+	Categories     StringArray   `json:"categories" gorm:"type:jsonb"`
+	RarityTiers    StringArray   `json:"rarityTiers" gorm:"column:rarity_tiers;type:jsonb"`
+	EquipSlots     StringArray   `json:"equipSlots" gorm:"column:equip_slots;type:jsonb"`
+	StatTags       StringArray   `json:"statTags" gorm:"column:stat_tags;type:jsonb"`
+	BenefitTags    StringArray   `json:"benefitTags" gorm:"column:benefit_tags;type:jsonb"`
+	StatusNames    StringArray   `json:"statusNames" gorm:"column:status_names;type:jsonb"`
+	InternalTags   StringArray   `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
+	MinItemLevel   int           `json:"minItemLevel" gorm:"column:min_item_level"`
+	MaxItemLevel   int           `json:"maxItemLevel" gorm:"column:max_item_level"`
+	CreatedCount   int           `json:"createdCount" gorm:"column:created_count"`
+	ErrorMessage   *string       `json:"errorMessage,omitempty" gorm:"column:error_message"`
 }
 
 func (InventoryItemSuggestionJob) TableName() string {
@@ -110,6 +116,15 @@ func NormalizeInventoryItemSuggestionJobStatus(raw string) string {
 		return InventoryItemSuggestionJobStatusFailed
 	default:
 		return InventoryItemSuggestionJobStatusQueued
+	}
+}
+
+func NormalizeInventoryItemSuggestionJobKind(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case InventoryItemSuggestionJobKindResourceProgression:
+		return InventoryItemSuggestionJobKindResourceProgression
+	default:
+		return InventoryItemSuggestionJobKindDraftBatch
 	}
 }
 

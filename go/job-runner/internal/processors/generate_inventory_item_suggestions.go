@@ -199,6 +199,16 @@ func (p *GenerateInventoryItemSuggestionsProcessor) generateDrafts(
 	ctx context.Context,
 	job *models.InventoryItemSuggestionJob,
 ) error {
+	if models.NormalizeInventoryItemSuggestionJobKind(job.JobKind) == models.InventoryItemSuggestionJobKindResourceProgression {
+		return p.generateResourceProgressionDrafts(ctx, job)
+	}
+	return p.generateDraftBatchDrafts(ctx, job)
+}
+
+func (p *GenerateInventoryItemSuggestionsProcessor) generateDraftBatchDrafts(
+	ctx context.Context,
+	job *models.InventoryItemSuggestionJob,
+) error {
 	existingItems, err := p.dbClient.InventoryItem().FindAllInventoryItems(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load inventory items: %w", err)

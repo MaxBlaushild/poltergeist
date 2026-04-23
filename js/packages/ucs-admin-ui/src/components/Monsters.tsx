@@ -58,6 +58,38 @@ type MonsterTemplateRecord = {
   imageGenerationError?: string | null;
 };
 
+const formatTemplateSpellLoadoutLabel = (
+  template: MonsterTemplateRecord
+): string => {
+  const spellCount = template.spells?.length ?? 0;
+  if (spellCount <= 0) {
+    return '0 spells';
+  }
+  if (spellCount === 1) {
+    return '1 spell';
+  }
+  if (spellCount === 2) {
+    return '2 spells';
+  }
+  if (spellCount <= 4) {
+    return '3-4 spells';
+  }
+  return '5+ spells';
+};
+
+const formatTemplateProgressionCoverageLabel = (
+  template: MonsterTemplateRecord
+): string => {
+  const progressionCount = template.progressions?.length ?? 0;
+  if (progressionCount <= 0) {
+    return 'No progressions';
+  }
+  if (progressionCount === 1) {
+    return '1 progression';
+  }
+  return '2+ progressions';
+};
+
 type MonsterTemplateProgressionRecord = {
   id: string;
   name: string;
@@ -1445,42 +1477,26 @@ export const Monsters = () => {
     '/sonar/admin/monster-templates',
     templateDashboardParams
   );
-  const {
-    items: dashboardMonsters,
-    loading: dashboardMonstersLoading,
-    error: dashboardMonstersError,
-  } = useAdminAggregateDataset<MonsterRecord>(
-    '/sonar/admin/monsters',
-    sharedDashboardParams
-  );
-  const {
-    items: dashboardEncounters,
-    loading: dashboardEncountersLoading,
-    error: dashboardEncountersError,
-  } = useAdminAggregateDataset<MonsterEncounterRecord>(
-    '/sonar/admin/monster-encounters',
-    sharedDashboardParams
-  );
-  const dashboardLoading =
-    dashboardTemplatesLoading ||
-    dashboardMonstersLoading ||
-    dashboardEncountersLoading;
-  const dashboardError =
-    dashboardTemplatesError || dashboardMonstersError || dashboardEncountersError;
+  const dashboardLoading = dashboardTemplatesLoading;
+  const dashboardError = dashboardTemplatesError;
   const dashboardMetrics = useMemo(() => {
+    const templatesWithSpells = dashboardTemplates.filter(
+      (template) => (template.spells?.length ?? 0) > 0
+    ).length;
+    const templatesWithProgressions = dashboardTemplates.filter(
+      (template) => (template.progressions?.length ?? 0) > 0
+    ).length;
     return [
       { label: 'Visible Templates', value: dashboardTemplates.length },
       { label: 'Active Templates', value: activeTemplateCount },
       { label: 'Archived Templates', value: archivedTemplateCount },
-      { label: 'Placed Monsters', value: dashboardMonsters.length },
-      { label: 'Encounters', value: dashboardEncounters.length },
+      { label: 'With Spells', value: templatesWithSpells },
+      { label: 'With Progressions', value: templatesWithProgressions },
     ];
   }, [
     activeTemplateCount,
     archivedTemplateCount,
-    dashboardEncounters.length,
-    dashboardMonsters.length,
-    dashboardTemplates.length,
+    dashboardTemplates,
   ]);
   const dashboardSections = useMemo(
     () => [
@@ -1513,55 +1529,23 @@ export const Monsters = () => {
         ),
       },
       {
-        title: 'Monster Zone Kinds',
-        note: 'Effective zone kind coverage for placed monsters.',
-        buckets: countBy(dashboardMonsters, (monster) =>
-          zoneKindLabel(
-            monster.zoneKind?.trim() || zoneDefaultKindById.get(monster.zoneId),
-            zoneKindBySlug
-          )
+        title: 'Spell Loadout',
+        note: 'How many direct spells are configured per template.',
+        buckets: countBy(dashboardTemplates, (template) =>
+          formatTemplateSpellLoadoutLabel(template)
         ),
       },
       {
-        title: 'Monster Genres',
-        note: 'Genre spread across concrete placed monsters.',
-        buckets: countBy(
-          dashboardMonsters,
-          (monster) =>
-            formatGenreLabel(
-              monster.genre ??
-                monster.template?.genre ??
-                genres.find((genre) => genre.id === monster.genreId) ??
-                null
-            ),
-          { emptyLabel: 'Fantasy' }
-        ),
-      },
-      {
-        title: 'Encounter Zone Kinds',
-        note: 'Where grouped encounters are concentrated.',
-        buckets: countBy(dashboardEncounters, (encounter) =>
-          zoneKindLabel(
-            encounter.zoneKind?.trim() ||
-              zoneDefaultKindById.get(encounter.zoneId),
-            zoneKindBySlug
-          )
-        ),
-      },
-      {
-        title: 'Encounter Types',
-        note: 'Distribution of standard, boss, and raid encounters.',
-        buckets: countBy(dashboardEncounters, (encounter) =>
-          formatMonsterEncounterTypeLabel(encounter.encounterType)
+        title: 'Progression Coverage',
+        note: 'How many progression tracks each template references.',
+        buckets: countBy(dashboardTemplates, (template) =>
+          formatTemplateProgressionCoverageLabel(template)
         ),
       },
     ],
     [
-      dashboardEncounters,
-      dashboardMonsters,
       dashboardTemplates,
       genres,
-      zoneDefaultKindById,
       zoneKindBySlug,
     ]
   );
@@ -3051,7 +3035,7 @@ export const Monsters = () => {
       <div className="max-w-7xl mx-auto space-y-6">
         <ContentDashboard
           title="Monster Dashboard"
-          subtitle="Aggregate monster coverage for the current query, zone, genre, and template filters."
+          subtitle="Aggregate monster template coverage for the current query, zone, genre, and template filters."
           status={
             query.trim() ||
             zoneQuery.trim() ||
@@ -3059,7 +3043,7 @@ export const Monsters = () => {
             templateTypeFilter !== 'all' ||
             templateTab === 'archived'
               ? 'Reflects current filters and template view'
-              : 'All live monster content'
+              : 'All monster templates in the active view'
           }
           loading={dashboardLoading}
           error={dashboardError}

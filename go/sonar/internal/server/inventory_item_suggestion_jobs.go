@@ -34,6 +34,8 @@ var inventoryProgressionBands = []inventoryProgressionBand{
 	{Label: "Superb", TargetLevel: 93, RarityTier: "Mythic", RecipeTier: 5},
 }
 
+const inventoryResourceProgressionSuggestionCount = 10
+
 type inventoryItemUpsertRequest struct {
 	Name                                     string                         `json:"name"`
 	Archived                                 *bool                          `json:"archived"`
@@ -107,19 +109,41 @@ type inventoryItemUpsertRequest struct {
 }
 
 type inventoryItemSuggestionJobRequest struct {
-	Count        int      `json:"count"`
-	GenreID      string   `json:"genreId"`
-	ZoneKind     string   `json:"zoneKind"`
-	ThemePrompt  string   `json:"themePrompt"`
-	Categories   []string `json:"categories"`
-	RarityTiers  []string `json:"rarityTiers"`
-	EquipSlots   []string `json:"equipSlots"`
-	StatTags     []string `json:"statTags"`
-	BenefitTags  []string `json:"benefitTags"`
-	StatusNames  []string `json:"statusNames"`
-	InternalTags []string `json:"internalTags"`
-	MinItemLevel *int     `json:"minItemLevel"`
-	MaxItemLevel *int     `json:"maxItemLevel"`
+	JobKind        string   `json:"jobKind"`
+	Count          int      `json:"count"`
+	GenreID        string   `json:"genreId"`
+	ZoneKind       string   `json:"zoneKind"`
+	ResourceTypeID *string  `json:"resourceTypeId"`
+	ResourceType   *string  `json:"resourceType"`
+	ThemePrompt    string   `json:"themePrompt"`
+	Categories     []string `json:"categories"`
+	RarityTiers    []string `json:"rarityTiers"`
+	EquipSlots     []string `json:"equipSlots"`
+	StatTags       []string `json:"statTags"`
+	BenefitTags    []string `json:"benefitTags"`
+	StatusNames    []string `json:"statusNames"`
+	InternalTags   []string `json:"internalTags"`
+	MinItemLevel   *int     `json:"minItemLevel"`
+	MaxItemLevel   *int     `json:"maxItemLevel"`
+}
+
+func defaultInventoryResourceProgressionThemePrompt(
+	resourceType *models.ResourceType,
+	zoneKind *models.ZoneKind,
+) string {
+	resourceLabel := strings.ToLower(resourceNameForDisplay(resourceType))
+	zoneLabel := strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind))
+	if zoneLabel == "" {
+		zoneLabel = humanizeNormalizedSlug(models.ZoneKindPromptSlug(zoneKind))
+	}
+	if zoneLabel == "" {
+		return fmt.Sprintf("10-step progression of %s materials", resourceLabel)
+	}
+	return fmt.Sprintf(
+		"10-step progression of %s materials branded to %s zones",
+		resourceLabel,
+		strings.ToLower(zoneLabel),
+	)
 }
 
 func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
@@ -128,24 +152,33 @@ func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if body.Count <= 0 {
-		body.Count = 12
-	}
-	if body.Count > 100 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
-		return
+
+	jobKind := models.NormalizeInventoryItemSuggestionJobKind(body.JobKind)
+	count := body.Count
+	if jobKind == models.InventoryItemSuggestionJobKindResourceProgression {
+		count = inventoryResourceProgressionSuggestionCount
+	} else {
+		if count <= 0 {
+			count = 12
+		}
+		if count > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
+			return
+		}
 	}
 
 	minLevel := 1
-	if body.MinItemLevel != nil && *body.MinItemLevel > 0 {
-		minLevel = *body.MinItemLevel
-	}
 	maxLevel := 100
-	if body.MaxItemLevel != nil && *body.MaxItemLevel > 0 {
-		maxLevel = *body.MaxItemLevel
-	}
-	if maxLevel < minLevel {
-		maxLevel = minLevel
+	if jobKind != models.InventoryItemSuggestionJobKindResourceProgression {
+		if body.MinItemLevel != nil && *body.MinItemLevel > 0 {
+			minLevel = *body.MinItemLevel
+		}
+		if body.MaxItemLevel != nil && *body.MaxItemLevel > 0 {
+			maxLevel = *body.MaxItemLevel
+		}
+		if maxLevel < minLevel {
+			maxLevel = minLevel
+		}
 	}
 	genre, err := s.resolveZoneGenre(ctx, body.GenreID)
 	if err != nil {
@@ -162,26 +195,83 @@ func (s *server) createInventoryItemSuggestionJob(ctx *gin.Context) {
 		zoneKindSlug = models.NormalizeZoneKind(zoneKind.Slug)
 	}
 
+	var (
+		resourceTypeID *uuid.UUID
+		resourceType   *models.ResourceType
+	)
+	if jobKind == models.InventoryItemSuggestionJobKindResourceProgression {
+		if zoneKind == nil || zoneKindSlug == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneKind is required for resource progression jobs"})
+			return
+		}
+		resolvedResourceTypeID, resolvedResourceType, err := s.resolveResourceTypeReference(
+			ctx,
+			body.ResourceTypeID,
+			body.ResourceType,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if resolvedResourceTypeID == nil || resolvedResourceType == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "resourceTypeId is required for resource progression jobs"})
+			return
+		}
+		resourceTypeID = resolvedResourceTypeID
+		resourceType = resolvedResourceType
+	}
+
+	themePrompt := strings.TrimSpace(body.ThemePrompt)
+	categories := normalizeInventorySuggestionCategories(body.Categories)
+	rarityTiers := normalizeInventorySuggestionRarityList(body.RarityTiers)
+	equipSlots := normalizeInventorySuggestionEquipSlots(body.EquipSlots)
+	statTags := normalizeInventorySuggestionStatTags(body.StatTags)
+	benefitTags := normalizeInventorySuggestionBenefitTags(body.BenefitTags)
+	statusNames := normalizeInventorySuggestionStatusNames(body.StatusNames)
+	internalTags := parseInventoryInternalTags(body.InternalTags)
+	if jobKind == models.InventoryItemSuggestionJobKindResourceProgression {
+		if themePrompt == "" {
+			themePrompt = defaultInventoryResourceProgressionThemePrompt(resourceType, zoneKind)
+		}
+		categories = models.StringArray{"material"}
+		rarityTiers = models.StringArray{"Common", "Uncommon", "Epic", "Mythic"}
+		equipSlots = models.StringArray{}
+		statTags = models.StringArray{}
+		benefitTags = models.StringArray{}
+		statusNames = models.StringArray{}
+		internalTags = parseInventoryInternalTags(
+			append(
+				append([]string{}, internalTags...),
+				"resource_progression",
+				normalizeResourceTypeSlug(resourceNameForDisplay(resourceType)),
+				zoneKindSlug,
+			),
+		)
+	}
+
 	job := &models.InventoryItemSuggestionJob{
-		ID:           uuid.New(),
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-		GenreID:      genre.ID,
-		Genre:        genre,
-		ZoneKind:     zoneKindSlug,
-		Status:       models.InventoryItemSuggestionJobStatusQueued,
-		Count:        body.Count,
-		ThemePrompt:  strings.TrimSpace(body.ThemePrompt),
-		Categories:   normalizeInventorySuggestionCategories(body.Categories),
-		RarityTiers:  normalizeInventorySuggestionRarityList(body.RarityTiers),
-		EquipSlots:   normalizeInventorySuggestionEquipSlots(body.EquipSlots),
-		StatTags:     normalizeInventorySuggestionStatTags(body.StatTags),
-		BenefitTags:  normalizeInventorySuggestionBenefitTags(body.BenefitTags),
-		StatusNames:  normalizeInventorySuggestionStatusNames(body.StatusNames),
-		InternalTags: parseInventoryInternalTags(body.InternalTags),
-		MinItemLevel: minLevel,
-		MaxItemLevel: maxLevel,
-		CreatedCount: 0,
+		ID:             uuid.New(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		JobKind:        jobKind,
+		GenreID:        genre.ID,
+		Genre:          genre,
+		ZoneKind:       zoneKindSlug,
+		ResourceTypeID: resourceTypeID,
+		ResourceType:   resourceType,
+		Status:         models.InventoryItemSuggestionJobStatusQueued,
+		Count:          count,
+		ThemePrompt:    themePrompt,
+		Categories:     categories,
+		RarityTiers:    rarityTiers,
+		EquipSlots:     equipSlots,
+		StatTags:       statTags,
+		BenefitTags:    benefitTags,
+		StatusNames:    statusNames,
+		InternalTags:   internalTags,
+		MinItemLevel:   minLevel,
+		MaxItemLevel:   maxLevel,
+		CreatedCount:   0,
 	}
 	if err := s.dbClient.InventoryItemSuggestionJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
