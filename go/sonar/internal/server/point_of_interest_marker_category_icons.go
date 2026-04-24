@@ -16,14 +16,20 @@ const (
 )
 
 type pointOfInterestMarkerCategoryIconStatusResponse struct {
-	Category      string  `json:"category"`
-	Label         string  `json:"label"`
-	DefaultPrompt string  `json:"defaultPrompt"`
-	ThumbnailURL  string  `json:"thumbnailUrl"`
-	Status        string  `json:"status"`
-	Exists        bool    `json:"exists"`
-	RequestedAt   *string `json:"requestedAt,omitempty"`
-	LastModified  *string `json:"lastModified,omitempty"`
+	Category              string  `json:"category"`
+	Label                 string  `json:"label"`
+	DefaultPrompt         string  `json:"defaultPrompt"`
+	ThumbnailURL          string  `json:"thumbnailUrl"`
+	EffectiveThumbnailURL string  `json:"effectiveThumbnailUrl"`
+	DefaultThumbnailURL   string  `json:"defaultThumbnailUrl"`
+	Status                string  `json:"status"`
+	Exists                bool    `json:"exists"`
+	DefaultExists         bool    `json:"defaultExists"`
+	ActionPath            string  `json:"actionPath"`
+	SupportsZoneKinds     bool    `json:"supportsZoneKinds"`
+	ZoneKind              string  `json:"zoneKind,omitempty"`
+	RequestedAt           *string `json:"requestedAt,omitempty"`
+	LastModified          *string `json:"lastModified,omitempty"`
 }
 
 func allPointOfInterestMarkerCategories() []models.PointOfInterestMarkerCategory {
@@ -150,21 +156,43 @@ func pointOfInterestMarkerCategoryThumbnailStatusKey(category models.PointOfInte
 func (s *server) pointOfInterestMarkerCategoryStatusResponse(
 	ctx *gin.Context,
 	category models.PointOfInterestMarkerCategory,
+	zoneKind *models.ZoneKind,
 ) (*pointOfInterestMarkerCategoryIconStatusResponse, error) {
-	destinationKey := pointOfInterestMarkerCategoryThumbnailKey(category)
-	statusKey := pointOfInterestMarkerCategoryThumbnailStatusKey(category)
+	destinationKey := pointOfInterestMarkerCategoryVariantThumbnailKey(category, zoneKind)
+	statusKey := pointOfInterestMarkerCategoryVariantStatusKey(category, zoneKind)
 	status, exists, requestedAt, lastModified, err := s.readStaticThumbnailStatus(ctx, destinationKey, statusKey)
 	if err != nil {
 		return nil, err
 	}
+	defaultDestinationKey := pointOfInterestMarkerCategoryThumbnailKey(category)
+	defaultExists := exists
+	if contentMapMarkerZoneKindSlug(zoneKind) != "" {
+		_, defaultExists, _, _, err = s.readStaticThumbnailStatus(
+			ctx,
+			defaultDestinationKey,
+			pointOfInterestMarkerCategoryThumbnailStatusKey(category),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	response := &pointOfInterestMarkerCategoryIconStatusResponse{
-		Category:      string(category),
-		Label:         pointOfInterestMarkerCategoryLabel(category),
-		DefaultPrompt: defaultPointOfInterestMarkerCategoryIconPrompt(category),
-		ThumbnailURL:  staticThumbnailURL(destinationKey),
-		Status:        status,
-		Exists:        exists,
+		Category:              string(category),
+		Label:                 pointOfInterestMarkerCategoryLabel(category),
+		DefaultPrompt:         mergeZoneKindContentMapMarkerPrompt(defaultPointOfInterestMarkerCategoryIconPrompt(category), zoneKind),
+		ThumbnailURL:          staticThumbnailURL(destinationKey),
+		EffectiveThumbnailURL: staticThumbnailURL(defaultDestinationKey),
+		DefaultThumbnailURL:   staticThumbnailURL(defaultDestinationKey),
+		Status:                status,
+		Exists:                exists,
+		DefaultExists:         defaultExists,
+		ActionPath:            fmt.Sprintf("/sonar/admin/thumbnails/poi-marker-categories/%s", category),
+		SupportsZoneKinds:     true,
+		ZoneKind:              contentMapMarkerZoneKindSlug(zoneKind),
+	}
+	if exists {
+		response.EffectiveThumbnailURL = response.ThumbnailURL
 	}
 	if requestedAt != nil {
 		value := requestedAt.UTC().Format(time.RFC3339Nano)
@@ -178,9 +206,14 @@ func (s *server) pointOfInterestMarkerCategoryStatusResponse(
 }
 
 func (s *server) listPointOfInterestMarkerCategoryIcons(ctx *gin.Context) {
+	zoneKind, err := s.resolveContentMapMarkerZoneKind(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	responses := make([]*pointOfInterestMarkerCategoryIconStatusResponse, 0, len(allPointOfInterestMarkerCategories()))
 	for _, category := range allPointOfInterestMarkerCategories() {
-		response, err := s.pointOfInterestMarkerCategoryStatusResponse(ctx, category)
+		response, err := s.pointOfInterestMarkerCategoryStatusResponse(ctx, category, zoneKind)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -196,11 +229,16 @@ func (s *server) generatePointOfInterestMarkerCategoryIcon(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest marker category"})
 		return
 	}
+	zoneKind, err := s.resolveContentMapMarkerZoneKind(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	s.queueGeneratedStaticThumbnail(
 		ctx,
-		defaultPointOfInterestMarkerCategoryIconPrompt(category),
-		pointOfInterestMarkerCategoryThumbnailKey(category),
-		pointOfInterestMarkerCategoryThumbnailStatusKey(category),
+		mergeZoneKindContentMapMarkerPrompt(defaultPointOfInterestMarkerCategoryIconPrompt(category), zoneKind),
+		pointOfInterestMarkerCategoryVariantThumbnailKey(category, zoneKind),
+		pointOfInterestMarkerCategoryVariantStatusKey(category, zoneKind),
 	)
 }
 
@@ -210,7 +248,12 @@ func (s *server) getPointOfInterestMarkerCategoryIconStatus(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest marker category"})
 		return
 	}
-	response, err := s.pointOfInterestMarkerCategoryStatusResponse(ctx, category)
+	zoneKind, err := s.resolveContentMapMarkerZoneKind(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	response, err := s.pointOfInterestMarkerCategoryStatusResponse(ctx, category, zoneKind)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -224,9 +267,14 @@ func (s *server) deletePointOfInterestMarkerCategoryIcon(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest marker category"})
 		return
 	}
+	zoneKind, err := s.resolveContentMapMarkerZoneKind(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	s.deleteStaticThumbnail(
 		ctx,
-		pointOfInterestMarkerCategoryThumbnailKey(category),
-		pointOfInterestMarkerCategoryThumbnailStatusKey(category),
+		pointOfInterestMarkerCategoryVariantThumbnailKey(category, zoneKind),
+		pointOfInterestMarkerCategoryVariantStatusKey(category, zoneKind),
 	)
 }

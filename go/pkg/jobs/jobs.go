@@ -42,6 +42,7 @@ const (
 	GenerateZoneFlavorTaskType                     = "generate_zone_flavor"
 	GenerateZoneTagsTaskType                       = "generate_zone_tags"
 	GenerateZoneKindPatternTileTaskType            = "generate_zone_kind_pattern_tile"
+	GenerateZoneShroudPatternTileTaskType          = "generate_zone_shroud_pattern_tile"
 	GenerateBaseDescriptionTaskType                = "generate_base_description"
 	GenerateBaseStructureLevelImageTaskType        = "generate_base_structure_level_image"
 	GenerateBaseStructureLevelTopDownImageTaskType = "generate_base_structure_level_top_down_image"
@@ -175,6 +176,10 @@ type GenerateLocationArchetypesTaskPayload struct {
 
 type GenerateZoneTagsTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateZoneShroudPatternTileTaskPayload struct {
+	Prompt string `json:"prompt"`
 }
 
 type SeedDistrictTaskPayload struct {

@@ -190,7 +190,14 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         label: 'Resources',
         path: '/resources',
         description:
-          'Create resource types, generate gathering icons, and place gatherable nodes.',
+          'Create resource types, define gathering rules, and place gatherable nodes.',
+      },
+      {
+        id: 'content-map-markers',
+        label: 'Content Map Markers',
+        path: '/content-map-markers',
+        description:
+          'Manage default marker art and zone-kind overrides for shared content pins.',
       },
     ],
   },

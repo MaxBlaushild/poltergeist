@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAPI } from '@poltergeist/contexts';
 import type { InventoryItem } from '@poltergeist/types';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 
 type BaseRecord = {
   id: string;
@@ -1379,95 +1380,7 @@ export const Bases = () => {
         assets for the map icon and the base board grass tile are managed here.
       </p>
 
-      <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">
-              Base Pin Icon
-            </h2>
-            <p className="mt-1 text-xs text-gray-600">
-              Requested: {formatDate(iconRequestedAt ?? undefined)}
-            </p>
-            <p className="text-xs text-gray-600">
-              Last updated: {formatDate(iconLastModified ?? undefined)}
-            </p>
-          </div>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${staticStatusClassName(
-              iconStatus
-            )}`}
-          >
-            {iconStatus || 'unknown'}
-          </span>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void refreshIconStatus(true, true)}
-            disabled={iconStatusLoading}
-            className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {iconStatusLoading ? 'Refreshing...' : 'Refresh Status'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleGenerateIcon()}
-            disabled={iconBusy || iconStatusLoading}
-            className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {iconBusy ? 'Working...' : 'Generate Icon'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDeleteIcon()}
-            disabled={iconBusy || iconStatusLoading}
-            className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {iconBusy ? 'Working...' : 'Delete Icon'}
-          </button>
-        </div>
-
-        <label className="mt-4 block text-sm font-medium text-gray-700">
-          Prompt
-          <textarea
-            value={iconPrompt}
-            onChange={(e) => setIconPrompt(e.target.value)}
-            rows={4}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-          />
-        </label>
-
-        <p className="mt-3 text-xs text-gray-600 break-all">URL: {iconUrl}</p>
-
-        {iconExists ? (
-          <div className="mt-4 flex justify-center rounded border border-dashed border-gray-300 bg-gray-50 p-4">
-            <button
-              type="button"
-              onClick={() => setIsIconLightboxOpen(true)}
-              className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              title="Open large preview"
-            >
-              <img
-                src={`${iconUrl}?v=${iconPreviewNonce}`}
-                alt="Base icon preview"
-                className="h-28 w-28 rounded object-contain"
-              />
-            </button>
-          </div>
-        ) : (
-          <div className="mt-4 rounded border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">
-            No generated icon found yet.
-          </div>
-        )}
-
-        {iconMessage ? (
-          <p className="mt-3 text-sm text-emerald-700">{iconMessage}</p>
-        ) : null}
-        {iconError ? (
-          <p className="mt-3 text-sm text-red-700">{iconError}</p>
-        ) : null}
-      </section>
+      <ContentMapMarkersMovedNotice subject="Base marker art" />
 
       <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -57,6 +57,7 @@ type client struct {
 	monsterTemplateSuggestionDraftHandle  *monsterTemplateSuggestionDraftHandle
 	userLearnedRecipeHandle               *userLearnedRecipeHandle
 	newUserStarterConfigHandle            *newUserStarterConfigHandle
+	zoneShroudConfigHandle                *zoneShroudConfigHandle
 	tutorialHandle                        *tutorialHandle
 	auditItemHandle                       *auditItemHandler
 	imageGenerationHandle                 *imageGenerationHandle
@@ -244,6 +245,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		monsterTemplateSuggestionDraftHandle:  &monsterTemplateSuggestionDraftHandle{db: db},
 		userLearnedRecipeHandle:               &userLearnedRecipeHandle{db: db},
 		newUserStarterConfigHandle:            &newUserStarterConfigHandle{db: db},
+		zoneShroudConfigHandle:                &zoneShroudConfigHandle{db: db},
 		tutorialHandle:                        &tutorialHandle{db: db},
 		auditItemHandle:                       &auditItemHandler{db: db},
 		imageGenerationHandle:                 &imageGenerationHandle{db: db},
@@ -618,6 +620,10 @@ func (c *client) UserLearnedRecipe() UserLearnedRecipeHandle {
 
 func (c *client) NewUserStarterConfig() NewUserStarterConfigHandle {
 	return c.newUserStarterConfigHandle
+}
+
+func (c *client) ZoneShroudConfig() ZoneShroudConfigHandle {
+	return c.zoneShroudConfigHandle
 }
 
 func (c *client) Tutorial() TutorialHandle {

@@ -26,6 +26,7 @@ class TreasureChest {
   final int? gold;
   final bool? openedByUser;
   final int? unlockTier;
+  final String mapMarkerUrl;
   final List<TreasureChestItem> items;
 
   const TreasureChest({
@@ -36,6 +37,7 @@ class TreasureChest {
     this.gold,
     this.openedByUser,
     this.unlockTier,
+    this.mapMarkerUrl = '',
     this.items = const [],
   });
 
@@ -59,6 +61,7 @@ class TreasureChest {
       gold: (json['gold'] as num?)?.toInt(),
       openedByUser: json['openedByUser'] as bool?,
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
+      mapMarkerUrl: json['mapMarkerUrl']?.toString() ?? '',
       items: itemList,
     );
   }

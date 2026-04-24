@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"strings"
 	"time"
@@ -263,13 +264,16 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 	if err != nil {
 		return fmt.Errorf("failed to load scenario genre: %w", err)
 	}
+	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
+	if shouldUseExistingScenarioTemplateForZoneSeed(job) {
+		return p.generateScenarioFromExistingTemplate(ctx, job, zone, genre, lat, lng)
+	}
+
 	zoneKinds, err := p.dbClient.ZoneKind().FindAll(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load zone kinds for scenario classification: %w", err)
 	}
 	parentZoneKind := findZoneKindBySlug(zoneKinds, zone.Kind)
-
-	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
 
 	scenario := &models.Scenario{
 		ZoneID:              job.ZoneID,
@@ -400,15 +404,92 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		return fmt.Errorf("failed to update scenario generation job: %w", err)
 	}
 
-	if p.asyncClient != nil {
-		imagePayload, err := json.Marshal(jobs.GenerateScenarioImageTaskPayload{
-			ScenarioID: scenario.ID,
-		})
-		if err == nil {
-			if _, enqueueErr := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioImageTaskType, imagePayload)); enqueueErr != nil {
-				log.Printf("Failed to enqueue scenario image generation for scenario %s: %v", scenario.ID, enqueueErr)
-			}
+	p.enqueueScenarioImageGenerationTask(scenario.ID)
+
+	return nil
+}
+
+func shouldUseExistingScenarioTemplateForZoneSeed(job *models.ScenarioGenerationJob) bool {
+	if job == nil {
+		return false
+	}
+	return job.RecurringScenarioID != nil &&
+		job.RecurrenceFrequency != nil &&
+		job.NextRecurrenceAt != nil
+}
+
+func (p *GenerateScenarioProcessor) generateScenarioFromExistingTemplate(
+	ctx context.Context,
+	job *models.ScenarioGenerationJob,
+	zone *models.Zone,
+	genre *models.ZoneGenre,
+	latitude float64,
+	longitude float64,
+) error {
+	genreID := uuid.Nil
+	if genre != nil {
+		genreID = genre.ID
+	}
+
+	templates, err := p.dbClient.ScenarioTemplate().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load scenario templates: %w", err)
+	}
+
+	matchingTemplates := filterZoneSeedScenarioTemplates(
+		templates,
+		genreID,
+		job.OpenEnded,
+		zone.Kind,
+	)
+	if len(matchingTemplates) == 0 {
+		zoneKind := models.NormalizeZoneKind(zone.Kind)
+		if zoneKind == "" {
+			return fmt.Errorf("no scenario templates available for zone-seeded %s scenarios", zoneSeedScenarioTemplateModeLabel(job.OpenEnded))
 		}
+		return fmt.Errorf(
+			"no scenario templates available for zone kind %q and %s scenarios",
+			zoneKind,
+			zoneSeedScenarioTemplateModeLabel(job.OpenEnded),
+		)
+	}
+
+	template := matchingTemplates[rand.Intn(len(matchingTemplates))]
+	scenario, options, itemRewards, itemChoiceRewards, spellRewards := buildScenarioFromTemplate(
+		job,
+		zone,
+		genre,
+		template,
+		latitude,
+		longitude,
+	)
+
+	if err := p.dbClient.Scenario().Create(ctx, scenario); err != nil {
+		return fmt.Errorf("failed to create scenario from template %s: %w", template.ID, err)
+	}
+	if err := p.dbClient.Scenario().ReplaceOptions(ctx, scenario.ID, options); err != nil {
+		return fmt.Errorf("failed to create scenario options from template %s: %w", template.ID, err)
+	}
+	if err := p.dbClient.Scenario().ReplaceItemRewards(ctx, scenario.ID, itemRewards); err != nil {
+		return fmt.Errorf("failed to create scenario rewards from template %s: %w", template.ID, err)
+	}
+	if err := p.dbClient.Scenario().ReplaceItemChoiceRewards(ctx, scenario.ID, itemChoiceRewards); err != nil {
+		return fmt.Errorf("failed to create scenario item choice rewards from template %s: %w", template.ID, err)
+	}
+	if err := p.dbClient.Scenario().ReplaceSpellRewards(ctx, scenario.ID, spellRewards); err != nil {
+		return fmt.Errorf("failed to create scenario spell rewards from template %s: %w", template.ID, err)
+	}
+
+	job.Status = models.ScenarioGenerationStatusCompleted
+	job.GeneratedScenarioID = &scenario.ID
+	job.ErrorMessage = nil
+	job.UpdatedAt = time.Now()
+	if err := p.dbClient.ScenarioGenerationJob().Update(ctx, job); err != nil {
+		return fmt.Errorf("failed to update scenario generation job: %w", err)
+	}
+
+	if shouldGenerateImageForScenarioTemplate(template) {
+		p.enqueueScenarioImageGenerationTask(scenario.ID)
 	}
 
 	return nil
@@ -803,6 +884,240 @@ func fallbackScenarioOption() models.ScenarioOption {
 	}
 }
 
+func filterZoneSeedScenarioTemplates(
+	templates []models.ScenarioTemplate,
+	genreID uuid.UUID,
+	openEnded bool,
+	zoneKind string,
+) []models.ScenarioTemplate {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKind)
+	filtered := make([]models.ScenarioTemplate, 0, len(templates))
+	for _, template := range templates {
+		if template.OpenEnded != openEnded {
+			continue
+		}
+		if genreID != uuid.Nil && template.GenreID != uuid.Nil && template.GenreID != genreID {
+			continue
+		}
+		if normalizedZoneKind != "" && models.NormalizeZoneKind(template.ZoneKind) != normalizedZoneKind {
+			continue
+		}
+		filtered = append(filtered, template)
+	}
+	return filtered
+}
+
+func zoneSeedScenarioTemplateModeLabel(openEnded bool) string {
+	if openEnded {
+		return "open-ended"
+	}
+	return "choice-based"
+}
+
+func buildScenarioFromTemplate(
+	job *models.ScenarioGenerationJob,
+	zone *models.Zone,
+	genre *models.ZoneGenre,
+	template models.ScenarioTemplate,
+	latitude float64,
+	longitude float64,
+) (
+	*models.Scenario,
+	[]models.ScenarioOption,
+	[]models.ScenarioItemReward,
+	[]models.ScenarioItemChoiceReward,
+	[]models.ScenarioSpellReward,
+) {
+	genreID := uuid.Nil
+	if genre != nil {
+		genreID = genre.ID
+	}
+
+	imageURL := strings.TrimSpace(template.ImageURL)
+	if imageURL == "" {
+		imageURL = scenarioPlaceholderImageURL
+	}
+	thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
+	if thumbnailURL == "" {
+		thumbnailURL = imageURL
+	}
+
+	scenario := &models.Scenario{
+		ZoneID:                    zone.ID,
+		ZoneKind:                  models.NormalizeZoneKind(zone.Kind),
+		GenreID:                   genreID,
+		Genre:                     genre,
+		Latitude:                  latitude,
+		Longitude:                 longitude,
+		Prompt:                    sanitizeScenarioPrompt(template.Prompt),
+		ImageURL:                  imageURL,
+		ThumbnailURL:              thumbnailURL,
+		ScaleWithUserLevel:        job.ScaleWithUserLevel,
+		RecurringScenarioID:       job.RecurringScenarioID,
+		RecurrenceFrequency:       job.RecurrenceFrequency,
+		NextRecurrenceAt:          job.NextRecurrenceAt,
+		RewardMode:                models.NormalizeRewardMode(string(template.RewardMode)),
+		RandomRewardSize:          models.NormalizeRandomRewardSize(string(template.RandomRewardSize)),
+		Difficulty:                clampInt(template.Difficulty, 0, 40),
+		RewardExperience:          max(template.RewardExperience, 0),
+		RewardGold:                max(template.RewardGold, 0),
+		OpenEnded:                 template.OpenEnded,
+		SuccessHandoffText:        strings.TrimSpace(template.SuccessHandoffText),
+		FailureHandoffText:        strings.TrimSpace(template.FailureHandoffText),
+		FailurePenaltyMode:        template.FailurePenaltyMode,
+		FailureHealthDrainType:    template.FailureHealthDrainType,
+		FailureHealthDrainValue:   max(template.FailureHealthDrainValue, 0),
+		FailureManaDrainType:      template.FailureManaDrainType,
+		FailureManaDrainValue:     max(template.FailureManaDrainValue, 0),
+		FailureStatuses:           template.FailureStatuses,
+		SuccessRewardMode:         template.SuccessRewardMode,
+		SuccessHealthRestoreType:  template.SuccessHealthRestoreType,
+		SuccessHealthRestoreValue: max(template.SuccessHealthRestoreValue, 0),
+		SuccessManaRestoreType:    template.SuccessManaRestoreType,
+		SuccessManaRestoreValue:   max(template.SuccessManaRestoreValue, 0),
+		SuccessStatuses:           template.SuccessStatuses,
+	}
+
+	return scenario,
+		scenarioTemplateOptionsToScenarioOptions(template.Options),
+		scenarioTemplateRewardsToScenarioItemRewards(template.ItemRewards),
+		scenarioTemplateRewardsToScenarioItemChoiceRewards(template.ItemChoiceRewards),
+		scenarioTemplateSpellRewardsToScenarioSpellRewards(template.SpellRewards)
+}
+
+func scenarioTemplateOptionsToScenarioOptions(options models.ScenarioTemplateOptions) []models.ScenarioOption {
+	out := make([]models.ScenarioOption, 0, len(options))
+	for _, option := range options {
+		out = append(out, models.ScenarioOption{
+			OptionText:                strings.TrimSpace(option.OptionText),
+			SuccessText:               strings.TrimSpace(option.SuccessText),
+			FailureText:               strings.TrimSpace(option.FailureText),
+			SuccessHandoffText:        strings.TrimSpace(option.SuccessHandoffText),
+			FailureHandoffText:        strings.TrimSpace(option.FailureHandoffText),
+			StatTag:                   strings.TrimSpace(option.StatTag),
+			Proficiencies:             models.StringArray(option.Proficiencies),
+			Difficulty:                option.Difficulty,
+			RewardExperience:          max(option.RewardExperience, 0),
+			RewardGold:                max(option.RewardGold, 0),
+			FailureHealthDrainType:    option.FailureHealthDrainType,
+			FailureHealthDrainValue:   max(option.FailureHealthDrainValue, 0),
+			FailureManaDrainType:      option.FailureManaDrainType,
+			FailureManaDrainValue:     max(option.FailureManaDrainValue, 0),
+			FailureStatuses:           option.FailureStatuses,
+			SuccessHealthRestoreType:  option.SuccessHealthRestoreType,
+			SuccessHealthRestoreValue: max(option.SuccessHealthRestoreValue, 0),
+			SuccessManaRestoreType:    option.SuccessManaRestoreType,
+			SuccessManaRestoreValue:   max(option.SuccessManaRestoreValue, 0),
+			SuccessStatuses:           option.SuccessStatuses,
+			ItemRewards:               scenarioTemplateRewardsToScenarioOptionItemRewards(option.ItemRewards),
+			ItemChoiceRewards:         scenarioTemplateRewardsToScenarioOptionItemChoiceRewards(option.ItemChoiceRewards),
+			SpellRewards:              scenarioTemplateSpellRewardsToScenarioOptionSpellRewards(option.SpellRewards),
+		})
+	}
+	return out
+}
+
+func scenarioTemplateRewardsToScenarioItemRewards(rewards models.ScenarioTemplateRewards) []models.ScenarioItemReward {
+	out := make([]models.ScenarioItemReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, models.ScenarioItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func scenarioTemplateRewardsToScenarioItemChoiceRewards(rewards models.ScenarioTemplateRewards) []models.ScenarioItemChoiceReward {
+	out := make([]models.ScenarioItemChoiceReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, models.ScenarioItemChoiceReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func scenarioTemplateSpellRewardsToScenarioSpellRewards(rewards models.ScenarioTemplateSpellRewards) []models.ScenarioSpellReward {
+	out := make([]models.ScenarioSpellReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.SpellID == uuid.Nil {
+			continue
+		}
+		out = append(out, models.ScenarioSpellReward{
+			SpellID: reward.SpellID,
+		})
+	}
+	return out
+}
+
+func scenarioTemplateRewardsToScenarioOptionItemRewards(rewards models.ScenarioTemplateRewards) []models.ScenarioOptionItemReward {
+	out := make([]models.ScenarioOptionItemReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, models.ScenarioOptionItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func scenarioTemplateRewardsToScenarioOptionItemChoiceRewards(rewards models.ScenarioTemplateRewards) []models.ScenarioOptionItemChoiceReward {
+	out := make([]models.ScenarioOptionItemChoiceReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, models.ScenarioOptionItemChoiceReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func scenarioTemplateSpellRewardsToScenarioOptionSpellRewards(rewards models.ScenarioTemplateSpellRewards) []models.ScenarioOptionSpellReward {
+	out := make([]models.ScenarioOptionSpellReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.SpellID == uuid.Nil {
+			continue
+		}
+		out = append(out, models.ScenarioOptionSpellReward{
+			SpellID: reward.SpellID,
+		})
+	}
+	return out
+}
+
+func shouldGenerateImageForScenarioTemplate(template models.ScenarioTemplate) bool {
+	return strings.TrimSpace(template.ImageURL) == "" && strings.TrimSpace(template.ThumbnailURL) == ""
+}
+
+func (p *GenerateScenarioProcessor) enqueueScenarioImageGenerationTask(scenarioID uuid.UUID) {
+	if p.asyncClient == nil {
+		return
+	}
+	imagePayload, err := json.Marshal(jobs.GenerateScenarioImageTaskPayload{
+		ScenarioID: scenarioID,
+	})
+	if err != nil {
+		return
+	}
+	if _, enqueueErr := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioImageTaskType, imagePayload)); enqueueErr != nil {
+		log.Printf("Failed to enqueue scenario image generation for scenario %s: %v", scenarioID, enqueueErr)
+	}
+}
+
 func clampInt(value, minValue, maxValue int) int {
 	if value < minValue {
 		return minValue
@@ -815,6 +1130,13 @@ func clampInt(value, minValue, maxValue int) int {
 
 func min(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

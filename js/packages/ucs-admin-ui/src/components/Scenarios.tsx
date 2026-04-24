@@ -21,6 +21,7 @@ import {
   difficultyBandLabel,
   useAdminAggregateDataset,
 } from './contentDashboardUtils.ts';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 import {
   MaterialRewardsEditor,
   MaterialRewardForm,
@@ -247,6 +248,7 @@ type PaginatedResponse<T> = {
 };
 
 const scenarioListPageSize = 25;
+const scenarioGenerationJobsPageSize = 10;
 
 const PaginationControls = ({
   page,
@@ -734,7 +736,12 @@ export const Scenarios = () => {
     []
   );
   const [generationJobsLoading, setGenerationJobsLoading] = useState(false);
+  const [generationJobsPage, setGenerationJobsPage] = useState(1);
+  const [generationJobsTotal, setGenerationJobsTotal] = useState(0);
   const [generationSubmitting, setGenerationSubmitting] = useState(false);
+  const [retryingGenerationJobId, setRetryingGenerationJobId] = useState<
+    string | null
+  >(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationGeoLoading, setGenerationGeoLoading] = useState(false);
   const [generationZoneQuery, setGenerationZoneQuery] = useState('');
@@ -1074,13 +1081,17 @@ export const Scenarios = () => {
   const loadGenerationJobs = useCallback(async () => {
     try {
       setGenerationJobsLoading(true);
-      const response = await apiClient.get<ScenarioGenerationJob[]>(
+      const response = await apiClient.get<
+        PaginatedResponse<ScenarioGenerationJob>
+      >(
         '/sonar/admin/scenario-generation-jobs',
         {
-          limit: 25,
+          page: generationJobsPage,
+          pageSize: scenarioGenerationJobsPageSize,
         }
       );
-      setGenerationJobs(response);
+      setGenerationJobs(Array.isArray(response?.items) ? response.items : []);
+      setGenerationJobsTotal(response?.total ?? 0);
       setGenerationError(null);
     } catch (err) {
       console.error('Error loading scenario generation jobs:', err);
@@ -1088,11 +1099,21 @@ export const Scenarios = () => {
     } finally {
       setGenerationJobsLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, generationJobsPage]);
 
   useEffect(() => {
     void loadGenerationJobs();
   }, [loadGenerationJobs]);
+
+  useEffect(() => {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(generationJobsTotal / scenarioGenerationJobsPageSize)
+    );
+    if (generationJobsPage > totalPages) {
+      setGenerationJobsPage(totalPages);
+    }
+  }, [generationJobsPage, generationJobsTotal]);
 
   useEffect(() => {
     if (!generationForm.zoneId && zones.length > 0) {
@@ -1221,17 +1242,21 @@ export const Scenarios = () => {
     try {
       setGenerationSubmitting(true);
       setGenerationError(null);
-      const created = await apiClient.post<ScenarioGenerationJob>(
+      await apiClient.post<ScenarioGenerationJob>(
         '/sonar/admin/scenario-generation-jobs',
         payload
       );
-      setGenerationJobs((prev) => [created, ...prev]);
       setGenerationForm((prev) => ({
         ...prev,
         includeLocation: false,
         latitude: '',
         longitude: '',
       }));
+      if (generationJobsPage !== 1) {
+        setGenerationJobsPage(1);
+      } else {
+        await loadGenerationJobs();
+      }
     } catch (err) {
       console.error('Error queueing scenario generation job:', err);
       setGenerationError('Failed to queue scenario generation job.');
@@ -1239,6 +1264,29 @@ export const Scenarios = () => {
       setGenerationSubmitting(false);
     }
   };
+
+  const handleRetryScenarioGenerationJob = useCallback(
+    async (job: ScenarioGenerationJob) => {
+      try {
+        setRetryingGenerationJobId(job.id);
+        setGenerationError(null);
+        await apiClient.post<ScenarioGenerationJob>(
+          `/sonar/admin/scenario-generation-jobs/${job.id}/retry`,
+          {}
+        );
+        await loadGenerationJobs();
+      } catch (err) {
+        console.error(
+          `Error retrying scenario generation job ${job.id}:`,
+          err
+        );
+        setGenerationError('Failed to retry scenario generation job.');
+      } finally {
+        setRetryingGenerationJobId(null);
+      }
+    },
+    [apiClient, loadGenerationJobs]
+  );
 
   const handleUseCurrentGenerationLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -3141,95 +3189,7 @@ export const Scenarios = () => {
         />
       </div>
 
-      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h2 className="text-lg font-semibold">Undiscovered Scenario Icon</h2>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={() => void refreshUndiscoveredScenarioIconStatus(true)}
-              disabled={scenarioUndiscoveredStatusLoading}
-            >
-              {scenarioUndiscoveredStatusLoading
-                ? 'Refreshing…'
-                : 'Refresh Status'}
-            </button>
-            <button
-              type="button"
-              className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={handleGenerateUndiscoveredScenarioIcon}
-              disabled={
-                scenarioUndiscoveredBusy || scenarioUndiscoveredStatusLoading
-              }
-            >
-              {scenarioUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
-            </button>
-            <button
-              type="button"
-              className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={handleDeleteUndiscoveredScenarioIcon}
-              disabled={
-                scenarioUndiscoveredBusy || scenarioUndiscoveredStatusLoading
-              }
-            >
-              {scenarioUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
-            </button>
-          </div>
-        </div>
-        <div className="mb-2">
-          <span
-            className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
-              scenarioUndiscoveredStatus
-            )}`}
-          >
-            {scenarioUndiscoveredStatus || 'unknown'}
-          </span>
-        </div>
-        <div className="text-xs text-gray-600 break-all">
-          URL: {scenarioUndiscoveredUrl}
-        </div>
-        <div className="text-xs text-gray-600 mt-1">
-          Requested: {formatDate(scenarioUndiscoveredRequestedAt ?? undefined)}
-          {' · '}
-          Last updated:{' '}
-          {formatDate(scenarioUndiscoveredLastModified ?? undefined)}
-        </div>
-        <label className="block text-sm mt-3">
-          Generation Prompt
-          <textarea
-            className="w-full border rounded-md p-2 mt-1 min-h-[88px]"
-            value={scenarioUndiscoveredPrompt}
-            onChange={(event) =>
-              setScenarioUndiscoveredPrompt(event.target.value)
-            }
-            placeholder="Prompt used to generate the undiscovered scenario icon."
-          />
-        </label>
-        {scenarioUndiscoveredExists ? (
-          <div className="mt-3">
-            <img
-              src={`${scenarioUndiscoveredUrl}?v=${scenarioUndiscoveredPreviewNonce}`}
-              alt="Undiscovered scenario icon preview"
-              className="w-24 h-24 object-cover border rounded-md bg-gray-50"
-            />
-          </div>
-        ) : (
-          <div className="text-xs text-gray-500 mt-2">
-            No icon currently found at this URL.
-          </div>
-        )}
-        {scenarioUndiscoveredMessage ? (
-          <div className="text-sm text-emerald-700 mt-2">
-            {scenarioUndiscoveredMessage}
-          </div>
-        ) : null}
-        {scenarioUndiscoveredError ? (
-          <div className="text-sm text-red-600 mt-2">
-            {scenarioUndiscoveredError}
-          </div>
-        ) : null}
-      </div>
+      <ContentMapMarkersMovedNotice subject="Scenario markers" />
 
       <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -3447,76 +3407,96 @@ export const Scenarios = () => {
         ) : generationJobs.length === 0 ? (
           <div className="text-sm text-gray-600">No jobs yet.</div>
         ) : (
-          <div className="grid gap-2">
-            {generationJobs.map((job) => {
-              const zoneName =
-                zones.find((zone) => zone.id === job.zoneId)?.name ??
-                job.zoneId;
-              const record = job.generatedScenarioId
-                ? records.find(
-                    (scenario) => scenario.id === job.generatedScenarioId
-                  )
-                : undefined;
-              return (
-                <div
-                  key={job.id}
-                  className="border rounded-md p-2 text-sm bg-gray-50"
-                >
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="font-mono text-xs">{job.id}</span>
-                    <span
-                      className={`text-white text-xs px-2 py-0.5 rounded ${scenarioGenerationStatusBadgeClass(job.status)}`}
-                    >
-                      {job.status}
-                    </span>
-                    <span>{job.openEnded ? 'Open-Ended' : 'Choice'}</span>
-                  </div>
-                  <div className="text-gray-700">Zone: {zoneName}</div>
-                  <div className="text-gray-700">
-                    Genre:{' '}
-                    {formatGenreLabel(
-                      job.genre ??
-                        genres.find((genre) => genre.id === job.genreId)
-                    )}
-                  </div>
-                  <div className="text-gray-700">
-                    Location:{' '}
-                    {typeof job.latitude === 'number' &&
-                    typeof job.longitude === 'number'
-                      ? `${job.latitude.toFixed(5)}, ${job.longitude.toFixed(5)}`
-                      : 'Auto-selected'}
-                  </div>
-                  <div className="text-gray-600 text-xs">
-                    Created: {formatDate(job.createdAt)}
-                  </div>
-                  {job.generatedScenarioId && (
-                    <div className="text-gray-700">
-                      Scenario ID:{' '}
-                      <span className="font-mono text-xs">
-                        {job.generatedScenarioId}
-                      </span>
-                    </div>
-                  )}
-                  {job.errorMessage && (
-                    <div className="text-red-600 text-xs mt-1">
-                      {job.errorMessage}
-                    </div>
-                  )}
-                  {record && (
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        className="bg-blue-500 text-white px-2 py-1 rounded-md text-xs"
-                        onClick={() => openEdit(record)}
+          <>
+            <div className="grid gap-2">
+              {generationJobs.map((job) => {
+                const zoneName =
+                  zones.find((zone) => zone.id === job.zoneId)?.name ??
+                  job.zoneId;
+                const record = job.generatedScenarioId
+                  ? records.find(
+                      (scenario) => scenario.id === job.generatedScenarioId
+                    )
+                  : undefined;
+                const isRetrying = retryingGenerationJobId === job.id;
+                return (
+                  <div
+                    key={job.id}
+                    className="border rounded-md p-2 text-sm bg-gray-50"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-mono text-xs">{job.id}</span>
+                      <span
+                        className={`text-white text-xs px-2 py-0.5 rounded ${scenarioGenerationStatusBadgeClass(job.status)}`}
                       >
-                        Open Scenario
-                      </button>
+                        {job.status}
+                      </span>
+                      <span>{job.openEnded ? 'Open-Ended' : 'Choice'}</span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    <div className="text-gray-700">Zone: {zoneName}</div>
+                    <div className="text-gray-700">
+                      Genre:{' '}
+                      {formatGenreLabel(
+                        job.genre ??
+                          genres.find((genre) => genre.id === job.genreId)
+                      )}
+                    </div>
+                    <div className="text-gray-700">
+                      Location:{' '}
+                      {typeof job.latitude === 'number' &&
+                      typeof job.longitude === 'number'
+                        ? `${job.latitude.toFixed(5)}, ${job.longitude.toFixed(5)}`
+                        : 'Auto-selected'}
+                    </div>
+                    <div className="text-gray-600 text-xs">
+                      Created: {formatDate(job.createdAt)}
+                    </div>
+                    {job.generatedScenarioId && (
+                      <div className="text-gray-700">
+                        Scenario ID:{' '}
+                        <span className="font-mono text-xs">
+                          {job.generatedScenarioId}
+                        </span>
+                      </div>
+                    )}
+                    {job.errorMessage && (
+                      <div className="text-red-600 text-xs mt-1">
+                        {job.errorMessage}
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {record && (
+                        <button
+                          type="button"
+                          className="bg-blue-500 text-white px-2 py-1 rounded-md text-xs"
+                          onClick={() => openEdit(record)}
+                        >
+                          Open Scenario
+                        </button>
+                      )}
+                      {job.status === 'failed' && (
+                        <button
+                          type="button"
+                          className="bg-amber-600 text-white px-2 py-1 rounded-md text-xs disabled:opacity-60"
+                          onClick={() => void handleRetryScenarioGenerationJob(job)}
+                          disabled={isRetrying}
+                        >
+                          {isRetrying ? 'Retrying…' : 'Retry'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <PaginationControls
+              page={generationJobsPage}
+              pageSize={scenarioGenerationJobsPageSize}
+              total={generationJobsTotal}
+              label="scenario generation jobs"
+              onPageChange={setGenerationJobsPage}
+            />
+          </>
         )}
       </div>
 

@@ -71,6 +71,7 @@ import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
 import Resources from './components/Resources.tsx';
+import ContentMapMarkers from './components/ContentMapMarkers.tsx';
 import Tutorial from './components/Tutorial.tsx';
 import { AdminHome } from './components/AdminHome.tsx';
 import {
@@ -446,6 +447,11 @@ const router = createBrowserRouter([
       {
         path: '/resources',
         element: <Resources />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/content-map-markers',
+        element: <ContentMapMarkers />,
         loader: onlyAuthenticated,
       },
       {

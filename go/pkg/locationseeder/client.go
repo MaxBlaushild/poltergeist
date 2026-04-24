@@ -187,7 +187,7 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 		return err
 	}
 
-	generatedPointOfInterest, err := c.generatePointOfInterestTheming(*place, zone, genre)
+	generatedPointOfInterest, err := c.generatePointOfInterestTheming(ctx, *place, zone, genre)
 	if err != nil {
 		log.Printf("Error generating point of interest theming: %v", err)
 		return err
@@ -594,7 +594,7 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 		return nil, err
 	}
 
-	generatedPointOfInterest, err := c.generatePointOfInterestTheming(place, zone, resolvedGenre)
+	generatedPointOfInterest, err := c.generatePointOfInterestTheming(ctx, place, zone, resolvedGenre)
 	if err != nil {
 		log.Printf("Error generating point of interest theming: %v", err)
 		return nil, err

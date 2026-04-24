@@ -41,6 +41,7 @@ import 'providers/zone_provider.dart';
 import 'providers/map_focus_provider.dart';
 import 'providers/character_stats_provider.dart';
 import 'providers/user_level_provider.dart';
+import 'providers/map_visual_settings_provider.dart';
 
 void main() {
   MapLibreMap.useHybridComposition = true;
@@ -91,6 +92,8 @@ class SonarApp extends StatelessWidget {
     final mapFocusProvider = MapFocusProvider();
     final userLevelProvider = UserLevelProvider(userLevelService, authProvider);
     final tutorialReplayProvider = TutorialReplayProvider();
+    final mapVisualSettingsProvider = MapVisualSettingsProvider();
+    mapVisualSettingsProvider.load();
 
     apiClient.setOnAuthError(() {
       authProvider.logout();
@@ -151,6 +154,9 @@ class SonarApp extends StatelessWidget {
           value: discoveriesProvider,
         ),
         ChangeNotifierProvider<MapFocusProvider>.value(value: mapFocusProvider),
+        ChangeNotifierProvider<MapVisualSettingsProvider>.value(
+          value: mapVisualSettingsProvider,
+        ),
         ChangeNotifierProvider<TutorialReplayProvider>.value(
           value: tutorialReplayProvider,
         ),

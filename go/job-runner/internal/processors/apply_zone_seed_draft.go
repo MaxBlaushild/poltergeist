@@ -305,8 +305,13 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 	if err != nil {
 		return fmt.Errorf("failed to load monster templates: %w", err)
 	}
+	templates = filterZoneSeedMonsterTemplatesByZoneKind(templates, zone.Kind)
 	if len(templates) == 0 {
-		return fmt.Errorf("no monster templates available")
+		zoneKind := models.NormalizeZoneKind(zone.Kind)
+		if zoneKind == "" {
+			return fmt.Errorf("no active monster templates available for zone seeding")
+		}
+		return fmt.Errorf("no active monster templates available for zone kind %q", zoneKind)
 	}
 
 	locations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
@@ -480,6 +485,25 @@ func preferredZoneSeedTemplatesForEncounterType(
 	}
 
 	return templates
+}
+
+func filterZoneSeedMonsterTemplatesByZoneKind(
+	templates []models.MonsterTemplate,
+	zoneKind string,
+) []models.MonsterTemplate {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKind)
+	if normalizedZoneKind == "" {
+		return templates
+	}
+
+	filtered := make([]models.MonsterTemplate, 0, len(templates))
+	for _, template := range templates {
+		if models.NormalizeZoneKind(template.ZoneKind) != normalizedZoneKind {
+			continue
+		}
+		filtered = append(filtered, template)
+	}
+	return filtered
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(

@@ -6,6 +6,11 @@ import '../models/user_zone_reputation.dart';
 import '../providers/location_provider.dart';
 import '../providers/zone_provider.dart';
 import '../services/poi_service.dart';
+import '../utils/zone_shroud_pattern_tile.dart';
+
+final ImageProvider<Object> _zoneShroudPatternImage = MemoryImage(
+  zoneShroudPatternTileBytes(),
+);
 
 class ZoneWidget extends StatefulWidget {
   final VoidCallback? onWidgetOpen;
@@ -222,6 +227,13 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         );
         final zoneKindLabel =
             zoneVisuals?.label ?? humanizeZoneKindSlug(displayedZone?.kind);
+        final shroudPatternImage = () {
+          final remoteUrl = displayedZone?.shroudPatternTileUrl?.trim() ?? '';
+          if (remoteUrl.isNotEmpty) {
+            return NetworkImage(remoteUrl) as ImageProvider<Object>;
+          }
+          return _zoneShroudPatternImage;
+        }();
         final genreScoresPreview = _genreScoresPreview();
         final expandUpwards = widget.expandUpwards;
         final expandedHeight = widget.expandedHeight;
@@ -280,29 +292,54 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (showingUndiscovered) ...[
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: chipBackgroundColor.withValues(alpha: 0.78),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: accentColor.withValues(alpha: 0.44),
-                            width: 1,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: chipBackgroundColor.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: accentColor.withValues(alpha: 0.44),
+                              width: 1,
+                            ),
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Unknown lands ahead',
-                              style: textStyle?.copyWith(fontSize: 14),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Step inside this shrouded zone to uncover its true name and earn a small discovery reward.',
-                              style: subTextStyle,
-                            ),
-                          ],
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: Opacity(
+                                    opacity: 0.18,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        image: DecorationImage(
+                                          image: shroudPatternImage,
+                                          repeat: ImageRepeat.repeat,
+                                          filterQuality: FilterQuality.none,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Unknown lands ahead',
+                                      style: textStyle?.copyWith(fontSize: 14),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Step inside this shrouded zone to uncover its true name and earn a small discovery reward.',
+                                      style: subTextStyle,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ] else ...[
@@ -456,28 +493,52 @@ class _ZoneWidgetState extends State<ZoneWidget> {
               ),
             ],
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                _setOpen(!_isOpen);
-              },
-              child: _isOpen
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (expandUpwards) ...[
-                          Flexible(fit: FlexFit.loose, child: content),
-                          header,
-                        ] else ...[
-                          header,
-                          Flexible(fit: FlexFit.loose, child: content),
-                        ],
-                      ],
-                    )
-                  : Center(child: header),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              children: [
+                if (showingUndiscovered)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: 0.14,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            image: DecorationImage(
+                              image: shroudPatternImage,
+                              repeat: ImageRepeat.repeat,
+                              filterQuality: FilterQuality.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      _setOpen(!_isOpen);
+                    },
+                    child: _isOpen
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (expandUpwards) ...[
+                                Flexible(fit: FlexFit.loose, child: content),
+                                header,
+                              ] else ...[
+                                header,
+                                Flexible(fit: FlexFit.loose, child: content),
+                              ],
+                            ],
+                          )
+                        : Center(child: header),
+                  ),
+                ),
+              ],
             ),
           ),
         );

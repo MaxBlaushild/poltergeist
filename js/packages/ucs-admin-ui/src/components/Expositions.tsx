@@ -16,6 +16,7 @@ import {
   MaterialRewardForm,
   normalizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 import ContentDashboard from './ContentDashboard.tsx';
 import { countBy } from './contentDashboardUtils.ts';
 import {
@@ -770,92 +771,7 @@ export const Expositions: React.FC = () => {
         sections={dashboardSections}
       />
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              Exposition Map Icon
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              This shared static icon is used for expositions both outside the
-              interaction radius and when players are close enough to engage.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-md bg-slate-700 px-3 py-1 text-white disabled:opacity-60"
-              onClick={() => void refreshExpositionIconStatus(true)}
-              disabled={expositionIconStatusLoading}
-            >
-              {expositionIconStatusLoading ? 'Refreshing…' : 'Refresh Status'}
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-indigo-600 px-3 py-1 text-white disabled:opacity-60"
-              onClick={handleGenerateExpositionIcon}
-              disabled={expositionIconBusy || expositionIconStatusLoading}
-            >
-              {expositionIconBusy ? 'Working…' : 'Generate Icon'}
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-red-600 px-3 py-1 text-white disabled:opacity-60"
-              onClick={handleDeleteExpositionIcon}
-              disabled={expositionIconBusy || expositionIconStatusLoading}
-            >
-              {expositionIconBusy ? 'Working…' : 'Delete Icon'}
-            </button>
-          </div>
-        </div>
-        <div className="mb-2">
-          <span
-            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
-              expositionIconStatus
-            )}`}
-          >
-            {expositionIconStatus || 'unknown'}
-          </span>
-        </div>
-        <div className="break-all text-xs text-slate-600">
-          URL: {expositionIconUrl}
-        </div>
-        <div className="mt-1 text-xs text-slate-600">
-          Requested: {formatDate(expositionIconRequestedAt)}
-          {' · '}
-          Last updated: {formatDate(expositionIconLastModified)}
-        </div>
-        <label className="mt-3 block text-sm">
-          Generation Prompt
-          <textarea
-            className="mt-1 min-h-[88px] w-full rounded-md border border-slate-300 p-2"
-            value={expositionIconPrompt}
-            onChange={(event) => setExpositionIconPrompt(event.target.value)}
-            placeholder="Prompt used to generate the exposition map icon."
-          />
-        </label>
-        {expositionIconExists ? (
-          <div className="mt-3">
-            <img
-              src={`${expositionIconUrl}?v=${expositionIconPreviewNonce}`}
-              alt="Exposition map icon preview"
-              className="h-24 w-24 rounded-md border bg-slate-50 object-cover"
-            />
-          </div>
-        ) : (
-          <div className="mt-2 text-xs text-slate-500">
-            No icon currently found at this URL.
-          </div>
-        )}
-        {expositionIconMessage ? (
-          <div className="mt-2 text-sm text-emerald-700">
-            {expositionIconMessage}
-          </div>
-        ) : null}
-        {expositionIconError ? (
-          <div className="mt-2 text-sm text-red-600">{expositionIconError}</div>
-        ) : null}
-      </div>
+      <ContentMapMarkersMovedNotice subject="Exposition map markers" />
 
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

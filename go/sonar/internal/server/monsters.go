@@ -73,6 +73,22 @@ type bulkGenerateMonsterTemplatesRequest struct {
 	YeetIt      bool   `json:"yeetIt"`
 }
 
+type bulkQueueMonsterTemplateImagesRequest struct {
+	IDs         []string `json:"ids"`
+	Query       string   `json:"query"`
+	ZoneQuery   string   `json:"zoneQuery"`
+	GenreID     string   `json:"genreId"`
+	Archived    *bool    `json:"archived"`
+	MonsterType string   `json:"monsterType"`
+}
+
+type bulkQueueMonsterTemplateImagesResponse struct {
+	TotalCount   int `json:"totalCount"`
+	QueuedCount  int `json:"queuedCount"`
+	SkippedCount int `json:"skippedCount"`
+	FailedCount  int `json:"failedCount"`
+}
+
 type dndMonsterTemplateSeed struct {
 	Name             string
 	Description      string
@@ -3140,6 +3156,156 @@ func (s *server) bulkArchiveMonsterTemplates(ctx *gin.Context) {
 	})
 }
 
+func (s *server) listAllAdminMonsterTemplates(
+	ctx *gin.Context,
+	params db.MonsterTemplateAdminListParams,
+) ([]models.MonsterTemplate, error) {
+	params.Page = 1
+	params.PageSize = 1
+
+	initialResult, err := s.dbClient.MonsterTemplate().ListAdmin(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if initialResult == nil || initialResult.Total <= 0 {
+		return []models.MonsterTemplate{}, nil
+	}
+	if initialResult.Total == 1 {
+		return initialResult.Templates, nil
+	}
+
+	maxPageSize := int(^uint(0) >> 1)
+	if initialResult.Total > int64(maxPageSize) {
+		return nil, fmt.Errorf("too many monster templates matched the request")
+	}
+
+	params.PageSize = int(initialResult.Total)
+	result, err := s.dbClient.MonsterTemplate().ListAdmin(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return []models.MonsterTemplate{}, nil
+	}
+	return result.Templates, nil
+}
+
+func (s *server) generateMonsterTemplateImages(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+
+	var requestBody bulkQueueMonsterTemplateImagesRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && !errors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	templates := make([]models.MonsterTemplate, 0)
+	if len(requestBody.IDs) > 0 {
+		seen := make(map[uuid.UUID]struct{}, len(requestBody.IDs))
+		for _, rawID := range requestBody.IDs {
+			templateID, err := uuid.Parse(strings.TrimSpace(rawID))
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid template ID: %s", rawID)})
+				return
+			}
+			if _, exists := seen[templateID]; exists {
+				continue
+			}
+			seen[templateID] = struct{}{}
+
+			template, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("template not found: %s", templateID)})
+					return
+				}
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if template != nil {
+				templates = append(templates, *template)
+			}
+		}
+	} else {
+		genreID, err := parseOptionalGenreIDFilter(requestBody.GenreID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		templates, err = s.listAllAdminMonsterTemplates(ctx, db.MonsterTemplateAdminListParams{
+			Page:        1,
+			PageSize:    1,
+			Query:       requestBody.Query,
+			ZoneQuery:   requestBody.ZoneQuery,
+			GenreID:     genreID,
+			Archived:    requestBody.Archived,
+			MonsterType: requestBody.MonsterType,
+		})
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	response := bulkQueueMonsterTemplateImagesResponse{
+		TotalCount: len(templates),
+	}
+
+	for i := range templates {
+		template := templates[i]
+		if template.ImageGenerationStatus == models.MonsterTemplateImageGenerationStatusQueued ||
+			template.ImageGenerationStatus == models.MonsterTemplateImageGenerationStatusInProgress {
+			response.SkippedCount++
+			continue
+		}
+
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusQueued
+		emptyError := ""
+		template.ImageGenerationError = &emptyError
+		if err := s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template); err != nil {
+			response.FailedCount++
+			continue
+		}
+
+		payloadBytes, err := json.Marshal(jobs.GenerateMonsterTemplateImageTaskPayload{
+			MonsterTemplateID: template.ID,
+		})
+		if err != nil {
+			template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
+			errMessage := err.Error()
+			template.ImageGenerationError = &errMessage
+			_ = s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template)
+			response.FailedCount++
+			continue
+		}
+
+		if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplateImageTaskType, payloadBytes)); err != nil {
+			template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
+			errMessage := err.Error()
+			template.ImageGenerationError = &errMessage
+			_ = s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template)
+			response.FailedCount++
+			continue
+		}
+
+		response.QueuedCount++
+	}
+
+	statusCode := http.StatusOK
+	if response.FailedCount > 0 && response.QueuedCount == 0 {
+		statusCode = http.StatusInternalServerError
+	}
+	ctx.JSON(statusCode, response)
+}
+
 func (s *server) deleteMonsterTemplate(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -3427,6 +3593,15 @@ func (s *server) getMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if markerURL := s.resolveSharedContentMapMarkerURL(
+		ctx,
+		monsterEncounterContentMapMarkerDefinition(response.EncounterType),
+		effectiveContentMapMarkerZoneKind(encounter.ZoneKind, &encounter.Zone),
+		response.ThumbnailURL,
+		contentMapMarkerExistenceCache{},
+	); markerURL != "" {
+		response.ThumbnailURL = markerURL
+	}
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -3468,8 +3643,14 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	response := make([]monsterEncounterResponse, 0, len(encounters))
+	markerCache := contentMapMarkerExistenceCache{}
 	for i := range encounters {
 		if !monsterEncounterAvailableForStoryFlags(&encounters[i], activeStoryFlags) {
 			continue
@@ -3484,6 +3665,15 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+		if markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx,
+			monsterEncounterContentMapMarkerDefinition(entry.EncounterType),
+			effectiveContentMapMarkerZoneKind(encounters[i].ZoneKind, zone),
+			entry.ThumbnailURL,
+			markerCache,
+		); markerURL != "" {
+			entry.ThumbnailURL = markerURL
 		}
 		response = append(response, entry)
 	}

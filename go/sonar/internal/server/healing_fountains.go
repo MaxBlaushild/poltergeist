@@ -66,20 +66,34 @@ func (s *server) getHealingFountains(ctx *gin.Context) {
 		}
 	}
 	response := make([]healingFountainWithUserStatus, 0, len(fountains))
+	markerCache := contentMapMarkerExistenceCache{}
 	for _, fountain := range fountains {
 		if fountain.Invalidated {
 			continue
 		}
+		discovered := discoveredByFountain[fountain.ID]
 		status := healingFountainCooldownStatusFromVisit(
 			latestVisitsByFountain[fountain.ID],
 			now,
+		)
+		markerDefinition := sharedContentMapMarkerDefinitions[0]
+		if discovered {
+			markerDefinition = sharedContentMapMarkerDefinitions[8]
+		}
+		markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			markerDefinition,
+			effectiveContentMapMarkerZoneKind(fountain.ZoneKind, &fountain.Zone),
+			"",
+			markerCache,
 		)
 		response = append(
 			response,
 			healingFountainResponseWithStatus(
 				fountain,
 				status,
-				discoveredByFountain[fountain.ID],
+				discovered,
+				markerURL,
 			),
 		)
 	}
@@ -127,7 +141,18 @@ func (s *server) getHealingFountain(ctx *gin.Context) {
 		discovered = discovery != nil
 	}
 	status := healingFountainCooldownStatusFromVisit(latestVisit, time.Now())
-	ctx.JSON(http.StatusOK, healingFountainResponseWithStatus(*fountain, status, discovered))
+	markerDefinition := sharedContentMapMarkerDefinitions[0]
+	if discovered {
+		markerDefinition = sharedContentMapMarkerDefinitions[8]
+	}
+	markerURL := s.resolveSharedContentMapMarkerURL(
+		ctx.Request.Context(),
+		markerDefinition,
+		effectiveContentMapMarkerZoneKind(fountain.ZoneKind, &fountain.Zone),
+		"",
+		contentMapMarkerExistenceCache{},
+	)
+	ctx.JSON(http.StatusOK, healingFountainResponseWithStatus(*fountain, status, discovered, markerURL))
 }
 
 func (s *server) getHealingFountainsForZone(ctx *gin.Context) {
@@ -162,20 +187,39 @@ func (s *server) getHealingFountainsForZone(ctx *gin.Context) {
 		}
 	}
 	response := make([]healingFountainWithUserStatus, 0, len(fountains))
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	markerCache := contentMapMarkerExistenceCache{}
 	for _, fountain := range fountains {
 		if fountain.Invalidated {
 			continue
 		}
+		discovered := discoveredByFountain[fountain.ID]
 		status := healingFountainCooldownStatusFromVisit(
 			latestVisitsByFountain[fountain.ID],
 			now,
+		)
+		markerDefinition := sharedContentMapMarkerDefinitions[0]
+		if discovered {
+			markerDefinition = sharedContentMapMarkerDefinitions[8]
+		}
+		markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			markerDefinition,
+			effectiveContentMapMarkerZoneKind(fountain.ZoneKind, zone),
+			"",
+			markerCache,
 		)
 		response = append(
 			response,
 			healingFountainResponseWithStatus(
 				fountain,
 				status,
-				discoveredByFountain[fountain.ID],
+				discovered,
+				markerURL,
 			),
 		)
 	}
@@ -588,8 +632,11 @@ func healingFountainResponseWithStatus(
 	fountain models.HealingFountain,
 	status healingFountainCooldownInfo,
 	discovered bool,
+	markerURL string,
 ) healingFountainWithUserStatus {
-	if discovered {
+	if trimmed := strings.TrimSpace(markerURL); trimmed != "" {
+		fountain.ThumbnailURL = trimmed
+	} else if discovered {
 		fountain.ThumbnailURL = staticThumbnailURL(healingFountainDiscoveredIconKey)
 	} else {
 		fountain.ThumbnailURL = staticThumbnailURL(poiUndiscoveredIconKey)

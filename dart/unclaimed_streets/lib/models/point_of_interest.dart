@@ -107,6 +107,7 @@ class PointOfInterest {
   final String? originalName;
   final String? googleMapsPlaceId;
   final String? googleMapsPlaceName;
+  final String? mapMarkerUrl;
   final PoiMarkerCategory markerCategory;
   final List<PoiTag> tags;
   final List<Character> characters;
@@ -125,6 +126,7 @@ class PointOfInterest {
     this.originalName,
     this.googleMapsPlaceId,
     this.googleMapsPlaceName,
+    this.mapMarkerUrl,
     this.markerCategory = PoiMarkerCategory.generic,
     this.tags = const [],
     this.characters = const [],
@@ -167,6 +169,7 @@ class PointOfInterest {
       originalName: json['originalName'] as String?,
       googleMapsPlaceId: json['googleMapsPlaceId'] as String?,
       googleMapsPlaceName: json['googleMapsPlaceName'] as String?,
+      mapMarkerUrl: json['mapMarkerUrl'] as String?,
       markerCategory: parsePoiMarkerCategory(
         json['markerCategory']?.toString(),
       ),

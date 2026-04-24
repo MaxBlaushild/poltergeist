@@ -250,6 +250,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateResourceType))
 	r.DELETE("/sonar/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResourceType))
 	r.POST("/sonar/resource-types/:id/generate-map-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeMapIcon))
+	r.DELETE("/sonar/admin/content-map-markers/resource-types/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteResourceTypeContentMapMarker))
 	r.POST("/sonar/resource-types/:id/generate-requirement-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateResourceTypeRequirementItems))
 	r.POST("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItemSuggestionJob))
 	r.GET("/sonar/inventory-item-suggestion-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItemSuggestionJobs))
@@ -362,6 +363,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
 	r.GET("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getNewUserStarterConfig))
 	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
+	r.GET("/sonar/admin/zone-shroud-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneShroudConfig))
+	r.POST("/sonar/admin/zone-shroud-config/generate-pattern-tile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateZoneShroudPatternTile))
 	r.GET("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialConfig))
 	r.PUT("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTutorialConfig))
 	r.POST("/sonar/admin/tutorial/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTutorialImage))
@@ -442,6 +445,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/scenario-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenarioGenerationJob))
 	r.GET("/sonar/admin/scenario-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJobs))
 	r.GET("/sonar/admin/scenario-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJob))
+	r.POST("/sonar/admin/scenario-generation-jobs/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryScenarioGenerationJob))
 	r.POST("/sonar/admin/challenge-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallengeGenerationJob))
 	r.GET("/sonar/admin/challenge-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeGenerationJobs))
 	r.GET("/sonar/admin/challenge-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeGenerationJob))
@@ -461,6 +465,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/zone-tag-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneTagGenerationJobs))
 	r.POST("/sonar/admin/zone-tag-generation-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneTagGenerationJobs))
 	r.GET("/sonar/admin/zone-tag-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneTagGenerationJob))
+	r.GET("/sonar/admin/content-map-markers", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getContentMapMarkersPageData))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
@@ -683,6 +688,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monster-template-suggestion-jobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplateSuggestionDrafts))
 	r.POST("/sonar/monster-template-suggestion-drafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertMonsterTemplateSuggestionDraft))
 	r.DELETE("/sonar/monster-template-suggestion-drafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterTemplateSuggestionDraft))
+	r.POST("/sonar/admin/monster-templates/generate-images", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterTemplateImages))
 	r.POST("/sonar/admin/monster-templates/refresh-affinities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshMonsterTemplateAffinities))
 	r.GET("/sonar/admin/monster-templates/refresh-affinities/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRefreshMonsterTemplateAffinitiesStatus))
 	r.POST("/sonar/admin/monster-templates/reset-progressions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.resetMonsterTemplateProgressions))
@@ -5892,11 +5898,19 @@ func (s *server) getZonePins(ctx *gin.Context) {
 	}
 
 	zonePoiIDs := make(map[uuid.UUID]struct{}, len(pointsOfInterest))
+	markerCache := contentMapMarkerExistenceCache{}
+	zoneKindSlug := models.NormalizeZoneKind(zone.Kind)
 	for i := range pointsOfInterest {
 		hasAvailable := false
 		hasAvailableMainStory := false
 		zonePoiIDs[pointsOfInterest[i].ID] = struct{}{}
 		applyPointOfInterestStoryVariant(&pointsOfInterest[i], activeStoryFlags)
+		pointsOfInterest[i].MapMarkerURL = s.resolvePointOfInterestMapMarkerURL(
+			ctx.Request.Context(),
+			pointsOfInterest[i].MarkerCategory,
+			effectiveContentMapMarkerZoneKind(pointsOfInterest[i].ZoneKind, zone),
+			markerCache,
+		)
 		for j := range pointsOfInterest[i].Characters {
 			pointsOfInterest[i].Characters[j].HasAvailableQuest =
 				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableQuest
@@ -5931,6 +5945,15 @@ func (s *server) getZonePins(ctx *gin.Context) {
 		ch.HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
 		applyCharacterStoryVariant(ch, activeStoryFlags)
 		applyCharacterRelationship(ch, relationshipMap)
+		if markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			sharedContentMapMarkerDefinitions[7],
+			zoneKindSlug,
+			ch.MapIconURL,
+			markerCache,
+		); markerURL != "" {
+			ch.MapIconURL = markerURL
+		}
 		if !characterInZone(zone, zonePoiIDs, ch) {
 			continue
 		}
@@ -7205,32 +7228,39 @@ func (s *server) createScenarioGenerationJob(ctx *gin.Context) {
 
 func (s *server) getScenarioGenerationJobs(ctx *gin.Context) {
 	zoneIDParam := strings.TrimSpace(ctx.Query("zoneId"))
-	limit := 20
-	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
+	page := parseAdminMonsterListPage(ctx)
+	pageSize := parseAdminMonsterListPageSize(ctx)
+	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" && strings.TrimSpace(ctx.Query("pageSize")) == "" {
 		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
-			limit = parsed
+			pageSize = clampAdminMonsterListPageSize(parsed)
 		}
 	}
 
-	var (
-		jobsList []models.ScenarioGenerationJob
-		err      error
-	)
+	var zoneID *uuid.UUID
 	if zoneIDParam != "" {
-		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		parsedZoneID, parseErr := uuid.Parse(zoneIDParam)
 		if parseErr != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
 			return
 		}
-		jobsList, err = s.dbClient.ScenarioGenerationJob().FindByZoneID(ctx, zoneID, limit)
-	} else {
-		jobsList, err = s.dbClient.ScenarioGenerationJob().FindRecent(ctx, limit)
+		zoneID = &parsedZoneID
 	}
+
+	result, err := s.dbClient.ScenarioGenerationJob().ListAdmin(ctx, db.ScenarioGenerationJobAdminListParams{
+		Page:     page,
+		PageSize: pageSize,
+		ZoneID:   zoneID,
+	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, jobsList)
+	ctx.JSON(http.StatusOK, gin.H{
+		"items":    result.Jobs,
+		"total":    result.Total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 func (s *server) getScenarioGenerationJob(ctx *gin.Context) {
@@ -7250,6 +7280,62 @@ func (s *server) getScenarioGenerationJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario generation job not found"})
 		return
 	}
+	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) retryScenarioGenerationJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario generation job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ScenarioGenerationJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario generation job not found"})
+		return
+	}
+	if job.Status == models.ScenarioGenerationStatusQueued || job.Status == models.ScenarioGenerationStatusInProgress {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot retry a job that is queued or in progress"})
+		return
+	}
+	if job.Status != models.ScenarioGenerationStatusFailed {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario generation job is not in a failed state"})
+		return
+	}
+
+	job.Status = models.ScenarioGenerationStatusQueued
+	job.ErrorMessage = nil
+	job.GeneratedScenarioID = nil
+	job.UpdatedAt = time.Now()
+	if err := s.dbClient.ScenarioGenerationJob().Update(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.GenerateScenarioTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ScenarioGenerationStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ScenarioGenerationJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx.JSON(http.StatusOK, job)
 }
 
@@ -8616,38 +8702,40 @@ func (s *server) queueGeneratedStaticThumbnail(ctx *gin.Context, defaultPrompt s
 }
 
 func (s *server) generateScenarioUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, scenarioUndiscoveredIconText, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[1])
 }
 
 func (s *server) generateExpositionUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, expositionUndiscoveredIconText, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[2])
 }
 
 func (s *server) generateTreasureChestUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, treasureChestUndiscoveredIconText, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[3])
 }
 
 func (s *server) generatePoiUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, poiUndiscoveredIconText, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[0])
 }
 
 func (s *server) generateMonsterUndiscoveredIcon(ctx *gin.Context) {
-	prompt, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
-		ctx.Param("encounterType"),
+	s.generateSharedContentMapMarker(
+		ctx,
+		monsterEncounterContentMapMarkerDefinition(
+			models.NormalizeMonsterEncounterType(ctx.Param("encounterType")),
+		),
 	)
-	s.queueGeneratedStaticThumbnail(ctx, prompt, destinationKey, statusKey)
 }
 
 func (s *server) generateCharacterUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, characterUndiscoveredIconText, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[7])
 }
 
 func (s *server) generateHealingFountainDiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, healingFountainDiscoveredIconText, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[8])
 }
 
 func (s *server) generateBaseDiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, baseDiscoveredIconText, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[9])
 }
 
 func (s *server) generateBaseGrassTile(ctx *gin.Context) {
@@ -8682,38 +8770,40 @@ func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey strin
 }
 
 func (s *server) getScenarioUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[1])
 }
 
 func (s *server) getExpositionUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[2])
 }
 
 func (s *server) getTreasureChestUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[3])
 }
 
 func (s *server) getPoiUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[0])
 }
 
 func (s *server) getMonsterUndiscoveredIconStatus(ctx *gin.Context) {
-	_, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
-		ctx.Param("encounterType"),
+	s.getSharedContentMapMarkerStatus(
+		ctx,
+		monsterEncounterContentMapMarkerDefinition(
+			models.NormalizeMonsterEncounterType(ctx.Param("encounterType")),
+		),
 	)
-	s.getStaticThumbnailStatus(ctx, destinationKey, statusKey)
 }
 
 func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[7])
 }
 
 func (s *server) getHealingFountainDiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[8])
 }
 
 func (s *server) getBaseDiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[9])
 }
 
 func (s *server) getBaseGrassTileStatus(ctx *gin.Context) {
@@ -8821,38 +8911,40 @@ func (s *server) deleteStaticThumbnail(ctx *gin.Context, destinationKey string, 
 }
 
 func (s *server) deleteScenarioUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[1])
 }
 
 func (s *server) deleteExpositionUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, expositionUndiscoveredIconKey, expositionUndiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[2])
 }
 
 func (s *server) deleteTreasureChestUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, treasureChestUndiscoveredIconKey, treasureChestUndiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[3])
 }
 
 func (s *server) deletePoiUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[0])
 }
 
 func (s *server) deleteMonsterUndiscoveredIcon(ctx *gin.Context) {
-	_, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
-		ctx.Param("encounterType"),
+	s.deleteSharedContentMapMarker(
+		ctx,
+		monsterEncounterContentMapMarkerDefinition(
+			models.NormalizeMonsterEncounterType(ctx.Param("encounterType")),
+		),
 	)
-	s.deleteStaticThumbnail(ctx, destinationKey, statusKey)
 }
 
 func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[7])
 }
 
 func (s *server) deleteHealingFountainDiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[8])
 }
 
 func (s *server) deleteBaseDiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, baseDiscoveredIconKey, baseDiscoveredStatusKey)
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[9])
 }
 
 func (s *server) deleteBaseGrassTile(ctx *gin.Context) {
@@ -16613,6 +16705,15 @@ func (s *server) getTreasureChest(ctx *gin.Context) {
 		models.TreasureChest
 		OpenedByUser bool `json:"openedByUser"`
 	}
+	if markerURL := s.resolveSharedContentMapMarkerURL(
+		ctx.Request.Context(),
+		sharedContentMapMarkerDefinitions[3],
+		effectiveContentMapMarkerZoneKind(treasureChest.ZoneKind, &treasureChest.Zone),
+		"",
+		contentMapMarkerExistenceCache{},
+	); markerURL != "" {
+		treasureChest.MapMarkerURL = markerURL
+	}
 	response := TreasureChestResponse{
 		TreasureChest: *treasureChest,
 		OpenedByUser:  openedByUser,
@@ -16640,14 +16741,29 @@ func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Add openedByUser field to each chest
 	type TreasureChestResponse struct {
 		models.TreasureChest
 		OpenedByUser bool `json:"openedByUser"`
 	}
+	markerCache := contentMapMarkerExistenceCache{}
 	response := make([]TreasureChestResponse, len(treasureChests))
 	for i, chest := range treasureChests {
+		if markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			sharedContentMapMarkerDefinitions[3],
+			effectiveContentMapMarkerZoneKind(chest.ZoneKind, zone),
+			"",
+			markerCache,
+		); markerURL != "" {
+			chest.MapMarkerURL = markerURL
+		}
 		response[i] = TreasureChestResponse{
 			TreasureChest: chest,
 			OpenedByUser:  openedMap[chest.ID],
@@ -19021,9 +19137,19 @@ func (s *server) getScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	scenarioWithMarker := scenarioWithScaledDifficulty(*scenario, userLevel)
+	if markerURL := s.resolveSharedContentMapMarkerURL(
+		ctx.Request.Context(),
+		sharedContentMapMarkerDefinitions[1],
+		effectiveContentMapMarkerZoneKind(scenario.ZoneKind, &scenario.Zone),
+		scenarioWithMarker.ThumbnailURL,
+		contentMapMarkerExistenceCache{},
+	); markerURL != "" {
+		scenarioWithMarker.ThumbnailURL = markerURL
+	}
 
 	ctx.JSON(http.StatusOK, scenarioWithUserStatus{
-		Scenario:        scenarioWithScaledDifficulty(*scenario, userLevel),
+		Scenario:        scenarioWithMarker,
 		AttemptedByUser: attempt != nil,
 	})
 }
@@ -19056,8 +19182,14 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	response := make([]scenarioWithUserStatus, 0, len(scenarios))
+	markerCache := contentMapMarkerExistenceCache{}
 	for _, scenario := range scenarios {
 		if !scenarioAvailableForStoryFlags(&scenario, activeStoryFlags) {
 			continue
@@ -19066,8 +19198,18 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 			// Hide resolved scenarios for this user so they no longer appear on map.
 			continue
 		}
+		scenarioWithMarker := scenarioWithScaledDifficulty(scenario, userLevel)
+		if markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			sharedContentMapMarkerDefinitions[1],
+			effectiveContentMapMarkerZoneKind(scenario.ZoneKind, zone),
+			scenarioWithMarker.ThumbnailURL,
+			markerCache,
+		); markerURL != "" {
+			scenarioWithMarker.ThumbnailURL = markerURL
+		}
 		response = append(response, scenarioWithUserStatus{
-			Scenario:        scenarioWithScaledDifficulty(scenario, userLevel),
+			Scenario:        scenarioWithMarker,
 			AttemptedByUser: false,
 		})
 	}

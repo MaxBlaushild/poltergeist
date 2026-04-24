@@ -265,6 +265,15 @@ func (s *server) getExposition(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "exposition not found"})
 		return
 	}
+	if markerURL := s.resolveSharedContentMapMarkerURL(
+		ctx.Request.Context(),
+		sharedContentMapMarkerDefinitions[2],
+		effectiveContentMapMarkerZoneKind(exposition.ZoneKind, &exposition.Zone),
+		exposition.ThumbnailURL,
+		contentMapMarkerExistenceCache{},
+	); markerURL != "" {
+		exposition.ThumbnailURL = markerURL
+	}
 	ctx.JSON(http.StatusOK, exposition)
 }
 
@@ -290,6 +299,11 @@ func (s *server) getExpositionsForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	expositionIDs := make([]uuid.UUID, 0, len(expositions))
 	for _, exposition := range expositions {
 		if !expositionAvailableForStoryFlags(&exposition, activeStoryFlags) {
@@ -307,12 +321,22 @@ func (s *server) getExpositionsForZone(ctx *gin.Context) {
 		completedSet[id] = struct{}{}
 	}
 	response := make([]models.Exposition, 0, len(expositions))
+	markerCache := contentMapMarkerExistenceCache{}
 	for i := range expositions {
 		if !expositionAvailableForStoryFlags(&expositions[i], activeStoryFlags) {
 			continue
 		}
 		if _, completed := completedSet[expositions[i].ID]; completed {
 			continue
+		}
+		if markerURL := s.resolveSharedContentMapMarkerURL(
+			ctx.Request.Context(),
+			sharedContentMapMarkerDefinitions[2],
+			effectiveContentMapMarkerZoneKind(expositions[i].ZoneKind, zone),
+			expositions[i].ThumbnailURL,
+			markerCache,
+		); markerURL != "" {
+			expositions[i].ThumbnailURL = markerURL
 		}
 		response = append(response, expositions[i])
 	}

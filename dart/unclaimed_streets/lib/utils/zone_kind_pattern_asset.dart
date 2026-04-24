@@ -12,6 +12,10 @@ final Map<String, Future<Uint8List?>> _zoneKindPatternAssetInFlight =
     <String, Future<Uint8List?>>{};
 
 Future<Uint8List?> loadZoneKindPatternTile(String? imageUrl) {
+  return loadZonePatternTileAsset(imageUrl);
+}
+
+Future<Uint8List?> loadZonePatternTileAsset(String? imageUrl) {
   final trimmed = (imageUrl ?? '').trim();
   if (trimmed.isEmpty) {
     return Future<Uint8List?>.value(null);
@@ -99,7 +103,15 @@ Uint8List? _processZoneKindPatternTile(Uint8List bytes) {
 
 String zoneKindPatternAssetImageId(String? rawKind, String? imageUrl) {
   final normalizedKind = normalizeZoneKindSlug(rawKind);
+  return zonePatternAssetImageId('zone_kind_pattern_$normalizedKind', imageUrl);
+}
+
+String zoneShroudPatternAssetImageId(String? imageUrl) {
+  return zonePatternAssetImageId('zone_shroud_pattern', imageUrl);
+}
+
+String zonePatternAssetImageId(String prefix, String? imageUrl) {
   final normalizedUrl = (imageUrl ?? '').trim();
   final hash = normalizedUrl.hashCode.abs();
-  return 'zone_kind_pattern_${normalizedKind}_${_zoneKindPatternAssetVersion}_$hash';
+  return '${prefix}_${_zoneKindPatternAssetVersion}_$hash';
 }

@@ -9,6 +9,7 @@ import {
   zoneKindSelectPlaceholderLabel,
   zoneKindSummaryLabel,
 } from './zoneKindHelpers.ts';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 
 type HealingFountainRecord = {
   id: string;
@@ -437,86 +438,7 @@ export const HealingFountains = () => {
         sections={dashboardSections}
       />
 
-      <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">
-              Discovered Icon
-            </h2>
-            <p className="text-xs text-gray-600 mt-1">
-              Requested: {formatDate(discoveredIconRequestedAt ?? undefined)}
-              {' · '}Last updated:{' '}
-              {formatDate(discoveredIconLastModified ?? undefined)}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="rounded border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
-              onClick={() => void refreshDiscoveredIconStatus(true)}
-              disabled={discoveredIconStatusLoading}
-            >
-              {discoveredIconStatusLoading ? 'Refreshing...' : 'Refresh Status'}
-            </button>
-            <button
-              className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
-              onClick={handleGenerateDiscoveredIcon}
-              disabled={discoveredIconBusy || discoveredIconStatusLoading}
-            >
-              {discoveredIconBusy ? 'Working...' : 'Generate Icon'}
-            </button>
-            <button
-              className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-60"
-              onClick={handleDeleteDiscoveredIcon}
-              disabled={discoveredIconBusy || discoveredIconStatusLoading}
-            >
-              {discoveredIconBusy ? 'Working...' : 'Delete Icon'}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-2">
-          <span
-            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
-              discoveredIconStatus
-            )}`}
-          >
-            {discoveredIconStatus || 'unknown'}
-          </span>
-        </div>
-
-        <label className="block text-sm mt-3">
-          Generation Prompt
-          <textarea
-            className="block w-full rounded border border-gray-300 p-2 mt-1 min-h-[88px]"
-            value={discoveredIconPrompt}
-            onChange={(event) => setDiscoveredIconPrompt(event.target.value)}
-            placeholder="Prompt used to generate the discovered healing fountain icon."
-          />
-        </label>
-
-        {discoveredIconExists ? (
-          <div className="mt-3">
-            <img
-              src={`${discoveredIconUrl}?v=${discoveredIconPreviewNonce}`}
-              alt="Discovered healing fountain icon preview"
-              className="h-24 w-24 rounded border bg-gray-50 object-cover"
-            />
-          </div>
-        ) : (
-          <p className="text-xs text-gray-500 mt-2">
-            No icon currently found at this URL.
-          </p>
-        )}
-
-        {discoveredIconMessage ? (
-          <p className="text-sm text-emerald-700 mt-2">
-            {discoveredIconMessage}
-          </p>
-        ) : null}
-        {discoveredIconError ? (
-          <p className="text-sm text-red-600 mt-2">{discoveredIconError}</p>
-        ) : null}
-      </section>
+      <ContentMapMarkersMovedNotice subject="Healing fountain markers" />
 
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

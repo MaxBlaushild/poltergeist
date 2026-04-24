@@ -25,6 +25,7 @@ type TreasureChest struct {
 	Geometry         string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Invalidated      bool                `json:"invalidated"`
 	UnlockTier       *int                `json:"unlockTier"`
+	MapMarkerURL     string              `json:"mapMarkerUrl,omitempty" gorm:"-"`
 	Items            []TreasureChestItem `json:"items" gorm:"foreignKey:TreasureChestID"`
 }
 

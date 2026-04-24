@@ -10,6 +10,7 @@ import {
   Candidate,
   Character,
   CharacterLocation,
+  Resource,
   TreasureChest,
   ZoneGenre,
 } from '@poltergeist/types';
@@ -115,9 +116,12 @@ type ExpositionRecord = {
   thumbnailUrl: string;
 };
 
+type ResourceRecord = Resource;
+
 type AdminMapPinKind =
   | 'pointOfInterest'
   | 'character'
+  | 'resource'
   | 'treasureChest'
   | 'healingFountain'
   | 'scenario'
@@ -140,6 +144,7 @@ type AdminMapPin = {
 const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
   pointOfInterest: 'point of interest',
   character: 'character',
+  resource: 'resource node',
   treasureChest: 'treasure chest',
   healingFountain: 'healing fountain',
   scenario: 'scenario',
@@ -186,6 +191,13 @@ const markerStyleByKind: Record<
     shortLabel: 'NPC',
     fullLabel: 'Character',
     fallbackImage: characterMysteryImageUrl,
+  },
+  resource: {
+    ring: '#16a34a',
+    badge: '#166534',
+    shortLabel: 'RS',
+    fullLabel: 'Resource',
+    fallbackImage: poiMysteryImageUrl,
   },
   treasureChest: {
     ring: '#f59e0b',
@@ -825,6 +837,7 @@ export const Zone = () => {
   const { pointsOfInterest, loading, error, refreshPointsOfInterest } =
     useZonePointsOfInterest(resolvedZoneId);
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [resources, setResources] = useState<ResourceRecord[]>([]);
   const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
   const [healingFountains, setHealingFountains] = useState<
     HealingFountainRecord[]
@@ -1006,6 +1019,7 @@ export const Zone = () => {
       try {
         const [
           fetchedCharacters,
+          fetchedResources,
           fetchedTreasureChests,
           fetchedHealingFountains,
           fetchedScenarios,
@@ -1014,6 +1028,7 @@ export const Zone = () => {
           fetchedChallenges,
         ] = await Promise.all([
           apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<ResourceRecord[]>(`/sonar/zones/${resolvedZoneId}/resources`),
           apiClient.get<TreasureChest[]>(
             `/sonar/zones/${resolvedZoneId}/treasure-chests`
           ),
@@ -1037,6 +1052,7 @@ export const Zone = () => {
           return false;
         }
         setCharacters(fetchedCharacters);
+        setResources(fetchedResources);
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
         setScenarios(fetchedScenarios);
@@ -1051,6 +1067,7 @@ export const Zone = () => {
           return false;
         }
         setCharacters([]);
+        setResources([]);
         setTreasureChests([]);
         setHealingFountains([]);
         setScenarios([]);
@@ -1201,6 +1218,17 @@ export const Zone = () => {
             { latitude, longitude }
           );
           break;
+        case 'resource':
+          await apiClient.put(`/sonar/resources/${pin.entityId}`, {
+            latitude,
+            longitude,
+          });
+          setResources((prev) =>
+            prev.map((entry) =>
+              entry.id === pin.entityId ? { ...entry, latitude, longitude } : entry
+            )
+          );
+          break;
         case 'treasureChest':
           await apiClient.patch(
             `/sonar/treasure-chests/${pin.entityId}/location`,
@@ -1320,6 +1348,10 @@ export const Zone = () => {
             next.add(pin.entityId);
             return next;
           });
+          break;
+        case 'resource':
+          await apiClient.delete(`/sonar/resources/${pin.entityId}`);
+          setResources((prev) => prev.filter((entry) => entry.id !== pin.entityId));
           break;
         case 'treasureChest':
           await apiClient.delete(`/sonar/treasure-chests/${pin.entityId}`);
@@ -1601,6 +1633,29 @@ export const Zone = () => {
       })
       .filter((pin): pin is AdminMapPin => pin !== null);
 
+    const resourcePins = resources
+      .filter((resource) => isValidCoordinate(resource.latitude, resource.longitude))
+      .map((resource) => {
+        const resourceName = resource.resourceType?.name?.trim() || 'Resource';
+        const quantityLabel = resource.quantity > 1 ? ` x${resource.quantity}` : '';
+
+        return {
+          id: `resource:${resource.id}`,
+          entityId: resource.id,
+          kind: 'resource' as const,
+          name: `${resourceName}${quantityLabel}`,
+          coordinates: resolveCoordinates(
+            `resource:${resource.id}`,
+            resource.longitude,
+            resource.latitude
+          ),
+          imageUrl:
+            resource.resourceType?.mapIconUrl?.trim() ||
+            markerStyleByKind.resource.fallbackImage,
+          draggable: true,
+        };
+      });
+
     const treasureChestPins = treasureChests
       .filter((chest) => isValidCoordinate(chest.latitude, chest.longitude))
       .map((chest) => ({
@@ -1615,7 +1670,10 @@ export const Zone = () => {
           chest.longitude,
           chest.latitude
         ),
-        imageUrl: markerStyleByKind.treasureChest.fallbackImage,
+        imageUrl:
+          ((chest as TreasureChest & { mapMarkerUrl?: string }).mapMarkerUrl ||
+            '')
+            .trim() || markerStyleByKind.treasureChest.fallbackImage,
         draggable: true,
       }));
 
@@ -1798,6 +1856,7 @@ export const Zone = () => {
     return [
       ...poiPins,
       ...characterPins,
+      ...resourcePins,
       ...treasureChestPins,
       ...healingFountainPins,
       ...scenarioPins,
@@ -1808,6 +1867,7 @@ export const Zone = () => {
   }, [
     pointsOfInterest,
     characters,
+    resources,
     treasureChests,
     healingFountains,
     scenarios,
@@ -2160,6 +2220,7 @@ export const Zone = () => {
             [
               ['pointOfInterest', 'POI'],
               ['character', 'Character'],
+              ['resource', 'Resource'],
               ['treasureChest', 'Treasure Chest'],
               ['healingFountain', 'Healing Fountain'],
               ['scenario', 'Scenario'],

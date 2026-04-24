@@ -137,6 +137,12 @@ func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
 		return "leaf clusters, canopy blotches, branch forks, trail scratches"
 	case "swamp":
 		return "reed strokes, puddle curves, marsh ripples, hanging moss"
+	case "coast":
+		return "shore curves, wave bands, cliff hatching, wreck fragments"
+	case "riverlands":
+		return "branching channels, levee lines, reed fans, ferry wake marks"
+	case "tidal-flats":
+		return "tide bands, shell speckle, sand ripples, exposed shoal contours"
 	case "volcanic":
 		return "lava cracks, ember seams, ash flecks, broken magma lines"
 	case "graveyard":
@@ -147,6 +153,8 @@ func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
 		return "sacred rings, shrine geometry, halo lines, ceremonial inlay"
 	case "city":
 		return "street grids, masonry blocks, alley runs, civic linework"
+	case "port":
+		return "dock planks, mooring rings, cargo marks, harbor gridwork"
 	case "industrial":
 		return "rivet grids, pipe runs, hazard striping, forged plate seams"
 	case "farmland":
@@ -163,6 +171,8 @@ func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
 		return "rock strata, sharp peak silhouettes, mineral seams"
 	case "ruins":
 		return "cracked tiles, broken arch fragments, chipped stone patterns"
+	case "sunken-ruins":
+		return "drowned arches, submerged tile breaks, coral-cracked stone, silted glyphs"
 	default:
 		return "subtle fantasy map texture marks, organic linework, exploratory symbols"
 	}

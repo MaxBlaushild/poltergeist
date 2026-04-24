@@ -32,6 +32,8 @@ const premise = `
 	Name: %s
 	Description: %s
 
+	%s
+
 	Do not use the location's name in your response.
 `
 
@@ -50,6 +52,8 @@ const genrePremiseTemplate = `
 
 	Name: %s
 	Description: %s
+
+	%s
 
 	Genre direction:
 	- genre: %s
@@ -125,9 +129,15 @@ const generateGenreImagePromptPromptTemplate = genrePremiseTemplate + `
 
 const style = ""
 
-func (c *client) generatePointOfInterestTheming(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (*GeneratedPointOfInterest, error) {
+func (c *client) generatePointOfInterestTheming(ctx context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (*GeneratedPointOfInterest, error) {
+	zoneKind, err := c.resolvePointOfInterestZoneKind(ctx, zone)
+	if err != nil {
+		log.Printf("Error resolving point of interest zone kind: %v", err)
+		return nil, err
+	}
+
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: c.makePointOfInterestThemingPrompt(place, zone, genre),
+		Question: c.makePointOfInterestThemingPrompt(place, zone, genre, zoneKind),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)
@@ -145,7 +155,7 @@ func (c *client) generatePointOfInterestTheming(place googlemaps.Place, zone *mo
 }
 
 func (c *client) generatePointOfInterestImage(ctx context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (string, error) {
-	prompt, err := c.generatePointOfInterestImagePrompt(place, zone, genre)
+	prompt, err := c.generatePointOfInterestImagePrompt(ctx, place, zone, genre)
 	if err != nil {
 		log.Printf("Error generating point of interest image prompt: %v", err)
 		return "", err
@@ -174,9 +184,15 @@ func (c *client) generatePointOfInterestImage(ctx context.Context, place googlem
 	return imageUrl, nil
 }
 
-func (c *client) generatePointOfInterestImagePrompt(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (string, error) {
+func (c *client) generatePointOfInterestImagePrompt(ctx context.Context, place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) (string, error) {
+	zoneKind, err := c.resolvePointOfInterestZoneKind(ctx, zone)
+	if err != nil {
+		log.Printf("Error resolving point of interest zone kind: %v", err)
+		return "", err
+	}
+
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: c.makePointOfInterestImagePromptPrompt(place, zone, genre),
+		Question: c.makePointOfInterestImagePromptPrompt(place, zone, genre, zoneKind),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)
@@ -204,6 +220,40 @@ func zoneDescriptionForPointOfInterestPrompt(zone *models.Zone) string {
 		return ""
 	}
 	return zone.Description
+}
+
+func zoneKindPromptBlock(zoneKind *models.ZoneKind) string {
+	if zoneKind == nil {
+		return ""
+	}
+
+	label := strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind))
+	if label == "" {
+		return ""
+	}
+	slug := strings.TrimSpace(models.ZoneKindPromptSlug(zoneKind))
+	seed := strings.TrimSpace(models.ZoneKindPromptSeed(zoneKind))
+	if seed == "" {
+		seed = fmt.Sprintf(
+			"Keep the location naturally suited to %s zones.",
+			strings.ToLower(label),
+		)
+	}
+
+	return fmt.Sprintf(
+		`Zone kind direction:
+	- zone kind: %s
+	- slug: %s
+	- creative seed: %s
+
+	Additional zone-kind rules:
+	- Make the location feel natively at home in %s spaces.
+	- Let the fantasy name, lore, architecture, props, and image cues reflect that zone kind while still honoring the real-world location.`,
+		label,
+		slug,
+		seed,
+		strings.ToLower(label),
+	)
 }
 
 func isBaselineFantasyPointOfInterestGenre(genre *models.ZoneGenre) bool {
@@ -254,7 +304,8 @@ func pointOfInterestGenrePromptSeedOrFallback(genre *models.ZoneGenre) string {
 	)
 }
 
-func (c *client) makePointOfInterestImagePromptPrompt(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) string {
+func (c *client) makePointOfInterestImagePromptPrompt(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre, zoneKind *models.ZoneKind) string {
+	zoneKindBlock := zoneKindPromptBlock(zoneKind)
 	if isBaselineFantasyPointOfInterestGenre(genre) {
 		return fmt.Sprintf(
 			generateFantasyImagePromptPromptTemplate,
@@ -268,6 +319,7 @@ func (c *client) makePointOfInterestImagePromptPrompt(place googlemaps.Place, zo
 			place.DisplayName.Text,
 			zoneNameForPointOfInterestPrompt(zone),
 			zoneDescriptionForPointOfInterestPrompt(zone),
+			zoneKindBlock,
 		)
 	}
 	genreLabel := pointOfInterestGenrePromptLabel(genre)
@@ -286,6 +338,7 @@ func (c *client) makePointOfInterestImagePromptPrompt(place googlemaps.Place, zo
 		place.DisplayName.Text,
 		zoneNameForPointOfInterestPrompt(zone),
 		zoneDescriptionForPointOfInterestPrompt(zone),
+		zoneKindBlock,
 		genreLabel,
 		promptSeed,
 		genreLabel,
@@ -304,7 +357,8 @@ func (c *client) makePointOfInterestImagePromptPrompt(place googlemaps.Place, zo
 // 	return prompt
 // }
 
-func (c *client) makePointOfInterestThemingPrompt(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre) string {
+func (c *client) makePointOfInterestThemingPrompt(place googlemaps.Place, zone *models.Zone, genre *models.ZoneGenre, zoneKind *models.ZoneKind) string {
+	zoneKindBlock := zoneKindPromptBlock(zoneKind)
 	if isBaselineFantasyPointOfInterestGenre(genre) {
 		return fmt.Sprintf(
 			generateFantasyPointOfInterestPromptTemplate,
@@ -318,6 +372,7 @@ func (c *client) makePointOfInterestThemingPrompt(place googlemaps.Place, zone *
 			place.DisplayName.Text,
 			zoneNameForPointOfInterestPrompt(zone),
 			zoneDescriptionForPointOfInterestPrompt(zone),
+			zoneKindBlock,
 		)
 	}
 	genreLabel := pointOfInterestGenrePromptLabel(genre)
@@ -336,6 +391,7 @@ func (c *client) makePointOfInterestThemingPrompt(place googlemaps.Place, zone *
 		place.DisplayName.Text,
 		zoneNameForPointOfInterestPrompt(zone),
 		zoneDescriptionForPointOfInterestPrompt(zone),
+		zoneKindBlock,
 		genreLabel,
 		promptSeed,
 		genreLabel,

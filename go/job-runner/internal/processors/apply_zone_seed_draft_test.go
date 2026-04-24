@@ -49,6 +49,31 @@ func TestPreferredZoneSeedTemplatesForEncounterType(t *testing.T) {
 	}
 }
 
+func TestFilterZoneSeedMonsterTemplatesByZoneKind(t *testing.T) {
+	templates := []models.MonsterTemplate{
+		{Name: "Forest Wolf", ZoneKind: "forest"},
+		{Name: "Swamp Hag", ZoneKind: "swamp"},
+		{Name: "Neutral Ooze", ZoneKind: ""},
+	}
+
+	filtered := filterZoneSeedMonsterTemplatesByZoneKind(templates, "forest")
+	if len(filtered) != 1 || filtered[0].Name != "Forest Wolf" {
+		t.Fatalf("expected only forest templates, got %+v", filtered)
+	}
+}
+
+func TestFilterZoneSeedMonsterTemplatesByZoneKindLeavesLegacyZonesBroad(t *testing.T) {
+	templates := []models.MonsterTemplate{
+		{Name: "Forest Wolf", ZoneKind: "forest"},
+		{Name: "Swamp Hag", ZoneKind: "swamp"},
+	}
+
+	filtered := filterZoneSeedMonsterTemplatesByZoneKind(templates, "")
+	if len(filtered) != len(templates) {
+		t.Fatalf("expected blank zone kind to keep all templates, got %+v", filtered)
+	}
+}
+
 func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
 	typeIDOne := uuid.New()
 	typeIDTwo := uuid.New()

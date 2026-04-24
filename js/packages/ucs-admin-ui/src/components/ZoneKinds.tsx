@@ -63,6 +63,16 @@ type ZoneKindBackfillStatus = {
   updatedAt: string;
 };
 
+type ZoneShroudConfig = {
+  id: number;
+  patternTileUrl: string;
+  patternTilePrompt: string;
+  patternTileGenerationStatus: string;
+  patternTileGenerationError: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ZoneKindPayload = Omit<
   ZoneKind,
   | 'id'
@@ -296,6 +306,41 @@ const resolveZoneKindPatternPrompt = (
   return buildDefaultZoneKindPatternPrompt(zoneKind);
 };
 
+const buildDefaultZoneShroudPatternPrompt = () => `Create a seamless repeating square texture tile for a fantasy RPG fog-of-war overlay.
+
+Shroud treatment:
+- purpose: conceal undiscovered map zones without revealing their biome or zone kind
+- palette direction: cool slate, smoke-gray, muted blue-charcoal, faint parchment haze
+- motif direction: mist bands, stipple grain, weathered cartographic haze, drifting fog curls, restrained exploration marks
+
+Requirements:
+- The tile must repeat seamlessly on all four edges.
+- This is not a scene, landscape illustration, or full environment painting.
+- It should read like a fog-of-war veil or shroud laid over a fantasy world map.
+- Keep the pattern atmospheric, elegant, and readable on top of a watercolor fantasy basemap.
+- Use a retro fantasy RPG feel: adventure-manual map art, classic JRPG overworld texture language, hand-inked fog motifs, weathered parchment energy.
+- Keep enough negative space for the base shroud color to read through.
+- Avoid revealing any specific biome, settlement, or zone identity.
+- No border, no frame, no text, no logos, no centered emblem.
+- Square composition only.
+- Top-down graphic texture language, never perspective or isometric.
+- Avoid photorealism, modern UI gradients, and sterile vector-flat design.`;
+
+const resolveZoneShroudPatternPrompt = (
+  config?: ZoneShroudConfig | null,
+  draft?: string | null
+) => {
+  const nextDraft = draft?.trim();
+  if (nextDraft) {
+    return nextDraft;
+  }
+  const savedPrompt = config?.patternTilePrompt?.trim();
+  if (savedPrompt) {
+    return savedPrompt;
+  }
+  return buildDefaultZoneShroudPatternPrompt();
+};
+
 const emptyForm = (): ZoneKindFormState => ({
   name: '',
   slug: '',
@@ -423,6 +468,8 @@ export const ZoneKinds = () => {
   const { apiClient } = useAPI();
   const [zoneKinds, setZoneKinds] = useState<ZoneKind[]>([]);
   const [zones, setZones] = useState<ZoneAdminSummary[]>([]);
+  const [zoneShroudConfig, setZoneShroudConfig] =
+    useState<ZoneShroudConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assigningZoneId, setAssigningZoneId] = useState<string | null>(null);
@@ -440,19 +487,24 @@ export const ZoneKinds = () => {
   const [patternPromptDrafts, setPatternPromptDrafts] = useState<
     Record<string, string>
   >({});
+  const [shroudPatternPromptDraft, setShroudPatternPromptDraft] = useState('');
   const [generatingPatternKindId, setGeneratingPatternKindId] = useState<
     string | null
   >(null);
+  const [generatingShroudPattern, setGeneratingShroudPattern] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [zoneKindsResponse, zonesResponse] = await Promise.all([
+      const [zoneKindsResponse, zonesResponse, zoneShroudResponse] =
+        await Promise.all([
         apiClient.get<ZoneKind[]>('/sonar/zoneKinds'),
         apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones'),
-      ]);
+        apiClient.get<ZoneShroudConfig>('/sonar/admin/zone-shroud-config'),
+        ]);
       setZoneKinds(zoneKindsResponse);
       setZones(zonesResponse);
+      setZoneShroudConfig(zoneShroudResponse);
       setError(null);
     } catch (err) {
       console.error('Failed to load zone kinds page data', err);
@@ -465,6 +517,17 @@ export const ZoneKinds = () => {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!zoneShroudConfig) {
+      return;
+    }
+    setShroudPatternPromptDraft((prev) =>
+      prev.trim()
+        ? prev
+        : resolveZoneShroudPatternPrompt(zoneShroudConfig, prev)
+    );
+  }, [zoneShroudConfig]);
 
   const zoneKindBySlug = useMemo(() => {
     const next = new Map<string, ZoneKind>();
@@ -682,8 +745,8 @@ export const ZoneKinds = () => {
   }, [backfillStatus, pollBackfillStatus]);
 
   const pendingPatternGenerationKey = useMemo(
-    () =>
-      zoneKinds
+    () => {
+      const zoneKindKey = zoneKinds
         .filter((zoneKind) =>
           isZoneKindPatternTilePending(zoneKind.patternTileGenerationStatus)
         )
@@ -691,8 +754,15 @@ export const ZoneKinds = () => {
           (zoneKind) =>
             `${zoneKind.id}:${zoneKind.patternTileGenerationStatus}:${zoneKind.updatedAt}`
         )
-        .join('|'),
-    [zoneKinds]
+        .join('|');
+      const shroudKey =
+        zoneShroudConfig &&
+        isZoneKindPatternTilePending(zoneShroudConfig.patternTileGenerationStatus)
+          ? `shroud:${zoneShroudConfig.patternTileGenerationStatus}:${zoneShroudConfig.updatedAt}`
+          : '';
+      return [zoneKindKey, shroudKey].filter(Boolean).join('|');
+    },
+    [zoneKinds, zoneShroudConfig]
   );
 
   useEffect(() => {
@@ -766,6 +836,39 @@ export const ZoneKinds = () => {
     }
   };
 
+  const handleGenerateShroudPatternTile = async () => {
+    const prompt = resolveZoneShroudPatternPrompt(
+      zoneShroudConfig,
+      shroudPatternPromptDraft
+    );
+    if (prompt.length < 24) {
+      setError('Shroud tile prompts must be at least 24 characters.');
+      return;
+    }
+    if (prompt.length > 8000) {
+      setError('Shroud tile prompts must be at most 8000 characters.');
+      return;
+    }
+
+    setGeneratingShroudPattern(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await apiClient.post<ZoneShroudConfig>(
+        '/sonar/admin/zone-shroud-config/generate-pattern-tile',
+        { prompt }
+      );
+      setZoneShroudConfig(updated);
+      setShroudPatternPromptDraft(updated.patternTilePrompt || prompt);
+      setSuccess('Queued shroud tile generation.');
+    } catch (err) {
+      console.error('Failed to queue shroud pattern tile job', err);
+      setError('Unable to queue that shroud pattern tile job.');
+    } finally {
+      setGeneratingShroudPattern(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-6 text-gray-500">Loading zone kinds...</div>;
   }
@@ -802,6 +905,121 @@ export const ZoneKinds = () => {
           )}
         </div>
       )}
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Fog of War Shroud Tile
+              </h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                  zoneShroudConfig?.patternTileGenerationStatus === 'failed'
+                    ? 'bg-red-100 text-red-700'
+                    : zoneShroudConfig?.patternTileGenerationStatus === 'complete'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : isZoneKindPatternTilePending(
+                            zoneShroudConfig?.patternTileGenerationStatus
+                          )
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {formatZoneKindPatternTileStatus(
+                  zoneShroudConfig?.patternTileGenerationStatus
+                )}
+              </span>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm text-gray-500">
+              Generate the global fog-of-war tile used for undiscovered zones on
+              the map and in the zone panel. The client will fall back to the
+              built-in texture until this asset exists.
+            </p>
+            {zoneShroudConfig?.patternTileUrl ? (
+              <a
+                href={zoneShroudConfig.patternTileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-900"
+              >
+                Open current shroud tile asset
+              </a>
+            ) : null}
+            {zoneShroudConfig?.patternTileGenerationError ? (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {zoneShroudConfig.patternTileGenerationError}
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            className="relative h-28 w-28 overflow-hidden rounded-2xl border border-slate-200 shadow-inner"
+            style={{ backgroundColor: '#2f3843' }}
+          >
+            {zoneShroudConfig?.patternTileUrl ? (
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url(${zoneShroudConfig.patternTileUrl})`,
+                  backgroundRepeat: 'repeat',
+                  backgroundSize: '96px 96px',
+                  opacity: 0.62,
+                  mixBlendMode: 'screen',
+                }}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] font-medium uppercase tracking-wide text-white/80">
+                No shroud tile yet
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+            Boilerplate prompt
+          </label>
+          <textarea
+            className="min-h-[184px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            value={resolveZoneShroudPatternPrompt(
+              zoneShroudConfig,
+              shroudPatternPromptDraft
+            )}
+            onChange={(event) => setShroudPatternPromptDraft(event.target.value)}
+            spellCheck={false}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              onClick={() => void handleGenerateShroudPatternTile()}
+              disabled={
+                generatingShroudPattern ||
+                isZoneKindPatternTilePending(
+                  zoneShroudConfig?.patternTileGenerationStatus
+                )
+              }
+            >
+              {generatingShroudPattern ||
+              isZoneKindPatternTilePending(
+                zoneShroudConfig?.patternTileGenerationStatus
+              )
+                ? 'Queueing...'
+                : 'Generate Shroud Tile Job'}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              onClick={() =>
+                setShroudPatternPromptDraft(buildDefaultZoneShroudPatternPrompt())
+              }
+            >
+              Use Boilerplate
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

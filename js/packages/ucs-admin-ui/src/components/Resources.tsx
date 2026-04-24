@@ -10,6 +10,7 @@ import {
   zoneKindSelectPlaceholderLabel,
   zoneKindSummaryLabel,
 } from './zoneKindHelpers.ts';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 
 type ResourceTypeRecord = ResourceType;
 type ResourceRecord = Resource;
@@ -464,40 +465,6 @@ export const Resources = () => {
     ]
   );
 
-  const handleGenerateMapIcon = useCallback(
-    async (resourceType: ResourceTypeRecord) => {
-      setBusy(true);
-      setError(null);
-      setMessage(null);
-      try {
-        await apiClient.post<ResourceTypeRecord>(
-          `/sonar/resource-types/${resourceType.id}/generate-map-icon`,
-          {
-            prompt:
-              editingResourceTypeId === resourceType.id
-                ? resourceTypeForm.mapIconPrompt.trim()
-                : resourceType.mapIconPrompt,
-          }
-        );
-        setMessage(`Generated a new map icon for ${resourceType.name}.`);
-        await fetchResourceTypes();
-      } catch (nextError) {
-        console.error('Failed to generate resource type icon:', nextError);
-        setError(
-          extractApiErrorMessage(nextError, 'Failed to generate map icon.')
-        );
-      } finally {
-        setBusy(false);
-      }
-    },
-    [
-      apiClient,
-      editingResourceTypeId,
-      fetchResourceTypes,
-      resourceTypeForm.mapIconPrompt,
-    ]
-  );
-
   const handleGenerateRequirementItemsForType = useCallback(
     async (resourceType: ResourceTypeRecord) => {
       const resourceCount = resourceCountByTypeId.get(resourceType.id) || 0;
@@ -794,8 +761,9 @@ export const Resources = () => {
               Resource Types
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Define gathering categories like herbalism or mining and generate
-              the map icon each resource node will use.
+              Define gathering categories like herbalism or mining, then manage
+              their default and zone-kind marker art from the Content Map
+              Markers page.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -828,6 +796,8 @@ export const Resources = () => {
             {error || message}
           </div>
         )}
+
+        <ContentMapMarkersMovedNotice subject="Resource type marker art" />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,420px)]">
           <div className="grid gap-4 md:grid-cols-2">
@@ -896,14 +866,6 @@ export const Resources = () => {
                     </div>
                   )}
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerateMapIcon(resourceType)}
-                    className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
-                    disabled={busy}
-                  >
-                    Generate Map Icon
-                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -999,8 +961,12 @@ export const Resources = () => {
 
               <label className="block text-sm">
                 <span className="mb-1 block font-medium text-slate-700">
-                  Map Icon Prompt
+                  Default Marker Prompt
                 </span>
+                <p className="mb-2 text-xs text-slate-500">
+                  This base prompt feeds the Content Map Markers page, where
+                  default resource icons and zone-kind overrides are generated.
+                </p>
                 <textarea
                   value={resourceTypeForm.mapIconPrompt}
                   onChange={(event) =>

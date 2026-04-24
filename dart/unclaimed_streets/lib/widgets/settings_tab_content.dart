@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../services/notification_permission_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/poi_service.dart';
@@ -244,6 +245,7 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
     final pushEnabled = _permissionState == NotificationPermissionState.granted;
     final canRequest =
         _permissionState != NotificationPermissionState.unsupported;
+    final mapVisualSettings = context.watch<MapVisualSettingsProvider>();
 
     return SingleChildScrollView(
       primary: false,
@@ -393,6 +395,51 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                         label: const Text('Replay tutorial'),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Map',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: SwitchListTile(
+                      value: mapVisualSettings.zoneKindMapStylingEnabled,
+                      onChanged: mapVisualSettings.setZoneKindMapStylingEnabled,
+                      title: const Text('Show discovered zone kind styling'),
+                      subtitle: const Text(
+                        'Adds zone-kind tinting and selected-zone tile textures to discovered zones on the map.',
+                      ),
+                      secondary: const Icon(Icons.layers_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: SwitchListTile(
+                      value: mapVisualSettings.unselectedZoneKindTilingEnabled,
+                      onChanged: mapVisualSettings.zoneKindMapStylingEnabled
+                          ? mapVisualSettings.setUnselectedZoneKindTilingEnabled
+                          : null,
+                      title: const Text('Tile unselected discovered zones'),
+                      subtitle: const Text(
+                        'Keeps each discovered zone filled with its zone-kind tile even when it is not selected.',
+                      ),
+                      secondary: const Icon(Icons.grid_on_rounded),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   const Divider(),

@@ -19,6 +19,7 @@ import {
   ShopActionSavePayload,
 } from './ShopActionEditor.tsx';
 import { useSearchParams } from 'react-router-dom';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -1498,136 +1499,7 @@ export const Characters = () => {
         </div>
       </div>
 
-      <div
-        style={{
-          marginBottom: '20px',
-          padding: '16px',
-          border: '1px solid #d1d5db',
-          borderRadius: '8px',
-          backgroundColor: '#ffffff',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            gap: '10px',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '10px',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
-            Undiscovered Character Icon
-          </h2>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={() => void refreshUndiscoveredCharacterIconStatus(true)}
-              disabled={characterUndiscoveredStatusLoading}
-            >
-              {characterUndiscoveredStatusLoading
-                ? 'Refreshing…'
-                : 'Refresh Status'}
-            </button>
-            <button
-              type="button"
-              className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={handleGenerateUndiscoveredCharacterIcon}
-              disabled={
-                characterUndiscoveredBusy || characterUndiscoveredStatusLoading
-              }
-            >
-              {characterUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
-            </button>
-            <button
-              type="button"
-              className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
-              onClick={handleDeleteUndiscoveredCharacterIcon}
-              disabled={
-                characterUndiscoveredBusy || characterUndiscoveredStatusLoading
-              }
-            >
-              {characterUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
-            </button>
-          </div>
-        </div>
-        <div style={{ marginBottom: '6px' }}>
-          <span
-            style={{
-              display: 'inline-flex',
-              color: '#ffffff',
-              fontSize: '12px',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              backgroundColor: staticStatusColor(characterUndiscoveredStatus),
-            }}
-          >
-            {characterUndiscoveredStatus || 'unknown'}
-          </span>
-        </div>
-        <div
-          style={{ fontSize: '12px', color: '#4b5563', wordBreak: 'break-all' }}
-        >
-          URL: {characterUndiscoveredUrl}
-        </div>
-        <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px' }}>
-          Requested: {formatDate(characterUndiscoveredRequestedAt)}
-          {' · '}
-          Last updated: {formatDate(characterUndiscoveredLastModified)}
-        </div>
-        <div style={{ marginTop: '10px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>
-            Generation Prompt
-          </label>
-          <textarea
-            value={characterUndiscoveredPrompt}
-            onChange={(event) =>
-              setCharacterUndiscoveredPrompt(event.target.value)
-            }
-            placeholder="Prompt used to generate the undiscovered character icon."
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              minHeight: '88px',
-            }}
-          />
-        </div>
-        {characterUndiscoveredExists ? (
-          <div style={{ marginTop: '12px' }}>
-            <img
-              src={`${characterUndiscoveredUrl}?v=${characterUndiscoveredPreviewNonce}`}
-              alt="Undiscovered character icon preview"
-              style={{
-                width: '96px',
-                height: '96px',
-                borderRadius: '6px',
-                border: '1px solid #d1d5db',
-                objectFit: 'cover',
-                backgroundColor: '#f9fafb',
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
-            No icon currently found at this URL.
-          </div>
-        )}
-        {characterUndiscoveredMessage ? (
-          <div style={{ fontSize: '14px', color: '#047857', marginTop: '8px' }}>
-            {characterUndiscoveredMessage}
-          </div>
-        ) : null}
-        {characterUndiscoveredError ? (
-          <div style={{ fontSize: '14px', color: '#b91c1c', marginTop: '8px' }}>
-            {characterUndiscoveredError}
-          </div>
-        ) : null}
-      </div>
+      <ContentMapMarkersMovedNotice subject="Character map markers" />
 
       {/* Search */}
       <div className="mb-4">

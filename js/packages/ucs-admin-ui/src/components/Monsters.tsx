@@ -15,11 +15,9 @@ import {
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
 import ContentDashboard from './ContentDashboard.tsx';
-import {
-  countBy,
-  useAdminAggregateDataset,
-} from './contentDashboardUtils.ts';
+import { countBy, useAdminAggregateDataset } from './contentDashboardUtils.ts';
 import type { ZoneGenre } from '@poltergeist/types';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 import {
   useZoneKinds,
   zoneKindDescription,
@@ -238,6 +236,13 @@ type BulkMonsterTemplateStatus = {
   startedAt?: string;
   completedAt?: string;
   updatedAt?: string;
+};
+
+type BulkMonsterTemplateImageQueueResponse = {
+  totalCount: number;
+  queuedCount: number;
+  skippedCount: number;
+  failedCount: number;
 };
 
 type MonsterTemplateSuggestionPayload = {
@@ -1235,6 +1240,13 @@ export const Monsters = () => {
   const [bulkTemplateMessage, setBulkTemplateMessage] = useState<string | null>(
     null
   );
+  const [bulkTemplateImageBusy, setBulkTemplateImageBusy] = useState(false);
+  const [bulkTemplateImageMessage, setBulkTemplateImageMessage] = useState<
+    string | null
+  >(null);
+  const [bulkTemplateImageError, setBulkTemplateImageError] = useState<
+    string | null
+  >(null);
   const [templateSuggestionJobs, setTemplateSuggestionJobs] = useState<
     BulkMonsterTemplateStatus[]
   >([]);
@@ -1242,8 +1254,10 @@ export const Monsters = () => {
     useState(1);
   const [templateSuggestionJobsHasMore, setTemplateSuggestionJobsHasMore] =
     useState(false);
-  const [templateSuggestionJobsLoadedLimit, setTemplateSuggestionJobsLoadedLimit] =
-    useState(monsterTemplateSuggestionJobsPerPage);
+  const [
+    templateSuggestionJobsLoadedLimit,
+    setTemplateSuggestionJobsLoadedLimit,
+  ] = useState(monsterTemplateSuggestionJobsPerPage);
   const [selectedTemplateSuggestionJobId, setSelectedTemplateSuggestionJobId] =
     useState('');
   const [templateSuggestionDrafts, setTemplateSuggestionDrafts] = useState<
@@ -1582,7 +1596,9 @@ export const Monsters = () => {
   useEffect(() => {
     const totalPages = Math.max(
       1,
-      Math.ceil(templateSuggestionJobs.length / monsterTemplateSuggestionJobsPerPage)
+      Math.ceil(
+        templateSuggestionJobs.length / monsterTemplateSuggestionJobsPerPage
+      )
     );
     setTemplateSuggestionJobsPage((current) => Math.min(current, totalPages));
   }, [templateSuggestionJobs.length]);
@@ -1773,11 +1789,7 @@ export const Monsters = () => {
       { label: 'With Spells', value: templatesWithSpells },
       { label: 'With Progressions', value: templatesWithProgressions },
     ];
-  }, [
-    activeTemplateCount,
-    archivedTemplateCount,
-    dashboardTemplates,
-  ]);
+  }, [activeTemplateCount, archivedTemplateCount, dashboardTemplates]);
   const dashboardSections = useMemo(
     () => [
       {
@@ -1823,11 +1835,7 @@ export const Monsters = () => {
         ),
       },
     ],
-    [
-      dashboardTemplates,
-      genres,
-      zoneKindBySlug,
-    ]
+    [dashboardTemplates, genres, zoneKindBySlug]
   );
 
   const templateNameById = useMemo(() => {
@@ -1938,6 +1946,8 @@ export const Monsters = () => {
   const filteredTemplates = templates;
   const filteredMonsters = records;
   const filteredEncounters = encounters;
+  const bulkTemplateImageTargetCount =
+    selectedTemplateIds.size > 0 ? selectedTemplateIds.size : templateTotal;
   const allFilteredTemplatesSelected = useMemo(() => {
     if (filteredTemplates.length === 0) return false;
     return filteredTemplates.every((template) =>
@@ -1995,7 +2005,8 @@ export const Monsters = () => {
   const visibleTemplateSuggestionJobsRangeStart =
     templateSuggestionJobs.length === 0
       ? 0
-      : (templateSuggestionJobsPage - 1) * monsterTemplateSuggestionJobsPerPage +
+      : (templateSuggestionJobsPage - 1) *
+          monsterTemplateSuggestionJobsPerPage +
         1;
   const visibleTemplateSuggestionJobsRangeEnd =
     templateSuggestionJobs.length === 0
@@ -2009,14 +2020,16 @@ export const Monsters = () => {
       Math.max(
         1,
         Math.ceil(
-          templateSuggestionDrafts.length / monsterTemplateSuggestionDraftsPerPage
+          templateSuggestionDrafts.length /
+            monsterTemplateSuggestionDraftsPerPage
         )
       ),
     [templateSuggestionDrafts.length]
   );
   const paginatedTemplateSuggestionDrafts = useMemo(() => {
     const startIndex =
-      (templateSuggestionDraftPage - 1) * monsterTemplateSuggestionDraftsPerPage;
+      (templateSuggestionDraftPage - 1) *
+      monsterTemplateSuggestionDraftsPerPage;
     return templateSuggestionDrafts.slice(
       startIndex,
       startIndex + monsterTemplateSuggestionDraftsPerPage
@@ -2315,7 +2328,9 @@ export const Monsters = () => {
   const handleDeleteTemplateSuggestionDraft = async (draftId: string) => {
     try {
       setDeletingTemplateSuggestionDraftId(draftId);
-      await apiClient.delete(`/sonar/monster-template-suggestion-drafts/${draftId}`);
+      await apiClient.delete(
+        `/sonar/monster-template-suggestion-drafts/${draftId}`
+      );
       if (selectedTemplateSuggestionJobId) {
         await fetchTemplateSuggestionDrafts(selectedTemplateSuggestionJobId);
       }
@@ -2509,6 +2524,94 @@ export const Monsters = () => {
           : 'Failed to reset monster template progressions.';
       setProgressionResetError(message);
       setProgressionResetBusy(false);
+    }
+  };
+
+  const handleBulkQueueTemplateImages = async () => {
+    const selectedIds = Array.from(selectedTemplateIds);
+    const usesSelection = selectedIds.length > 0;
+    const targetCount = usesSelection ? selectedIds.length : templateTotal;
+    if (targetCount <= 0) {
+      return;
+    }
+
+    try {
+      setBulkTemplateImageBusy(true);
+      setBulkTemplateImageError(null);
+      setBulkTemplateImageMessage(null);
+
+      const response =
+        await apiClient.post<BulkMonsterTemplateImageQueueResponse>(
+          '/sonar/admin/monster-templates/generate-images',
+          usesSelection
+            ? { ids: selectedIds }
+            : {
+                query: deferredQuery.trim(),
+                zoneQuery: deferredZoneQuery.trim(),
+                genreId: genreFilter === 'all' ? '' : genreFilter,
+                archived: templateTab === 'archived',
+                monsterType:
+                  templateTypeFilter === 'all' ? '' : templateTypeFilter,
+              }
+        );
+
+      const matchedLabel = `${response.totalCount} template${
+        response.totalCount === 1 ? '' : 's'
+      }`;
+      if (response.queuedCount > 0) {
+        const parts = [
+          `Queued ${response.queuedCount} image job${
+            response.queuedCount === 1 ? '' : 's'
+          } for ${matchedLabel}.`,
+        ];
+        if (response.skippedCount > 0) {
+          parts.push(
+            `Skipped ${response.skippedCount} already queued or in-progress template${
+              response.skippedCount === 1 ? '' : 's'
+            }.`
+          );
+        }
+        if (response.failedCount > 0) {
+          parts.push(
+            `${response.failedCount} template${
+              response.failedCount === 1 ? '' : 's'
+            } failed to queue.`
+          );
+        }
+        setBulkTemplateImageMessage(parts.join(' '));
+      } else if (response.skippedCount > 0 && response.failedCount === 0) {
+        setBulkTemplateImageMessage(
+          `No new image jobs were queued for ${matchedLabel}; ${response.skippedCount} ${
+            response.skippedCount === 1 ? 'was' : 'were'
+          } already queued or in progress.`
+        );
+      } else if (response.totalCount === 0) {
+        setBulkTemplateImageMessage(
+          'No monster templates matched this request.'
+        );
+      }
+
+      if (response.failedCount > 0) {
+        setBulkTemplateImageError(
+          `Failed to queue ${response.failedCount} template image job${
+            response.failedCount === 1 ? '' : 's'
+          }.`
+        );
+      }
+
+      await loadPagedData(true);
+    } catch (err) {
+      console.error(
+        'Failed to queue bulk monster template image generation',
+        err
+      );
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to queue monster template image jobs.';
+      setBulkTemplateImageError(message);
+    } finally {
+      setBulkTemplateImageBusy(false);
     }
   };
 
@@ -3556,14 +3659,18 @@ export const Monsters = () => {
                 onClick={() => handleGenerateSingleTypedTemplate('boss')}
                 disabled={bulkTemplateBusy}
               >
-                {bulkTemplateYeetIt ? 'Generate Live Boss' : 'Generate Boss Draft'}
+                {bulkTemplateYeetIt
+                  ? 'Generate Live Boss'
+                  : 'Generate Boss Draft'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={() => handleGenerateSingleTypedTemplate('raid')}
                 disabled={bulkTemplateBusy}
               >
-                {bulkTemplateYeetIt ? 'Generate Live Raid' : 'Generate Raid Draft'}
+                {bulkTemplateYeetIt
+                  ? 'Generate Live Raid'
+                  : 'Generate Raid Draft'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
@@ -3596,8 +3703,7 @@ export const Monsters = () => {
               </span>
               <span>
                 {bulkTemplateJob.yeetIt ? 'Templates' : 'Drafts'}:{' '}
-                {bulkTemplateJob.createdCount}/
-                {bulkTemplateJob.totalCount}
+                {bulkTemplateJob.createdCount}/{bulkTemplateJob.totalCount}
               </span>
               <span>
                 Type:{' '}
@@ -3664,8 +3770,8 @@ export const Monsters = () => {
                       Showing {visibleTemplateSuggestionJobsRangeStart}-
                       {visibleTemplateSuggestionJobsRangeEnd} of{' '}
                       {templateSuggestionJobs.length}
-                      {templateSuggestionJobsHasMore ? '+' : ''} loaded jobs ·
-                      {' '}Page {templateSuggestionJobsPage}
+                      {templateSuggestionJobsHasMore ? '+' : ''} loaded jobs ·{' '}
+                      Page {templateSuggestionJobsPage}
                     </div>
                   )}
                 </div>
@@ -3711,12 +3817,15 @@ export const Monsters = () => {
                     </div>
                   )}
                 {visibleTemplateSuggestionJobs.map((job) => {
-                  const selected = job.jobId === selectedTemplateSuggestionJobId;
+                  const selected =
+                    job.jobId === selectedTemplateSuggestionJobId;
                   return (
                     <button
                       key={job.jobId}
                       type="button"
-                      onClick={() => setSelectedTemplateSuggestionJobId(job.jobId)}
+                      onClick={() =>
+                        setSelectedTemplateSuggestionJobId(job.jobId)
+                      }
                       className={`w-full rounded-lg border px-3 py-3 text-left transition ${
                         selected
                           ? 'border-indigo-500 bg-indigo-50'
@@ -3749,8 +3858,8 @@ export const Monsters = () => {
                         {job.zoneKind
                           ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
                           : ''}
-                        · {job.yeetIt ? 'yeet mode' : 'draft mode'} 
-                        · {job.createdCount}/{job.totalCount} ready
+                        · {job.yeetIt ? 'yeet mode' : 'draft mode'}·{' '}
+                        {job.createdCount}/{job.totalCount} ready
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                         {[
@@ -3809,8 +3918,8 @@ export const Monsters = () => {
                           : 'draft'}
                         {selectedTemplateSuggestionJob.createdCount === 1
                           ? ''
-                          : 's'}
-                        {' '}·{' '}
+                          : 's'}{' '}
+                        ·{' '}
                         {selectedTemplateSuggestionJob.yeetIt
                           ? 'yeet mode'
                           : 'draft mode'}
@@ -3821,28 +3930,28 @@ export const Monsters = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   {selectedTemplateSuggestionJob &&
                     !selectedTemplateSuggestionJob.yeetIt && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void handleConvertAllTemplateSuggestionDrafts()
-                      }
-                      disabled={
-                        loadingTemplateSuggestionDrafts ||
-                        convertingAllTemplateSuggestionDrafts ||
-                        convertingTemplateSuggestionDraftId !== null ||
-                        unconvertedTemplateSuggestionDrafts.length === 0
-                      }
-                      className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      {convertingAllTemplateSuggestionDrafts
-                        ? 'Converting all...'
-                        : `Convert All to Templates${
-                            unconvertedTemplateSuggestionDrafts.length > 0
-                              ? ` (${unconvertedTemplateSuggestionDrafts.length})`
-                              : ''
-                          }`}
-                    </button>
-                  )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleConvertAllTemplateSuggestionDrafts()
+                        }
+                        disabled={
+                          loadingTemplateSuggestionDrafts ||
+                          convertingAllTemplateSuggestionDrafts ||
+                          convertingTemplateSuggestionDraftId !== null ||
+                          unconvertedTemplateSuggestionDrafts.length === 0
+                        }
+                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {convertingAllTemplateSuggestionDrafts
+                          ? 'Converting all...'
+                          : `Convert All to Templates${
+                              unconvertedTemplateSuggestionDrafts.length > 0
+                                ? ` (${unconvertedTemplateSuggestionDrafts.length})`
+                                : ''
+                            }`}
+                      </button>
+                    )}
                   {loadingTemplateSuggestionDrafts && (
                     <div className="text-xs text-slate-500">
                       Loading drafts...
@@ -3877,7 +3986,10 @@ export const Monsters = () => {
                       type="button"
                       onClick={() =>
                         setTemplateSuggestionDraftPage((current) =>
-                          Math.min(templateSuggestionDraftTotalPages, current + 1)
+                          Math.min(
+                            templateSuggestionDraftTotalPages,
+                            current + 1
+                          )
                         )
                       }
                       disabled={
@@ -4041,7 +4153,10 @@ export const Monsters = () => {
                         type="button"
                         onClick={() =>
                           setTemplateSuggestionDraftPage((current) =>
-                            Math.min(templateSuggestionDraftTotalPages, current + 1)
+                            Math.min(
+                              templateSuggestionDraftTotalPages,
+                              current + 1
+                            )
                           )
                         }
                         disabled={
@@ -4059,123 +4174,7 @@ export const Monsters = () => {
           </div>
         </div>
 
-        <div className="qa-card">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold">
-              Undiscovered Encounter Icons
-            </h2>
-            <p className="text-sm text-gray-600">
-              Standard, boss, and raid encounters each have their own mystery
-              pin.
-            </p>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {(Object.keys(encounterIconDefaults) as MonsterEncounterType[]).map(
-              (encounterType) => {
-                const iconState = encounterIconStates[encounterType];
-                const meta = encounterIconDefaults[encounterType];
-                return (
-                  <div
-                    key={encounterType}
-                    className="rounded-lg border border-gray-200 bg-white p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold">
-                          {meta.label} Icon
-                        </h3>
-                        <p className="text-xs text-gray-600 break-all">
-                          URL: {iconState.url}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Requested:{' '}
-                          {formatDate(iconState.requestedAt ?? undefined)}
-                          {' · '}
-                          Last updated:{' '}
-                          {formatDate(iconState.lastModified ?? undefined)}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
-                          iconState.status
-                        )}`}
-                      >
-                        {iconState.status || 'unknown'}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        className="qa-btn qa-btn-secondary"
-                        onClick={() =>
-                          void refreshEncounterIconStatus(encounterType, true)
-                        }
-                        disabled={iconState.statusLoading}
-                      >
-                        {iconState.statusLoading
-                          ? 'Refreshing...'
-                          : 'Refresh Status'}
-                      </button>
-                      <button
-                        className="qa-btn qa-btn-secondary"
-                        onClick={() =>
-                          void handleGenerateEncounterIcon(encounterType)
-                        }
-                        disabled={iconState.busy || iconState.statusLoading}
-                      >
-                        {iconState.busy ? 'Working...' : 'Generate Icon'}
-                      </button>
-                      <button
-                        className="qa-btn qa-btn-danger"
-                        onClick={() =>
-                          void handleDeleteEncounterIcon(encounterType)
-                        }
-                        disabled={iconState.busy || iconState.statusLoading}
-                      >
-                        {iconState.busy ? 'Working...' : 'Delete Icon'}
-                      </button>
-                    </div>
-                    <label className="block text-sm mt-3">
-                      Generation Prompt
-                      <textarea
-                        className="block w-full border border-gray-300 rounded-md p-2 mt-1 min-h-[88px]"
-                        value={iconState.prompt}
-                        onChange={(event) =>
-                          setEncounterIconState(encounterType, {
-                            prompt: event.target.value,
-                          })
-                        }
-                        placeholder={`Prompt used to generate the undiscovered ${meta.label.toLowerCase()} icon.`}
-                      />
-                    </label>
-                    {iconState.exists ? (
-                      <div className="mt-3">
-                        <img
-                          src={`${iconState.url}?v=${iconState.previewNonce}`}
-                          alt={`Undiscovered ${meta.label.toLowerCase()} icon preview`}
-                          className="w-24 h-24 object-cover border rounded-md bg-gray-50"
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500 mt-2">
-                        No icon currently found at this URL.
-                      </p>
-                    )}
-                    {iconState.message ? (
-                      <p className="text-sm text-emerald-700 mt-2">
-                        {iconState.message}
-                      </p>
-                    ) : null}
-                    {iconState.error ? (
-                      <p className="text-sm text-red-600 mt-2">
-                        {iconState.error}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              }
-            )}
-          </div>
-        </div>
+        <ContentMapMarkersMovedNotice subject="Encounter map markers" />
 
         <div className="qa-card">
           <div className="flex flex-wrap gap-3">
@@ -4312,6 +4311,19 @@ export const Monsters = () => {
                       ? `Reset Selected Progressions (${selectedTemplateIds.size})`
                       : 'Reset All Template Progressions'}
                 </button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  disabled={
+                    bulkTemplateImageBusy || bulkTemplateImageTargetCount === 0
+                  }
+                  onClick={() => void handleBulkQueueTemplateImages()}
+                >
+                  {bulkTemplateImageBusy
+                    ? 'Queueing Image Jobs...'
+                    : selectedTemplateIds.size > 0
+                      ? `Queue Selected Image Jobs (${selectedTemplateIds.size})`
+                      : `Queue All Matching Image Jobs (${templateTotal})`}
+                </button>
               </div>
               {affinityRefreshJob ? (
                 <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-700">
@@ -4369,6 +4381,16 @@ export const Monsters = () => {
               {progressionResetError ? (
                 <p className="mb-4 text-sm text-red-700">
                   {progressionResetError}
+                </p>
+              ) : null}
+              {bulkTemplateImageMessage ? (
+                <p className="mb-4 text-sm text-emerald-700">
+                  {bulkTemplateImageMessage}
+                </p>
+              ) : null}
+              {bulkTemplateImageError ? (
+                <p className="mb-4 text-sm text-red-700">
+                  {bulkTemplateImageError}
                 </p>
               ) : null}
               {filteredTemplates.length === 0 ? (

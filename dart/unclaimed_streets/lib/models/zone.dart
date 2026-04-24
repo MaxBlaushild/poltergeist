@@ -61,6 +61,7 @@ class Zone {
   final String? kind;
   final String? kindOverlayColor;
   final String? kindPatternTileUrl;
+  final String? shroudPatternTileUrl;
   final double latitude;
   final double longitude;
   final bool discovered;
@@ -77,6 +78,7 @@ class Zone {
     this.kind,
     this.kindOverlayColor,
     this.kindPatternTileUrl,
+    this.shroudPatternTileUrl,
     required this.latitude,
     required this.longitude,
     this.discovered = false,
@@ -95,6 +97,7 @@ class Zone {
       kind: json['kind']?.toString(),
       kindOverlayColor: json['kindOverlayColor']?.toString(),
       kindPatternTileUrl: json['kindPatternTileUrl']?.toString(),
+      shroudPatternTileUrl: json['shroudPatternTileUrl']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       discovered: json['discovered'] == true,
@@ -127,6 +130,7 @@ class Zone {
     String? kind,
     String? kindOverlayColor,
     String? kindPatternTileUrl,
+    String? shroudPatternTileUrl,
     double? latitude,
     double? longitude,
     bool? discovered,
@@ -143,6 +147,7 @@ class Zone {
       kind: kind ?? this.kind,
       kindOverlayColor: kindOverlayColor ?? this.kindOverlayColor,
       kindPatternTileUrl: kindPatternTileUrl ?? this.kindPatternTileUrl,
+      shroudPatternTileUrl: shroudPatternTileUrl ?? this.shroudPatternTileUrl,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       discovered: discovered ?? this.discovered,

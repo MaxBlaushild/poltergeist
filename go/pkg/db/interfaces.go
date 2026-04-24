@@ -55,6 +55,7 @@ type DbClient interface {
 	MonsterTemplateSuggestionDraft() MonsterTemplateSuggestionDraftHandle
 	UserLearnedRecipe() UserLearnedRecipeHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
+	ZoneShroudConfig() ZoneShroudConfigHandle
 	Tutorial() TutorialHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
@@ -449,6 +450,18 @@ type ScenarioGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioGenerationJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ScenarioGenerationJob, error)
+	ListAdmin(ctx context.Context, params ScenarioGenerationJobAdminListParams) (*ScenarioGenerationJobAdminListResult, error)
+}
+
+type ScenarioGenerationJobAdminListParams struct {
+	Page     int
+	PageSize int
+	ZoneID   *uuid.UUID
+}
+
+type ScenarioGenerationJobAdminListResult struct {
+	Jobs  []models.ScenarioGenerationJob
+	Total int64
 }
 
 type ChallengeGenerationJobHandle interface {
@@ -635,6 +648,11 @@ type NewUserStarterConfigHandle interface {
 	Get(ctx context.Context) (*models.NewUserStarterConfig, error)
 	Upsert(ctx context.Context, config *models.NewUserStarterConfig) (*models.NewUserStarterConfig, error)
 	ApplyToUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type ZoneShroudConfigHandle interface {
+	Get(ctx context.Context) (*models.ZoneShroudConfig, error)
+	Upsert(ctx context.Context, config *models.ZoneShroudConfig) (*models.ZoneShroudConfig, error)
 }
 
 type TutorialHandle interface {

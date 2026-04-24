@@ -829,10 +829,22 @@ func normalizedGatherRewardItemLevel(item models.InventoryItem) int {
 	return 1
 }
 
+func effectiveGatherRewardZoneKind(resource *models.Resource) string {
+	if resource == nil {
+		return ""
+	}
+	if zoneKind := models.NormalizeZoneKind(resource.Zone.Kind); zoneKind != "" {
+		return zoneKind
+	}
+	return models.NormalizeZoneKind(resource.ZoneKind)
+}
+
 func gatherRewardCandidatesForResourceType(
 	resourceTypeID uuid.UUID,
+	zoneKind string,
 	items []models.InventoryItem,
 ) []models.InventoryItem {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKind)
 	filtered := make([]models.InventoryItem, 0, len(items))
 	for _, item := range items {
 		if item.ID <= 0 || item.Archived || item.IsCaptureType {
@@ -842,6 +854,9 @@ func gatherRewardCandidatesForResourceType(
 			continue
 		}
 		if !resourceTypeIDsMatch(&item, resourceTypeID) {
+			continue
+		}
+		if normalizedZoneKind != "" && models.NormalizeZoneKind(item.ZoneKind) != normalizedZoneKind {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -859,12 +874,16 @@ func gatherRewardCandidatesForResourceType(
 
 func selectGatherRewardInventoryItem(
 	resourceTypeID uuid.UUID,
+	zoneKind string,
 	userLevel int,
 	items []models.InventoryItem,
 	rng *rand.Rand,
 ) (*models.InventoryItem, error) {
-	candidates := gatherRewardCandidatesForResourceType(resourceTypeID, items)
+	candidates := gatherRewardCandidatesForResourceType(resourceTypeID, zoneKind, items)
 	if len(candidates) == 0 {
+		if models.NormalizeZoneKind(zoneKind) != "" {
+			return nil, fmt.Errorf("no active inventory items are configured for this resource type in this zone kind")
+		}
 		return nil, fmt.Errorf("no active inventory items are configured for this resource type")
 	}
 
@@ -1129,12 +1148,15 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 		return
 	}
 
-	prompt := strings.TrimSpace(resourceType.MapIconPrompt)
-	if requestBody.Prompt != nil {
-		prompt = strings.TrimSpace(*requestBody.Prompt)
+	zoneKind, err := s.resolveContentMapMarkerZoneKind(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-	if prompt == "" {
-		prompt = defaultResourceTypeMapIconPrompt(resourceType)
+
+	prompt := resourceTypeContentMapMarkerPrompt(resourceType, zoneKind)
+	if requestBody.Prompt != nil && strings.TrimSpace(*requestBody.Prompt) != "" {
+		prompt = strings.TrimSpace(*requestBody.Prompt)
 	}
 
 	request := deep_priest.GenerateImageRequest{Prompt: prompt}
@@ -1149,6 +1171,23 @@ func (s *server) generateResourceTypeMapIcon(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode generated icon: " + err.Error()})
 		return
 	}
+
+	if contentMapMarkerZoneKindSlug(zoneKind) != "" {
+		destinationKey := resourceTypeContentMapMarkerDestinationKey(resourceType.ID, zoneKind)
+		mapIconURL, err := s.uploadStaticContentMapMarker(destinationKey, imageBytes)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload generated icon: " + err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"status":       "completed",
+			"prompt":       prompt,
+			"thumbnailUrl": mapIconURL,
+			"zoneKind":     contentMapMarkerZoneKindSlug(zoneKind),
+		})
+		return
+	}
+
 	mapIconURL, err := s.uploadResourceTypeMapIcon(resourceType.ID, imageBytes)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload generated icon: " + err.Error()})
@@ -1351,6 +1390,14 @@ func (s *server) getResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		return
 	}
+	if markerURL := s.resolveResourceTypeMapMarkerURL(
+		ctx.Request.Context(),
+		&resource.ResourceType,
+		effectiveContentMapMarkerZoneKind(resource.ZoneKind, &resource.Zone),
+		contentMapMarkerExistenceCache{},
+	); markerURL != "" {
+		resource.ResourceType.MapIconURL = markerURL
+	}
 	ctx.JSON(http.StatusOK, resourceWithUserStatus{
 		Resource:       *resource,
 		GatheredByUser: gatheredByUser,
@@ -1373,10 +1420,24 @@ func (s *server) getResourcesForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	markerCache := contentMapMarkerExistenceCache{}
 	response := make([]resourceWithUserStatus, 0, len(resources))
 	for _, resource := range resources {
 		if resource.Invalidated {
 			continue
+		}
+		if markerURL := s.resolveResourceTypeMapMarkerURL(
+			ctx.Request.Context(),
+			&resource.ResourceType,
+			effectiveContentMapMarkerZoneKind(resource.ZoneKind, zone),
+			markerCache,
+		); markerURL != "" {
+			resource.ResourceType.MapIconURL = markerURL
 		}
 		response = append(response, resourceWithUserStatus{
 			Resource:       resource,
@@ -1732,6 +1793,7 @@ func (s *server) gatherResource(ctx *gin.Context) {
 	}
 	selectedItem, err := selectGatherRewardInventoryItem(
 		resource.ResourceTypeID,
+		effectiveGatherRewardZoneKind(resource),
 		userLevel.Level,
 		inventoryItems,
 		nil,

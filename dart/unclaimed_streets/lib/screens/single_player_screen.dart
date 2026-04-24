@@ -40,6 +40,7 @@ import '../providers/base_placement_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
@@ -57,6 +58,7 @@ import '../utils/poi_image_util.dart';
 import '../utils/camera_capture.dart';
 import '../utils/zone_kind_pattern_asset.dart';
 import '../utils/zone_kind_pattern_tiles.dart';
+import '../utils/zone_shroud_pattern_tile.dart';
 import '../constants/api_constants.dart';
 import '../constants/gameplay_constants.dart';
 import '../constants/zone_kind_visuals.dart';
@@ -133,6 +135,9 @@ const _mainStoryPulseRingColor = '#7a1823';
 const _discoveryPulseCoreColor = '#f6d98c';
 const _discoveryPulseMistColor = '#fff5d7';
 const _discoveryPulseRingColor = '#f5c542';
+const _focusPulseOverlaySourceId = 'focus-pulse-overlay-source';
+const _focusPulseOverlayLayerId = 'focus-pulse-overlay-layer';
+const _focusPulseOverlaySourceBuffer = 512.0;
 
 int _monsterBattleDefeatResourceFloor(int maxResource, int floorPercent) {
   if (maxResource <= 0) return 0;
@@ -228,6 +233,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   List<Circle> _mainStoryPoiHighlightCircles = [];
   _TrackedQuestOverlayPulseTarget? _trackedQuestOverlayPulseTarget;
   final Set<String> _activePulseKeys = <String>{};
+  final Map<String, _PulseOverlayCircle> _focusPulseOverlayCircles =
+      <String, _PulseOverlayCircle>{};
+  bool _focusPulseOverlayReady = false;
   List<Symbol> _characterSymbols = [];
   final Map<String, List<Symbol>> _characterSymbolsById = {};
   List<Symbol> _chestSymbols = [];
@@ -281,6 +289,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
+  String? _renderedTreasureChestMarkerUrl;
   Uint8List? _scenarioMysteryThumbnailBytes;
   bool _scenarioMysteryThumbnailAdded = false;
   Uint8List? _expositionMysteryThumbnailBytes;
@@ -414,6 +423,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   int _playerPresenceRefreshGeneration = 0;
   LatLng? _lastPlayerPresenceLatLng;
   double? _lastResolvedPlayerHeading;
+  MapVisualSettingsProvider? _mapVisualSettingsProvider;
+  bool _zoneKindMapStylingEnabled = false;
+  bool _unselectedZoneKindTilingEnabled = false;
 
   @override
   void initState() {
@@ -450,6 +462,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _activityFeedProvider?.addListener(_onActivityFeedChanged);
       _basePlacementProvider = context.read<BasePlacementProvider>();
       _basePlacementProvider?.addListener(_onBasePlacementRequested);
+      _mapVisualSettingsProvider = context.read<MapVisualSettingsProvider>();
+      _zoneKindMapStylingEnabled =
+          _mapVisualSettingsProvider?.zoneKindMapStylingEnabled ?? false;
+      _unselectedZoneKindTilingEnabled =
+          _mapVisualSettingsProvider?.unselectedZoneKindTilingEnabled ?? false;
+      _mapVisualSettingsProvider?.addListener(_onMapVisualSettingsChanged);
       _lastAuthenticatedUserId =
           context.read<AuthProvider>().user?.id.trim() ?? '';
       unawaited(_restoreTrackedQuestOverlaySelectedItem());
@@ -512,6 +530,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _basePlacementProvider?.removeListener(_onBasePlacementRequested);
     } catch (_) {}
     try {
+      _mapVisualSettingsProvider?.removeListener(_onMapVisualSettingsChanged);
+    } catch (_) {}
+    try {
       context.read<TutorialReplayProvider>().removeListener(
         _onTutorialReplayRequested,
       );
@@ -547,6 +568,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     _refreshScenarioVisibilityForLocationChange();
     _maybeShowTutorialDialogues();
     unawaited(_refreshPlayerPresence());
+  }
+
+  void _onMapVisualSettingsChanged() {
+    final enabled =
+        _mapVisualSettingsProvider?.zoneKindMapStylingEnabled ?? false;
+    final unselectedTilingEnabled =
+        _mapVisualSettingsProvider?.unselectedZoneKindTilingEnabled ?? false;
+    if (_zoneKindMapStylingEnabled == enabled &&
+        _unselectedZoneKindTilingEnabled == unselectedTilingEnabled) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _zoneKindMapStylingEnabled = enabled;
+        _unselectedZoneKindTilingEnabled = unselectedTilingEnabled;
+      });
+    } else {
+      _zoneKindMapStylingEnabled = enabled;
+      _unselectedZoneKindTilingEnabled = unselectedTilingEnabled;
+    }
+
+    if (_styleLoaded && _mapController != null) {
+      unawaited(_refreshZoneBoundaryRendering());
+    }
   }
 
   void _onActivityFeedChanged() {
@@ -1913,7 +1959,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
-    final categoryId = poi.markerCategory.wireValue;
+    final markerSource = poi.mapMarkerUrl?.trim() ?? '';
+    final categoryId = markerSource.isNotEmpty
+        ? 'remote_${markerSource.hashCode}'
+        : poi.markerCategory.wireValue;
     if (hasQuestMarker) {
       return hasMainStoryAccent
           ? 'poi_category_${categoryId}_main_story'
@@ -1927,6 +1976,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
+    final markerSource = poi.mapMarkerUrl?.trim() ?? '';
+    if (markerSource.isNotEmpty) {
+      if (hasQuestMarker) {
+        return hasMainStoryAccent
+            ? peekPoiThumbnailWithMainStoryMarker(markerSource)
+            : peekPoiThumbnailWithQuestMarker(markerSource);
+      }
+      return peekPoiThumbnail(markerSource);
+    }
     if (hasQuestMarker) {
       return hasMainStoryAccent
           ? peekPoiCategoryThumbnailWithMainStoryMarker(poi.markerCategory)
@@ -1940,6 +1998,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     required bool hasQuestMarker,
     required bool hasMainStoryAccent,
   }) {
+    final markerSource = poi.mapMarkerUrl?.trim() ?? '';
+    if (markerSource.isNotEmpty) {
+      if (hasQuestMarker) {
+        return hasMainStoryAccent
+            ? loadPoiThumbnailWithMainStoryMarker(markerSource)
+            : loadPoiThumbnailWithQuestMarker(markerSource);
+      }
+      return loadPoiThumbnail(markerSource);
+    }
     if (hasQuestMarker) {
       return hasMainStoryAccent
           ? loadPoiCategoryThumbnailWithMainStoryMarker(poi.markerCategory)
@@ -2545,6 +2612,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _challengePolygonFills = [];
       _challengePolygonLineById.clear();
       _challengePolygonFillById.clear();
+      _activePulseKeys.clear();
+      _focusPulseOverlayCircles.clear();
+      _focusPulseOverlayReady = false;
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
       _monsterMysteryThumbnailBytesByType.clear();
@@ -2558,6 +2628,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _mapImageIds.clear();
       _renderedSelectedZoneId = null;
       _renderedTreasureChestZoneId = null;
+      _renderedTreasureChestMarkerUrl = null;
       _questLines = [];
       _characterSymbolsById.clear();
       _playerPresenceSymbol = null;
@@ -2581,6 +2652,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     unawaited(
       (() async {
         await _setSymbolOverlap();
+        await _ensureFocusPulseOverlayLayer();
         await _refreshPlayerPresence();
         await _addPoiMarkers();
         if (_scenarioVisibilityRefreshPending) {
@@ -2625,6 +2697,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
       return;
     }
+    _updateSelectedZoneFromLocation(force: true);
     final currentCamera = c.cameraPosition;
     try {
       c.animateCamera(
@@ -4135,6 +4208,90 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return start + ((end - start) * t);
   }
 
+  Map<String, dynamic> _focusPulseOverlayFeatureCollection() {
+    return <String, dynamic>{
+      'type': 'FeatureCollection',
+      'features': _focusPulseOverlayCircles.values
+          .map((circle) => circle.toGeoJson())
+          .toList(),
+    };
+  }
+
+  Future<void> _ensureFocusPulseOverlayLayer() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded || _focusPulseOverlayReady) return;
+
+    final symbolManager = c.symbolManager;
+    final belowLayerId =
+        symbolManager != null && symbolManager.layerIds.isNotEmpty
+        ? symbolManager.layerIds.first
+        : null;
+
+    try {
+      // The pulse grows beyond the default GeoJSON tile buffer, which can clip
+      // large circles right at raster tile seams.
+      await c.addSource(
+        _focusPulseOverlaySourceId,
+        GeojsonSourceProperties(
+          data: _focusPulseOverlayFeatureCollection(),
+          buffer: _focusPulseOverlaySourceBuffer,
+          tolerance: 0,
+        ),
+      );
+    } catch (_) {}
+
+    try {
+      await c.addCircleLayer(
+        _focusPulseOverlaySourceId,
+        _focusPulseOverlayLayerId,
+        const CircleLayerProperties(
+          circleRadius: [Expressions.get, 'circleRadius'],
+          circleColor: [Expressions.get, 'circleColor'],
+          circleBlur: [Expressions.get, 'circleBlur'],
+          circleOpacity: [Expressions.get, 'circleOpacity'],
+          circleStrokeWidth: [Expressions.get, 'circleStrokeWidth'],
+          circleStrokeColor: [Expressions.get, 'circleStrokeColor'],
+          circleStrokeOpacity: [Expressions.get, 'circleStrokeOpacity'],
+        ),
+        belowLayerId: belowLayerId,
+        enableInteraction: false,
+      );
+    } catch (_) {}
+
+    _focusPulseOverlayReady = true;
+  }
+
+  Future<void> _syncFocusPulseOverlaySource() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    await _ensureFocusPulseOverlayLayer();
+    if (!_focusPulseOverlayReady) return;
+    try {
+      await c.setGeoJsonSource(
+        _focusPulseOverlaySourceId,
+        _focusPulseOverlayFeatureCollection(),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _setFocusPulseOverlayCircles(
+    Iterable<_PulseOverlayCircle> circles,
+  ) async {
+    for (final circle in circles) {
+      _focusPulseOverlayCircles[circle.id] = circle;
+    }
+    await _syncFocusPulseOverlaySource();
+  }
+
+  Future<void> _removeFocusPulseOverlayCircles(
+    Iterable<String> circleIds,
+  ) async {
+    for (final circleId in circleIds) {
+      _focusPulseOverlayCircles.remove(circleId);
+    }
+    await _syncFocusPulseOverlaySource();
+  }
+
   Future<void> _animateFeatheredPulse(
     double lat,
     double lng, {
@@ -4159,34 +4316,44 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (c == null || !_styleLoaded) return;
     if (!_activePulseKeys.add(pulseKey)) return;
 
-    Circle? coreCircle;
-    Circle? mistCircle;
-    Circle? ringCircle;
     final geometry = LatLng(lat, lng);
+    final coreCircleId = '$pulseKey:core';
+    final mistCircleId = '$pulseKey:mist';
+    final ringCircleId = '$pulseKey:ring';
 
-    CircleOptions coreOptions(double progress) {
+    _PulseOverlayCircle coreCircle(double progress) {
       final eased = Curves.easeOutCubic.transform(progress);
       final fade = 1.0 - Curves.easeInCubic.transform(progress);
-      return CircleOptions(
+      return _PulseOverlayCircle(
+        id: coreCircleId,
         geometry: geometry,
         circleRadius: _lerpDouble(coreStartRadius, coreEndRadius, eased),
         circleColor: coreColor,
+        circleBlur: 0,
         circleOpacity: maxCoreOpacity * fade,
+        circleStrokeWidth: 0,
+        circleStrokeColor: coreColor,
+        circleStrokeOpacity: 0,
       );
     }
 
-    CircleOptions mistOptions(double progress) {
+    _PulseOverlayCircle mistCircle(double progress) {
       final eased = Curves.easeOutQuart.transform(progress);
       final bloom = (math.sin(progress * math.pi) * 1.08).clamp(0.0, 1.0);
-      return CircleOptions(
+      return _PulseOverlayCircle(
+        id: mistCircleId,
         geometry: geometry,
         circleRadius: _lerpDouble(mistStartRadius, mistEndRadius, eased),
         circleColor: mistColor,
+        circleBlur: 0,
         circleOpacity: maxMistOpacity * bloom,
+        circleStrokeWidth: 0,
+        circleStrokeColor: mistColor,
+        circleStrokeOpacity: 0,
       );
     }
 
-    CircleOptions ringOptions(double progress) {
+    _PulseOverlayCircle ringCircle(double progress) {
       final eased = Curves.easeOutQuart.transform(progress);
       final fade = 1.0 - Curves.easeOutCubic.transform(progress);
       final strokeWidth = _lerpDouble(
@@ -4194,30 +4361,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         0.6,
         Curves.easeOut.transform(progress),
       );
-      return CircleOptions(
+      return _PulseOverlayCircle(
+        id: ringCircleId,
         geometry: geometry,
         circleRadius: _lerpDouble(ringStartRadius, ringEndRadius, eased),
         circleColor: ringColor,
+        circleBlur: 0,
         circleOpacity: maxRingOpacity * fade,
         circleStrokeWidth: strokeWidth,
         circleStrokeColor: ringColor,
+        circleStrokeOpacity: fade,
       );
     }
 
     try {
-      coreCircle = await c.addCircle(coreOptions(0.0));
-      mistCircle = await c.addCircle(mistOptions(0.0));
-      ringCircle = await c.addCircle(ringOptions(0.0));
-      final animatedCoreCircle = coreCircle;
-      final animatedMistCircle = mistCircle;
-      final animatedRingCircle = ringCircle;
+      await _ensureFocusPulseOverlayLayer();
+      await _setFocusPulseOverlayCircles([
+        coreCircle(0.0),
+        mistCircle(0.0),
+        ringCircle(0.0),
+      ]);
 
       for (var step = 1; step <= steps; step++) {
         final progress = step / steps;
-        await Future.wait([
-          c.updateCircle(animatedCoreCircle, coreOptions(progress)),
-          c.updateCircle(animatedMistCircle, mistOptions(progress)),
-          c.updateCircle(animatedRingCircle, ringOptions(progress)),
+        await _setFocusPulseOverlayCircles([
+          coreCircle(progress),
+          mistCircle(progress),
+          ringCircle(progress),
         ]);
         if (step < steps) {
           await Future.delayed(frameDelay);
@@ -4226,12 +4396,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     } catch (_) {
       // Best-effort pulse only.
     } finally {
-      for (final circle in [coreCircle, mistCircle, ringCircle]) {
-        if (circle == null) continue;
-        try {
-          await c.removeCircle(circle);
-        } catch (_) {}
-      }
+      await _removeFocusPulseOverlayCircles([
+        coreCircleId,
+        mistCircleId,
+        ringCircleId,
+      ]);
       _activePulseKeys.remove(pulseKey);
     }
   }
@@ -6447,6 +6616,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return null;
   }
 
+  String _treasureChestMarkerImageUrl(TreasureChest chest) {
+    final markerUrl = chest.mapMarkerUrl.trim();
+    if (markerUrl.isNotEmpty) return markerUrl;
+    return _chestImageUrl;
+  }
+
   MonsterEncounter? _monsterById(String id) {
     for (final monster in _monsters) {
       if (monster.id == id) return monster;
@@ -8544,7 +8719,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           type: type,
           id: id,
           title: 'Treasure Chest',
-          imageUrl: _chestImageUrl,
+          imageUrl: _treasureChestMarkerImageUrl(chest),
           distance: distance,
         );
       case 'healingFountain':
@@ -10159,22 +10334,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
 
-    if (_chestThumbnailBytes == null) {
-      try {
-        _chestThumbnailBytes = await loadPoiThumbnail(_chestImageUrl);
-      } catch (_) {}
-    }
-    if (_chestThumbnailBytes != null && !_chestThumbnailAdded) {
-      try {
-        await c.addImage(
-          'chest_thumbnail_$_mapThumbnailVersion',
-          _chestThumbnailBytes!,
-        );
-        _chestThumbnailAdded = true;
-      } catch (_) {}
-    }
-
-    final useImage = _chestThumbnailBytes != null;
     final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
     final visibleTreasureChests =
         (_shouldSuppressNormalMapPinsForTutorial
@@ -10188,6 +10347,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                       t.zoneId == selectedZoneId),
             )
             .toList();
+    final chestImageUrl = visibleTreasureChests.isNotEmpty
+        ? _treasureChestMarkerImageUrl(visibleTreasureChests.first)
+        : _chestImageUrl;
+    if (_renderedTreasureChestMarkerUrl != chestImageUrl) {
+      _renderedTreasureChestMarkerUrl = chestImageUrl;
+      _chestThumbnailBytes = null;
+      _chestThumbnailAdded = false;
+    }
+    final chestImageId =
+        'chest_thumbnail_${chestImageUrl.hashCode}_$_mapThumbnailVersion';
+
+    if (_chestThumbnailBytes == null) {
+      try {
+        _chestThumbnailBytes = await loadPoiThumbnail(chestImageUrl);
+      } catch (_) {}
+    }
+    if (_chestThumbnailBytes != null && !_chestThumbnailAdded) {
+      try {
+        await c.addImage(chestImageId, _chestThumbnailBytes!);
+        _chestThumbnailAdded = true;
+      } catch (_) {}
+    }
+
+    final useImage = _chestThumbnailBytes != null;
     final desiredIds = visibleTreasureChests
         .where((t) => t.openedByUser != true)
         .map((t) => t.id)
@@ -10262,7 +10445,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           final sym = await c.addSymbol(
             SymbolOptions(
               geometry: LatLng(tc.latitude, tc.longitude),
-              iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
+              iconImage: chestImageId,
               iconSize: 0.75,
               iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: _transparentMapHaloColor,
@@ -10840,9 +11023,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
     hash ^= (hash >> 11);
     hash = 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
-    final hue = 208 + (hash % 14); // 208–221
-    final saturation = 18 + ((hash >> 8) % 10); // 18–27
-    final lightness = 18 + ((hash >> 16) % 7); // 18–24
+    final hue = 210 + (hash % 10); // 210–219
+    final saturation = 12 + ((hash >> 8) % 7); // 12–18
+    final lightness = 23 + ((hash >> 16) % 6); // 23–28
     final color = HSLColor.fromAHSL(
       1,
       hue.toDouble(),
@@ -10870,10 +11053,36 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return '#$hex';
   }
 
+  Color _undiscoveredZoneBorderColor(Zone zone, {required bool inner}) {
+    final shroudBase =
+        _parseHexColor(_shroudedToneForZone(zone)) ?? const Color(0xFF28313B);
+    final hsl = HSLColor.fromColor(shroudBase);
+    final tuned = inner
+        ? hsl
+              .withSaturation(
+                (hsl.saturation * 1.08).clamp(0.18, 0.3).toDouble(),
+              )
+              .withLightness((hsl.lightness * 1.12).clamp(0.2, 0.3).toDouble())
+        : hsl
+              .withSaturation(
+                (hsl.saturation * 0.9).clamp(0.14, 0.24).toDouble(),
+              )
+              .withLightness(
+                (hsl.lightness * 0.78).clamp(0.12, 0.2).toDouble(),
+              );
+    return tuned.toColor();
+  }
+
   Color? _zoneKindBaseColor(Zone zone) => _parseHexColor(zone.kindOverlayColor);
   ZoneKindVisualProfile _zoneKindVisuals(Zone zone) =>
       zoneKindVisualProfileForSlug(zone.kind);
   ZoneKindVisualProfile get _neutralZoneVisuals => defaultZoneKindVisualProfile;
+  bool _shouldUseZoneKindMapStyling(Zone zone) =>
+      !_isUndiscoveredZone(zone) && _zoneKindMapStylingEnabled;
+  ZoneKindVisualProfile _zoneMapVisuals(Zone zone) =>
+      _shouldUseZoneKindMapStyling(zone)
+      ? _zoneKindVisuals(zone)
+      : _neutralZoneVisuals;
 
   String _zoneKindFillColor(Color baseColor) {
     final hsl = HSLColor.fromColor(baseColor);
@@ -10922,7 +11131,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (_isUndiscoveredZone(zone)) {
       return _shroudedToneForZone(zone, salt: salt);
     }
-    final kindColor = _zoneKindBaseColor(zone);
+    final kindColor = _shouldUseZoneKindMapStyling(zone)
+        ? _zoneKindBaseColor(zone)
+        : null;
     if (kindColor != null) {
       return _zoneKindFillColor(kindColor);
     }
@@ -10930,15 +11141,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zoneFillOpacity(Zone zone) {
+    final visuals = _zoneMapVisuals(zone);
     if (_isUndiscoveredZone(zone)) {
-      return _neutralZoneVisuals.undiscoveredFillOpacity;
+      return (visuals.undiscoveredFillOpacity * 0.86)
+          .clamp(0.54, 0.62)
+          .toDouble();
     }
-    final visuals = _zoneKindVisuals(zone);
     final baseOpacity = visuals.discoveredFillOpacity;
-    if (_zoneKindBaseColor(zone) != null) {
-      return (baseOpacity * 1.18).clamp(0.34, 0.82).toDouble();
+    if (_shouldUseZoneKindMapStyling(zone) &&
+        _zoneKindBaseColor(zone) != null) {
+      return (baseOpacity * 1.36).clamp(0.42, 0.82).toDouble();
     }
-    return baseOpacity;
+    return (baseOpacity * 1.22).clamp(0.46, 0.74).toDouble();
   }
 
   double _selectedZoneFillOpacity(Zone zone) {
@@ -10946,18 +11160,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final baseOpacity = _neutralZoneVisuals.undiscoveredFillOpacity;
       return (baseOpacity * 0.28).clamp(0.08, 0.16).toDouble();
     }
-    final baseOpacity = _zoneFillOpacity(zone);
-    if (_zoneKindBaseColor(zone) != null) {
-      return (baseOpacity * 0.42).clamp(0.12, 0.22).toDouble();
+    final baseOpacity = _zoneMapVisuals(zone).discoveredFillOpacity;
+    if (_shouldUseZoneKindMapStyling(zone) &&
+        _zoneKindBaseColor(zone) != null) {
+      return (baseOpacity * 0.5).clamp(0.12, 0.22).toDouble();
     }
     return (baseOpacity * 0.28).clamp(0.08, 0.16).toDouble();
   }
 
   String _zoneOuterLineColor(Zone zone) {
     if (_isUndiscoveredZone(zone)) {
-      return _hexFromColor(Colors.black);
+      return _hexFromColor(_undiscoveredZoneBorderColor(zone, inner: false));
     }
-    final kindColor = _zoneKindBaseColor(zone);
+    final kindColor = _shouldUseZoneKindMapStyling(zone)
+        ? _zoneKindBaseColor(zone)
+        : null;
     if (kindColor != null) {
       return _hexFromColor(
         _zoneKindOuterAccentFromColor(
@@ -10966,7 +11183,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         ),
       );
     }
-    final visuals = _zoneKindVisuals(zone);
+    final visuals = _zoneMapVisuals(zone);
     final fallback = Color.lerp(
       visuals.panelBorder,
       Colors.black,
@@ -10976,21 +11193,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zoneOuterLineOpacity(Zone zone) {
-    final visuals = _zoneKindVisuals(zone);
+    final visuals = _zoneMapVisuals(zone);
     return _isUndiscoveredZone(zone)
-        ? visuals.undiscoveredOuterLineOpacity
+        ? (visuals.undiscoveredOuterLineOpacity * 0.84)
+              .clamp(0.28, 0.38)
+              .toDouble()
         : visuals.outerLineOpacity;
   }
 
   double _zoneOuterLineWidth(Zone zone) {
-    final visuals = _zoneKindVisuals(zone);
-    return _isUndiscoveredZone(zone)
-        ? visuals.undiscoveredOuterLineWidth
-        : visuals.outerLineWidth;
+    final visuals = _zoneMapVisuals(zone);
+    return visuals.outerLineWidth;
   }
 
   double _zoneOuterLineBlur(Zone zone) {
-    final visuals = _zoneKindVisuals(zone);
+    final visuals = _zoneMapVisuals(zone);
     return _isUndiscoveredZone(zone)
         ? visuals.undiscoveredOuterLineBlur
         : visuals.outerLineBlur;
@@ -10998,33 +11215,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   String _zoneInnerLineColor(Zone zone) {
     if (_isUndiscoveredZone(zone)) {
-      return _hexFromColor(const Color(0xFF0A1018));
+      return _hexFromColor(_undiscoveredZoneBorderColor(zone, inner: true));
     }
-    final kindColor = _zoneKindBaseColor(zone);
+    final kindColor = _shouldUseZoneKindMapStyling(zone)
+        ? _zoneKindBaseColor(zone)
+        : null;
     if (kindColor != null) {
       return _zoneKindInnerAccentColor(kindColor);
     }
-    final visuals = _zoneKindVisuals(zone);
+    final visuals = _zoneMapVisuals(zone);
     return _hexFromColor(visuals.panelAccent);
   }
 
   double _zoneInnerLineOpacity(Zone zone) {
-    final visuals = _zoneKindVisuals(zone);
-    return _isUndiscoveredZone(zone) ? 0.9 : visuals.innerLineOpacity;
+    final visuals = _zoneMapVisuals(zone);
+    return _isUndiscoveredZone(zone) ? 0.72 : visuals.innerLineOpacity;
   }
 
   double _zoneInnerLineWidth(Zone zone) {
-    final visuals = _zoneKindVisuals(zone);
-    return _isUndiscoveredZone(zone)
-        ? visuals.undiscoveredInnerLineWidth
-        : visuals.innerLineWidth;
+    final visuals = _zoneMapVisuals(zone);
+    return visuals.innerLineWidth;
   }
 
   String _zoneLineJoin(Zone zone) {
     if (_isUndiscoveredZone(zone)) {
       return 'round';
     }
-    return _zoneKindVisuals(zone).lineJoin;
+    return _zoneMapVisuals(zone).lineJoin;
   }
 
   FillOptions _zoneBaseFillOptions(
@@ -11040,6 +11257,35 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           ? _selectedZoneFillOpacity(zone)
           : _zoneFillOpacity(zone),
     );
+  }
+
+  Future<void> _refreshZoneBoundaryRendering() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) {
+      return;
+    }
+
+    if (_zoneLines.isNotEmpty) {
+      try {
+        await c.removeLines(_zoneLines);
+      } catch (_) {}
+      _zoneLines.clear();
+    }
+    if (_zoneFills.isNotEmpty) {
+      try {
+        await c.removeFills(_zoneFills);
+      } catch (_) {}
+      _zoneFills.clear();
+      _zoneFillById.clear();
+    }
+    if (_zonePatternFills.isNotEmpty) {
+      try {
+        await c.removeFills(_zonePatternFills);
+      } catch (_) {}
+      _zonePatternFills.clear();
+    }
+    _renderedSelectedZoneId = null;
+    await _addZoneBoundaries();
   }
 
   Future<void> _addZoneBoundaries() {
@@ -11143,12 +11389,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (c == null || !_styleLoaded) return;
     if (_renderedSelectedZoneId == selectedZoneId) return;
 
-    final previousZoneId = _renderedSelectedZoneId;
-    if (previousZoneId != null && previousZoneId.isNotEmpty) {
-      await _upsertZoneFill(previousZoneId, selected: false);
-    }
-    if (selectedZoneId != null && selectedZoneId.isNotEmpty) {
-      await _upsertZoneFill(selectedZoneId, selected: true);
+    final normalizedSelectedZoneId = selectedZoneId?.trim() ?? '';
+    for (final zone in _zones) {
+      final zoneId = zone.id.trim();
+      if (zoneId.isEmpty) continue;
+      await _upsertZoneFill(
+        zoneId,
+        selected:
+            normalizedSelectedZoneId.isNotEmpty &&
+            zoneId == normalizedSelectedZoneId,
+      );
     }
     await _renderZonePatternFills(c, selectedZoneId: selectedZoneId);
     _renderedSelectedZoneId = selectedZoneId;
@@ -11173,6 +11423,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       try {
         await c.updateFill(existingFill, fillOptions);
       } catch (_) {
+        try {
+          await c.removeFills([existingFill]);
+        } catch (_) {}
         _zoneFillById.remove(zoneId);
         _zoneFills.remove(existingFill);
       }
@@ -15755,18 +16008,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zonePatternFillOpacity(Zone zone, {required bool selected}) {
-    final baseOpacity = _isUndiscoveredZone(zone) ? 0.36 : 0.5;
+    final baseOpacity = _isUndiscoveredZone(zone) ? 0.22 : 0.5;
     if (!selected) {
       return baseOpacity;
+    }
+    if (_isUndiscoveredZone(zone)) {
+      return (baseOpacity * 0.78).clamp(0.12, 0.18).toDouble();
     }
     return (baseOpacity * 0.82).clamp(0.26, 0.42).toDouble();
   }
 
+  bool _shouldRenderDiscoveredZonePattern(Zone zone, {required bool selected}) {
+    if (!_shouldUseZoneKindMapStyling(zone)) {
+      return false;
+    }
+    return selected || _unselectedZoneKindTilingEnabled;
+  }
+
   Future<String?> _zonePatternImageIdForZone(
     MapLibreMapController controller,
-    Zone zone,
-  ) async {
+    Zone zone, {
+    required bool selected,
+  }) async {
     if (_isUndiscoveredZone(zone)) {
+      final remoteUrl = zone.shroudPatternTileUrl?.trim() ?? '';
+      if (remoteUrl.isNotEmpty) {
+        final remoteBytes = await loadZonePatternTileAsset(remoteUrl);
+        if (remoteBytes != null && remoteBytes.isNotEmpty) {
+          final imageId = zoneShroudPatternAssetImageId(remoteUrl);
+          await _ensureMapImage(controller, imageId, remoteBytes);
+          return imageId;
+        }
+      }
+      final imageId = zoneShroudPatternImageId();
+      await _ensureMapImage(controller, imageId, zoneShroudPatternTileBytes());
+      return imageId;
+    }
+    if (!_shouldRenderDiscoveredZonePattern(zone, selected: selected)) {
       return null;
     }
     final remoteUrl = zone.kindPatternTileUrl?.trim() ?? '';
@@ -15821,11 +16099,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       if (ring.length < 3) {
         continue;
       }
-      final imageId = await _zonePatternImageIdForZone(controller, zone);
+      final isSelected = selectedZoneId != null && selectedZoneId == zone.id;
+      final imageId = await _zonePatternImageIdForZone(
+        controller,
+        zone,
+        selected: isSelected,
+      );
       if (imageId == null || imageId.isEmpty) {
         continue;
       }
-      final isSelected = selectedZoneId != null && selectedZoneId == zone.id;
       options.add(
         _zonePatternFillOptions(
           zone,
@@ -16606,6 +16888,51 @@ class _FeaturedMainStoryPulseTarget {
 
   final String? poiId;
   final String? characterId;
+}
+
+class _PulseOverlayCircle {
+  const _PulseOverlayCircle({
+    required this.id,
+    required this.geometry,
+    required this.circleRadius,
+    required this.circleColor,
+    required this.circleBlur,
+    required this.circleOpacity,
+    required this.circleStrokeWidth,
+    required this.circleStrokeColor,
+    required this.circleStrokeOpacity,
+  });
+
+  final String id;
+  final LatLng geometry;
+  final double circleRadius;
+  final String circleColor;
+  final double circleBlur;
+  final double circleOpacity;
+  final double circleStrokeWidth;
+  final String circleStrokeColor;
+  final double circleStrokeOpacity;
+
+  Map<String, dynamic> toGeoJson() {
+    return <String, dynamic>{
+      'type': 'Feature',
+      'id': id,
+      'properties': <String, dynamic>{
+        'id': id,
+        'circleRadius': circleRadius,
+        'circleColor': circleColor,
+        'circleBlur': circleBlur,
+        'circleOpacity': circleOpacity,
+        'circleStrokeWidth': circleStrokeWidth,
+        'circleStrokeColor': circleStrokeColor,
+        'circleStrokeOpacity': circleStrokeOpacity,
+      },
+      'geometry': <String, dynamic>{
+        'type': 'Point',
+        'coordinates': <double>[geometry.longitude, geometry.latitude],
+      },
+    };
+  }
 }
 
 class _MapMarkerIsolation {

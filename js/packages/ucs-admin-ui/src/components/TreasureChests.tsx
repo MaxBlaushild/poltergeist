@@ -24,6 +24,7 @@ import {
   zoneKindSelectPlaceholderLabel,
   zoneKindSummaryLabel,
 } from './zoneKindHelpers.ts';
+import { ContentMapMarkersMovedNotice } from './ContentMapMarkersMovedNotice.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -1029,95 +1030,7 @@ export const TreasureChests = () => {
         </div>
       )}
 
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              Treasure Chest Map Icon
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              This shared static icon is used for treasure chests on the map.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-md bg-slate-700 px-3 py-1 text-white disabled:opacity-60"
-              onClick={() => void refreshTreasureChestIconStatus(true)}
-              disabled={treasureChestIconStatusLoading}
-            >
-              {treasureChestIconStatusLoading
-                ? 'Refreshing…'
-                : 'Refresh Status'}
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-indigo-600 px-3 py-1 text-white disabled:opacity-60"
-              onClick={() => void handleGenerateTreasureChestIcon()}
-              disabled={treasureChestIconBusy || treasureChestIconStatusLoading}
-            >
-              {treasureChestIconBusy ? 'Working…' : 'Generate Icon'}
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-red-600 px-3 py-1 text-white disabled:opacity-60"
-              onClick={() => void handleDeleteTreasureChestIcon()}
-              disabled={treasureChestIconBusy || treasureChestIconStatusLoading}
-            >
-              {treasureChestIconBusy ? 'Working…' : 'Delete Icon'}
-            </button>
-          </div>
-        </div>
-        <div className="mb-2">
-          <span
-            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
-              treasureChestIconStatus
-            )}`}
-          >
-            {treasureChestIconStatus || 'unknown'}
-          </span>
-        </div>
-        <div className="break-all text-xs text-slate-600">
-          URL: {treasureChestIconUrl}
-        </div>
-        <div className="mt-1 text-xs text-slate-600">
-          Requested: {formatDate(treasureChestIconRequestedAt)}
-          {' · '}
-          Last updated: {formatDate(treasureChestIconLastModified)}
-        </div>
-        <label className="mt-3 block text-sm">
-          Generation Prompt
-          <textarea
-            className="mt-1 min-h-[88px] w-full rounded-md border border-slate-300 p-2"
-            value={treasureChestIconPrompt}
-            onChange={(event) => setTreasureChestIconPrompt(event.target.value)}
-            placeholder="Prompt used to generate the treasure chest map icon."
-          />
-        </label>
-        {treasureChestIconExists ? (
-          <div className="mt-3">
-            <img
-              src={`${treasureChestIconUrl}?v=${treasureChestIconPreviewNonce}`}
-              alt="Treasure chest map icon preview"
-              className="h-24 w-24 rounded-md border bg-slate-50 object-cover"
-            />
-          </div>
-        ) : (
-          <div className="mt-2 text-xs text-slate-500">
-            No icon currently found at this URL.
-          </div>
-        )}
-        {treasureChestIconMessage ? (
-          <div className="mt-2 text-sm text-emerald-700">
-            {treasureChestIconMessage}
-          </div>
-        ) : null}
-        {treasureChestIconError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {treasureChestIconError}
-          </div>
-        ) : null}
-      </div>
+      <ContentMapMarkersMovedNotice subject="Treasure chest markers" />
 
       {/* Search */}
       <div className="mb-4">

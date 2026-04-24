@@ -114,6 +114,7 @@ func main() {
 	generateZoneFlavorProcessor := processors.NewGenerateZoneFlavorProcessor(dbClient, deepPriestClient)
 	generateZoneTagsProcessor := processors.NewGenerateZoneTagsProcessor(dbClient, deepPriestClient)
 	generateZoneKindPatternTileProcessor := processors.NewGenerateZoneKindPatternTileProcessor(dbClient, deepPriestClient, awsClient)
+	generateZoneShroudPatternTileProcessor := processors.NewGenerateZoneShroudPatternTileProcessor(dbClient, deepPriestClient, awsClient)
 	generateImageThumbnailProcessor := processors.NewGenerateImageThumbnailProcessor(dbClient, awsClient)
 	queueThumbnailBackfillProcessor := processors.NewQueueThumbnailBackfillProcessor(dbClient, client)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
@@ -205,6 +206,7 @@ func main() {
 	mux.Handle(jobs.GenerateZoneFlavorTaskType, &generateZoneFlavorProcessor)
 	mux.Handle(jobs.GenerateZoneTagsTaskType, &generateZoneTagsProcessor)
 	mux.Handle(jobs.GenerateZoneKindPatternTileTaskType, &generateZoneKindPatternTileProcessor)
+	mux.Handle(jobs.GenerateZoneShroudPatternTileTaskType, &generateZoneShroudPatternTileProcessor)
 	mux.Handle(jobs.GenerateBaseDescriptionTaskType, asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		log.Printf("Discarding legacy task %s because player base flavor generation is disabled", t.Type())
 		return nil

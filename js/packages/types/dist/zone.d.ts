@@ -24,6 +24,7 @@ export type Zone = {
     kind: string;
     kindOverlayColor?: string;
     kindPatternTileUrl?: string;
+    shroudPatternTileUrl?: string;
     internalTags?: string[];
     zoneImportId?: string | null;
     boundary: number[][];

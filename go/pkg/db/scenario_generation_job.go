@@ -64,3 +64,45 @@ func (h *scenarioGenerationJobHandle) FindByZoneID(ctx context.Context, zoneID u
 	}
 	return jobs, nil
 }
+
+func (h *scenarioGenerationJobHandle) ListAdmin(
+	ctx context.Context,
+	params ScenarioGenerationJobAdminListParams,
+) (*ScenarioGenerationJobAdminListResult, error) {
+	page := params.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := params.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	countQuery := h.db.WithContext(ctx).Model(&models.ScenarioGenerationJob{})
+	if params.ZoneID != nil {
+		countQuery = countQuery.Where("zone_id = ?", *params.ZoneID)
+	}
+
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	listQuery := h.db.WithContext(ctx).Preload("Genre").Order("created_at DESC")
+	if params.ZoneID != nil {
+		listQuery = listQuery.Where("zone_id = ?", *params.ZoneID)
+	}
+
+	var jobs []models.ScenarioGenerationJob
+	if err := listQuery.
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+
+	return &ScenarioGenerationJobAdminListResult{
+		Jobs:  jobs,
+		Total: total,
+	}, nil
+}

@@ -123,6 +123,7 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 
 	tests := []struct {
 		name         string
+		zoneKind     string
 		userLevel    int
 		items        []models.InventoryItem
 		expectedID   int
@@ -131,6 +132,7 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 	}{
 		{
 			name:         "prefers items within the level band for the same resource type",
+			zoneKind:     "",
 			userLevel:    22,
 			resourceType: herbalismID,
 			items: []models.InventoryItem{
@@ -144,6 +146,7 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 		},
 		{
 			name:         "falls back to the closest matching item level when nothing is in band",
+			zoneKind:     "",
 			userLevel:    20,
 			resourceType: herbalismID,
 			items: []models.InventoryItem{
@@ -155,6 +158,7 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 		},
 		{
 			name:         "errors when there are no active items for the resource type",
+			zoneKind:     "",
 			userLevel:    20,
 			resourceType: herbalismID,
 			items: []models.InventoryItem{
@@ -162,11 +166,45 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name:         "filters gather rewards to the same zone kind",
+			zoneKind:     "haunted-streets",
+			userLevel:    18,
+			resourceType: herbalismID,
+			items: []models.InventoryItem{
+				{ID: 101, ItemLevel: 18, ResourceTypeID: &herbalismID, ZoneKind: "quiet-meadow"},
+				{ID: 102, ItemLevel: 18, ResourceTypeID: &herbalismID, ZoneKind: "haunted-streets"},
+				{ID: 103, ItemLevel: 18, ResourceTypeID: &herbalismID},
+			},
+			expectedID: 102,
+		},
+		{
+			name:         "uses normalized zone kind when filtering",
+			zoneKind:     "Haunted Streets",
+			userLevel:    18,
+			resourceType: herbalismID,
+			items: []models.InventoryItem{
+				{ID: 101, ItemLevel: 18, ResourceTypeID: &herbalismID, ZoneKind: "haunted_streets"},
+				{ID: 102, ItemLevel: 18, ResourceTypeID: &herbalismID, ZoneKind: "quiet-meadow"},
+			},
+			expectedID: 101,
+		},
+		{
+			name:         "errors when zone kind has no matching reward items",
+			zoneKind:     "haunted-streets",
+			userLevel:    18,
+			resourceType: herbalismID,
+			items: []models.InventoryItem{
+				{ID: 101, ItemLevel: 18, ResourceTypeID: &herbalismID, ZoneKind: "quiet-meadow"},
+				{ID: 102, ItemLevel: 18, ResourceTypeID: &miningID, ZoneKind: "haunted-streets"},
+			},
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			item, err := selectGatherRewardInventoryItem(tt.resourceType, tt.userLevel, tt.items, nil)
+			item, err := selectGatherRewardInventoryItem(tt.resourceType, tt.zoneKind, tt.userLevel, tt.items, nil)
 			if tt.expectErr {
 				if err == nil {
 					t.Fatalf("selectGatherRewardInventoryItem() expected error, got nil")
@@ -181,6 +219,38 @@ func TestSelectGatherRewardInventoryItem(t *testing.T) {
 			}
 			if item.ID != tt.expectedID {
 				t.Fatalf("selectGatherRewardInventoryItem() id = %d, want %d", item.ID, tt.expectedID)
+			}
+		})
+	}
+}
+
+func TestEffectiveGatherRewardZoneKind(t *testing.T) {
+	tests := []struct {
+		name     string
+		resource *models.Resource
+		expected string
+	}{
+		{
+			name:     "prefers the resource zone kind from the loaded zone",
+			resource: &models.Resource{ZoneKind: "quiet-meadow", Zone: models.Zone{Kind: "Haunted Streets"}},
+			expected: "haunted-streets",
+		},
+		{
+			name:     "falls back to the resource record zone kind",
+			resource: &models.Resource{ZoneKind: "quiet_meadow"},
+			expected: "quiet-meadow",
+		},
+		{
+			name:     "returns blank when no zone kind is available",
+			resource: &models.Resource{},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveGatherRewardZoneKind(tt.resource); got != tt.expected {
+				t.Fatalf("effectiveGatherRewardZoneKind() = %q, want %q", got, tt.expected)
 			}
 		})
 	}
