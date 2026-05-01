@@ -140,13 +140,137 @@ func buildRandomBaseMaterialRewards(seed string) []models.BaseResourceDelta {
 	return rewards
 }
 
+func buildRandomBaseMaterialRewardsForContext(
+	seed string,
+	rewardContext *models.RandomRewardContext,
+) []models.BaseResourceDelta {
+	if rewardContext == nil {
+		return buildRandomBaseMaterialRewards(seed)
+	}
+
+	priorities := preferredBaseResourceOrderForContext(rewardContext)
+	if len(priorities) == 0 {
+		return buildRandomBaseMaterialRewards(seed)
+	}
+
+	rng := rand.New(rand.NewSource(randomBaseMaterialRewardSeed(seed)))
+	rewards := []models.BaseResourceDelta{{
+		ResourceKey: priorities[0],
+		Amount:      1 + rng.Intn(3),
+	}}
+
+	if len(priorities) == 1 || rng.Float64() >= 0.6 {
+		return rewards
+	}
+
+	window := min(4, len(priorities))
+	secondIndex := 1 + rng.Intn(window-1)
+	rewards = append(rewards, models.BaseResourceDelta{
+		ResourceKey: priorities[secondIndex],
+		Amount:      1 + rng.Intn(2),
+	})
+	return rewards
+}
+
+func preferredBaseResourceOrderForContext(
+	rewardContext *models.RandomRewardContext,
+) []models.BaseResourceKey {
+	if rewardContext == nil {
+		return append([]models.BaseResourceKey{}, baseMaterialRewardKeyOrder...)
+	}
+
+	order := make([]models.BaseResourceKey, 0, len(baseMaterialRewardKeyOrder))
+	seen := map[models.BaseResourceKey]struct{}{}
+	add := func(resourceKey models.BaseResourceKey) {
+		resourceKey = models.NormalizeBaseResourceKey(string(resourceKey))
+		if resourceKey == "" {
+			return
+		}
+		if _, exists := seen[resourceKey]; exists {
+			return
+		}
+		seen[resourceKey] = struct{}{}
+		order = append(order, resourceKey)
+	}
+	addMany := func(resourceKeys ...models.BaseResourceKey) {
+		for _, resourceKey := range resourceKeys {
+			add(resourceKey)
+		}
+	}
+
+	switch rewardContext.ContentKind {
+	case models.RandomRewardContentMonster, models.RandomRewardContentMonsterEncounter:
+		addMany(models.BaseResourceMonsterParts, models.BaseResourceIron, models.BaseResourceHerbs)
+	case models.RandomRewardContentExposition:
+		addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust, models.BaseResourceHerbs)
+	case models.RandomRewardContentPointOfInterest:
+		switch rewardContext.PointOfInterestCategory {
+		case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum, models.PointOfInterestMarkerCategoryLandmark, models.PointOfInterestMarkerCategoryCivic:
+			addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust, models.BaseResourceHerbs)
+		case models.PointOfInterestMarkerCategoryMarket, models.PointOfInterestMarkerCategoryCoffeehouse, models.PointOfInterestMarkerCategoryTavern, models.PointOfInterestMarkerCategoryEatery:
+			addMany(models.BaseResourceHerbs, models.BaseResourceIron, models.BaseResourceTimber)
+		case models.PointOfInterestMarkerCategoryPark, models.PointOfInterestMarkerCategoryWaterfront:
+			addMany(models.BaseResourceHerbs, models.BaseResourceTimber, models.BaseResourceStone)
+		case models.PointOfInterestMarkerCategoryArena:
+			addMany(models.BaseResourceIron, models.BaseResourceMonsterParts, models.BaseResourceHerbs)
+		}
+	case models.RandomRewardContentTreasureChest:
+		addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust)
+	}
+
+	for _, tag := range rewardContext.PreferredRewardTags() {
+		switch strings.ToLower(strings.TrimSpace(tag)) {
+		case "martial", "frontline", "defender", "hunter":
+			addMany(models.BaseResourceMonsterParts, models.BaseResourceIron, models.BaseResourceStone)
+		case "rogue", "skirmisher", "street", "scout":
+			addMany(models.BaseResourceTimber, models.BaseResourceHerbs, models.BaseResourceIron)
+		case "scholar", "arcane", "seer", "ritual", "relic":
+			addMany(models.BaseResourceArcaneDust, models.BaseResourceRelicShards, models.BaseResourceHerbs)
+		case "social", "leader", "broker", "court", "guide":
+			addMany(models.BaseResourceRelicShards, models.BaseResourceHerbs, models.BaseResourceTimber)
+		case "nature", "wild":
+			addMany(models.BaseResourceHerbs, models.BaseResourceTimber, models.BaseResourceStone)
+		case "fire", "ice", "lightning", "storm", "shadow", "holy":
+			addMany(models.BaseResourceArcaneDust, models.BaseResourceMonsterParts)
+		case "poison":
+			addMany(models.BaseResourceHerbs, models.BaseResourceMonsterParts)
+		}
+	}
+
+	zoneKind := strings.ToLower(strings.TrimSpace(rewardContext.ZoneKind))
+	switch {
+	case strings.Contains(zoneKind, "park"), strings.Contains(zoneKind, "garden"), strings.Contains(zoneKind, "wild"), strings.Contains(zoneKind, "meadow"):
+		addMany(models.BaseResourceHerbs, models.BaseResourceTimber)
+	case strings.Contains(zoneKind, "water"), strings.Contains(zoneKind, "harbor"), strings.Contains(zoneKind, "coast"), strings.Contains(zoneKind, "river"):
+		addMany(models.BaseResourceTimber, models.BaseResourceHerbs, models.BaseResourceRelicShards)
+	case strings.Contains(zoneKind, "industrial"), strings.Contains(zoneKind, "forge"), strings.Contains(zoneKind, "factory"), strings.Contains(zoneKind, "rail"):
+		addMany(models.BaseResourceIron, models.BaseResourceStone)
+	case strings.Contains(zoneKind, "haunted"), strings.Contains(zoneKind, "occult"), strings.Contains(zoneKind, "grave"), strings.Contains(zoneKind, "ruin"):
+		addMany(models.BaseResourceArcaneDust, models.BaseResourceRelicShards)
+	}
+
+	for _, resourceKey := range baseMaterialRewardKeyOrder {
+		add(resourceKey)
+	}
+	return order
+}
+
 func resolveBaseMaterialRewards(
 	rewardMode models.RewardMode,
 	explicit models.BaseMaterialRewards,
 	randomSeed string,
 ) []models.BaseResourceDelta {
+	return resolveBaseMaterialRewardsForContext(rewardMode, explicit, randomSeed, nil)
+}
+
+func resolveBaseMaterialRewardsForContext(
+	rewardMode models.RewardMode,
+	explicit models.BaseMaterialRewards,
+	randomSeed string,
+	rewardContext *models.RandomRewardContext,
+) []models.BaseResourceDelta {
 	if models.NormalizeRewardMode(string(rewardMode)) == models.RewardModeRandom {
-		return buildRandomBaseMaterialRewards(randomSeed)
+		return buildRandomBaseMaterialRewardsForContext(randomSeed, rewardContext)
 	}
 	return normalizeBaseMaterialRewards(explicit)
 }

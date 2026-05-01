@@ -69,6 +69,26 @@ func BuildRandomRewardPlan(
 	seed string,
 	inventoryItems []InventoryItem,
 ) RandomRewardPlan {
+	return buildRandomRewardPlan(level, size, seed, inventoryItems, nil)
+}
+
+func BuildRandomRewardPlanForContext(
+	level int,
+	size RandomRewardSize,
+	seed string,
+	inventoryItems []InventoryItem,
+	rewardContext *RandomRewardContext,
+) RandomRewardPlan {
+	return buildRandomRewardPlan(level, size, seed, inventoryItems, rewardContext)
+}
+
+func buildRandomRewardPlan(
+	level int,
+	size RandomRewardSize,
+	seed string,
+	inventoryItems []InventoryItem,
+	rewardContext *RandomRewardContext,
+) RandomRewardPlan {
 	normalizedLevel := level
 	if normalizedLevel < 1 {
 		normalizedLevel = 1
@@ -83,8 +103,18 @@ func BuildRandomRewardPlan(
 		ItemGrants: []RandomRewardItemGrant{},
 	}
 
-	consumables := filterRewardItems(inventoryItems, normalizedLevel, false)
-	equippables := filterRewardItems(inventoryItems, normalizedLevel, true)
+	consumables := filterRewardItemsForContext(
+		inventoryItems,
+		normalizedLevel,
+		false,
+		rewardContext,
+	)
+	equippables := filterRewardItemsForContext(
+		inventoryItems,
+		normalizedLevel,
+		true,
+		rewardContext,
+	)
 
 	grantConsumable := profile.consumableGuaranteed
 	if !grantConsumable && profile.consumableChance > 0 {

@@ -700,6 +700,7 @@ func (s *server) performExposition(ctx *gin.Context) {
 				user.ID,
 				exposition.RandomRewardSize,
 				fmt.Sprintf("exposition:%s:user:%s", exposition.ID, user.ID),
+				buildRandomRewardContextForExposition(exposition),
 			)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -733,10 +734,11 @@ func (s *server) performExposition(ctx *gin.Context) {
 		baseResourcesAwarded, err = s.awardBaseResourcesToUser(
 			ctx,
 			user.ID,
-			resolveBaseMaterialRewards(
+			resolveBaseMaterialRewardsForContext(
 				exposition.RewardMode,
 				exposition.MaterialRewards,
 				fmt.Sprintf("exposition:%s:user:%s:materials", exposition.ID, user.ID),
+				buildRandomRewardContextForExposition(exposition),
 			),
 			"exposition",
 			&exposition.ID,

@@ -716,11 +716,12 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		for _, item := range allItems {
 			itemByID[item.ID] = item
 		}
-		plan := models.BuildRandomRewardPlan(
+		plan := models.BuildRandomRewardPlanForContext(
 			userLevel.Level,
 			randomRewardSize,
 			fmt.Sprintf("quest:%s:user:%s", quest.ID, userID),
 			allItems,
+			buildRandomRewardContextForQuestTurnIn(quest),
 		)
 		goldAwarded = plan.Gold
 		experienceAwarded = plan.Experience

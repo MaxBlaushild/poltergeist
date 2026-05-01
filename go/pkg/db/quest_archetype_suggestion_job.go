@@ -16,6 +16,7 @@ func (h *questArchetypeSuggestionJobHandle) Create(ctx context.Context, job *mod
 	if job != nil {
 		job.Status = models.NormalizeQuestArchetypeSuggestionJobStatus(job.Status)
 		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
+		job.FamilyMixTargets = models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(map[string]int(job.FamilyMixTargets))
 	}
 	return h.db.WithContext(ctx).Create(job).Error
 }
@@ -24,6 +25,7 @@ func (h *questArchetypeSuggestionJobHandle) Update(ctx context.Context, job *mod
 	if job != nil {
 		job.Status = models.NormalizeQuestArchetypeSuggestionJobStatus(job.Status)
 		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
+		job.FamilyMixTargets = models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(map[string]int(job.FamilyMixTargets))
 	}
 	return h.db.WithContext(ctx).Save(job).Error
 }

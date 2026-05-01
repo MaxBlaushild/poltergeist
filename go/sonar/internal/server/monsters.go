@@ -864,6 +864,7 @@ func (s *server) resolveMonsterEncounterRewardsForUser(
 			userID,
 			rewardSize,
 			rewardSeed,
+			buildRandomRewardContextForMonsterEncounter(encounter),
 		)
 		if err != nil {
 			return rewardMode, rewardSize, 0, 0, nil, nil, err

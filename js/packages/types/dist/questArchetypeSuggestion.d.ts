@@ -23,6 +23,14 @@ export interface QuestArchetypeSuggestionStep {
     monsterTemplateIds?: string[];
     encounterTone?: string[];
 }
+export interface QuestArchetypeSuggestionNodeOutcome {
+    outcome: 'success' | 'failure' | (string & {});
+    nextNodeKey?: string;
+}
+export interface QuestArchetypeSuggestionNode extends QuestArchetypeSuggestionStep {
+    nodeKey: string;
+    outcomes?: QuestArchetypeSuggestionNodeOutcome[];
+}
 export interface QuestArchetypeSuggestionJob {
     id: string;
     createdAt: string;
@@ -32,6 +40,7 @@ export interface QuestArchetypeSuggestionJob {
     zoneKind: string;
     themePrompt: string;
     familyTags: string[];
+    familyMixTargets?: Record<string, number>;
     characterTags: string[];
     internalTags: string[];
     requiredLocationArchetypeIds: string[];
@@ -57,6 +66,7 @@ export interface QuestArchetypeSuggestionDraft {
     monsterEncounterTargetLevel: number;
     whyThisScales: string;
     steps: QuestArchetypeSuggestionStep[];
+    nodes?: QuestArchetypeSuggestionNode[];
     challengeTemplateSeeds: string[];
     scenarioTemplateSeeds: string[];
     monsterTemplateSeeds: string[];

@@ -16,6 +16,7 @@ func (s *server) randomRewardPlanForUser(
 	userID uuid.UUID,
 	size models.RandomRewardSize,
 	seed string,
+	rewardContext *models.RandomRewardContext,
 ) (models.RandomRewardPlan, map[int]models.InventoryItem, int, error) {
 	userLevel, err := s.currentUserLevel(ctx, userID)
 	if err != nil {
@@ -33,11 +34,12 @@ func (s *server) randomRewardPlanForUser(
 	if normalizedSeed == "" {
 		normalizedSeed = fmt.Sprintf("user:%s", userID)
 	}
-	plan := models.BuildRandomRewardPlan(
+	plan := models.BuildRandomRewardPlanForContext(
 		userLevel,
 		models.NormalizeRandomRewardSize(string(size)),
 		normalizedSeed,
 		allItems,
+		rewardContext,
 	)
 	return plan, itemByID, userLevel, nil
 }
@@ -389,6 +391,7 @@ func (s *server) resolveMonsterRewardsForUser(
 			userID,
 			rewardSize,
 			rewardSeed,
+			buildRandomRewardContextForMonster(monster),
 		)
 		if err != nil {
 			return rewardMode, rewardSize, 0, 0, nil, nil, err

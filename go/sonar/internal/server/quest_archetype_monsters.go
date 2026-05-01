@@ -64,7 +64,12 @@ Respond as:
 }
 `
 
-const minimumQuestMonsterTemplateMatchScore = 2
+const (
+	minimumQuestMonsterTemplateMatchScore = 2
+	questMonsterTemplateVeryRecentWindow  = 7 * 24 * time.Hour
+	questMonsterTemplateRecentWindow      = 30 * 24 * time.Hour
+	questMonsterTemplateAgingWindow       = 90 * 24 * time.Hour
+)
 
 type questMonsterTemplateRequest struct {
 	Count             int
@@ -177,6 +182,7 @@ func selectQuestMonsterTemplateMatches(
 			models.NormalizeZoneKind(template.ZoneKind) == preferredZoneKind {
 			score += 3
 		}
+		score -= questMonsterTemplateFreshnessPenalty(template.CreatedAt)
 		if score < minimumQuestMonsterTemplateMatchScore {
 			continue
 		}
@@ -186,8 +192,16 @@ func selectQuestMonsterTemplateMatches(
 		if scored[i].score != scored[j].score {
 			return scored[i].score > scored[j].score
 		}
+		leftPenalty := questMonsterTemplateFreshnessPenalty(scored[i].template.CreatedAt)
+		rightPenalty := questMonsterTemplateFreshnessPenalty(scored[j].template.CreatedAt)
+		if leftPenalty != rightPenalty {
+			return leftPenalty < rightPenalty
+		}
 		if scored[i].template.MonsterType != scored[j].template.MonsterType {
 			return scored[i].template.MonsterType < scored[j].template.MonsterType
+		}
+		if !scored[i].template.CreatedAt.Equal(scored[j].template.CreatedAt) {
+			return scored[i].template.CreatedAt.Before(scored[j].template.CreatedAt)
 		}
 		return strings.ToLower(scored[i].template.Name) < strings.ToLower(scored[j].template.Name)
 	})
@@ -195,6 +209,23 @@ func selectQuestMonsterTemplateMatches(
 		scored = scored[:limit]
 	}
 	return scored
+}
+
+func questMonsterTemplateFreshnessPenalty(createdAt time.Time) int {
+	if createdAt.IsZero() {
+		return 0
+	}
+	age := time.Since(createdAt)
+	switch {
+	case age < questMonsterTemplateVeryRecentWindow:
+		return 4
+	case age < questMonsterTemplateRecentWindow:
+		return 2
+	case age < questMonsterTemplateAgingWindow:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func buildQuestMonsterTemplateQuerySet(request questMonsterTemplateRequest) map[string]struct{} {
@@ -366,13 +397,10 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 	}
 
 	if remaining := request.Count - len(specs); remaining > 0 {
-		fallback := buildBulkMonsterTemplateSpecsFromSeeds(
+		fallback := buildQuestMonsterFallbackSpecsFromRequest(
 			remaining,
 			usedNames,
-			uuid.Nil,
-			request.MonsterType,
-			nil,
-			nil,
+			request,
 		)
 		specs = append(specs, fallback...)
 	}
@@ -383,6 +411,138 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 		specs = specs[:request.Count]
 	}
 	return specs, nil
+}
+
+func buildQuestMonsterFallbackSpecsFromRequest(
+	count int,
+	usedNames map[string]struct{},
+	request questMonsterTemplateRequest,
+) []jobs.MonsterTemplateCreationSpec {
+	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
+	if count <= 0 {
+		return specs
+	}
+	orderedSeedPool := orderQuestMonsterFallbackSeedPool(
+		genericMonsterTemplateRoleSeeds,
+		request,
+		usedNames,
+	)
+	if len(orderedSeedPool) == 0 {
+		return specs
+	}
+	prefixes := questMonsterFallbackPrefixes(request)
+	preferredZoneKind := models.ZoneKindPromptSlug(request.PreferredZoneKind)
+	for index := 0; index < count; index++ {
+		seed := orderedSeedPool[index%len(orderedSeedPool)]
+		baseName := strings.TrimSpace(seed.Name)
+		if len(prefixes) > 0 {
+			baseName = fmt.Sprintf("%s %s", prefixes[index%len(prefixes)], baseName)
+		}
+		specs = append(specs, jobs.MonsterTemplateCreationSpec{
+			MonsterType:      string(request.MonsterType),
+			ZoneKind:         preferredZoneKind,
+			Name:             nextUniqueMonsterTemplateName(baseName, usedNames, prefixes),
+			Description:      buildMonsterTemplateFallbackDescription(seed, nil, request.PreferredZoneKind),
+			BaseStrength:     seed.BaseStrength,
+			BaseDexterity:    seed.BaseDexterity,
+			BaseConstitution: seed.BaseConstitution,
+			BaseIntelligence: seed.BaseIntelligence,
+			BaseWisdom:       seed.BaseWisdom,
+			BaseCharisma:     seed.BaseCharisma,
+		})
+	}
+	return specs
+}
+
+func orderQuestMonsterFallbackSeedPool(
+	seedPool []dndMonsterTemplateSeed,
+	request questMonsterTemplateRequest,
+	usedNames map[string]struct{},
+) []dndMonsterTemplateSeed {
+	ordered := append([]dndMonsterTemplateSeed(nil), seedPool...)
+	querySet := buildQuestMonsterTemplateQuerySet(request)
+	sort.SliceStable(ordered, func(left, right int) bool {
+		leftScore := questMonsterFallbackSeedScore(ordered[left], querySet)
+		rightScore := questMonsterFallbackSeedScore(ordered[right], querySet)
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
+		leftUsage := monsterTemplateSeedUsageCount(ordered[left].Name, usedNames)
+		rightUsage := monsterTemplateSeedUsageCount(ordered[right].Name, usedNames)
+		if leftUsage != rightUsage {
+			return leftUsage < rightUsage
+		}
+		return ordered[left].Name < ordered[right].Name
+	})
+	return ordered
+}
+
+func questMonsterFallbackSeedScore(
+	seed dndMonsterTemplateSeed,
+	querySet map[string]struct{},
+) int {
+	score := 0
+	for _, token := range generatedQuestTemplateTokens(seed.Name + " " + seed.Description) {
+		if _, ok := querySet[token]; ok {
+			score++
+		}
+	}
+	return score
+}
+
+func questMonsterFallbackPrefixes(
+	request questMonsterTemplateRequest,
+) []string {
+	prefixes := monsterTemplateFallbackPrefixes(nil, request.PreferredZoneKind)
+	seen := make(map[string]struct{}, len(prefixes))
+	for _, prefix := range prefixes {
+		seen[strings.ToLower(strings.TrimSpace(prefix))] = struct{}{}
+	}
+	appendWords := func(raw string) {
+		for _, word := range strings.Fields(strings.TrimSpace(raw)) {
+			trimmed := strings.Trim(word, " -_,.;:!?/\\")
+			if len(trimmed) < 4 {
+				continue
+			}
+			if _, blocked := monsterTemplateFallbackPrefixStopWords[strings.ToLower(trimmed)]; blocked {
+				continue
+			}
+			appendUniqueMonsterTemplatePrefix(
+				&prefixes,
+				seen,
+				questMonsterFallbackPrefixLabel(trimmed),
+			)
+		}
+	}
+
+	for _, tone := range request.EncounterTone {
+		appendWords(tone)
+	}
+	appendWords(request.LocationConcept)
+	appendWords(request.EncounterConcept)
+	if request.LocationArchetype != nil {
+		appendWords(request.LocationArchetype.Name)
+		for _, placeType := range request.LocationArchetype.IncludedTypes {
+			appendWords(string(placeType))
+		}
+	}
+	for _, seedHint := range request.SeedHints {
+		appendWords(seedHint)
+	}
+	appendWords(request.ThemePrompt)
+	return prefixes
+}
+
+func questMonsterFallbackPrefixLabel(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	if len(lower) == 1 {
+		return strings.ToUpper(lower)
+	}
+	return strings.ToUpper(lower[:1]) + lower[1:]
 }
 
 func questMonsterPromptValue(value string) string {

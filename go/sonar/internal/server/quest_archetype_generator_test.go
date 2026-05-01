@@ -3,6 +3,7 @@ package server
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -99,5 +100,76 @@ func TestSelectQuestMonsterTemplateMatchesPrefersMatchingZoneKind(t *testing.T) 
 	}
 	if matches[0].template.Name != "Canopy Stalker" {
 		t.Fatalf("expected forest-matched template to be selected, got %q", matches[0].template.Name)
+	}
+}
+
+func TestSelectQuestMonsterTemplateMatchesPenalizesVeryRecentMatches(t *testing.T) {
+	now := time.Now()
+	matches := selectQuestMonsterTemplateMatches(
+		[]models.MonsterTemplate{
+			{
+				ID:          uuid.New(),
+				CreatedAt:   now.Add(-2 * 24 * time.Hour),
+				MonsterType: models.MonsterTemplateTypeMonster,
+				ZoneKind:    "harbor",
+				Name:        "Harbor Stalker",
+				Description: "A hunter that shadows smugglers through dockside lanes.",
+			},
+			{
+				ID:          uuid.New(),
+				CreatedAt:   now.Add(-180 * 24 * time.Hour),
+				MonsterType: models.MonsterTemplateTypeMonster,
+				ZoneKind:    "harbor",
+				Name:        "Dockside Stalker",
+				Description: "A hunter that shadows smugglers through dockside lanes.",
+			},
+		},
+		questMonsterTemplateRequest{
+			Count:             1,
+			MonsterType:       models.MonsterTemplateTypeMonster,
+			PreferredZoneKind: &models.ZoneKind{Slug: "harbor", Name: "Harbor"},
+			ThemePrompt:       "dockside smuggling trail",
+			EncounterConcept:  "predator stalking smugglers through the lanes",
+			LocationConcept:   "dockside lane",
+		},
+		1,
+	)
+
+	if len(matches) != 1 {
+		t.Fatalf("expected one match, got %d", len(matches))
+	}
+	if matches[0].template.Name != "Dockside Stalker" {
+		t.Fatalf("expected older harbor match to win, got %q", matches[0].template.Name)
+	}
+}
+
+func TestBuildQuestMonsterFallbackSpecsFromRequestUsesContextualRoleSeeds(t *testing.T) {
+	specs := buildQuestMonsterFallbackSpecsFromRequest(
+		2,
+		map[string]struct{}{},
+		questMonsterTemplateRequest{
+			Count:             2,
+			MonsterType:       models.MonsterTemplateTypeMonster,
+			PreferredZoneKind: &models.ZoneKind{Slug: "harbor", Name: "Harbor"},
+			ThemePrompt:       "shadow trade along the docks",
+			EncounterConcept:  "ambushers controlling the tide gates",
+			LocationConcept:   "dockside canal",
+			EncounterTone:     []string{"shadowed", "territorial"},
+		},
+	)
+
+	if len(specs) != 2 {
+		t.Fatalf("expected two fallback specs, got %d", len(specs))
+	}
+	for _, spec := range specs {
+		if spec.ZoneKind != "harbor" {
+			t.Fatalf("expected harbor zone kind, got %q", spec.ZoneKind)
+		}
+		if strings.Contains(strings.ToLower(spec.Name), "goblin") {
+			t.Fatalf("expected contextual role-seed fallback, got %q", spec.Name)
+		}
+	}
+	if !strings.Contains(strings.ToLower(specs[0].Name), "harbor") {
+		t.Fatalf("expected first fallback name to carry a contextual prefix, got %q", specs[0].Name)
 	}
 }

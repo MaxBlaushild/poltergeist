@@ -4,6 +4,7 @@ import { useAPI } from '@poltergeist/contexts';
 import {
   QuestArchetypeSuggestionDraft,
   QuestArchetypeSuggestionJob,
+  QuestArchetypeSuggestionNode,
 } from '@poltergeist/types';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
@@ -14,17 +15,38 @@ type GeneratorFormState = {
   zoneKind: string;
   themePrompt: string;
   familyTagsText: string;
+  familyMixTargets: Record<string, string>;
   characterTagsText: string;
   internalTagsText: string;
   requiredLocationArchetypeIds: string[];
   requiredLocationMetadataTagsText: string;
 };
 
+const QUEST_FAMILY_OPTIONS = [
+  { slug: 'investigation', label: 'Investigation' },
+  { slug: 'delivery', label: 'Delivery' },
+  { slug: 'negotiation', label: 'Negotiation' },
+  { slug: 'pursuit', label: 'Pursuit' },
+  { slug: 'containment', label: 'Containment' },
+  { slug: 'omen_chasing', label: 'Omen Chasing' },
+  { slug: 'ritual_interruption', label: 'Ritual Interruption' },
+  { slug: 'survival', label: 'Survival' },
+  { slug: 'rescue', label: 'Rescue' },
+  { slug: 'combat_finale', label: 'Combat Finale' },
+];
+
+const emptyFamilyMixTargets = () =>
+  QUEST_FAMILY_OPTIONS.reduce<Record<string, string>>((accumulator, family) => {
+    accumulator[family.slug] = '0';
+    return accumulator;
+  }, {});
+
 const emptyGeneratorForm = (): GeneratorFormState => ({
   count: '12',
   zoneKind: '',
   themePrompt: '',
   familyTagsText: '',
+  familyMixTargets: emptyFamilyMixTargets(),
   characterTagsText: '',
   internalTagsText: '',
   requiredLocationArchetypeIds: [],
@@ -85,6 +107,79 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const draftNodesForReview = (
+  draft: QuestArchetypeSuggestionDraft
+): QuestArchetypeSuggestionNode[] => {
+  const usingGraphNodes = !!(draft.nodes && draft.nodes.length > 0);
+  const rawNodes = usingGraphNodes
+    ? draft.nodes!
+    : (draft.steps ?? []).map((step, index) => ({
+          ...step,
+          nodeKey: `node_${index + 1}`,
+          outcomes:
+            index + 1 < (draft.steps?.length ?? 0)
+              ? [{ outcome: 'success' as const, nextNodeKey: `node_${index + 2}` }]
+              : [],
+        }));
+
+  return rawNodes.map((node, index) => ({
+    ...node,
+    nodeKey: node.nodeKey?.trim() || `node_${index + 1}`,
+    outcomes:
+      node.outcomes && node.outcomes.length > 0
+        ? node.outcomes
+        : !usingGraphNodes && index + 1 < rawNodes.length
+          ? [
+              {
+                outcome: 'success' as const,
+                nextNodeKey: `node_${index + 2}`,
+              },
+            ]
+          : [],
+  }));
+};
+
+const draftFailureBranchCount = (nodes: QuestArchetypeSuggestionNode[]) =>
+  nodes.reduce(
+    (count, node) =>
+      count +
+      (node.outcomes ?? []).filter((outcome) => outcome.outcome === 'failure')
+        .length,
+    0
+  );
+
+const formatOutcomeLabel = (outcome: string) => outcome.replace(/_/g, ' ');
+
+const buildFamilyMixTargetsPayload = (values: Record<string, string>) =>
+  Object.entries(values).reduce<Record<string, number>>(
+    (accumulator, [slug, rawValue]) => {
+      const count = Math.max(0, parseInt(rawValue, 10) || 0);
+      if (count > 0) {
+        accumulator[slug] = count;
+      }
+      return accumulator;
+    },
+    {}
+  );
+
+const familyMixTargetCount = (values: Record<string, string>) =>
+  Object.values(buildFamilyMixTargetsPayload(values)).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+
+const formatFamilyMixTargets = (
+  targets?: Record<string, number> | null
+): string => {
+  if (!targets) return 'none';
+  const parts = QUEST_FAMILY_OPTIONS.map((family) => {
+    const count = targets[family.slug];
+    if (!count || count <= 0) return null;
+    return `${family.label} x${count}`;
+  }).filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : 'none';
+};
+
 export const QuestArchetypeGenerator = () => {
   const { apiClient } = useAPI();
   const { locationArchetypes } = useQuestArchetypes();
@@ -124,6 +219,10 @@ export const QuestArchetypeGenerator = () => {
         `Unknown archetype (${id.slice(0, 8)}...)`
     );
   }, [locationArchetypeNamesById, selectedJob]);
+  const requestedFamilyMixCount = useMemo(
+    () => familyMixTargetCount(form.familyMixTargets),
+    [form.familyMixTargets]
+  );
 
   const fetchJobs = useCallback(async () => {
     setLoadingJobs(true);
@@ -217,6 +316,7 @@ export const QuestArchetypeGenerator = () => {
           zoneKind: form.zoneKind.trim(),
           themePrompt: form.themePrompt.trim(),
           familyTags: parseTags(form.familyTagsText),
+          familyMixTargets: buildFamilyMixTargetsPayload(form.familyMixTargets),
           characterTags: parseTags(form.characterTagsText),
           internalTags: parseTags(form.internalTagsText),
           requiredLocationArchetypeIds: form.requiredLocationArchetypeIds,
@@ -377,6 +477,47 @@ export const QuestArchetypeGenerator = () => {
                   placeholder="civic, criminal, occult"
                 />
               </div>
+              <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
+                <div className="qa-label">Family Mix Targets</div>
+                <div
+                  className="qa-muted"
+                  style={{ marginTop: 6, marginBottom: 10 }}
+                >
+                  Set explicit minimum counts for the batch. Leave a family at 0
+                  to make it optional.
+                </div>
+                <div
+                  className="qa-form-grid"
+                  style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+                >
+                  {QUEST_FAMILY_OPTIONS.map((family) => (
+                    <label key={family.slug} className="qa-field">
+                      <div className="qa-meta" style={{ marginBottom: 6 }}>
+                        {family.label}
+                      </div>
+                      <input
+                        className="qa-input"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={form.familyMixTargets[family.slug] ?? '0'}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            familyMixTargets: {
+                              ...current.familyMixTargets,
+                              [family.slug]: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="qa-meta" style={{ marginTop: 10 }}>
+                  Requested family slots: {requestedFamilyMixCount}
+                </div>
+              </div>
               <div className="qa-field">
                 <div className="qa-label">Character Tags</div>
                 <input
@@ -506,7 +647,11 @@ export const QuestArchetypeGenerator = () => {
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={() => void handleQueueJob()}
-                disabled={queueing}
+                disabled={
+                  queueing ||
+                  requestedFamilyMixCount >
+                    Math.max(1, parseInt(form.count, 10) || 1)
+                }
               >
                 {queueing ? 'Queueing...' : 'Queue Draft Job'}
               </button>
@@ -522,6 +667,12 @@ export const QuestArchetypeGenerator = () => {
             {(jobActionError || pageError) && (
               <div className="qa-chip danger" style={{ marginTop: 14 }}>
                 {jobActionError || pageError}
+              </div>
+            )}
+            {requestedFamilyMixCount >
+              Math.max(1, parseInt(form.count, 10) || 1) && (
+              <div className="qa-chip danger" style={{ marginTop: 14 }}>
+                Family mix targets cannot exceed the requested batch size.
               </div>
             )}
           </div>
@@ -572,6 +723,12 @@ export const QuestArchetypeGenerator = () => {
                         Zone kind: {zoneKindLabel(job.zoneKind, zoneKindBySlug)}
                       </div>
                     )}
+                    {job.familyMixTargets &&
+                      Object.keys(job.familyMixTargets).length > 0 && (
+                        <div className="qa-meta" style={{ marginTop: 8 }}>
+                          Family mix: {formatFamilyMixTargets(job.familyMixTargets)}
+                        </div>
+                      )}
                     {job.requiredLocationArchetypeIds?.length > 0 && (
                       <div className="qa-meta" style={{ marginTop: 8 }}>
                         Required archetypes:{' '}
@@ -629,274 +786,321 @@ export const QuestArchetypeGenerator = () => {
 
           {!loadingDrafts && drafts.length > 0 && (
             <div className="qa-tree" style={{ marginTop: 18 }}>
-              {drafts.map((draft) => (
-                <article key={draft.id} className="qa-node-card">
-                  <div className="qa-card-header">
-                    <div>
-                      <div className="qa-card-title">{draft.name}</div>
-                      <div className="qa-meta" style={{ marginTop: 4 }}>
-                        {draft.hook || 'No hook provided'}
-                      </div>
-                    </div>
-                    <div className={statusChipClass(draft.status)}>
-                      {formatStatus(draft.status)}
-                    </div>
-                  </div>
+              {drafts.map((draft) => {
+                const draftNodes = draftNodesForReview(draft);
+                const failureBranchCount = draftFailureBranchCount(draftNodes);
 
-                  <div className="qa-stat-grid" style={{ marginTop: 16 }}>
-                    <div className="qa-stat">
-                      <div className="qa-stat-label">Difficulty</div>
-                      <div className="qa-stat-value">
-                        {draft.difficultyMode} / {draft.difficulty}
+                return (
+                  <article key={draft.id} className="qa-node-card">
+                    <div className="qa-card-header">
+                      <div>
+                        <div className="qa-card-title">{draft.name}</div>
+                        <div className="qa-meta" style={{ marginTop: 4 }}>
+                          {draft.hook || 'No hook provided'}
+                        </div>
+                      </div>
+                      <div className={statusChipClass(draft.status)}>
+                        {formatStatus(draft.status)}
                       </div>
                     </div>
-                    <div className="qa-stat">
-                      <div className="qa-stat-label">Encounter Level</div>
-                      <div className="qa-stat-value">
-                        {draft.monsterEncounterTargetLevel}
-                      </div>
-                    </div>
-                    <div className="qa-stat">
-                      <div className="qa-stat-label">Route Steps</div>
-                      <div className="qa-stat-value">{draft.steps.length}</div>
-                    </div>
-                  </div>
 
-                  <div style={{ marginTop: 18 }}>
-                    {draft.zoneKind?.trim() && (
-                      <div className="qa-meta" style={{ marginBottom: 8 }}>
-                        Zone kind:{' '}
-                        {zoneKindLabel(draft.zoneKind, zoneKindBySlug)}
+                    <div className="qa-stat-grid" style={{ marginTop: 16 }}>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Difficulty</div>
+                        <div className="qa-stat-value">
+                          {draft.difficultyMode} / {draft.difficulty}
+                        </div>
                       </div>
-                    )}
-                    {selectedJobRequiredLocationArchetypes.length > 0 && (
-                      <div className="qa-meta" style={{ marginBottom: 8 }}>
-                        Required archetypes:{' '}
-                        {selectedJobRequiredLocationArchetypes.join(', ')}
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Encounter Level</div>
+                        <div className="qa-stat-value">
+                          {draft.monsterEncounterTargetLevel}
+                        </div>
                       </div>
-                    )}
-                    <div className="qa-meta">
-                      Character tags:{' '}
-                      {(draft.characterTags ?? []).join(', ') || 'none'}
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Quest Nodes</div>
+                        <div className="qa-stat-value">
+                          {draftNodes.length}
+                        </div>
+                      </div>
+                      <div className="qa-stat">
+                        <div className="qa-stat-label">Failure Paths</div>
+                        <div className="qa-stat-value">
+                          {failureBranchCount}
+                        </div>
+                      </div>
                     </div>
-                    <div className="qa-meta" style={{ marginTop: 6 }}>
-                      Internal tags:{' '}
-                      {(draft.internalTags ?? []).join(', ') || 'none'}
-                    </div>
-                    <p style={{ marginTop: 12 }}>{draft.description}</p>
-                  </div>
 
-                  {draft.acceptanceDialogue?.length > 0 && (
                     <div style={{ marginTop: 18 }}>
-                      <div className="qa-stat-label">Acceptance Dialogue</div>
-                      <div className="qa-tree" style={{ marginTop: 8 }}>
-                        {draft.acceptanceDialogue.map((line, index) => (
+                      {draft.zoneKind?.trim() && (
+                        <div className="qa-meta" style={{ marginBottom: 8 }}>
+                          Zone kind:{' '}
+                          {zoneKindLabel(draft.zoneKind, zoneKindBySlug)}
+                        </div>
+                      )}
+                      {selectedJobRequiredLocationArchetypes.length > 0 && (
+                        <div className="qa-meta" style={{ marginBottom: 8 }}>
+                          Required archetypes:{' '}
+                          {selectedJobRequiredLocationArchetypes.join(', ')}
+                        </div>
+                      )}
+                      {selectedJob?.familyMixTargets &&
+                        Object.keys(selectedJob.familyMixTargets).length > 0 && (
+                          <div className="qa-meta" style={{ marginBottom: 8 }}>
+                            Family mix:{' '}
+                            {formatFamilyMixTargets(selectedJob.familyMixTargets)}
+                          </div>
+                        )}
+                      <div className="qa-meta">
+                        Character tags:{' '}
+                        {(draft.characterTags ?? []).join(', ') || 'none'}
+                      </div>
+                      <div className="qa-meta" style={{ marginTop: 6 }}>
+                        Internal tags:{' '}
+                        {(draft.internalTags ?? []).join(', ') || 'none'}
+                      </div>
+                      <p style={{ marginTop: 12 }}>{draft.description}</p>
+                    </div>
+
+                    {draft.acceptanceDialogue?.length > 0 && (
+                      <div style={{ marginTop: 18 }}>
+                        <div className="qa-stat-label">Acceptance Dialogue</div>
+                        <div className="qa-tree" style={{ marginTop: 8 }}>
+                          {draft.acceptanceDialogue.map((line, index) => (
+                            <div
+                              key={`${draft.id}-dialogue-${index}`}
+                              className="qa-node-card"
+                            >
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 18 }}>
+                      <div className="qa-stat-label">Node Plan</div>
+                      <div className="qa-tree" style={{ marginTop: 10 }}>
+                        {draftNodes.map((node, index) => (
                           <div
-                            key={`${draft.id}-dialogue-${index}`}
+                            key={`${draft.id}-node-${node.nodeKey}-${index}`}
                             className="qa-node-card"
                           >
-                            {line}
+                            <div
+                              className="qa-card-title"
+                              style={{ fontSize: 15 }}
+                            >
+                              Node {index + 1}: {node.source} {node.content}
+                            </div>
+                            <div className="qa-meta" style={{ marginTop: 8 }}>
+                              Node key: {node.nodeKey}
+                            </div>
+                            <div className="qa-meta" style={{ marginTop: 6 }}>
+                              Location concept: {node.locationConcept}
+                            </div>
+                            {node.locationArchetypeName && (
+                              <div className="qa-meta" style={{ marginTop: 6 }}>
+                                Location archetype: {node.locationArchetypeName}
+                              </div>
+                            )}
+                            {node.distanceMeters != null && (
+                              <div className="qa-meta" style={{ marginTop: 6 }}>
+                                Distance: {node.distanceMeters}m
+                              </div>
+                            )}
+                            <div className="qa-meta" style={{ marginTop: 6 }}>
+                              Metadata tags:{' '}
+                              {(node.locationMetadataTags ?? []).join(', ')}
+                            </div>
+                            <div className="qa-meta" style={{ marginTop: 6 }}>
+                              Template concept: {node.templateConcept}
+                            </div>
+
+                            {node.content === 'challenge' && (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">
+                                  Challenge Template Draft
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Question: {node.challengeQuestion}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Description: {node.challengeDescription}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Submission:{' '}
+                                  {node.challengeSubmissionType || 'photo'}
+                                </div>
+                              </div>
+                            )}
+
+                            {node.content === 'scenario' && (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">
+                                  Scenario Template Draft
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Prompt: {node.scenarioPrompt}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Beats:{' '}
+                                  {(node.scenarioBeats ?? []).join(', ') ||
+                                    'none'}
+                                </div>
+                              </div>
+                            )}
+
+                            {node.content === 'monster' && (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">
+                                  Monster Encounter Draft
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Templates:{' '}
+                                  {(node.monsterTemplateNames ?? []).join(
+                                    ', '
+                                  ) || 'none'}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Tone:{' '}
+                                  {(node.encounterTone ?? []).join(', ') ||
+                                    'none'}
+                                </div>
+                              </div>
+                            )}
+
+                            {(node.outcomes ?? []).length > 0 ? (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">Transitions</div>
+                                <div className="qa-tree" style={{ marginTop: 8 }}>
+                                  {(node.outcomes ?? []).map(
+                                    (outcome, outcomeIndex) => (
+                                      <div
+                                        key={`${draft.id}-${node.nodeKey}-outcome-${outcomeIndex}`}
+                                        className="qa-chip accent"
+                                      >
+                                        {formatOutcomeLabel(outcome.outcome)}{' '}
+                                        -&gt; {outcome.nextNodeKey || 'end'}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="qa-meta" style={{ marginTop: 12 }}>
+                                Transitions: this node can end the quest path.
+                              </div>
+                            )}
+
+                            {(node.potentialContent ?? []).length > 0 && (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">
+                                  Potential Content
+                                </div>
+                                <div className="qa-tree" style={{ marginTop: 8 }}>
+                                  {node.potentialContent.map(
+                                    (item, ideaIndex) => (
+                                      <div
+                                        key={`${draft.id}-${node.nodeKey}-idea-${ideaIndex}`}
+                                        className="qa-node-card"
+                                      >
+                                        {item}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
                     </div>
-                  )}
 
-                  <div style={{ marginTop: 18 }}>
-                    <div className="qa-stat-label">Node Plan</div>
-                    <div className="qa-tree" style={{ marginTop: 10 }}>
-                      {draft.steps.map((step, index) => (
-                        <div
-                          key={`${draft.id}-step-${index}`}
-                          className="qa-node-card"
-                        >
-                          <div
-                            className="qa-card-title"
-                            style={{ fontSize: 15 }}
-                          >
-                            Step {index + 1}: {step.source} {step.content}
-                          </div>
+                    {draft.whyThisScales && (
+                      <div style={{ marginTop: 18 }}>
+                        <div className="qa-stat-label">Why This Scales</div>
+                        <p style={{ marginTop: 8 }}>{draft.whyThisScales}</p>
+                      </div>
+                    )}
+
+                    {(draft.warnings ?? []).length > 0 && (
+                      <div style={{ marginTop: 18 }}>
+                        <div className="qa-stat-label">Warnings</div>
+                        <div className="qa-tree" style={{ marginTop: 8 }}>
+                          {draft.warnings.map((warning, index) => (
+                            <div
+                              key={`${draft.id}-warning-${index}`}
+                              className="qa-chip danger"
+                            >
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(draft.challengeTemplateSeeds?.length ||
+                      draft.scenarioTemplateSeeds?.length ||
+                      draft.monsterTemplateSeeds?.length) && (
+                      <div style={{ marginTop: 18 }}>
+                        <div className="qa-stat-label">Seed Notes</div>
+                        {draft.challengeTemplateSeeds?.length ? (
                           <div className="qa-meta" style={{ marginTop: 8 }}>
-                            Location concept: {step.locationConcept}
+                            Challenge seeds:{' '}
+                            {draft.challengeTemplateSeeds.join(' | ')}
                           </div>
-                          {step.locationArchetypeName && (
-                            <div className="qa-meta" style={{ marginTop: 6 }}>
-                              Location archetype: {step.locationArchetypeName}
-                            </div>
-                          )}
-                          {step.distanceMeters != null && (
-                            <div className="qa-meta" style={{ marginTop: 6 }}>
-                              Distance: {step.distanceMeters}m
-                            </div>
-                          )}
-                          <div className="qa-meta" style={{ marginTop: 6 }}>
-                            Metadata tags:{' '}
-                            {(step.locationMetadataTags ?? []).join(', ')}
+                        ) : null}
+                        {draft.scenarioTemplateSeeds?.length ? (
+                          <div className="qa-meta" style={{ marginTop: 8 }}>
+                            Scenario seeds:{' '}
+                            {draft.scenarioTemplateSeeds.join(' | ')}
                           </div>
-                          <div className="qa-meta" style={{ marginTop: 6 }}>
-                            Template concept: {step.templateConcept}
+                        ) : null}
+                        {draft.monsterTemplateSeeds?.length ? (
+                          <div className="qa-meta" style={{ marginTop: 8 }}>
+                            Monster seeds:{' '}
+                            {draft.monsterTemplateSeeds.join(' | ')}
                           </div>
-
-                          {step.content === 'challenge' && (
-                            <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">
-                                Challenge Template Draft
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Question: {step.challengeQuestion}
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Description: {step.challengeDescription}
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Submission:{' '}
-                                {step.challengeSubmissionType || 'photo'}
-                              </div>
-                            </div>
-                          )}
-
-                          {step.content === 'scenario' && (
-                            <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">
-                                Scenario Template Draft
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Prompt: {step.scenarioPrompt}
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Beats:{' '}
-                                {(step.scenarioBeats ?? []).join(', ') ||
-                                  'none'}
-                              </div>
-                            </div>
-                          )}
-
-                          {step.content === 'monster' && (
-                            <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">
-                                Monster Encounter Draft
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Templates:{' '}
-                                {(step.monsterTemplateNames ?? []).join(', ') ||
-                                  'none'}
-                              </div>
-                              <div className="qa-meta" style={{ marginTop: 6 }}>
-                                Tone:{' '}
-                                {(step.encounterTone ?? []).join(', ') ||
-                                  'none'}
-                              </div>
-                            </div>
-                          )}
-
-                          {(step.potentialContent ?? []).length > 0 && (
-                            <div style={{ marginTop: 12 }}>
-                              <div className="qa-stat-label">
-                                Potential Content
-                              </div>
-                              <div className="qa-tree" style={{ marginTop: 8 }}>
-                                {step.potentialContent.map(
-                                  (item, ideaIndex) => (
-                                    <div
-                                      key={`${draft.id}-step-${index}-idea-${ideaIndex}`}
-                                      className="qa-node-card"
-                                    >
-                                      {item}
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {draft.whyThisScales && (
-                    <div style={{ marginTop: 18 }}>
-                      <div className="qa-stat-label">Why This Scales</div>
-                      <p style={{ marginTop: 8 }}>{draft.whyThisScales}</p>
-                    </div>
-                  )}
-
-                  {(draft.warnings ?? []).length > 0 && (
-                    <div style={{ marginTop: 18 }}>
-                      <div className="qa-stat-label">Warnings</div>
-                      <div className="qa-tree" style={{ marginTop: 8 }}>
-                        {draft.warnings.map((warning, index) => (
-                          <div
-                            key={`${draft.id}-warning-${index}`}
-                            className="qa-chip danger"
-                          >
-                            {warning}
-                          </div>
-                        ))}
+                        ) : null}
                       </div>
-                    </div>
-                  )}
-
-                  {(draft.challengeTemplateSeeds?.length ||
-                    draft.scenarioTemplateSeeds?.length ||
-                    draft.monsterTemplateSeeds?.length) && (
-                    <div style={{ marginTop: 18 }}>
-                      <div className="qa-stat-label">Seed Notes</div>
-                      {draft.challengeTemplateSeeds?.length ? (
-                        <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Challenge seeds:{' '}
-                          {draft.challengeTemplateSeeds.join(' | ')}
-                        </div>
-                      ) : null}
-                      {draft.scenarioTemplateSeeds?.length ? (
-                        <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Scenario seeds:{' '}
-                          {draft.scenarioTemplateSeeds.join(' | ')}
-                        </div>
-                      ) : null}
-                      {draft.monsterTemplateSeeds?.length ? (
-                        <div className="qa-meta" style={{ marginTop: 8 }}>
-                          Monster seeds:{' '}
-                          {draft.monsterTemplateSeeds.join(' | ')}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  <div className="qa-actions" style={{ marginTop: 18 }}>
-                    {draft.questArchetypeId ? (
-                      <Link
-                        to="/quest-archetypes"
-                        className="qa-btn qa-btn-outline"
-                      >
-                        Open Quest Archetypes
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        className="qa-btn qa-btn-primary"
-                        onClick={() => void handleConvertDraft(draft.id)}
-                        disabled={convertingDraftId === draft.id}
-                      >
-                        {convertingDraftId === draft.id
-                          ? 'Converting...'
-                          : 'Convert to Archetype'}
-                      </button>
                     )}
-                    {!draft.questArchetypeId && (
-                      <button
-                        type="button"
-                        className="qa-btn qa-btn-danger"
-                        onClick={() => void handleDeleteDraft(draft.id)}
-                        disabled={deletingDraftId === draft.id}
-                      >
-                        {deletingDraftId === draft.id
-                          ? 'Deleting...'
-                          : 'Delete Draft'}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+
+                    <div className="qa-actions" style={{ marginTop: 18 }}>
+                      {draft.questArchetypeId ? (
+                        <Link
+                          to="/quest-archetypes"
+                          className="qa-btn qa-btn-outline"
+                        >
+                          Open Quest Archetypes
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-primary"
+                          onClick={() => void handleConvertDraft(draft.id)}
+                          disabled={convertingDraftId === draft.id}
+                        >
+                          {convertingDraftId === draft.id
+                            ? 'Converting...'
+                            : 'Convert to Archetype'}
+                        </button>
+                      )}
+                      {!draft.questArchetypeId && (
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-danger"
+                          onClick={() => void handleDeleteDraft(draft.id)}
+                          disabled={deletingDraftId === draft.id}
+                        >
+                          {deletingDraftId === draft.id
+                            ? 'Deleting...'
+                            : 'Delete Draft'}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

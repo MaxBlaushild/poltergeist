@@ -18,14 +18,15 @@ import (
 )
 
 type questArchetypeSuggestionJobRequest struct {
-	Count                        int      `json:"count"`
-	ZoneKind                     string   `json:"zoneKind"`
-	ThemePrompt                  string   `json:"themePrompt"`
-	FamilyTags                   []string `json:"familyTags"`
-	CharacterTags                []string `json:"characterTags"`
-	InternalTags                 []string `json:"internalTags"`
-	RequiredLocationArchetypeIDs []string `json:"requiredLocationArchetypeIds"`
-	RequiredLocationMetadataTags []string `json:"requiredLocationMetadataTags"`
+	Count                        int            `json:"count"`
+	ZoneKind                     string         `json:"zoneKind"`
+	ThemePrompt                  string         `json:"themePrompt"`
+	FamilyTags                   []string       `json:"familyTags"`
+	FamilyMixTargets             map[string]int `json:"familyMixTargets"`
+	CharacterTags                []string       `json:"characterTags"`
+	InternalTags                 []string       `json:"internalTags"`
+	RequiredLocationArchetypeIDs []string       `json:"requiredLocationArchetypeIds"`
+	RequiredLocationMetadataTags []string       `json:"requiredLocationMetadataTags"`
 }
 
 func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
@@ -39,6 +40,11 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 	}
 	if body.Count > 100 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
+		return
+	}
+	familyMixTargets := models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(body.FamilyMixTargets)
+	if sumQuestArchetypeSuggestionFamilyMixTargets(familyMixTargets) > body.Count {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "family mix targets cannot exceed the requested count"})
 		return
 	}
 	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
@@ -64,6 +70,7 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		ZoneKind:                     models.ZoneKindPromptSlug(zoneKind),
 		ThemePrompt:                  strings.TrimSpace(body.ThemePrompt),
 		FamilyTags:                   normalizeQuestTemplateInternalTags(body.FamilyTags),
+		FamilyMixTargets:             familyMixTargets,
 		CharacterTags:                normalizeQuestTemplateCharacterTags(body.CharacterTags),
 		InternalTags:                 normalizeQuestTemplateInternalTags(body.InternalTags),
 		RequiredLocationArchetypeIDs: requiredLocationArchetypeIDs,
@@ -91,6 +98,18 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusAccepted, job)
+}
+
+func sumQuestArchetypeSuggestionFamilyMixTargets(
+	targets models.QuestArchetypeSuggestionFamilyMixTargets,
+) int {
+	total := 0
+	for _, count := range targets {
+		if count > 0 {
+			total += count
+		}
+	}
+	return total
 }
 
 func (s *server) normalizeQuestArchetypeSuggestionLocationArchetypeIDs(
@@ -243,11 +262,12 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	if draft == nil {
 		return nil, fmt.Errorf("draft is required")
 	}
-	if len(draft.Steps) == 0 {
-		return nil, fmt.Errorf("draft does not contain any steps")
+	draftNodes := questArchetypeSuggestionDraftNodes(draft)
+	if len(draftNodes) == 0 {
+		return nil, fmt.Errorf("draft does not contain any nodes")
 	}
-	if draft.Steps[0].Source == "proximity" {
-		return nil, fmt.Errorf("the first step cannot use proximity")
+	if draftNodes[0].Source == "proximity" {
+		return nil, fmt.Errorf("the first node cannot use proximity")
 	}
 
 	monsterTemplates, err := s.dbClient.MonsterTemplate().FindAllActive(ctx)
@@ -259,21 +279,30 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 		return nil, fmt.Errorf("failed to load suggestion draft zone kind: %w", err)
 	}
 
-	nodes := make([]*models.QuestArchetypeNode, 0, len(draft.Steps))
-	for _, step := range draft.Steps {
-		node, err := s.createQuestArchetypeSuggestionNode(ctx, step, draft, preferredZoneKind, &monsterTemplates)
+	nodes := make([]*models.QuestArchetypeNode, 0, len(draftNodes))
+	nodeIDsByKey := make(map[string]uuid.UUID, len(draftNodes))
+	for _, suggestionNode := range draftNodes {
+		node, err := s.createQuestArchetypeSuggestionNode(
+			ctx,
+			suggestionNode,
+			draft,
+			preferredZoneKind,
+			&monsterTemplates,
+		)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, node)
+		nodeIDsByKey[suggestionNode.NodeKey] = node.ID
 	}
 
-	for index, step := range draft.Steps {
-		var nextNodeID *uuid.UUID
-		if index+1 < len(nodes) {
-			nextNodeID = &nodes[index+1].ID
-		}
-		if err := s.linkQuestArchetypeSuggestionStep(ctx, nodes[index], step, nextNodeID); err != nil {
+	for index, suggestionNode := range draftNodes {
+		if err := s.linkQuestArchetypeSuggestionNode(
+			ctx,
+			nodes[index],
+			suggestionNode,
+			nodeIDsByKey,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -330,18 +359,113 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	return s.dbClient.QuestArchetype().FindByID(ctx, questArchetype.ID)
 }
 
+func questArchetypeSuggestionDraftNodes(
+	draft *models.QuestArchetypeSuggestionDraft,
+) models.QuestArchetypeSuggestionNodes {
+	if draft == nil {
+		return nil
+	}
+	if len(draft.Nodes) > 0 {
+		nodes := make(models.QuestArchetypeSuggestionNodes, 0, len(draft.Nodes))
+		for index, node := range draft.Nodes {
+			if strings.TrimSpace(node.NodeKey) == "" {
+				node.NodeKey = fmt.Sprintf("node_%d", index+1)
+			}
+			nodes = append(nodes, node)
+		}
+		return nodes
+	}
+	if len(draft.Steps) == 0 {
+		return nil
+	}
+	nodes := make(models.QuestArchetypeSuggestionNodes, 0, len(draft.Steps))
+	for index, step := range draft.Steps {
+		node := questArchetypeSuggestionNodeFromStep(step, fmt.Sprintf("node_%d", index+1))
+		if index+1 < len(draft.Steps) {
+			node.Outcomes = models.QuestArchetypeSuggestionNodeOutcomes{
+				{
+					Outcome:     "success",
+					NextNodeKey: fmt.Sprintf("node_%d", index+2),
+				},
+			}
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+func questArchetypeSuggestionNodeFromStep(
+	step models.QuestArchetypeSuggestionStep,
+	nodeKey string,
+) models.QuestArchetypeSuggestionNode {
+	return models.QuestArchetypeSuggestionNode{
+		NodeKey:                 strings.TrimSpace(nodeKey),
+		Source:                  step.Source,
+		Content:                 step.Content,
+		LocationConcept:         step.LocationConcept,
+		LocationArchetypeName:   step.LocationArchetypeName,
+		LocationArchetypeID:     step.LocationArchetypeID,
+		LocationMetadataTags:    append([]string(nil), step.LocationMetadataTags...),
+		DistanceMeters:          step.DistanceMeters,
+		TemplateConcept:         step.TemplateConcept,
+		PotentialContent:        append([]string(nil), step.PotentialContent...),
+		ChallengeQuestion:       step.ChallengeQuestion,
+		ChallengeDescription:    step.ChallengeDescription,
+		ChallengeSubmissionType: step.ChallengeSubmissionType,
+		ChallengeProficiency:    step.ChallengeProficiency,
+		ChallengeStatTags:       append([]string(nil), step.ChallengeStatTags...),
+		ScenarioPrompt:          step.ScenarioPrompt,
+		ScenarioOpenEnded:       step.ScenarioOpenEnded,
+		ScenarioBeats:           append([]string(nil), step.ScenarioBeats...),
+		MonsterTemplateNames:    append([]string(nil), step.MonsterTemplateNames...),
+		MonsterTemplateIDs:      append([]string(nil), step.MonsterTemplateIDs...),
+		EncounterTone:           append([]string(nil), step.EncounterTone...),
+	}
+}
+
+func questArchetypeSuggestionStepFromNode(
+	node models.QuestArchetypeSuggestionNode,
+) models.QuestArchetypeSuggestionStep {
+	return models.QuestArchetypeSuggestionStep{
+		Source:                  node.Source,
+		Content:                 node.Content,
+		LocationConcept:         node.LocationConcept,
+		LocationArchetypeName:   node.LocationArchetypeName,
+		LocationArchetypeID:     node.LocationArchetypeID,
+		LocationMetadataTags:    append([]string(nil), node.LocationMetadataTags...),
+		DistanceMeters:          node.DistanceMeters,
+		TemplateConcept:         node.TemplateConcept,
+		PotentialContent:        append([]string(nil), node.PotentialContent...),
+		ChallengeQuestion:       node.ChallengeQuestion,
+		ChallengeDescription:    node.ChallengeDescription,
+		ChallengeSubmissionType: node.ChallengeSubmissionType,
+		ChallengeProficiency:    node.ChallengeProficiency,
+		ChallengeStatTags:       append([]string(nil), node.ChallengeStatTags...),
+		ScenarioPrompt:          node.ScenarioPrompt,
+		ScenarioOpenEnded:       node.ScenarioOpenEnded,
+		ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
+		MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
+		MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
+		EncounterTone:           append([]string(nil), node.EncounterTone...),
+	}
+}
+
 func (s *server) createQuestArchetypeSuggestionNode(
 	ctx context.Context,
-	step models.QuestArchetypeSuggestionStep,
+	suggestionNode models.QuestArchetypeSuggestionNode,
 	draft *models.QuestArchetypeSuggestionDraft,
 	preferredZoneKind *models.ZoneKind,
 	monsterTemplates *[]models.MonsterTemplate,
 ) (*models.QuestArchetypeNode, error) {
+	step := questArchetypeSuggestionStepFromNode(suggestionNode)
 	if step.Source == "location" && (step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil) {
 		return nil, fmt.Errorf("%s step %q is missing a resolved location archetype", step.Content, step.LocationConcept)
 	}
 
 	payload := questArchetypeNodePayload{}
+	if questArchetypeSuggestionNodeHasFailureOutcome(suggestionNode) {
+		payload.FailurePolicy = string(models.QuestNodeFailurePolicyTransition)
+	}
 	switch step.Content {
 	case "scenario":
 		template, err := s.createQuestArchetypeSuggestionScenarioTemplate(ctx, step, draft, preferredZoneKind)
@@ -416,6 +540,18 @@ func (s *server) createQuestArchetypeSuggestionNode(
 	return node, nil
 }
 
+func questArchetypeSuggestionNodeHasFailureOutcome(
+	node models.QuestArchetypeSuggestionNode,
+) bool {
+	for _, outcome := range node.Outcomes {
+		if strings.EqualFold(strings.TrimSpace(outcome.Outcome), "failure") &&
+			strings.TrimSpace(outcome.NextNodeKey) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *server) resolveQuestArchetypeSuggestionStepLocationArchetype(
 	ctx context.Context,
 	step models.QuestArchetypeSuggestionStep,
@@ -458,7 +594,11 @@ func questArchetypeSuggestionMonsterSeedHints(
 	step models.QuestArchetypeSuggestionStep,
 	draft *models.QuestArchetypeSuggestionDraft,
 ) []string {
-	hints := make([]string, 0, len(step.MonsterTemplateNames)+len(step.PotentialContent)+len(step.EncounterTone)+len(draft.MonsterTemplateSeeds)+2)
+	seedCount := 0
+	if draft != nil {
+		seedCount = len(draft.MonsterTemplateSeeds)
+	}
+	hints := make([]string, 0, len(step.MonsterTemplateNames)+len(step.PotentialContent)+len(step.EncounterTone)+seedCount+2)
 	hints = append(hints, step.MonsterTemplateNames...)
 	hints = append(hints, step.PotentialContent...)
 	hints = append(hints, step.EncounterTone...)
@@ -474,39 +614,79 @@ func questArchetypeSuggestionMonsterSeedHints(
 	return hints
 }
 
-func (s *server) linkQuestArchetypeSuggestionStep(
+func (s *server) linkQuestArchetypeSuggestionNode(
 	ctx context.Context,
 	node *models.QuestArchetypeNode,
-	step models.QuestArchetypeSuggestionStep,
-	nextNodeID *uuid.UUID,
+	suggestionNode models.QuestArchetypeSuggestionNode,
+	nodeIDsByKey map[string]uuid.UUID,
 ) error {
 	if node == nil {
 		return fmt.Errorf("node is required")
 	}
-	if step.Content != "challenge" && nextNodeID == nil {
+	successNodeID, err := questArchetypeSuggestionOutcomeNodeID(
+		suggestionNode.Outcomes,
+		"success",
+		nodeIDsByKey,
+	)
+	if err != nil {
+		return err
+	}
+	failureNodeID, err := questArchetypeSuggestionOutcomeNodeID(
+		suggestionNode.Outcomes,
+		"failure",
+		nodeIDsByKey,
+	)
+	if err != nil {
+		return err
+	}
+	if suggestionNode.Content != "challenge" && successNodeID == nil && failureNodeID == nil {
 		return nil
 	}
 
 	challenge := &models.QuestArchetypeChallenge{
-		ID:             uuid.New(),
-		Reward:         0,
-		Difficulty:     0,
-		UnlockedNodeID: nextNodeID,
+		ID:                    uuid.New(),
+		Reward:                0,
+		Difficulty:            0,
+		UnlockedNodeID:        successNodeID,
+		FailureUnlockedNodeID: failureNodeID,
 	}
 	if err := s.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
 		return fmt.Errorf("failed to create quest archetype link: %w", err)
 	}
 	log.Printf(
-		"[main-story-convert][quest-archetype-suggestion][link] node=%s challenge=%s nextNode=%v creating explicit node-challenge join",
+		"[main-story-convert][quest-archetype-suggestion][link] node=%s challenge=%s successNext=%v failureNext=%v creating explicit node-challenge join",
 		node.ID.String(),
 		challenge.ID.String(),
-		nextNodeID,
+		successNodeID,
+		failureNodeID,
 	)
 	return s.dbClient.QuestArchetypeNodeChallenge().Create(ctx, &models.QuestArchetypeNodeChallenge{
 		ID:                        uuid.New(),
 		QuestArchetypeChallengeID: challenge.ID,
 		QuestArchetypeNodeID:      node.ID,
 	})
+}
+
+func questArchetypeSuggestionOutcomeNodeID(
+	outcomes models.QuestArchetypeSuggestionNodeOutcomes,
+	outcomeKind string,
+	nodeIDsByKey map[string]uuid.UUID,
+) (*uuid.UUID, error) {
+	for _, outcome := range outcomes {
+		if !strings.EqualFold(strings.TrimSpace(outcome.Outcome), outcomeKind) {
+			continue
+		}
+		nextNodeKey := strings.TrimSpace(outcome.NextNodeKey)
+		if nextNodeKey == "" {
+			return nil, fmt.Errorf("%s branch is missing a next node key", outcomeKind)
+		}
+		nodeID, ok := nodeIDsByKey[nextNodeKey]
+		if !ok {
+			return nil, fmt.Errorf("%s branch points to unknown node %q", outcomeKind, nextNodeKey)
+		}
+		return &nodeID, nil
+	}
+	return nil, nil
 }
 
 func (s *server) createQuestArchetypeSuggestionChallengeTemplate(

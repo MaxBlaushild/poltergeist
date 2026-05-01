@@ -6099,6 +6099,7 @@ func (s *server) discoverZone(ctx *gin.Context) {
 		user.ID,
 		models.RandomRewardSizeSmall,
 		fmt.Sprintf("zone:%s:user:%s", zone.ID, user.ID),
+		buildRandomRewardContextForZone(zone),
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -12390,6 +12391,7 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 			user.ID,
 			challenge.RandomRewardSize,
 			fmt.Sprintf("challenge:%s:user:%s", challenge.ID, user.ID),
+			buildRandomRewardContextForChallenge(challenge),
 		)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -12442,10 +12444,11 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx,
 		participantIDs,
 		user.ID,
-		resolveBaseMaterialRewards(
+		resolveBaseMaterialRewardsForContext(
 			challenge.RewardMode,
 			challenge.MaterialRewards,
 			fmt.Sprintf("challenge:%s:user:%s:materials", challenge.ID, user.ID),
+			buildRandomRewardContextForChallenge(challenge),
 		),
 		"challenge",
 		&challenge.ID,
@@ -14064,6 +14067,7 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 			user.ID,
 			rewardSize,
 			fmt.Sprintf("point_of_interest:%s:user:%s", pointOfInterest.ID, user.ID),
+			buildRandomRewardContextForPointOfInterest(pointOfInterest),
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -14103,10 +14107,11 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		c,
 		user.ID,
-		resolveBaseMaterialRewards(
+		resolveBaseMaterialRewardsForContext(
 			pointOfInterest.RewardMode,
 			pointOfInterest.MaterialRewards,
 			fmt.Sprintf("point_of_interest:%s:user:%s:materials", pointOfInterest.ID, user.ID),
+			buildRandomRewardContextForPointOfInterest(pointOfInterest),
 		),
 		"point_of_interest",
 		&pointOfInterest.ID,
@@ -17284,6 +17289,7 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 			user.ID,
 			rewardSize,
 			fmt.Sprintf("treasure_chest:%s:user:%s", treasureChest.ID, user.ID),
+			buildRandomRewardContextForTreasureChest(treasureChest),
 		)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -17321,10 +17327,11 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		user.ID,
-		resolveBaseMaterialRewards(
+		resolveBaseMaterialRewardsForContext(
 			treasureChest.RewardMode,
 			treasureChest.MaterialRewards,
 			fmt.Sprintf("treasure_chest:%s:user:%s:materials", treasureChest.ID, user.ID),
+			buildRandomRewardContextForTreasureChest(treasureChest),
 		),
 		"treasure_chest",
 		&treasureChest.ID,
@@ -19819,6 +19826,12 @@ func (s *server) performScenario(ctx *gin.Context) {
 				user.ID,
 				scenarioRandomRewardSize,
 				fmt.Sprintf("scenario:%s:user:%s", scenario.ID, user.ID),
+				buildRandomRewardContextForScenario(
+					scenario,
+					selectedOption,
+					statTag,
+					proficiencies,
+				),
 			)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -19859,7 +19872,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx,
 			participantIDs,
 			user.ID,
-			resolveBaseMaterialRewards(
+			resolveBaseMaterialRewardsForContext(
 				scenarioRewardMode,
 				func() models.BaseMaterialRewards {
 					if !scenario.OpenEnded &&
@@ -19870,6 +19883,12 @@ func (s *server) performScenario(ctx *gin.Context) {
 					return scenario.MaterialRewards
 				}(),
 				fmt.Sprintf("scenario:%s:user:%s:materials", scenario.ID, user.ID),
+				buildRandomRewardContextForScenario(
+					scenario,
+					selectedOption,
+					statTag,
+					proficiencies,
+				),
 			),
 			"scenario",
 			&scenario.ID,
