@@ -9,30 +9,32 @@ import (
 )
 
 type Exposition struct {
-	ID                 uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt          time.Time               `json:"createdAt"`
-	UpdatedAt          time.Time               `json:"updatedAt"`
-	ZoneID             uuid.UUID               `json:"zoneId" gorm:"column:zone_id"`
-	ZoneKind           string                  `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
-	Zone               Zone                    `json:"zone"`
-	PointOfInterestID  *uuid.UUID              `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
-	PointOfInterest    *PointOfInterest        `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
-	Latitude           float64                 `json:"latitude"`
-	Longitude          float64                 `json:"longitude"`
-	Geometry           string                  `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	Title              string                  `json:"title"`
-	Description        string                  `json:"description"`
-	Dialogue           DialogueSequence        `json:"dialogue" gorm:"type:jsonb"`
-	RequiredStoryFlags StringArray             `json:"requiredStoryFlags" gorm:"column:required_story_flags;type:jsonb;default:'[]'"`
-	ImageURL           string                  `json:"imageUrl" gorm:"column:image_url"`
-	ThumbnailURL       string                  `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	RewardMode         RewardMode              `json:"rewardMode" gorm:"column:reward_mode"`
-	RandomRewardSize   RandomRewardSize        `json:"randomRewardSize" gorm:"column:random_reward_size"`
-	RewardExperience   int                     `json:"rewardExperience" gorm:"column:reward_experience"`
-	RewardGold         int                     `json:"rewardGold" gorm:"column:reward_gold"`
-	MaterialRewards    BaseMaterialRewards     `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
-	ItemRewards        []ExpositionItemReward  `json:"itemRewards" gorm:"foreignKey:ExpositionID"`
-	SpellRewards       []ExpositionSpellReward `json:"spellRewards" gorm:"foreignKey:ExpositionID"`
+	ID                   uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt            time.Time               `json:"createdAt"`
+	UpdatedAt            time.Time               `json:"updatedAt"`
+	ZoneID               uuid.UUID               `json:"zoneId" gorm:"column:zone_id"`
+	ZoneKind             string                  `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
+	Zone                 Zone                    `json:"zone"`
+	ExpositionTemplateID *uuid.UUID              `json:"expositionTemplateId,omitempty" gorm:"column:exposition_template_id;type:uuid"`
+	ExpositionTemplate   *ExpositionTemplate     `json:"expositionTemplate,omitempty" gorm:"foreignKey:ExpositionTemplateID"`
+	PointOfInterestID    *uuid.UUID              `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
+	PointOfInterest      *PointOfInterest        `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
+	Latitude             float64                 `json:"latitude"`
+	Longitude            float64                 `json:"longitude"`
+	Geometry             string                  `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Title                string                  `json:"title"`
+	Description          string                  `json:"description"`
+	Dialogue             DialogueSequence        `json:"dialogue" gorm:"type:jsonb"`
+	RequiredStoryFlags   StringArray             `json:"requiredStoryFlags" gorm:"column:required_story_flags;type:jsonb;default:'[]'"`
+	ImageURL             string                  `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL         string                  `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	RewardMode           RewardMode              `json:"rewardMode" gorm:"column:reward_mode"`
+	RandomRewardSize     RandomRewardSize        `json:"randomRewardSize" gorm:"column:random_reward_size"`
+	RewardExperience     int                     `json:"rewardExperience" gorm:"column:reward_experience"`
+	RewardGold           int                     `json:"rewardGold" gorm:"column:reward_gold"`
+	MaterialRewards      BaseMaterialRewards     `json:"materialRewards" gorm:"column:material_rewards_json;type:jsonb;default:'[]'"`
+	ItemRewards          []ExpositionItemReward  `json:"itemRewards" gorm:"foreignKey:ExpositionID"`
+	SpellRewards         []ExpositionSpellReward `json:"spellRewards" gorm:"foreignKey:ExpositionID"`
 }
 
 func (e *Exposition) TableName() string {
@@ -40,6 +42,7 @@ func (e *Exposition) TableName() string {
 }
 
 func (e *Exposition) BeforeSave(tx *gorm.DB) error {
+	e.ZoneKind = NormalizeZoneKind(e.ZoneKind)
 	if e.RequiredStoryFlags == nil {
 		e.RequiredStoryFlags = StringArray{}
 	}

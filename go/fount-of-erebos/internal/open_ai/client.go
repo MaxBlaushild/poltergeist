@@ -25,21 +25,29 @@ import (
 )
 
 type client struct {
-	ai     *openai.Client
-	apiKey string
+	ai           *openai.Client
+	apiKey       string
+	consultModel string
 }
 
 type ClientConfig struct {
-	ApiKey string
+	ApiKey       string
+	ConsultModel string
 }
 
 func NewClient(config ClientConfig) OpenAiClient {
 	log.Println("Initializing OpenAI client")
 	ai := openai.NewClient(config.ApiKey)
 
+	consultModel := config.ConsultModel
+	if consultModel == "" {
+		consultModel = openai.GPT4o
+	}
+
 	return &client{
-		ai:     ai,
-		apiKey: config.ApiKey,
+		ai:           ai,
+		apiKey:       config.ApiKey,
+		consultModel: consultModel,
 	}
 }
 
@@ -210,7 +218,7 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 	resp, err := c.ai.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4o,
+			Model: c.consultModel,
 			ResponseFormat: &openai.ChatCompletionResponseFormat{
 				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
 			},

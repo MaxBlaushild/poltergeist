@@ -191,6 +191,22 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		)
 	}
 
+	questQueued, questFailed, err := p.seedQuestsForZone(ctx, zone, job)
+	if err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed quests: %w", err))
+	}
+	if questFailed > 0 {
+		log.Printf(
+			"Zone seed job %v seeded quest generation jobs with failures (queued=%d failed=%d)",
+			job.ID,
+			questQueued,
+			questFailed,
+		)
+	}
+
+	if err := p.seedExpositionsForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed expositions: %w", err))
+	}
 	if err := p.seedTreasureChestsForZone(ctx, zone, job); err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed treasure chests: %w", err))
 	}
@@ -278,6 +294,12 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueThumbnailTask(poiID uuid.UUID, imag
 type zoneSeedScenarioLocation struct {
 	Latitude  float64
 	Longitude float64
+}
+
+type zoneSeedExpositionLocation struct {
+	PointOfInterestID *uuid.UUID
+	Latitude          float64
+	Longitude         float64
 }
 
 func zoneSeedScenarioLocations(pois []models.ZoneSeedPointOfInterestDraft) []zoneSeedScenarioLocation {
@@ -507,6 +529,872 @@ func filterZoneSeedMonsterTemplatesByZoneKind(
 		filtered = append(filtered, template)
 	}
 	return filtered
+}
+
+func filterZoneSeedQuestArchetypes(
+	archetypes []*models.QuestArchetype,
+	zoneKind string,
+) []*models.QuestArchetype {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKind)
+	filtered := make([]*models.QuestArchetype, 0, len(archetypes))
+	for _, archetype := range archetypes {
+		if archetype == nil {
+			continue
+		}
+		if models.NormalizeQuestCategory(archetype.Category) != models.QuestCategorySide {
+			continue
+		}
+		if normalizedZoneKind != "" && models.NormalizeZoneKind(archetype.ZoneKind) != normalizedZoneKind {
+			continue
+		}
+		filtered = append(filtered, archetype)
+	}
+	return filtered
+}
+
+func filterZoneSeedExpositionTemplates(
+	templates []models.ExpositionTemplate,
+	zoneKind string,
+) []models.ExpositionTemplate {
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKind)
+	if normalizedZoneKind == "" {
+		return templates
+	}
+
+	matching := make([]models.ExpositionTemplate, 0, len(templates))
+	generic := make([]models.ExpositionTemplate, 0, len(templates))
+	for _, template := range templates {
+		templateZoneKind := models.NormalizeZoneKind(template.ZoneKind)
+		switch {
+		case templateZoneKind == normalizedZoneKind:
+			matching = append(matching, template)
+		case templateZoneKind == "":
+			generic = append(generic, template)
+		}
+	}
+	if len(matching) > 0 {
+		return append(matching, generic...)
+	}
+	return generic
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedQuestsForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) (queued int, failed int, err error) {
+	questCount := job.QuestCount
+	if questCount <= 0 {
+		return 0, 0, nil
+	}
+
+	effectiveZoneKind := models.NormalizeZoneKind(job.ZoneKind)
+	if effectiveZoneKind == "" && zone != nil {
+		effectiveZoneKind = models.NormalizeZoneKind(zone.Kind)
+	}
+
+	allArchetypes, err := p.dbClient.QuestArchetype().FindAll(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to load quest archetypes: %w", err)
+	}
+
+	archetypePool := filterZoneSeedQuestArchetypes(allArchetypes, effectiveZoneKind)
+	if len(archetypePool) < questCount {
+		generated, generateErr := p.generateZoneSeedQuestArchetypes(
+			ctx,
+			effectiveZoneKind,
+			questCount-len(archetypePool),
+			archetypePool,
+		)
+		if generateErr != nil {
+			if len(archetypePool) == 0 {
+				return 0, 0, generateErr
+			}
+			log.Printf(
+				"Zone seed quest archetype generation degraded for zone=%s zone_kind=%q: %v",
+				zone.ID,
+				effectiveZoneKind,
+				generateErr,
+			)
+		}
+		archetypePool = append(archetypePool, generated...)
+	}
+
+	if len(archetypePool) == 0 {
+		if effectiveZoneKind == "" {
+			return 0, 0, fmt.Errorf("no side quest archetypes available for zone seeding")
+		}
+		return 0, 0, fmt.Errorf("no side quest archetypes available for zone kind %q", effectiveZoneKind)
+	}
+
+	return p.enqueueZoneSeedQuestGenerationJobs(ctx, zone, archetypePool, questCount)
+}
+
+func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
+	ctx context.Context,
+	zone *models.Zone,
+	archetypePool []*models.QuestArchetype,
+	questCount int,
+) (queued int, failed int, err error) {
+	if zone == nil {
+		return 0, 0, fmt.Errorf("zone is required")
+	}
+	if questCount <= 0 || len(archetypePool) == 0 {
+		return 0, 0, nil
+	}
+
+	order := rand.Perm(len(archetypePool))
+	for i := 0; i < questCount; i++ {
+		if len(order) == 0 {
+			order = rand.Perm(len(archetypePool))
+		}
+		archetype := archetypePool[order[0]]
+		order = order[1:]
+		if archetype == nil {
+			failed++
+			continue
+		}
+
+		now := time.Now()
+		job := &models.QuestGenerationJob{
+			ID:               uuid.New(),
+			CreatedAt:        now,
+			UpdatedAt:        now,
+			ZoneID:           zone.ID,
+			QuestArchetypeID: archetype.ID,
+			Status:           models.QuestGenerationStatusQueued,
+			TotalCount:       1,
+			QuestIDs:         models.StringArray{},
+		}
+		if err := p.dbClient.QuestGenerationJob().Create(ctx, job); err != nil {
+			return queued, failed, fmt.Errorf(
+				"failed to create quest generation job %d/%d for archetype %s: %w",
+				i+1,
+				questCount,
+				archetype.ID,
+				err,
+			)
+		}
+
+		payload, marshalErr := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
+			ZoneID:               zone.ID,
+			QuestArchetypeID:     archetype.ID,
+			QuestGenerationJobID: &job.ID,
+		})
+		if marshalErr != nil {
+			p.failZoneSeedQuestGenerationJob(ctx, job, marshalErr)
+			failed++
+			continue
+		}
+		if p.asyncClient == nil {
+			p.failZoneSeedQuestGenerationJob(ctx, job, fmt.Errorf("async client unavailable"))
+			failed++
+			continue
+		}
+		if _, enqueueErr := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); enqueueErr != nil {
+			p.failZoneSeedQuestGenerationJob(ctx, job, enqueueErr)
+			failed++
+			continue
+		}
+
+		queued++
+	}
+
+	return queued, failed, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) failZoneSeedQuestGenerationJob(
+	ctx context.Context,
+	job *models.QuestGenerationJob,
+	err error,
+) {
+	if job == nil || err == nil {
+		return
+	}
+	msg := err.Error()
+	job.Status = models.QuestGenerationStatusFailed
+	job.ErrorMessage = &msg
+	job.UpdatedAt = time.Now()
+	if updateErr := p.dbClient.QuestGenerationJob().Update(ctx, job); updateErr != nil {
+		log.Printf("Failed to mark zone seed quest generation job %s as failed: %v", job.ID, updateErr)
+	}
+}
+
+func (p *ApplyZoneSeedDraftProcessor) generateZoneSeedQuestArchetypes(
+	ctx context.Context,
+	effectiveZoneKind string,
+	count int,
+	existing []*models.QuestArchetype,
+) ([]*models.QuestArchetype, error) {
+	if count <= 0 {
+		return []*models.QuestArchetype{}, nil
+	}
+
+	zoneKind, err := loadOptionalZoneKind(ctx, p.dbClient, effectiveZoneKind)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load zone kind for quest archetype generation: %w", err)
+	}
+
+	locationArchetypes, err := p.dbClient.LocationArchetype().FindAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load location archetypes for quest generation: %w", err)
+	}
+	if len(locationArchetypes) == 0 {
+		return nil, fmt.Errorf("no location archetypes available to generate quest archetypes")
+	}
+
+	allMonsterTemplates, err := p.dbClient.MonsterTemplate().FindAllActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster templates for quest generation: %w", err)
+	}
+	monsterTemplates := filterZoneSeedMonsterTemplatesByZoneKind(allMonsterTemplates, effectiveZoneKind)
+	if len(monsterTemplates) == 0 {
+		monsterTemplates = allMonsterTemplates
+	}
+
+	created := make([]*models.QuestArchetype, 0, count)
+	existingCount := len(existing)
+	for i := 0; i < count; i++ {
+		archetype, createErr := p.createGeneratedZoneSeedQuestArchetype(
+			ctx,
+			zoneKind,
+			locationArchetypes,
+			monsterTemplates,
+			existingCount+i,
+		)
+		if createErr != nil {
+			if len(created) > 0 {
+				return created, createErr
+			}
+			return nil, createErr
+		}
+		created = append(created, archetype)
+	}
+
+	return created, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedQuestArchetype(
+	ctx context.Context,
+	zoneKind *models.ZoneKind,
+	locationArchetypes []*models.LocationArchetype,
+	monsterTemplates []models.MonsterTemplate,
+	ordinal int,
+) (*models.QuestArchetype, error) {
+	if len(locationArchetypes) == 0 {
+		return nil, fmt.Errorf("location archetypes are required")
+	}
+
+	primaryLocation := locationArchetypes[ordinal%len(locationArchetypes)]
+	difficulty := 1 + (ordinal % 3)
+
+	firstNode, finalNodeType, err := p.createGeneratedZoneSeedQuestFirstNode(
+		ctx,
+		zoneKind,
+		primaryLocation,
+		ordinal,
+		difficulty,
+	)
+	if err != nil {
+		return nil, err
+	}
+	secondNode, err := p.createGeneratedZoneSeedQuestSecondNode(
+		ctx,
+		zoneKind,
+		primaryLocation,
+		monsterTemplates,
+		ordinal,
+		difficulty,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if secondNode != nil {
+		if err := p.linkZoneSeedQuestArchetypeNodes(ctx, firstNode.ID, &secondNode.ID); err != nil {
+			return nil, err
+		}
+		finalNodeType = secondNode.NodeType
+	}
+
+	questArchetype := &models.QuestArchetype{
+		ID:                          uuid.New(),
+		Name:                        zoneSeedGeneratedQuestArchetypeName(zoneKind, primaryLocation, ordinal),
+		Description:                 zoneSeedGeneratedQuestArchetypeDescription(zoneKind, primaryLocation, finalNodeType),
+		ZoneKind:                    models.ZoneKindPromptSlug(zoneKind),
+		Category:                    models.QuestCategorySide,
+		AcceptanceDialogue:          models.DialogueSequenceFromStringLines(zoneSeedGeneratedQuestAcceptanceDialogue(zoneKind, primaryLocation)),
+		ImageURL:                    "",
+		DifficultyMode:              models.QuestDifficultyModeScale,
+		Difficulty:                  difficulty,
+		MonsterEncounterTargetLevel: difficulty,
+		DefaultGold:                 0,
+		RewardMode:                  models.RewardModeRandom,
+		RandomRewardSize:            models.RandomRewardSizeSmall,
+		RewardExperience:            0,
+		MaterialRewards:             models.BaseMaterialRewards{},
+		CharacterTags:               models.StringArray{},
+		InternalTags:                zoneSeedGeneratedQuestInternalTags(zoneKind),
+		RootID:                      firstNode.ID,
+		ItemRewards:                 []models.QuestArchetypeItemReward{},
+		SpellRewards:                []models.QuestArchetypeSpellReward{},
+	}
+	if err := p.dbClient.QuestArchetype().Create(ctx, questArchetype); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest archetype: %w", err)
+	}
+	return questArchetype, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedQuestFirstNode(
+	ctx context.Context,
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+	ordinal int,
+	difficulty int,
+) (*models.QuestArchetypeNode, models.QuestArchetypeNodeType, error) {
+	if ordinal%3 == 1 {
+		template, err := p.createGeneratedZoneSeedScenarioTemplate(
+			ctx,
+			zoneKind,
+			zoneSeedGeneratedScenarioPrompt(zoneKind, locationArchetype, false),
+			difficulty,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+		node, err := p.createGeneratedZoneSeedScenarioNode(ctx, template.ID, &locationArchetype.ID, 0)
+		return node, models.QuestArchetypeNodeTypeScenario, err
+	}
+
+	template, err := p.createGeneratedZoneSeedChallengeTemplate(
+		ctx,
+		locationArchetype,
+		zoneSeedGeneratedChallengeQuestion(zoneKind, locationArchetype),
+		zoneSeedGeneratedChallengeDescription(zoneKind, locationArchetype),
+		difficulty,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	node, err := p.createGeneratedZoneSeedChallengeNode(ctx, template.ID, &locationArchetype.ID, 0)
+	return node, models.QuestArchetypeNodeTypeChallenge, err
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedQuestSecondNode(
+	ctx context.Context,
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+	monsterTemplates []models.MonsterTemplate,
+	ordinal int,
+	difficulty int,
+) (*models.QuestArchetypeNode, error) {
+	proximityMeters := 120 + ((ordinal % 3) * 40)
+	if len(monsterTemplates) > 0 && ordinal%3 != 0 {
+		template := monsterTemplates[ordinal%len(monsterTemplates)]
+		return p.createGeneratedZoneSeedMonsterNode(ctx, template.ID, proximityMeters, difficulty)
+	}
+
+	template, err := p.createGeneratedZoneSeedScenarioTemplate(
+		ctx,
+		zoneKind,
+		zoneSeedGeneratedScenarioPrompt(zoneKind, locationArchetype, true),
+		difficulty,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return p.createGeneratedZoneSeedScenarioNode(ctx, template.ID, nil, proximityMeters)
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedChallengeTemplate(
+	ctx context.Context,
+	locationArchetype *models.LocationArchetype,
+	question string,
+	description string,
+	difficulty int,
+) (*models.ChallengeTemplate, error) {
+	if locationArchetype == nil {
+		return nil, fmt.Errorf("location archetype is required for generated challenge templates")
+	}
+	template := &models.ChallengeTemplate{
+		ID:                  uuid.New(),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+		LocationArchetypeID: locationArchetype.ID,
+		Question:            strings.TrimSpace(question),
+		Description:         strings.TrimSpace(description),
+		ImageURL:            "",
+		ThumbnailURL:        "",
+		ScaleWithUserLevel:  false,
+		RewardMode:          models.RewardModeRandom,
+		RandomRewardSize:    models.RandomRewardSizeSmall,
+		RewardExperience:    0,
+		Reward:              0,
+		InventoryItemID:     nil,
+		ItemChoiceRewards:   models.ChallengeTemplateItemChoiceRewards{},
+		SubmissionType:      models.DefaultQuestNodeSubmissionType(),
+		Difficulty:          difficulty,
+		StatTags:            models.StringArray{},
+		Proficiency:         nil,
+	}
+	if err := p.dbClient.ChallengeTemplate().Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest challenge template: %w", err)
+	}
+	return template, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedScenarioTemplate(
+	ctx context.Context,
+	zoneKind *models.ZoneKind,
+	prompt string,
+	difficulty int,
+) (*models.ScenarioTemplate, error) {
+	template := &models.ScenarioTemplate{
+		ID:                        uuid.New(),
+		CreatedAt:                 time.Now(),
+		UpdatedAt:                 time.Now(),
+		ZoneKind:                  models.ZoneKindPromptSlug(zoneKind),
+		Prompt:                    strings.TrimSpace(prompt),
+		ImageURL:                  "",
+		ThumbnailURL:              "",
+		ScaleWithUserLevel:        false,
+		RewardMode:                models.RewardModeRandom,
+		RandomRewardSize:          models.RandomRewardSizeSmall,
+		Difficulty:                difficulty,
+		RewardExperience:          0,
+		RewardGold:                0,
+		OpenEnded:                 true,
+		FailurePenaltyMode:        models.ScenarioFailurePenaltyModeShared,
+		FailureHealthDrainType:    models.ScenarioFailureDrainTypeNone,
+		FailureHealthDrainValue:   0,
+		FailureManaDrainType:      models.ScenarioFailureDrainTypeNone,
+		FailureManaDrainValue:     0,
+		FailureStatuses:           models.ScenarioFailureStatusTemplates{},
+		SuccessRewardMode:         models.ScenarioSuccessRewardModeShared,
+		SuccessHealthRestoreType:  models.ScenarioFailureDrainTypeNone,
+		SuccessHealthRestoreValue: 0,
+		SuccessManaRestoreType:    models.ScenarioFailureDrainTypeNone,
+		SuccessManaRestoreValue:   0,
+		SuccessStatuses:           models.ScenarioFailureStatusTemplates{},
+		Options:                   models.ScenarioTemplateOptions{},
+		ItemRewards:               models.ScenarioTemplateRewards{},
+		ItemChoiceRewards:         models.ScenarioTemplateRewards{},
+		SpellRewards:              models.ScenarioTemplateSpellRewards{},
+	}
+	if err := p.dbClient.ScenarioTemplate().Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest scenario template: %w", err)
+	}
+	return template, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedChallengeNode(
+	ctx context.Context,
+	challengeTemplateID uuid.UUID,
+	locationArchetypeID *uuid.UUID,
+	proximityMeters int,
+) (*models.QuestArchetypeNode, error) {
+	node := &models.QuestArchetypeNode{
+		ID:                       uuid.New(),
+		CreatedAt:                time.Now(),
+		UpdatedAt:                time.Now(),
+		NodeType:                 models.QuestArchetypeNodeTypeChallenge,
+		LocationArchetypeID:      locationArchetypeID,
+		ChallengeTemplateID:      &challengeTemplateID,
+		EncounterProximityMeters: proximityMeters,
+		Difficulty:               0,
+	}
+	if err := p.dbClient.QuestArchetypeNode().Create(ctx, node); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest challenge node: %w", err)
+	}
+	return node, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedScenarioNode(
+	ctx context.Context,
+	scenarioTemplateID uuid.UUID,
+	locationArchetypeID *uuid.UUID,
+	proximityMeters int,
+) (*models.QuestArchetypeNode, error) {
+	node := &models.QuestArchetypeNode{
+		ID:                       uuid.New(),
+		CreatedAt:                time.Now(),
+		UpdatedAt:                time.Now(),
+		NodeType:                 models.QuestArchetypeNodeTypeScenario,
+		LocationArchetypeID:      locationArchetypeID,
+		ScenarioTemplateID:       &scenarioTemplateID,
+		EncounterProximityMeters: proximityMeters,
+		Difficulty:               0,
+	}
+	if err := p.dbClient.QuestArchetypeNode().Create(ctx, node); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest scenario node: %w", err)
+	}
+	return node, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createGeneratedZoneSeedMonsterNode(
+	ctx context.Context,
+	monsterTemplateID uuid.UUID,
+	proximityMeters int,
+	targetLevel int,
+) (*models.QuestArchetypeNode, error) {
+	node := &models.QuestArchetypeNode{
+		ID:                        uuid.New(),
+		CreatedAt:                 time.Now(),
+		UpdatedAt:                 time.Now(),
+		NodeType:                  models.QuestArchetypeNodeTypeMonsterEncounter,
+		MonsterTemplateIDs:        models.StringArray{monsterTemplateID.String()},
+		EncounterType:             models.MonsterEncounterTypeMonster,
+		TargetLevel:               maxInt(1, targetLevel),
+		EncounterRewardMode:       models.RewardModeRandom,
+		EncounterRandomRewardSize: models.RandomRewardSizeSmall,
+		EncounterRewardExperience: 0,
+		EncounterRewardGold:       0,
+		EncounterMaterialRewards:  models.BaseMaterialRewards{},
+		EncounterItemRewards:      models.MonsterEncounterRewardItems{},
+		EncounterProximityMeters:  proximityMeters,
+		Difficulty:                0,
+	}
+	if err := p.dbClient.QuestArchetypeNode().Create(ctx, node); err != nil {
+		return nil, fmt.Errorf("failed to create generated quest monster node: %w", err)
+	}
+	return node, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) linkZoneSeedQuestArchetypeNodes(
+	ctx context.Context,
+	parentNodeID uuid.UUID,
+	nextNodeID *uuid.UUID,
+) error {
+	challenge := &models.QuestArchetypeChallenge{
+		ID:             uuid.New(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		Reward:         0,
+		Difficulty:     0,
+		UnlockedNodeID: nextNodeID,
+	}
+	if err := p.dbClient.QuestArchetypeChallenge().Create(ctx, challenge); err != nil {
+		return fmt.Errorf("failed to create generated quest archetype link: %w", err)
+	}
+	if err := p.dbClient.QuestArchetypeNodeChallenge().Create(ctx, &models.QuestArchetypeNodeChallenge{
+		ID:                        uuid.New(),
+		CreatedAt:                 time.Now(),
+		UpdatedAt:                 time.Now(),
+		QuestArchetypeChallengeID: challenge.ID,
+		QuestArchetypeNodeID:      parentNodeID,
+	}); err != nil {
+		return fmt.Errorf("failed to attach generated quest archetype link: %w", err)
+	}
+	return nil
+}
+
+func zoneSeedGeneratedQuestInternalTags(zoneKind *models.ZoneKind) models.StringArray {
+	tags := []string{"zone_seed_generated", "auto_generated"}
+	if slug := strings.TrimSpace(models.ZoneKindPromptSlug(zoneKind)); slug != "" {
+		tags = append(tags, "zone_kind_"+slug)
+	}
+	return models.StringArray(models.NormalizeTagList(tags))
+}
+
+func zoneSeedGeneratedQuestArchetypeName(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+	ordinal int,
+) string {
+	prefix := zoneSeedGeneratedQuestThemeTitle(zoneKind)
+	suffixes := []string{"Trace", "Watch", "Patrol", "Whisper", "Vigil", "Crossing"}
+	suffix := suffixes[ordinal%len(suffixes)]
+	location := strings.TrimSpace(zoneSeedLocationArchetypeLabel(locationArchetype))
+	if location != "" && len(strings.Fields(location)) == 1 {
+		return fmt.Sprintf("%s %s %s", prefix, location, suffix)
+	}
+	return fmt.Sprintf("%s %s", prefix, suffix)
+}
+
+func zoneSeedGeneratedQuestArchetypeDescription(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+	finalNodeType models.QuestArchetypeNodeType,
+) string {
+	location := strings.ToLower(zoneSeedLocationArchetypeLabel(locationArchetype))
+	theme := strings.ToLower(zoneSeedGeneratedQuestThemeLabel(zoneKind))
+	if location == "" {
+		location = "landmark"
+	}
+	switch finalNodeType {
+	case models.QuestArchetypeNodeTypeMonsterEncounter:
+		return fmt.Sprintf(
+			"A reusable side quest that begins at a %s and follows signs of %s unrest into a nearby confrontation.",
+			location,
+			theme,
+		)
+	default:
+		return fmt.Sprintf(
+			"A reusable side quest that starts at a %s and unspools into a fresh %s complication nearby.",
+			location,
+			theme,
+		)
+	}
+}
+
+func zoneSeedGeneratedQuestAcceptanceDialogue(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+) []string {
+	theme := strings.ToLower(zoneSeedGeneratedQuestThemeLabel(zoneKind))
+	location := strings.ToLower(zoneSeedLocationArchetypeLabel(locationArchetype))
+	if location == "" {
+		location = "nearest landmark"
+	}
+	return []string{
+		fmt.Sprintf("The %s paths are stirring again.", theme),
+		fmt.Sprintf("Start at the %s and follow the trail from there.", location),
+		"Bring back proof of what you find, and I will see you rewarded.",
+	}
+}
+
+func zoneSeedGeneratedChallengeQuestion(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+) string {
+	location := strings.ToLower(zoneSeedLocationArchetypeLabel(locationArchetype))
+	if location == "" {
+		location = "site"
+	}
+	return fmt.Sprintf(
+		"Photograph a detail at the %s that shows this place has recently changed.",
+		location,
+	)
+}
+
+func zoneSeedGeneratedChallengeDescription(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+) string {
+	theme := strings.ToLower(zoneSeedGeneratedQuestThemeLabel(zoneKind))
+	location := strings.ToLower(zoneSeedLocationArchetypeLabel(locationArchetype))
+	if location == "" {
+		location = "landmark"
+	}
+	return fmt.Sprintf(
+		"Signs of %s trouble are easiest to spot around the %s. Capture one clear detail that proves the disturbance is real.",
+		theme,
+		location,
+	)
+}
+
+func zoneSeedGeneratedScenarioPrompt(
+	zoneKind *models.ZoneKind,
+	locationArchetype *models.LocationArchetype,
+	proximity bool,
+) string {
+	theme := strings.ToLower(zoneSeedGeneratedQuestThemeLabel(zoneKind))
+	location := strings.ToLower(zoneSeedLocationArchetypeLabel(locationArchetype))
+	if location == "" {
+		location = "landmark"
+	}
+	if proximity {
+		return fmt.Sprintf(
+			"A fresh development tied to %s unrest emerges nearby after leaving the %s. What do you do?",
+			theme,
+			location,
+		)
+	}
+	return fmt.Sprintf(
+		"At the %s, a complication tied to %s unrest unfolds in front of you. What do you do?",
+		location,
+		theme,
+	)
+}
+
+func zoneSeedGeneratedQuestThemeLabel(zoneKind *models.ZoneKind) string {
+	label := strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind))
+	if label != "" {
+		return label
+	}
+	if slug := strings.TrimSpace(models.ZoneKindPromptSlug(zoneKind)); slug != "" {
+		return strings.ReplaceAll(slug, "-", " ")
+	}
+	return "local"
+}
+
+func zoneSeedGeneratedQuestThemeTitle(zoneKind *models.ZoneKind) string {
+	label := strings.TrimSpace(zoneSeedGeneratedQuestThemeLabel(zoneKind))
+	if label == "" {
+		return "Local"
+	}
+	words := strings.Fields(label)
+	for index, word := range words {
+		if word == "" {
+			continue
+		}
+		runes := []rune(strings.ToLower(word))
+		runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+		words[index] = string(runes)
+	}
+	return strings.Join(words, " ")
+}
+
+func zoneSeedLocationArchetypeLabel(locationArchetype *models.LocationArchetype) string {
+	if locationArchetype == nil {
+		return "landmark"
+	}
+	label := strings.TrimSpace(locationArchetype.Name)
+	if label != "" {
+		return label
+	}
+	return "landmark"
+}
+
+func zoneSeedLocationFromPointOfInterest(poi *models.PointOfInterest) (zoneSeedExpositionLocation, bool) {
+	if poi == nil {
+		return zoneSeedExpositionLocation{}, false
+	}
+	latitude, latErr := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+	longitude, lngErr := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+	if latErr != nil || lngErr != nil {
+		return zoneSeedExpositionLocation{}, false
+	}
+	if latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 {
+		return zoneSeedExpositionLocation{}, false
+	}
+	return zoneSeedExpositionLocation{
+		PointOfInterestID: &poi.ID,
+		Latitude:          latitude,
+		Longitude:         longitude,
+	}, true
+}
+
+func (p *ApplyZoneSeedDraftProcessor) loadZoneSeedExpositionLocations(
+	ctx context.Context,
+	pois []models.ZoneSeedPointOfInterestDraft,
+) ([]zoneSeedExpositionLocation, error) {
+	locations := make([]zoneSeedExpositionLocation, 0, len(pois))
+	for _, draftPOI := range pois {
+		trimmedPlaceID := strings.TrimSpace(draftPOI.PlaceID)
+		if trimmedPlaceID != "" {
+			poi, err := p.dbClient.PointOfInterest().FindByGoogleMapsPlaceID(ctx, trimmedPlaceID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load point of interest %q: %w", trimmedPlaceID, err)
+			}
+			if location, ok := zoneSeedLocationFromPointOfInterest(poi); ok {
+				locations = append(locations, location)
+				continue
+			}
+		}
+		if draftPOI.Latitude < -90 || draftPOI.Latitude > 90 || draftPOI.Longitude < -180 || draftPOI.Longitude > 180 {
+			continue
+		}
+		locations = append(locations, zoneSeedExpositionLocation{
+			Latitude:  draftPOI.Latitude,
+			Longitude: draftPOI.Longitude,
+		})
+	}
+	return locations, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedExpositionsForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	expositionCount := job.ExpositionCount
+	if expositionCount <= 0 {
+		return nil
+	}
+
+	templates, err := p.dbClient.ExpositionTemplate().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load exposition templates: %w", err)
+	}
+
+	effectiveZoneKind := models.NormalizeZoneKind(job.ZoneKind)
+	if effectiveZoneKind == "" && zone != nil {
+		effectiveZoneKind = models.NormalizeZoneKind(zone.Kind)
+	}
+
+	templates = filterZoneSeedExpositionTemplates(templates, effectiveZoneKind)
+	if len(templates) == 0 {
+		if effectiveZoneKind == "" {
+			return fmt.Errorf("no exposition templates available for zone seeding")
+		}
+		return fmt.Errorf("no exposition templates available for zone kind %q", effectiveZoneKind)
+	}
+
+	poiLocations, err := p.loadZoneSeedExpositionLocations(ctx, job.Draft.PointsOfInterest)
+	if err != nil {
+		return err
+	}
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	templateOrder := rand.Perm(len(templates))
+	for i := 0; i < expositionCount; i++ {
+		if len(templateOrder) == 0 {
+			templateOrder = rand.Perm(len(templates))
+		}
+		template := templates[templateOrder[0]]
+		templateOrder = templateOrder[1:]
+
+		location := zoneSeedExpositionLocation{}
+		if len(poiLocations) > 0 {
+			location = poiLocations[rand.Intn(len(poiLocations))]
+		} else {
+			fallback := p.randomLocationForZone(zone, fallbackLocations)
+			location = zoneSeedExpositionLocation{
+				Latitude:  fallback.Latitude,
+				Longitude: fallback.Longitude,
+			}
+		}
+
+		expositionZoneKind := effectiveZoneKind
+		if expositionZoneKind == "" {
+			expositionZoneKind = models.NormalizeZoneKind(template.ZoneKind)
+		}
+		data := models.ExpositionTemplateDataFromExpositionTemplate(&template)
+		exposition := data.Instantiate(models.ExpositionTemplateInstanceOptions{
+			ZoneID:               zone.ID,
+			ZoneKind:             expositionZoneKind,
+			ExpositionTemplateID: &template.ID,
+			PointOfInterestID:    location.PointOfInterestID,
+			Latitude:             location.Latitude,
+			Longitude:            location.Longitude,
+		})
+		if err := p.dbClient.Exposition().Create(ctx, exposition); err != nil {
+			return fmt.Errorf(
+				"failed to create exposition %d/%d from template %s: %w",
+				i+1,
+				expositionCount,
+				template.ID,
+				err,
+			)
+		}
+		if err := p.dbClient.Exposition().ReplaceItemRewards(
+			ctx,
+			exposition.ID,
+			data.ItemRewardsForExposition(exposition.ID),
+		); err != nil {
+			return fmt.Errorf(
+				"failed to attach exposition item rewards %d/%d from template %s: %w",
+				i+1,
+				expositionCount,
+				template.ID,
+				err,
+			)
+		}
+		if err := p.dbClient.Exposition().ReplaceSpellRewards(
+			ctx,
+			exposition.ID,
+			data.SpellRewardsForExposition(exposition.ID),
+		); err != nil {
+			return fmt.Errorf(
+				"failed to attach exposition spell rewards %d/%d from template %s: %w",
+				i+1,
+				expositionCount,
+				template.ID,
+				err,
+			)
+		}
+	}
+
+	return nil
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(

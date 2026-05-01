@@ -33,6 +33,7 @@ type ZoneKind struct {
 	PatternTileGenerationStatus string      `json:"patternTileGenerationStatus" gorm:"column:pattern_tile_generation_status"`
 	PatternTileGenerationError  string      `json:"patternTileGenerationError" gorm:"column:pattern_tile_generation_error"`
 	PlaceCountRatio             float64     `json:"placeCountRatio" gorm:"column:place_count_ratio"`
+	QuestCountRatio             float64     `json:"questCountRatio" gorm:"column:quest_count_ratio"`
 	MonsterCountRatio           float64     `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
 	BossEncounterCountRatio     float64     `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
 	RaidEncounterCountRatio     float64     `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
@@ -125,6 +126,7 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.PatternTileGenerationError = strings.TrimSpace(z.PatternTileGenerationError)
 	z.PatternTileGenerationStatus = normalizeZoneKindPatternTileGenerationStatus(z.PatternTileGenerationStatus)
 	z.PlaceCountRatio = normalizeZoneKindRatio(z.PlaceCountRatio)
+	z.QuestCountRatio = normalizeZoneKindRatio(z.QuestCountRatio)
 	z.MonsterCountRatio = normalizeZoneKindRatio(z.MonsterCountRatio)
 	z.BossEncounterCountRatio = normalizeZoneKindRatio(z.BossEncounterCountRatio)
 	z.RaidEncounterCountRatio = normalizeZoneKindRatio(z.RaidEncounterCountRatio)
@@ -157,11 +159,13 @@ func (z ZoneKind) ApplyToCounts(counts ZoneSeedResolvedCounts) ZoneSeedResolvedC
 
 	return ZoneSeedResolvedCounts{
 		PlaceCount:             apply(counts.PlaceCount, z.PlaceCountRatio),
+		QuestCount:             apply(counts.QuestCount, z.QuestCountRatio),
 		MonsterCount:           apply(counts.MonsterCount, z.MonsterCountRatio),
 		BossEncounterCount:     apply(counts.BossEncounterCount, z.BossEncounterCountRatio),
 		RaidEncounterCount:     apply(counts.RaidEncounterCount, z.RaidEncounterCountRatio),
 		InputEncounterCount:    apply(counts.InputEncounterCount, z.InputEncounterCountRatio),
 		OptionEncounterCount:   apply(counts.OptionEncounterCount, z.OptionEncounterCountRatio),
+		ExpositionCount:        counts.ExpositionCount,
 		TreasureChestCount:     apply(counts.TreasureChestCount, z.TreasureChestCountRatio),
 		HealingFountainCount:   apply(counts.HealingFountainCount, z.HealingFountainCountRatio),
 		ShrineCount:            apply(counts.ShrineCount, z.ShrineCountRatio),

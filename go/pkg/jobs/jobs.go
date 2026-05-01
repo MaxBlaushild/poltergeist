@@ -33,6 +33,7 @@ const (
 	GenerateInventoryItemSuggestionsTaskType       = "generate_inventory_item_suggestions"
 	GenerateScenarioTaskType                       = "generate_scenario"
 	GenerateChallengesTaskType                     = "generate_challenges"
+	GenerateExpositionTemplatesTaskType            = "generate_exposition_templates"
 	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
 	GenerateShrineTemplatesTaskType                = "generate_shrine_templates"
@@ -465,6 +466,10 @@ type GenerateScenarioTaskPayload struct {
 }
 
 type GenerateChallengesTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateExpositionTemplatesTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
 }
 

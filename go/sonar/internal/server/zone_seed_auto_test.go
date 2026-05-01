@@ -30,6 +30,7 @@ func TestZoneSeedInferAutoCountsAppliesMinimumFloors(t *testing.T) {
 	counts, warnings := zoneSeedInferAutoCounts(0, nil)
 
 	if counts.PlaceCount != 1 ||
+		counts.QuestCount != 1 ||
 		counts.MonsterCount != 1 ||
 		counts.BossEncounterCount != 1 ||
 		counts.RaidEncounterCount != 1 ||
@@ -101,11 +102,13 @@ func TestNormalizeZoneSeedDraftCountModeDefaultsToAbsolute(t *testing.T) {
 func TestZoneSeedResolveCurrentAwareCountsSubtractsExisting(t *testing.T) {
 	target := models.ZoneSeedResolvedCounts{
 		PlaceCount:             15,
+		QuestCount:             4,
 		MonsterCount:           6,
 		BossEncounterCount:     2,
 		RaidEncounterCount:     1,
 		InputEncounterCount:    4,
 		OptionEncounterCount:   3,
+		ExpositionCount:        5,
 		TreasureChestCount:     5,
 		HealingFountainCount:   2,
 		HerbalismResourceCount: 4,
@@ -115,11 +118,13 @@ func TestZoneSeedResolveCurrentAwareCountsSubtractsExisting(t *testing.T) {
 	snapshot := zoneSeedCurrentContentSnapshot{
 		ExistingCounts: models.ZoneSeedResolvedCounts{
 			PlaceCount:             3,
+			QuestCount:             1,
 			MonsterCount:           1,
 			BossEncounterCount:     1,
 			RaidEncounterCount:     0,
 			InputEncounterCount:    1,
 			OptionEncounterCount:   2,
+			ExpositionCount:        2,
 			TreasureChestCount:     4,
 			HealingFountainCount:   1,
 			HerbalismResourceCount: 1,
@@ -131,11 +136,13 @@ func TestZoneSeedResolveCurrentAwareCountsSubtractsExisting(t *testing.T) {
 	queued, audit := zoneSeedResolveCurrentAwareCounts(target, snapshot)
 
 	if queued.PlaceCount != 12 ||
+		queued.QuestCount != 3 ||
 		queued.MonsterCount != 5 ||
 		queued.BossEncounterCount != 1 ||
 		queued.RaidEncounterCount != 1 ||
 		queued.InputEncounterCount != 3 ||
 		queued.OptionEncounterCount != 1 ||
+		queued.ExpositionCount != 3 ||
 		queued.TreasureChestCount != 1 ||
 		queued.HealingFountainCount != 1 ||
 		queued.HerbalismResourceCount != 3 ||

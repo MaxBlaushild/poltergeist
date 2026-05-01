@@ -19,23 +19,24 @@ import (
 )
 
 type expositionUpsertRequest struct {
-	ZoneID            string                       `json:"zoneId"`
-	ZoneKind          *string                      `json:"zoneKind"`
-	PointOfInterestID string                       `json:"pointOfInterestId"`
-	Latitude          float64                      `json:"latitude"`
-	Longitude         float64                      `json:"longitude"`
-	Title             string                       `json:"title"`
-	Description       string                       `json:"description"`
-	Dialogue          []models.DialogueMessage     `json:"dialogue"`
-	ImageURL          string                       `json:"imageUrl"`
-	ThumbnailURL      string                       `json:"thumbnailUrl"`
-	RewardMode        string                       `json:"rewardMode"`
-	RandomRewardSize  string                       `json:"randomRewardSize"`
-	RewardExperience  int                          `json:"rewardExperience"`
-	RewardGold        int                          `json:"rewardGold"`
-	MaterialRewards   []baseMaterialRewardPayload  `json:"materialRewards"`
-	ItemRewards       []scenarioRewardItemPayload  `json:"itemRewards"`
-	SpellRewards      []scenarioRewardSpellPayload `json:"spellRewards"`
+	ZoneID               string                       `json:"zoneId"`
+	ZoneKind             *string                      `json:"zoneKind"`
+	ExpositionTemplateID string                       `json:"expositionTemplateId"`
+	PointOfInterestID    string                       `json:"pointOfInterestId"`
+	Latitude             float64                      `json:"latitude"`
+	Longitude            float64                      `json:"longitude"`
+	Title                string                       `json:"title"`
+	Description          string                       `json:"description"`
+	Dialogue             []models.DialogueMessage     `json:"dialogue"`
+	ImageURL             string                       `json:"imageUrl"`
+	ThumbnailURL         string                       `json:"thumbnailUrl"`
+	RewardMode           string                       `json:"rewardMode"`
+	RandomRewardSize     string                       `json:"randomRewardSize"`
+	RewardExperience     int                          `json:"rewardExperience"`
+	RewardGold           int                          `json:"rewardGold"`
+	MaterialRewards      []baseMaterialRewardPayload  `json:"materialRewards"`
+	ItemRewards          []scenarioRewardItemPayload  `json:"itemRewards"`
+	SpellRewards         []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
 func (s *server) parseExpositionDialogue(
@@ -48,23 +49,24 @@ func (s *server) parseExpositionDialogue(
 		if text == "" {
 			continue
 		}
-		if raw.CharacterID == nil || *raw.CharacterID == uuid.Nil {
-			return nil, fmt.Errorf("each dialogue line requires a characterId")
+		var characterID *uuid.UUID
+		if raw.CharacterID != nil && *raw.CharacterID != uuid.Nil {
+			character, err := s.dbClient.Character().FindByID(ctx, *raw.CharacterID)
+			if err != nil {
+				return nil, err
+			}
+			if character == nil {
+				return nil, fmt.Errorf("dialogue references an unknown characterId")
+			}
+			resolved := *raw.CharacterID
+			characterID = &resolved
 		}
-		character, err := s.dbClient.Character().FindByID(ctx, *raw.CharacterID)
-		if err != nil {
-			return nil, err
-		}
-		if character == nil {
-			return nil, fmt.Errorf("dialogue references an unknown characterId")
-		}
-		characterID := *raw.CharacterID
 		dialogue = append(dialogue, models.DialogueMessage{
 			Speaker:     "character",
 			Text:        text,
 			Order:       len(dialogue),
 			Effect:      models.NormalizeDialogueEffect(string(raw.Effect)),
-			CharacterID: &characterID,
+			CharacterID: characterID,
 		})
 	}
 	if len(dialogue) == 0 {
@@ -114,19 +116,20 @@ func (s *server) parseExpositionSpellRewards(
 func (s *server) parseExpositionUpsertRequest(
 	ctx context.Context,
 	body expositionUpsertRequest,
+	existing *models.Exposition,
 ) (*models.Exposition, []models.ExpositionItemReward, []models.ExpositionSpellReward, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid zoneId")
 	}
-	title := strings.TrimSpace(body.Title)
-	if title == "" {
-		return nil, nil, nil, fmt.Errorf("title is required")
-	}
-	dialogue, err := s.parseExpositionDialogue(ctx, body.Dialogue)
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if zone == nil {
+		return nil, nil, nil, fmt.Errorf("zoneId not found")
+	}
+	resolvedZoneKind := mergeZoneKindRequest(body.ZoneKind, zone.Kind)
 	pointOfInterestID, err := parseStandalonePointOfInterestID(body.PointOfInterestID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -141,55 +144,147 @@ func (s *server) parseExpositionUpsertRequest(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if body.RewardExperience < 0 || body.RewardGold < 0 {
-		return nil, nil, nil, fmt.Errorf("reward values must be zero or greater")
-	}
-	materialRewards, err := parseBaseMaterialRewards(body.MaterialRewards, "materialRewards")
+
+	template, err := s.resolveExpositionTemplateForUpsert(ctx, existing, body, resolvedZoneKind)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	itemRewards, err := s.parseExpositionItemRewards(body.ItemRewards)
-	if err != nil {
-		return nil, nil, nil, err
+	templateOptions := models.ExpositionTemplateInstanceOptions{
+		ZoneID:               zoneID,
+		ZoneKind:             resolvedZoneKind,
+		ExpositionTemplateID: &template.ID,
+		PointOfInterestID:    resolvedPointOfInterestID,
+		Latitude:             resolvedLatitude,
+		Longitude:            resolvedLongitude,
 	}
-	spellRewards, err := s.parseExpositionSpellRewards(ctx, body.SpellRewards)
-	if err != nil {
-		return nil, nil, nil, err
+	if existing != nil {
+		templateOptions.ID = existing.ID
+		templateOptions.CreatedAt = existing.CreatedAt
+		templateOptions.UpdatedAt = time.Now()
 	}
-	rewardMode := models.NormalizeRewardMode(body.RewardMode)
-	if strings.TrimSpace(body.RewardMode) == "" {
-		if body.RewardExperience > 0 ||
-			body.RewardGold > 0 ||
-			len(materialRewards) > 0 ||
-			len(itemRewards) > 0 ||
-			len(spellRewards) > 0 {
-			rewardMode = models.RewardModeExplicit
+	exposition := buildExpositionInstanceFromTemplate(template, templateOptions)
+	itemRewards, spellRewards := buildExpositionInstanceRewardsFromTemplate(template, exposition.ID)
+	return exposition, itemRewards, spellRewards, nil
+}
+
+func expositionTemplateRequestFromExpositionRequest(
+	body expositionUpsertRequest,
+	fallbackZoneKind string,
+) expositionTemplateUpsertRequest {
+	zoneKind := mergeZoneKindRequest(body.ZoneKind, fallbackZoneKind)
+	return expositionTemplateUpsertRequest{
+		ZoneKind:         &zoneKind,
+		Title:            body.Title,
+		Description:      body.Description,
+		Dialogue:         body.Dialogue,
+		ImageURL:         body.ImageURL,
+		ThumbnailURL:     body.ThumbnailURL,
+		RewardMode:       body.RewardMode,
+		RandomRewardSize: body.RandomRewardSize,
+		RewardExperience: body.RewardExperience,
+		RewardGold:       body.RewardGold,
+		MaterialRewards:  body.MaterialRewards,
+		ItemRewards:      body.ItemRewards,
+		SpellRewards:     body.SpellRewards,
+	}
+}
+
+func buildExpositionInstanceFromTemplate(
+	template *models.ExpositionTemplate,
+	options models.ExpositionTemplateInstanceOptions,
+) *models.Exposition {
+	data := models.ExpositionTemplateDataFromExpositionTemplate(template)
+	return data.Instantiate(options)
+}
+
+func buildExpositionInstanceRewardsFromTemplate(
+	template *models.ExpositionTemplate,
+	expositionID uuid.UUID,
+) ([]models.ExpositionItemReward, []models.ExpositionSpellReward) {
+	data := models.ExpositionTemplateDataFromExpositionTemplate(template)
+	return data.ItemRewardsForExposition(expositionID), data.SpellRewardsForExposition(expositionID)
+}
+
+func (s *server) resolveExpositionTemplateForUpsert(
+	ctx context.Context,
+	existing *models.Exposition,
+	body expositionUpsertRequest,
+	fallbackZoneKind string,
+) (*models.ExpositionTemplate, error) {
+	explicitTemplateID := strings.TrimSpace(body.ExpositionTemplateID)
+	if explicitTemplateID != "" {
+		templateID, err := uuid.Parse(explicitTemplateID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid expositionTemplateId")
 		}
-	}
-	imageURL := strings.TrimSpace(body.ImageURL)
-	thumbnailURL := strings.TrimSpace(body.ThumbnailURL)
-	if thumbnailURL == "" && imageURL != "" {
-		thumbnailURL = imageURL
+		template, err := s.dbClient.ExpositionTemplate().FindByID(ctx, templateID)
+		if err != nil {
+			return nil, err
+		}
+		if template == nil {
+			return nil, fmt.Errorf("expositionTemplateId not found")
+		}
+		return template, nil
 	}
 
-	exposition := &models.Exposition{
-		ZoneID:            zoneID,
-		ZoneKind:          normalizeZoneKindRequest(body.ZoneKind),
-		PointOfInterestID: resolvedPointOfInterestID,
-		Latitude:          resolvedLatitude,
-		Longitude:         resolvedLongitude,
-		Title:             title,
-		Description:       strings.TrimSpace(body.Description),
-		Dialogue:          dialogue,
-		ImageURL:          imageURL,
-		ThumbnailURL:      thumbnailURL,
-		RewardMode:        rewardMode,
-		RandomRewardSize:  models.NormalizeRandomRewardSize(body.RandomRewardSize),
-		RewardExperience:  body.RewardExperience,
-		RewardGold:        body.RewardGold,
-		MaterialRewards:   materialRewards,
+	templatePayload := expositionTemplateRequestFromExpositionRequest(body, fallbackZoneKind)
+	template, err := s.parseExpositionTemplateUpsertRequest(ctx, templatePayload)
+	if err != nil {
+		return nil, err
 	}
-	return exposition, itemRewards, spellRewards, nil
+
+	if existing != nil && existing.ExpositionTemplateID != nil && *existing.ExpositionTemplateID != uuid.Nil {
+		if err := s.dbClient.ExpositionTemplate().Update(ctx, *existing.ExpositionTemplateID, template); err != nil {
+			return nil, err
+		}
+		return s.dbClient.ExpositionTemplate().FindByID(ctx, *existing.ExpositionTemplateID)
+	}
+
+	if err := s.dbClient.ExpositionTemplate().Create(ctx, template); err != nil {
+		return nil, err
+	}
+	return s.dbClient.ExpositionTemplate().FindByID(ctx, template.ID)
+}
+
+func (s *server) syncLinkedExpositionsForTemplate(
+	ctx context.Context,
+	template *models.ExpositionTemplate,
+) error {
+	if template == nil {
+		return nil
+	}
+	linkedExpositions, err := s.dbClient.Exposition().FindByTemplateID(ctx, template.ID)
+	if err != nil {
+		return err
+	}
+	for _, linked := range linkedExpositions {
+		zoneKind := linked.ZoneKind
+		if zoneKind == "" {
+			zoneKind = template.ZoneKind
+		}
+		next := buildExpositionInstanceFromTemplate(template, models.ExpositionTemplateInstanceOptions{
+			ID:                   linked.ID,
+			CreatedAt:            linked.CreatedAt,
+			UpdatedAt:            time.Now(),
+			ZoneID:               linked.ZoneID,
+			ZoneKind:             zoneKind,
+			ExpositionTemplateID: &template.ID,
+			PointOfInterestID:    linked.PointOfInterestID,
+			Latitude:             linked.Latitude,
+			Longitude:            linked.Longitude,
+		})
+		if err := s.dbClient.Exposition().Update(ctx, linked.ID, next); err != nil {
+			return err
+		}
+		itemRewards, spellRewards := buildExpositionInstanceRewardsFromTemplate(template, linked.ID)
+		if err := s.dbClient.Exposition().ReplaceItemRewards(ctx, linked.ID, itemRewards); err != nil {
+			return err
+		}
+		if err := s.dbClient.Exposition().ReplaceSpellRewards(ctx, linked.ID, spellRewards); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func expositionRewardItemsFromExposition(
@@ -355,7 +450,7 @@ func (s *server) createExposition(ctx *gin.Context) {
 		return
 	}
 
-	exposition, itemRewards, spellRewards, err := s.parseExpositionUpsertRequest(ctx, requestBody)
+	exposition, itemRewards, spellRewards, err := s.parseExpositionUpsertRequest(ctx, requestBody, nil)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -405,7 +500,7 @@ func (s *server) updateExposition(ctx *gin.Context) {
 		return
 	}
 
-	exposition, itemRewards, spellRewards, err := s.parseExpositionUpsertRequest(ctx, requestBody)
+	exposition, itemRewards, spellRewards, err := s.parseExpositionUpsertRequest(ctx, requestBody, existing)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

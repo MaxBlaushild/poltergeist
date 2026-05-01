@@ -959,14 +959,21 @@ func (c *client) processQuestExpositionNode(
 	}
 
 	now := time.Now()
+	expositionTemplateID := (*uuid.UUID)(nil)
+	if questArchTypeNode.ExpositionTemplateID != nil &&
+		*questArchTypeNode.ExpositionTemplateID != uuid.Nil {
+		expositionTemplateID = questArchTypeNode.ExpositionTemplateID
+	}
 	exposition := template.Instantiate(models.ExpositionTemplateInstanceOptions{
-		ID:                uuid.New(),
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		ZoneID:            zone.ID,
-		PointOfInterestID: optionalPointOfInterestID(pointOfInterest),
-		Latitude:          currentAnchor.Latitude,
-		Longitude:         currentAnchor.Longitude,
+		ID:                   uuid.New(),
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		ZoneID:               zone.ID,
+		ZoneKind:             zone.Kind,
+		ExpositionTemplateID: expositionTemplateID,
+		PointOfInterestID:    optionalPointOfInterestID(pointOfInterest),
+		Latitude:             currentAnchor.Latitude,
+		Longitude:            currentAnchor.Longitude,
 	})
 	if err := c.dbClient.Exposition().Create(ctx, exposition); err != nil {
 		return previousAnchor, err

@@ -25,6 +25,7 @@ type zoneKindPayload struct {
 	DefaultShopkeeperItemTags   []string `json:"defaultShopkeeperItemTags"`
 	OverlayColor                string   `json:"overlayColor"`
 	PlaceCountRatio             float64  `json:"placeCountRatio"`
+	QuestCountRatio             float64  `json:"questCountRatio"`
 	MonsterCountRatio           float64  `json:"monsterCountRatio"`
 	BossEncounterCountRatio     float64  `json:"bossEncounterCountRatio"`
 	RaidEncounterCountRatio     float64  `json:"raidEncounterCountRatio"`
@@ -71,6 +72,7 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 		DefaultShopkeeperItemTags:   models.StringArray(models.NormalizeTagList(body.DefaultShopkeeperItemTags)),
 		OverlayColor:                overlayColor,
 		PlaceCountRatio:             body.PlaceCountRatio,
+		QuestCountRatio:             body.QuestCountRatio,
 		MonsterCountRatio:           body.MonsterCountRatio,
 		BossEncounterCountRatio:     body.BossEncounterCountRatio,
 		RaidEncounterCountRatio:     body.RaidEncounterCountRatio,
@@ -100,6 +102,7 @@ func maxZoneKindPatternCueValue(a float64, b float64) float64 {
 func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
 	candidates := []zoneKindPatternCue{
 		{label: "place-rich", value: zoneKind.PlaceCountRatio},
+		{label: "quest-rich", value: zoneKind.QuestCountRatio},
 		{label: "monster-heavy", value: zoneKind.MonsterCountRatio},
 		{label: "boss-dangerous", value: zoneKind.BossEncounterCountRatio},
 		{label: "raid-heavy", value: zoneKind.RaidEncounterCountRatio},

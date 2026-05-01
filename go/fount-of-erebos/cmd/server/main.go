@@ -21,7 +21,8 @@ func main() {
 	}
 
 	openApiClient := open_ai.NewClient(open_ai.ClientConfig{
-		ApiKey: cfg.Secret.OpenAIKey,
+		ApiKey:       cfg.Secret.OpenAIKey,
+		ConsultModel: cfg.Public.OpenAIConsultModel,
 	})
 
 	// grokClient := grok.NewClient(grok.ClientConfig{

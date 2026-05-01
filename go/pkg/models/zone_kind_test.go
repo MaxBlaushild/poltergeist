@@ -34,6 +34,7 @@ func TestDistrictZoneSeedSettingsHasContentWithZoneKind(t *testing.T) {
 func TestZoneKindApplyToCounts(t *testing.T) {
 	zoneKind := ZoneKind{
 		PlaceCountRatio:             1.5,
+		QuestCountRatio:             0.5,
 		MonsterCountRatio:           0.5,
 		BossEncounterCountRatio:     2.0,
 		RaidEncounterCountRatio:     0,
@@ -47,11 +48,13 @@ func TestZoneKindApplyToCounts(t *testing.T) {
 
 	got := zoneKind.ApplyToCounts(ZoneSeedResolvedCounts{
 		PlaceCount:             4,
+		QuestCount:             6,
 		MonsterCount:           6,
 		BossEncounterCount:     2,
 		RaidEncounterCount:     3,
 		InputEncounterCount:    4,
 		OptionEncounterCount:   5,
+		ExpositionCount:        2,
 		TreasureChestCount:     2,
 		HealingFountainCount:   1,
 		HerbalismResourceCount: 2,
@@ -60,11 +63,13 @@ func TestZoneKindApplyToCounts(t *testing.T) {
 
 	want := ZoneSeedResolvedCounts{
 		PlaceCount:             6,
+		QuestCount:             3,
 		MonsterCount:           3,
 		BossEncounterCount:     4,
 		RaidEncounterCount:     0,
 		InputEncounterCount:    5,
 		OptionEncounterCount:   5,
+		ExpositionCount:        2,
 		TreasureChestCount:     1,
 		HealingFountainCount:   2,
 		HerbalismResourceCount: 4,

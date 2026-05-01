@@ -1,16 +1,23 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
 type expositionTemplateUpsertRequest struct {
+	ZoneKind           *string                      `json:"zoneKind"`
 	Title              string                       `json:"title"`
 	Description        string                       `json:"description"`
 	Dialogue           []models.DialogueMessage     `json:"dialogue"`
@@ -26,8 +33,13 @@ type expositionTemplateUpsertRequest struct {
 	SpellRewards       []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
+type expositionTemplateGenerationJobRequest struct {
+	Count    int    `json:"count"`
+	ZoneKind string `json:"zoneKind"`
+}
+
 func (s *server) parseExpositionTemplateUpsertRequest(
-	ctx *gin.Context,
+	ctx context.Context,
 	body expositionTemplateUpsertRequest,
 ) (*models.ExpositionTemplate, error) {
 	title := strings.TrimSpace(body.Title)
@@ -82,6 +94,7 @@ func (s *server) parseExpositionTemplateUpsertRequest(
 		})
 	}
 	return &models.ExpositionTemplate{
+		ZoneKind:           normalizeZoneKindRequest(body.ZoneKind),
 		Title:              title,
 		Description:        strings.TrimSpace(body.Description),
 		Dialogue:           dialogue,
@@ -143,7 +156,7 @@ func (s *server) createExpositionTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := s.parseExpositionTemplateUpsertRequest(ctx, body)
+	template, err := s.parseExpositionTemplateUpsertRequest(ctx.Request.Context(), body)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -184,7 +197,7 @@ func (s *server) updateExpositionTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	template, err := s.parseExpositionTemplateUpsertRequest(ctx, body)
+	template, err := s.parseExpositionTemplateUpsertRequest(ctx.Request.Context(), body)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -197,6 +210,12 @@ func (s *server) updateExpositionTemplate(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if updated != nil {
+		if err := s.syncLinkedExpositionsForTemplate(ctx.Request.Context(), updated); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	ctx.JSON(http.StatusOK, updated)
 }
@@ -216,4 +235,91 @@ func (s *server) deleteExpositionTemplate(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "exposition template deleted successfully"})
+}
+
+func (s *server) createExpositionTemplateGenerationJob(ctx *gin.Context) {
+	var body expositionTemplateGenerationJobRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Count <= 0 {
+		body.Count = 1
+	}
+	if body.Count > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
+		return
+	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if zoneKind == nil || strings.TrimSpace(zoneKind.Slug) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneKind is required"})
+		return
+	}
+
+	job := &models.ExpositionTemplateGenerationJob{
+		ID:           uuid.New(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ZoneKind:     zoneKind.Slug,
+		Status:       models.ExpositionTemplateGenerationStatusQueued,
+		Count:        body.Count,
+		CreatedCount: 0,
+	}
+	if err := s.dbClient.ExpositionTemplateGenerationJob().Create(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.GenerateExpositionTemplatesTaskPayload{JobID: job.ID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateExpositionTemplatesTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ExpositionTemplateGenerationStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ExpositionTemplateGenerationJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusAccepted, job)
+}
+
+func (s *server) getExpositionTemplateGenerationJobs(ctx *gin.Context) {
+	limit := 20
+	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
+		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	jobsList, err := s.dbClient.ExpositionTemplateGenerationJob().FindRecent(ctx, limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, jobsList)
+}
+
+func (s *server) getExpositionTemplateGenerationJob(ctx *gin.Context) {
+	id, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid exposition template generation job ID"})
+		return
+	}
+	job, err := s.dbClient.ExpositionTemplateGenerationJob().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "exposition template generation job not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, job)
 }

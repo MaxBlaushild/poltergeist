@@ -3161,7 +3161,7 @@ export const Scenarios = () => {
 
   return (
     <div className="m-10">
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Scenarios</h1>
         <button
           className="bg-blue-500 text-white px-4 py-2 rounded-md"
@@ -3568,7 +3568,10 @@ export const Scenarios = () => {
 
       <div
         className="grid gap-4"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}
+        style={{
+          gridTemplateColumns:
+            'repeat(auto-fill, minmax(min(320px, 100%), 1fr))',
+        }}
       >
         {filtered.map((record) => {
           const zoneName =

@@ -76,6 +76,7 @@ type ExpositionTemplate struct {
 	ID                 uuid.UUID                      `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	CreatedAt          time.Time                      `json:"createdAt"`
 	UpdatedAt          time.Time                      `json:"updatedAt"`
+	ZoneKind           string                         `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Title              string                         `json:"title"`
 	Description        string                         `json:"description"`
 	Dialogue           DialogueSequence               `json:"dialogue" gorm:"type:jsonb;default:'[]'"`
@@ -96,6 +97,7 @@ func (ExpositionTemplate) TableName() string {
 }
 
 func (e *ExpositionTemplate) BeforeSave(tx *gorm.DB) error {
+	e.ZoneKind = NormalizeZoneKind(e.ZoneKind)
 	e.Title = strings.TrimSpace(e.Title)
 	e.Description = strings.TrimSpace(e.Description)
 	e.ImageURL = strings.TrimSpace(e.ImageURL)

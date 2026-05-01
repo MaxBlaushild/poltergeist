@@ -15,13 +15,14 @@ type SecretConfig struct {
 }
 
 type PublicConfig struct {
-	DbHost           string `mapstructure:"DB_HOST"`
-	DbUser           string `mapstructure:"DB_USER"`
-	DbPort           string `mapstructure:"DB_PORT"`
-	DbName           string `mapstructure:"DB_NAME"`
-	EmailFromAddress string `mapstructure:"EMAIL_FROM_ADDRESS"`
-	ApiHost          string `mapstructure:"API_HOST"`
-	WebHost          string `mapstructure:"WEB_HOST"`
+	DbHost             string `mapstructure:"DB_HOST"`
+	DbUser             string `mapstructure:"DB_USER"`
+	DbPort             string `mapstructure:"DB_PORT"`
+	DbName             string `mapstructure:"DB_NAME"`
+	EmailFromAddress   string `mapstructure:"EMAIL_FROM_ADDRESS"`
+	ApiHost            string `mapstructure:"API_HOST"`
+	WebHost            string `mapstructure:"WEB_HOST"`
+	OpenAIConsultModel string `mapstructure:"OPEN_AI_CONSULT_MODEL"`
 }
 
 type Config struct {

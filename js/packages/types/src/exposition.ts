@@ -1,4 +1,5 @@
 import { DialogueMessage } from './characterAction';
+import type { ExpositionTemplate } from './expositionTemplate';
 import { PointOfInterest } from './pointOfInterest';
 
 export type ExpositionRewardMode = 'explicit' | 'random';
@@ -31,6 +32,8 @@ export interface Exposition {
   updatedAt?: Date | string;
   zoneId: string;
   zoneKind?: string;
+  expositionTemplateId?: string | null;
+  expositionTemplate?: ExpositionTemplate | null;
   pointOfInterestId?: string | null;
   pointOfInterest?: PointOfInterest | null;
   latitude: number;

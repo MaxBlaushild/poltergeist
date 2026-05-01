@@ -103,6 +103,7 @@ type ZoneSeedJob struct {
 	RaidEncounterCount     int                `json:"raidEncounterCount"`
 	InputEncounterCount    int                `json:"inputEncounterCount"`
 	OptionEncounterCount   int                `json:"optionEncounterCount"`
+	ExpositionCount        int                `json:"expositionCount" gorm:"column:exposition_count"`
 	TreasureChestCount     int                `json:"treasureChestCount"`
 	HealingFountainCount   int                `json:"healingFountainCount"`
 	ShrineCount            int                `json:"shrineCount"`

@@ -379,6 +379,16 @@ a {
   padding-bottom: calc(clamp(1.35rem, 2vw, 1.8rem) + env(safe-area-inset-bottom, 0px));
 }
 
+.admin-page > .m-10 {
+  min-width: 0;
+}
+
+.admin-page .overflow-auto,
+.admin-page .overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 .dashboard-home {
   max-width: 90rem;
   margin: 0 auto;
@@ -659,6 +669,10 @@ a {
 
   .admin-page {
     padding: 1rem;
+  }
+
+  .admin-page > .m-10 {
+    margin: 0;
   }
 }
 

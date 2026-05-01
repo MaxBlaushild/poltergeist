@@ -74,11 +74,13 @@ type DistrictSeedResult struct {
 type DistrictZoneSeedSettings struct {
 	ZoneKind             string      `json:"zoneKind,omitempty"`
 	PlaceCount           int         `json:"placeCount"`
+	QuestCount           int         `json:"questCount"`
 	MonsterCount         int         `json:"monsterCount"`
 	BossEncounterCount   int         `json:"bossEncounterCount"`
 	RaidEncounterCount   int         `json:"raidEncounterCount"`
 	InputEncounterCount  int         `json:"inputEncounterCount"`
 	OptionEncounterCount int         `json:"optionEncounterCount"`
+	ExpositionCount      int         `json:"expositionCount"`
 	TreasureChestCount   int         `json:"treasureChestCount"`
 	HealingFountainCount int         `json:"healingFountainCount"`
 	ShrineCount          int         `json:"shrineCount"`
@@ -91,11 +93,13 @@ func (s DistrictZoneSeedSettings) HasContent() bool {
 		return true
 	}
 	if s.PlaceCount > 0 ||
+		s.QuestCount > 0 ||
 		s.MonsterCount > 0 ||
 		s.BossEncounterCount > 0 ||
 		s.RaidEncounterCount > 0 ||
 		s.InputEncounterCount > 0 ||
 		s.OptionEncounterCount > 0 ||
+		s.ExpositionCount > 0 ||
 		s.TreasureChestCount > 0 ||
 		s.HealingFountainCount > 0 ||
 		s.ShrineCount > 0 {

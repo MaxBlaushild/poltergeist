@@ -41,6 +41,7 @@ type DbClient interface {
 	ShrineTemplate() ShrineTemplateHandle
 	CharacterTemplate() CharacterTemplateHandle
 	ExpositionTemplate() ExpositionTemplateHandle
+	ExpositionTemplateGenerationJob() ExpositionTemplateGenerationJobHandle
 	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
 	ScenarioTemplateGenerationDraft() ScenarioTemplateGenerationDraftHandle
 	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
@@ -530,6 +531,13 @@ type ExpositionTemplateHandle interface {
 	FindAll(ctx context.Context) ([]models.ExpositionTemplate, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.ExpositionTemplate) error
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ExpositionTemplateGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ExpositionTemplateGenerationJob) error
+	Update(ctx context.Context, job *models.ExpositionTemplateGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ExpositionTemplateGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ExpositionTemplateGenerationJob, error)
 }
 
 type ScenarioTemplateGenerationJobHandle interface {
@@ -1516,6 +1524,7 @@ type ExpositionHandle interface {
 	Create(ctx context.Context, exposition *models.Exposition) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Exposition, error)
 	FindAll(ctx context.Context) ([]models.Exposition, error)
+	FindByTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.Exposition, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Exposition, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Exposition, error)
 	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)

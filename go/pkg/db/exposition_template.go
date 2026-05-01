@@ -48,6 +48,7 @@ func (h *expositionTemplateHandle) Update(ctx context.Context, id uuid.UUID, upd
 	}
 	updates.UpdatedAt = time.Now()
 	payload := map[string]interface{}{
+		"zone_kind":             updates.ZoneKind,
 		"title":                 updates.Title,
 		"description":           updates.Description,
 		"dialogue":              updates.Dialogue,

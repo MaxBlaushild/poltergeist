@@ -11,6 +11,7 @@ export interface ExpositionTemplate {
     id: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    zoneKind?: string;
     title: string;
     description: string;
     dialogue: DialogueMessage[];

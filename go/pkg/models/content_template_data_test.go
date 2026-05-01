@@ -125,14 +125,17 @@ func TestExpositionTemplateDataFromQuestArchetypeNodeInstantiatesContent(t *test
 	node.ExpositionMaterialRewards[0].Amount = 99
 
 	pointOfInterestID := uuid.New()
+	expositionTemplateID := uuid.New()
 	instance := template.Instantiate(ExpositionTemplateInstanceOptions{
-		ID:                uuid.New(),
-		CreatedAt:         time.Unix(200, 0),
-		UpdatedAt:         time.Unix(220, 0),
-		ZoneID:            uuid.New(),
-		PointOfInterestID: &pointOfInterestID,
-		Latitude:          40.0,
-		Longitude:         -73.0,
+		ID:                   uuid.New(),
+		CreatedAt:            time.Unix(200, 0),
+		UpdatedAt:            time.Unix(220, 0),
+		ZoneID:               uuid.New(),
+		ZoneKind:             "Ancient Forest",
+		ExpositionTemplateID: &expositionTemplateID,
+		PointOfInterestID:    &pointOfInterestID,
+		Latitude:             40.0,
+		Longitude:            -73.0,
 	})
 
 	if instance.Title != "Doorstep Warning" {
@@ -149,6 +152,12 @@ func TestExpositionTemplateDataFromQuestArchetypeNodeInstantiatesContent(t *test
 	}
 	if instance.RewardMode != RewardModeExplicit || instance.RandomRewardSize != RandomRewardSizeMedium {
 		t.Fatalf("expected reward settings to carry through, got mode=%q size=%q", instance.RewardMode, instance.RandomRewardSize)
+	}
+	if instance.ZoneKind != "ancient-forest" {
+		t.Fatalf("expected normalized zone kind, got %q", instance.ZoneKind)
+	}
+	if instance.ExpositionTemplateID == nil || *instance.ExpositionTemplateID != expositionTemplateID {
+		t.Fatalf("expected exposition template id to carry through, got %+v", instance.ExpositionTemplateID)
 	}
 
 	itemRewards := template.ItemRewardsForExposition(instance.ID)

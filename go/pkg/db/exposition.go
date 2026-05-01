@@ -19,6 +19,7 @@ type expositionHandle struct {
 func (h *expositionHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
+		Preload("ExpositionTemplate").
 		Preload("PointOfInterest").
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
@@ -85,6 +86,16 @@ func (h *expositionHandle) FindAll(ctx context.Context) ([]models.Exposition, er
 	return expositions, nil
 }
 
+func (h *expositionHandle) FindByTemplateID(ctx context.Context, templateID uuid.UUID) ([]models.Exposition, error) {
+	var expositions []models.Exposition
+	if err := h.visibleQuery(ctx).
+		Where("exposition_template_id = ?", templateID).
+		Find(&expositions).Error; err != nil {
+		return nil, err
+	}
+	return expositions, nil
+}
+
 func (h *expositionHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Exposition, error) {
 	var expositions []models.Exposition
 	if err := h.visibleQuery(ctx).
@@ -123,23 +134,25 @@ func (h *expositionHandle) Update(ctx context.Context, id uuid.UUID, updates *mo
 	}
 	normalizeExpositionRewards(updates)
 	payload := map[string]interface{}{
-		"zone_id":               updates.ZoneID,
-		"point_of_interest_id":  updates.PointOfInterestID,
-		"latitude":              updates.Latitude,
-		"longitude":             updates.Longitude,
-		"geometry":              updates.Geometry,
-		"title":                 updates.Title,
-		"description":           updates.Description,
-		"dialogue":              updates.Dialogue,
-		"required_story_flags":  updates.RequiredStoryFlags,
-		"image_url":             updates.ImageURL,
-		"thumbnail_url":         updates.ThumbnailURL,
-		"reward_mode":           updates.RewardMode,
-		"random_reward_size":    updates.RandomRewardSize,
-		"reward_experience":     updates.RewardExperience,
-		"reward_gold":           updates.RewardGold,
-		"material_rewards_json": updates.MaterialRewards,
-		"updated_at":            updates.UpdatedAt,
+		"zone_id":                updates.ZoneID,
+		"zone_kind":              updates.ZoneKind,
+		"exposition_template_id": updates.ExpositionTemplateID,
+		"point_of_interest_id":   updates.PointOfInterestID,
+		"latitude":               updates.Latitude,
+		"longitude":              updates.Longitude,
+		"geometry":               updates.Geometry,
+		"title":                  updates.Title,
+		"description":            updates.Description,
+		"dialogue":               updates.Dialogue,
+		"required_story_flags":   updates.RequiredStoryFlags,
+		"image_url":              updates.ImageURL,
+		"thumbnail_url":          updates.ThumbnailURL,
+		"reward_mode":            updates.RewardMode,
+		"random_reward_size":     updates.RandomRewardSize,
+		"reward_experience":      updates.RewardExperience,
+		"reward_gold":            updates.RewardGold,
+		"material_rewards_json":  updates.MaterialRewards,
+		"updated_at":             updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.Exposition{}).Where("id = ?", id).Updates(payload).Error
 }

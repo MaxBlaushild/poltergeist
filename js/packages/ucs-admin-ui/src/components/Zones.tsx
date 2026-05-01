@@ -566,6 +566,8 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '10px',
           marginBottom: '10px',
         }}
       >
@@ -575,7 +577,7 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
             Click on the map to add boundary points for the new zone.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onClearBoundary}

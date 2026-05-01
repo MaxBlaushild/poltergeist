@@ -8,11 +8,13 @@ import (
 
 type ZoneSeedResolvedCounts struct {
 	PlaceCount             int `json:"placeCount"`
+	QuestCount             int `json:"questCount"`
 	MonsterCount           int `json:"monsterCount"`
 	BossEncounterCount     int `json:"bossEncounterCount"`
 	RaidEncounterCount     int `json:"raidEncounterCount"`
 	InputEncounterCount    int `json:"inputEncounterCount"`
 	OptionEncounterCount   int `json:"optionEncounterCount"`
+	ExpositionCount        int `json:"expositionCount"`
 	TreasureChestCount     int `json:"treasureChestCount"`
 	HealingFountainCount   int `json:"healingFountainCount"`
 	ShrineCount            int `json:"shrineCount"`
@@ -23,11 +25,13 @@ type ZoneSeedResolvedCounts struct {
 
 func (c ZoneSeedResolvedCounts) HasContent() bool {
 	return c.PlaceCount != 0 ||
+		c.QuestCount != 0 ||
 		c.MonsterCount != 0 ||
 		c.BossEncounterCount != 0 ||
 		c.RaidEncounterCount != 0 ||
 		c.InputEncounterCount != 0 ||
 		c.OptionEncounterCount != 0 ||
+		c.ExpositionCount != 0 ||
 		c.TreasureChestCount != 0 ||
 		c.HealingFountainCount != 0 ||
 		c.ShrineCount != 0 ||

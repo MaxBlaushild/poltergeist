@@ -458,6 +458,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/scenario-template-generation-jobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioTemplateGenerationDrafts))
 	r.POST("/sonar/admin/scenario-template-generation-drafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertScenarioTemplateGenerationDraft))
 	r.DELETE("/sonar/admin/scenario-template-generation-drafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioTemplateGenerationDraft))
+	r.POST("/sonar/admin/exposition-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createExpositionTemplateGenerationJob))
+	r.GET("/sonar/admin/exposition-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionTemplateGenerationJobs))
+	r.GET("/sonar/admin/exposition-template-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getExpositionTemplateGenerationJob))
 	r.POST("/sonar/admin/shrine-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createShrineTemplateGenerationJob))
 	r.GET("/sonar/admin/shrine-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplateGenerationJobs))
 	r.GET("/sonar/admin/shrine-template-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplateGenerationJob))
@@ -6485,11 +6488,13 @@ type zoneSeedDraftRequest struct {
 	CountMode              string   `json:"countMode"`
 	ZoneKind               string   `json:"zoneKind"`
 	PlaceCount             *int     `json:"placeCount"`
+	QuestCount             *int     `json:"questCount"`
 	MonsterCount           *int     `json:"monsterCount"`
 	BossEncounterCount     *int     `json:"bossEncounterCount"`
 	RaidEncounterCount     *int     `json:"raidEncounterCount"`
 	InputEncounterCount    *int     `json:"inputEncounterCount"`
 	OptionEncounterCount   *int     `json:"optionEncounterCount"`
+	ExpositionCount        *int     `json:"expositionCount"`
 	TreasureChestCount     *int     `json:"treasureChestCount"`
 	HealingFountainCount   *int     `json:"healingFountainCount"`
 	ShrineCount            *int     `json:"shrineCount"`
@@ -6505,11 +6510,13 @@ type normalizedZoneSeedDraftRequest struct {
 	CountMode              string
 	ZoneKind               string
 	PlaceCount             int
+	QuestCount             int
 	MonsterCount           int
 	BossEncounterCount     int
 	RaidEncounterCount     int
 	InputEncounterCount    int
 	OptionEncounterCount   int
+	ExpositionCount        int
 	TreasureChestCount     int
 	HealingFountainCount   int
 	ShrineCount            int
@@ -6556,11 +6563,13 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 		CountMode:              countMode,
 		ZoneKind:               models.NormalizeZoneKind(requestBody.ZoneKind),
 		PlaceCount:             counts.PlaceCount,
+		QuestCount:             counts.QuestCount,
 		MonsterCount:           counts.MonsterCount,
 		BossEncounterCount:     counts.BossEncounterCount,
 		RaidEncounterCount:     counts.RaidEncounterCount,
 		InputEncounterCount:    counts.InputEncounterCount,
 		OptionEncounterCount:   counts.OptionEncounterCount,
+		ExpositionCount:        counts.ExpositionCount,
 		TreasureChestCount:     counts.TreasureChestCount,
 		HealingFountainCount:   counts.HealingFountainCount,
 		ShrineCount:            counts.ShrineCount,
@@ -6602,13 +6611,14 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		CountMode:              settings.CountMode,
 		PlaceCount:             settings.PlaceCount,
 		CharacterCount:         0,
-		QuestCount:             0,
+		QuestCount:             settings.QuestCount,
 		MainQuestCount:         0,
 		MonsterCount:           settings.MonsterCount,
 		BossEncounterCount:     settings.BossEncounterCount,
 		RaidEncounterCount:     settings.RaidEncounterCount,
 		InputEncounterCount:    settings.InputEncounterCount,
 		OptionEncounterCount:   settings.OptionEncounterCount,
+		ExpositionCount:        settings.ExpositionCount,
 		TreasureChestCount:     settings.TreasureChestCount,
 		HealingFountainCount:   settings.HealingFountainCount,
 		ShrineCount:            settings.ShrineCount,

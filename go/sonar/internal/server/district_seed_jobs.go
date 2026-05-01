@@ -74,11 +74,13 @@ func districtZoneSeedSettingsFromNormalized(
 	return models.DistrictZoneSeedSettings{
 		ZoneKind:             settings.ZoneKind,
 		PlaceCount:           settings.PlaceCount,
+		QuestCount:           settings.QuestCount,
 		MonsterCount:         settings.MonsterCount,
 		BossEncounterCount:   settings.BossEncounterCount,
 		RaidEncounterCount:   settings.RaidEncounterCount,
 		InputEncounterCount:  settings.InputEncounterCount,
 		OptionEncounterCount: settings.OptionEncounterCount,
+		ExpositionCount:      settings.ExpositionCount,
 		TreasureChestCount:   settings.TreasureChestCount,
 		HealingFountainCount: settings.HealingFountainCount,
 		ShrineCount:          settings.ShrineCount,
@@ -153,11 +155,13 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 		QuestArchetypeIDs    []string `json:"questArchetypeIds"`
 		ZoneKind             string   `json:"zoneKind"`
 		PlaceCount           *int     `json:"placeCount"`
+		QuestCount           *int     `json:"questCount"`
 		MonsterCount         *int     `json:"monsterCount"`
 		BossEncounterCount   *int     `json:"bossEncounterCount"`
 		RaidEncounterCount   *int     `json:"raidEncounterCount"`
 		InputEncounterCount  *int     `json:"inputEncounterCount"`
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
+		ExpositionCount      *int     `json:"expositionCount"`
 		TreasureChestCount   *int     `json:"treasureChestCount"`
 		HealingFountainCount *int     `json:"healingFountainCount"`
 		ShrineCount          *int     `json:"shrineCount"`
@@ -192,11 +196,13 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 	zoneSeedSettingsInput, err := normalizeZoneSeedDraftRequest(zoneSeedDraftRequest{
 		ZoneKind:             requestBody.ZoneKind,
 		PlaceCount:           requestBody.PlaceCount,
+		QuestCount:           requestBody.QuestCount,
 		MonsterCount:         requestBody.MonsterCount,
 		BossEncounterCount:   requestBody.BossEncounterCount,
 		RaidEncounterCount:   requestBody.RaidEncounterCount,
 		InputEncounterCount:  requestBody.InputEncounterCount,
 		OptionEncounterCount: requestBody.OptionEncounterCount,
+		ExpositionCount:      requestBody.ExpositionCount,
 		TreasureChestCount:   requestBody.TreasureChestCount,
 		HealingFountainCount: requestBody.HealingFountainCount,
 		ShrineCount:          requestBody.ShrineCount,

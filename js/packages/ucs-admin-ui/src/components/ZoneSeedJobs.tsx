@@ -47,6 +47,7 @@ type CountMode = 'absolute' | 'current_aware';
 
 type ZoneSeedCounts = {
   placeCount: number;
+  questCount: number;
   monsterCount: number;
   bossEncounterCount: number;
   raidEncounterCount: number;
@@ -128,6 +129,7 @@ type BulkQueueZoneSeedJobsResponse = {
 
 const defaultSeedCountInputs: SeedCountInputMap = {
   placeCount: '0',
+  questCount: '0',
   monsterCount: '0',
   bossEncounterCount: '0',
   raidEncounterCount: '0',
@@ -150,6 +152,11 @@ const seedCountFields: Array<{
     key: 'placeCount',
     label: 'Places',
     description: 'POIs and coupled standalone challenges',
+  },
+  {
+    key: 'questCount',
+    label: 'Quests',
+    description: 'Side quests generated from matching archetypes',
   },
   {
     key: 'monsterCount',
@@ -626,6 +633,7 @@ const formatDate = (value?: string) => {
 
 const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
   placeCount: job.placeCount ?? 0,
+  questCount: job.questCount ?? 0,
   monsterCount: job.monsterCount ?? 0,
   bossEncounterCount: job.bossEncounterCount ?? 0,
   raidEncounterCount: job.raidEncounterCount ?? 0,
@@ -647,7 +655,7 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
 });
 
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
-  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.shrineCount} shrines, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
+  `${counts.placeCount} POIs/challenges, ${counts.questCount} quests, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.shrineCount} shrines, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
 
 const formatCountMode = (mode?: CountMode) => {
   switch (mode) {
@@ -742,6 +750,7 @@ const inferAutoSeedCounts = (
 
   return {
     placeCount,
+    questCount: inferAutoCount(areaAcres, 0.85),
     monsterCount: inferAutoCount(areaAcres, 1.9),
     bossEncounterCount: inferAutoCount(areaAcres, 0.85),
     raidEncounterCount: inferAutoCount(areaAcres, 0.55),
@@ -1501,7 +1510,7 @@ export const ZoneSeedJobs = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Draft settings
@@ -1662,8 +1671,8 @@ export const ZoneSeedJobs = () => {
               )}
             </div>
           )}
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="md:col-span-2 xl:col-span-4">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Zone kind
               </label>
@@ -1994,7 +2003,7 @@ export const ZoneSeedJobs = () => {
           </div>
         </div>
 
-        <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 space-y-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <h2 className="text-lg font-semibold text-gray-900">

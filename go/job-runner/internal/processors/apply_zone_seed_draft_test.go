@@ -74,6 +74,62 @@ func TestFilterZoneSeedMonsterTemplatesByZoneKindLeavesLegacyZonesBroad(t *testi
 	}
 }
 
+func TestFilterZoneSeedQuestArchetypesByZoneKind(t *testing.T) {
+	forestQuest := &models.QuestArchetype{Name: "Forest Watch", ZoneKind: "forest", Category: models.QuestCategorySide}
+	swampQuest := &models.QuestArchetype{Name: "Swamp Patrol", ZoneKind: "swamp", Category: models.QuestCategorySide}
+	mainStoryQuest := &models.QuestArchetype{Name: "Forest Chapter", ZoneKind: "forest", Category: models.QuestCategoryMainStory}
+
+	filtered := filterZoneSeedQuestArchetypes(
+		[]*models.QuestArchetype{forestQuest, swampQuest, mainStoryQuest},
+		"forest",
+	)
+	if len(filtered) != 1 || filtered[0].Name != "Forest Watch" {
+		t.Fatalf("expected only forest side quests, got %+v", filtered)
+	}
+}
+
+func TestFilterZoneSeedQuestArchetypesLeavesBlankZoneKindBroadForSideQuests(t *testing.T) {
+	forestQuest := &models.QuestArchetype{Name: "Forest Watch", ZoneKind: "forest", Category: models.QuestCategorySide}
+	swampQuest := &models.QuestArchetype{Name: "Swamp Patrol", ZoneKind: "swamp", Category: models.QuestCategorySide}
+	mainStoryQuest := &models.QuestArchetype{Name: "Forest Chapter", ZoneKind: "forest", Category: models.QuestCategoryMainStory}
+
+	filtered := filterZoneSeedQuestArchetypes(
+		[]*models.QuestArchetype{forestQuest, swampQuest, mainStoryQuest},
+		"",
+	)
+	if len(filtered) != 2 {
+		t.Fatalf("expected all side quests for blank zone kind, got %+v", filtered)
+	}
+}
+
+func TestFilterZoneSeedExpositionTemplatesByZoneKindPrefersMatchesAndKeepsGenericFallback(t *testing.T) {
+	templates := []models.ExpositionTemplate{
+		{Title: "Forest Warning", ZoneKind: "forest"},
+		{Title: "Swamp Murmur", ZoneKind: "swamp"},
+		{Title: "Generic Omen", ZoneKind: ""},
+	}
+
+	filtered := filterZoneSeedExpositionTemplates(templates, "forest")
+	if len(filtered) != 2 {
+		t.Fatalf("expected matched and generic exposition templates, got %+v", filtered)
+	}
+	if filtered[0].Title != "Forest Warning" || filtered[1].Title != "Generic Omen" {
+		t.Fatalf("expected forest template first with generic fallback, got %+v", filtered)
+	}
+}
+
+func TestFilterZoneSeedExpositionTemplatesByZoneKindFallsBackToGenericWhenNoMatchExists(t *testing.T) {
+	templates := []models.ExpositionTemplate{
+		{Title: "Swamp Murmur", ZoneKind: "swamp"},
+		{Title: "Generic Omen", ZoneKind: ""},
+	}
+
+	filtered := filterZoneSeedExpositionTemplates(templates, "forest")
+	if len(filtered) != 1 || filtered[0].Title != "Generic Omen" {
+		t.Fatalf("expected generic exposition fallback, got %+v", filtered)
+	}
+}
+
 func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
 	typeIDOne := uuid.New()
 	typeIDTwo := uuid.New()

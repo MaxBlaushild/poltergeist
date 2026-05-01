@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 type ZoneKindRatioField = {
   key:
     | 'placeCountRatio'
+    | 'questCountRatio'
     | 'monsterCountRatio'
     | 'bossEncounterCountRatio'
     | 'raidEncounterCountRatio'
@@ -27,6 +28,7 @@ type ZoneKindFormState = {
   defaultShopkeeperItemTags: string;
   overlayColor: string;
   placeCountRatio: string;
+  questCountRatio: string;
   monsterCountRatio: string;
   bossEncounterCountRatio: string;
   raidEncounterCountRatio: string;
@@ -92,6 +94,11 @@ const ratioFields: ZoneKindRatioField[] = [
     key: 'placeCountRatio',
     label: 'Places',
     description: 'POIs and place-led encounters',
+  },
+  {
+    key: 'questCountRatio',
+    label: 'Quests',
+    description: 'Side-quest density for seeded zones',
   },
   {
     key: 'monsterCountRatio',
@@ -238,6 +245,7 @@ const zoneKindPatternMotifs = (slug: string) => {
 const zoneKindPatternCueLabels = (zoneKind: ZoneKind) => {
   const cues = [
     { label: 'place-rich', value: zoneKind.placeCountRatio },
+    { label: 'quest-rich', value: zoneKind.questCountRatio },
     { label: 'monster-heavy', value: zoneKind.monsterCountRatio },
     { label: 'boss-dangerous', value: zoneKind.bossEncounterCountRatio },
     { label: 'raid-heavy', value: zoneKind.raidEncounterCountRatio },
@@ -358,6 +366,7 @@ const emptyForm = (): ZoneKindFormState => ({
   defaultShopkeeperItemTags: '',
   overlayColor: defaultZoneKindOverlayColor,
   placeCountRatio: '1',
+  questCountRatio: '1',
   monsterCountRatio: '1',
   bossEncounterCountRatio: '1',
   raidEncounterCountRatio: '1',
@@ -429,6 +438,7 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
     normalizeOverlayColorDraft(zoneKind.overlayColor) ||
     defaultZoneKindOverlayColor,
   placeCountRatio: String(zoneKind.placeCountRatio ?? 1),
+  questCountRatio: String(zoneKind.questCountRatio ?? 1),
   monsterCountRatio: String(zoneKind.monsterCountRatio ?? 1),
   bossEncounterCountRatio: String(zoneKind.bossEncounterCountRatio ?? 1),
   raidEncounterCountRatio: String(zoneKind.raidEncounterCountRatio ?? 1),
@@ -465,6 +475,7 @@ const parseZoneKindForm = (
     ),
     overlayColor: '',
     placeCountRatio: 1,
+    questCountRatio: 1,
     monsterCountRatio: 1,
     bossEncounterCountRatio: 1,
     raidEncounterCountRatio: 1,

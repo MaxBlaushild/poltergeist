@@ -124,13 +124,15 @@ type ExpositionTemplateData struct {
 }
 
 type ExpositionTemplateInstanceOptions struct {
-	ID                uuid.UUID
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ZoneID            uuid.UUID
-	PointOfInterestID *uuid.UUID
-	Latitude          float64
-	Longitude         float64
+	ID                   uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ZoneID               uuid.UUID
+	ZoneKind             string
+	ExpositionTemplateID *uuid.UUID
+	PointOfInterestID    *uuid.UUID
+	Latitude             float64
+	Longitude            float64
 }
 
 func ExpositionTemplateDataFromExposition(source *Exposition) ExpositionTemplateData {
@@ -247,24 +249,26 @@ func (t ExpositionTemplateData) Instantiate(options ExpositionTemplateInstanceOp
 		updatedAt = createdAt
 	}
 	return &Exposition{
-		ID:                 id,
-		CreatedAt:          createdAt,
-		UpdatedAt:          updatedAt,
-		ZoneID:             options.ZoneID,
-		PointOfInterestID:  cloneOptionalUUID(options.PointOfInterestID),
-		Latitude:           options.Latitude,
-		Longitude:          options.Longitude,
-		Title:              strings.TrimSpace(t.Title),
-		Description:        strings.TrimSpace(t.Description),
-		Dialogue:           cloneDialogueSequence(t.Dialogue),
-		RequiredStoryFlags: append(StringArray{}, t.RequiredStoryFlags...),
-		ImageURL:           strings.TrimSpace(t.ImageURL),
-		ThumbnailURL:       strings.TrimSpace(t.ThumbnailURL),
-		RewardMode:         t.RewardMode,
-		RandomRewardSize:   t.RandomRewardSize,
-		RewardExperience:   t.RewardExperience,
-		RewardGold:         t.RewardGold,
-		MaterialRewards:    append(BaseMaterialRewards{}, t.MaterialRewards...),
+		ID:                   id,
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
+		ZoneID:               options.ZoneID,
+		ZoneKind:             NormalizeZoneKind(options.ZoneKind),
+		ExpositionTemplateID: cloneOptionalUUID(options.ExpositionTemplateID),
+		PointOfInterestID:    cloneOptionalUUID(options.PointOfInterestID),
+		Latitude:             options.Latitude,
+		Longitude:            options.Longitude,
+		Title:                strings.TrimSpace(t.Title),
+		Description:          strings.TrimSpace(t.Description),
+		Dialogue:             cloneDialogueSequence(t.Dialogue),
+		RequiredStoryFlags:   append(StringArray{}, t.RequiredStoryFlags...),
+		ImageURL:             strings.TrimSpace(t.ImageURL),
+		ThumbnailURL:         strings.TrimSpace(t.ThumbnailURL),
+		RewardMode:           t.RewardMode,
+		RandomRewardSize:     t.RandomRewardSize,
+		RewardExperience:     t.RewardExperience,
+		RewardGold:           t.RewardGold,
+		MaterialRewards:      append(BaseMaterialRewards{}, t.MaterialRewards...),
 	}
 }
 

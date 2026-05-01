@@ -826,11 +826,25 @@
 }
 
 @media (max-width: 860px) {
+  .qa-grid {
+    grid-template-columns: 1fr !important;
+  }
+
   .qa-hero {
     grid-template-columns: 1fr;
   }
+
   .qa-hero-actions {
     justify-content: flex-start;
+  }
+
+  .qa-reward-row {
+    grid-template-columns: 1fr;
+  }
+
+  .qa-footer {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 

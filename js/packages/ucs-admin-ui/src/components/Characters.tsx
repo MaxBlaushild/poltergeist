@@ -1506,7 +1506,8 @@ export const Characters = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) 240px',
+            gridTemplateColumns:
+              'repeat(auto-fit, minmax(min(220px, 100%), 1fr))',
             gap: '12px',
           }}
         >
@@ -1572,7 +1573,8 @@ export const Characters = () => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gridTemplateColumns:
+            'repeat(auto-fill, minmax(min(300px, 100%), 1fr))',
           gap: '20px',
           padding: '20px',
         }}

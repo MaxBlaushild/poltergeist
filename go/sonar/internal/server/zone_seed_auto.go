@@ -50,11 +50,13 @@ func newZoneSeedDraftResolutionError(statusCode int, err error) error {
 
 type zoneSeedDraftCountOverrides struct {
 	PlaceCount             *int
+	QuestCount             *int
 	MonsterCount           *int
 	BossEncounterCount     *int
 	RaidEncounterCount     *int
 	InputEncounterCount    *int
 	OptionEncounterCount   *int
+	ExpositionCount        *int
 	TreasureChestCount     *int
 	HealingFountainCount   *int
 	ShrineCount            *int
@@ -111,6 +113,9 @@ func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (z
 	if overrides.PlaceCount, err = copyCount(requestBody.PlaceCount, "placeCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
+	if overrides.QuestCount, err = copyCount(requestBody.QuestCount, "questCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
 	if overrides.MonsterCount, err = copyCount(requestBody.MonsterCount, "monsterCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
@@ -124,6 +129,9 @@ func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (z
 		return zoneSeedDraftCountOverrides{}, err
 	}
 	if overrides.OptionEncounterCount, err = copyCount(requestBody.OptionEncounterCount, "optionEncounterCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
+	if overrides.ExpositionCount, err = copyCount(requestBody.ExpositionCount, "expositionCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
 	if overrides.TreasureChestCount, err = copyCount(requestBody.TreasureChestCount, "treasureChestCount"); err != nil {
@@ -157,6 +165,9 @@ func zoneSeedResolvedCountsFromOverrides(overrides zoneSeedDraftCountOverrides) 
 	if overrides.PlaceCount != nil {
 		counts.PlaceCount = *overrides.PlaceCount
 	}
+	if overrides.QuestCount != nil {
+		counts.QuestCount = *overrides.QuestCount
+	}
 	if overrides.MonsterCount != nil {
 		counts.MonsterCount = *overrides.MonsterCount
 	}
@@ -171,6 +182,9 @@ func zoneSeedResolvedCountsFromOverrides(overrides zoneSeedDraftCountOverrides) 
 	}
 	if overrides.OptionEncounterCount != nil {
 		counts.OptionEncounterCount = *overrides.OptionEncounterCount
+	}
+	if overrides.ExpositionCount != nil {
+		counts.ExpositionCount = *overrides.ExpositionCount
 	}
 	if overrides.TreasureChestCount != nil {
 		counts.TreasureChestCount = *overrides.TreasureChestCount
@@ -201,6 +215,9 @@ func zoneSeedApplyCountOverrides(
 	if overrides.PlaceCount != nil {
 		counts.PlaceCount = *overrides.PlaceCount
 	}
+	if overrides.QuestCount != nil {
+		counts.QuestCount = *overrides.QuestCount
+	}
 	if overrides.MonsterCount != nil {
 		counts.MonsterCount = *overrides.MonsterCount
 	}
@@ -215,6 +232,9 @@ func zoneSeedApplyCountOverrides(
 	}
 	if overrides.OptionEncounterCount != nil {
 		counts.OptionEncounterCount = *overrides.OptionEncounterCount
+	}
+	if overrides.ExpositionCount != nil {
+		counts.ExpositionCount = *overrides.ExpositionCount
 	}
 	if overrides.TreasureChestCount != nil {
 		counts.TreasureChestCount = *overrides.TreasureChestCount
@@ -253,11 +273,13 @@ func zoneSeedCountsToNormalizedRequest(
 		CountMode:              countMode,
 		ZoneKind:               zoneKind,
 		PlaceCount:             counts.PlaceCount,
+		QuestCount:             counts.QuestCount,
 		MonsterCount:           counts.MonsterCount,
 		BossEncounterCount:     counts.BossEncounterCount,
 		RaidEncounterCount:     counts.RaidEncounterCount,
 		InputEncounterCount:    counts.InputEncounterCount,
 		OptionEncounterCount:   counts.OptionEncounterCount,
+		ExpositionCount:        counts.ExpositionCount,
 		TreasureChestCount:     counts.TreasureChestCount,
 		HealingFountainCount:   counts.HealingFountainCount,
 		ShrineCount:            counts.ShrineCount,
@@ -277,11 +299,13 @@ func zoneSeedCountsFromNormalizedRequest(settings *normalizedZoneSeedDraftReques
 	}
 	return models.ZoneSeedResolvedCounts{
 		PlaceCount:             settings.PlaceCount,
+		QuestCount:             settings.QuestCount,
 		MonsterCount:           settings.MonsterCount,
 		BossEncounterCount:     settings.BossEncounterCount,
 		RaidEncounterCount:     settings.RaidEncounterCount,
 		InputEncounterCount:    settings.InputEncounterCount,
 		OptionEncounterCount:   settings.OptionEncounterCount,
+		ExpositionCount:        settings.ExpositionCount,
 		TreasureChestCount:     settings.TreasureChestCount,
 		HealingFountainCount:   settings.HealingFountainCount,
 		ShrineCount:            settings.ShrineCount,
@@ -304,11 +328,13 @@ func zoneSeedSubtractExistingCounts(
 
 	return models.ZoneSeedResolvedCounts{
 		PlaceCount:             clamp(target.PlaceCount - existing.PlaceCount),
+		QuestCount:             clamp(target.QuestCount - existing.QuestCount),
 		MonsterCount:           clamp(target.MonsterCount - existing.MonsterCount),
 		BossEncounterCount:     clamp(target.BossEncounterCount - existing.BossEncounterCount),
 		RaidEncounterCount:     clamp(target.RaidEncounterCount - existing.RaidEncounterCount),
 		InputEncounterCount:    clamp(target.InputEncounterCount - existing.InputEncounterCount),
 		OptionEncounterCount:   clamp(target.OptionEncounterCount - existing.OptionEncounterCount),
+		ExpositionCount:        clamp(target.ExpositionCount - existing.ExpositionCount),
 		TreasureChestCount:     clamp(target.TreasureChestCount - existing.TreasureChestCount),
 		HealingFountainCount:   clamp(target.HealingFountainCount - existing.HealingFountainCount),
 		ShrineCount:            clamp(target.ShrineCount - existing.ShrineCount),
@@ -331,11 +357,13 @@ func zoneSeedCurrentAwareWarnings(
 
 	items := []countWarning{
 		{label: "POIs", target: target.PlaceCount, existing: existing.PlaceCount, queued: queued.PlaceCount},
+		{label: "quests", target: target.QuestCount, existing: existing.QuestCount, queued: queued.QuestCount},
 		{label: "monster encounters", target: target.MonsterCount, existing: existing.MonsterCount, queued: queued.MonsterCount},
 		{label: "boss encounters", target: target.BossEncounterCount, existing: existing.BossEncounterCount, queued: queued.BossEncounterCount},
 		{label: "raid encounters", target: target.RaidEncounterCount, existing: existing.RaidEncounterCount, queued: queued.RaidEncounterCount},
 		{label: "input scenarios", target: target.InputEncounterCount, existing: existing.InputEncounterCount, queued: queued.InputEncounterCount},
 		{label: "option scenarios", target: target.OptionEncounterCount, existing: existing.OptionEncounterCount, queued: queued.OptionEncounterCount},
+		{label: "expositions", target: target.ExpositionCount, existing: existing.ExpositionCount, queued: queued.ExpositionCount},
 		{label: "treasure chests", target: target.TreasureChestCount, existing: existing.TreasureChestCount, queued: queued.TreasureChestCount},
 		{label: "healing fountains", target: target.HealingFountainCount, existing: existing.HealingFountainCount, queued: queued.HealingFountainCount},
 		{label: "shrines", target: target.ShrineCount, existing: existing.ShrineCount, queued: queued.ShrineCount},
@@ -412,11 +440,13 @@ func zoneSeedInferAutoCounts(
 	herbalismResourceCount, miningResourceCount := models.SplitZoneSeedResourceCount(totalResourceCount)
 	counts := models.ZoneSeedResolvedCounts{
 		PlaceCount:             zoneSeedAutoCurveCount(areaAcres, 2.75),
+		QuestCount:             zoneSeedAutoCurveCount(areaAcres, 0.85),
 		MonsterCount:           zoneSeedAutoCurveCount(areaAcres, 1.9),
 		BossEncounterCount:     zoneSeedAutoCurveCount(areaAcres, 0.85),
 		RaidEncounterCount:     zoneSeedAutoCurveCount(areaAcres, 0.55),
 		InputEncounterCount:    zoneSeedAutoCurveCount(areaAcres, 1.1),
 		OptionEncounterCount:   zoneSeedAutoCurveCount(areaAcres, 1.1),
+		ExpositionCount:        zoneSeedAutoCurveCount(areaAcres, 0.9),
 		TreasureChestCount:     zoneSeedAutoCurveCount(areaAcres, 1.35),
 		HealingFountainCount:   zoneSeedAutoCurveCount(areaAcres, 0.75),
 		ShrineCount:            zoneSeedAutoCurveCount(areaAcres, 0.6),
@@ -1004,6 +1034,10 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 	if err != nil {
 		return zoneSeedCurrentContentSnapshot{}, err
 	}
+	quests, err := s.dbClient.Quest().FindByZoneID(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
 
 	encounters, err := s.dbClient.MonsterEncounter().FindByZoneIDExcludingQuestNodes(ctx, zone.ID)
 	if err != nil {
@@ -1011,6 +1045,10 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 	}
 
 	scenarios, err := s.dbClient.Scenario().FindByZoneIDExcludingQuestNodes(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+	expositions, err := s.dbClient.Exposition().FindByZoneIDExcludingQuestNodes(ctx, zone.ID)
 	if err != nil {
 		return zoneSeedCurrentContentSnapshot{}, err
 	}
@@ -1037,6 +1075,7 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 
 	counts := models.ZoneSeedResolvedCounts{
 		PlaceCount:           len(pointsOfInterest),
+		QuestCount:           len(quests),
 		TreasureChestCount:   len(treasureChests),
 		HealingFountainCount: len(healingFountains),
 		ShrineCount:          len(shrines),
@@ -1060,6 +1099,7 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 			counts.OptionEncounterCount++
 		}
 	}
+	counts.ExpositionCount = len(expositions)
 
 	for _, resource := range resources {
 		switch models.NormalizeZoneKind(resource.ResourceType.Slug) {

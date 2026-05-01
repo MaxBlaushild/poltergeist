@@ -12,6 +12,7 @@ export type ZoneKind = {
     patternTileGenerationStatus: string;
     patternTileGenerationError: string;
     placeCountRatio: number;
+    questCountRatio: number;
     monsterCountRatio: number;
     bossEncounterCountRatio: number;
     raidEncounterCountRatio: number;
