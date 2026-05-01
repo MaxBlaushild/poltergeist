@@ -814,8 +814,8 @@ export const Scenarios = () => {
     const explicitRewardCount = dashboardRecords.filter(
       (record) => record.rewardMode === 'explicit'
     ).length;
-    const scaledCount = dashboardRecords.filter((record) =>
-      record.scaleWithUserLevel
+    const scaledCount = dashboardRecords.filter(
+      (record) => record.scaleWithUserLevel
     ).length;
 
     return [
@@ -854,7 +854,10 @@ export const Scenarios = () => {
             record.zoneKind?.trim()
               ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
               : 'Unassigned',
-          { emptyLabel: 'Unassigned' }
+          {
+            emptyLabel: 'Unassigned',
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -874,7 +877,7 @@ export const Scenarios = () => {
         ),
       },
     ],
-    [dashboardRecords, genres, zoneKindBySlug]
+    [dashboardRecords, genres, zoneKindBySlug, zoneKinds]
   );
 
   const [showModal, setShowModal] = useState(false);
@@ -1083,13 +1086,10 @@ export const Scenarios = () => {
       setGenerationJobsLoading(true);
       const response = await apiClient.get<
         PaginatedResponse<ScenarioGenerationJob>
-      >(
-        '/sonar/admin/scenario-generation-jobs',
-        {
-          page: generationJobsPage,
-          pageSize: scenarioGenerationJobsPageSize,
-        }
-      );
+      >('/sonar/admin/scenario-generation-jobs', {
+        page: generationJobsPage,
+        pageSize: scenarioGenerationJobsPageSize,
+      });
       setGenerationJobs(Array.isArray(response?.items) ? response.items : []);
       setGenerationJobsTotal(response?.total ?? 0);
       setGenerationError(null);
@@ -1276,10 +1276,7 @@ export const Scenarios = () => {
         );
         await loadGenerationJobs();
       } catch (err) {
-        console.error(
-          `Error retrying scenario generation job ${job.id}:`,
-          err
-        );
+        console.error(`Error retrying scenario generation job ${job.id}:`, err);
         setGenerationError('Failed to retry scenario generation job.');
       } finally {
         setRetryingGenerationJobId(null);
@@ -3478,7 +3475,9 @@ export const Scenarios = () => {
                         <button
                           type="button"
                           className="bg-amber-600 text-white px-2 py-1 rounded-md text-xs disabled:opacity-60"
-                          onClick={() => void handleRetryScenarioGenerationJob(job)}
+                          onClick={() =>
+                            void handleRetryScenarioGenerationJob(job)
+                          }
                           disabled={isRetrying}
                         >
                           {isRetrying ? 'Retrying…' : 'Retry'}

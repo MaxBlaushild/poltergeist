@@ -253,11 +253,16 @@ export const Expositions: React.FC = () => {
       {
         title: 'Zone Kinds',
         note: 'Effective exposition placement by zone kind.',
-        buckets: countBy(records, (record) =>
-          zoneKindLabel(
-            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
-            zoneKindBySlug
-          )
+        buckets: countBy(
+          records,
+          (record) =>
+            zoneKindLabel(
+              record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+              zoneKindBySlug
+            ),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -289,7 +294,7 @@ export const Expositions: React.FC = () => {
         }),
       },
     ],
-    [records, zoneDefaultKindById, zoneKindBySlug]
+    [records, zoneDefaultKindById, zoneKindBySlug, zoneKinds]
   );
 
   const refreshExpositionIconStatus = useCallback(

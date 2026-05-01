@@ -567,11 +567,16 @@ export const Challenges = () => {
       {
         title: 'Zone Kinds',
         note: 'Effective challenge placement across zone kinds.',
-        buckets: countBy(dashboardRecords, (record) =>
-          zoneKindLabel(
-            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
-            zoneKindBySlug
-          )
+        buckets: countBy(
+          dashboardRecords,
+          (record) =>
+            zoneKindLabel(
+              record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+              zoneKindBySlug
+            ),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -616,7 +621,7 @@ export const Challenges = () => {
         emptyLabel: 'No stat tags yet.',
       },
     ],
-    [dashboardRecords, zoneDefaultKindById, zoneKindBySlug]
+    [dashboardRecords, zoneDefaultKindById, zoneKindBySlug, zoneKinds]
   );
 
   const loadPointsOfInterestForZone = useCallback(

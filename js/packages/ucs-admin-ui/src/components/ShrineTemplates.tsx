@@ -268,7 +268,9 @@ export const ShrineTemplates = () => {
   );
 
   const dashboardMetrics = useMemo(() => {
-    const zoneBoundCount = records.filter((record) => record.zoneKind?.trim()).length;
+    const zoneBoundCount = records.filter((record) =>
+      record.zoneKind?.trim()
+    ).length;
     const strongestTemplate = records.reduce(
       (max, record) => Math.max(max, record.baseMagnitude ?? 0),
       0
@@ -321,14 +323,12 @@ export const ShrineTemplates = () => {
         value: records.filter((record) => !record.zoneKind?.trim()).length,
         note: 'Available to any zone when selected or seeded',
       },
-      ...zoneKinds
-        .map((zoneKind) => ({
-          label: zoneKind.name,
-          value: records.filter((record) => record.zoneKind === zoneKind.slug)
-            .length,
-          note: zoneKind.description?.trim() || zoneKind.slug,
-        }))
-        .filter((bucket) => bucket.value > 0),
+      ...zoneKinds.map((zoneKind) => ({
+        label: zoneKind.name,
+        value: records.filter((record) => record.zoneKind === zoneKind.slug)
+          .length,
+        note: zoneKind.description?.trim() || zoneKind.slug,
+      })),
     ];
 
     const jobBuckets = jobs.slice(0, 6).map((job) => ({
@@ -352,7 +352,7 @@ export const ShrineTemplates = () => {
       {
         title: 'Zone Kind Coverage',
         note: 'Use global templates as overflow and zone-kind templates for flavor.',
-        buckets: byZoneKind.filter((bucket) => bucket.value > 0),
+        buckets: byZoneKind,
         emptyLabel: 'No zone kind coverage yet.',
       },
       {
@@ -625,7 +625,8 @@ export const ShrineTemplates = () => {
             </p>
           </div>
           <div className="text-sm text-gray-500">
-            {sortedRecords.length} template{sortedRecords.length === 1 ? '' : 's'}
+            {sortedRecords.length} template
+            {sortedRecords.length === 1 ? '' : 's'}
           </div>
         </div>
         {sortedRecords.length === 0 ? (

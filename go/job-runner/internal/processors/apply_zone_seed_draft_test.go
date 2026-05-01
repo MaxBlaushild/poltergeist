@@ -1,6 +1,7 @@
 package processors
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
@@ -127,6 +128,72 @@ func TestFilterZoneSeedExpositionTemplatesByZoneKindFallsBackToGenericWhenNoMatc
 	filtered := filterZoneSeedExpositionTemplates(templates, "forest")
 	if len(filtered) != 1 || filtered[0].Title != "Generic Omen" {
 		t.Fatalf("expected generic exposition fallback, got %+v", filtered)
+	}
+}
+
+func TestMatchZoneSeedPOILocationArchetypePrefersMostSpecificIncludedTypes(t *testing.T) {
+	archetypes := []*models.LocationArchetype{
+		{
+			Name:          "Coffeehouse",
+			IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeCafe},
+		},
+		{
+			Name:          "Bakery Cafe",
+			IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeCafe, googlemaps.TypeBakery},
+		},
+		{
+			Name:          "Park",
+			IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypePark},
+		},
+	}
+
+	match := matchZoneSeedPOILocationArchetype(archetypes, &models.ZoneSeedPointOfInterestDraft{
+		Types: []string{"cafe", "bakery", "food_store"},
+	})
+	if match == nil || match.Name != "Bakery Cafe" {
+		t.Fatalf("expected Bakery Cafe archetype, got %+v", match)
+	}
+}
+
+func TestMatchZoneSeedPOILocationArchetypeSkipsExcludedTypes(t *testing.T) {
+	archetypes := []*models.LocationArchetype{
+		{
+			Name:          "Coffeehouse",
+			IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeCafe},
+			ExcludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeMuseum},
+		},
+		{
+			Name:          "Museum",
+			IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeMuseum},
+		},
+	}
+
+	match := matchZoneSeedPOILocationArchetype(archetypes, &models.ZoneSeedPointOfInterestDraft{
+		Types: []string{"cafe", "museum"},
+	})
+	if match == nil || match.Name != "Museum" {
+		t.Fatalf("expected Museum archetype, got %+v", match)
+	}
+}
+
+func TestFallbackZoneSeedReusableChallengeTemplateAvoidsSpecificPOIName(t *testing.T) {
+	draft := &models.ZoneSeedPointOfInterestDraft{
+		Name:    "Moonwake Coffee",
+		Address: "123 Lantern St",
+		Types:   []string{"cafe", "coffee_shop"},
+	}
+
+	spec := fallbackZoneSeedReusableChallengeTemplate(&models.LocationArchetype{Name: "Coffeehouse"}, draft)
+	lowerQuestion := strings.ToLower(spec.Question)
+	lowerDescription := strings.ToLower(spec.Description)
+	if strings.Contains(lowerQuestion, strings.ToLower(draft.Name)) {
+		t.Fatalf("expected reusable challenge question to omit POI name, got %q", spec.Question)
+	}
+	if strings.Contains(lowerDescription, strings.ToLower(draft.Address)) {
+		t.Fatalf("expected reusable challenge description to omit POI address, got %q", spec.Description)
+	}
+	if !strings.Contains(lowerQuestion, "this coffeehouse") {
+		t.Fatalf("expected reusable challenge question to stay generic, got %q", spec.Question)
 	}
 }
 

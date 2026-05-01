@@ -446,6 +446,7 @@ export const ScenarioTemplates = () => {
   const [convertingDraftId, setConvertingDraftId] = useState<string | null>(
     null
   );
+  const [convertingAllDrafts, setConvertingAllDrafts] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<ScenarioTemplateRecord | null>(null);
@@ -462,22 +463,26 @@ export const ScenarioTemplates = () => {
     async (suppressLoading = false) => {
       try {
         if (!suppressLoading) setLoading(true);
-        const [templateResp, jobResp, spellResp, genreResp] = await Promise.all([
-          apiClient.get<PaginatedResponse<ScenarioTemplateRecord>>(
-            '/sonar/admin/scenario-templates',
-            {
-              page,
-              pageSize: scenarioTemplateListPageSize,
-              query: deferredQuery.trim(),
-              genreId: genreFilter === 'all' ? '' : genreFilter,
-            }
-          ),
-          apiClient.get<ScenarioTemplateGenerationJob[]>(
-            '/sonar/admin/scenario-template-generation-jobs?limit=20'
-          ),
-          apiClient.get<Spell[]>('/sonar/spells'),
-          apiClient.get<ZoneGenre[]>('/sonar/zone-genres?includeInactive=true'),
-        ]);
+        const [templateResp, jobResp, spellResp, genreResp] = await Promise.all(
+          [
+            apiClient.get<PaginatedResponse<ScenarioTemplateRecord>>(
+              '/sonar/admin/scenario-templates',
+              {
+                page,
+                pageSize: scenarioTemplateListPageSize,
+                query: deferredQuery.trim(),
+                genreId: genreFilter === 'all' ? '' : genreFilter,
+              }
+            ),
+            apiClient.get<ScenarioTemplateGenerationJob[]>(
+              '/sonar/admin/scenario-template-generation-jobs?limit=20'
+            ),
+            apiClient.get<Spell[]>('/sonar/spells'),
+            apiClient.get<ZoneGenre[]>(
+              '/sonar/zone-genres?includeInactive=true'
+            ),
+          ]
+        );
         setRecords(
           Array.isArray(templateResp?.items) ? templateResp.items : []
         );
@@ -528,7 +533,7 @@ export const ScenarioTemplates = () => {
       if (!trimmedJobId) {
         setDrafts([]);
         setDraftError('');
-        return;
+        return [] as ScenarioTemplateGenerationDraft[];
       }
       try {
         setLoadingDrafts(true);
@@ -536,7 +541,9 @@ export const ScenarioTemplates = () => {
         const response = await apiClient.get<ScenarioTemplateGenerationDraft[]>(
           `/sonar/admin/scenario-template-generation-jobs/${trimmedJobId}/drafts`
         );
-        setDrafts(Array.isArray(response) ? response : []);
+        const nextDrafts = Array.isArray(response) ? response : [];
+        setDrafts(nextDrafts);
+        return nextDrafts;
       } catch (error) {
         console.error(
           'Failed to load scenario template generation drafts',
@@ -549,6 +556,7 @@ export const ScenarioTemplates = () => {
             'Failed to load generated scenario template drafts.'
           )
         );
+        return [] as ScenarioTemplateGenerationDraft[];
       } finally {
         setLoadingDrafts(false);
       }
@@ -666,7 +674,10 @@ export const ScenarioTemplates = () => {
             record.zoneKind?.trim()
               ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
               : 'Unassigned',
-          { emptyLabel: 'Unassigned' }
+          {
+            emptyLabel: 'Unassigned',
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -686,11 +697,15 @@ export const ScenarioTemplates = () => {
         ),
       },
     ],
-    [dashboardRecords, genres, zoneKindBySlug]
+    [dashboardRecords, genres, zoneKindBySlug, zoneKinds]
   );
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
+  );
+  const unconvertedDrafts = useMemo(
+    () => drafts.filter((draft) => draft.status !== 'converted'),
+    [drafts]
   );
 
   const openCreate = () => {
@@ -811,6 +826,7 @@ export const ScenarioTemplates = () => {
   const handleConvertDraft = async (draftId: string) => {
     try {
       setConvertingDraftId(draftId);
+      setDraftError('');
       await apiClient.post(
         `/sonar/admin/scenario-template-generation-drafts/${draftId}/convert`,
         {}
@@ -832,9 +848,71 @@ export const ScenarioTemplates = () => {
     }
   };
 
+  const handleConvertAllDrafts = async (jobId = selectedJobId) => {
+    const targetJobId = jobId.trim();
+    if (!targetJobId) {
+      return;
+    }
+
+    setConvertingAllDrafts(true);
+    setDraftError('');
+    setSelectedJobId(targetJobId);
+    let convertedCount = 0;
+    let failedCount = 0;
+
+    try {
+      const draftsToConvert =
+        targetJobId === selectedJobId ? drafts : await fetchDrafts(targetJobId);
+      const pendingDrafts = draftsToConvert.filter(
+        (draft) => draft.status !== 'converted'
+      );
+      if (pendingDrafts.length === 0) {
+        return;
+      }
+
+      for (const draft of pendingDrafts) {
+        try {
+          await apiClient.post(
+            `/sonar/admin/scenario-template-generation-drafts/${draft.id}/convert`,
+            {}
+          );
+          convertedCount += 1;
+        } catch (error) {
+          failedCount += 1;
+          console.error(
+            'Failed to convert scenario template draft during bulk convert',
+            error
+          );
+        }
+      }
+
+      await load(true);
+      await fetchDrafts(targetJobId);
+
+      if (failedCount > 0) {
+        setDraftError(
+          `Converted ${convertedCount} draft${
+            convertedCount === 1 ? '' : 's'
+          }, but ${failedCount} failed. You can retry the remaining drafts individually.`
+        );
+      }
+    } catch (error) {
+      console.error('Failed to bulk convert scenario template drafts', error);
+      setDraftError(
+        errorMessageFromUnknown(
+          error,
+          'Failed to convert scenario template drafts.'
+        )
+      );
+    } finally {
+      setConvertingAllDrafts(false);
+    }
+  };
+
   const handleDeleteDraft = async (draftId: string) => {
     try {
       setDeletingDraftId(draftId);
+      setDraftError('');
       await apiClient.delete(
         `/sonar/admin/scenario-template-generation-drafts/${draftId}`
       );
@@ -926,7 +1004,10 @@ export const ScenarioTemplates = () => {
                 <option value="">Fantasy</option>
               ) : (
                 genres.map((genre) => (
-                  <option key={`template-generation-${genre.id}`} value={genre.id}>
+                  <option
+                    key={`template-generation-${genre.id}`}
+                    value={genre.id}
+                  >
                     {formatGenreLabel(genre)}
                     {genre.active === false ? ' (inactive)' : ''}
                   </option>
@@ -1022,8 +1103,8 @@ export const ScenarioTemplates = () => {
                         <> • {zoneKindLabel(job.zoneKind, zoneKindBySlug)}</>
                       ) : null}{' '}
                       • {job.yeetIt ? 'Yeet mode' : 'Draft mode'} • Generated{' '}
-                      {job.createdCount} {job.yeetIt ? 'live templates' : 'drafts'}{' '}
-                      • queued{' '}
+                      {job.createdCount}{' '}
+                      {job.yeetIt ? 'live templates' : 'drafts'} • queued{' '}
                       {formatDate(job.createdAt)}
                     </div>
                     {job.errorMessage ? (
@@ -1031,6 +1112,24 @@ export const ScenarioTemplates = () => {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2">
+                    {!job.yeetIt ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleConvertAllDrafts(job.id)}
+                        disabled={
+                          convertingAllDrafts ||
+                          convertingDraftId !== null ||
+                          deletingDraftId !== null ||
+                          !['completed', 'failed'].includes(job.status) ||
+                          job.createdCount <= 0
+                        }
+                        className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {convertingAllDrafts && selectedJobId === job.id
+                          ? 'Converting...'
+                          : 'Convert Batch'}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setSelectedJobId(job.id)}
@@ -1072,10 +1171,35 @@ export const ScenarioTemplates = () => {
               </p>
             </div>
             {selectedJob ? (
-              <div className="text-sm text-gray-500">
-                Inspecting {selectedJob.openEnded ? 'open-ended' : 'choice-based'}{' '}
-                {selectedJob.yeetIt ? 'yeet' : 'draft'} job queued{' '}
-                {formatDate(selectedJob.createdAt)}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm text-gray-500">
+                  Inspecting{' '}
+                  {selectedJob.openEnded ? 'open-ended' : 'choice-based'}{' '}
+                  {selectedJob.yeetIt ? 'yeet' : 'draft'} job queued{' '}
+                  {formatDate(selectedJob.createdAt)}
+                </div>
+                {!selectedJob.yeetIt ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleConvertAllDrafts()}
+                    disabled={
+                      loadingDrafts ||
+                      convertingAllDrafts ||
+                      convertingDraftId !== null ||
+                      deletingDraftId !== null ||
+                      unconvertedDrafts.length === 0
+                    }
+                    className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {convertingAllDrafts
+                      ? 'Converting all...'
+                      : `Convert All to Templates${
+                          unconvertedDrafts.length > 0
+                            ? ` (${unconvertedDrafts.length})`
+                            : ''
+                        }`}
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -1094,8 +1218,8 @@ export const ScenarioTemplates = () => {
                 {selectedJob.yeetIt
                   ? 'This job created live templates directly, so there are no drafts to review below. Use the template list to inspect the results.'
                   : ['queued', 'in_progress'].includes(selectedJob.status)
-                  ? 'This job has not produced any drafts yet.'
-                  : 'No drafts for this job yet.'}
+                    ? 'This job has not produced any drafts yet.'
+                    : 'No drafts for this job yet.'}
               </p>
             ) : (
               drafts.map((draft) => {
@@ -1103,7 +1227,9 @@ export const ScenarioTemplates = () => {
                 const options = Array.isArray(payload?.options)
                   ? payload.options
                   : [];
-                const sharedItemRewardCount = Array.isArray(payload?.itemRewards)
+                const sharedItemRewardCount = Array.isArray(
+                  payload?.itemRewards
+                )
                   ? payload.itemRewards.length
                   : 0;
                 const sharedItemChoiceCount = Array.isArray(
@@ -1111,10 +1237,13 @@ export const ScenarioTemplates = () => {
                 )
                   ? payload.itemChoiceRewards.length
                   : 0;
-                const sharedSpellRewardCount = Array.isArray(payload?.spellRewards)
+                const sharedSpellRewardCount = Array.isArray(
+                  payload?.spellRewards
+                )
                   ? payload.spellRewards.length
                   : 0;
-                const draftZoneKind = draft.zoneKind?.trim() || payload.zoneKind;
+                const draftZoneKind =
+                  draft.zoneKind?.trim() || payload.zoneKind;
                 return (
                   <div
                     key={draft.id}
@@ -1131,8 +1260,7 @@ export const ScenarioTemplates = () => {
                           {draftZoneKind?.trim()
                             ? zoneKindLabel(draftZoneKind, zoneKindBySlug)
                             : 'Unassigned'}{' '}
-                          •{' '}
-                          {draft.openEnded ? 'Open ended' : 'Choice based'} •
+                          • {draft.openEnded ? 'Open ended' : 'Choice based'} •
                           difficulty {draft.difficulty} • created{' '}
                           {formatDate(draft.createdAt)}
                           {draft.convertedAt ? (
@@ -1144,8 +1272,9 @@ export const ScenarioTemplates = () => {
                         </div>
                         <div className="text-sm text-gray-600">
                           Shared rewards: {payload.rewardExperience ?? 0} XP •{' '}
-                          {payload.rewardGold ?? 0} gold • {sharedItemRewardCount}{' '}
-                          item rewards • {sharedItemChoiceCount} item choices •{' '}
+                          {payload.rewardGold ?? 0} gold •{' '}
+                          {sharedItemRewardCount} item rewards •{' '}
+                          {sharedItemChoiceCount} item choices •{' '}
                           {sharedSpellRewardCount} spell rewards
                         </div>
                         {!draft.openEnded && options.length > 0 ? (
@@ -1188,22 +1317,26 @@ export const ScenarioTemplates = () => {
                           onClick={() => void handleConvertDraft(draft.id)}
                           disabled={
                             draft.status === 'converted' ||
-                            convertingDraftId === draft.id
+                            convertingDraftId === draft.id ||
+                            convertingAllDrafts
                           }
                           className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {draft.status === 'converted'
                             ? 'Converted'
-                            : convertingDraftId === draft.id
-                              ? 'Converting...'
-                              : 'Convert to Template'}
+                            : convertingAllDrafts
+                              ? 'Bulk converting...'
+                              : convertingDraftId === draft.id
+                                ? 'Converting...'
+                                : 'Convert to Template'}
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteDraft(draft.id)}
                           disabled={
                             draft.status === 'converted' ||
-                            deletingDraftId === draft.id
+                            deletingDraftId === draft.id ||
+                            convertingAllDrafts
                           }
                           className="rounded border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -1264,8 +1397,7 @@ export const ScenarioTemplates = () => {
                       {record.zoneKind?.trim()
                         ? zoneKindLabel(record.zoneKind, zoneKindBySlug)
                         : 'Unassigned'}{' '}
-                      •{' '}
-                      {record.openEnded ? 'Open ended' : 'Choice based'} •
+                      • {record.openEnded ? 'Open ended' : 'Choice based'} •
                       difficulty {record.difficulty}
                     </div>
                     <div className="font-medium whitespace-pre-wrap">
@@ -1339,7 +1471,10 @@ export const ScenarioTemplates = () => {
                     <option value="">Fantasy</option>
                   ) : (
                     genres.map((genre) => (
-                      <option key={`template-genre-${genre.id}`} value={genre.id}>
+                      <option
+                        key={`template-genre-${genre.id}`}
+                        value={genre.id}
+                      >
                         {formatGenreLabel(genre)}
                         {genre.active === false ? ' (inactive)' : ''}
                       </option>

@@ -1496,6 +1496,11 @@ func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
 		return nil
 	}
 
+	locationArchetypes, err := p.dbClient.LocationArchetype().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load location archetypes for point of interest challenges: %w", err)
+	}
+
 	narrator := pickZoneSeedNarrator(characterByDraftID)
 	for _, draftPOI := range job.Draft.PointsOfInterest {
 		poi, err := p.ensurePointOfInterest(ctx, zone, draftPOI.PlaceID)
@@ -1515,11 +1520,59 @@ func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
 			Name:        fmt.Sprintf("Field Challenge at %s", strings.TrimSpace(poi.Name)),
 			Description: strings.TrimSpace(zone.Description),
 		}
-		question, difficulty := p.generateQuestChallenge(ctx, zone, poi, &draftPOI, narrator, questDraft)
-		question, submissionType := normalizeAppliedChallengeQuestion(question, poi, &draftPOI)
-		description := p.generateStandalonePOIChallengeDescription(ctx, zone, poi, &draftPOI, question)
-		questDraft.ChallengeQuestion = question
-		statTags := p.classifyQuestStatTags(ctx, questDraft)
+
+		locationArchetype := matchZoneSeedPOILocationArchetype(locationArchetypes, &draftPOI)
+		question := ""
+		description := ""
+		submissionType := models.DefaultQuestNodeSubmissionType()
+		difficulty := 0
+		statTags := models.StringArray{}
+		var proficiency *string
+
+		if locationArchetype != nil {
+			template, err := p.resolveZoneSeedPOIChallengeTemplate(
+				ctx,
+				locationArchetype,
+				poi,
+				&draftPOI,
+				narrator,
+				questDraft,
+			)
+			if err != nil {
+				return err
+			}
+
+			question = strings.TrimSpace(template.Question)
+			if question == "" {
+				fallback := fallbackZoneSeedReusableChallengeTemplate(locationArchetype, &draftPOI)
+				question = fallback.Question
+				submissionType = fallback.SubmissionType
+				difficulty = fallback.Difficulty
+				statTags = fallback.StatTags
+				proficiency = fallback.Proficiency
+			} else {
+				submissionType = template.SubmissionType
+				if !submissionType.IsValid() {
+					submissionType = models.DefaultQuestNodeSubmissionType()
+				}
+				difficulty = template.Difficulty
+				statTags = append(models.StringArray(nil), template.StatTags...)
+				proficiency = template.Proficiency
+			}
+
+			description = p.generateStandalonePOIChallengeDescription(ctx, zone, poi, &draftPOI, question)
+			if len(statTags) == 0 {
+				statDraft := questDraft
+				statDraft.ChallengeQuestion = question
+				statTags = inferQuestStatTagsHeuristic(statDraft)
+			}
+		} else {
+			question, difficulty = p.generateQuestChallenge(ctx, zone, poi, &draftPOI, narrator, questDraft)
+			question, submissionType = normalizeAppliedChallengeQuestion(question, poi, &draftPOI)
+			description = p.generateStandalonePOIChallengeDescription(ctx, zone, poi, &draftPOI, question)
+			questDraft.ChallengeQuestion = question
+			statTags = p.classifyQuestStatTags(ctx, questDraft)
+		}
 		if statTags == nil {
 			statTags = models.StringArray{}
 		}
@@ -1548,6 +1601,7 @@ func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
 			RewardMode:           models.RewardModeRandom,
 			RandomRewardSize:     models.RandomRewardSizeSmall,
 			StatTags:             statTags,
+			Proficiency:          proficiency,
 		}
 		if err := p.dbClient.Challenge().Create(ctx, challenge); err != nil {
 			return err
@@ -1556,6 +1610,318 @@ func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
 	}
 
 	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) resolveZoneSeedPOIChallengeTemplate(
+	ctx context.Context,
+	locationArchetype *models.LocationArchetype,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	character *models.Character,
+	draft models.ZoneSeedQuestDraft,
+) (*models.ChallengeTemplate, error) {
+	if locationArchetype == nil {
+		return nil, fmt.Errorf("location archetype is required")
+	}
+
+	recentTemplates, err := p.dbClient.ChallengeTemplate().FindRecentByLocationArchetypeID(ctx, locationArchetype.ID, 24)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to load challenge templates for location archetype %s: %w",
+			locationArchetype.ID,
+			err,
+		)
+	}
+
+	usableTemplates := make([]models.ChallengeTemplate, 0, len(recentTemplates))
+	for _, template := range recentTemplates {
+		if strings.TrimSpace(template.Question) == "" {
+			continue
+		}
+		usableTemplates = append(usableTemplates, template)
+	}
+	if len(usableTemplates) > 0 {
+		selected := usableTemplates[rand.Intn(len(usableTemplates))]
+		return &selected, nil
+	}
+
+	return p.generateZoneSeedPOIChallengeTemplate(ctx, locationArchetype, poi, poiDraft, character, draft)
+}
+
+func (p *ApplyZoneSeedDraftProcessor) generateZoneSeedPOIChallengeTemplate(
+	ctx context.Context,
+	locationArchetype *models.LocationArchetype,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	character *models.Character,
+	draft models.ZoneSeedQuestDraft,
+) (*models.ChallengeTemplate, error) {
+	if locationArchetype == nil {
+		return nil, fmt.Errorf("location archetype is required for reusable point of interest challenges")
+	}
+
+	spec := p.generateZoneSeedReusableChallengeSpec(ctx, locationArchetype, poi, poiDraft, character, draft)
+	template := &models.ChallengeTemplate{
+		ID:                  uuid.New(),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+		LocationArchetypeID: locationArchetype.ID,
+		Question:            strings.TrimSpace(spec.Question),
+		Description:         strings.TrimSpace(spec.Description),
+		ImageURL:            "",
+		ThumbnailURL:        "",
+		ScaleWithUserLevel:  false,
+		RewardMode:          models.RewardModeRandom,
+		RandomRewardSize:    models.RandomRewardSizeSmall,
+		RewardExperience:    0,
+		Reward:              0,
+		InventoryItemID:     nil,
+		ItemChoiceRewards:   models.ChallengeTemplateItemChoiceRewards{},
+		SubmissionType:      spec.SubmissionType,
+		Difficulty:          spec.Difficulty,
+		StatTags:            spec.StatTags,
+		Proficiency:         spec.Proficiency,
+	}
+	if err := p.dbClient.ChallengeTemplate().Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to create zone seed challenge template: %w", err)
+	}
+	return template, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) generateZoneSeedReusableChallengeSpec(
+	ctx context.Context,
+	locationArchetype *models.LocationArchetype,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	character *models.Character,
+	draft models.ZoneSeedQuestDraft,
+) sanitizedGeneratedChallenge {
+	fallback := fallbackZoneSeedReusableChallengeTemplate(locationArchetype, poiDraft)
+	if locationArchetype == nil || p.deepPriest == nil {
+		return fallback
+	}
+
+	poiDetails := formatZoneSeedPOIForPrompt(poi, poiDraft)
+	prompt := fmt.Sprintf(
+		zoneSeedReusableChallengeTemplatePromptTemplate,
+		truncate(strings.TrimSpace(locationArchetype.Name), 120),
+		joinPlaceTypes(placeTypesToStrings(locationArchetype.IncludedTypes)),
+		joinPlaceTypes(placeTypesToStrings(locationArchetype.ExcludedTypes)),
+		poiDetails,
+		truncate(strings.TrimSpace(draft.Name), 120),
+		truncate(strings.TrimSpace(draft.Description), 400),
+		truncate(strings.TrimSpace(character.Name), 80),
+		truncate(strings.TrimSpace(character.Description), 200),
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return fallback
+	}
+
+	var response generatedChallengePayload
+	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &response); err != nil {
+		return fallback
+	}
+
+	spec := sanitizeGeneratedChallenge(response, 0, strings.TrimSpace(zoneSeedLocationArchetypeLabel(locationArchetype)))
+	if zoneSeedReusableChallengeMentionsPOI(spec.Question, poi, poiDraft) || strings.TrimSpace(spec.Question) == "" {
+		spec.Question = fallback.Question
+		spec.SubmissionType = fallback.SubmissionType
+	}
+	if zoneSeedReusableChallengeMentionsPOI(spec.Description, poi, poiDraft) || strings.TrimSpace(spec.Description) == "" {
+		spec.Description = fallback.Description
+	}
+	if len(spec.StatTags) == 0 {
+		spec.StatTags = fallback.StatTags
+	}
+	if spec.Proficiency == nil {
+		spec.Proficiency = fallback.Proficiency
+	}
+	if spec.Difficulty <= 0 {
+		spec.Difficulty = fallback.Difficulty
+	}
+	return spec
+}
+
+func fallbackZoneSeedReusableChallengeTemplate(
+	locationArchetype *models.LocationArchetype,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+) sanitizedGeneratedChallenge {
+	locationName := zoneSeedReusableChallengeLocationName(locationArchetype)
+	typeHints := zoneSeedReusableChallengeTypeHints(locationArchetype, poiDraft)
+	question := buildAppliedPhotoProofQuestion(locationName, typeHints)
+	description := fallbackZoneSeedReusableChallengeDescription(locationName)
+	draft := models.ZoneSeedQuestDraft{
+		Name:              strings.TrimSpace(zoneSeedLocationArchetypeLabel(locationArchetype)),
+		Description:       description,
+		ChallengeQuestion: question,
+	}
+	statTags := inferQuestStatTagsHeuristic(draft)
+	if len(statTags) == 0 {
+		statTags = models.StringArray{"wisdom"}
+	}
+	return sanitizedGeneratedChallenge{
+		Question:       question,
+		Description:    description,
+		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		Difficulty:     30,
+		Reward:         0,
+		StatTags:       statTags,
+		Proficiency:    nil,
+	}
+}
+
+func fallbackZoneSeedReusableChallengeDescription(locationName string) string {
+	return fmt.Sprintf(
+		"At %s, the guild values proof that you joined the place's natural rhythm instead of only observing from the edge. Focus on a real action the site invites, capture the moment clearly, and show enough grounded detail that a quartermaster could judge the deed at a glance.",
+		locationName,
+	)
+}
+
+func zoneSeedReusableChallengeLocationName(locationArchetype *models.LocationArchetype) string {
+	label := strings.ToLower(strings.TrimSpace(zoneSeedLocationArchetypeLabel(locationArchetype)))
+	if label == "" || label == "landmark" {
+		return "this location"
+	}
+	if strings.HasPrefix(label, "this ") {
+		return label
+	}
+	return "this " + label
+}
+
+func zoneSeedReusableChallengeTypeHints(
+	locationArchetype *models.LocationArchetype,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+) []string {
+	if poiDraft != nil && len(poiDraft.Types) > 0 {
+		return append([]string(nil), poiDraft.Types...)
+	}
+	if locationArchetype == nil || len(locationArchetype.IncludedTypes) == 0 {
+		return nil
+	}
+	return placeTypesToStrings(locationArchetype.IncludedTypes)
+}
+
+func matchZoneSeedPOILocationArchetype(
+	locationArchetypes []*models.LocationArchetype,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+) *models.LocationArchetype {
+	if len(locationArchetypes) == 0 || poiDraft == nil {
+		return nil
+	}
+
+	poiTypeKeys := zoneSeedPOITypeKeySet(poiDraft)
+	if len(poiTypeKeys) == 0 {
+		return nil
+	}
+
+	var best *models.LocationArchetype
+	bestMatchCount := 0
+	bestIncludedCount := 0
+	bestName := ""
+
+	for _, archetype := range locationArchetypes {
+		if archetype == nil {
+			continue
+		}
+
+		matchCount := 0
+		includedCount := 0
+		seenIncluded := map[string]struct{}{}
+		for _, placeType := range archetype.IncludedTypes {
+			key := normalizeGeneratedPlaceTypeKey(string(placeType))
+			if key == "" {
+				continue
+			}
+			if _, seen := seenIncluded[key]; seen {
+				continue
+			}
+			seenIncluded[key] = struct{}{}
+			includedCount++
+			if _, ok := poiTypeKeys[key]; ok {
+				matchCount++
+			}
+		}
+		if includedCount == 0 || matchCount == 0 {
+			continue
+		}
+
+		excluded := false
+		for _, placeType := range archetype.ExcludedTypes {
+			key := normalizeGeneratedPlaceTypeKey(string(placeType))
+			if key == "" {
+				continue
+			}
+			if _, ok := poiTypeKeys[key]; ok {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
+
+		name := strings.TrimSpace(archetype.Name)
+		if best == nil ||
+			matchCount > bestMatchCount ||
+			(matchCount == bestMatchCount && includedCount < bestIncludedCount) ||
+			(matchCount == bestMatchCount && includedCount == bestIncludedCount && name < bestName) {
+			best = archetype
+			bestMatchCount = matchCount
+			bestIncludedCount = includedCount
+			bestName = name
+		}
+	}
+
+	return best
+}
+
+func zoneSeedPOITypeKeySet(poiDraft *models.ZoneSeedPointOfInterestDraft) map[string]struct{} {
+	if poiDraft == nil || len(poiDraft.Types) == 0 {
+		return nil
+	}
+
+	result := make(map[string]struct{}, len(poiDraft.Types))
+	for _, raw := range poiDraft.Types {
+		key := normalizeGeneratedPlaceTypeKey(raw)
+		if key == "" {
+			continue
+		}
+		result[key] = struct{}{}
+	}
+	return result
+}
+
+func zoneSeedReusableChallengeMentionsPOI(
+	text string,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+) bool {
+	lowerText := strings.ToLower(strings.TrimSpace(text))
+	if lowerText == "" {
+		return false
+	}
+
+	candidates := []string{}
+	if poiDraft != nil {
+		candidates = append(candidates, poiDraft.Name, poiDraft.Address)
+	}
+	if poi != nil {
+		candidates = append(candidates, poi.Name, poi.OriginalName)
+	}
+
+	for _, candidate := range candidates {
+		trimmed := strings.ToLower(strings.TrimSpace(candidate))
+		if len(trimmed) < 4 {
+			continue
+		}
+		if strings.Contains(lowerText, trimmed) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (p *ApplyZoneSeedDraftProcessor) generateStandalonePOIChallengeDescription(
@@ -2837,6 +3203,46 @@ Respond ONLY as JSON:
   "question": "string",
   "difficulty": 32
 }
+`
+
+const zoneSeedReusableChallengeTemplatePromptTemplate = `
+You are designing one reusable fantasy MMORPG challenge template for a location archetype.
+
+Location archetype:
+- name: %s
+- included place types: %s
+- excluded place types: %s
+
+Real POI inspiration (for activity fit only; do not copy names, addresses, coordinates, unique landmarks, or one-off signage):
+%s
+
+Quest flavor context:
+- quest name: %s
+- quest description: %s
+- quest giver: %s
+- quest giver description: %s
+
+Return JSON only:
+{
+  "question": "One short sentence (6-18 words) stating exactly what the player must do",
+  "description": "40-140 words of scene flavor and context that supports the action",
+  "submissionType": "photo or text",
+  "difficulty": 0-40,
+  "statTags": ["0-3 of: strength,dexterity,constitution,intelligence,wisdom,charisma"],
+  "proficiency": "optional short phrase or null"
+}
+
+Hard rules:
+- This must be reusable across many real places that fit the archetype.
+- Never mention the POI's real name, address, coordinates, or one-off landmark details.
+- The action must still be completable at most places that match the archetype, including the inspiration POI.
+- Safe, legal, and respectful. Do not require restricted access or interaction with staff.
+- Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both.
+- Require meaningful participation in the archetype's core activity, not just approaching the exterior.
+- Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation in the activity itself.
+- Do NOT rely on signage-only prompts (storefront sign, menu board, entrance, marquee, poster, plaque, or facade) as the main proof.
+- If the archetype is food/drink-focused, the challenge should involve getting a drink or food item, and proof should show the selected item.
+- Keep the question concise and task-only; put atmosphere and lore flavor in the description.
 `
 
 func (p *ApplyZoneSeedDraftProcessor) generateQuestChallenge(

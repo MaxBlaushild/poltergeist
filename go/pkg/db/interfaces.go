@@ -1640,6 +1640,7 @@ type MonsterTemplateAdminListParams struct {
 	ZoneQuery   string
 	GenreID     *uuid.UUID
 	Archived    *bool
+	ZoneKind    string
 	MonsterType string
 }
 

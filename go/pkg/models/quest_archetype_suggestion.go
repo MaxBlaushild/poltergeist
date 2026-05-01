@@ -75,6 +75,7 @@ type QuestArchetypeSuggestionJob struct {
 	UpdatedAt                    time.Time   `json:"updatedAt"`
 	Status                       string      `json:"status"`
 	Count                        int         `json:"count"`
+	ZoneKind                     string      `json:"zoneKind" gorm:"column:zone_kind"`
 	ThemePrompt                  string      `json:"themePrompt" gorm:"column:theme_prompt"`
 	FamilyTags                   StringArray `json:"familyTags" gorm:"column:family_tags;type:jsonb"`
 	CharacterTags                StringArray `json:"characterTags" gorm:"column:character_tags;type:jsonb"`
@@ -98,6 +99,7 @@ type QuestArchetypeSuggestionDraft struct {
 	Name                        string                        `json:"name"`
 	Hook                        string                        `json:"hook"`
 	Description                 string                        `json:"description"`
+	ZoneKind                    string                        `json:"zoneKind" gorm:"column:zone_kind"`
 	AcceptanceDialogue          StringArray                   `json:"acceptanceDialogue" gorm:"column:acceptance_dialogue;type:jsonb"`
 	CharacterTags               StringArray                   `json:"characterTags" gorm:"column:character_tags;type:jsonb"`
 	InternalTags                StringArray                   `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`

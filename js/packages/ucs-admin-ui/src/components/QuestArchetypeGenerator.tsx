@@ -6,10 +6,12 @@ import {
   QuestArchetypeSuggestionJob,
 } from '@poltergeist/types';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
+import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 import './questArchetypeTheme.css';
 
 type GeneratorFormState = {
   count: string;
+  zoneKind: string;
   themePrompt: string;
   familyTagsText: string;
   characterTagsText: string;
@@ -20,6 +22,7 @@ type GeneratorFormState = {
 
 const emptyGeneratorForm = (): GeneratorFormState => ({
   count: '12',
+  zoneKind: '',
   themePrompt: '',
   familyTagsText: '',
   characterTagsText: '',
@@ -85,6 +88,7 @@ const extractApiErrorMessage = (error: unknown, fallback: string) => {
 export const QuestArchetypeGenerator = () => {
   const { apiClient } = useAPI();
   const { locationArchetypes } = useQuestArchetypes();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const [form, setForm] = useState<GeneratorFormState>(emptyGeneratorForm);
   const [jobs, setJobs] = useState<QuestArchetypeSuggestionJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -210,6 +214,7 @@ export const QuestArchetypeGenerator = () => {
         '/sonar/questArchetypeSuggestionJobs',
         {
           count: Math.max(1, parseInt(form.count, 10) || 1),
+          zoneKind: form.zoneKind.trim(),
           themePrompt: form.themePrompt.trim(),
           familyTags: parseTags(form.familyTagsText),
           characterTags: parseTags(form.characterTagsText),
@@ -322,6 +327,26 @@ export const QuestArchetypeGenerator = () => {
                   min={1}
                   max={100}
                 />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Zone Kind</div>
+                <select
+                  className="qa-input"
+                  value={form.zoneKind}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      zoneKind: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Any zone kind</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option key={zoneKind.id} value={zoneKind.slug}>
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
                 <div className="qa-label">Theme Prompt</div>
@@ -542,6 +567,11 @@ export const QuestArchetypeGenerator = () => {
                     <div className="qa-meta">
                       Drafts: {job.createdCount}/{job.count}
                     </div>
+                    {job.zoneKind?.trim() && (
+                      <div className="qa-meta" style={{ marginTop: 8 }}>
+                        Zone kind: {zoneKindLabel(job.zoneKind, zoneKindBySlug)}
+                      </div>
+                    )}
                     {job.requiredLocationArchetypeIds?.length > 0 && (
                       <div className="qa-meta" style={{ marginTop: 8 }}>
                         Required archetypes:{' '}
@@ -633,6 +663,12 @@ export const QuestArchetypeGenerator = () => {
                   </div>
 
                   <div style={{ marginTop: 18 }}>
+                    {draft.zoneKind?.trim() && (
+                      <div className="qa-meta" style={{ marginBottom: 8 }}>
+                        Zone kind:{' '}
+                        {zoneKindLabel(draft.zoneKind, zoneKindBySlug)}
+                      </div>
+                    )}
                     {selectedJobRequiredLocationArchetypes.length > 0 && (
                       <div className="qa-meta" style={{ marginBottom: 8 }}>
                         Required archetypes:{' '}

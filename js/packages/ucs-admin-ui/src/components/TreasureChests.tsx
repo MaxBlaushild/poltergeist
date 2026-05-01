@@ -671,11 +671,16 @@ export const TreasureChests = () => {
       {
         title: 'Zone Kinds',
         note: 'Effective treasure chest placement by zone kind.',
-        buckets: countBy(filteredChests, (chest) =>
-          zoneKindLabel(
-            chest.zoneKind?.trim() || zoneDefaultKindByID.get(chest.zoneId),
-            zoneKindBySlug
-          )
+        buckets: countBy(
+          filteredChests,
+          (chest) =>
+            zoneKindLabel(
+              chest.zoneKind?.trim() || zoneDefaultKindByID.get(chest.zoneId),
+              zoneKindBySlug
+            ),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -723,7 +728,7 @@ export const TreasureChests = () => {
         }),
       },
     ],
-    [filteredChests, zoneDefaultKindByID, zoneKindBySlug]
+    [filteredChests, zoneDefaultKindByID, zoneKindBySlug, zoneKinds]
   );
 
   const addItem = () => {

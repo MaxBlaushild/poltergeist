@@ -250,8 +250,9 @@ export const Resources = () => {
   const dashboardMetrics = useMemo(() => {
     const totalTypes = resourceTypes.length;
     const totalNodes = resources.length;
-    const invalidatedNodes = resources.filter((resource) => resource.invalidated)
-      .length;
+    const invalidatedNodes = resources.filter(
+      (resource) => resource.invalidated
+    ).length;
     const coveredZones = new Set(resources.map((resource) => resource.zoneId))
       .size;
 
@@ -267,20 +268,28 @@ export const Resources = () => {
       {
         title: 'Nodes by Zone Kind',
         note: 'Effective resource placement grouped by zone kind.',
-        buckets: countBy(resources, (resource) =>
-          zoneKindLabel(
-            resource.zoneKind?.trim() || zoneDefaultKindById.get(resource.zoneId),
-            zoneKindBySlug
-          )
+        buckets: countBy(
+          resources,
+          (resource) =>
+            zoneKindLabel(
+              resource.zoneKind?.trim() ||
+                zoneDefaultKindById.get(resource.zoneId),
+              zoneKindBySlug
+            ),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
         title: 'Nodes by Resource Type',
         note: 'Which gatherable types currently have the most live nodes.',
-        buckets: countBy(resources, (resource) =>
-          resource.resourceType?.name ||
-          resourceTypeById.get(resource.resourceTypeId)?.name ||
-          'Unknown type'
+        buckets: countBy(
+          resources,
+          (resource) =>
+            resource.resourceType?.name ||
+            resourceTypeById.get(resource.resourceTypeId)?.name ||
+            'Unknown type'
         ),
       },
       {
@@ -300,7 +309,14 @@ export const Resources = () => {
         ),
       },
     ],
-    [resourceTypeById, resourceTypes, resources, zoneDefaultKindById, zoneKindBySlug]
+    [
+      resourceTypeById,
+      resourceTypes,
+      resources,
+      zoneDefaultKindById,
+      zoneKindBySlug,
+      zoneKinds,
+    ]
   );
 
   const resourceCountByTypeId = useMemo(() => {

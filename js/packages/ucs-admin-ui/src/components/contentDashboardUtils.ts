@@ -7,6 +7,7 @@ type CountBucketsOptions = {
   limit?: number;
   remainderLabel?: string;
   includeEmpty?: boolean;
+  seedLabels?: Array<string | null | undefined>;
 };
 
 type PaginatedAdminResponse<T> = {
@@ -50,13 +51,21 @@ const finalizeBuckets = (
   return visible;
 };
 
-export const countBy = <T,>(
+export const countBy = <T>(
   items: T[],
   getLabel: (item: T) => string | null | undefined,
   options: CountBucketsOptions = {}
 ): ContentDashboardBucket[] => {
   const counts = new Map<string, number>();
   const emptyLabel = options.emptyLabel ?? 'Unassigned';
+
+  (options.seedLabels ?? []).forEach((label) => {
+    const normalized = normalizeLabel(label);
+    if (!normalized || counts.has(normalized)) {
+      return;
+    }
+    counts.set(normalized, 0);
+  });
 
   items.forEach((item) => {
     const normalized = normalizeLabel(getLabel(item));
@@ -67,7 +76,7 @@ export const countBy = <T,>(
   return finalizeBuckets(counts, options);
 };
 
-export const countManyBy = <T,>(
+export const countManyBy = <T>(
   items: T[],
   getLabels: (item: T) => Array<string | null | undefined>,
   options: CountBucketsOptions = {}
@@ -114,7 +123,7 @@ export const difficultyBandLabel = (
   return '9+';
 };
 
-export const useAdminAggregateDataset = <T,>(
+export const useAdminAggregateDataset = <T>(
   endpoint: string,
   params: Record<string, string | number | undefined>,
   enabled = true
@@ -197,7 +206,10 @@ export const useAdminAggregateDataset = <T,>(
         if (cancelled) {
           return;
         }
-        console.error(`Failed to load aggregate dataset for ${endpoint}`, nextError);
+        console.error(
+          `Failed to load aggregate dataset for ${endpoint}`,
+          nextError
+        );
         setError(
           nextError instanceof Error
             ? nextError.message

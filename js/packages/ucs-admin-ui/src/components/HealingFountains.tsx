@@ -151,8 +151,9 @@ export const HealingFountains = () => {
   );
   const dashboardMetrics = useMemo(() => {
     const totalFountains = records.length;
-    const invalidatedCount = records.filter((record) => record.invalidated)
-      .length;
+    const invalidatedCount = records.filter(
+      (record) => record.invalidated
+    ).length;
     const activeCount = totalFountains - invalidatedCount;
     const uniqueZones = new Set(records.map((record) => record.zoneId)).size;
 
@@ -168,11 +169,16 @@ export const HealingFountains = () => {
       {
         title: 'Zone Kinds',
         note: 'Effective healing fountain placement by zone kind.',
-        buckets: countBy(records, (record) =>
-          zoneKindLabel(
-            record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
-            zoneKindBySlug
-          )
+        buckets: countBy(
+          records,
+          (record) =>
+            zoneKindLabel(
+              record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
+              zoneKindBySlug
+            ),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -185,12 +191,16 @@ export const HealingFountains = () => {
       {
         title: 'Zones',
         note: 'Top zones with healing fountain coverage.',
-        buckets: countBy(records, (record) =>
-          record.zone?.name || zoneNameById.get(record.zoneId) || record.zoneId
+        buckets: countBy(
+          records,
+          (record) =>
+            record.zone?.name ||
+            zoneNameById.get(record.zoneId) ||
+            record.zoneId
         ),
       },
     ],
-    [records, zoneDefaultKindById, zoneKindBySlug, zoneNameById]
+    [records, zoneDefaultKindById, zoneKindBySlug, zoneKinds, zoneNameById]
   );
 
   const fetchHealingFountains = useCallback(async () => {

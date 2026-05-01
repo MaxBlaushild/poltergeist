@@ -15,6 +15,7 @@ type questArchetypeSuggestionJobHandle struct {
 func (h *questArchetypeSuggestionJobHandle) Create(ctx context.Context, job *models.QuestArchetypeSuggestionJob) error {
 	if job != nil {
 		job.Status = models.NormalizeQuestArchetypeSuggestionJobStatus(job.Status)
+		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
 	}
 	return h.db.WithContext(ctx).Create(job).Error
 }
@@ -22,6 +23,7 @@ func (h *questArchetypeSuggestionJobHandle) Create(ctx context.Context, job *mod
 func (h *questArchetypeSuggestionJobHandle) Update(ctx context.Context, job *models.QuestArchetypeSuggestionJob) error {
 	if job != nil {
 		job.Status = models.NormalizeQuestArchetypeSuggestionJobStatus(job.Status)
+		job.ZoneKind = models.NormalizeZoneKind(job.ZoneKind)
 	}
 	return h.db.WithContext(ctx).Save(job).Error
 }

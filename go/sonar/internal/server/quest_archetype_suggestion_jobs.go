@@ -19,6 +19,7 @@ import (
 
 type questArchetypeSuggestionJobRequest struct {
 	Count                        int      `json:"count"`
+	ZoneKind                     string   `json:"zoneKind"`
 	ThemePrompt                  string   `json:"themePrompt"`
 	FamilyTags                   []string `json:"familyTags"`
 	CharacterTags                []string `json:"characterTags"`
@@ -40,6 +41,11 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
 		return
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, body.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	requiredLocationArchetypeIDs, err := s.normalizeQuestArchetypeSuggestionLocationArchetypeIDs(
 		ctx,
 		body.RequiredLocationArchetypeIDs,
@@ -55,6 +61,7 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		UpdatedAt:                    time.Now(),
 		Status:                       models.QuestArchetypeSuggestionJobStatusQueued,
 		Count:                        body.Count,
+		ZoneKind:                     models.ZoneKindPromptSlug(zoneKind),
 		ThemePrompt:                  strings.TrimSpace(body.ThemePrompt),
 		FamilyTags:                   normalizeQuestTemplateInternalTags(body.FamilyTags),
 		CharacterTags:                normalizeQuestTemplateCharacterTags(body.CharacterTags),
@@ -247,10 +254,14 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load monster templates: %w", err)
 	}
+	preferredZoneKind, err := s.resolveOptionalZoneKind(ctx, draft.ZoneKind)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load suggestion draft zone kind: %w", err)
+	}
 
 	nodes := make([]*models.QuestArchetypeNode, 0, len(draft.Steps))
 	for _, step := range draft.Steps {
-		node, err := s.createQuestArchetypeSuggestionNode(ctx, step, draft, &monsterTemplates)
+		node, err := s.createQuestArchetypeSuggestionNode(ctx, step, draft, preferredZoneKind, &monsterTemplates)
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +282,7 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 		ID:                          uuid.New(),
 		Name:                        strings.TrimSpace(draft.Name),
 		Description:                 strings.TrimSpace(draft.Description),
+		ZoneKind:                    models.ZoneKindPromptSlug(preferredZoneKind),
 		AcceptanceDialogue:          dialogueSequenceFromLines(draft.AcceptanceDialogue),
 		ImageURL:                    "",
 		DifficultyMode:              models.NormalizeQuestDifficultyMode(string(draft.DifficultyMode)),
@@ -322,6 +334,7 @@ func (s *server) createQuestArchetypeSuggestionNode(
 	ctx context.Context,
 	step models.QuestArchetypeSuggestionStep,
 	draft *models.QuestArchetypeSuggestionDraft,
+	preferredZoneKind *models.ZoneKind,
 	monsterTemplates *[]models.MonsterTemplate,
 ) (*models.QuestArchetypeNode, error) {
 	if step.Source == "location" && (step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil) {
@@ -331,7 +344,7 @@ func (s *server) createQuestArchetypeSuggestionNode(
 	payload := questArchetypeNodePayload{}
 	switch step.Content {
 	case "scenario":
-		template, err := s.createQuestArchetypeSuggestionScenarioTemplate(ctx, step, draft)
+		template, err := s.createQuestArchetypeSuggestionScenarioTemplate(ctx, step, draft, preferredZoneKind)
 		if err != nil {
 			return nil, err
 		}
@@ -352,6 +365,7 @@ func (s *server) createQuestArchetypeSuggestionNode(
 			questMonsterTemplateRequest{
 				Count:             questArchetypeSuggestionMonsterTemplateCount(step),
 				MonsterType:       models.MonsterTemplateTypeMonster,
+				PreferredZoneKind: preferredZoneKind,
 				ThemePrompt:       strings.TrimSpace(draft.Name + " " + draft.Hook + " " + draft.Description),
 				EncounterConcept:  questArchetypeSuggestionMonsterEncounterConcept(step, draft),
 				LocationConcept:   strings.TrimSpace(step.LocationConcept),
@@ -545,12 +559,14 @@ func (s *server) createQuestArchetypeSuggestionScenarioTemplate(
 	ctx context.Context,
 	step models.QuestArchetypeSuggestionStep,
 	draft *models.QuestArchetypeSuggestionDraft,
+	preferredZoneKind *models.ZoneKind,
 ) (*models.ScenarioTemplate, error) {
 	prompt := strings.TrimSpace(step.ScenarioPrompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("scenario step %q is missing prompt text", step.LocationConcept)
 	}
 	template := &models.ScenarioTemplate{
+		ZoneKind:                  models.ZoneKindPromptSlug(preferredZoneKind),
 		Prompt:                    prompt,
 		ImageURL:                  "",
 		ThumbnailURL:              "",

@@ -31,6 +31,7 @@ export interface QuestArchetypeSuggestionJob {
   updatedAt: string;
   status: string;
   count: number;
+  zoneKind: string;
   themePrompt: string;
   familyTags: string[];
   characterTags: string[];
@@ -50,6 +51,7 @@ export interface QuestArchetypeSuggestionDraft {
   name: string;
   hook: string;
   description: string;
+  zoneKind: string;
   acceptanceDialogue: string[];
   characterTags: string[];
   internalTags: string[];

@@ -369,6 +369,7 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 		fallback := buildBulkMonsterTemplateSpecsFromSeeds(
 			remaining,
 			usedNames,
+			uuid.Nil,
 			request.MonsterType,
 			nil,
 			nil,

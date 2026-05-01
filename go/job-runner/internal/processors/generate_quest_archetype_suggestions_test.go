@@ -91,6 +91,7 @@ func TestSanitizeQuestArchetypeSuggestionDraftWarnsWhenRequiredLocationArchetype
 				},
 			},
 		},
+		"",
 		map[string]locationArchetypeIndexEntry{
 			"lantern market": {ID: usedID, Name: "Lantern Market"},
 			"roof garden":    {ID: missingID, Name: "Roof Garden"},
@@ -111,6 +112,33 @@ func TestSanitizeQuestArchetypeSuggestionDraftWarnsWhenRequiredLocationArchetype
 	}
 	if !found {
 		t.Fatalf("expected missing required location warning, got %v", draft.Warnings)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionDraftNormalizesZoneKind(t *testing.T) {
+	draft := sanitizeQuestArchetypeSuggestionDraft(
+		questArchetypeSuggestionDraftPayload{
+			Name:        "Glacier Relay",
+			Description: "Carry messages through an icy ward.",
+			Steps: []questArchetypeSuggestionStepPayload{
+				{
+					Source:               "location",
+					Content:              "challenge",
+					LocationConcept:      "watch post",
+					LocationMetadataTags: []string{"frost", "outpost"},
+					ChallengeQuestion:    "Photograph the signal marker you would use to confirm the route.",
+					ChallengeDescription: "Capture the route marker that would guide the next courier.",
+				},
+			},
+		},
+		"Tundra",
+		map[string]locationArchetypeIndexEntry{},
+		map[string]monsterTemplateIndexEntry{},
+		nil,
+	)
+
+	if draft.ZoneKind != "tundra" {
+		t.Fatalf("expected normalized zone kind, got %q", draft.ZoneKind)
 	}
 }
 

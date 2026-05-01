@@ -79,6 +79,7 @@ type bulkQueueMonsterTemplateImagesRequest struct {
 	ZoneQuery   string   `json:"zoneQuery"`
 	GenreID     string   `json:"genreId"`
 	Archived    *bool    `json:"archived"`
+	ZoneKind    string   `json:"zoneKind"`
 	MonsterType string   `json:"monsterType"`
 }
 
@@ -395,6 +396,51 @@ var genericMonsterTemplateRoleSeeds = []dndMonsterTemplateSeed{
 	},
 }
 
+var monsterTemplateFallbackNamePrefixes = []string{
+	"Ash",
+	"Briar",
+	"Cinder",
+	"Crag",
+	"Dread",
+	"Dusk",
+	"Ember",
+	"Flint",
+	"Frost",
+	"Gloom",
+	"Grave",
+	"Hollow",
+	"Iron",
+	"Mire",
+	"Mist",
+	"Moon",
+	"Moss",
+	"Night",
+	"Rift",
+	"Rime",
+	"Rune",
+	"Sable",
+	"Shadow",
+	"Stone",
+	"Storm",
+	"Thorn",
+	"Vale",
+	"Vine",
+	"Wild",
+	"Witch",
+}
+
+var monsterTemplateFallbackPrefixStopWords = map[string]struct{}{
+	"and":      {},
+	"default":  {},
+	"for":      {},
+	"kind":     {},
+	"monster":  {},
+	"of":       {},
+	"the":      {},
+	"template": {},
+	"zone":     {},
+}
+
 type monsterRewardItemPayload struct {
 	InventoryItemID int                   `json:"inventoryItemId"`
 	Quantity        int                   `json:"quantity"`
@@ -679,6 +725,15 @@ func parseOptionalGenreIDFilter(raw string) (*uuid.UUID, error) {
 		return nil, errors.New("genreId must be a valid UUID")
 	}
 	return &genreID, nil
+}
+
+func parseOptionalZoneKindFilter(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "all":
+		return ""
+	default:
+		return models.NormalizeZoneKind(raw)
+	}
 }
 
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
@@ -2039,6 +2094,7 @@ func (s *server) getAdminMonsterTemplates(ctx *gin.Context) {
 		ZoneQuery:   ctx.Query("zoneQuery"),
 		GenreID:     genreID,
 		Archived:    archived,
+		ZoneKind:    parseOptionalZoneKindFilter(ctx.Query("zoneKind")),
 		MonsterType: ctx.Query("monsterType"),
 	})
 	if err != nil {
@@ -2133,22 +2189,190 @@ func (s *server) createMonsterTemplate(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, monsterTemplateResponseFrom(created))
 }
 
-func nextUniqueMonsterTemplateName(base string, used map[string]struct{}) string {
+func nextUniqueMonsterTemplateName(
+	base string,
+	used map[string]struct{},
+	prefixes []string,
+) string {
 	trimmed := strings.TrimSpace(base)
 	if trimmed == "" {
 		trimmed = "Monster Template"
 	}
-	candidate := trimmed
-	suffix := 2
-	for {
+
+	tryClaim := func(candidate string) (string, bool) {
 		key := strings.ToLower(strings.TrimSpace(candidate))
-		if _, exists := used[key]; !exists {
-			used[key] = struct{}{}
+		if key == "" {
+			return "", false
+		}
+		if _, exists := used[key]; exists {
+			return "", false
+		}
+		used[key] = struct{}{}
+		return strings.TrimSpace(candidate), true
+	}
+
+	if candidate, ok := tryClaim(trimmed); ok {
+		return candidate
+	}
+	for _, prefix := range prefixes {
+		if candidate, ok := tryClaim(fmt.Sprintf("%s %s", prefix, trimmed)); ok {
 			return candidate
 		}
-		candidate = fmt.Sprintf("%s %d", trimmed, suffix)
-		suffix++
 	}
+	for suffix := 2; suffix < 100; suffix++ {
+		for _, prefix := range prefixes {
+			candidate, ok := tryClaim(
+				fmt.Sprintf("%s %s %d", prefix, trimmed, suffix),
+			)
+			if ok {
+				return candidate
+			}
+		}
+	}
+	for suffix := 2; ; suffix++ {
+		if candidate, ok := tryClaim(fmt.Sprintf("%s %d", trimmed, suffix)); ok {
+			return candidate
+		}
+	}
+}
+
+func appendUniqueMonsterTemplatePrefix(
+	target *[]string,
+	seen map[string]struct{},
+	raw string,
+) {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if normalized == "" {
+		return
+	}
+	key := strings.ToLower(normalized)
+	if _, exists := seen[key]; exists {
+		return
+	}
+	seen[key] = struct{}{}
+	*target = append(*target, normalized)
+}
+
+func monsterTemplateFallbackPrefixes(
+	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+) []string {
+	prefixes := make([]string, 0, len(monsterTemplateFallbackNamePrefixes)+8)
+	seen := map[string]struct{}{}
+
+	appendWords := func(raw string) {
+		for _, word := range strings.Fields(strings.TrimSpace(raw)) {
+			trimmed := strings.Trim(word, " -_,.;:!?/\\")
+			if len(trimmed) < 4 {
+				continue
+			}
+			if _, blocked := monsterTemplateFallbackPrefixStopWords[strings.ToLower(trimmed)]; blocked {
+				continue
+			}
+			appendUniqueMonsterTemplatePrefix(&prefixes, seen, trimmed)
+		}
+	}
+
+	zoneKindLabel := strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind))
+	if zoneKindLabel != "" {
+		appendUniqueMonsterTemplatePrefix(&prefixes, seen, zoneKindLabel)
+		appendWords(zoneKindLabel)
+	}
+
+	if genre != nil && !isBaselineFantasyMonsterGenre(genre) {
+		genreName := strings.TrimSpace(genre.Name)
+		if genreName != "" {
+			appendUniqueMonsterTemplatePrefix(&prefixes, seen, genreName)
+			appendWords(genreName)
+		}
+	}
+
+	for _, prefix := range monsterTemplateFallbackNamePrefixes {
+		appendUniqueMonsterTemplatePrefix(&prefixes, seen, prefix)
+	}
+	return prefixes
+}
+
+func monsterTemplateSeedUsageCount(
+	base string,
+	usedNames map[string]struct{},
+) int {
+	normalizedBase := strings.ToLower(strings.TrimSpace(base))
+	if normalizedBase == "" {
+		return 0
+	}
+
+	count := 0
+	for usedName := range usedNames {
+		switch {
+		case usedName == normalizedBase:
+			count++
+		case strings.HasPrefix(usedName, normalizedBase+" "):
+			count++
+		case strings.HasSuffix(usedName, " "+normalizedBase):
+			count++
+		case strings.Contains(usedName, " "+normalizedBase+" "):
+			count++
+		}
+	}
+	return count
+}
+
+func monsterTemplateSeedTieBreaker(jobID uuid.UUID, seedName string) int {
+	score := 0
+	for index, value := range jobID {
+		score += int(value) * (index + 1)
+	}
+	for index, value := range strings.ToLower(strings.TrimSpace(seedName)) {
+		score += int(value) * (index + 17)
+	}
+	return score
+}
+
+func orderMonsterTemplateSeedPool(
+	seedPool []dndMonsterTemplateSeed,
+	usedNames map[string]struct{},
+	jobID uuid.UUID,
+) []dndMonsterTemplateSeed {
+	ordered := append([]dndMonsterTemplateSeed(nil), seedPool...)
+	sort.SliceStable(ordered, func(left, right int) bool {
+		leftUsage := monsterTemplateSeedUsageCount(ordered[left].Name, usedNames)
+		rightUsage := monsterTemplateSeedUsageCount(ordered[right].Name, usedNames)
+		if leftUsage != rightUsage {
+			return leftUsage < rightUsage
+		}
+
+		leftScore := monsterTemplateSeedTieBreaker(jobID, ordered[left].Name)
+		rightScore := monsterTemplateSeedTieBreaker(jobID, ordered[right].Name)
+		if leftScore != rightScore {
+			return leftScore < rightScore
+		}
+		return ordered[left].Name < ordered[right].Name
+	})
+	return ordered
+}
+
+func buildMonsterTemplateFallbackDescription(
+	seed dndMonsterTemplateSeed,
+	genre *models.ZoneGenre,
+	zoneKind *models.ZoneKind,
+) string {
+	description := strings.TrimSpace(seed.Description)
+	if !isBaselineFantasyMonsterGenre(genre) {
+		description = fmt.Sprintf(
+			"%s Designed for a %s action RPG setting.",
+			description,
+			monsterGenrePromptLabel(genre),
+		)
+	}
+	if zoneKind != nil && strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind)) != "" {
+		description = fmt.Sprintf(
+			"%s Naturally suited to %s zones.",
+			description,
+			strings.ToLower(models.ZoneKindPromptLabel(zoneKind)),
+		)
+	}
+	return description
 }
 
 func monsterTemplateTypePromptLabel(monsterType models.MonsterTemplateType) string {
@@ -2309,6 +2533,7 @@ func buildMonsterTemplateGenerationPrompt(
 func buildBulkMonsterTemplateSpecsFromSeeds(
 	count int,
 	usedNames map[string]struct{},
+	jobID uuid.UUID,
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
 	zoneKind *models.ZoneKind,
@@ -2324,35 +2549,28 @@ func buildBulkMonsterTemplateSpecsFromSeeds(
 	if len(seedPool) == 0 {
 		return specs
 	}
+	orderedSeedPool := orderMonsterTemplateSeedPool(seedPool, usedNames, jobID)
+	namePrefixes := monsterTemplateFallbackPrefixes(genre, zoneKind)
 	genreID := ""
 	if genre != nil {
 		genreID = genre.ID.String()
 	}
 	preferredZoneKind := models.ZoneKindPromptSlug(zoneKind)
 	for i := 0; i < count; i++ {
-		seed := seedPool[i%len(seedPool)]
+		seed := orderedSeedPool[i%len(orderedSeedPool)]
 		name := strings.TrimSpace(seed.Name)
-		description := strings.TrimSpace(seed.Description)
-		if !isBaselineFantasyMonsterGenre(genre) {
-			name = fmt.Sprintf("%s %s", strings.TrimSpace(genre.Name), name)
-			description = fmt.Sprintf(
-				"%s Designed for a %s action RPG setting.",
-				description,
-				monsterGenrePromptLabel(genre),
-			)
+		if !isBaselineFantasyMonsterGenre(genre) && genre != nil {
+			genreName := strings.TrimSpace(genre.Name)
+			if genreName != "" {
+				name = fmt.Sprintf("%s %s", genreName, name)
+			}
 		}
-		if zoneKind != nil && strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind)) != "" {
-			description = fmt.Sprintf(
-				"%s Naturally suited to %s zones.",
-				description,
-				strings.ToLower(models.ZoneKindPromptLabel(zoneKind)),
-			)
-		}
+		description := buildMonsterTemplateFallbackDescription(seed, genre, zoneKind)
 		specs = append(specs, jobs.MonsterTemplateCreationSpec{
 			MonsterType:      string(monsterType),
 			GenreID:          genreID,
 			ZoneKind:         preferredZoneKind,
-			Name:             nextUniqueMonsterTemplateName(name, usedNames),
+			Name:             nextUniqueMonsterTemplateName(name, usedNames, namePrefixes),
 			Description:      description,
 			BaseStrength:     seed.BaseStrength,
 			BaseDexterity:    seed.BaseDexterity,
@@ -2507,6 +2725,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 	count int,
 	usedNames map[string]struct{},
 	existingNames []string,
+	jobID uuid.UUID,
 	monsterType models.MonsterTemplateType,
 	genre *models.ZoneGenre,
 	zoneKind *models.ZoneKind,
@@ -2539,6 +2758,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 		fallback := buildBulkMonsterTemplateSpecsFromSeeds(
 			remaining,
 			usedNames,
+			jobID,
 			monsterType,
 			genre,
 			zoneKind,
@@ -3247,6 +3467,7 @@ func (s *server) generateMonsterTemplateImages(ctx *gin.Context) {
 			ZoneQuery:   requestBody.ZoneQuery,
 			GenreID:     genreID,
 			Archived:    requestBody.Archived,
+			ZoneKind:    parseOptionalZoneKindFilter(requestBody.ZoneKind),
 			MonsterType: requestBody.MonsterType,
 		})
 		if err != nil {
@@ -3267,31 +3488,7 @@ func (s *server) generateMonsterTemplateImages(ctx *gin.Context) {
 			continue
 		}
 
-		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusQueued
-		emptyError := ""
-		template.ImageGenerationError = &emptyError
-		if err := s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template); err != nil {
-			response.FailedCount++
-			continue
-		}
-
-		payloadBytes, err := json.Marshal(jobs.GenerateMonsterTemplateImageTaskPayload{
-			MonsterTemplateID: template.ID,
-		})
-		if err != nil {
-			template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
-			errMessage := err.Error()
-			template.ImageGenerationError = &errMessage
-			_ = s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template)
-			response.FailedCount++
-			continue
-		}
-
-		if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplateImageTaskType, payloadBytes)); err != nil {
-			template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
-			errMessage := err.Error()
-			template.ImageGenerationError = &errMessage
-			_ = s.dbClient.MonsterTemplate().Update(ctx, template.ID, &template)
+		if err := s.queueMonsterTemplateImageGeneration(ctx, &template); err != nil {
 			response.FailedCount++
 			continue
 		}
@@ -3344,6 +3541,69 @@ func (s *server) deleteMonsterTemplate(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "template deleted successfully"})
 }
 
+func queueMonsterTemplateImageGeneration(
+	ctx context.Context,
+	template *models.MonsterTemplate,
+	update func(context.Context, uuid.UUID, *models.MonsterTemplate) error,
+	enqueue func(*asynq.Task) error,
+) error {
+	if template == nil {
+		return fmt.Errorf("monster template is required")
+	}
+
+	template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusQueued
+	emptyError := ""
+	template.ImageGenerationError = &emptyError
+	if err := update(ctx, template.ID, template); err != nil {
+		return err
+	}
+
+	markFailed := func(jobErr error) error {
+		errMessage := jobErr.Error()
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
+		template.ImageGenerationError = &errMessage
+		_ = update(ctx, template.ID, template)
+		return jobErr
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateMonsterTemplateImageTaskPayload{
+		MonsterTemplateID: template.ID,
+	})
+	if err != nil {
+		return markFailed(err)
+	}
+
+	if enqueue == nil {
+		return markFailed(errors.New("async client unavailable"))
+	}
+
+	if err := enqueue(asynq.NewTask(jobs.GenerateMonsterTemplateImageTaskType, payloadBytes)); err != nil {
+		return markFailed(err)
+	}
+
+	return nil
+}
+
+func (s *server) queueMonsterTemplateImageGeneration(
+	ctx context.Context,
+	template *models.MonsterTemplate,
+) error {
+	return queueMonsterTemplateImageGeneration(
+		ctx,
+		template,
+		func(ctx context.Context, templateID uuid.UUID, updates *models.MonsterTemplate) error {
+			return s.dbClient.MonsterTemplate().Update(ctx, templateID, updates)
+		},
+		func(task *asynq.Task) error {
+			if s.asyncClient == nil {
+				return errors.New("async client unavailable")
+			}
+			_, err := s.asyncClient.Enqueue(task)
+			return err
+		},
+	)
+}
+
 func (s *server) generateMonsterTemplateImage(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -3366,25 +3626,7 @@ func (s *server) generateMonsterTemplateImage(ctx *gin.Context) {
 		return
 	}
 
-	template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusQueued
-	emptyError := ""
-	template.ImageGenerationError = &emptyError
-	if err := s.dbClient.MonsterTemplate().Update(ctx, templateID, template); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue monster template image generation: " + err.Error()})
-		return
-	}
-
-	payloadBytes, err := json.Marshal(jobs.GenerateMonsterTemplateImageTaskPayload{MonsterTemplateID: templateID})
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build monster template image generation payload"})
-		return
-	}
-
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplateImageTaskType, payloadBytes)); err != nil {
-		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
-		errMessage := err.Error()
-		template.ImageGenerationError = &errMessage
-		_ = s.dbClient.MonsterTemplate().Update(ctx, templateID, template)
+	if err := s.queueMonsterTemplateImageGeneration(ctx, template); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue monster template image generation: " + err.Error()})
 		return
 	}

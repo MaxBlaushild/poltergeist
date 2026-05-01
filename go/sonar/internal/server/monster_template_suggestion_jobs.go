@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,6 +144,7 @@ func (s *server) createMonsterTemplateSuggestionJobRecord(
 		requestBody.Count,
 		usedNames,
 		existingNames,
+		job.ID,
 		monsterType,
 		genre,
 		zoneKind,
@@ -165,6 +167,14 @@ func (s *server) createMonsterTemplateSuggestionJobRecord(
 			})
 			if err := s.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
 				return failJob(err, http.StatusInternalServerError)
+			}
+			if err := s.queueMonsterTemplateImageGeneration(ctx, template); err != nil {
+				log.Printf(
+					"createMonsterTemplateSuggestionJobRecord: failed to queue monster template image generation for %s (%s): %v",
+					strings.TrimSpace(template.Name),
+					template.ID,
+					err,
+				)
 			}
 		} else {
 			draft := &models.MonsterTemplateSuggestionDraft{

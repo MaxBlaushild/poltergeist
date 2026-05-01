@@ -19,6 +19,7 @@ func (h *questArchetypeSuggestionDraftHandle) preloadBase(ctx context.Context) *
 func (h *questArchetypeSuggestionDraftHandle) Create(ctx context.Context, draft *models.QuestArchetypeSuggestionDraft) error {
 	if draft != nil {
 		draft.Status = models.NormalizeQuestArchetypeSuggestionDraftStatus(draft.Status)
+		draft.ZoneKind = models.NormalizeZoneKind(draft.ZoneKind)
 	}
 	return h.db.WithContext(ctx).Create(draft).Error
 }
@@ -26,6 +27,7 @@ func (h *questArchetypeSuggestionDraftHandle) Create(ctx context.Context, draft 
 func (h *questArchetypeSuggestionDraftHandle) Update(ctx context.Context, draft *models.QuestArchetypeSuggestionDraft) error {
 	if draft != nil {
 		draft.Status = models.NormalizeQuestArchetypeSuggestionDraftStatus(draft.Status)
+		draft.ZoneKind = models.NormalizeZoneKind(draft.ZoneKind)
 	}
 	return h.db.WithContext(ctx).Save(draft).Error
 }

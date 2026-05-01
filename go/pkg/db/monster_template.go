@@ -105,6 +105,10 @@ func (h *monsterTemplateHandle) adminListBaseQuery(
 		query = query.Where("monster_templates.genre_id = ?", *params.GenreID)
 	}
 
+	if normalizedZoneKind := models.NormalizeZoneKind(params.ZoneKind); normalizedZoneKind != "" {
+		query = query.Where("monster_templates.zone_kind = ?", normalizedZoneKind)
+	}
+
 	switch normalizedType := strings.TrimSpace(strings.ToLower(params.MonsterType)); normalizedType {
 	case "", "all":
 	default:

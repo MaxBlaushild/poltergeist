@@ -1231,6 +1231,7 @@ export const Monsters = () => {
   const [templateTypeFilter, setTemplateTypeFilter] = useState<
     'all' | MonsterTemplateType
   >('all');
+  const [templateZoneKindFilter, setTemplateZoneKindFilter] = useState('all');
   const [bulkTemplateBusy, setBulkTemplateBusy] = useState(false);
   const [bulkTemplateJob, setBulkTemplateJob] =
     useState<BulkMonsterTemplateStatus | null>(null);
@@ -1360,52 +1361,28 @@ export const Monsters = () => {
           setLoading(true);
         }
         setError(null);
-        const [templateResp, monsterResp, encounterResp] = await Promise.all([
-          apiClient.get<PaginatedResponse<MonsterTemplateRecord>>(
-            '/sonar/admin/monster-templates',
-            {
-              page: templatePage,
-              pageSize: monsterListPageSize,
-              query: deferredQuery.trim(),
-              zoneQuery: deferredZoneQuery.trim(),
-              genreId: genreFilter === 'all' ? '' : genreFilter,
-              archived: templateTab === 'archived',
-              monsterType:
-                templateTypeFilter === 'all' ? '' : templateTypeFilter,
-            }
-          ),
-          apiClient.get<PaginatedResponse<MonsterRecord>>(
-            '/sonar/admin/monsters',
-            {
-              page: monsterPage,
-              pageSize: monsterListPageSize,
-              query: deferredQuery.trim(),
-              zoneQuery: deferredZoneQuery.trim(),
-              genreId: genreFilter === 'all' ? '' : genreFilter,
-            }
-          ),
-          apiClient.get<PaginatedResponse<MonsterEncounterRecord>>(
-            '/sonar/admin/monster-encounters',
-            {
-              page: encounterPage,
-              pageSize: monsterListPageSize,
-              query: deferredQuery.trim(),
-              zoneQuery: deferredZoneQuery.trim(),
-              genreId: genreFilter === 'all' ? '' : genreFilter,
-            }
-          ),
-        ]);
+        const templateResp = await apiClient.get<
+          PaginatedResponse<MonsterTemplateRecord>
+        >('/sonar/admin/monster-templates', {
+          page: templatePage,
+          pageSize: monsterListPageSize,
+          query: deferredQuery.trim(),
+          zoneQuery: deferredZoneQuery.trim(),
+          genreId: genreFilter === 'all' ? '' : genreFilter,
+          archived: templateTab === 'archived',
+          zoneKind:
+            templateZoneKindFilter === 'all' ? '' : templateZoneKindFilter,
+          monsterType: templateTypeFilter === 'all' ? '' : templateTypeFilter,
+        });
 
         setTemplates(
           Array.isArray(templateResp?.items) ? templateResp.items : []
         );
-        setRecords(Array.isArray(monsterResp?.items) ? monsterResp.items : []);
-        setEncounters(
-          Array.isArray(encounterResp?.items) ? encounterResp.items : []
-        );
+        setRecords([]);
+        setEncounters([]);
         setTemplateTotal(templateResp?.total ?? 0);
-        setMonsterTotal(monsterResp?.total ?? 0);
-        setEncounterTotal(encounterResp?.total ?? 0);
+        setMonsterTotal(0);
+        setEncounterTotal(0);
         setActiveTemplateCount(templateResp?.activeCount ?? 0);
         setArchivedTemplateCount(templateResp?.archivedCount ?? 0);
       } catch (err) {
@@ -1421,12 +1398,11 @@ export const Monsters = () => {
       apiClient,
       deferredQuery,
       deferredZoneQuery,
-      encounterPage,
       genreFilter,
-      monsterPage,
       templatePage,
       templateTab,
       templateTypeFilter,
+      templateZoneKindFilter,
     ]
   );
 
@@ -1614,32 +1590,25 @@ export const Monsters = () => {
   }, [templateSuggestionDrafts.length]);
 
   useEffect(() => {
-    const hasPendingMonsterGeneration = records.some((record) =>
-      ['queued', 'in_progress'].includes(record.imageGenerationStatus || '')
-    );
     const hasPendingTemplateGeneration = templates.some((template) =>
       ['queued', 'in_progress'].includes(template.imageGenerationStatus || '')
     );
-    const hasPendingGeneration =
-      hasPendingMonsterGeneration || hasPendingTemplateGeneration;
-    if (!hasPendingGeneration) return;
+    if (!hasPendingTemplateGeneration) return;
 
     const interval = window.setInterval(() => {
       void loadPagedData(true);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [loadPagedData, records, templates]);
+  }, [loadPagedData, templates]);
 
   useEffect(() => {
     setTemplatePage(1);
-    setMonsterPage(1);
-    setEncounterPage(1);
   }, [genreFilter, query, zoneQuery]);
 
   useEffect(() => {
     setTemplatePage(1);
-  }, [templateTab, templateTypeFilter]);
+  }, [templateTab, templateTypeFilter, templateZoneKindFilter]);
 
   useEffect(() => {
     const totalPages = Math.max(
@@ -1761,9 +1730,15 @@ export const Monsters = () => {
     () => ({
       ...sharedDashboardParams,
       archived: templateTab === 'archived' ? 'true' : 'false',
+      zoneKind: templateZoneKindFilter === 'all' ? '' : templateZoneKindFilter,
       monsterType: templateTypeFilter === 'all' ? '' : templateTypeFilter,
     }),
-    [sharedDashboardParams, templateTab, templateTypeFilter]
+    [
+      sharedDashboardParams,
+      templateTab,
+      templateTypeFilter,
+      templateZoneKindFilter,
+    ]
   );
   const {
     items: dashboardTemplates,
@@ -1816,8 +1791,12 @@ export const Monsters = () => {
       {
         title: 'Template Zone Kinds',
         note: 'Likely habitat classification across the current template pool.',
-        buckets: countBy(dashboardTemplates, (template) =>
-          zoneKindLabel(template.zoneKind, zoneKindBySlug)
+        buckets: countBy(
+          dashboardTemplates,
+          (template) => zoneKindLabel(template.zoneKind, zoneKindBySlug),
+          {
+            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
+          }
         ),
       },
       {
@@ -1835,7 +1814,7 @@ export const Monsters = () => {
         ),
       },
     ],
-    [dashboardTemplates, genres, zoneKindBySlug]
+    [dashboardTemplates, genres, zoneKindBySlug, zoneKinds]
   );
 
   const templateNameById = useMemo(() => {
@@ -1946,6 +1925,7 @@ export const Monsters = () => {
   const filteredTemplates = templates;
   const filteredMonsters = records;
   const filteredEncounters = encounters;
+  const showLiveMonsterSections = false;
   const bulkTemplateImageTargetCount =
     selectedTemplateIds.size > 0 ? selectedTemplateIds.size : templateTotal;
   const allFilteredTemplatesSelected = useMemo(() => {
@@ -2550,6 +2530,10 @@ export const Monsters = () => {
                 zoneQuery: deferredZoneQuery.trim(),
                 genreId: genreFilter === 'all' ? '' : genreFilter,
                 archived: templateTab === 'archived',
+                zoneKind:
+                  templateZoneKindFilter === 'all'
+                    ? ''
+                    : templateZoneKindFilter,
                 monsterType:
                   templateTypeFilter === 'all' ? '' : templateTypeFilter,
               }
@@ -2629,25 +2613,6 @@ export const Monsters = () => {
     return loadMonsterOptions();
   }, [loadMonsterOptions, monsterOptions, monsterOptionsLoaded]);
 
-  const openCreateMonster = async () => {
-    try {
-      const availableTemplates = await ensureTemplateOptionsLoaded();
-      setEditingMonster(null);
-      setMonsterForm({
-        ...emptyMonsterForm(),
-        zoneId: zones[0]?.id ?? '',
-        templateId: availableTemplates[0]?.id ?? '',
-        dominantHandInventoryItemId: dominantHandItems[0]
-          ? String(dominantHandItems[0].id)
-          : '',
-      });
-      setShowMonsterModal(true);
-    } catch (err) {
-      console.error('Failed to load template options', err);
-      alert('Failed to load monster template options.');
-    }
-  };
-
   const openEditMonster = async (monster: MonsterRecord) => {
     try {
       await ensureTemplateOptionsLoaded();
@@ -2664,29 +2629,6 @@ export const Monsters = () => {
     setShowMonsterModal(false);
     setEditingMonster(null);
     setMonsterForm(emptyMonsterForm());
-  };
-
-  const openCreateEncounter = async () => {
-    try {
-      const availableMonsters = await ensureMonsterOptionsLoaded();
-      const defaultZoneId = zones[0]?.id ?? '';
-      const defaultMonsters = availableMonsters
-        .filter((monster) =>
-          defaultZoneId ? monster.zoneId === defaultZoneId : true
-        )
-        .slice(0, 3)
-        .map((monster) => monster.id);
-      setEditingEncounter(null);
-      setEncounterForm({
-        ...emptyMonsterEncounterForm(),
-        zoneId: defaultZoneId,
-        monsterIds: defaultMonsters,
-      });
-      setShowEncounterModal(true);
-    } catch (err) {
-      console.error('Failed to load monster options', err);
-      alert('Failed to load monsters for encounter editing.');
-    }
   };
 
   const openEditEncounter = async (encounter: MonsterEncounterRecord) => {
@@ -3552,11 +3494,12 @@ export const Monsters = () => {
       <div className="max-w-7xl mx-auto space-y-6">
         <ContentDashboard
           title="Monster Dashboard"
-          subtitle="Aggregate monster template coverage for the current query, zone, genre, and template filters."
+          subtitle="Aggregate monster template coverage for the current query, zone, genre, zone kind, and template filters."
           status={
             query.trim() ||
             zoneQuery.trim() ||
             genreFilter !== 'all' ||
+            templateZoneKindFilter !== 'all' ||
             templateTypeFilter !== 'all' ||
             templateTab === 'archived'
               ? 'Reflects current filters and template view'
@@ -3573,578 +3516,266 @@ export const Monsters = () => {
             <div>
               <h1 className="qa-card-title">Monsters</h1>
               <p className="text-sm text-gray-600">
-                Configure monster templates (base stats + abilities), then place
-                monsters with level and weapon loadouts.
+                Configure monster templates, then tune their art, affinities,
+                and progression coverage.
               </p>
             </div>
-            <div className="flex gap-2">
-              <select
-                value={bulkTemplateType}
-                onChange={(event) =>
-                  setBulkTemplateType(event.target.value as MonsterTemplateType)
-                }
-                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk template type"
-              >
-                {monsterTemplateTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={bulkTemplateGenreId}
-                onChange={(event) => setBulkTemplateGenreId(event.target.value)}
-                className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk template genre"
-              >
-                {genres.length === 0 ? (
-                  <option value="">Fantasy</option>
-                ) : (
-                  genres.map((genre) => (
-                    <option key={genre.id} value={genre.id}>
-                      {formatGenreLabel(genre)}
-                      {genre.active === false ? ' (inactive)' : ''}
-                    </option>
-                  ))
-                )}
-              </select>
-              <select
-                value={bulkTemplateZoneKind}
-                onChange={(event) =>
-                  setBulkTemplateZoneKind(event.target.value)
-                }
-                className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk template zone kind"
-              >
-                <option value="">Any zone kind</option>
-                {zoneKinds.map((zoneKind) => (
-                  <option key={zoneKind.id} value={zoneKind.slug}>
-                    {zoneKind.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={bulkTemplateCount}
-                onChange={(event) => setBulkTemplateCount(event.target.value)}
-                className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk template count"
-              />
-              <label className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={bulkTemplateYeetIt}
-                  onChange={(event) =>
-                    setBulkTemplateYeetIt(event.target.checked)
-                  }
-                />
-                Yeet it
-              </label>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={handleBulkGenerateTemplates}
-                disabled={bulkTemplateBusy}
-              >
-                {bulkTemplateBusy
-                  ? 'Generating...'
-                  : bulkTemplateYeetIt
-                    ? 'Generate Live Templates'
-                    : 'Generate Drafts'}
-              </button>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={() => handleGenerateSingleTypedTemplate('boss')}
-                disabled={bulkTemplateBusy}
-              >
-                {bulkTemplateYeetIt
-                  ? 'Generate Live Boss'
-                  : 'Generate Boss Draft'}
-              </button>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={() => handleGenerateSingleTypedTemplate('raid')}
-                disabled={bulkTemplateBusy}
-              >
-                {bulkTemplateYeetIt
-                  ? 'Generate Live Raid'
-                  : 'Generate Raid Draft'}
-              </button>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={openCreateTemplate}
-              >
-                Create Template
-              </button>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={() => void openCreateEncounter()}
-              >
-                Create Encounter
-              </button>
-              <button
-                className="qa-btn qa-btn-primary"
-                onClick={() => void openCreateMonster()}
-              >
-                Create Monster
-              </button>
-            </div>
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={openCreateTemplate}
+            >
+              Create Template
+            </button>
           </div>
-          {bulkTemplateJob && (
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
-              <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white ${staticStatusClassName(
-                  bulkTemplateJob.status
-                )}`}
-              >
-                {formatBulkTemplateStatus(bulkTemplateJob.status)}
-              </span>
-              <span>
-                {bulkTemplateJob.yeetIt ? 'Templates' : 'Drafts'}:{' '}
-                {bulkTemplateJob.createdCount}/{bulkTemplateJob.totalCount}
-              </span>
-              <span>
-                Type:{' '}
-                {formatMonsterTemplateTypeLabel(
-                  bulkTemplateJob.monsterType ?? bulkTemplateType
-                )}
-              </span>
-              <span>
-                Genre:{' '}
-                {formatGenreLabel(
-                  genres.find(
-                    (genre) =>
-                      genre.id ===
-                      (bulkTemplateJob.genreId ?? bulkTemplateGenreId)
-                  )
-                )}
-              </span>
-              {bulkTemplateJob.zoneKind ? (
-                <span>
-                  Zone Kind:{' '}
-                  {zoneKindLabel(bulkTemplateJob.zoneKind, zoneKindBySlug)}
-                </span>
-              ) : null}
-              <span>{bulkTemplateJob.yeetIt ? 'Yeet mode' : 'Draft mode'}</span>
-              <span>Job: {bulkTemplateJob.jobId}</span>
-              <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
-            </div>
-          )}
-          {bulkTemplateMessage && (
-            <p className="mt-2 text-sm text-emerald-700">
-              {bulkTemplateMessage}
-            </p>
-          )}
-          {bulkTemplateError && (
-            <p className="mt-2 text-sm text-red-700">{bulkTemplateError}</p>
-          )}
         </div>
 
-        <div className="qa-card">
-          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Template Drafts</h2>
-              <p className="text-sm text-gray-600">
-                Review generated monster template drafts, approve the keepers,
-                and only materialize real templates once they look worth
-                keeping. Yeeted jobs skip this review step and go live
-                immediately.
-              </p>
+        <details className="qa-card">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Template Generator + Draft Review
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Generate monster template drafts in batches, then review and
+                  convert the keepers when you want them.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                <span className="rounded-full border border-gray-200 bg-white px-3 py-1">
+                  Recent jobs: {templateSuggestionJobs.length}
+                  {templateSuggestionJobsHasMore ? '+' : ''}
+                </span>
+                {selectedTemplateSuggestionJob ? (
+                  <span className="rounded-full border border-gray-200 bg-white px-3 py-1">
+                    Selected job: {selectedTemplateSuggestionJob.createdCount}{' '}
+                    {selectedTemplateSuggestionJob.yeetIt
+                      ? 'template'
+                      : 'draft'}
+                    {selectedTemplateSuggestionJob.createdCount === 1
+                      ? ''
+                      : 's'}
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
-              Recent jobs: {templateSuggestionJobs.length}
-            </div>
-          </div>
+          </summary>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="mt-4 space-y-6">
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-slate-800">
-                    Recent Draft Jobs
-                  </div>
-                  {templateSuggestionJobs.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-500">
-                      Showing {visibleTemplateSuggestionJobsRangeStart}-
-                      {visibleTemplateSuggestionJobsRangeEnd} of{' '}
-                      {templateSuggestionJobs.length}
-                      {templateSuggestionJobsHasMore ? '+' : ''} loaded jobs ·{' '}
-                      Page {templateSuggestionJobsPage}
-                    </div>
-                  )}
+                  <h3 className="text-lg font-semibold">Template Generator</h3>
+                  <p className="text-sm text-gray-600">
+                    Queue new draft batches, or yeet them straight into live
+                    templates when you already know the direction is solid.
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {loadingTemplateSuggestionJobs && (
-                    <div className="text-xs text-slate-500">Refreshing...</div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTemplateSuggestionJobsPage((current) =>
-                        Math.max(1, current - 1)
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    value={bulkTemplateType}
+                    onChange={(event) =>
+                      setBulkTemplateType(
+                        event.target.value as MonsterTemplateType
                       )
                     }
-                    disabled={
-                      loadingTemplateSuggestionJobs ||
-                      templateSuggestionJobsPage <= 1
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    aria-label="Bulk template type"
                   >
-                    Previous
+                    {monsterTemplateTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={bulkTemplateGenreId}
+                    onChange={(event) =>
+                      setBulkTemplateGenreId(event.target.value)
+                    }
+                    className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    aria-label="Bulk template genre"
+                  >
+                    {genres.length === 0 ? (
+                      <option value="">Fantasy</option>
+                    ) : (
+                      genres.map((genre) => (
+                        <option key={genre.id} value={genre.id}>
+                          {formatGenreLabel(genre)}
+                          {genre.active === false ? ' (inactive)' : ''}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <select
+                    value={bulkTemplateZoneKind}
+                    onChange={(event) =>
+                      setBulkTemplateZoneKind(event.target.value)
+                    }
+                    className="min-w-[180px] rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    aria-label="Bulk template zone kind"
+                  >
+                    <option value="">Any zone kind</option>
+                    {zoneKinds.map((zoneKind) => (
+                      <option key={zoneKind.id} value={zoneKind.slug}>
+                        {zoneKind.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={bulkTemplateCount}
+                    onChange={(event) =>
+                      setBulkTemplateCount(event.target.value)
+                    }
+                    className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                    aria-label="Bulk template count"
+                  />
+                  <label className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={bulkTemplateYeetIt}
+                      onChange={(event) =>
+                        setBulkTemplateYeetIt(event.target.checked)
+                      }
+                    />
+                    Yeet it
+                  </label>
+                  <button
+                    className="qa-btn qa-btn-secondary"
+                    onClick={handleBulkGenerateTemplates}
+                    disabled={bulkTemplateBusy}
+                  >
+                    {bulkTemplateBusy
+                      ? 'Generating...'
+                      : bulkTemplateYeetIt
+                        ? 'Generate Live Templates'
+                        : 'Generate Drafts'}
                   </button>
                   <button
-                    type="button"
-                    onClick={() =>
-                      setTemplateSuggestionJobsPage((current) => current + 1)
-                    }
-                    disabled={
-                      loadingTemplateSuggestionJobs ||
-                      !templateSuggestionJobsCanAdvance
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    className="qa-btn qa-btn-secondary"
+                    onClick={() => handleGenerateSingleTypedTemplate('boss')}
+                    disabled={bulkTemplateBusy}
                   >
-                    Next
+                    {bulkTemplateYeetIt
+                      ? 'Generate Live Boss'
+                      : 'Generate Boss Draft'}
+                  </button>
+                  <button
+                    className="qa-btn qa-btn-secondary"
+                    onClick={() => handleGenerateSingleTypedTemplate('raid')}
+                    disabled={bulkTemplateBusy}
+                  >
+                    {bulkTemplateYeetIt
+                      ? 'Generate Live Raid'
+                      : 'Generate Raid Draft'}
                   </button>
                 </div>
               </div>
-              <div className="space-y-2">
-                {templateSuggestionJobs.length === 0 &&
-                  !loadingTemplateSuggestionJobs && (
-                    <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
-                      No monster template draft jobs yet.
-                    </div>
-                  )}
-                {visibleTemplateSuggestionJobs.map((job) => {
-                  const selected =
-                    job.jobId === selectedTemplateSuggestionJobId;
-                  return (
-                    <button
-                      key={job.jobId}
-                      type="button"
-                      onClick={() =>
-                        setSelectedTemplateSuggestionJobId(job.jobId)
-                      }
-                      className={`w-full rounded-lg border px-3 py-3 text-left transition ${
-                        selected
-                          ? 'border-indigo-500 bg-indigo-50'
-                          : 'border-slate-200 bg-slate-50 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium text-slate-900">
-                          {formatMonsterTemplateTypeLabel(job.monsterType)} ·{' '}
-                          {job.totalCount} {job.yeetIt ? 'template' : 'draft'}
-                          {job.totalCount === 1 ? '' : 's'}
-                        </div>
-                        <span
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                            job.status === 'completed'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : job.status === 'failed'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          {job.status.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500">
-                        Genre:{' '}
-                        {formatGenreLabel(
-                          genres.find((genre) => genre.id === job.genreId)
-                        )}{' '}
-                        {job.zoneKind
-                          ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
-                          : ''}
-                        · {job.yeetIt ? 'yeet mode' : 'draft mode'}·{' '}
-                        {job.createdCount}/{job.totalCount} ready
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                        {[
-                          job.source
-                            ? job.source.replace(/_/g, ' ')
-                            : 'generated',
-                          job.updatedAt
-                            ? `Updated ${formatDate(job.updatedAt)}`
-                            : null,
-                        ]
-                          .filter((entry): entry is string => Boolean(entry))
-                          .map((entry) => (
-                            <span
-                              key={`${job.jobId}-${entry}`}
-                              className="rounded-full bg-white/80 px-2 py-1"
-                            >
-                              {entry}
-                            </span>
-                          ))}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              {bulkTemplateJob && (
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white ${staticStatusClassName(
+                      bulkTemplateJob.status
+                    )}`}
+                  >
+                    {formatBulkTemplateStatus(bulkTemplateJob.status)}
+                  </span>
+                  <span>
+                    {bulkTemplateJob.yeetIt ? 'Templates' : 'Drafts'}:{' '}
+                    {bulkTemplateJob.createdCount}/{bulkTemplateJob.totalCount}
+                  </span>
+                  <span>
+                    Type:{' '}
+                    {formatMonsterTemplateTypeLabel(
+                      bulkTemplateJob.monsterType ?? bulkTemplateType
+                    )}
+                  </span>
+                  <span>
+                    Genre:{' '}
+                    {formatGenreLabel(
+                      genres.find(
+                        (genre) =>
+                          genre.id ===
+                          (bulkTemplateJob.genreId ?? bulkTemplateGenreId)
+                      )
+                    )}
+                  </span>
+                  {bulkTemplateJob.zoneKind ? (
+                    <span>
+                      Zone Kind:{' '}
+                      {zoneKindLabel(bulkTemplateJob.zoneKind, zoneKindBySlug)}
+                    </span>
+                  ) : null}
+                  <span>
+                    {bulkTemplateJob.yeetIt ? 'Yeet mode' : 'Draft mode'}
+                  </span>
+                  <span>Job: {bulkTemplateJob.jobId}</span>
+                  <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
+                </div>
+              )}
+              {bulkTemplateMessage && (
+                <p className="mt-2 text-sm text-emerald-700">
+                  {bulkTemplateMessage}
+                </p>
+              )}
+              {bulkTemplateError && (
+                <p className="mt-2 text-sm text-red-700">{bulkTemplateError}</p>
+              )}
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-slate-800">
-                    {selectedTemplateSuggestionJob
-                      ? `${selectedTemplateSuggestionJob.yeetIt ? 'Results' : 'Drafts'} for ${formatMonsterTemplateTypeLabel(
-                          selectedTemplateSuggestionJob.monsterType
-                        )}`
-                      : 'Generated Drafts'}
-                  </div>
-                  {selectedTemplateSuggestionJob && (
-                    <div className="space-y-1 text-xs text-slate-500">
-                      <div>
-                        Genre:{' '}
-                        {formatGenreLabel(
-                          genres.find(
-                            (genre) =>
-                              genre.id === selectedTemplateSuggestionJob.genreId
-                          )
-                        )}{' '}
-                        {selectedTemplateSuggestionJob.zoneKind
-                          ? `· ${zoneKindLabel(
-                              selectedTemplateSuggestionJob.zoneKind,
-                              zoneKindBySlug
-                            )} `
-                          : ''}
-                        · {selectedTemplateSuggestionJob.createdCount}{' '}
-                        {selectedTemplateSuggestionJob.yeetIt
-                          ? 'template'
-                          : 'draft'}
-                        {selectedTemplateSuggestionJob.createdCount === 1
-                          ? ''
-                          : 's'}{' '}
-                        ·{' '}
-                        {selectedTemplateSuggestionJob.yeetIt
-                          ? 'yeet mode'
-                          : 'draft mode'}
-                      </div>
-                    </div>
-                  )}
+                  <h3 className="text-lg font-semibold">Template Drafts</h3>
+                  <p className="text-sm text-gray-600">
+                    Review generated monster template drafts, approve the
+                    keepers, and only materialize real templates once they look
+                    worth keeping. Yeeted jobs skip this review step and go live
+                    immediately.
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {selectedTemplateSuggestionJob &&
-                    !selectedTemplateSuggestionJob.yeetIt && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void handleConvertAllTemplateSuggestionDrafts()
-                        }
-                        disabled={
-                          loadingTemplateSuggestionDrafts ||
-                          convertingAllTemplateSuggestionDrafts ||
-                          convertingTemplateSuggestionDraftId !== null ||
-                          unconvertedTemplateSuggestionDrafts.length === 0
-                        }
-                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        {convertingAllTemplateSuggestionDrafts
-                          ? 'Converting all...'
-                          : `Convert All to Templates${
-                              unconvertedTemplateSuggestionDrafts.length > 0
-                                ? ` (${unconvertedTemplateSuggestionDrafts.length})`
-                                : ''
-                            }`}
-                      </button>
-                    )}
-                  {loadingTemplateSuggestionDrafts && (
-                    <div className="text-xs text-slate-500">
-                      Loading drafts...
-                    </div>
-                  )}
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
+                  Recent jobs: {templateSuggestionJobs.length}
                 </div>
               </div>
 
-              {templateSuggestionDrafts.length > 0 && (
-                <div className="mb-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    Showing {templateSuggestionDraftRangeStart}-
-                    {templateSuggestionDraftRangeEnd} of{' '}
-                    {templateSuggestionDrafts.length} drafts · Page{' '}
-                    {templateSuggestionDraftPage} of{' '}
-                    {templateSuggestionDraftTotalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTemplateSuggestionDraftPage((current) =>
-                          Math.max(1, current - 1)
-                        )
-                      }
-                      disabled={templateSuggestionDraftPage <= 1}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTemplateSuggestionDraftPage((current) =>
-                          Math.min(
-                            templateSuggestionDraftTotalPages,
-                            current + 1
-                          )
-                        )
-                      }
-                      disabled={
-                        templateSuggestionDraftPage >=
-                        templateSuggestionDraftTotalPages
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                {templateSuggestionDrafts.length === 0 &&
-                  !loadingTemplateSuggestionDrafts && (
-                    <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
-                      {selectedTemplateSuggestionJob
-                        ? selectedTemplateSuggestionJob.yeetIt
-                          ? 'This job yeeted its generated monsters straight into live templates, so there are no drafts to review here.'
-                          : 'This job has not produced any drafts yet.'
-                        : 'Select a draft job to review its generated templates.'}
-                    </div>
-                  )}
-                {paginatedTemplateSuggestionDrafts.map((draft) => (
-                  <div
-                    key={draft.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-semibold text-slate-900">
-                          {draft.name}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                            {formatMonsterTemplateTypeLabel(
-                              draft.monsterType || draft.payload.monsterType
-                            )}
-                          </span>
-                          <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                            {formatGenreLabel(
-                              draft.genre ??
-                                genres.find(
-                                  (genre) => genre.id === draft.genreId
-                                ) ??
-                                null
-                            )}
-                          </span>
-                          {draft.zoneKind && (
-                            <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
-                              {zoneKindLabel(draft.zoneKind, zoneKindBySlug)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span
-                        className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                          draft.status === 'converted'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-indigo-100 text-indigo-700'
-                        }`}
-                      >
-                        {draft.status}
-                      </span>
-                    </div>
-                    {draft.description && (
-                      <p className="mt-3 text-sm text-slate-700">
-                        {draft.description}
-                      </p>
-                    )}
-                    <p className="mt-3 text-sm text-slate-600">
-                      STR {draft.payload.baseStrength} · DEX{' '}
-                      {draft.payload.baseDexterity} · CON{' '}
-                      {draft.payload.baseConstitution} · INT{' '}
-                      {draft.payload.baseIntelligence} · WIS{' '}
-                      {draft.payload.baseWisdom} · CHA{' '}
-                      {draft.payload.baseCharisma}
-                    </p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      Damage Bonuses:{' '}
-                      {summarizeAffinityMap(
-                        monsterTemplateSuggestionDamageMap(draft.payload),
-                        damageBonusFieldOptions
-                      )}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Resistances:{' '}
-                      {summarizeAffinityMap(
-                        monsterTemplateSuggestionResistanceMap(draft.payload),
-                        resistanceFieldOptions
-                      )}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void handleConvertTemplateSuggestionDraft(draft.id)
-                        }
-                        disabled={
-                          draft.status === 'converted' ||
-                          convertingTemplateSuggestionDraftId === draft.id ||
-                          convertingAllTemplateSuggestionDrafts
-                        }
-                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        {draft.status === 'converted'
-                          ? 'Converted'
-                          : convertingAllTemplateSuggestionDrafts
-                            ? 'Bulk converting...'
-                            : convertingTemplateSuggestionDraftId === draft.id
-                              ? 'Converting...'
-                              : 'Convert to Template'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void handleDeleteTemplateSuggestionDraft(draft.id)
-                        }
-                        disabled={
-                          draft.status === 'converted' ||
-                          deletingTemplateSuggestionDraftId === draft.id ||
-                          convertingAllTemplateSuggestionDrafts
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
-                      >
-                        {deletingTemplateSuggestionDraftId === draft.id
-                          ? 'Deleting...'
-                          : 'Delete Draft'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {templateSuggestionDrafts.length > 0 &&
-                templateSuggestionDraftTotalPages > 1 && (
-                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
                     <div>
-                      Showing {templateSuggestionDraftRangeStart}-
-                      {templateSuggestionDraftRangeEnd} of{' '}
-                      {templateSuggestionDrafts.length} drafts · Page{' '}
-                      {templateSuggestionDraftPage} of{' '}
-                      {templateSuggestionDraftTotalPages}
+                      <div className="text-sm font-semibold text-slate-800">
+                        Recent Draft Jobs
+                      </div>
+                      {templateSuggestionJobs.length > 0 && (
+                        <div className="mt-1 text-xs text-slate-500">
+                          Showing {visibleTemplateSuggestionJobsRangeStart}-
+                          {visibleTemplateSuggestionJobsRangeEnd} of{' '}
+                          {templateSuggestionJobs.length}
+                          {templateSuggestionJobsHasMore ? '+' : ''} loaded jobs
+                          · Page {templateSuggestionJobsPage}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
+                      {loadingTemplateSuggestionJobs && (
+                        <div className="text-xs text-slate-500">
+                          Refreshing...
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() =>
-                          setTemplateSuggestionDraftPage((current) =>
+                          setTemplateSuggestionJobsPage((current) =>
                             Math.max(1, current - 1)
                           )
                         }
-                        disabled={templateSuggestionDraftPage <= 1}
+                        disabled={
+                          loadingTemplateSuggestionJobs ||
+                          templateSuggestionJobsPage <= 1
+                        }
                         className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Previous
@@ -4152,16 +3783,13 @@ export const Monsters = () => {
                       <button
                         type="button"
                         onClick={() =>
-                          setTemplateSuggestionDraftPage((current) =>
-                            Math.min(
-                              templateSuggestionDraftTotalPages,
-                              current + 1
-                            )
+                          setTemplateSuggestionJobsPage(
+                            (current) => current + 1
                           )
                         }
                         disabled={
-                          templateSuggestionDraftPage >=
-                          templateSuggestionDraftTotalPages
+                          loadingTemplateSuggestionJobs ||
+                          !templateSuggestionJobsCanAdvance
                         }
                         className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                       >
@@ -4169,10 +3797,385 @@ export const Monsters = () => {
                       </button>
                     </div>
                   </div>
-                )}
+                  <div className="space-y-2">
+                    {templateSuggestionJobs.length === 0 &&
+                      !loadingTemplateSuggestionJobs && (
+                        <div className="rounded-md border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+                          No monster template draft jobs yet.
+                        </div>
+                      )}
+                    {visibleTemplateSuggestionJobs.map((job) => {
+                      const selected =
+                        job.jobId === selectedTemplateSuggestionJobId;
+                      return (
+                        <button
+                          key={job.jobId}
+                          type="button"
+                          onClick={() =>
+                            setSelectedTemplateSuggestionJobId(job.jobId)
+                          }
+                          className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                            selected
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium text-slate-900">
+                              {formatMonsterTemplateTypeLabel(job.monsterType)}{' '}
+                              · {job.totalCount}{' '}
+                              {job.yeetIt ? 'template' : 'draft'}
+                              {job.totalCount === 1 ? '' : 's'}
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                                job.status === 'completed'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : job.status === 'failed'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {job.status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-xs text-slate-500">
+                            Genre:{' '}
+                            {formatGenreLabel(
+                              genres.find((genre) => genre.id === job.genreId)
+                            )}{' '}
+                            {job.zoneKind
+                              ? `· ${zoneKindLabel(job.zoneKind, zoneKindBySlug)} `
+                              : ''}
+                            · {job.yeetIt ? 'yeet mode' : 'draft mode'}·{' '}
+                            {job.createdCount}/{job.totalCount} ready
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                            {[
+                              job.source
+                                ? job.source.replace(/_/g, ' ')
+                                : 'generated',
+                              job.updatedAt
+                                ? `Updated ${formatDate(job.updatedAt)}`
+                                : null,
+                            ]
+                              .filter((entry): entry is string =>
+                                Boolean(entry)
+                              )
+                              .map((entry) => (
+                                <span
+                                  key={`${job.jobId}-${entry}`}
+                                  className="rounded-full bg-white/80 px-2 py-1"
+                                >
+                                  {entry}
+                                </span>
+                              ))}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">
+                        {selectedTemplateSuggestionJob
+                          ? `${selectedTemplateSuggestionJob.yeetIt ? 'Results' : 'Drafts'} for ${formatMonsterTemplateTypeLabel(
+                              selectedTemplateSuggestionJob.monsterType
+                            )}`
+                          : 'Generated Drafts'}
+                      </div>
+                      {selectedTemplateSuggestionJob && (
+                        <div className="space-y-1 text-xs text-slate-500">
+                          <div>
+                            Genre:{' '}
+                            {formatGenreLabel(
+                              genres.find(
+                                (genre) =>
+                                  genre.id ===
+                                  selectedTemplateSuggestionJob.genreId
+                              )
+                            )}{' '}
+                            {selectedTemplateSuggestionJob.zoneKind
+                              ? `· ${zoneKindLabel(
+                                  selectedTemplateSuggestionJob.zoneKind,
+                                  zoneKindBySlug
+                                )} `
+                              : ''}
+                            · {selectedTemplateSuggestionJob.createdCount}{' '}
+                            {selectedTemplateSuggestionJob.yeetIt
+                              ? 'template'
+                              : 'draft'}
+                            {selectedTemplateSuggestionJob.createdCount === 1
+                              ? ''
+                              : 's'}{' '}
+                            ·{' '}
+                            {selectedTemplateSuggestionJob.yeetIt
+                              ? 'yeet mode'
+                              : 'draft mode'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selectedTemplateSuggestionJob &&
+                        !selectedTemplateSuggestionJob.yeetIt && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleConvertAllTemplateSuggestionDrafts()
+                            }
+                            disabled={
+                              loadingTemplateSuggestionDrafts ||
+                              convertingAllTemplateSuggestionDrafts ||
+                              convertingTemplateSuggestionDraftId !== null ||
+                              unconvertedTemplateSuggestionDrafts.length === 0
+                            }
+                            className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            {convertingAllTemplateSuggestionDrafts
+                              ? 'Converting all...'
+                              : `Convert All to Templates${
+                                  unconvertedTemplateSuggestionDrafts.length > 0
+                                    ? ` (${unconvertedTemplateSuggestionDrafts.length})`
+                                    : ''
+                                }`}
+                          </button>
+                        )}
+                      {loadingTemplateSuggestionDrafts && (
+                        <div className="text-xs text-slate-500">
+                          Loading drafts...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {templateSuggestionDrafts.length > 0 && (
+                    <div className="mb-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        Showing {templateSuggestionDraftRangeStart}-
+                        {templateSuggestionDraftRangeEnd} of{' '}
+                        {templateSuggestionDrafts.length} drafts · Page{' '}
+                        {templateSuggestionDraftPage} of{' '}
+                        {templateSuggestionDraftTotalPages}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTemplateSuggestionDraftPage((current) =>
+                              Math.max(1, current - 1)
+                            )
+                          }
+                          disabled={templateSuggestionDraftPage <= 1}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTemplateSuggestionDraftPage((current) =>
+                              Math.min(
+                                templateSuggestionDraftTotalPages,
+                                current + 1
+                              )
+                            )
+                          }
+                          disabled={
+                            templateSuggestionDraftPage >=
+                            templateSuggestionDraftTotalPages
+                          }
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {templateSuggestionDrafts.length === 0 &&
+                      !loadingTemplateSuggestionDrafts && (
+                        <div className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500 xl:col-span-2">
+                          {selectedTemplateSuggestionJob
+                            ? selectedTemplateSuggestionJob.yeetIt
+                              ? 'This job yeeted its generated monsters straight into live templates, so there are no drafts to review here.'
+                              : 'This job has not produced any drafts yet.'
+                            : 'Select a draft job to review its generated templates.'}
+                        </div>
+                      )}
+                    {paginatedTemplateSuggestionDrafts.map((draft) => (
+                      <div
+                        key={draft.id}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-lg font-semibold text-slate-900">
+                              {draft.name}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                              <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                                {formatMonsterTemplateTypeLabel(
+                                  draft.monsterType || draft.payload.monsterType
+                                )}
+                              </span>
+                              <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                                {formatGenreLabel(
+                                  draft.genre ??
+                                    genres.find(
+                                      (genre) => genre.id === draft.genreId
+                                    ) ??
+                                    null
+                                )}
+                              </span>
+                              {draft.zoneKind && (
+                                <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-700">
+                                  {zoneKindLabel(
+                                    draft.zoneKind,
+                                    zoneKindBySlug
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                              draft.status === 'converted'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-indigo-100 text-indigo-700'
+                            }`}
+                          >
+                            {draft.status}
+                          </span>
+                        </div>
+                        {draft.description && (
+                          <p className="mt-3 text-sm text-slate-700">
+                            {draft.description}
+                          </p>
+                        )}
+                        <p className="mt-3 text-sm text-slate-600">
+                          STR {draft.payload.baseStrength} · DEX{' '}
+                          {draft.payload.baseDexterity} · CON{' '}
+                          {draft.payload.baseConstitution} · INT{' '}
+                          {draft.payload.baseIntelligence} · WIS{' '}
+                          {draft.payload.baseWisdom} · CHA{' '}
+                          {draft.payload.baseCharisma}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Damage Bonuses:{' '}
+                          {summarizeAffinityMap(
+                            monsterTemplateSuggestionDamageMap(draft.payload),
+                            damageBonusFieldOptions
+                          )}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Resistances:{' '}
+                          {summarizeAffinityMap(
+                            monsterTemplateSuggestionResistanceMap(
+                              draft.payload
+                            ),
+                            resistanceFieldOptions
+                          )}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleConvertTemplateSuggestionDraft(
+                                draft.id
+                              )
+                            }
+                            disabled={
+                              draft.status === 'converted' ||
+                              convertingTemplateSuggestionDraftId ===
+                                draft.id ||
+                              convertingAllTemplateSuggestionDrafts
+                            }
+                            className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            {draft.status === 'converted'
+                              ? 'Converted'
+                              : convertingAllTemplateSuggestionDrafts
+                                ? 'Bulk converting...'
+                                : convertingTemplateSuggestionDraftId ===
+                                    draft.id
+                                  ? 'Converting...'
+                                  : 'Convert to Template'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleDeleteTemplateSuggestionDraft(draft.id)
+                            }
+                            disabled={
+                              draft.status === 'converted' ||
+                              deletingTemplateSuggestionDraftId === draft.id ||
+                              convertingAllTemplateSuggestionDrafts
+                            }
+                            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100"
+                          >
+                            {deletingTemplateSuggestionDraftId === draft.id
+                              ? 'Deleting...'
+                              : 'Delete Draft'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {templateSuggestionDrafts.length > 0 &&
+                    templateSuggestionDraftTotalPages > 1 && (
+                      <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          Showing {templateSuggestionDraftRangeStart}-
+                          {templateSuggestionDraftRangeEnd} of{' '}
+                          {templateSuggestionDrafts.length} drafts · Page{' '}
+                          {templateSuggestionDraftPage} of{' '}
+                          {templateSuggestionDraftTotalPages}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTemplateSuggestionDraftPage((current) =>
+                                Math.max(1, current - 1)
+                              )
+                            }
+                            disabled={templateSuggestionDraftPage <= 1}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTemplateSuggestionDraftPage((current) =>
+                                Math.min(
+                                  templateSuggestionDraftTotalPages,
+                                  current + 1
+                                )
+                              )
+                            }
+                            disabled={
+                              templateSuggestionDraftPage >=
+                              templateSuggestionDraftTotalPages
+                            }
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </details>
 
         <ContentMapMarkersMovedNotice subject="Encounter map markers" />
 
@@ -4204,6 +4207,24 @@ export const Monsters = () => {
               {monsterTemplateTypeOptions.map((option) => (
                 <option key={`filter-${option.value}`} value={option.value}>
                   {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="rounded-md border border-gray-300 p-2"
+              value={templateZoneKindFilter}
+              onChange={(event) =>
+                setTemplateZoneKindFilter(event.target.value)
+              }
+              aria-label="Filter monster templates by zone kind"
+            >
+              <option value="all">All Zone Kinds</option>
+              {zoneKinds.map((zoneKind) => (
+                <option
+                  key={`filter-zone-kind-${zoneKind.id}`}
+                  value={zoneKind.slug}
+                >
+                  {zoneKind.name}
                 </option>
               ))}
             </select>
@@ -4569,461 +4590,491 @@ export const Monsters = () => {
                 onPageChange={setTemplatePage}
               />
             </div>
-
-            <div className="qa-card">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">Monsters</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={selectAllVisibleMonsters}
-                    disabled={
-                      filteredMonsters.length === 0 ||
-                      allFilteredMonstersSelected ||
-                      bulkDeletingMonsters
-                    }
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={clearMonsterSelection}
-                    disabled={
-                      selectedMonsterIds.size === 0 || bulkDeletingMonsters
-                    }
-                  >
-                    Clear Selection
-                  </button>
-                  <button
-                    type="button"
-                    className="qa-btn qa-btn-danger"
-                    onClick={handleBulkDeleteMonsters}
-                    disabled={
-                      selectedMonsterIds.size === 0 || bulkDeletingMonsters
-                    }
-                  >
-                    {bulkDeletingMonsters
-                      ? `Deleting ${selectedMonsterIds.size}...`
-                      : `Delete Selected (${selectedMonsterIds.size})`}
-                  </button>
-                </div>
-              </div>
-              {filteredMonsters.length === 0 ? (
-                <p className="text-sm text-gray-600">No monsters found.</p>
-              ) : (
-                <div className="grid gap-4">
-                  {filteredMonsters.map((monster) => (
-                    <div
-                      key={monster.id}
-                      className="border border-gray-200 rounded-md p-3 bg-white"
-                    >
-                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                        <div className="flex gap-3 min-w-0">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 mt-1"
-                            checked={selectedMonsterIdSet.has(monster.id)}
-                            disabled={bulkDeletingMonsters}
-                            onChange={() => toggleMonsterSelection(monster.id)}
-                          />
-                          {monster.thumbnailUrl || monster.imageUrl ? (
-                            <button
-                              type="button"
-                              className="block"
-                              onClick={() => openMonsterImagePreview(monster)}
-                              title="Open image preview"
-                            >
-                              <img
-                                src={monster.thumbnailUrl || monster.imageUrl}
-                                alt={monster.name}
-                                className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
-                              />
-                            </button>
-                          ) : (
-                            <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
-                              ?
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <h3 className="font-semibold text-lg truncate">
-                              {monster.name}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              Zone:{' '}
-                              {zoneNameById.get(monster.zoneId) ??
-                                monster.zoneId}{' '}
-                              · Level {monster.level}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Zone Kind:{' '}
-                              {zoneKindSummaryLabel(
-                                monster.zoneKind,
-                                zoneDefaultKindById.get(monster.zoneId) ?? '',
-                                zoneKindBySlug
-                              )}
-                            </p>
-                            {monster.zoneKind?.trim() &&
-                            (zoneDefaultKindById.get(monster.zoneId) ?? '') &&
-                            monster.zoneKind.trim() !==
-                              (zoneDefaultKindById.get(monster.zoneId) ??
-                                '') ? (
-                              <p className="text-xs text-gray-500">
-                                Zone default:{' '}
-                                {zoneKindLabel(
-                                  zoneDefaultKindById.get(monster.zoneId) ?? '',
-                                  zoneKindBySlug
-                                )}
-                              </p>
-                            ) : null}
-                            <p className="text-sm text-gray-600">
-                              Template:{' '}
-                              {monster.template?.name ??
-                                (monster.templateId
-                                  ? templateNameById.get(monster.templateId)
-                                  : 'N/A')}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Genre:{' '}
-                              {formatGenreLabel(
-                                monster.genre ?? monster.template?.genre
-                              )}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Dominant Hand:{' '}
-                              {monster.dominantHandInventoryItem?.name ??
-                                monster.weaponInventoryItem?.name ??
-                                ((monster.dominantHandInventoryItemId ??
-                                monster.weaponInventoryItemId)
-                                  ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
-                                  : 'N/A')}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Off Hand:{' '}
-                              {monster.offHandInventoryItem?.name ??
-                                (monster.offHandInventoryItemId
-                                  ? `#${monster.offHandInventoryItemId}`
-                                  : 'N/A')}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Damage {monster.attackDamageMin}-
-                              {monster.attackDamageMax} · Swipes{' '}
-                              {monster.attackSwipesPerAttack}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Health {monster.health}/{monster.maxHealth} · Mana{' '}
-                              {monster.mana}/{monster.maxMana}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Damage Bonuses:{' '}
-                              {summarizeAffinityMap(
-                                monster.affinityDamageBonuses,
-                                damageBonusFieldOptions
-                              )}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Resistances:{' '}
-                              {summarizeAffinityMap(
-                                monster.affinityResistances,
-                                resistanceFieldOptions
-                              )}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              STR {monster.strength} · DEX {monster.dexterity} ·
-                              CON {monster.constitution} · INT{' '}
-                              {monster.intelligence} · WIS {monster.wisdom} ·
-                              CHA {monster.charisma}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {(monster.rewardMode ?? 'random') === 'random'
-                                ? `Random ${(monster.randomRewardSize ?? 'small').toUpperCase()} reward${
-                                    (monster.itemRewards?.length ?? 0) > 0
-                                      ? ` + ${monster.itemRewards?.length ?? 0} guaranteed item reward${
-                                          (monster.itemRewards?.length ?? 0) ===
-                                          1
-                                            ? ''
-                                            : 's'
-                                        }`
-                                      : ''
-                                  }`
-                                : `XP ${monster.rewardExperience} · Gold ${monster.rewardGold} · Item rewards ${
-                                    monster.itemRewards?.length ?? 0
-                                  }`}
-                            </p>
-                            {monster.materialRewards &&
-                            monster.materialRewards.length > 0 ? (
-                              <p className="text-xs text-gray-500">
-                                {summarizeMaterialRewards(
-                                  monster.materialRewards
-                                )}
-                              </p>
-                            ) : null}
-                            <p className="text-xs text-gray-500 mt-1">
-                              Image generation:{' '}
-                              {formatGenerationStatus(
-                                monster.imageGenerationStatus
-                              )}
-                            </p>
-                            {monster.imageGenerationError ? (
-                              <p className="text-xs text-red-600 mt-1">
-                                {monster.imageGenerationError}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            className="qa-btn qa-btn-secondary"
-                            onClick={() => handleGenerateImage(monster)}
-                            disabled={generatingMonsterId === monster.id}
-                          >
-                            {generatingMonsterId === monster.id
-                              ? 'Queueing...'
-                              : 'Generate Image'}
-                          </button>
-                          <button
-                            className="qa-btn qa-btn-secondary"
-                            onClick={() => void openEditMonster(monster)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="qa-btn qa-btn-danger"
-                            onClick={() => deleteMonster(monster)}
-                            disabled={bulkDeletingMonsters}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
+            {showLiveMonsterSections ? (
+              <>
+                <div className="qa-card">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold">Monsters</h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={selectAllVisibleMonsters}
+                        disabled={
+                          filteredMonsters.length === 0 ||
+                          allFilteredMonstersSelected ||
+                          bulkDeletingMonsters
+                        }
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={clearMonsterSelection}
+                        disabled={
+                          selectedMonsterIds.size === 0 || bulkDeletingMonsters
+                        }
+                      >
+                        Clear Selection
+                      </button>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-danger"
+                        onClick={handleBulkDeleteMonsters}
+                        disabled={
+                          selectedMonsterIds.size === 0 || bulkDeletingMonsters
+                        }
+                      >
+                        {bulkDeletingMonsters
+                          ? `Deleting ${selectedMonsterIds.size}...`
+                          : `Delete Selected (${selectedMonsterIds.size})`}
+                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
-              <PaginationControls
-                page={monsterPage}
-                pageSize={monsterListPageSize}
-                total={monsterTotal}
-                label="monsters"
-                onPageChange={setMonsterPage}
-              />
-            </div>
-
-            <div className="qa-card">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">Monster Encounters</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={toggleSelectVisibleEncounters}
-                    disabled={
-                      filteredEncounters.length === 0 || bulkDeletingEncounters
-                    }
-                  >
-                    {allFilteredEncountersSelected
-                      ? 'Unselect Visible'
-                      : 'Select Visible'}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={clearEncounterSelection}
-                    disabled={
-                      selectedEncounterIds.size === 0 || bulkDeletingEncounters
-                    }
-                  >
-                    Clear Selection
-                  </button>
-                  <button
-                    type="button"
-                    className="qa-btn qa-btn-danger"
-                    onClick={handleBulkDeleteEncounters}
-                    disabled={
-                      selectedEncounterIds.size === 0 || bulkDeletingEncounters
-                    }
-                  >
-                    {bulkDeletingEncounters
-                      ? `Deleting ${selectedEncounterIds.size}...`
-                      : `Delete Selected (${selectedEncounterIds.size})`}
-                  </button>
-                </div>
-              </div>
-              {filteredEncounters.length === 0 ? (
-                <p className="text-sm text-gray-600">No encounters found.</p>
-              ) : (
-                <div className="grid gap-4">
-                  {filteredEncounters.map((encounter) => (
-                    <div
-                      key={encounter.id}
-                      className="border border-gray-200 rounded-md p-3 bg-white"
-                    >
-                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                        <div className="flex gap-3 min-w-0">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 mt-1"
-                            checked={selectedEncounterIdSet.has(encounter.id)}
-                            disabled={bulkDeletingEncounters}
-                            onChange={() =>
-                              toggleEncounterSelection(encounter.id)
-                            }
-                          />
-                          {encounter.thumbnailUrl || encounter.imageUrl ? (
-                            <button
-                              type="button"
-                              className="block"
-                              onClick={() =>
-                                setImagePreview({
-                                  url:
-                                    encounter.thumbnailUrl ||
-                                    encounter.imageUrl,
-                                  alt: `${encounter.name || 'Encounter'} image`,
-                                })
-                              }
-                              title="Open image preview"
-                            >
-                              <img
-                                src={
-                                  encounter.thumbnailUrl || encounter.imageUrl
+                  </div>
+                  {filteredMonsters.length === 0 ? (
+                    <p className="text-sm text-gray-600">No monsters found.</p>
+                  ) : (
+                    <div className="grid gap-4">
+                      {filteredMonsters.map((monster) => (
+                        <div
+                          key={monster.id}
+                          className="border border-gray-200 rounded-md p-3 bg-white"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                            <div className="flex gap-3 min-w-0">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 mt-1"
+                                checked={selectedMonsterIdSet.has(monster.id)}
+                                disabled={bulkDeletingMonsters}
+                                onChange={() =>
+                                  toggleMonsterSelection(monster.id)
                                 }
-                                alt={encounter.name}
-                                className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
                               />
-                            </button>
-                          ) : (
-                            <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
-                              ?
+                              {monster.thumbnailUrl || monster.imageUrl ? (
+                                <button
+                                  type="button"
+                                  className="block"
+                                  onClick={() =>
+                                    openMonsterImagePreview(monster)
+                                  }
+                                  title="Open image preview"
+                                >
+                                  <img
+                                    src={
+                                      monster.thumbnailUrl || monster.imageUrl
+                                    }
+                                    alt={monster.name}
+                                    className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
+                                  />
+                                </button>
+                              ) : (
+                                <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
+                                  ?
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <h3 className="font-semibold text-lg truncate">
+                                  {monster.name}
+                                </h3>
+                                <p className="text-sm text-gray-600">
+                                  Zone:{' '}
+                                  {zoneNameById.get(monster.zoneId) ??
+                                    monster.zoneId}{' '}
+                                  · Level {monster.level}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Zone Kind:{' '}
+                                  {zoneKindSummaryLabel(
+                                    monster.zoneKind,
+                                    zoneDefaultKindById.get(monster.zoneId) ??
+                                      '',
+                                    zoneKindBySlug
+                                  )}
+                                </p>
+                                {monster.zoneKind?.trim() &&
+                                (zoneDefaultKindById.get(monster.zoneId) ??
+                                  '') &&
+                                monster.zoneKind.trim() !==
+                                  (zoneDefaultKindById.get(monster.zoneId) ??
+                                    '') ? (
+                                  <p className="text-xs text-gray-500">
+                                    Zone default:{' '}
+                                    {zoneKindLabel(
+                                      zoneDefaultKindById.get(monster.zoneId) ??
+                                        '',
+                                      zoneKindBySlug
+                                    )}
+                                  </p>
+                                ) : null}
+                                <p className="text-sm text-gray-600">
+                                  Template:{' '}
+                                  {monster.template?.name ??
+                                    (monster.templateId
+                                      ? templateNameById.get(monster.templateId)
+                                      : 'N/A')}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Genre:{' '}
+                                  {formatGenreLabel(
+                                    monster.genre ?? monster.template?.genre
+                                  )}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Dominant Hand:{' '}
+                                  {monster.dominantHandInventoryItem?.name ??
+                                    monster.weaponInventoryItem?.name ??
+                                    ((monster.dominantHandInventoryItemId ??
+                                    monster.weaponInventoryItemId)
+                                      ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
+                                      : 'N/A')}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Off Hand:{' '}
+                                  {monster.offHandInventoryItem?.name ??
+                                    (monster.offHandInventoryItemId
+                                      ? `#${monster.offHandInventoryItemId}`
+                                      : 'N/A')}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Damage {monster.attackDamageMin}-
+                                  {monster.attackDamageMax} · Swipes{' '}
+                                  {monster.attackSwipesPerAttack}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Health {monster.health}/{monster.maxHealth} ·
+                                  Mana {monster.mana}/{monster.maxMana}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Damage Bonuses:{' '}
+                                  {summarizeAffinityMap(
+                                    monster.affinityDamageBonuses,
+                                    damageBonusFieldOptions
+                                  )}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Resistances:{' '}
+                                  {summarizeAffinityMap(
+                                    monster.affinityResistances,
+                                    resistanceFieldOptions
+                                  )}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  STR {monster.strength} · DEX{' '}
+                                  {monster.dexterity} · CON{' '}
+                                  {monster.constitution} · INT{' '}
+                                  {monster.intelligence} · WIS {monster.wisdom}{' '}
+                                  · CHA {monster.charisma}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {(monster.rewardMode ?? 'random') === 'random'
+                                    ? `Random ${(monster.randomRewardSize ?? 'small').toUpperCase()} reward${
+                                        (monster.itemRewards?.length ?? 0) > 0
+                                          ? ` + ${monster.itemRewards?.length ?? 0} guaranteed item reward${
+                                              (monster.itemRewards?.length ??
+                                                0) === 1
+                                                ? ''
+                                                : 's'
+                                            }`
+                                          : ''
+                                      }`
+                                    : `XP ${monster.rewardExperience} · Gold ${monster.rewardGold} · Item rewards ${
+                                        monster.itemRewards?.length ?? 0
+                                      }`}
+                                </p>
+                                {monster.materialRewards &&
+                                monster.materialRewards.length > 0 ? (
+                                  <p className="text-xs text-gray-500">
+                                    {summarizeMaterialRewards(
+                                      monster.materialRewards
+                                    )}
+                                  </p>
+                                ) : null}
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Image generation:{' '}
+                                  {formatGenerationStatus(
+                                    monster.imageGenerationStatus
+                                  )}
+                                </p>
+                                {monster.imageGenerationError ? (
+                                  <p className="text-xs text-red-600 mt-1">
+                                    {monster.imageGenerationError}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <h3 className="font-semibold text-lg truncate">
-                              {encounter.name}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              Type:{' '}
-                              {formatMonsterEncounterTypeLabel(
-                                encounter.encounterType
-                              )}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Zone:{' '}
-                              {zoneNameById.get(encounter.zoneId) ??
-                                encounter.zoneId}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Zone Kind:{' '}
-                              {zoneKindSummaryLabel(
-                                encounter.zoneKind,
-                                zoneDefaultKindById.get(encounter.zoneId) ?? '',
-                                zoneKindBySlug
-                              )}
-                            </p>
-                            {encounter.zoneKind?.trim() &&
-                            (zoneDefaultKindById.get(encounter.zoneId) ?? '') &&
-                            encounter.zoneKind.trim() !==
-                              (zoneDefaultKindById.get(encounter.zoneId) ??
-                                '') ? (
-                              <p className="text-xs text-gray-500">
-                                Zone default:{' '}
-                                {zoneKindLabel(
-                                  zoneDefaultKindById.get(encounter.zoneId) ??
-                                    '',
-                                  zoneKindBySlug
-                                )}
-                              </p>
-                            ) : null}
-                            <p className="text-sm text-gray-600">
-                              Monsters:{' '}
-                              {encounter.monsterCount ||
-                                encounter.members?.length ||
-                                0}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Scaling:{' '}
-                              {encounter.scaleWithUserLevel
-                                ? 'Scales with user level'
-                                : 'Fixed monster levels'}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Rewards:{' '}
-                              {encounter.rewardMode === 'random'
-                                ? `Random ${(encounter.randomRewardSize ?? 'small').toUpperCase()} reward${
-                                    (encounter.itemRewards?.length ?? 0) > 0
-                                      ? ` + ${encounter.itemRewards?.length ?? 0} guaranteed item reward${
-                                          (encounter.itemRewards?.length ??
-                                            0) === 1
-                                            ? ''
-                                            : 's'
-                                        }`
-                                      : ''
-                                  }`
-                                : `XP ${encounter.rewardExperience} · Gold ${encounter.rewardGold} · Item rewards ${
-                                    encounter.itemRewards?.length ?? 0
-                                  }`}
-                            </p>
-                            {encounter.materialRewards &&
-                            encounter.materialRewards.length > 0 ? (
-                              <p className="text-xs text-gray-500">
-                                {summarizeMaterialRewards(
-                                  encounter.materialRewards
-                                )}
-                              </p>
-                            ) : null}
-                            {encounter.recurrenceFrequency ? (
-                              <p className="text-sm text-indigo-700">
-                                Recurs {encounter.recurrenceFrequency}
-                              </p>
-                            ) : null}
-                            {encounter.description ? (
-                              <p className="text-sm text-gray-600 mt-1">
-                                {encounter.description}
-                              </p>
-                            ) : null}
-                            <p className="text-xs text-gray-500 mt-1">
-                              Members:{' '}
-                              {(encounter.members ?? [])
-                                .slice()
-                                .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
-                                .map(
-                                  (member) =>
-                                    member.monster?.name ||
-                                    member.monster?.id ||
-                                    'Unknown'
-                                )
-                                .join(', ') || 'None'}
-                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() => handleGenerateImage(monster)}
+                                disabled={generatingMonsterId === monster.id}
+                              >
+                                {generatingMonsterId === monster.id
+                                  ? 'Queueing...'
+                                  : 'Generate Image'}
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() => void openEditMonster(monster)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-danger"
+                                onClick={() => deleteMonster(monster)}
+                                disabled={bulkDeletingMonsters}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            className="qa-btn qa-btn-secondary"
-                            onClick={() => void openEditEncounter(encounter)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="qa-btn qa-btn-danger"
-                            onClick={() => deleteEncounter(encounter)}
-                            disabled={bulkDeletingEncounters}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  <PaginationControls
+                    page={monsterPage}
+                    pageSize={monsterListPageSize}
+                    total={monsterTotal}
+                    label="monsters"
+                    onPageChange={setMonsterPage}
+                  />
                 </div>
-              )}
-              <PaginationControls
-                page={encounterPage}
-                pageSize={monsterListPageSize}
-                total={encounterTotal}
-                label="encounters"
-                onPageChange={setEncounterPage}
-              />
-            </div>
+
+                <div className="qa-card">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold">
+                      Monster Encounters
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={toggleSelectVisibleEncounters}
+                        disabled={
+                          filteredEncounters.length === 0 ||
+                          bulkDeletingEncounters
+                        }
+                      >
+                        {allFilteredEncountersSelected
+                          ? 'Unselect Visible'
+                          : 'Select Visible'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={clearEncounterSelection}
+                        disabled={
+                          selectedEncounterIds.size === 0 ||
+                          bulkDeletingEncounters
+                        }
+                      >
+                        Clear Selection
+                      </button>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-danger"
+                        onClick={handleBulkDeleteEncounters}
+                        disabled={
+                          selectedEncounterIds.size === 0 ||
+                          bulkDeletingEncounters
+                        }
+                      >
+                        {bulkDeletingEncounters
+                          ? `Deleting ${selectedEncounterIds.size}...`
+                          : `Delete Selected (${selectedEncounterIds.size})`}
+                      </button>
+                    </div>
+                  </div>
+                  {filteredEncounters.length === 0 ? (
+                    <p className="text-sm text-gray-600">
+                      No encounters found.
+                    </p>
+                  ) : (
+                    <div className="grid gap-4">
+                      {filteredEncounters.map((encounter) => (
+                        <div
+                          key={encounter.id}
+                          className="border border-gray-200 rounded-md p-3 bg-white"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                            <div className="flex gap-3 min-w-0">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 mt-1"
+                                checked={selectedEncounterIdSet.has(
+                                  encounter.id
+                                )}
+                                disabled={bulkDeletingEncounters}
+                                onChange={() =>
+                                  toggleEncounterSelection(encounter.id)
+                                }
+                              />
+                              {encounter.thumbnailUrl || encounter.imageUrl ? (
+                                <button
+                                  type="button"
+                                  className="block"
+                                  onClick={() =>
+                                    setImagePreview({
+                                      url:
+                                        encounter.thumbnailUrl ||
+                                        encounter.imageUrl,
+                                      alt: `${encounter.name || 'Encounter'} image`,
+                                    })
+                                  }
+                                  title="Open image preview"
+                                >
+                                  <img
+                                    src={
+                                      encounter.thumbnailUrl ||
+                                      encounter.imageUrl
+                                    }
+                                    alt={encounter.name}
+                                    className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
+                                  />
+                                </button>
+                              ) : (
+                                <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
+                                  ?
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <h3 className="font-semibold text-lg truncate">
+                                  {encounter.name}
+                                </h3>
+                                <p className="text-sm text-gray-600">
+                                  Type:{' '}
+                                  {formatMonsterEncounterTypeLabel(
+                                    encounter.encounterType
+                                  )}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Zone:{' '}
+                                  {zoneNameById.get(encounter.zoneId) ??
+                                    encounter.zoneId}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Zone Kind:{' '}
+                                  {zoneKindSummaryLabel(
+                                    encounter.zoneKind,
+                                    zoneDefaultKindById.get(encounter.zoneId) ??
+                                      '',
+                                    zoneKindBySlug
+                                  )}
+                                </p>
+                                {encounter.zoneKind?.trim() &&
+                                (zoneDefaultKindById.get(encounter.zoneId) ??
+                                  '') &&
+                                encounter.zoneKind.trim() !==
+                                  (zoneDefaultKindById.get(encounter.zoneId) ??
+                                    '') ? (
+                                  <p className="text-xs text-gray-500">
+                                    Zone default:{' '}
+                                    {zoneKindLabel(
+                                      zoneDefaultKindById.get(
+                                        encounter.zoneId
+                                      ) ?? '',
+                                      zoneKindBySlug
+                                    )}
+                                  </p>
+                                ) : null}
+                                <p className="text-sm text-gray-600">
+                                  Monsters:{' '}
+                                  {encounter.monsterCount ||
+                                    encounter.members?.length ||
+                                    0}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Scaling:{' '}
+                                  {encounter.scaleWithUserLevel
+                                    ? 'Scales with user level'
+                                    : 'Fixed monster levels'}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  Rewards:{' '}
+                                  {encounter.rewardMode === 'random'
+                                    ? `Random ${(encounter.randomRewardSize ?? 'small').toUpperCase()} reward${
+                                        (encounter.itemRewards?.length ?? 0) > 0
+                                          ? ` + ${encounter.itemRewards?.length ?? 0} guaranteed item reward${
+                                              (encounter.itemRewards?.length ??
+                                                0) === 1
+                                                ? ''
+                                                : 's'
+                                            }`
+                                          : ''
+                                      }`
+                                    : `XP ${encounter.rewardExperience} · Gold ${encounter.rewardGold} · Item rewards ${
+                                        encounter.itemRewards?.length ?? 0
+                                      }`}
+                                </p>
+                                {encounter.materialRewards &&
+                                encounter.materialRewards.length > 0 ? (
+                                  <p className="text-xs text-gray-500">
+                                    {summarizeMaterialRewards(
+                                      encounter.materialRewards
+                                    )}
+                                  </p>
+                                ) : null}
+                                {encounter.recurrenceFrequency ? (
+                                  <p className="text-sm text-indigo-700">
+                                    Recurs {encounter.recurrenceFrequency}
+                                  </p>
+                                ) : null}
+                                {encounter.description ? (
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    {encounter.description}
+                                  </p>
+                                ) : null}
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Members:{' '}
+                                  {(encounter.members ?? [])
+                                    .slice()
+                                    .sort(
+                                      (a, b) => (a.slot ?? 0) - (b.slot ?? 0)
+                                    )
+                                    .map(
+                                      (member) =>
+                                        member.monster?.name ||
+                                        member.monster?.id ||
+                                        'Unknown'
+                                    )
+                                    .join(', ') || 'None'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="qa-btn qa-btn-secondary"
+                                onClick={() =>
+                                  void openEditEncounter(encounter)
+                                }
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="qa-btn qa-btn-danger"
+                                onClick={() => deleteEncounter(encounter)}
+                                disabled={bulkDeletingEncounters}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <PaginationControls
+                    page={encounterPage}
+                    pageSize={monsterListPageSize}
+                    total={encounterTotal}
+                    label="encounters"
+                    onPageChange={setEncounterPage}
+                  />
+                </div>
+              </>
+            ) : null}
           </>
         ) : null}
       </div>

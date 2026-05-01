@@ -24,6 +24,7 @@ Generate exactly %d quest archetype bundles.
 
 Requested direction:
 - theme prompt: %s
+- preferred zone kind: %s
 - family tags: %s
 - character tags to bias toward: %s
 - internal tags to bias toward: %s
@@ -85,7 +86,10 @@ Return JSON only:
 Rules:
 - Output exactly %d drafts.
 - Output JSON only. No markdown.
-- Keep the tone urban fantasy, street-level, and reusable.
+- Keep the tone fantasy and reusable.
+- Default to street-level urban fantasy when no preferred zone kind is provided.
+- If a preferred zone kind is provided, make the quest premise and step content feel naturally suited to it while remaining reusable.
+- Let the zone kind flavor influence hooks, descriptions, scenario prompts, challenge descriptions, metadata tags, and encounter tone where appropriate.
 - Prefer 2-3 node routes.
 - At least one third of drafts should be mostly non-combat.
 - At least one third of drafts should end in combat.
@@ -204,6 +208,10 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 	if err != nil {
 		return fmt.Errorf("failed to load location archetypes: %w", err)
 	}
+	zoneKind, err := loadOptionalZoneKind(ctx, p.dbClient, job.ZoneKind)
+	if err != nil {
+		return fmt.Errorf("failed to load quest archetype suggestion zone kind: %w", err)
+	}
 	monsterTemplates, err := p.dbClient.MonsterTemplate().FindAllActive(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load monster templates: %w", err)
@@ -217,6 +225,7 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 		questArchetypeSuggestionPromptTemplate,
 		maxInt(1, job.Count),
 		quotedOrNone(job.ThemePrompt),
+		renderQuestArchetypeSuggestionZoneKind(zoneKind),
 		renderTagList(job.FamilyTags),
 		renderTagList(job.CharacterTags),
 		renderTagList(job.InternalTags),
@@ -227,6 +236,9 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 		buildAllowedMonsterTemplatesPrompt(monsterTemplates),
 		maxInt(1, job.Count),
 	)
+	if zoneKindBlock := zoneKindInstructionBlock(zoneKind); zoneKindBlock != "" {
+		prompt = strings.TrimSpace(zoneKindBlock + "\n\n" + prompt)
+	}
 
 	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
@@ -251,6 +263,7 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 	for _, spec := range generated.Drafts {
 		draft := sanitizeQuestArchetypeSuggestionDraft(
 			spec,
+			job.ZoneKind,
 			locationIndex,
 			monsterIndex,
 			requiredLocationArchetypes,
@@ -480,6 +493,7 @@ func buildMonsterTemplateIndex(items []models.MonsterTemplate) map[string]monste
 
 func sanitizeQuestArchetypeSuggestionDraft(
 	payload questArchetypeSuggestionDraftPayload,
+	zoneKind string,
 	locationIndex map[string]locationArchetypeIndexEntry,
 	monsterIndex map[string]monsterTemplateIndexEntry,
 	requiredLocationArchetypes []locationArchetypeIndexEntry,
@@ -532,6 +546,7 @@ func sanitizeQuestArchetypeSuggestionDraft(
 		Name:                        name,
 		Hook:                        hook,
 		Description:                 description,
+		ZoneKind:                    models.NormalizeZoneKind(zoneKind),
 		AcceptanceDialogue:          normalizeSuggestionLines(payload.AcceptanceDialogue),
 		CharacterTags:               normalizeSuggestionTags(payload.CharacterTags),
 		InternalTags:                normalizeSuggestionTags(payload.InternalTags),
@@ -833,6 +848,29 @@ func quotedOrNone(value string) string {
 		return "none"
 	}
 	return trimmed
+}
+
+func renderQuestArchetypeSuggestionZoneKind(zoneKind *models.ZoneKind) string {
+	if zoneKind == nil {
+		return "none"
+	}
+	label := strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind))
+	slug := strings.TrimSpace(models.ZoneKindPromptSlug(zoneKind))
+	seed := strings.TrimSpace(models.ZoneKindPromptSeed(zoneKind))
+	parts := make([]string, 0, 3)
+	if label != "" {
+		parts = append(parts, label)
+	}
+	if slug != "" && slug != label {
+		parts = append(parts, "slug="+slug)
+	}
+	if seed != "" {
+		parts = append(parts, "seed="+seed)
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, " | ")
 }
 
 func renderTagList(tags []string) string {
