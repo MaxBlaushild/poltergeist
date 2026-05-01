@@ -124,6 +124,7 @@ func (m *MonsterEncounter) BeforeSave(tx *gorm.DB) error {
 	m.EncounterType = NormalizeMonsterEncounterType(string(m.EncounterType))
 	m.RewardMode = NormalizeRewardMode(string(m.RewardMode))
 	m.RandomRewardSize = NormalizeRandomRewardSize(string(m.RandomRewardSize))
+	m.ZoneKind = NormalizeZoneKind(m.ZoneKind)
 	return m.SetGeometry(m.Latitude, m.Longitude)
 }
 

@@ -31,7 +31,7 @@ var inventoryResourceProgressionTargets = []inventoryResourceProgressionTarget{
 }
 
 const inventoryResourceProgressionPromptTemplate = `
-You are designing a 10-step progression of gatherable crafting resources for Unclaimed Streets, an urban fantasy MMORPG.
+You are designing a 10-step progression of gatherable crafting resources for StreetSekai, an urban fantasy MMORPG.
 %s
 %s
 %s

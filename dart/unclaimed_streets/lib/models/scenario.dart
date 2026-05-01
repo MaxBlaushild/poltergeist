@@ -146,6 +146,7 @@ class Scenario {
   final List<ScenarioItemReward> itemChoiceRewards;
   final List<ScenarioSpellReward> spellRewards;
   final bool attemptedByUser;
+  final bool hasFullDetails;
 
   const Scenario({
     required this.id,
@@ -166,6 +167,7 @@ class Scenario {
     this.itemChoiceRewards = const [],
     this.spellRewards = const [],
     this.attemptedByUser = false,
+    this.hasFullDetails = true,
   });
 
   factory Scenario.fromJson(Map<String, dynamic> json) {
@@ -231,6 +233,7 @@ class Scenario {
       itemChoiceRewards: itemChoiceRewards,
       spellRewards: spellRewards,
       attemptedByUser: json['attemptedByUser'] as bool? ?? false,
+      hasFullDetails: json['hasFullDetails'] as bool? ?? true,
     );
   }
 }

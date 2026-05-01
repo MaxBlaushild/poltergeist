@@ -98,6 +98,42 @@ func questMonsterEncounterTargetLevel(quest *models.Quest, fallback int) int {
 	return 1
 }
 
+func questPreferredZoneKind(
+	zone *models.Zone,
+	questArchetype *models.QuestArchetype,
+) string {
+	if questArchetype != nil {
+		if normalized := models.NormalizeZoneKind(questArchetype.ZoneKind); normalized != "" {
+			return normalized
+		}
+	}
+	if zone != nil {
+		return models.NormalizeZoneKind(zone.Kind)
+	}
+	return ""
+}
+
+func questGeneratedContentZoneKind(primary string, fallbacks ...string) string {
+	if normalized := models.NormalizeZoneKind(primary); normalized != "" {
+		return normalized
+	}
+	for _, fallback := range fallbacks {
+		if normalized := models.NormalizeZoneKind(fallback); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func questEncounterTemplateZoneKind(templates []models.MonsterTemplate) string {
+	for _, template := range templates {
+		if normalized := models.NormalizeZoneKind(template.ZoneKind); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
 func NewClient(
 	googlemapsClient googlemaps.Client,
 	dbClient db.DbClient,
@@ -165,6 +201,7 @@ func (c *client) GenerateQuest(
 		}
 		questGiverCharacterID = resolvedQuestGiverID
 	}
+	questZoneKind := questPreferredZoneKind(zone, questArchType)
 
 	rewardMode := questArchType.RewardMode
 	if strings.TrimSpace(string(rewardMode)) == "" {
@@ -205,6 +242,7 @@ func (c *client) GenerateQuest(
 		AcceptanceDialogue:             acceptanceDialogue,
 		ImageURL:                       questArchType.ImageURL,
 		ZoneID:                         &zone.ID,
+		ZoneKind:                       questZoneKind,
 		QuestArchetypeID:               &questArchetypeID,
 		QuestGiverCharacterID:          questGiverCharacterID,
 		RequiredStoryFlags:             questArchType.RequiredStoryFlags,
@@ -756,6 +794,7 @@ func (c *client) processQuestScenarioNode(
 		CreatedAt:                 time.Now(),
 		UpdatedAt:                 time.Now(),
 		ZoneID:                    zone.ID,
+		ZoneKind:                  questGeneratedContentZoneKind(template.ZoneKind, quest.ZoneKind, zone.Kind),
 		PointOfInterestID:         optionalPointOfInterestID(pointOfInterest),
 		GenreID:                   template.GenreID,
 		Genre:                     template.Genre,
@@ -1273,6 +1312,7 @@ func (c *client) processQuestMonsterEncounterNode(
 			ThumbnailURL:     thumbnailURL,
 			Ephemeral:        false,
 			ZoneID:           zone.ID,
+			ZoneKind:         questGeneratedContentZoneKind(source.ZoneKind, quest.ZoneKind, zone.Kind),
 			GenreID:          source.GenreID,
 			Genre:            source.Genre,
 			Latitude:         currentAnchor.Latitude,
@@ -1318,6 +1358,7 @@ func (c *client) processQuestMonsterEncounterNode(
 		Ephemeral:          false,
 		ScaleWithUserLevel: scaleWithUserLevel,
 		ZoneID:             zone.ID,
+		ZoneKind:           questGeneratedContentZoneKind(questEncounterTemplateZoneKind(sourceTemplates), quest.ZoneKind, zone.Kind),
 		PointOfInterestID:  optionalPointOfInterestID(pointOfInterest),
 		Latitude:           currentAnchor.Latitude,
 		Longitude:          currentAnchor.Longitude,

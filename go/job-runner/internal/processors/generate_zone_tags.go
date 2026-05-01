@@ -24,7 +24,7 @@ const (
 )
 
 const zoneTagPromptTemplate = `
-You are choosing internal neighborhood flavor tags for Unclaimed Streets, an urban fantasy MMORPG.
+You are choosing internal neighborhood flavor tags for StreetSekai, an urban fantasy MMORPG.
 
 Zone:
 - current name: %s

@@ -81,6 +81,7 @@ func districtZoneSeedSettingsFromNormalized(
 		OptionEncounterCount: settings.OptionEncounterCount,
 		TreasureChestCount:   settings.TreasureChestCount,
 		HealingFountainCount: settings.HealingFountainCount,
+		ShrineCount:          settings.ShrineCount,
 		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
 		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
 	}
@@ -159,6 +160,7 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
 		TreasureChestCount   *int     `json:"treasureChestCount"`
 		HealingFountainCount *int     `json:"healingFountainCount"`
+		ShrineCount          *int     `json:"shrineCount"`
 		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
 		ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
 	}
@@ -197,6 +199,7 @@ func (s *server) createDistrictSeedJob(ctx *gin.Context) {
 		OptionEncounterCount: requestBody.OptionEncounterCount,
 		TreasureChestCount:   requestBody.TreasureChestCount,
 		HealingFountainCount: requestBody.HealingFountainCount,
+		ShrineCount:          requestBody.ShrineCount,
 		RequiredPlaceTags:    requestBody.RequiredPlaceTags,
 		ShopkeeperItemTags:   requestBody.ShopkeeperItemTags,
 	})

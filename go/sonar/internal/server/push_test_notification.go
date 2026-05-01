@@ -85,7 +85,7 @@ func (s *server) sendTestPushToCurrentUser(ctx *gin.Context) {
 		"type":   "push_test",
 		"sentAt": time.Now().UTC().Format(time.RFC3339),
 	}
-	title := "Unclaimed Streets"
+	title := "StreetSekai"
 	body := "Test push notification delivered successfully."
 
 	sentCount := 0

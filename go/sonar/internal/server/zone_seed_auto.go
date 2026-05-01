@@ -57,6 +57,7 @@ type zoneSeedDraftCountOverrides struct {
 	OptionEncounterCount   *int
 	TreasureChestCount     *int
 	HealingFountainCount   *int
+	ShrineCount            *int
 	HerbalismResourceCount *int
 	MiningResourceCount    *int
 	ResourceCount          *int
@@ -90,25 +91,7 @@ func normalizeZoneSeedDraftCountMode(mode string) (string, error) {
 }
 
 func normalizeZoneSeedDraftTags(tags []string) []string {
-	if len(tags) == 0 {
-		return []string{}
-	}
-
-	seen := make(map[string]struct{}, len(tags))
-	normalized := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		trimmed := strings.ToLower(strings.TrimSpace(tag))
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		normalized = append(normalized, trimmed)
-	}
-
-	return normalized
+	return models.NormalizeTagList(tags)
 }
 
 func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (zoneSeedDraftCountOverrides, error) {
@@ -147,6 +130,9 @@ func zoneSeedDraftCountOverridesFromRequest(requestBody zoneSeedDraftRequest) (z
 		return zoneSeedDraftCountOverrides{}, err
 	}
 	if overrides.HealingFountainCount, err = copyCount(requestBody.HealingFountainCount, "healingFountainCount"); err != nil {
+		return zoneSeedDraftCountOverrides{}, err
+	}
+	if overrides.ShrineCount, err = copyCount(requestBody.ShrineCount, "shrineCount"); err != nil {
 		return zoneSeedDraftCountOverrides{}, err
 	}
 	if overrides.HerbalismResourceCount, err = copyCount(requestBody.HerbalismResourceCount, "herbalismResourceCount"); err != nil {
@@ -192,6 +178,9 @@ func zoneSeedResolvedCountsFromOverrides(overrides zoneSeedDraftCountOverrides) 
 	if overrides.HealingFountainCount != nil {
 		counts.HealingFountainCount = *overrides.HealingFountainCount
 	}
+	if overrides.ShrineCount != nil {
+		counts.ShrineCount = *overrides.ShrineCount
+	}
 	if overrides.ResourceCount != nil {
 		counts.HerbalismResourceCount, counts.MiningResourceCount = models.SplitZoneSeedResourceCount(*overrides.ResourceCount)
 	}
@@ -233,6 +222,9 @@ func zoneSeedApplyCountOverrides(
 	if overrides.HealingFountainCount != nil {
 		counts.HealingFountainCount = *overrides.HealingFountainCount
 	}
+	if overrides.ShrineCount != nil {
+		counts.ShrineCount = *overrides.ShrineCount
+	}
 	if overrides.ResourceCount != nil {
 		counts.HerbalismResourceCount, counts.MiningResourceCount = models.SplitZoneSeedResourceCount(*overrides.ResourceCount)
 	}
@@ -268,6 +260,7 @@ func zoneSeedCountsToNormalizedRequest(
 		OptionEncounterCount:   counts.OptionEncounterCount,
 		TreasureChestCount:     counts.TreasureChestCount,
 		HealingFountainCount:   counts.HealingFountainCount,
+		ShrineCount:            counts.ShrineCount,
 		HerbalismResourceCount: counts.HerbalismResourceCount,
 		MiningResourceCount:    counts.MiningResourceCount,
 		ResourceCount:          counts.ResourceCount,
@@ -291,6 +284,7 @@ func zoneSeedCountsFromNormalizedRequest(settings *normalizedZoneSeedDraftReques
 		OptionEncounterCount:   settings.OptionEncounterCount,
 		TreasureChestCount:     settings.TreasureChestCount,
 		HealingFountainCount:   settings.HealingFountainCount,
+		ShrineCount:            settings.ShrineCount,
 		HerbalismResourceCount: settings.HerbalismResourceCount,
 		MiningResourceCount:    settings.MiningResourceCount,
 		ResourceCount:          settings.ResourceCount,
@@ -317,6 +311,7 @@ func zoneSeedSubtractExistingCounts(
 		OptionEncounterCount:   clamp(target.OptionEncounterCount - existing.OptionEncounterCount),
 		TreasureChestCount:     clamp(target.TreasureChestCount - existing.TreasureChestCount),
 		HealingFountainCount:   clamp(target.HealingFountainCount - existing.HealingFountainCount),
+		ShrineCount:            clamp(target.ShrineCount - existing.ShrineCount),
 		HerbalismResourceCount: clamp(target.HerbalismResourceCount - existing.HerbalismResourceCount),
 		MiningResourceCount:    clamp(target.MiningResourceCount - existing.MiningResourceCount),
 	}.WithLegacyResourceCount()
@@ -343,6 +338,7 @@ func zoneSeedCurrentAwareWarnings(
 		{label: "option scenarios", target: target.OptionEncounterCount, existing: existing.OptionEncounterCount, queued: queued.OptionEncounterCount},
 		{label: "treasure chests", target: target.TreasureChestCount, existing: existing.TreasureChestCount, queued: queued.TreasureChestCount},
 		{label: "healing fountains", target: target.HealingFountainCount, existing: existing.HealingFountainCount, queued: queued.HealingFountainCount},
+		{label: "shrines", target: target.ShrineCount, existing: existing.ShrineCount, queued: queued.ShrineCount},
 		{label: "herbalism resources", target: target.HerbalismResourceCount, existing: existing.HerbalismResourceCount, queued: queued.HerbalismResourceCount},
 		{label: "mining resources", target: target.MiningResourceCount, existing: existing.MiningResourceCount, queued: queued.MiningResourceCount},
 	}
@@ -423,6 +419,7 @@ func zoneSeedInferAutoCounts(
 		OptionEncounterCount:   zoneSeedAutoCurveCount(areaAcres, 1.1),
 		TreasureChestCount:     zoneSeedAutoCurveCount(areaAcres, 1.35),
 		HealingFountainCount:   zoneSeedAutoCurveCount(areaAcres, 0.75),
+		ShrineCount:            zoneSeedAutoCurveCount(areaAcres, 0.6),
 		HerbalismResourceCount: herbalismResourceCount,
 		MiningResourceCount:    miningResourceCount,
 	}.WithLegacyResourceCount()
@@ -452,6 +449,38 @@ func zoneSeedEffectiveKind(zone *models.Zone, requestedKind string) string {
 		return ""
 	}
 	return models.NormalizeZoneKind(zone.Kind)
+}
+
+func zoneSeedShopkeeperItemTagsForKind(
+	zoneKind *models.ZoneKind,
+	explicitTags []string,
+) []string {
+	if zoneKind == nil {
+		return models.NormalizeTagList(explicitTags)
+	}
+	return zoneKind.MergeDefaultShopkeeperItemTags(explicitTags)
+}
+
+func (s *server) resolveZoneSeedShopkeeperItemTags(
+	ctx context.Context,
+	zoneKindSlug string,
+	explicitTags []string,
+) ([]string, error) {
+	normalizedTags := models.NormalizeTagList(explicitTags)
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKindSlug)
+	if normalizedZoneKind == "" {
+		return normalizedTags, nil
+	}
+
+	zoneKind, err := s.dbClient.ZoneKind().FindBySlug(ctx, normalizedZoneKind)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			return normalizedTags, nil
+		}
+		return nil, err
+	}
+
+	return zoneSeedShopkeeperItemTagsForKind(zoneKind, normalizedTags), nil
 }
 
 func (s *server) applyZoneKindRatios(
@@ -996,6 +1025,11 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 		return zoneSeedCurrentContentSnapshot{}, err
 	}
 
+	shrines, err := s.dbClient.Shrine().FindByZoneID(ctx, zone.ID)
+	if err != nil {
+		return zoneSeedCurrentContentSnapshot{}, err
+	}
+
 	resources, err := s.dbClient.Resource().FindByZoneID(ctx, zone.ID)
 	if err != nil {
 		return zoneSeedCurrentContentSnapshot{}, err
@@ -1005,6 +1039,7 @@ func (s *server) zoneSeedCurrentContentSnapshot(
 		PlaceCount:           len(pointsOfInterest),
 		TreasureChestCount:   len(treasureChests),
 		HealingFountainCount: len(healingFountains),
+		ShrineCount:          len(shrines),
 	}
 
 	for _, encounter := range encounters {

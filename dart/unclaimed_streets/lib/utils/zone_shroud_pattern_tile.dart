@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
-const _zoneShroudPatternVersion = 'v1';
+const _zoneShroudPatternVersion = 'v2';
 const _zoneShroudPatternTileSize = 32;
 
 Uint8List? _zoneShroudPatternTileCache;
@@ -24,14 +24,15 @@ Uint8List zoneShroudPatternTileBytes() {
     const haze = Color(0xFF97A4B2);
     const shadow = Color(0xFF232B34);
 
-    final mistInk = _imgColor(mist, alpha: 56);
-    final hazeInk = _imgColor(haze, alpha: 34);
-    final shadowInk = _imgColor(shadow, alpha: 28);
+    final mistInk = _imgColor(mist, alpha: 112);
+    final hazeInk = _imgColor(haze, alpha: 82);
+    final shadowInk = _imgColor(shadow, alpha: 68);
 
-    for (var offset = -8; offset <= 32; offset += 12) {
-      _line(image, offset + 2, 7, offset + 10, 4, mistInk, thickness: 1.2);
-      _line(image, offset + 6, 17, offset + 14, 14, hazeInk, thickness: 1.0);
-      _line(image, offset + 1, 27, offset + 9, 24, mistInk, thickness: 1.0);
+    for (var offset = -8; offset <= 32; offset += 10) {
+      _line(image, offset + 2, 7, offset + 11, 4, mistInk, thickness: 1.6);
+      _line(image, offset + 6, 17, offset + 15, 14, hazeInk, thickness: 1.4);
+      _line(image, offset + 1, 27, offset + 10, 24, mistInk, thickness: 1.4);
+      _line(image, offset + 4, 30, offset + 12, 27, shadowInk, thickness: 1.0);
     }
 
     for (final dot in const <Offset>[
@@ -48,6 +49,7 @@ Uint8List zoneShroudPatternTileBytes() {
       Offset(22, 29),
     ]) {
       _dot(image, dot.dx.round(), dot.dy.round(), 1, hazeInk);
+      _dot(image, dot.dx.round() + 1, dot.dy.round(), 1, mistInk);
     }
 
     for (final puff in const <Offset>[
@@ -57,7 +59,8 @@ Uint8List zoneShroudPatternTileBytes() {
       Offset(27, 27),
     ]) {
       _dot(image, puff.dx.round(), puff.dy.round(), 2, shadowInk);
-      _dot(image, puff.dx.round() + 1, puff.dy.round() + 1, 1, hazeInk);
+      _dot(image, puff.dx.round() + 1, puff.dy.round() + 1, 2, hazeInk);
+      _dot(image, puff.dx.round() - 1, puff.dy.round(), 1, mistInk);
     }
 
     return Uint8List.fromList(img.encodePng(image));

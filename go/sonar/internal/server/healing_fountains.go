@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	stdErrors "errors"
 	"fmt"
 	"math"
@@ -662,7 +663,7 @@ func healingFountainResponseWithStatus(
 	}
 }
 
-func (s *server) userHealingFountainDiscoveryMap(ctx *gin.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
+func (s *server) userHealingFountainDiscoveryMap(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
 	rows, err := s.dbClient.HealingFountain().GetDiscoveriesForUser(ctx, userID)
 	if err != nil {
 		return nil, err

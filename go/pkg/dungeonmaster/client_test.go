@@ -206,3 +206,21 @@ func TestQuestGenerationSkipsQuestGiver(t *testing.T) {
 		t.Fatal("expected uuid.Nil sentinel to skip quest giver generation")
 	}
 }
+
+func TestQuestPreferredZoneKindPrefersArchetypeValue(t *testing.T) {
+	zone := &models.Zone{Kind: "forest"}
+	questArchetype := &models.QuestArchetype{ZoneKind: "Haunted Streets"}
+
+	if got := questPreferredZoneKind(zone, questArchetype); got != "haunted-streets" {
+		t.Fatalf("expected archetype zone kind to win, got %q", got)
+	}
+}
+
+func TestQuestGeneratedContentZoneKindFallsBackInPriorityOrder(t *testing.T) {
+	if got := questGeneratedContentZoneKind("", "", "forest", "desert"); got != "forest" {
+		t.Fatalf("expected first populated fallback, got %q", got)
+	}
+	if got := questGeneratedContentZoneKind("Haunted Streets", "forest"); got != "haunted-streets" {
+		t.Fatalf("expected primary zone kind to normalize and win, got %q", got)
+	}
+}

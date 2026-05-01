@@ -1,0 +1,2 @@
+ALTER TABLE quest_archetypes
+  ADD COLUMN IF NOT EXISTS zone_kind TEXT NOT NULL DEFAULT '';

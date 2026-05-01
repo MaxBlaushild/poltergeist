@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/zone_kind_visuals.dart';
@@ -6,6 +8,7 @@ import '../models/user_zone_reputation.dart';
 import '../providers/location_provider.dart';
 import '../providers/zone_provider.dart';
 import '../services/poi_service.dart';
+import '../utils/zone_kind_pattern_asset.dart';
 import '../utils/zone_shroud_pattern_tile.dart';
 
 final ImageProvider<Object> _zoneShroudPatternImage = MemoryImage(
@@ -227,13 +230,8 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         );
         final zoneKindLabel =
             zoneVisuals?.label ?? humanizeZoneKindSlug(displayedZone?.kind);
-        final shroudPatternImage = () {
-          final remoteUrl = displayedZone?.shroudPatternTileUrl?.trim() ?? '';
-          if (remoteUrl.isNotEmpty) {
-            return NetworkImage(remoteUrl) as ImageProvider<Object>;
-          }
-          return _zoneShroudPatternImage;
-        }();
+        final shroudPatternTileUrl =
+            displayedZone?.shroudPatternTileUrl?.trim() ?? '';
         final genreScoresPreview = _genreScoresPreview();
         final expandUpwards = widget.expandUpwards;
         final expandedHeight = widget.expandedHeight;
@@ -307,17 +305,9 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                             children: [
                               Positioned.fill(
                                 child: IgnorePointer(
-                                  child: Opacity(
-                                    opacity: 0.18,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        image: DecorationImage(
-                                          image: shroudPatternImage,
-                                          repeat: ImageRepeat.repeat,
-                                          filterQuality: FilterQuality.none,
-                                        ),
-                                      ),
-                                    ),
+                                  child: _ZoneShroudPatternOverlay(
+                                    remoteUrl: shroudPatternTileUrl,
+                                    opacity: 0.26,
                                   ),
                                 ),
                               ),
@@ -500,17 +490,9 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                 if (showingUndiscovered)
                   Positioned.fill(
                     child: IgnorePointer(
-                      child: Opacity(
-                        opacity: 0.14,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            image: DecorationImage(
-                              image: shroudPatternImage,
-                              repeat: ImageRepeat.repeat,
-                              filterQuality: FilterQuality.none,
-                            ),
-                          ),
-                        ),
+                      child: _ZoneShroudPatternOverlay(
+                        remoteUrl: shroudPatternTileUrl,
+                        opacity: 0.2,
                       ),
                     ),
                   ),
@@ -539,6 +521,47 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                   ),
                 ),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ZoneShroudPatternOverlay extends StatelessWidget {
+  final String remoteUrl;
+  final double opacity;
+
+  const _ZoneShroudPatternOverlay({
+    required this.remoteUrl,
+    required this.opacity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final future = remoteUrl.isEmpty
+        ? Future<Uint8List?>.value(null)
+        : loadZoneShroudPatternTile(remoteUrl);
+    return FutureBuilder<Uint8List?>(
+      future: future,
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        final imageProvider = bytes != null && bytes.isNotEmpty
+            ? MemoryImage(bytes) as ImageProvider<Object>
+            : _zoneShroudPatternImage;
+        return Opacity(
+          opacity: opacity,
+          child: Image(
+            image: imageProvider,
+            repeat: ImageRepeat.repeat,
+            fit: BoxFit.none,
+            filterQuality: FilterQuality.none,
+            errorBuilder: (_, error, stackTrace) => Image(
+              image: _zoneShroudPatternImage,
+              repeat: ImageRepeat.repeat,
+              fit: BoxFit.none,
+              filterQuality: FilterQuality.none,
             ),
           ),
         );

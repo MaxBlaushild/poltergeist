@@ -45,6 +45,7 @@ class ResourceNode {
   final double longitude;
   final bool invalidated;
   final bool gatheredByUser;
+  final bool hasFullDetails;
 
   const ResourceNode({
     required this.id,
@@ -57,6 +58,7 @@ class ResourceNode {
     required this.longitude,
     this.invalidated = false,
     this.gatheredByUser = false,
+    this.hasFullDetails = true,
   });
 
   factory ResourceNode.fromJson(Map<String, dynamic> json) {
@@ -87,6 +89,7 @@ class ResourceNode {
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       invalidated: json['invalidated'] == true,
       gatheredByUser: json['gatheredByUser'] == true,
+      hasFullDetails: json['hasFullDetails'] as bool? ?? true,
     );
   }
 }

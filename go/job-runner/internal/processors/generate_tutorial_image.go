@@ -33,7 +33,7 @@ Framing:
 - Slight isometric or 3/4 perspective.
 - Match the visual language used for character portraits, outfit portraits, and POI images.`
 
-const tutorialScenarioImageZoneContext = "Unclaimed Streets tutorial starting point"
+const tutorialScenarioImageZoneContext = "StreetSekai tutorial starting point"
 
 type GenerateTutorialImageProcessor struct {
 	dbClient         db.DbClient

@@ -174,6 +174,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Create reusable challenge templates and artwork.',
       },
       {
+        id: 'shrine-templates',
+        label: 'Shrine Templates',
+        path: '/shrine-templates',
+        description:
+          'Author reusable blessing shrines and queue template generation jobs.',
+      },
+      {
         id: 'treasure-chests',
         label: 'Treasure Chests',
         path: '/treasure-chests',

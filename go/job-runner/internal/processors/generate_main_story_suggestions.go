@@ -19,7 +19,7 @@ import (
 )
 
 const mainStorySuggestionPromptTemplate = `
-You are designing reusable district-scale main story campaigns for Unclaimed Streets, an urban fantasy MMORPG.
+You are designing reusable district-scale main story campaigns for StreetSekai, an urban fantasy MMORPG.
 
 Generate exactly %d main story campaign drafts.
 Each draft should represent a complete, coherent main story with exactly %d quests/beats.
@@ -213,7 +213,7 @@ Rules:
 `
 
 const mainStoryBeatExpansionPromptTemplate = `
-You are upgrading one main story beat for Unclaimed Streets so it becomes a richer, more varied quest.
+You are upgrading one main story beat for StreetSekai so it becomes a richer, more varied quest.
 
 Campaign context:
 - campaign premise: %s

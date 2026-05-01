@@ -72,6 +72,22 @@ func scenarioRewardItemsToRandomRewardItemGrants(
 	return grants
 }
 
+func randomRewardItemGrantsToScenarioRewardItems(
+	grants []models.RandomRewardItemGrant,
+) []scenarioRewardItem {
+	items := make([]scenarioRewardItem, 0, len(grants))
+	for _, grant := range grants {
+		if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+			continue
+		}
+		items = append(items, scenarioRewardItem{
+			InventoryItemID: grant.InventoryItemID,
+			Quantity:        grant.Quantity,
+		})
+	}
+	return items
+}
+
 func mergeScenarioRewardItems(itemSets ...[]scenarioRewardItem) []scenarioRewardItem {
 	grantSets := make([][]models.RandomRewardItemGrant, 0, len(itemSets))
 	for _, itemSet := range itemSets {
@@ -135,36 +151,82 @@ func randomRewardItemGrantsToMonsterItemRewards(
 	return out
 }
 
-func ensureMonsterEncounterRandomRewardHasItem(
-	plan models.RandomRewardPlan,
+func randomRewardItemGrantsToMonsterRewardPayloads(
+	grants []models.RandomRewardItemGrant,
 	itemByID map[int]models.InventoryItem,
-	userLevel int,
-	seed string,
-) models.RandomRewardPlan {
-	if len(plan.ItemGrants) > 0 {
-		return plan
+) []monsterRewardItemPayload {
+	out := make([]monsterRewardItemPayload, 0, len(grants))
+	for _, grant := range grants {
+		if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+			continue
+		}
+		payload := monsterRewardItemPayload{
+			InventoryItemID: grant.InventoryItemID,
+			Quantity:        grant.Quantity,
+		}
+		if item, ok := itemByID[grant.InventoryItemID]; ok {
+			itemCopy := item
+			payload.InventoryItem = &itemCopy
+		}
+		out = append(out, payload)
 	}
-
-	item := pickDeterministicEncounterFallbackItem(itemByID, userLevel, seed, false)
-	if item == nil {
-		item = pickDeterministicEncounterFallbackItem(itemByID, userLevel, seed, true)
-	}
-	if item == nil {
-		return plan
-	}
-
-	plan.ItemGrants = append(plan.ItemGrants, models.RandomRewardItemGrant{
-		InventoryItemID: item.ID,
-		Quantity:        1,
-	})
-	return plan
+	return out
 }
 
-func pickDeterministicEncounterFallbackItem(
+func inventoryItemIsEquipment(item models.InventoryItem) bool {
+	if item.EquipSlot == nil {
+		return false
+	}
+	return strings.TrimSpace(*item.EquipSlot) != ""
+}
+
+func randomRewardItemGrantsIncludeEquipment(
+	grants []models.RandomRewardItemGrant,
+	itemByID map[int]models.InventoryItem,
+) bool {
+	for _, grant := range grants {
+		if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+			continue
+		}
+		item, ok := itemByID[grant.InventoryItemID]
+		if !ok {
+			continue
+		}
+		if inventoryItemIsEquipment(item) {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureMonsterRewardItemGrantsIncludeEquipment(
+	grants []models.RandomRewardItemGrant,
 	itemByID map[int]models.InventoryItem,
 	userLevel int,
 	seed string,
-	allowEquippable bool,
+) []models.RandomRewardItemGrant {
+	if randomRewardItemGrantsIncludeEquipment(grants, itemByID) {
+		return grants
+	}
+
+	item := pickDeterministicMonsterRewardEquipment(itemByID, userLevel, seed)
+	if item == nil {
+		return grants
+	}
+
+	return models.MergeRandomRewardItemGrants(
+		grants,
+		[]models.RandomRewardItemGrant{{
+			InventoryItemID: item.ID,
+			Quantity:        1,
+		}},
+	)
+}
+
+func pickDeterministicMonsterRewardEquipment(
+	itemByID map[int]models.InventoryItem,
+	userLevel int,
+	seed string,
 ) *models.InventoryItem {
 	candidates := make([]models.InventoryItem, 0, len(itemByID))
 	for _, item := range itemByID {
@@ -174,11 +236,7 @@ func pickDeterministicEncounterFallbackItem(
 		if strings.EqualFold(strings.TrimSpace(item.RarityTier), "Not Droppable") {
 			continue
 		}
-		isEquippable := false
-		if item.EquipSlot != nil && strings.TrimSpace(*item.EquipSlot) != "" {
-			isEquippable = true
-		}
-		if isEquippable != allowEquippable {
+		if !inventoryItemIsEquipment(item) {
 			continue
 		}
 		candidates = append(candidates, item)
@@ -224,16 +282,15 @@ func pickDeterministicEncounterFallbackItem(
 		pool = candidates
 	}
 
-	index := deterministicEncounterRewardIndex(seed, userLevel, len(pool), allowEquippable)
+	index := deterministicMonsterRewardIndex(seed, userLevel, len(pool))
 	chosen := pool[index]
 	return &chosen
 }
 
-func deterministicEncounterRewardIndex(
+func deterministicMonsterRewardIndex(
 	seed string,
 	userLevel int,
 	count int,
-	allowEquippable bool,
 ) int {
 	if count <= 1 {
 		return 0
@@ -241,11 +298,7 @@ func deterministicEncounterRewardIndex(
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(strings.TrimSpace(seed)))
 	_, _ = hasher.Write([]byte{0})
-	if allowEquippable {
-		_, _ = hasher.Write([]byte("equippable"))
-	} else {
-		_, _ = hasher.Write([]byte("consumable"))
-	}
+	_, _ = hasher.Write([]byte("equipment"))
 	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.Write([]byte{byte(userLevel & 0xff), byte((userLevel >> 8) & 0xff)})
 	return int(hasher.Sum64() % uint64(count))
@@ -256,6 +309,139 @@ func absEncounterRewardInt(value int) int {
 		return -value
 	}
 	return value
+}
+
+func (s *server) hydrateMonsterRewardItemMap(
+	ctx context.Context,
+	itemByID map[int]models.InventoryItem,
+	rewards []models.MonsterItemReward,
+) error {
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		if reward.InventoryItem.ID != 0 {
+			itemByID[reward.InventoryItemID] = reward.InventoryItem
+			continue
+		}
+		if _, ok := itemByID[reward.InventoryItemID]; ok {
+			continue
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil {
+			return err
+		}
+		if item != nil {
+			itemByID[reward.InventoryItemID] = *item
+		}
+	}
+	return nil
+}
+
+func (s *server) hydrateMonsterEncounterRewardItemMap(
+	ctx context.Context,
+	itemByID map[int]models.InventoryItem,
+	rewards []models.MonsterEncounterRewardItem,
+) error {
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		if _, ok := itemByID[reward.InventoryItemID]; ok {
+			continue
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil {
+			return err
+		}
+		if item != nil {
+			itemByID[reward.InventoryItemID] = *item
+		}
+	}
+	return nil
+}
+
+func (s *server) resolveMonsterRewardsForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	monster *models.Monster,
+) (
+	models.RewardMode,
+	models.RandomRewardSize,
+	int,
+	int,
+	[]models.MonsterItemReward,
+	[]scenarioRewardItem,
+	error,
+) {
+	if monster == nil {
+		return models.RewardModeExplicit, models.RandomRewardSizeSmall, 0, 0, nil, nil, nil
+	}
+
+	rewardMode := models.NormalizeRewardMode(string(monster.RewardMode))
+	rewardSize := models.NormalizeRandomRewardSize(string(monster.RandomRewardSize))
+	rewardSeed := fmt.Sprintf("monster:%s:user:%s", monster.ID, userID)
+	guaranteedItems := monsterRewardItemsToScenarioRewards(monster.ItemRewards)
+
+	if rewardMode == models.RewardModeRandom {
+		plan, itemByID, userLevel, err := s.randomRewardPlanForUser(
+			ctx,
+			userID,
+			rewardSize,
+			rewardSeed,
+		)
+		if err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
+		}
+		if err := s.hydrateMonsterRewardItemMap(ctx, itemByID, monster.ItemRewards); err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
+		}
+		itemGrants := models.MergeRandomRewardItemGrants(
+			plan.ItemGrants,
+			scenarioRewardItemsToRandomRewardItemGrants(guaranteedItems),
+		)
+		itemGrants = ensureMonsterRewardItemGrantsIncludeEquipment(
+			itemGrants,
+			itemByID,
+			userLevel,
+			rewardSeed,
+		)
+		return rewardMode,
+			rewardSize,
+			plan.Experience,
+			plan.Gold,
+			randomRewardItemGrantsToMonsterItemRewards(itemGrants, itemByID, monster.ID),
+			randomRewardItemGrantsToScenarioRewardItems(itemGrants),
+			nil
+	}
+
+	itemByID := make(map[int]models.InventoryItem, len(monster.ItemRewards))
+	if err := s.hydrateMonsterRewardItemMap(ctx, itemByID, monster.ItemRewards); err != nil {
+		return rewardMode, rewardSize, 0, 0, nil, nil, err
+	}
+	itemGrants := scenarioRewardItemsToRandomRewardItemGrants(guaranteedItems)
+	if !randomRewardItemGrantsIncludeEquipment(itemGrants, itemByID) {
+		userLevel, err := s.currentUserLevel(ctx, userID)
+		if err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
+		}
+		itemGrants = ensureMonsterRewardItemGrantsIncludeEquipment(
+			itemGrants,
+			itemByID,
+			userLevel,
+			rewardSeed,
+		)
+	}
+
+	rewardExperience := max(0, monster.RewardExperience)
+	rewardGold := max(0, monster.RewardGold)
+	return rewardMode,
+		rewardSize,
+		rewardExperience,
+		rewardGold,
+		randomRewardItemGrantsToMonsterItemRewards(itemGrants, itemByID, monster.ID),
+		randomRewardItemGrantsToScenarioRewardItems(itemGrants),
+		nil
 }
 
 func (s *server) applyMonsterRewardsForUser(
@@ -272,62 +458,16 @@ func (s *server) applyMonsterRewardsForUser(
 	response.RewardMode = rewardMode
 	response.RandomRewardSize = rewardSize
 
-	if rewardMode == models.RewardModeRandom {
-		plan, itemByID, _, err := s.randomRewardPlanForUser(
-			ctx,
-			userID,
-			rewardSize,
-			fmt.Sprintf("monster:%s:user:%s", monster.ID, userID),
-		)
-		if err != nil {
-			return err
-		}
-		response.RewardExperience = plan.Experience
-		response.RewardGold = plan.Gold
-		for _, reward := range monster.ItemRewards {
-			if reward.InventoryItem.ID != 0 {
-				itemByID[reward.InventoryItemID] = reward.InventoryItem
-				continue
-			}
-			if reward.InventoryItemID <= 0 {
-				continue
-			}
-			if _, ok := itemByID[reward.InventoryItemID]; ok {
-				continue
-			}
-			item, err := s.dbClient.InventoryItem().FindInventoryItemByID(
-				ctx,
-				reward.InventoryItemID,
-			)
-			if err != nil {
-				return err
-			}
-			if item != nil {
-				itemByID[reward.InventoryItemID] = *item
-			}
-		}
-		itemGrants := models.MergeRandomRewardItemGrants(
-			plan.ItemGrants,
-			scenarioRewardItemsToRandomRewardItemGrants(
-				monsterRewardItemsToScenarioRewards(monster.ItemRewards),
-			),
-		)
-		response.ItemRewards = randomRewardItemGrantsToMonsterItemRewards(
-			itemGrants,
-			itemByID,
-			monster.ID,
-		)
-		return nil
+	_, _, rewardExperience, rewardGold, itemRewards, _, err := s.resolveMonsterRewardsForUser(
+		ctx,
+		userID,
+		monster,
+	)
+	if err != nil {
+		return err
 	}
-
-	response.RewardExperience = monster.RewardExperience
-	if response.RewardExperience < 0 {
-		response.RewardExperience = 0
-	}
-	response.RewardGold = monster.RewardGold
-	if response.RewardGold < 0 {
-		response.RewardGold = 0
-	}
-	response.ItemRewards = monster.ItemRewards
+	response.RewardExperience = rewardExperience
+	response.RewardGold = rewardGold
+	response.ItemRewards = itemRewards
 	return nil
 }

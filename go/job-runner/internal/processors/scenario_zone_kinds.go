@@ -14,6 +14,8 @@ type scenarioZoneKindCueRule struct {
 
 var scenarioZoneKindCueRules = []scenarioZoneKindCueRule{
 	{contentKeywords: []string{"forest", "wood", "grove", "canopy", "briar", "thorn", "moss"}, zoneCues: []string{"forest", "wood", "grove", "wild", "jungle"}},
+	{contentKeywords: []string{"jungle", "vine", "tropical", "humid", "monsoon", "overgrowth"}, zoneCues: []string{"jungle", "tropical", "canopy", "vine", "wild"}},
+	{contentKeywords: []string{"plains", "prairie", "steppe", "grassland", "savanna", "meadow"}, zoneCues: []string{"plains", "prairie", "steppe", "grass", "savanna"}},
 	{contentKeywords: []string{"swamp", "bog", "mire", "marsh", "ooze", "wetland"}, zoneCues: []string{"swamp", "bog", "marsh", "wetland", "mire"}},
 	{contentKeywords: []string{"desert", "dune", "sand", "scorch", "sunbaked", "arid"}, zoneCues: []string{"desert", "dune", "sand", "waste", "arid"}},
 	{contentKeywords: []string{"mountain", "peak", "cliff", "highland", "ridge", "crag"}, zoneCues: []string{"mountain", "peak", "highland", "cliff", "rock"}},

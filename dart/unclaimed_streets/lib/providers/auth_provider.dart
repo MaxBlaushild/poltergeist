@@ -36,16 +36,19 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> getVerificationCode(String phoneNumber) async {
+  Future<bool> getVerificationCode(String phoneNumber) async {
     _error = null;
     notifyListeners();
     try {
       await _auth.getVerificationCode(phoneNumber);
       _isWaitingForVerificationCode = true;
+      notifyListeners();
+      return true;
     } catch (e) {
       _error = e.toString();
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
   }
 
   /// Returns true if profile setup is needed (new user).

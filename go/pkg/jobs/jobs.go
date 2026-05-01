@@ -35,6 +35,7 @@ const (
 	GenerateChallengesTaskType                     = "generate_challenges"
 	GenerateScenarioTemplatesTaskType              = "generate_scenario_templates"
 	GenerateChallengeTemplatesTaskType             = "generate_challenge_templates"
+	GenerateShrineTemplatesTaskType                = "generate_shrine_templates"
 	GenerateLocationArchetypesTaskType             = "generate_location_archetypes"
 	GenerateQuestArchetypeSuggestionsTaskType      = "generate_quest_archetype_suggestions"
 	GenerateMainStorySuggestionsTaskType           = "generate_main_story_suggestions"
@@ -472,6 +473,10 @@ type GenerateScenarioTemplatesTaskPayload struct {
 }
 
 type GenerateChallengeTemplatesTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type GenerateShrineTemplatesTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
 }
 

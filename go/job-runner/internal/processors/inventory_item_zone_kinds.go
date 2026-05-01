@@ -14,6 +14,8 @@ type inventoryItemZoneKindCueRule struct {
 
 var inventoryItemZoneKindCueRules = []inventoryItemZoneKindCueRule{
 	{itemKeywords: []string{"forest", "bark", "moss", "thorn", "grove", "herb", "sap"}, zoneCues: []string{"forest", "wood", "grove", "wild", "jungle"}},
+	{itemKeywords: []string{"jungle", "vine", "tropical", "canopy", "fang", "serpent", "humid"}, zoneCues: []string{"jungle", "tropical", "canopy", "vine", "wild"}},
+	{itemKeywords: []string{"plains", "prairie", "steppe", "grass", "meadow", "savanna", "wind"}, zoneCues: []string{"plains", "prairie", "steppe", "grass", "savanna"}},
 	{itemKeywords: []string{"swamp", "bog", "mire", "marsh", "rot", "ooze", "toxin", "reed"}, zoneCues: []string{"swamp", "bog", "marsh", "wetland", "mire"}},
 	{itemKeywords: []string{"desert", "dune", "sand", "sun", "glass", "scorch", "arid"}, zoneCues: []string{"desert", "dune", "sand", "waste", "arid"}},
 	{itemKeywords: []string{"mountain", "peak", "ore", "granite", "cliff", "ridge", "stone"}, zoneCues: []string{"mountain", "peak", "highland", "cliff", "rock"}},

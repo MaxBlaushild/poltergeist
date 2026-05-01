@@ -9,6 +9,7 @@ export type ZoneFlushContentType =
   | 'monsters'
   | 'treasureChests'
   | 'healingFountains'
+  | 'shrines'
   | 'resources'
   | 'movementPatterns'
   | 'jobs';
@@ -27,6 +28,7 @@ export type ZoneContentFlushSummary = {
   deletedMonsterCount: number;
   deletedTreasureChestCount: number;
   deletedHealingFountainCount: number;
+  deletedShrineCount: number;
   deletedResourceCount: number;
   deletedMovementPatternCount: number;
   deletedZoneSeedJobCount: number;
@@ -86,6 +88,11 @@ export const zoneFlushContentOptions: ZoneFlushContentOption[] = [
     description: 'Deletes all zone healing fountains.',
   },
   {
+    value: 'shrines',
+    label: 'Shrines',
+    description: 'Deletes all zone shrines.',
+  },
+  {
     value: 'resources',
     label: 'Resources',
     description: 'Deletes all zone resources.',
@@ -128,6 +135,7 @@ export const formatZoneContentFlushSummary = (
     ['monsters', summary.deletedMonsterCount],
     ['chests', summary.deletedTreasureChestCount],
     ['fountains', summary.deletedHealingFountainCount],
+    ['shrines', summary.deletedShrineCount],
     ['resources', summary.deletedResourceCount],
     ['movement patterns', summary.deletedMovementPatternCount],
     ['jobs', deletedJobCount],

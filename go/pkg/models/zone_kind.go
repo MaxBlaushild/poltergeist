@@ -20,28 +20,30 @@ const (
 )
 
 type ZoneKind struct {
-	ID                          uuid.UUID `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt                   time.Time `json:"createdAt"`
-	UpdatedAt                   time.Time `json:"updatedAt"`
-	Slug                        string    `json:"slug" gorm:"column:slug"`
-	Name                        string    `json:"name"`
-	Description                 string    `json:"description"`
-	OverlayColor                string    `json:"overlayColor" gorm:"column:overlay_color"`
-	PatternTileURL              string    `json:"patternTileUrl" gorm:"column:pattern_tile_url"`
-	PatternTilePrompt           string    `json:"patternTilePrompt" gorm:"column:pattern_tile_prompt"`
-	PatternTileGenerationStatus string    `json:"patternTileGenerationStatus" gorm:"column:pattern_tile_generation_status"`
-	PatternTileGenerationError  string    `json:"patternTileGenerationError" gorm:"column:pattern_tile_generation_error"`
-	PlaceCountRatio             float64   `json:"placeCountRatio" gorm:"column:place_count_ratio"`
-	MonsterCountRatio           float64   `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
-	BossEncounterCountRatio     float64   `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
-	RaidEncounterCountRatio     float64   `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
-	InputEncounterCountRatio    float64   `json:"inputEncounterCountRatio" gorm:"column:input_encounter_count_ratio"`
-	OptionEncounterCountRatio   float64   `json:"optionEncounterCountRatio" gorm:"column:option_encounter_count_ratio"`
-	TreasureChestCountRatio     float64   `json:"treasureChestCountRatio" gorm:"column:treasure_chest_count_ratio"`
-	HealingFountainCountRatio   float64   `json:"healingFountainCountRatio" gorm:"column:healing_fountain_count_ratio"`
-	HerbalismResourceCountRatio float64   `json:"herbalismResourceCountRatio" gorm:"column:herbalism_resource_count_ratio"`
-	MiningResourceCountRatio    float64   `json:"miningResourceCountRatio" gorm:"column:mining_resource_count_ratio"`
-	ResourceCountRatio          float64   `json:"resourceCountRatio" gorm:"column:resource_count_ratio"`
+	ID                          uuid.UUID   `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt                   time.Time   `json:"createdAt"`
+	UpdatedAt                   time.Time   `json:"updatedAt"`
+	Slug                        string      `json:"slug" gorm:"column:slug"`
+	Name                        string      `json:"name"`
+	Description                 string      `json:"description"`
+	DefaultShopkeeperItemTags   StringArray `json:"defaultShopkeeperItemTags" gorm:"column:default_shopkeeper_item_tags;type:jsonb"`
+	OverlayColor                string      `json:"overlayColor" gorm:"column:overlay_color"`
+	PatternTileURL              string      `json:"patternTileUrl" gorm:"column:pattern_tile_url"`
+	PatternTilePrompt           string      `json:"patternTilePrompt" gorm:"column:pattern_tile_prompt"`
+	PatternTileGenerationStatus string      `json:"patternTileGenerationStatus" gorm:"column:pattern_tile_generation_status"`
+	PatternTileGenerationError  string      `json:"patternTileGenerationError" gorm:"column:pattern_tile_generation_error"`
+	PlaceCountRatio             float64     `json:"placeCountRatio" gorm:"column:place_count_ratio"`
+	MonsterCountRatio           float64     `json:"monsterCountRatio" gorm:"column:monster_count_ratio"`
+	BossEncounterCountRatio     float64     `json:"bossEncounterCountRatio" gorm:"column:boss_encounter_count_ratio"`
+	RaidEncounterCountRatio     float64     `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
+	InputEncounterCountRatio    float64     `json:"inputEncounterCountRatio" gorm:"column:input_encounter_count_ratio"`
+	OptionEncounterCountRatio   float64     `json:"optionEncounterCountRatio" gorm:"column:option_encounter_count_ratio"`
+	TreasureChestCountRatio     float64     `json:"treasureChestCountRatio" gorm:"column:treasure_chest_count_ratio"`
+	HealingFountainCountRatio   float64     `json:"healingFountainCountRatio" gorm:"column:healing_fountain_count_ratio"`
+	ShrineCountRatio            float64     `json:"shrineCountRatio" gorm:"column:shrine_count_ratio"`
+	HerbalismResourceCountRatio float64     `json:"herbalismResourceCountRatio" gorm:"column:herbalism_resource_count_ratio"`
+	MiningResourceCountRatio    float64     `json:"miningResourceCountRatio" gorm:"column:mining_resource_count_ratio"`
+	ResourceCountRatio          float64     `json:"resourceCountRatio" gorm:"column:resource_count_ratio"`
 }
 
 func (ZoneKind) TableName() string {
@@ -116,6 +118,7 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	if z.Slug == "" {
 		z.Slug = NormalizeZoneKind(z.Name)
 	}
+	z.DefaultShopkeeperItemTags = StringArray(NormalizeTagList([]string(z.DefaultShopkeeperItemTags)))
 	z.OverlayColor = NormalizeHexColor(z.OverlayColor)
 	z.PatternTileURL = strings.TrimSpace(z.PatternTileURL)
 	z.PatternTilePrompt = strings.TrimSpace(z.PatternTilePrompt)
@@ -129,10 +132,19 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.OptionEncounterCountRatio = normalizeZoneKindRatio(z.OptionEncounterCountRatio)
 	z.TreasureChestCountRatio = normalizeZoneKindRatio(z.TreasureChestCountRatio)
 	z.HealingFountainCountRatio = normalizeZoneKindRatio(z.HealingFountainCountRatio)
+	z.ShrineCountRatio = normalizeZoneKindRatio(z.ShrineCountRatio)
 	z.HerbalismResourceCountRatio = normalizeZoneKindRatio(z.HerbalismResourceCountRatio)
 	z.MiningResourceCountRatio = normalizeZoneKindRatio(z.MiningResourceCountRatio)
 	z.ResourceCountRatio = normalizeZoneKindRatio(z.ResourceCountRatio)
 	return nil
+}
+
+func (z ZoneKind) DefaultShopkeeperTags() []string {
+	return NormalizeTagList([]string(z.DefaultShopkeeperItemTags))
+}
+
+func (z ZoneKind) MergeDefaultShopkeeperItemTags(tags []string) []string {
+	return MergeTagLists(z.DefaultShopkeeperTags(), tags)
 }
 
 func (z ZoneKind) ApplyToCounts(counts ZoneSeedResolvedCounts) ZoneSeedResolvedCounts {
@@ -152,6 +164,7 @@ func (z ZoneKind) ApplyToCounts(counts ZoneSeedResolvedCounts) ZoneSeedResolvedC
 		OptionEncounterCount:   apply(counts.OptionEncounterCount, z.OptionEncounterCountRatio),
 		TreasureChestCount:     apply(counts.TreasureChestCount, z.TreasureChestCountRatio),
 		HealingFountainCount:   apply(counts.HealingFountainCount, z.HealingFountainCountRatio),
+		ShrineCount:            apply(counts.ShrineCount, z.ShrineCountRatio),
 		HerbalismResourceCount: apply(counts.HerbalismResourceCount, z.HerbalismResourceCountRatio),
 		MiningResourceCount:    apply(counts.MiningResourceCount, z.MiningResourceCountRatio),
 	}.WithLegacyResourceCount()

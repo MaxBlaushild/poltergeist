@@ -50,6 +50,37 @@ func (h *monsterEncounterHandle) visibleQuery(ctx context.Context) *gorm.DB {
 	return h.preloadBase(ctx).Where("retired_at IS NULL")
 }
 
+func (h *monsterEncounterHandle) mapSummaryQuery(ctx context.Context) *gorm.DB {
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterEncounter{}).
+		Select([]string{
+			"id",
+			"created_at",
+			"updated_at",
+			"name",
+			"description",
+			"image_url",
+			"thumbnail_url",
+			"encounter_type",
+			"owner_user_id",
+			"zone_id",
+			"zone_kind",
+			"required_story_flags",
+			"point_of_interest_id",
+			"latitude",
+			"longitude",
+		}).
+		Where("retired_at IS NULL").
+		Preload("Members", func(db *gorm.DB) *gorm.DB {
+			return db.Select([]string{
+				"id",
+				"monster_encounter_id",
+				"monster_id",
+				"slot",
+			})
+		})
+}
+
 func (h *monsterEncounterHandle) Create(ctx context.Context, encounter *models.MonsterEncounter) error {
 	now := time.Now()
 	if encounter.ID == uuid.Nil {
@@ -198,6 +229,21 @@ func (h *monsterEncounterHandle) FindByZoneIDExcludingQuestNodes(
 ) ([]models.MonsterEncounter, error) {
 	var encounters []models.MonsterEncounter
 	if err := h.visibleQuery(ctx).
+		Where("zone_id = ?", zoneID).
+		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.monster_encounter_id = monster_encounters.id)").
+		Order("name ASC").
+		Find(&encounters).Error; err != nil {
+		return nil, err
+	}
+	return encounters, nil
+}
+
+func (h *monsterEncounterHandle) FindMapByZoneIDExcludingQuestNodes(
+	ctx context.Context,
+	zoneID uuid.UUID,
+) ([]models.MonsterEncounter, error) {
+	var encounters []models.MonsterEncounter
+	if err := h.mapSummaryQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.monster_encounter_id = monster_encounters.id)").
 		Order("name ASC").

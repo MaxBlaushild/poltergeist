@@ -12,6 +12,7 @@ import (
 var zoneKindReferenceTables = []string{
 	"points_of_interest",
 	"quests",
+	"quest_archetypes",
 	"challenges",
 	"scenarios",
 	"expositions",
@@ -23,6 +24,8 @@ var zoneKindReferenceTables = []string{
 	"monster_encounters",
 	"treasure_chests",
 	"healing_fountains",
+	"shrine_templates",
+	"shrines",
 	"resources",
 	"movement_patterns",
 	"inventory_items",
@@ -38,6 +41,7 @@ var zoneKindDirectZoneTables = []string{
 	"monster_encounters",
 	"treasure_chests",
 	"healing_fountains",
+	"shrines",
 	"resources",
 	"movement_patterns",
 }

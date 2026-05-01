@@ -3,6 +3,7 @@ package processors
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,6 +19,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 type SeedDistrictProcessor struct {
@@ -165,12 +167,25 @@ func (p *SeedDistrictProcessor) queueZoneSeedJobsForDistrict(
 
 	jobIDs := make([]string, 0, len(zones))
 	for _, zone := range zones {
+		effectiveZoneKind := models.NormalizeZoneKind(settings.ZoneKind)
+		if effectiveZoneKind == "" {
+			effectiveZoneKind = models.NormalizeZoneKind(zone.Kind)
+		}
+		shopkeeperItemTags, err := p.resolveZoneSeedJobShopkeeperItemTags(
+			ctx,
+			effectiveZoneKind,
+			[]string(settings.ShopkeeperItemTags),
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		job := &models.ZoneSeedJob{
 			ID:                   uuid.New(),
 			CreatedAt:            time.Now(),
 			UpdatedAt:            time.Now(),
 			ZoneID:               zone.ID,
-			ZoneKind:             settings.ZoneKind,
+			ZoneKind:             effectiveZoneKind,
 			Status:               models.ZoneSeedStatusQueued,
 			SeedMode:             models.ZoneSeedModeManual,
 			CountMode:            models.ZoneSeedCountModeAbsolute,
@@ -185,8 +200,9 @@ func (p *SeedDistrictProcessor) queueZoneSeedJobsForDistrict(
 			OptionEncounterCount: settings.OptionEncounterCount,
 			TreasureChestCount:   settings.TreasureChestCount,
 			HealingFountainCount: settings.HealingFountainCount,
+			ShrineCount:          settings.ShrineCount,
 			RequiredPlaceTags:    settings.RequiredPlaceTags,
-			ShopkeeperItemTags:   settings.ShopkeeperItemTags,
+			ShopkeeperItemTags:   models.StringArray(shopkeeperItemTags),
 		}
 		if err := p.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 			return nil, err
@@ -204,6 +220,28 @@ func (p *SeedDistrictProcessor) queueZoneSeedJobsForDistrict(
 	}
 
 	return jobIDs, nil
+}
+
+func (p *SeedDistrictProcessor) resolveZoneSeedJobShopkeeperItemTags(
+	ctx context.Context,
+	zoneKindSlug string,
+	explicitTags []string,
+) ([]string, error) {
+	normalizedTags := models.NormalizeTagList(explicitTags)
+	normalizedZoneKind := models.NormalizeZoneKind(zoneKindSlug)
+	if normalizedZoneKind == "" {
+		return normalizedTags, nil
+	}
+
+	zoneKind, err := p.dbClient.ZoneKind().FindBySlug(ctx, normalizedZoneKind)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			return normalizedTags, nil
+		}
+		return nil, err
+	}
+
+	return zoneKind.MergeDefaultShopkeeperItemTags(normalizedTags), nil
 }
 
 func finalizeDistrictSeedJob(job *models.DistrictSeedJob, failedCount int, total int) {

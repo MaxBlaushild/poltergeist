@@ -653,7 +653,7 @@ class _LayoutHeader extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'unclaimed streets',
+                      'StreetSekai',
                       style: GoogleFonts.cinzelDecorative(
                         fontWeight: FontWeight.w700,
                         fontSize: 24,

@@ -1975,6 +1975,15 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			_, _, _, _, _, resolvedItemRewards, err = s.resolveMonsterRewardsForUser(
+				ctx,
+				participant.UserID,
+				monster,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		log.Printf(
 			"[monster-rewards][finalize][resolved] battle=%s user=%s encounter=%s rewardExperience=%d rewardGold=%d itemRewardCount=%d",

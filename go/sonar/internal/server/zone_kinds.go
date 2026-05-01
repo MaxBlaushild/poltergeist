@@ -19,21 +19,23 @@ import (
 var errZoneKindSlugExists = stdErrors.New("zone kind slug already exists")
 
 type zoneKindPayload struct {
-	Name                        string  `json:"name"`
-	Slug                        string  `json:"slug"`
-	Description                 string  `json:"description"`
-	OverlayColor                string  `json:"overlayColor"`
-	PlaceCountRatio             float64 `json:"placeCountRatio"`
-	MonsterCountRatio           float64 `json:"monsterCountRatio"`
-	BossEncounterCountRatio     float64 `json:"bossEncounterCountRatio"`
-	RaidEncounterCountRatio     float64 `json:"raidEncounterCountRatio"`
-	InputEncounterCountRatio    float64 `json:"inputEncounterCountRatio"`
-	OptionEncounterCountRatio   float64 `json:"optionEncounterCountRatio"`
-	TreasureChestCountRatio     float64 `json:"treasureChestCountRatio"`
-	HealingFountainCountRatio   float64 `json:"healingFountainCountRatio"`
-	HerbalismResourceCountRatio float64 `json:"herbalismResourceCountRatio"`
-	MiningResourceCountRatio    float64 `json:"miningResourceCountRatio"`
-	ResourceCountRatio          float64 `json:"resourceCountRatio"`
+	Name                        string   `json:"name"`
+	Slug                        string   `json:"slug"`
+	Description                 string   `json:"description"`
+	DefaultShopkeeperItemTags   []string `json:"defaultShopkeeperItemTags"`
+	OverlayColor                string   `json:"overlayColor"`
+	PlaceCountRatio             float64  `json:"placeCountRatio"`
+	MonsterCountRatio           float64  `json:"monsterCountRatio"`
+	BossEncounterCountRatio     float64  `json:"bossEncounterCountRatio"`
+	RaidEncounterCountRatio     float64  `json:"raidEncounterCountRatio"`
+	InputEncounterCountRatio    float64  `json:"inputEncounterCountRatio"`
+	OptionEncounterCountRatio   float64  `json:"optionEncounterCountRatio"`
+	TreasureChestCountRatio     float64  `json:"treasureChestCountRatio"`
+	HealingFountainCountRatio   float64  `json:"healingFountainCountRatio"`
+	ShrineCountRatio            float64  `json:"shrineCountRatio"`
+	HerbalismResourceCountRatio float64  `json:"herbalismResourceCountRatio"`
+	MiningResourceCountRatio    float64  `json:"miningResourceCountRatio"`
+	ResourceCountRatio          float64  `json:"resourceCountRatio"`
 }
 
 func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
@@ -66,6 +68,7 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 		Name:                        name,
 		Slug:                        slug,
 		Description:                 strings.TrimSpace(body.Description),
+		DefaultShopkeeperItemTags:   models.StringArray(models.NormalizeTagList(body.DefaultShopkeeperItemTags)),
 		OverlayColor:                overlayColor,
 		PlaceCountRatio:             body.PlaceCountRatio,
 		MonsterCountRatio:           body.MonsterCountRatio,
@@ -75,6 +78,7 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 		OptionEncounterCountRatio:   body.OptionEncounterCountRatio,
 		TreasureChestCountRatio:     body.TreasureChestCountRatio,
 		HealingFountainCountRatio:   body.HealingFountainCountRatio,
+		ShrineCountRatio:            body.ShrineCountRatio,
 		HerbalismResourceCountRatio: herbalismRatio,
 		MiningResourceCountRatio:    miningRatio,
 		ResourceCountRatio:          legacyResourceRatio,
@@ -108,6 +112,7 @@ func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
 		},
 		{label: "treasure-rich", value: zoneKind.TreasureChestCountRatio},
 		{label: "restorative", value: zoneKind.HealingFountainCountRatio},
+		{label: "shrine-rich", value: zoneKind.ShrineCountRatio},
 		{label: "herbalism-rich", value: zoneKind.HerbalismResourceCountRatio},
 		{label: "mining-rich", value: zoneKind.MiningResourceCountRatio},
 	}
@@ -133,8 +138,16 @@ func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
 
 func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
 	switch models.NormalizeZoneKind(zoneKind.Slug) {
+	case "cave":
+		return "stalactite teeth, mineral seams, fungus speckle, tunnel contours"
 	case "forest":
 		return "leaf clusters, canopy blotches, branch forks, trail scratches"
+	case "jungle":
+		return "broad leaf clusters, tangled vines, canopy shadows, humid rootwork"
+	case "plains":
+		return "wind bands, tall-grass strokes, herd paths, horizon hatching"
+	case "reef":
+		return "coral fans, shoal ripples, shell clusters, reef latticework"
 	case "swamp":
 		return "reed strokes, puddle curves, marsh ripples, hanging moss"
 	case "coast":
@@ -151,6 +164,8 @@ func zoneKindPatternMotifs(zoneKind models.ZoneKind) string {
 		return "wind-carved dune lines, grit speckle, drifting wave contours"
 	case "temple-grounds":
 		return "sacred rings, shrine geometry, halo lines, ceremonial inlay"
+	case "tundra":
+		return "snow drift bands, frost shards, cracked ice seams, wind scour"
 	case "city":
 		return "street grids, masonry blocks, alley runs, civic linework"
 	case "port":

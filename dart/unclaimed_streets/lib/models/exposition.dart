@@ -21,6 +21,7 @@ class Exposition {
   final List<Map<String, dynamic>> materialRewards;
   final List<Map<String, dynamic>> itemRewards;
   final List<Spell> spellRewards;
+  final bool hasFullDetails;
 
   const Exposition({
     required this.id,
@@ -41,6 +42,7 @@ class Exposition {
     this.materialRewards = const [],
     this.itemRewards = const [],
     this.spellRewards = const [],
+    this.hasFullDetails = true,
   });
 
   factory Exposition.fromJson(Map<String, dynamic> json) {
@@ -123,6 +125,7 @@ class Exposition {
               .toList() ??
           const [],
       spellRewards: spellRewards,
+      hasFullDetails: json['hasFullDetails'] as bool? ?? true,
     );
   }
 }

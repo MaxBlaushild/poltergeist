@@ -30,6 +30,7 @@ import '../models/quest_node.dart';
 import '../models/quest_node_objective.dart';
 import '../models/resource.dart';
 import '../models/scenario.dart';
+import '../models/shrine.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
 import '../models/user.dart';
@@ -78,6 +79,7 @@ import '../widgets/quest_turn_in_target.dart';
 import '../widgets/resource_panel.dart';
 import '../widgets/rpg_dialogue_modal.dart';
 import '../widgets/scenario_panel.dart';
+import '../widgets/shrine_panel.dart';
 import '../widgets/tracked_quests_overlay.dart';
 import '../widgets/shop_modal.dart';
 import '../widgets/treasure_chest_panel.dart';
@@ -109,6 +111,8 @@ const _healingFountainFallbackImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _healingFountainDiscoveredImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
+const _shrineDiscoveredImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/shrine-discovered.png';
 const _baseDiscoveredImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/base-discovered.png';
 const _legacyMysteryImageUrl =
@@ -206,10 +210,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     with TickerProviderStateMixin {
   MapLibreMapController? _mapController;
   List<Zone> _zones = [];
+  final Set<String> _loadedZoneContentIds = <String>{};
+  final Map<String, Set<String>> _loadedPoiIdsByZoneId =
+      <String, Set<String>>{};
+  final Map<String, Set<String>> _loadedCharacterIdsByZoneId =
+      <String, Set<String>>{};
   List<PointOfInterest> _pois = [];
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
   List<HealingFountain> _healingFountains = [];
+  List<Shrine> _shrines = [];
   List<ResourceNode> _resources = [];
   List<BasePin> _bases = [];
   List<Scenario> _scenarios = [];
@@ -247,6 +257,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   List<Circle> _healingFountainCircles = [];
   final Map<String, Symbol> _healingFountainSymbolById = {};
   final Map<String, Circle> _healingFountainCircleById = {};
+  List<Symbol> _shrineSymbols = [];
+  List<Circle> _shrineCircles = [];
+  final Map<String, Symbol> _shrineSymbolById = {};
+  final Map<String, Circle> _shrineCircleById = {};
   List<Symbol> _resourceSymbols = [];
   List<Circle> _resourceCircles = [];
   final Map<String, Symbol> _resourceSymbolById = {};
@@ -290,6 +304,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
   String? _renderedTreasureChestMarkerUrl;
+  Future<void> _healingFountainRefreshSequence = Future<void>.value();
+  Future<void> _shrineRefreshSequence = Future<void>.value();
+  Future<void> _resourceRefreshSequence = Future<void>.value();
   Uint8List? _scenarioMysteryThumbnailBytes;
   bool _scenarioMysteryThumbnailAdded = false;
   Uint8List? _expositionMysteryThumbnailBytes;
@@ -324,7 +341,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   int _questAvailabilityLeadSyncGeneration = 0;
   bool _manualRefreshInFlight = false;
   int _skipQuestLogMapRefreshCount = 0;
-  DateTime? _lastQuestLogRefreshAt;
   bool _questLogNeedsOverlayApply = false;
   _MapMarkerIsolation? _mapMarkerIsolation;
   int _mapMarkerIsolationToken = 0;
@@ -355,11 +371,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   final Map<String, Future<_ZoneBaseContent>> _zoneBaseContentRequests = {};
   final Map<String, _ZonePinContentCacheEntry> _zonePinContentCache = {};
   final Map<String, Future<_ZonePinContent>> _zonePinContentRequests = {};
+  final Map<String, Future<ZoneMapSnapshotPayload>> _zoneMapSnapshotRequests =
+      {};
+  final Map<String, Future<bool>> _zoneQuestAvailabilityOverlayRequests = {};
+  final Map<String, Future<Scenario?>> _scenarioDetailRequests = {};
+  final Map<String, Future<Exposition?>> _expositionDetailRequests = {};
+  final Map<String, Future<MonsterEncounter?>> _monsterDetailRequests = {};
+  final Map<String, Future<ResourceNode?>> _resourceDetailRequests = {};
   final Map<String, PointOfInterest> _knownPoiById = {};
   final Map<String, Character> _knownCharacterById = {};
   Timer? _zoneBaseContentWarmupTimer;
   String _lastZoneBaseContentWarmSignature = '';
   DateTime? _lastZoneBaseContentWarmAt;
+  int _deferredZoneMarkerHydrationGeneration = 0;
+  bool _deferredZoneMarkerHydrationScheduled = false;
   String? _renderedTreasureChestZoneId;
   String? _loadingZoneTransitionZoneId;
   QuestSubmissionOverlayPhase _questSubmissionPhase =
@@ -478,7 +503,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _onCompletedTaskModalChanged();
       _onActivityFeedChanged();
       _updateSelectedZoneFromLocation();
-      _requestQuestLogIfReady();
       context.read<ActivityFeedProvider>().refresh();
       unawaited(context.read<PartyProvider>().fetchParty());
       unawaited(_loadTutorialStatus(force: true));
@@ -1450,17 +1474,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     if (!auth.isAuthenticated) return;
     _updateSelectedZoneFromLocation();
-    final zoneId = context.read<ZoneProvider>().selectedZone?.id;
-    if (zoneId == null || zoneId.isEmpty) {
-      final loc = context.read<LocationProvider>().location;
-      if (loc == null) return;
-      if (!force &&
-          _lastQuestLogRefreshAt != null &&
-          DateTime.now().difference(_lastQuestLogRefreshAt!) <
-              const Duration(seconds: 20)) {
-        return;
-      }
-      _refreshQuestLog();
+    final zoneId = context.read<ZoneProvider>().selectedZone?.id.trim() ?? '';
+    if (zoneId.isEmpty) {
       return;
     }
     if (!force && _questLogRequestedZoneId == zoneId) return;
@@ -1486,8 +1501,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     final syncGeneration = ++_questAvailabilityLeadSyncGeneration;
     _setQuestAvailabilityLeadSyncPending(true);
-    // Quest availability is embedded in zone pin payloads, so quest-log changes
-    // need a fresh pin fetch before showing any main-story availability lead.
+    // Quest-log changes usually only need refreshed availability flags. We
+    // merge a tiny overlay into cached pins first and only fall back to a full
+    // pin refresh if the visible pin set has drifted.
     unawaited(_refreshQuestAvailabilityAfterQuestLogChange(syncGeneration));
   }
 
@@ -1513,7 +1529,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _refreshQuestLog() {
     if (_questLogRefreshInFlight) return;
     _questLogRefreshInFlight = true;
-    _lastQuestLogRefreshAt = DateTime.now();
     unawaited(() async {
       try {
         await context.read<QuestLogProvider>().refresh();
@@ -1542,15 +1557,205 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     int syncGeneration,
   ) async {
     try {
-      await _loadTreasureChestsForSelectedZone(forceRefreshZonePins: true);
+      final appliedOverlay = await _refreshZoneQuestAvailabilityOverlay();
+      if (!appliedOverlay) {
+        await _loadTreasureChestsForSelectedZone(forceRefreshZonePins: true);
+      }
     } catch (_) {
-      // Best-effort refresh; keep existing pins if the forced reload fails.
+      try {
+        await _loadTreasureChestsForSelectedZone(forceRefreshZonePins: true);
+      } catch (_) {
+        // Best-effort refresh; keep existing pins if both the overlay merge and
+        // the fallback pin refresh fail.
+      }
     }
     if (!mounted || syncGeneration != _questAvailabilityLeadSyncGeneration) {
       return;
     }
     _setQuestAvailabilityLeadSyncPending(false);
     _applyQuestLogOverlaysIfChanged();
+  }
+
+  Future<bool> _refreshZoneQuestAvailabilityOverlay() async {
+    final zoneId = context.read<ZoneProvider>().selectedZone?.id.trim() ?? '';
+    if (zoneId.isEmpty) return false;
+    return _refreshZoneQuestAvailabilityOverlayForZone(zoneId);
+  }
+
+  Future<bool> _refreshZoneQuestAvailabilityOverlayForZone(
+    String zoneId, {
+    bool updateSelectedZone = true,
+  }) {
+    final normalizedZoneId = zoneId.trim();
+    if (normalizedZoneId.isEmpty) {
+      return Future<bool>.value(false);
+    }
+    final inFlight = _zoneQuestAvailabilityOverlayRequests[normalizedZoneId];
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final request = () async {
+      try {
+        final cached = _zonePinContentCache[normalizedZoneId];
+        if (cached == null) return false;
+
+        final overlay = await context
+            .read<PoiService>()
+            .getZoneQuestAvailabilityOverlay(normalizedZoneId);
+        if (!_zoneQuestAvailabilityOverlayMatchesContent(
+          cached.content,
+          overlay,
+        )) {
+          return false;
+        }
+
+        final merged = _zonePinContentWithQuestAvailabilityOverlay(
+          cached.content,
+          overlay,
+        );
+        _storeZonePinContent(normalizedZoneId, merged);
+
+        if (mounted &&
+            updateSelectedZone &&
+            _isZoneContentLoaded(normalizedZoneId)) {
+          _applyZonePinContent(normalizedZoneId, merged);
+          if (_styleLoaded && _mapController != null && _markersAdded) {
+            await _refreshZoneScopedMapPins();
+          }
+        }
+
+        return true;
+      } finally {
+        _zoneQuestAvailabilityOverlayRequests.remove(normalizedZoneId);
+      }
+    }();
+
+    _zoneQuestAvailabilityOverlayRequests[normalizedZoneId] = request;
+    return request;
+  }
+
+  Future<void> _warmZoneQuestAvailabilityOverlay(String zoneId) async {
+    try {
+      await _refreshZoneQuestAvailabilityOverlayForZone(zoneId);
+    } catch (_) {
+      return;
+    }
+  }
+
+  bool _zoneQuestAvailabilityOverlayMatchesContent(
+    _ZonePinContent content,
+    ZoneQuestAvailabilityOverlayPayload overlay,
+  ) {
+    final overlayPoiIds = overlay.pointsOfInterest
+        .map((poi) => poi.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final contentPoiIds = content.pointsOfInterest
+        .map((poi) => poi.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (!_setEquals(overlayPoiIds, contentPoiIds)) {
+      return false;
+    }
+
+    final overlayCharacterIds = overlay.characters
+        .map((character) => character.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final contentCharacterIds = content.characters
+        .map((character) => character.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (!_setEquals(overlayCharacterIds, contentCharacterIds)) {
+      return false;
+    }
+
+    final overlayPoiById = <String, QuestAvailabilityOverlayPointOfInterest>{
+      for (final poi in overlay.pointsOfInterest)
+        if (poi.id.trim().isNotEmpty) poi.id.trim(): poi,
+    };
+    for (final poi in content.pointsOfInterest) {
+      final poiOverlay = overlayPoiById[poi.id.trim()];
+      if (poiOverlay == null) {
+        return false;
+      }
+      final overlayNestedCharacterIds = poiOverlay.characters
+          .map((character) => character.id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final contentNestedCharacterIds = poi.characters
+          .map((character) => character.id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (!_setEquals(overlayNestedCharacterIds, contentNestedCharacterIds)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  _ZonePinContent _zonePinContentWithQuestAvailabilityOverlay(
+    _ZonePinContent content,
+    ZoneQuestAvailabilityOverlayPayload overlay,
+  ) {
+    final overlayCharacterById = <String, QuestAvailabilityOverlayCharacter>{
+      for (final character in overlay.characters)
+        if (character.id.trim().isNotEmpty) character.id.trim(): character,
+    };
+    final overlayPoiById = <String, QuestAvailabilityOverlayPointOfInterest>{
+      for (final poi in overlay.pointsOfInterest)
+        if (poi.id.trim().isNotEmpty) poi.id.trim(): poi,
+    };
+
+    final updatedPois = content.pointsOfInterest
+        .map((poi) {
+          final poiOverlay = overlayPoiById[poi.id.trim()];
+          if (poiOverlay == null) return poi;
+          final nestedCharacterOverlayById =
+              <String, QuestAvailabilityOverlayCharacter>{
+                for (final character in poiOverlay.characters)
+                  if (character.id.trim().isNotEmpty)
+                    character.id.trim(): character,
+              };
+          final updatedCharacters = poi.characters
+              .map((character) {
+                final overlayCharacter =
+                    nestedCharacterOverlayById[character.id.trim()] ??
+                    overlayCharacterById[character.id.trim()];
+                if (overlayCharacter == null) return character;
+                return character.copyWith(
+                  hasAvailableQuest: overlayCharacter.hasAvailableQuest,
+                  hasAvailableMainStoryQuest:
+                      overlayCharacter.hasAvailableMainStoryQuest,
+                );
+              })
+              .toList(growable: false);
+          return poi.copyWith(
+            characters: updatedCharacters,
+            hasAvailableQuest: poiOverlay.hasAvailableQuest,
+            hasAvailableMainStoryQuest: poiOverlay.hasAvailableMainStoryQuest,
+          );
+        })
+        .toList(growable: false);
+
+    final updatedCharacters = content.characters
+        .map((character) {
+          final overlayCharacter = overlayCharacterById[character.id.trim()];
+          if (overlayCharacter == null) return character;
+          return character.copyWith(
+            hasAvailableQuest: overlayCharacter.hasAvailableQuest,
+            hasAvailableMainStoryQuest:
+                overlayCharacter.hasAvailableMainStoryQuest,
+          );
+        })
+        .toList(growable: false);
+
+    return _ZonePinContent(
+      pointsOfInterest: updatedPois,
+      characters: updatedCharacters,
+      includesQuestAvailability: true,
+    );
   }
 
   void _applyQuestLogOverlaysIfChanged() {
@@ -2586,6 +2791,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _healingFountainCircles = [];
       _healingFountainSymbolById.clear();
       _healingFountainCircleById.clear();
+      _shrineSymbols = [];
+      _shrineCircles = [];
+      _shrineSymbolById.clear();
+      _shrineCircleById.clear();
       _resourceSymbols = [];
       _resourceCircles = [];
       _resourceSymbolById.clear();
@@ -4018,7 +4227,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final discoveries = context.read<DiscoveriesProvider>();
     final mapContentPoiIds = _buildPoiIdsWithMapContent();
 
-    for (final entry in _poiSymbolById.entries) {
+    for (final entry in _poiSymbolById.entries.toList()) {
       final poi = _poiById(entry.key);
       if (poi == null) continue;
       final isQuestCurrent = questPoiIds.contains(poi.id);
@@ -4036,8 +4245,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _characterSymbolsById.entries) {
-      for (final symbol in entry.value) {
+    for (final entry in _characterSymbolsById.entries.toList()) {
+      for (final symbol in entry.value.toList()) {
         await updateSymbolVisibility(
           symbol,
           type: 'character',
@@ -4047,7 +4256,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       }
     }
 
-    for (final entry in _chestSymbolById.entries) {
+    for (final entry in _chestSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'chest',
@@ -4055,7 +4264,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _chestCircleById.entries) {
+    for (final entry in _chestCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'chest',
@@ -4064,7 +4273,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _healingFountainSymbolById.entries) {
+    for (final entry in _healingFountainSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'healingFountain',
@@ -4072,7 +4281,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _healingFountainCircleById.entries) {
+    for (final entry in _healingFountainCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'healingFountain',
@@ -4081,7 +4290,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _resourceSymbolById.entries) {
+    for (final entry in _shrineSymbolById.entries.toList()) {
+      await updateSymbolVisibility(
+        entry.value,
+        type: 'shrine',
+        id: entry.key,
+        visibleOpacity: 1.0,
+      );
+    }
+    for (final entry in _shrineCircleById.entries.toList()) {
+      await updateCircleVisibility(
+        entry.value,
+        type: 'shrine',
+        id: entry.key,
+        visibleOpacity: 1.0,
+      );
+    }
+
+    for (final entry in _resourceSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'resource',
@@ -4089,7 +4315,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _resourceCircleById.entries) {
+    for (final entry in _resourceCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'resource',
@@ -4098,7 +4324,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _baseSymbolById.entries) {
+    for (final entry in _baseSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'base',
@@ -4106,7 +4332,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _baseCircleById.entries) {
+    for (final entry in _baseCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'base',
@@ -4115,7 +4341,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _scenarioSymbolById.entries) {
+    for (final entry in _scenarioSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'scenario',
@@ -4123,7 +4349,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _scenarioCircleById.entries) {
+    for (final entry in _scenarioCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'scenario',
@@ -4132,7 +4358,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _expositionSymbolById.entries) {
+    for (final entry in _expositionSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'exposition',
@@ -4140,7 +4366,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _expositionCircleById.entries) {
+    for (final entry in _expositionCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'exposition',
@@ -4149,7 +4375,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _monsterSymbolById.entries) {
+    for (final entry in _monsterSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'monster',
@@ -4157,7 +4383,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _monsterCircleById.entries) {
+    for (final entry in _monsterCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'monster',
@@ -4166,7 +4392,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
     }
 
-    for (final entry in _challengeSymbolById.entries) {
+    for (final entry in _challengeSymbolById.entries.toList()) {
       await updateSymbolVisibility(
         entry.value,
         type: 'challenge',
@@ -4174,7 +4400,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         visibleOpacity: 1.0,
       );
     }
-    for (final entry in _challengeCircleById.entries) {
+    for (final entry in _challengeCircleById.entries.toList()) {
       await updateCircleVisibility(
         entry.value,
         type: 'challenge',
@@ -4564,6 +4790,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     _loadAllInFlight = true;
     final loadGeneration = ++_loadAllGeneration;
     debugPrint('SinglePlayer: _loadAll start');
+    final shellTraceId = _newZoneTraceId('shell', phase: 'shell-load');
+    final shellStopwatch = Stopwatch()..start();
     final svc = context.read<PoiService>();
     final discoveriesProvider = context.read<DiscoveriesProvider>();
     final zoneProvider = context.read<ZoneProvider>();
@@ -4572,16 +4800,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       final restoreDiscoveredCharactersFuture =
           _restoreDiscoveredCharacterIds();
       final discoveriesFuture = discoveriesProvider.refresh();
-      final zonesFuture = svc.getZones();
-      final basesFuture = svc.getVisibleBases();
+      final zonesFuture = _traceZoneFuture(
+        shellTraceId,
+        'zones shell',
+        svc.getZones(traceId: shellTraceId),
+      );
+      final basesFuture = _traceZoneFuture(
+        shellTraceId,
+        'bases bootstrap',
+        svc.getVisibleBases(traceId: shellTraceId),
+      );
       final zones = await zonesFuture;
       if (!_isCurrentLoadGeneration(loadGeneration)) return;
-      debugPrint('SinglePlayer: _loadAll shell ready: zones=${zones.length}');
+      debugPrint(
+        'SinglePlayer: _loadAll shell ready: zones=${zones.length} '
+        'elapsedMs=${shellStopwatch.elapsedMilliseconds}',
+      );
       zoneProvider.setZones(zones);
       setState(() {
         _zones = zones;
-        _pois = [];
-        _characters = [];
+        _resetLoadedZoneContentState();
         _markersAdded = false;
       });
       _updateSelectedZoneFromLocation();
@@ -4600,7 +4838,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           basesFuture: basesFuture,
         ),
       );
-      debugPrint('SinglePlayer: _loadAll shell staged');
+      debugPrint(
+        'SinglePlayer: _loadAll shell staged elapsedMs=${shellStopwatch.elapsedMilliseconds}',
+      );
     } catch (e, stackTrace) {
       debugPrint('SinglePlayer: _loadAll error: $e');
       debugPrint('SinglePlayer: _loadAll stack: $stackTrace');
@@ -5510,6 +5750,41 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
+  String _newZoneTraceId(String zoneId, {String phase = 'zone-load'}) {
+    final normalizedZoneId = zoneId.trim();
+    final suffix = normalizedZoneId.isEmpty
+        ? 'none'
+        : normalizedZoneId.substring(0, math.min(8, normalizedZoneId.length));
+    return '$phase-$suffix-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+  }
+
+  void _logZoneTrace(String traceId, String message) {
+    if (!kDebugMode) return;
+    debugPrint('SinglePlayer trace[$traceId] $message');
+  }
+
+  Future<T> _traceZoneFuture<T>(
+    String traceId,
+    String label,
+    Future<T> future,
+  ) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final value = await future;
+      _logZoneTrace(
+        traceId,
+        '$label done elapsedMs=${stopwatch.elapsedMilliseconds}',
+      );
+      return value;
+    } catch (error) {
+      _logZoneTrace(
+        traceId,
+        '$label error elapsedMs=${stopwatch.elapsedMilliseconds} error=$error',
+      );
+      rethrow;
+    }
+  }
+
   Future<void> _loadTreasureChestsForSelectedZone({
     bool forceRefreshZonePins = false,
     bool forceRefreshZoneBaseContent = false,
@@ -5521,23 +5796,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (zoneId == null) {
       if (mounted && requestVersion == _zoneContentRequestVersion) {
         setState(() {
-          _pois = [];
-          _characters = [];
-          _treasureChests = [];
-          _healingFountains = [];
-          _resources = [];
-          _scenarios = [];
-          _expositions = [];
-          _monsters = [];
-          _challenges = [];
+          _resetLoadedZoneContentState();
         });
       }
       _setLoadingZoneTransition(null);
       return;
     }
+    final traceId = _newZoneTraceId(
+      zoneId,
+      phase: forceRefreshZonePins || forceRefreshZoneBaseContent
+          ? 'zone-refresh'
+          : 'zone-load',
+    );
+    final loadStopwatch = Stopwatch()..start();
     final zoneChanged = _renderedTreasureChestZoneId != zoneId;
     final hasZoneSnapshot = _hasZoneBaseContentSnapshot(zoneId);
     final hasZonePinsSnapshot = _hasZonePinContentSnapshot(zoneId);
+    _logZoneTrace(
+      traceId,
+      'start zone=$zoneId requestVersion=$requestVersion zoneChanged=$zoneChanged '
+      'cachedBase=$hasZoneSnapshot cachedPins=$hasZonePinsSnapshot '
+      'forcePins=$forceRefreshZonePins forceBase=$forceRefreshZoneBaseContent',
+    );
     _setLoadingZoneTransition(
       zoneChanged && !(hasZoneSnapshot && hasZonePinsSnapshot) ? zoneId : null,
     );
@@ -5549,33 +5829,58 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _markersAdded &&
         !_shouldSuppressNormalMapPinsForTutorial &&
         !_tutorialNormalPinsRevealInProgress) {
+      final cachedRefreshStopwatch = Stopwatch()..start();
       _applyCachedZoneSnapshot(zoneId);
-      await _refreshZoneScopedMapPins();
+      await _refreshZoneScopedMapPins(traceId: traceId);
+      _logZoneTrace(
+        traceId,
+        'cached snapshot applied elapsedMs=${cachedRefreshStopwatch.elapsedMilliseconds}',
+      );
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
     }
     try {
       final svc = context.read<PoiService>();
-      final pinContentFuture = _getZonePinContent(
-        zoneId,
-        svc: svc,
-        forceRefresh: forceRefreshZonePins,
+      final pinContentFuture = _traceZoneFuture(
+        traceId,
+        'pin content',
+        _getZonePinContent(
+          zoneId,
+          svc: svc,
+          forceRefresh: forceRefreshZonePins,
+          traceId: traceId,
+        ),
       );
-      final baseContentFuture = _getZoneBaseContent(
-        zoneId,
-        svc: svc,
-        forceRefresh: forceRefreshZoneBaseContent,
+      final baseContentFuture = _traceZoneFuture(
+        traceId,
+        'base content',
+        _getZoneBaseContent(
+          zoneId,
+          svc: svc,
+          forceRefresh: forceRefreshZoneBaseContent,
+          traceId: traceId,
+        ),
       );
       final pinContent = await pinContentFuture;
       final baseContent = await baseContentFuture;
       final chests = baseContent.treasureChests;
       final healingFountains = baseContent.healingFountains;
+      final shrines = baseContent.shrines;
       final resources = baseContent.resources;
       final baseScenarios = baseContent.scenarios;
       final baseExpositions = baseContent.expositions;
       final baseMonsters = baseContent.monsters;
       final baseChallenges = baseContent.challenges;
+      _logZoneTrace(
+        traceId,
+        'payload counts '
+        'pois=${pinContent.pointsOfInterest.length} chars=${pinContent.characters.length} '
+        'chests=${chests.length} fountains=${healingFountains.length} shrines=${shrines.length} resources=${resources.length} '
+        'scenarios=${baseScenarios.length} expositions=${baseExpositions.length} '
+        'monsters=${baseMonsters.length} challenges=${baseChallenges.length}',
+      );
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
       _rememberKnownZonePins(pinContent);
+      final augmentationStopwatch = Stopwatch()..start();
       final currentQuestScenarioIds = _currentQuestScenarioIds();
       final currentQuestExpositionIds = _currentQuestExpositionIds();
       final currentQuestMonsterIds = _currentQuestMonsterIds();
@@ -5725,7 +6030,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           )
           .toList();
       final challenges = challengeById.values.toList();
+      _logZoneTrace(
+        traceId,
+        'quest/tut augmentation elapsedMs=${augmentationStopwatch.elapsedMilliseconds} '
+        'scenarioIds=${scenarioById.length} expositionIds=${expositionById.length} '
+        'monsterIds=${monsterById.length} challengeIds=${challengeById.length}',
+      );
       if (!mounted || requestVersion != _zoneContentRequestVersion) return;
+      final applyStopwatch = Stopwatch()..start();
       _applyZoneContent(
         zoneId,
         pinContent: pinContent,
@@ -5733,6 +6045,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList(growable: false),
         healingFountains: healingFountains,
+        shrines: shrines,
         resources: resources
             .where(
               (resource) =>
@@ -5745,25 +6058,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         monsters: monsters,
         challenges: challenges,
       );
+      _logZoneTrace(
+        traceId,
+        'zone content applied elapsedMs=${applyStopwatch.elapsedMilliseconds}',
+      );
       if (_styleLoaded && _mapController != null && _markersAdded) {
-        await _refreshZoneScopedMapPins();
+        final refreshStopwatch = Stopwatch()..start();
+        await _refreshZoneScopedMapPins(traceId: traceId);
+        _logZoneTrace(
+          traceId,
+          'zone scoped map pins refreshed elapsedMs=${refreshStopwatch.elapsedMilliseconds}',
+        );
       }
       _clearLoadingZoneTransition(zoneId, requestVersion);
+      _logZoneTrace(
+        traceId,
+        'done totalElapsedMs=${loadStopwatch.elapsedMilliseconds}',
+      );
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
-      if (mounted && requestVersion == _zoneContentRequestVersion) {
-        setState(() {
-          _pois = [];
-          _characters = [];
-          _treasureChests = [];
-          _healingFountains = [];
-          _resources = [];
-          _scenarios = [];
-          _expositions = [];
-          _monsters = [];
-          _challenges = [];
-        });
-        _renderedTreasureChestZoneId = null;
+      _logZoneTrace(
+        traceId,
+        'error totalElapsedMs=${loadStopwatch.elapsedMilliseconds} error=$e',
+      );
+      if (mounted &&
+          requestVersion == _zoneContentRequestVersion &&
+          _loadedZoneContentIds.isEmpty) {
+        setState(_resetLoadedZoneContentState);
         if (_styleLoaded && _mapController != null && _markersAdded) {
           await _refreshZoneScopedMapPins();
         }
@@ -5777,23 +6098,100 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     required _ZonePinContent pinContent,
     required List<TreasureChest> treasureChests,
     required List<HealingFountain> healingFountains,
+    required List<Shrine> shrines,
     required List<ResourceNode> resources,
     required List<Scenario> scenarios,
     required List<Exposition> expositions,
     required List<MonsterEncounter> monsters,
     required List<Challenge> challenges,
   }) {
+    final normalizedZoneId = zoneId.trim();
+    final nextPoiIds = pinContent.pointsOfInterest
+        .map((poi) => poi.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final nextCharacterIds = pinContent.characters
+        .map((character) => character.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final previousPoiIds =
+        _loadedPoiIdsByZoneId[normalizedZoneId] ?? const <String>{};
+    final previousCharacterIds =
+        _loadedCharacterIdsByZoneId[normalizedZoneId] ?? const <String>{};
+
     void update() {
-      _pois = pinContent.pointsOfInterest;
-      _characters = pinContent.characters;
-      _treasureChests = treasureChests;
-      _healingFountains = healingFountains;
-      _resources = resources;
-      _scenarios = scenarios;
-      _expositions = expositions;
-      _monsters = monsters;
-      _challenges = challenges;
-      _renderedTreasureChestZoneId = zoneId;
+      _loadedZoneContentIds.add(normalizedZoneId);
+      _loadedPoiIdsByZoneId[normalizedZoneId] = nextPoiIds;
+      _loadedCharacterIdsByZoneId[normalizedZoneId] = nextCharacterIds;
+      _pois = _replaceItemsById(
+        _pois,
+        pinContent.pointsOfInterest,
+        idOf: (poi) => poi.id,
+        removeIds: previousPoiIds,
+      );
+      _characters = _replaceItemsById(
+        _characters,
+        pinContent.characters,
+        idOf: (character) => character.id,
+        removeIds: previousCharacterIds,
+      );
+      _treasureChests = _replaceZoneScopedItems(
+        _treasureChests,
+        normalizedZoneId,
+        treasureChests,
+        idOf: (chest) => chest.id,
+        zoneIdOf: (chest) => chest.zoneId,
+      );
+      _healingFountains = _replaceZoneScopedItems(
+        _healingFountains,
+        normalizedZoneId,
+        healingFountains,
+        idOf: (fountain) => fountain.id,
+        zoneIdOf: (fountain) => fountain.zoneId,
+      );
+      _shrines = _replaceZoneScopedItems(
+        _shrines,
+        normalizedZoneId,
+        shrines,
+        idOf: (shrine) => shrine.id,
+        zoneIdOf: (shrine) => shrine.zoneId,
+      );
+      _resources = _replaceZoneScopedItems(
+        _resources,
+        normalizedZoneId,
+        resources,
+        idOf: (resource) => resource.id,
+        zoneIdOf: (resource) => resource.zoneId,
+      );
+      _scenarios = _replaceZoneScopedItems(
+        _scenarios,
+        normalizedZoneId,
+        scenarios,
+        idOf: (scenario) => scenario.id,
+        zoneIdOf: (scenario) => scenario.zoneId,
+      );
+      _expositions = _replaceZoneScopedItems(
+        _expositions,
+        normalizedZoneId,
+        expositions,
+        idOf: (exposition) => exposition.id,
+        zoneIdOf: (exposition) => exposition.zoneId,
+      );
+      _monsters = _replaceZoneScopedItems(
+        _monsters,
+        normalizedZoneId,
+        monsters,
+        idOf: (monster) => monster.id,
+        zoneIdOf: (monster) => monster.zoneId,
+      );
+      _challenges = _replaceZoneScopedItems(
+        _challenges,
+        normalizedZoneId,
+        challenges,
+        idOf: (challenge) => challenge.id,
+        zoneIdOf: (challenge) => challenge.zoneId,
+      );
+      _renderedTreasureChestZoneId = normalizedZoneId;
     }
 
     if (mounted) {
@@ -5801,6 +6199,121 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     } else {
       update();
     }
+  }
+
+  void _applyZonePinContent(String zoneId, _ZonePinContent pinContent) {
+    final normalizedZoneId = zoneId.trim();
+    if (normalizedZoneId.isEmpty) return;
+    final nextPoiIds = pinContent.pointsOfInterest
+        .map((poi) => poi.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final nextCharacterIds = pinContent.characters
+        .map((character) => character.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final previousPoiIds =
+        _loadedPoiIdsByZoneId[normalizedZoneId] ?? const <String>{};
+    final previousCharacterIds =
+        _loadedCharacterIdsByZoneId[normalizedZoneId] ?? const <String>{};
+
+    void update() {
+      _loadedZoneContentIds.add(normalizedZoneId);
+      _loadedPoiIdsByZoneId[normalizedZoneId] = nextPoiIds;
+      _loadedCharacterIdsByZoneId[normalizedZoneId] = nextCharacterIds;
+      _pois = _replaceItemsById(
+        _pois,
+        pinContent.pointsOfInterest,
+        idOf: (poi) => poi.id,
+        removeIds: previousPoiIds,
+      );
+      _characters = _replaceItemsById(
+        _characters,
+        pinContent.characters,
+        idOf: (character) => character.id,
+        removeIds: previousCharacterIds,
+      );
+    }
+
+    if (mounted) {
+      setState(update);
+    } else {
+      update();
+    }
+  }
+
+  List<T> _replaceItemsById<T>(
+    List<T> existing,
+    Iterable<T> incoming, {
+    required String Function(T item) idOf,
+    Set<String> removeIds = const <String>{},
+  }) {
+    final merged = <T>[];
+    final indexById = <String, int>{};
+
+    void upsert(T item) {
+      final id = idOf(item).trim();
+      if (id.isEmpty) {
+        merged.add(item);
+        return;
+      }
+      final existingIndex = indexById[id];
+      if (existingIndex != null) {
+        merged[existingIndex] = item;
+        return;
+      }
+      indexById[id] = merged.length;
+      merged.add(item);
+    }
+
+    for (final item in existing) {
+      final id = idOf(item).trim();
+      if (id.isNotEmpty && removeIds.contains(id)) continue;
+      upsert(item);
+    }
+    for (final item in incoming) {
+      upsert(item);
+    }
+    return List<T>.from(merged);
+  }
+
+  List<T> _replaceZoneScopedItems<T>(
+    List<T> existing,
+    String zoneId,
+    Iterable<T> incoming, {
+    required String Function(T item) idOf,
+    required String Function(T item) zoneIdOf,
+  }) {
+    final normalizedZoneId = zoneId.trim();
+    final retained = existing
+        .where((item) => zoneIdOf(item).trim() != normalizedZoneId)
+        .toList(growable: false);
+    return _replaceItemsById(retained, incoming, idOf: idOf);
+  }
+
+  void _resetLoadedZoneContentState() {
+    _loadedZoneContentIds.clear();
+    _loadedPoiIdsByZoneId.clear();
+    _loadedCharacterIdsByZoneId.clear();
+    _knownPoiById.clear();
+    _knownCharacterById.clear();
+    _zoneBaseContentCache.clear();
+    _zonePinContentCache.clear();
+    _zoneBaseContentRequests.clear();
+    _zonePinContentRequests.clear();
+    _zoneMapSnapshotRequests.clear();
+    _zoneQuestAvailabilityOverlayRequests.clear();
+    _pois = [];
+    _characters = [];
+    _treasureChests = [];
+    _healingFountains = [];
+    _shrines = [];
+    _resources = [];
+    _scenarios = [];
+    _expositions = [];
+    _monsters = [];
+    _challenges = [];
+    _renderedTreasureChestZoneId = null;
   }
 
   void _setLoadingZoneTransition(String? zoneId) {
@@ -5846,6 +6359,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           .where((chest) => !_openedTreasureChestIds.contains(chest.id))
           .toList(growable: false),
       healingFountains: content.healingFountains,
+      shrines: content.shrines,
       resources: content.resources
           .where(
             (resource) =>
@@ -5878,11 +6392,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
-  Future<void> _refreshZoneScopedMapPins() async {
+  Future<void> _refreshZoneScopedMapPins({String? traceId}) async {
     if (!_styleLoaded || _mapController == null || !_markersAdded) return;
+    final stopwatch = Stopwatch()..start();
     if (_shouldSuppressNormalMapPinsForTutorial ||
         _tutorialNormalPinsRevealInProgress) {
       await _rebuildMapPins();
+      if (traceId != null && traceId.isNotEmpty) {
+        _logZoneTrace(
+          traceId,
+          'refreshZoneScopedMapPins rebuilt elapsedMs=${stopwatch.elapsedMilliseconds}',
+        );
+      }
       return;
     }
     final controller = _mapController;
@@ -5894,12 +6415,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _pinBatchRevealInProgress = false;
     }
     await _revealLoadedPins(controller);
+    if (traceId != null && traceId.isNotEmpty) {
+      _logZoneTrace(
+        traceId,
+        'refreshZoneScopedMapPins reveal elapsedMs=${stopwatch.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<_ZoneBaseContent> _getZoneBaseContent(
     String zoneId, {
     PoiService? svc,
     bool forceRefresh = false,
+    String? traceId,
   }) {
     final normalizedZoneId = zoneId.trim();
     final service = svc ?? context.read<PoiService>();
@@ -5913,6 +6441,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final cached = _zoneBaseContentCache[normalizedZoneId];
     if (cached != null) {
       cached.touch();
+      if (traceId != null && traceId.isNotEmpty) {
+        _logZoneTrace(
+          traceId,
+          'zone base cache hit zone=$normalizedZoneId fresh=${cached.isFresh}',
+        );
+      }
       if (!cached.isFresh) {
         // Keep movement snappy by serving the last snapshot immediately while
         // the selected zone refreshes in the background.
@@ -5924,19 +6458,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     final inFlight = _zoneBaseContentRequests[normalizedZoneId];
     if (inFlight != null) return inFlight;
-    return _fetchZoneBaseContent(normalizedZoneId, svc: service);
+    return _fetchZoneBaseContent(
+      normalizedZoneId,
+      svc: service,
+      traceId: traceId,
+    );
   }
 
   Future<_ZoneBaseContent> _fetchZoneBaseContent(
     String zoneId, {
     PoiService? svc,
     bool forceRefresh = false,
+    String? traceId,
   }) {
     final normalizedZoneId = zoneId.trim();
     if (!forceRefresh) {
       final cached = _zoneBaseContentCache[normalizedZoneId];
       if (cached != null && cached.isFresh) {
         cached.touch();
+        if (traceId != null && traceId.isNotEmpty) {
+          _logZoneTrace(
+            traceId,
+            'zone base fetch satisfied from fresh cache zone=$normalizedZoneId',
+          );
+        }
         return Future<_ZoneBaseContent>.value(cached.content);
       }
     }
@@ -5947,26 +6492,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final service = svc ?? context.read<PoiService>();
     final request = () async {
       try {
-        final results = await Future.wait<dynamic>([
-          service.getTreasureChestsForZone(normalizedZoneId),
-          service.getHealingFountainsForZone(normalizedZoneId),
-          service.getResourcesForZone(normalizedZoneId),
-          service.getScenariosForZone(normalizedZoneId),
-          service.getExpositionsForZone(normalizedZoneId),
-          service.getMonsterEncountersForZone(normalizedZoneId),
-          service.getChallengesForZone(normalizedZoneId),
-        ]);
-        final content = _ZoneBaseContent(
-          treasureChests: results[0] as List<TreasureChest>,
-          healingFountains: results[1] as List<HealingFountain>,
-          resources: results[2] as List<ResourceNode>,
-          scenarios: results[3] as List<Scenario>,
-          expositions: results[4] as List<Exposition>,
-          monsters: results[5] as List<MonsterEncounter>,
-          challenges: results[6] as List<Challenge>,
+        final snapshot = await _fetchZoneMapSnapshot(
+          normalizedZoneId,
+          svc: service,
+          forceRefresh: forceRefresh,
+          traceId: traceId,
         );
-        _storeZoneBaseContent(normalizedZoneId, content);
-        return content;
+        return _zoneBaseContentFromSnapshot(snapshot);
       } finally {
         _zoneBaseContentRequests.remove(normalizedZoneId);
       }
@@ -5995,6 +6527,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     String zoneId, {
     PoiService? svc,
     bool forceRefresh = false,
+    String? traceId,
   }) {
     final normalizedZoneId = zoneId.trim();
     final service = svc ?? context.read<PoiService>();
@@ -6008,6 +6541,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final cached = _zonePinContentCache[normalizedZoneId];
     if (cached != null) {
       cached.touch();
+      if (traceId != null && traceId.isNotEmpty) {
+        _logZoneTrace(
+          traceId,
+          'zone pin cache hit zone=$normalizedZoneId fresh=${cached.isFresh}',
+        );
+      }
       if (!cached.isFresh) {
         unawaited(
           _warmZonePinContentInBackground(normalizedZoneId, svc: service),
@@ -6017,19 +6556,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     final inFlight = _zonePinContentRequests[normalizedZoneId];
     if (inFlight != null) return inFlight;
-    return _fetchZonePinContent(normalizedZoneId, svc: service);
+    return _fetchZonePinContent(
+      normalizedZoneId,
+      svc: service,
+      traceId: traceId,
+    );
   }
 
   Future<_ZonePinContent> _fetchZonePinContent(
     String zoneId, {
     PoiService? svc,
     bool forceRefresh = false,
+    String? traceId,
   }) {
     final normalizedZoneId = zoneId.trim();
     if (!forceRefresh) {
       final cached = _zonePinContentCache[normalizedZoneId];
       if (cached != null && cached.isFresh) {
         cached.touch();
+        if (traceId != null && traceId.isNotEmpty) {
+          _logZoneTrace(
+            traceId,
+            'zone pin fetch satisfied from fresh cache zone=$normalizedZoneId',
+          );
+        }
         return Future<_ZonePinContent>.value(cached.content);
       }
     }
@@ -6038,15 +6588,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (inFlight != null) return inFlight;
 
     final service = svc ?? context.read<PoiService>();
+    final shouldPreferPinsOnlyRefresh =
+        forceRefresh && _zoneBaseContentCache.containsKey(normalizedZoneId);
     final request = () async {
       try {
-        final payload = await service.getZonePins(normalizedZoneId);
-        final content = _ZonePinContent(
-          pointsOfInterest: payload.pointsOfInterest,
-          characters: payload.characters,
+        if (shouldPreferPinsOnlyRefresh) {
+          // Quest-log updates frequently need fresher quest-availability flags
+          // without re-downloading the rest of the zone snapshot.
+          final payload = await service.getZonePins(
+            normalizedZoneId,
+            traceId: traceId,
+          );
+          final content = _ZonePinContent(
+            pointsOfInterest: payload.pointsOfInterest,
+            characters: payload.characters,
+            includesQuestAvailability: true,
+          );
+          _storeZonePinContent(normalizedZoneId, content);
+          return content;
+        }
+        final snapshot = await _fetchZoneMapSnapshot(
+          normalizedZoneId,
+          svc: service,
+          forceRefresh: forceRefresh,
+          traceId: traceId,
         );
-        _storeZonePinContent(normalizedZoneId, content);
-        return content;
+        return _zonePinContentFromSnapshot(snapshot);
       } finally {
         _zonePinContentRequests.remove(normalizedZoneId);
       }
@@ -6069,6 +6636,120 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
     if (selectedZoneId != zoneId) return;
     await _loadTreasureChestsForSelectedZone();
+  }
+
+  _ZonePinContent _zonePinContentFromSnapshot(ZoneMapSnapshotPayload snapshot) {
+    return _ZonePinContent(
+      pointsOfInterest: snapshot.pointsOfInterest,
+      characters: snapshot.characters,
+      includesQuestAvailability: snapshot.includesQuestAvailability,
+    );
+  }
+
+  _ZoneBaseContent _zoneBaseContentFromSnapshot(
+    ZoneMapSnapshotPayload snapshot,
+  ) {
+    return _ZoneBaseContent(
+      treasureChests: snapshot.treasureChests,
+      healingFountains: snapshot.healingFountains,
+      shrines: snapshot.shrines,
+      resources: snapshot.resources,
+      scenarios: snapshot.scenarios,
+      expositions: snapshot.expositions,
+      monsters: snapshot.monsters,
+      challenges: snapshot.challenges,
+    );
+  }
+
+  ZoneMapSnapshotPayload _zoneMapSnapshotFromCachedContent(
+    _ZonePinContent pinContent,
+    _ZoneBaseContent baseContent,
+  ) {
+    return ZoneMapSnapshotPayload(
+      includesQuestAvailability: pinContent.includesQuestAvailability,
+      pointsOfInterest: pinContent.pointsOfInterest,
+      characters: pinContent.characters,
+      treasureChests: baseContent.treasureChests,
+      healingFountains: baseContent.healingFountains,
+      shrines: baseContent.shrines,
+      resources: baseContent.resources,
+      scenarios: baseContent.scenarios,
+      expositions: baseContent.expositions,
+      monsters: baseContent.monsters,
+      challenges: baseContent.challenges,
+    );
+  }
+
+  Future<ZoneMapSnapshotPayload> _fetchZoneMapSnapshot(
+    String zoneId, {
+    PoiService? svc,
+    bool forceRefresh = false,
+    String? traceId,
+  }) {
+    final normalizedZoneId = zoneId.trim();
+    if (!forceRefresh) {
+      final cachedBase = _zoneBaseContentCache[normalizedZoneId];
+      final cachedPins = _zonePinContentCache[normalizedZoneId];
+      if (cachedBase != null &&
+          cachedBase.isFresh &&
+          cachedPins != null &&
+          cachedPins.isFresh) {
+        cachedBase.touch();
+        cachedPins.touch();
+        if (traceId != null && traceId.isNotEmpty) {
+          _logZoneTrace(
+            traceId,
+            'zone snapshot cache hit zone=$normalizedZoneId '
+            'includesQuestAvailability=${cachedPins.content.includesQuestAvailability}',
+          );
+        }
+        if (!cachedPins.content.includesQuestAvailability) {
+          unawaited(_warmZoneQuestAvailabilityOverlay(normalizedZoneId));
+        }
+        return Future<ZoneMapSnapshotPayload>.value(
+          _zoneMapSnapshotFromCachedContent(
+            cachedPins.content,
+            cachedBase.content,
+          ),
+        );
+      }
+    }
+
+    final inFlight = _zoneMapSnapshotRequests[normalizedZoneId];
+    if (inFlight != null) return inFlight;
+
+    final service = svc ?? context.read<PoiService>();
+    final request = () async {
+      try {
+        if (traceId != null && traceId.isNotEmpty) {
+          _logZoneTrace(
+            traceId,
+            'zone snapshot request start zone=$normalizedZoneId forceRefresh=$forceRefresh',
+          );
+        }
+        final snapshot = await service.getZoneMapSnapshot(
+          normalizedZoneId,
+          traceId: traceId,
+        );
+        _storeZonePinContent(
+          normalizedZoneId,
+          _zonePinContentFromSnapshot(snapshot),
+        );
+        _storeZoneBaseContent(
+          normalizedZoneId,
+          _zoneBaseContentFromSnapshot(snapshot),
+        );
+        if (!snapshot.includesQuestAvailability) {
+          unawaited(_warmZoneQuestAvailabilityOverlay(normalizedZoneId));
+        }
+        return snapshot;
+      } finally {
+        _zoneMapSnapshotRequests.remove(normalizedZoneId);
+      }
+    }();
+
+    _zoneMapSnapshotRequests[normalizedZoneId] = request;
+    return request;
   }
 
   void _scheduleZoneBaseContentWarmup({bool immediate = false}) {
@@ -6760,6 +7441,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                       item.id == updatedFountain.id ? updatedFountain : item,
                 )
                 .toList(growable: false),
+            shrines: cached.content.shrines,
             resources: cached.content.resources,
             scenarios: cached.content.scenarios,
             expositions: cached.content.expositions,
@@ -6776,6 +7458,52 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     setState(() {
       _healingFountains = _healingFountains
           .map((item) => item.id == updatedFountain.id ? updatedFountain : item)
+          .toList(growable: false);
+    });
+  }
+
+  Shrine? _shrineById(String id) {
+    for (final shrine in _shrines) {
+      if (shrine.id == id) return shrine;
+    }
+    return null;
+  }
+
+  void _syncShrineState(Shrine updatedShrine) {
+    final normalizedZoneId = updatedShrine.zoneId.trim();
+    final cached = normalizedZoneId.isEmpty
+        ? null
+        : _zoneBaseContentCache[normalizedZoneId];
+    if (cached != null) {
+      final hasMatch = cached.content.shrines.any(
+        (item) => item.id == updatedShrine.id,
+      );
+      if (hasMatch) {
+        _zoneBaseContentCache[normalizedZoneId] = _ZoneBaseContentCacheEntry(
+          content: _ZoneBaseContent(
+            treasureChests: cached.content.treasureChests,
+            healingFountains: cached.content.healingFountains,
+            shrines: cached.content.shrines
+                .map(
+                  (item) => item.id == updatedShrine.id ? updatedShrine : item,
+                )
+                .toList(growable: false),
+            resources: cached.content.resources,
+            scenarios: cached.content.scenarios,
+            expositions: cached.content.expositions,
+            monsters: cached.content.monsters,
+            challenges: cached.content.challenges,
+          ),
+          fetchedAt: cached.fetchedAt,
+          lastAccessedAt: cached.lastAccessedAt,
+        );
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _shrines = _shrines
+          .map((item) => item.id == updatedShrine.id ? updatedShrine : item)
           .toList(growable: false);
     });
   }
@@ -6849,16 +7577,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return earthRadiusMeters * c;
   }
 
-  Future<void> _loadScenarioMysteryThumbnail(MapLibreMapController c) async {
+  Future<Uint8List?> _loadCachedThumbnail(String? imageUrl) async {
+    final url = imageUrl?.trim() ?? '';
+    if (url.isEmpty) return null;
+    try {
+      return await loadCachedPoiThumbnail(url);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Uint8List?> _loadFirstCachedThumbnail(
+    Iterable<String?> imageUrls,
+  ) async {
+    for (final imageUrl in imageUrls) {
+      final bytes = await _loadCachedThumbnail(imageUrl);
+      if (bytes != null) return bytes;
+    }
+    return null;
+  }
+
+  Future<void> _loadScenarioMysteryThumbnail(
+    MapLibreMapController c, {
+    bool allowNetwork = true,
+  }) async {
+    _scenarioMysteryThumbnailBytes ??= await _loadFirstCachedThumbnail([
+      _scenarioMysteryImageUrl,
+      _legacyMysteryImageUrl,
+    ]);
     if (_scenarioMysteryThumbnailBytes == null) {
-      try {
-        _scenarioMysteryThumbnailBytes = await loadPoiThumbnail(
-          _scenarioMysteryImageUrl,
+      if (allowNetwork) {
+        try {
+          _scenarioMysteryThumbnailBytes = await loadPoiThumbnail(
+            _scenarioMysteryImageUrl,
+          );
+        } catch (_) {}
+        _scenarioMysteryThumbnailBytes ??= await loadPoiThumbnail(
+          _legacyMysteryImageUrl,
         );
-      } catch (_) {}
-      _scenarioMysteryThumbnailBytes ??= await loadPoiThumbnail(
-        _legacyMysteryImageUrl,
-      );
+      }
     }
     if (_scenarioMysteryThumbnailBytes != null &&
         !_scenarioMysteryThumbnailAdded) {
@@ -6872,10 +7629,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
-  Future<void> _refreshScenarioSymbols() {
+  Future<void> _refreshScenarioSymbols({bool preferImages = true}) {
     _scenarioRefreshSequence = _scenarioRefreshSequence.then((_) async {
       try {
-        await _refreshScenarioSymbolsNow();
+        await _refreshScenarioSymbolsNow(preferImages: preferImages);
       } catch (e, st) {
         debugPrint('SinglePlayer: _refreshScenarioSymbols error: $e');
         debugPrint('SinglePlayer: _refreshScenarioSymbols stack: $st');
@@ -6884,10 +7641,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _scenarioRefreshSequence;
   }
 
-  Future<void> _refreshScenarioSymbolsNow() async {
+  Future<void> _refreshScenarioSymbolsNow({bool preferImages = true}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    await _loadScenarioMysteryThumbnail(c);
+    await _loadScenarioMysteryThumbnail(c, allowNetwork: preferImages);
     final visibleScenarios = _shouldSuppressNormalMapPinsForTutorial
         ? _scenarios
               .where((scenario) => _isTutorialFocusedScenarioId(scenario.id))
@@ -6991,6 +7748,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
       if (canUseImages) {
         if (needsRefresh) {
+          Symbol? addedSymbol;
+          try {
+            addedSymbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(scenario.latitude, scenario.longitude),
+                iconImage: 'scenario_mystery_thumbnail_$_mapThumbnailVersion',
+                iconSize: 0.74,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'scenario', 'id': scenario.id},
+            );
+          } catch (_) {}
+          if (addedSymbol == null) {
+            continue;
+          }
           if (existingSymbol != null) {
             _setQuestPoiHighlight(existingSymbol, false);
             try {
@@ -7007,22 +7782,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             _scenarioCircles.remove(existingCircle);
             _scenarioCircleById.remove(scenario.id);
           }
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(scenario.latitude, scenario.longitude),
-              iconImage: 'scenario_mystery_thumbnail_$_mapThumbnailVersion',
-              iconSize: 0.74,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-            ),
-            {'type': 'scenario', 'id': scenario.id},
-          );
           if (!mounted) return;
-          _scenarioSymbols.add(symbol);
-          _scenarioSymbolById[scenario.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+          _scenarioSymbols.add(addedSymbol);
+          _scenarioSymbolById[scenario.id] = addedSymbol;
+          _setQuestPoiHighlight(addedSymbol, shouldAnimateQuest);
           _scenarioCircleMystery[scenario.id] = mystery;
           _scenarioQuestObjective[scenario.id] = shouldAnimateQuest;
         } else {
@@ -7074,19 +7837,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await _applyMapMarkerIsolationIfNeeded();
   }
 
-  Future<void> _loadExpositionMysteryThumbnail(MapLibreMapController c) async {
+  Future<void> _loadExpositionMysteryThumbnail(
+    MapLibreMapController c, {
+    bool allowNetwork = true,
+  }) async {
+    _expositionMysteryThumbnailBytes ??= await _loadFirstCachedThumbnail([
+      _expositionMapIconImageUrl,
+      _scenarioMysteryImageUrl,
+      _legacyMysteryImageUrl,
+    ]);
     if (_expositionMysteryThumbnailBytes == null) {
-      try {
-        _expositionMysteryThumbnailBytes = await loadPoiThumbnail(
-          _expositionMapIconImageUrl,
+      if (allowNetwork) {
+        try {
+          _expositionMysteryThumbnailBytes = await loadPoiThumbnail(
+            _expositionMapIconImageUrl,
+          );
+        } catch (_) {}
+        _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
+          _scenarioMysteryImageUrl,
         );
-      } catch (_) {}
-      _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
-        _scenarioMysteryImageUrl,
-      );
-      _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
-        _legacyMysteryImageUrl,
-      );
+        _expositionMysteryThumbnailBytes ??= await loadPoiThumbnail(
+          _legacyMysteryImageUrl,
+        );
+      }
     }
     if (_expositionMysteryThumbnailBytes != null &&
         !_expositionMysteryThumbnailAdded) {
@@ -7100,10 +7873,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
-  Future<void> _refreshExpositionSymbols() {
+  Future<void> _refreshExpositionSymbols({bool preferImages = true}) {
     _expositionRefreshSequence = _expositionRefreshSequence.then((_) async {
       try {
-        await _refreshExpositionSymbolsNow();
+        await _refreshExpositionSymbolsNow(preferImages: preferImages);
       } catch (e, st) {
         debugPrint('SinglePlayer: _refreshExpositionSymbols error: $e');
         debugPrint('SinglePlayer: _refreshExpositionSymbols stack: $st');
@@ -7112,10 +7885,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _expositionRefreshSequence;
   }
 
-  Future<void> _refreshExpositionSymbolsNow() async {
+  Future<void> _refreshExpositionSymbolsNow({bool preferImages = true}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    await _loadExpositionMysteryThumbnail(c);
+    await _loadExpositionMysteryThumbnail(c, allowNetwork: preferImages);
     final visibleExpositions = _shouldSuppressNormalMapPinsForTutorial
         ? const <Exposition>[]
         : _expositions
@@ -7209,6 +7982,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
       if (canUseImages) {
         if (needsRefresh) {
+          Symbol? addedSymbol;
+          try {
+            addedSymbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(exposition.latitude, exposition.longitude),
+                iconImage: 'exposition_mystery_thumbnail_$_mapThumbnailVersion',
+                iconSize: 0.74,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'exposition', 'id': exposition.id},
+            );
+          } catch (_) {}
+          if (addedSymbol == null) {
+            continue;
+          }
           if (existingSymbol != null) {
             _setQuestPoiHighlight(existingSymbol, false);
             try {
@@ -7225,23 +8016,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             _expositionCircles.remove(existingCircle);
             _expositionCircleById.remove(exposition.id);
           }
-          const imageId = 'exposition_mystery_thumbnail_$_mapThumbnailVersion';
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(exposition.latitude, exposition.longitude),
-              iconImage: imageId,
-              iconSize: 0.74,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-            ),
-            {'type': 'exposition', 'id': exposition.id},
-          );
           if (!mounted) return;
-          _expositionSymbols.add(symbol);
-          _expositionSymbolById[exposition.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+          _expositionSymbols.add(addedSymbol);
+          _expositionSymbolById[exposition.id] = addedSymbol;
+          _setQuestPoiHighlight(addedSymbol, shouldAnimateQuest);
           _expositionQuestObjective[exposition.id] = shouldAnimateQuest;
         } else {
           _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
@@ -7290,26 +8068,36 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await _applyMapMarkerIsolationIfNeeded();
   }
 
-  Future<void> _loadMonsterMysteryThumbnail(MapLibreMapController c) async {
+  Future<void> _loadMonsterMysteryThumbnail(
+    MapLibreMapController c, {
+    bool allowNetwork = true,
+  }) async {
     for (final encounterType in const ['monster', 'boss', 'raid']) {
       final imageTypeId = _monsterMysteryImageIdForEncounterType(encounterType);
-      if (!_monsterMysteryThumbnailBytesByType.containsKey(imageTypeId)) {
-        Uint8List? bytes;
-        try {
-          bytes = await loadPoiThumbnail(
-            _monsterMysteryImageUrlForEncounterType(encounterType),
-          );
-        } catch (_) {}
-        bytes ??= await loadPoiThumbnail(_legacyMysteryImageUrl);
-        _monsterMysteryThumbnailBytesByType[imageTypeId] = bytes;
+      var bytes = _monsterMysteryThumbnailBytesByType[imageTypeId];
+      if (bytes == null) {
+        bytes = await _loadFirstCachedThumbnail([
+          _monsterMysteryImageUrlForEncounterType(encounterType),
+          _legacyMysteryImageUrl,
+        ]);
+        if (bytes == null && allowNetwork) {
+          try {
+            bytes = await loadPoiThumbnail(
+              _monsterMysteryImageUrlForEncounterType(encounterType),
+            );
+          } catch (_) {}
+          bytes ??= await loadPoiThumbnail(_legacyMysteryImageUrl);
+        }
+        if (bytes != null) {
+          _monsterMysteryThumbnailBytesByType[imageTypeId] = bytes;
+        }
       }
-      final mysteryBytes = _monsterMysteryThumbnailBytesByType[imageTypeId];
-      if (mysteryBytes != null &&
+      if (bytes != null &&
           !_monsterMysteryThumbnailTypesAdded.contains(imageTypeId)) {
         try {
           await c.addImage(
             'monster_mystery_thumbnail_${imageTypeId}_$_mapThumbnailVersion',
-            mysteryBytes,
+            bytes,
           );
           _monsterMysteryThumbnailTypesAdded.add(imageTypeId);
         } catch (_) {}
@@ -7317,10 +8105,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
   }
 
-  Future<void> _refreshMonsterSymbols() {
+  Future<void> _refreshMonsterSymbols({bool preferImages = true}) {
     _monsterRefreshSequence = _monsterRefreshSequence.then((_) async {
       try {
-        await _refreshMonsterSymbolsNow();
+        await _refreshMonsterSymbolsNow(preferImages: preferImages);
       } catch (e, st) {
         debugPrint('SinglePlayer: _refreshMonsterSymbols error: $e');
         debugPrint('SinglePlayer: _refreshMonsterSymbols stack: $st');
@@ -7329,10 +8117,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _monsterRefreshSequence;
   }
 
-  Future<void> _refreshMonsterSymbolsNow() async {
+  Future<void> _refreshMonsterSymbolsNow({bool preferImages = true}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    await _loadMonsterMysteryThumbnail(c);
+    await _loadMonsterMysteryThumbnail(c, allowNetwork: preferImages);
     final visibleMonsters = _shouldSuppressNormalMapPinsForTutorial
         ? _monsters
               .where(
@@ -7441,48 +8229,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             ? monster.thumbnailUrl
             : monster.imageUrl;
         if (sourceUrl.isNotEmpty) {
-          try {
-            final imageBytes = await loadPoiThumbnail(sourceUrl);
-            if (imageBytes != null) {
-              symbolImageId = 'monster_${monster.id}_$_mapThumbnailVersion';
-              try {
-                await c.addImage(symbolImageId, imageBytes);
-              } catch (_) {}
-            }
-          } catch (_) {}
+          Uint8List? imageBytes = await _loadCachedThumbnail(sourceUrl);
+          if (imageBytes == null && preferImages) {
+            try {
+              imageBytes = await loadPoiThumbnail(sourceUrl);
+            } catch (_) {}
+          }
+          if (imageBytes != null) {
+            symbolImageId = 'monster_${monster.id}_$_mapThumbnailVersion';
+            try {
+              await c.addImage(symbolImageId, imageBytes);
+            } catch (_) {}
+          }
         }
       }
 
       if (symbolImageId != null) {
-        final existingCircle = _monsterCircleById[monster.id];
-        if (existingCircle != null) {
-          _setQuestCircleHighlight(existingCircle, false);
-          try {
-            await c.removeCircle(existingCircle);
-          } catch (_) {}
-          _monsterCircles.remove(existingCircle);
-          _monsterCircleById.remove(monster.id);
-        }
-
         final existingSymbol = _monsterSymbolById[monster.id];
+        var symbolRendered = false;
         if (existingSymbol == null) {
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(monster.latitude, monster.longitude),
-              iconImage: symbolImageId,
-              iconSize: 0.78,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-              zIndex: shouldShowQuestState ? 4 : 2,
-            ),
-            {'type': 'monster', 'id': monster.id},
-          );
-          if (!mounted) return;
-          _monsterSymbols.add(symbol);
-          _monsterSymbolById[monster.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+          try {
+            final symbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(monster.latitude, monster.longitude),
+                iconImage: symbolImageId,
+                iconSize: 0.78,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+                zIndex: shouldShowQuestState ? 4 : 2,
+              ),
+              {'type': 'monster', 'id': monster.id},
+            );
+            if (!mounted) return;
+            _monsterSymbols.add(symbol);
+            _monsterSymbolById[monster.id] = symbol;
+            _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+            symbolRendered = true;
+          } catch (_) {}
         } else {
           try {
             await c.updateSymbol(
@@ -7497,9 +8282,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               ),
             );
             _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
+            symbolRendered = true;
           } catch (_) {}
         }
-        continue;
+        if (symbolRendered) {
+          final existingCircle = _monsterCircleById[monster.id];
+          if (existingCircle != null) {
+            _setQuestCircleHighlight(existingCircle, false);
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _monsterCircles.remove(existingCircle);
+            _monsterCircleById.remove(monster.id);
+          }
+          continue;
+        }
       }
 
       final existingSymbol = _monsterSymbolById[monster.id];
@@ -7670,16 +8467,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _trackedQuestTurnInCharacterIds(questLog).contains(characterId);
   }
 
-  Future<void> _loadChallengeMysteryThumbnail(MapLibreMapController c) async {
+  Future<void> _loadChallengeMysteryThumbnail(
+    MapLibreMapController c, {
+    bool allowNetwork = true,
+  }) async {
+    _challengeMysteryThumbnailBytes ??= await _loadFirstCachedThumbnail([
+      _challengeMysteryImageUrl,
+      _legacyMysteryImageUrl,
+    ]);
     if (_challengeMysteryThumbnailBytes == null) {
-      try {
-        _challengeMysteryThumbnailBytes = await loadPoiThumbnail(
-          _challengeMysteryImageUrl,
+      if (allowNetwork) {
+        try {
+          _challengeMysteryThumbnailBytes = await loadPoiThumbnail(
+            _challengeMysteryImageUrl,
+          );
+        } catch (_) {}
+        _challengeMysteryThumbnailBytes ??= await loadPoiThumbnail(
+          _legacyMysteryImageUrl,
         );
-      } catch (_) {}
-      _challengeMysteryThumbnailBytes ??= await loadPoiThumbnail(
-        _legacyMysteryImageUrl,
-      );
+      }
     }
     if (_challengeMysteryThumbnailBytes != null &&
         !_challengeMysteryThumbnailAdded) {
@@ -7695,14 +8501,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   Future<String?> _ensureChallengeVisibleThumbnail(
     MapLibreMapController c,
-    Challenge challenge,
-  ) async {
+    Challenge challenge, {
+    bool allowNetwork = true,
+  }) async {
     final source = challenge.thumbnailUrl.isNotEmpty
         ? challenge.thumbnailUrl
         : challenge.imageUrl;
     if (source.isEmpty) return null;
 
-    final imageBytes = await loadPoiThumbnail(source);
+    Uint8List? imageBytes = await _loadCachedThumbnail(source);
+    if (imageBytes == null && allowNetwork) {
+      imageBytes = await loadPoiThumbnail(source);
+    }
     if (imageBytes == null) return null;
 
     final imageId = 'challenge_${challenge.id}_$_mapThumbnailVersion';
@@ -7712,10 +8522,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return imageId;
   }
 
-  Future<void> _refreshChallengeSymbols() {
+  Future<void> _refreshChallengeSymbols({bool preferImages = true}) {
     _challengeRefreshSequence = _challengeRefreshSequence.then((_) async {
       try {
-        await _refreshChallengeSymbolsNow();
+        await _refreshChallengeSymbolsNow(preferImages: preferImages);
       } catch (e, st) {
         debugPrint('SinglePlayer: _refreshChallengeSymbols error: $e');
         debugPrint('SinglePlayer: _refreshChallengeSymbols stack: $st');
@@ -7724,10 +8534,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _challengeRefreshSequence;
   }
 
-  Future<void> _refreshChallengeSymbolsNow() async {
+  Future<void> _refreshChallengeSymbolsNow({bool preferImages = true}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    await _loadChallengeMysteryThumbnail(c);
+    await _loadChallengeMysteryThumbnail(c, allowNetwork: preferImages);
     final visibleChallenges = _shouldSuppressNormalMapPinsForTutorial
         ? const <Challenge>[]
         : _challenges;
@@ -7828,39 +8638,37 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         }
       } else {
         try {
-          symbolImageId = await _ensureChallengeVisibleThumbnail(c, challenge);
+          symbolImageId = await _ensureChallengeVisibleThumbnail(
+            c,
+            challenge,
+            allowNetwork: preferImages,
+          );
         } catch (_) {}
       }
 
       if (symbolImageId != null) {
-        final existingCircle = _challengeCircleById[challenge.id];
-        if (existingCircle != null) {
-          _setQuestCircleHighlight(existingCircle, false);
-          try {
-            await c.removeCircle(existingCircle);
-          } catch (_) {}
-          _challengeCircles.remove(existingCircle);
-          _challengeCircleById.remove(challenge.id);
-        }
-
         final existingSymbol = _challengeSymbolById[challenge.id];
+        var symbolRendered = false;
         if (existingSymbol == null) {
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(challenge.latitude, challenge.longitude),
-              iconImage: symbolImageId,
-              iconSize: 0.74,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-            ),
-            {'type': 'challenge', 'id': challenge.id},
-          );
-          if (!mounted) return;
-          _challengeSymbols.add(symbol);
-          _challengeSymbolById[challenge.id] = symbol;
-          _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+          try {
+            final symbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(challenge.latitude, challenge.longitude),
+                iconImage: symbolImageId,
+                iconSize: 0.74,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'challenge', 'id': challenge.id},
+            );
+            if (!mounted) return;
+            _challengeSymbols.add(symbol);
+            _challengeSymbolById[challenge.id] = symbol;
+            _setQuestPoiHighlight(symbol, shouldAnimateQuest);
+            symbolRendered = true;
+          } catch (_) {}
         } else {
           try {
             await c.updateSymbol(
@@ -7874,9 +8682,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               ),
             );
             _setQuestPoiHighlight(existingSymbol, shouldAnimateQuest);
+            symbolRendered = true;
           } catch (_) {}
         }
-        continue;
+        if (symbolRendered) {
+          final existingCircle = _challengeCircleById[challenge.id];
+          if (existingCircle != null) {
+            _setQuestCircleHighlight(existingCircle, false);
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _challengeCircles.remove(existingCircle);
+            _challengeCircleById.remove(challenge.id);
+          }
+          continue;
+        }
       }
 
       final existingSymbol = _challengeSymbolById[challenge.id];
@@ -8171,6 +8991,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         findById(_chestCircles) ??
         findById(_healingFountainSymbols) ??
         findById(_healingFountainCircles) ??
+        findById(_shrineSymbols) ??
+        findById(_shrineCircles) ??
         findById(_resourceSymbols) ??
         findById(_resourceCircles) ??
         findById(_baseSymbols) ??
@@ -8247,14 +9069,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   bool _isZoneScopedContentVisibleForSelectedZone(String zoneId) {
     final normalizedZoneId = zoneId.trim();
-    if (normalizedZoneId.isEmpty) return false;
-    final selectedZoneId =
-        context.read<ZoneProvider>().selectedZone?.id.trim() ?? '';
-    if (selectedZoneId.isNotEmpty) {
-      return selectedZoneId == normalizedZoneId;
-    }
-    if (_zones.isEmpty) return false;
-    return _zones.first.id == normalizedZoneId;
+    return normalizedZoneId.isNotEmpty &&
+        _loadedZoneContentIds.contains(normalizedZoneId);
   }
 
   bool _poiMatchesActiveTagFilter(PointOfInterest poi) {
@@ -8327,6 +9143,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         final fountain = _healingFountainById(id);
         return fountain != null &&
             _isZoneScopedContentVisibleForSelectedZone(fountain.zoneId);
+      case 'shrine':
+        final shrine = _shrineById(id);
+        return shrine != null &&
+            _isZoneScopedContentVisibleForSelectedZone(shrine.zoneId);
       case 'resource':
         final resource = _resourceById(id);
         return resource != null &&
@@ -8367,6 +9187,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       case 'character':
       case 'chest':
       case 'healingFountain':
+      case 'shrine':
       case 'resource':
       case 'base':
       case 'scenario':
@@ -8463,6 +9284,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     addSymbolSeeds(_characterSymbols);
     addSymbolSeeds(_chestSymbols);
     addSymbolSeeds(_healingFountainSymbols);
+    addSymbolSeeds(_shrineSymbols);
     addSymbolSeeds(_resourceSymbols);
     addSymbolSeeds(_baseSymbols);
     addSymbolSeeds(_scenarioSymbols);
@@ -8472,6 +9294,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     addCircleSeeds(_chestCircles);
     addCircleSeeds(_healingFountainCircles);
+    addCircleSeeds(_shrineCircles);
     addCircleSeeds(_resourceCircles);
     addCircleSeeds(_baseCircles);
     addCircleSeeds(_scenarioCircles);
@@ -8732,6 +9555,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               ? fountain.name.trim()
               : 'Healing Fountain',
           imageUrl: _healingFountainImageUrl(fountain),
+          distance: distance,
+        );
+      case 'shrine':
+        final shrine = _shrineById(id);
+        if (shrine == null) return null;
+        return _MapPinSelectionCandidate(
+          type: type,
+          id: id,
+          title: shrine.name.trim().isNotEmpty ? shrine.name.trim() : 'Shrine',
+          imageUrl: _shrineImageUrl(shrine),
           distance: distance,
         );
       case 'resource':
@@ -9051,6 +9884,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       }
       return;
     }
+    if (type == 'shrine') {
+      final shrine = _shrineById(idStr);
+      if (shrine != null) {
+        _showShrinePanel(shrine);
+      }
+      return;
+    }
     if (type == 'resource') {
       final resource = _resourceById(idStr);
       if (resource != null) {
@@ -9342,6 +10182,176 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
+  void _upsertScenarioDetail(Scenario scenario) {
+    final updated = [
+      scenario,
+      ..._scenarios.where((item) => item.id != scenario.id),
+    ];
+    if (mounted) {
+      setState(() {
+        _scenarios = updated;
+      });
+      return;
+    }
+    _scenarios = updated;
+  }
+
+  void _upsertExpositionDetail(Exposition exposition) {
+    final updated = [
+      exposition,
+      ..._expositions.where((item) => item.id != exposition.id),
+    ];
+    if (mounted) {
+      setState(() {
+        _expositions = updated;
+      });
+      return;
+    }
+    _expositions = updated;
+  }
+
+  void _upsertMonsterEncounterDetail(MonsterEncounter encounter) {
+    final updated = [
+      encounter,
+      ..._monsters.where((item) => item.id != encounter.id),
+    ];
+    if (mounted) {
+      setState(() {
+        _monsters = updated;
+      });
+      return;
+    }
+    _monsters = updated;
+  }
+
+  void _upsertResourceDetail(ResourceNode resource) {
+    final updated = [
+      resource,
+      ..._resources.where((item) => item.id != resource.id),
+    ];
+    if (mounted) {
+      setState(() {
+        _resources = updated;
+      });
+      return;
+    }
+    _resources = updated;
+  }
+
+  Future<Scenario?> _resolveScenarioDetails(Scenario scenario) async {
+    final scenarioId = scenario.id.trim();
+    final current = _scenarioById(scenarioId) ?? scenario;
+    if (scenarioId.isEmpty || current.hasFullDetails) return current;
+
+    final inFlight = _scenarioDetailRequests[scenarioId];
+    if (inFlight != null) {
+      return await inFlight;
+    }
+
+    final poiService = context.read<PoiService>();
+    final request = () async {
+      try {
+        final detailed = await poiService.getScenarioById(scenarioId);
+        if (detailed == null) return current;
+        _upsertScenarioDetail(detailed);
+        return detailed;
+      } catch (_) {
+        return current;
+      } finally {
+        _scenarioDetailRequests.remove(scenarioId);
+      }
+    }();
+
+    _scenarioDetailRequests[scenarioId] = request;
+    return await request;
+  }
+
+  Future<Exposition?> _resolveExpositionDetails(Exposition exposition) async {
+    final expositionId = exposition.id.trim();
+    final current = _expositionById(expositionId) ?? exposition;
+    if (expositionId.isEmpty || current.hasFullDetails) return current;
+
+    final inFlight = _expositionDetailRequests[expositionId];
+    if (inFlight != null) {
+      return await inFlight;
+    }
+
+    final poiService = context.read<PoiService>();
+    final request = () async {
+      try {
+        final detailed = await poiService.getExpositionById(expositionId);
+        if (detailed == null) return current;
+        _upsertExpositionDetail(detailed);
+        return detailed;
+      } catch (_) {
+        return current;
+      } finally {
+        _expositionDetailRequests.remove(expositionId);
+      }
+    }();
+
+    _expositionDetailRequests[expositionId] = request;
+    return await request;
+  }
+
+  Future<MonsterEncounter?> _resolveMonsterEncounterDetails(
+    MonsterEncounter encounter,
+  ) async {
+    final encounterId = encounter.id.trim();
+    final current = _monsterById(encounterId) ?? encounter;
+    if (encounterId.isEmpty || current.hasFullDetails) return current;
+
+    final inFlight = _monsterDetailRequests[encounterId];
+    if (inFlight != null) {
+      return await inFlight;
+    }
+
+    final poiService = context.read<PoiService>();
+    final request = () async {
+      try {
+        final detailed = await poiService.getMonsterEncounterById(encounterId);
+        if (detailed == null) return current;
+        _upsertMonsterEncounterDetail(detailed);
+        return detailed;
+      } catch (_) {
+        return current;
+      } finally {
+        _monsterDetailRequests.remove(encounterId);
+      }
+    }();
+
+    _monsterDetailRequests[encounterId] = request;
+    return await request;
+  }
+
+  Future<ResourceNode?> _resolveResourceDetails(ResourceNode resource) async {
+    final resourceId = resource.id.trim();
+    final current = _resourceById(resourceId) ?? resource;
+    if (resourceId.isEmpty || current.hasFullDetails) return current;
+
+    final inFlight = _resourceDetailRequests[resourceId];
+    if (inFlight != null) {
+      return await inFlight;
+    }
+
+    final poiService = context.read<PoiService>();
+    final request = () async {
+      try {
+        final detailed = await poiService.getResourceById(resourceId);
+        if (detailed == null) return current;
+        _upsertResourceDetail(detailed);
+        return detailed;
+      } catch (_) {
+        return current;
+      } finally {
+        _resourceDetailRequests.remove(resourceId);
+      }
+    }();
+
+    _resourceDetailRequests[resourceId] = request;
+    return await request;
+  }
+
   Future<void> _showPointOfInterestPanel(
     PointOfInterest poi,
     bool hasDiscovered,
@@ -9509,12 +10519,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
+    final markerStopwatch = Stopwatch()..start();
     final suppressNormalPins = _shouldSuppressNormalMapPinsForTutorial;
     final deferPinReveal =
         !suppressNormalPins && _tutorialNormalPinsRevealInProgress;
     _pinBatchRevealInProgress = deferPinReveal;
     debugPrint(
-      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} fountains=${_healingFountains.length} resources=${_resources.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} fountains=${_healingFountains.length} shrines=${_shrines.length} resources=${_resources.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
     );
 
     try {
@@ -9598,6 +10609,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _healingFountainCircles.clear();
       }
       _healingFountainCircleById.clear();
+      if (_shrineSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_shrineSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _shrineSymbols.clear();
+      }
+      _shrineSymbolById.clear();
+      if (_shrineCircles.isNotEmpty) {
+        for (final circle in _shrineCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _shrineCircles.clear();
+      }
+      _shrineCircleById.clear();
       if (_resourceSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_resourceSymbols);
@@ -9761,6 +10790,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _pinBatchRevealInProgress = false;
         await _refreshTreasureChestSymbols();
         await _refreshHealingFountainSymbols();
+        await _refreshShrineSymbols();
         await _refreshResourceSymbols();
         await _refreshBaseSymbols();
         await _refreshScenarioSymbols();
@@ -9768,7 +10798,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
         _ensureQuestPoiPulseTimer();
-        debugPrint('SinglePlayer: _addPoiMarkers done (tutorial-suppressed)');
+        debugPrint(
+          'SinglePlayer: _addPoiMarkers done (tutorial-suppressed) '
+          'elapsedMs=${markerStopwatch.elapsedMilliseconds}',
+        );
         return;
       }
 
@@ -10065,20 +11098,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           _chestCircleOpened[tc.id] = tc.openedByUser == true;
         }
       }
-      await _refreshHealingFountainSymbols();
-      await _refreshResourceSymbols();
       await _refreshBaseSymbols();
-      await _refreshScenarioSymbols();
-      await _refreshExpositionSymbols();
-      await _refreshMonsterSymbols();
-      await _refreshChallengeSymbols();
-      if (_scenarioVisibilityRefreshPending) {
-        _scenarioVisibilityRefreshPending = false;
-        await _refreshScenarioSymbols();
-        await _refreshExpositionSymbols();
-        await _refreshMonsterSymbols();
-        await _refreshChallengeSymbols();
-      }
       if (deferPinReveal) {
         _pinBatchRevealInProgress = false;
         await _revealLoadedPins(c);
@@ -10088,10 +11108,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         setState(() => _addedMarkersWithEmptyDiscoveries = true);
       }
       await _applyMapMarkerIsolationIfNeeded();
-      debugPrint('SinglePlayer: _addPoiMarkers done');
+      _scheduleDeferredZoneMarkerHydration(markerGeneration);
+      debugPrint(
+        'SinglePlayer: _addPoiMarkers done elapsedMs=${markerStopwatch.elapsedMilliseconds}',
+      );
     } catch (e, st) {
       _pinBatchRevealInProgress = false;
-      debugPrint('SinglePlayer: _addPoiMarkers error: $e');
+      debugPrint(
+        'SinglePlayer: _addPoiMarkers error: $e elapsedMs=${markerStopwatch.elapsedMilliseconds}',
+      );
       debugPrint('SinglePlayer: _addPoiMarkers stack: $st');
       if (mounted) setState(() => _markersAdded = false);
     } finally {
@@ -10330,11 +11355,84 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return _PoiImageUpdateResult(update, imageId, imageBytes);
   }
 
+  void _scheduleDeferredZoneMarkerHydration(int markerGeneration) {
+    _deferredZoneMarkerHydrationGeneration = markerGeneration;
+    if (_deferredZoneMarkerHydrationScheduled) return;
+    _deferredZoneMarkerHydrationScheduled = true;
+    unawaited(_runDeferredZoneMarkerHydration());
+  }
+
+  Future<void> _runDeferredZoneMarkerHydration() async {
+    while (true) {
+      final generation = _deferredZoneMarkerHydrationGeneration;
+      final hydrationStopwatch = Stopwatch()..start();
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted ||
+          generation != _poiMarkerGeneration ||
+          !_styleLoaded ||
+          _mapController == null) {
+        if (generation == _deferredZoneMarkerHydrationGeneration) {
+          _deferredZoneMarkerHydrationScheduled = false;
+          return;
+        }
+        continue;
+      }
+
+      await _refreshHealingFountainSymbols(preferImages: false);
+      await _refreshShrineSymbols(preferImages: false);
+      await _refreshResourceSymbols(preferImages: false);
+      await _refreshScenarioSymbols(preferImages: false);
+      await _refreshExpositionSymbols(preferImages: false);
+      await _refreshMonsterSymbols(preferImages: false);
+      await _refreshChallengeSymbols(preferImages: false);
+      if (_scenarioVisibilityRefreshPending) {
+        _scenarioVisibilityRefreshPending = false;
+        await _refreshScenarioSymbols(preferImages: false);
+        await _refreshExpositionSymbols(preferImages: false);
+        await _refreshMonsterSymbols(preferImages: false);
+        await _refreshChallengeSymbols(preferImages: false);
+      }
+      if (!mounted ||
+          generation != _poiMarkerGeneration ||
+          !_styleLoaded ||
+          _mapController == null) {
+        if (generation == _deferredZoneMarkerHydrationGeneration) {
+          _deferredZoneMarkerHydrationScheduled = false;
+          return;
+        }
+        continue;
+      }
+
+      await _refreshHealingFountainSymbols();
+      await _refreshShrineSymbols();
+      await _refreshResourceSymbols();
+      await _refreshScenarioSymbols();
+      await _refreshExpositionSymbols();
+      await _refreshMonsterSymbols();
+      await _refreshChallengeSymbols();
+      if (_scenarioVisibilityRefreshPending) {
+        _scenarioVisibilityRefreshPending = false;
+        await _refreshScenarioSymbols();
+        await _refreshExpositionSymbols();
+        await _refreshMonsterSymbols();
+        await _refreshChallengeSymbols();
+      }
+
+      if (generation == _deferredZoneMarkerHydrationGeneration) {
+        debugPrint(
+          'SinglePlayer: deferred marker hydration generation=$generation '
+          'elapsedMs=${hydrationStopwatch.elapsedMilliseconds}',
+        );
+        _deferredZoneMarkerHydrationScheduled = false;
+        return;
+      }
+    }
+  }
+
   Future<void> _refreshTreasureChestSymbols() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
 
-    final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
     final visibleTreasureChests =
         (_shouldSuppressNormalMapPinsForTutorial
                 ? const <TreasureChest>[]
@@ -10342,9 +11440,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             .where(
               (t) =>
                   t.openedByUser != true &&
-                  (selectedZoneId == null ||
-                      selectedZoneId.isEmpty ||
-                      t.zoneId == selectedZoneId),
+                  _isZoneScopedContentVisibleForSelectedZone(t.zoneId),
             )
             .toList();
     final chestImageUrl = visibleTreasureChests.isNotEmpty
@@ -10513,7 +11609,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return thumbnail;
   }
 
-  Future<void> _refreshHealingFountainSymbols() async {
+  String _shrineImageUrl(Shrine shrine) {
+    final markerUrl = shrine.mapMarkerUrl.trim();
+    if (markerUrl.isNotEmpty) {
+      return markerUrl;
+    }
+    return _shrineDiscoveredImageUrl;
+  }
+
+  Future<void> _refreshHealingFountainSymbols({bool preferImages = true}) {
+    _healingFountainRefreshSequence = _healingFountainRefreshSequence.then((
+      _,
+    ) async {
+      try {
+        await _refreshHealingFountainSymbolsNow(preferImages: preferImages);
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshHealingFountainSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshHealingFountainSymbols stack: $st');
+      }
+    });
+    return _healingFountainRefreshSequence;
+  }
+
+  Future<void> _refreshHealingFountainSymbolsNow({
+    bool preferImages = true,
+  }) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
 
@@ -10553,43 +11673,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           ? (fountain.availableNow ? '#2ecc71' : '#7f8c8d')
           : '#3388ff';
       final imageSource = _healingFountainImageUrl(fountain);
-      Uint8List? imageBytes;
-      try {
-        imageBytes = await loadPoiThumbnail(imageSource);
-      } catch (_) {}
+      Uint8List? imageBytes = await _loadCachedThumbnail(imageSource);
+      if (imageBytes == null && preferImages) {
+        try {
+          imageBytes = await loadPoiThumbnail(imageSource);
+        } catch (_) {}
+      }
 
       if (imageBytes != null) {
         final imageKey = imageSource.hashCode.abs();
         final imageId =
             'healing_fountain_${fountain.id}_${imageKey}_$_mapThumbnailVersion';
         await _ensureMapImage(c, imageId, imageBytes);
-
-        final existingCircle = _healingFountainCircleById[fountain.id];
-        if (existingCircle != null) {
-          try {
-            await c.removeCircle(existingCircle);
-          } catch (_) {}
-          _healingFountainCircles.remove(existingCircle);
-          _healingFountainCircleById.remove(fountain.id);
-        }
-
         final existingSymbol = _healingFountainSymbolById[fountain.id];
+        var symbolRendered = false;
         if (existingSymbol == null) {
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(fountain.latitude, fountain.longitude),
-              iconImage: imageId,
-              iconSize: 0.8,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-            ),
-            {'type': 'healingFountain', 'id': fountain.id},
-          );
-          if (!mounted) return;
-          _healingFountainSymbols.add(symbol);
-          _healingFountainSymbolById[fountain.id] = symbol;
+          try {
+            final symbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(fountain.latitude, fountain.longitude),
+                iconImage: imageId,
+                iconSize: 0.8,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'healingFountain', 'id': fountain.id},
+            );
+            if (!mounted) return;
+            _healingFountainSymbols.add(symbol);
+            _healingFountainSymbolById[fountain.id] = symbol;
+            symbolRendered = true;
+          } catch (_) {}
         } else {
           try {
             await c.updateSymbol(
@@ -10602,9 +11718,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                 iconHaloWidth: 0.0,
               ),
             );
+            symbolRendered = true;
           } catch (_) {}
         }
-        continue;
+        if (symbolRendered) {
+          final existingCircle = _healingFountainCircleById[fountain.id];
+          if (existingCircle != null) {
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _healingFountainCircles.remove(existingCircle);
+            _healingFountainCircleById.remove(fountain.id);
+          }
+          continue;
+        }
       }
 
       final existingSymbol = _healingFountainSymbolById[fountain.id];
@@ -10648,7 +11775,167 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await _applyMapMarkerIsolationIfNeeded();
   }
 
-  Future<void> _refreshResourceSymbols() async {
+  Future<void> _refreshShrineSymbols({bool preferImages = true}) {
+    _shrineRefreshSequence = _shrineRefreshSequence.then((_) async {
+      try {
+        await _refreshShrineSymbolsNow(preferImages: preferImages);
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshShrineSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshShrineSymbols stack: $st');
+      }
+    });
+    return _shrineRefreshSequence;
+  }
+
+  Future<void> _refreshShrineSymbolsNow({bool preferImages = true}) async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    final visibleShrines = _shouldSuppressNormalMapPinsForTutorial
+        ? const <Shrine>[]
+        : _shrines;
+    final desiredIds = visibleShrines.map((shrine) => shrine.id).toSet();
+
+    for (final entry in _shrineSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _shrineSymbols.remove(entry.value);
+        _shrineSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _shrineCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _shrineCircles.remove(entry.value);
+        _shrineCircleById.remove(entry.key);
+      }
+    }
+
+    for (final shrine in visibleShrines) {
+      if (shrine.id.isEmpty) continue;
+      if (!shrine.latitude.isFinite || !shrine.longitude.isFinite) continue;
+      if (shrine.latitude == 0.0 && shrine.longitude == 0.0) continue;
+
+      final circleColor = shrine.availableNow ? '#a855f7' : '#7f8c8d';
+      final imageSource = _shrineImageUrl(shrine);
+      Uint8List? imageBytes = await _loadCachedThumbnail(imageSource);
+      if (imageBytes == null && preferImages) {
+        try {
+          imageBytes = await loadPoiThumbnail(imageSource);
+        } catch (_) {}
+      }
+
+      if (imageBytes != null) {
+        final imageKey = imageSource.hashCode.abs();
+        final imageId = 'shrine_${shrine.id}_${imageKey}_$_mapThumbnailVersion';
+        await _ensureMapImage(c, imageId, imageBytes);
+        final existingSymbol = _shrineSymbolById[shrine.id];
+        var symbolRendered = false;
+        if (existingSymbol == null) {
+          try {
+            final symbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(shrine.latitude, shrine.longitude),
+                iconImage: imageId,
+                iconSize: 0.8,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'shrine', 'id': shrine.id},
+            );
+            if (!mounted) return;
+            _shrineSymbols.add(symbol);
+            _shrineSymbolById[shrine.id] = symbol;
+            symbolRendered = true;
+          } catch (_) {}
+        } else {
+          try {
+            await c.updateSymbol(
+              existingSymbol,
+              SymbolOptions(
+                geometry: LatLng(shrine.latitude, shrine.longitude),
+                iconImage: imageId,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+              ),
+            );
+            symbolRendered = true;
+          } catch (_) {}
+        }
+        if (symbolRendered) {
+          final existingCircle = _shrineCircleById[shrine.id];
+          if (existingCircle != null) {
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _shrineCircles.remove(existingCircle);
+            _shrineCircleById.remove(shrine.id);
+          }
+          continue;
+        }
+      }
+
+      final existingSymbol = _shrineSymbolById[shrine.id];
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _shrineSymbols.remove(existingSymbol);
+        _shrineSymbolById.remove(shrine.id);
+      }
+
+      final existingCircle = _shrineCircleById[shrine.id];
+      if (existingCircle == null) {
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(shrine.latitude, shrine.longitude),
+            circleRadius: 20,
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
+            circleColor: circleColor,
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#ffffff',
+          ),
+          {'type': 'shrine', 'id': shrine.id},
+        );
+        if (!mounted) return;
+        _shrineCircles.add(circle);
+        _shrineCircleById[shrine.id] = circle;
+      } else {
+        try {
+          await c.updateCircle(
+            existingCircle,
+            CircleOptions(
+              geometry: LatLng(shrine.latitude, shrine.longitude),
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
+              circleColor: circleColor,
+            ),
+          );
+        } catch (_) {}
+      }
+    }
+    await _applyMapMarkerIsolationIfNeeded();
+  }
+
+  Future<void> _refreshResourceSymbols({bool preferImages = true}) {
+    _resourceRefreshSequence = _resourceRefreshSequence.then((_) async {
+      try {
+        await _refreshResourceSymbolsNow(preferImages: preferImages);
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshResourceSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshResourceSymbols stack: $st');
+      }
+    });
+    return _resourceRefreshSequence;
+  }
+
+  Future<void> _refreshResourceSymbolsNow({bool preferImages = true}) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
 
@@ -10682,8 +11969,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       if (resource.latitude == 0.0 && resource.longitude == 0.0) continue;
 
       final imageSource = _resourceImageUrl(resource);
-      Uint8List? imageBytes;
-      if (imageSource.isNotEmpty) {
+      Uint8List? imageBytes = await _loadCachedThumbnail(imageSource);
+      if (imageBytes == null && preferImages && imageSource.isNotEmpty) {
         try {
           imageBytes = await loadPoiThumbnail(imageSource);
         } catch (_) {}
@@ -10694,33 +11981,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         final imageId =
             'resource_${resource.id}_${imageKey}_$_mapThumbnailVersion';
         await _ensureMapImage(c, imageId, imageBytes);
-
-        final existingCircle = _resourceCircleById[resource.id];
-        if (existingCircle != null) {
-          try {
-            await c.removeCircle(existingCircle);
-          } catch (_) {}
-          _resourceCircles.remove(existingCircle);
-          _resourceCircleById.remove(resource.id);
-        }
-
         final existingSymbol = _resourceSymbolById[resource.id];
+        var symbolRendered = false;
         if (existingSymbol == null) {
-          final symbol = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(resource.latitude, resource.longitude),
-              iconImage: imageId,
-              iconSize: 0.72,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: _transparentMapHaloColor,
-              iconHaloWidth: 0.0,
-              iconAnchor: 'center',
-            ),
-            {'type': 'resource', 'id': resource.id},
-          );
-          if (!mounted) return;
-          _resourceSymbols.add(symbol);
-          _resourceSymbolById[resource.id] = symbol;
+          try {
+            final symbol = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(resource.latitude, resource.longitude),
+                iconImage: imageId,
+                iconSize: 0.72,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: _transparentMapHaloColor,
+                iconHaloWidth: 0.0,
+                iconAnchor: 'center',
+              ),
+              {'type': 'resource', 'id': resource.id},
+            );
+            if (!mounted) return;
+            _resourceSymbols.add(symbol);
+            _resourceSymbolById[resource.id] = symbol;
+            symbolRendered = true;
+          } catch (_) {}
         } else {
           try {
             await c.updateSymbol(
@@ -10734,9 +12015,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                 iconHaloWidth: 0.0,
               ),
             );
+            symbolRendered = true;
           } catch (_) {}
         }
-        continue;
+        if (symbolRendered) {
+          final existingCircle = _resourceCircleById[resource.id];
+          if (existingCircle != null) {
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _resourceCircles.remove(existingCircle);
+            _resourceCircleById.remove(resource.id);
+          }
+          continue;
+        }
       }
 
       final existingSymbol = _resourceSymbolById[resource.id];
@@ -10932,7 +12224,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       }
       return list;
     }
-    // boundary is a WKT string, not usable directly - rely on points/boundaryCoords
+    // Zone.ring already falls back to boundary WKT when expanded geometry is absent.
     return [];
   }
 
@@ -10960,13 +12252,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return context.read<ZoneProvider>().selectedZone;
   }
 
+  bool _isZoneContentLoaded(String zoneId) {
+    final normalizedZoneId = zoneId.trim();
+    return normalizedZoneId.isNotEmpty &&
+        _loadedZoneContentIds.contains(normalizedZoneId);
+  }
+
   bool _isPoiInSelectedZone(PointOfInterest poi) {
-    final selectedZone = _effectiveSelectedZone();
-    if (selectedZone == null) return false;
     final lat = double.tryParse(poi.lat);
     final lng = double.tryParse(poi.lng);
     if (lat == null || lng == null) return false;
-    return _isPointInZone(selectedZone, lat, lng);
+    return _isCoordinateInLoadedZones(lat, lng);
+  }
+
+  bool _isCoordinateInLoadedZones(double lat, double lng) {
+    if (_loadedZoneContentIds.isEmpty) {
+      return false;
+    }
+    final zoneProvider = context.read<ZoneProvider>();
+    for (final zoneId in _loadedZoneContentIds) {
+      final zone = zoneProvider.zoneById(zoneId);
+      if (zone == null) continue;
+      if (_isPointInZone(zone, lat, lng)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   double _poiMarkerOpacity(
@@ -11553,6 +12864,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
   Future<void> _revealLoadedPins(MapLibreMapController c) async {
     if (!_styleLoaded || !_markersAdded) return;
+    final stopwatch = Stopwatch()..start();
     await _updateNormalPinOpacities(
       c,
       1.0,
@@ -11561,6 +12873,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       ),
       discoveries: context.read<DiscoveriesProvider>(),
       mapContentPoiIds: _buildPoiIdsWithMapContent(),
+    );
+    debugPrint(
+      'SinglePlayer: revealLoadedPins done elapsedMs=${stopwatch.elapsedMilliseconds} '
+      'poi=${_poiSymbolById.length} chars=${_characterSymbols.length} '
+      'chests=${_chestSymbolById.length}/${_chestCircleById.length} '
+      'fountains=${_healingFountainSymbolById.length}/${_healingFountainCircleById.length} '
+      'shrines=${_shrineSymbolById.length}/${_shrineCircleById.length} '
+      'resources=${_resourceSymbolById.length}/${_resourceCircleById.length} '
+      'bases=${_baseSymbolById.length}/${_baseCircleById.length} '
+      'scenarios=${_scenarioSymbolById.length}/${_scenarioCircleById.length} '
+      'expositions=${_expositionSymbolById.length}/${_expositionCircleById.length} '
+      'monsters=${_monsterSymbolById.length}/${_monsterCircleById.length} '
+      'challenges=${_challengeSymbolById.length}/${_challengeCircleById.length}',
     );
   }
 
@@ -11934,13 +13259,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         .toList();
     if (points.isEmpty) return const <LatLng>[];
 
-    final selectedZone = _effectiveSelectedZone();
-    if (selectedZone == null) return const <LatLng>[];
-
     return points
         .where(
           (point) =>
-              _isPointInZone(selectedZone, point.latitude, point.longitude),
+              _isCoordinateInLoadedZones(point.latitude, point.longitude),
         )
         .toList();
   }
@@ -12127,7 +13449,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
 
     Future<void> updateSymbolOpacity(Iterable<Symbol> symbols) async {
-      for (final symbol in symbols) {
+      for (final symbol in symbols.toList()) {
         try {
           await c.updateSymbol(symbol, SymbolOptions(iconOpacity: progress));
         } catch (_) {}
@@ -12135,7 +13457,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
 
     Future<void> updateCircleOpacity(Map<String, Circle> circles) async {
-      for (final circle in circles.values) {
+      for (final circle in circles.values.toList()) {
         try {
           await c.updateCircle(circle, CircleOptions(circleOpacity: progress));
         } catch (_) {}
@@ -12147,6 +13469,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await updateCircleOpacity(_chestCircleById);
     await updateSymbolOpacity(_healingFountainSymbolById.values);
     await updateCircleOpacity(_healingFountainCircleById);
+    await updateSymbolOpacity(_shrineSymbolById.values);
+    await updateCircleOpacity(_shrineCircleById);
     await updateSymbolOpacity(_resourceSymbolById.values);
     await updateCircleOpacity(_resourceCircleById);
     await updateSymbolOpacity(_baseSymbolById.values);
@@ -14158,7 +15482,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          'Welcome to Unclaimed Streets',
+                          'Welcome to StreetSekai',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.cinzelDecorative(
                             textStyle: theme.textTheme.titleLarge?.copyWith(
@@ -14590,6 +15914,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await removeSymbols(_healingFountainSymbols);
     _healingFountainSymbolById.clear();
     await removeCircleMap(_healingFountainCircleById, _healingFountainCircles);
+    await removeSymbols(_shrineSymbols);
+    _shrineSymbolById.clear();
+    await removeCircleMap(_shrineCircleById, _shrineCircles);
     await removeSymbols(_resourceSymbols);
     _resourceSymbolById.clear();
     await removeCircleMap(_resourceCircleById, _resourceCircles);
@@ -14968,7 +16295,76 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
-  void _showResourcePanel(ResourceNode resource) {
+  void _showShrinePanel(Shrine shrine) {
+    final parentContext = context;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => ShrinePanel(
+        shrine: shrine,
+        onClose: () => Navigator.of(context).pop(),
+        onStatusChanged: (updatedShrine) {
+          if (!mounted) return;
+          _syncShrineState(updatedShrine);
+          unawaited(_refreshShrineSymbols());
+        },
+        onUsed: (result) {
+          if (!mounted) return;
+          final lastUsedAt = DateTime.tryParse(
+            result['lastUsedAt']?.toString() ?? '',
+          )?.toLocal();
+          final nextAvailableAt = DateTime.tryParse(
+            result['nextAvailableAt']?.toString() ?? '',
+          )?.toLocal();
+          final currentShrine = _shrineById(shrine.id) ?? shrine;
+          final resolvedBlessingName =
+              result['blessingName']?.toString().trim() ?? '';
+          final blessingName = resolvedBlessingName.isNotEmpty
+              ? resolvedBlessingName
+              : currentShrine.blessingName.trim();
+
+          _syncShrineState(
+            currentShrine.copyWith(
+              availableNow: false,
+              lastUsedAt: lastUsedAt,
+              nextAvailableAt: nextAvailableAt,
+              cooldownSecondsRemaining:
+                  (result['cooldownSecondsRemaining'] as num?)?.toInt() ??
+                  currentShrine.cooldownSeconds,
+            ),
+          );
+
+          unawaited(_refreshShrineSymbols());
+          _invalidateZoneBaseContent(currentShrine.zoneId);
+          unawaited(
+            context.read<CharacterStatsProvider>().refresh(silent: true),
+          );
+          unawaited(_loadTreasureChestsForSelectedZone());
+
+          if (!parentContext.mounted) return;
+          ScaffoldMessenger.of(parentContext).showSnackBar(
+            SnackBar(
+              content: Text(
+                blessingName.isNotEmpty
+                    ? '$blessingName surrounds you.'
+                    : 'The shrine\'s blessing settles over you.',
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showResourcePanel(ResourceNode resource) async {
+    final resolvedResource = await _resolveResourceDetails(resource);
+    if (!mounted || resolvedResource == null) return;
+    final resourceToShow = resolvedResource;
     final parentContext = context;
     showModalBottomSheet(
       context: context,
@@ -14979,17 +16375,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) => ResourcePanel(
-        resource: resource,
+        resource: resourceToShow,
         onClose: () => Navigator.of(context).pop(),
         onGathered: (rewardData) {
           if (!mounted) return;
           setState(() {
-            _gatheredResourceIds.add(resource.id);
+            _gatheredResourceIds.add(resourceToShow.id);
             _resources = _resources
-                .where((item) => item.id != resource.id)
+                .where((item) => item.id != resourceToShow.id)
                 .toList(growable: false);
           });
-          _invalidateZoneBaseContent(resource.zoneId);
+          _invalidateZoneBaseContent(resourceToShow.zoneId);
           unawaited(_refreshResourceSymbols());
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -15298,14 +16694,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     Quest? quest,
     QuestNode? node,
   }) async {
-    final distanceMeters = _expositionDistanceMeters(exposition);
+    final resolvedExposition = await _resolveExpositionDetails(exposition);
+    if (!mounted || resolvedExposition == null) return;
+    final expositionToShow = resolvedExposition;
+
+    final distanceMeters = _expositionDistanceMeters(expositionToShow);
     if (distanceMeters != null &&
         distanceMeters > kProximityUnlockRadiusMeters) {
-      await _showExpositionTooFarDialog(exposition, distanceMeters);
+      await _showExpositionTooFarDialog(expositionToShow, distanceMeters);
       return;
     }
 
-    final defaultSpeaker = _defaultExpositionSpeaker(exposition);
+    final defaultSpeaker = _defaultExpositionSpeaker(expositionToShow);
     if (defaultSpeaker == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -15317,15 +16717,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     }
 
     final action = CharacterAction(
-      id: 'exposition-${exposition.id}',
+      id: 'exposition-${expositionToShow.id}',
       createdAt: '',
       updatedAt: '',
       characterId: defaultSpeaker.id,
       actionType: 'exposition',
-      dialogue: List<DialogueMessage>.from(exposition.dialogue)
+      dialogue: List<DialogueMessage>.from(expositionToShow.dialogue)
         ..sort((a, b) => a.order.compareTo(b.order)),
     );
-    final speakerCharacters = _speakerCharacterMapForExposition(exposition);
+    final speakerCharacters = _speakerCharacterMapForExposition(
+      expositionToShow,
+    );
     final parentContext = context;
 
     await showDialog<void>(
@@ -15352,9 +16754,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               try {
                 final result = await parentContext
                     .read<PoiService>()
-                    .performExposition(exposition.id);
-                await _removeExpositionLocally(exposition.id);
-                _invalidateZoneBaseContent(exposition.zoneId);
+                    .performExposition(expositionToShow.id);
+                await _removeExpositionLocally(expositionToShow.id);
+                _invalidateZoneBaseContent(expositionToShow.zoneId);
                 await parentContext.read<QuestLogProvider>().refresh();
                 final currentLevel = await _refreshRewardDrivenPlayerState();
                 if (!mounted || !parentContext.mounted) return;
@@ -15364,7 +16766,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                     'expositionId': result.expositionId,
                     'title': result.title.isNotEmpty
                         ? result.title
-                        : exposition.title,
+                        : expositionToShow.title,
                     'questName': quest?.name,
                     'questNodeId': node?.id,
                     'successful': result.successful,
@@ -15721,6 +17123,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (normalized.isEmpty) return;
     _zoneBaseContentCache.remove(normalized);
     _zoneBaseContentRequests.remove(normalized);
+    _zoneMapSnapshotRequests.remove(normalized);
   }
 
   Future<void> _refreshStandaloneChallengeZoneContent(String? zoneId) async {
@@ -15732,7 +17135,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await _loadTreasureChestsForSelectedZone();
   }
 
-  void _showMonsterPanel(MonsterEncounter monster) {
+  Future<void> _showMonsterPanel(MonsterEncounter monster) async {
+    final resolvedMonster = await _resolveMonsterEncounterDetails(monster);
+    if (!mounted || resolvedMonster == null) return;
+    final monsterToShow = resolvedMonster;
     final parentContext = context;
     showModalBottomSheet(
       context: context,
@@ -15743,13 +17149,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) => MonsterPanel(
-        encounter: monster,
+        encounter: monsterToShow,
         onClose: () => Navigator.of(sheetContext).pop(),
         onFight: () {
           Navigator.of(sheetContext).pop();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            unawaited(_startMonsterBattle(monster, parentContext));
+            unawaited(_startMonsterBattle(monsterToShow, parentContext));
           });
         },
       ),
@@ -16008,12 +17414,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   double _zonePatternFillOpacity(Zone zone, {required bool selected}) {
-    final baseOpacity = _isUndiscoveredZone(zone) ? 0.22 : 0.5;
+    final baseOpacity = _isUndiscoveredZone(zone) ? 0.4 : 0.5;
     if (!selected) {
       return baseOpacity;
     }
     if (_isUndiscoveredZone(zone)) {
-      return (baseOpacity * 0.78).clamp(0.12, 0.18).toDouble();
+      return (baseOpacity * 0.84).clamp(0.26, 0.36).toDouble();
     }
     return (baseOpacity * 0.82).clamp(0.26, 0.42).toDouble();
   }
@@ -16033,7 +17439,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (_isUndiscoveredZone(zone)) {
       final remoteUrl = zone.shroudPatternTileUrl?.trim() ?? '';
       if (remoteUrl.isNotEmpty) {
-        final remoteBytes = await loadZonePatternTileAsset(remoteUrl);
+        final remoteBytes = await loadZoneShroudPatternTile(remoteUrl);
         if (remoteBytes != null && remoteBytes.isNotEmpty) {
           final imageId = zoneShroudPatternAssetImageId(remoteUrl);
           await _ensureMapImage(controller, imageId, remoteBytes);
@@ -16481,7 +17887,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         prompt == fallbackPrompt;
   }
 
-  void _showScenarioPanel(Scenario scenario) {
+  Future<void> _showScenarioPanel(Scenario scenario) async {
+    final resolvedScenario = await _resolveScenarioDetails(scenario);
+    if (!mounted || resolvedScenario == null) return;
+    final scenarioToShow = resolvedScenario;
     final parentContext = context;
     showModalBottomSheet(
       context: context,
@@ -16492,16 +17901,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) => ScenarioPanel(
-        scenario: scenario,
+        scenario: scenarioToShow,
         onClose: () => Navigator.of(context).pop(),
         onPerformed: (result) async {
           if (!mounted) return;
           final previousLevel = context.read<CharacterStatsProvider>().level;
 
           await _removeScenarioLocally(
-            scenario.id,
+            scenarioToShow.id,
             performedScenarioId: result.scenarioId,
-            fallbackScenario: scenario,
+            fallbackScenario: scenarioToShow,
           );
           unawaited(_loadTreasureChestsForSelectedZone());
           final currentLevel = await _refreshRewardDrivenPlayerState();
@@ -16510,7 +17919,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           ScenarioOption? selectedOption;
           if (result.scenarioOptionId != null &&
               result.scenarioOptionId!.isNotEmpty) {
-            for (final option in scenario.options) {
+            for (final option in scenarioToShow.options) {
               if (option.id == result.scenarioOptionId) {
                 selectedOption = option;
                 break;
@@ -16536,7 +17945,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               'scenarioOutcome',
               data: {
                 'scenarioId': result.scenarioId,
-                'scenarioPrompt': scenario.prompt,
+                'scenarioPrompt': scenarioToShow.prompt,
                 'successful': result.successful,
                 'outcomeText': outcomeText,
                 'questHandoffs': result.questHandoffs
@@ -17064,10 +18473,12 @@ class _ZonePinContent {
   const _ZonePinContent({
     required this.pointsOfInterest,
     required this.characters,
+    this.includesQuestAvailability = false,
   });
 
   final List<PointOfInterest> pointsOfInterest;
   final List<Character> characters;
+  final bool includesQuestAvailability;
 }
 
 class _ZonePinContentCacheEntry {
@@ -17094,6 +18505,7 @@ class _ZoneBaseContent {
   const _ZoneBaseContent({
     required this.treasureChests,
     required this.healingFountains,
+    required this.shrines,
     required this.resources,
     required this.scenarios,
     required this.expositions,
@@ -17103,6 +18515,7 @@ class _ZoneBaseContent {
 
   final List<TreasureChest> treasureChests;
   final List<HealingFountain> healingFountains;
+  final List<Shrine> shrines;
   final List<ResourceNode> resources;
   final List<Scenario> scenarios;
   final List<Exposition> expositions;

@@ -20,6 +20,8 @@ type monsterTemplateDraftZoneKindCueRule struct {
 
 var monsterTemplateDraftZoneKindCueRules = []monsterTemplateDraftZoneKindCueRule{
 	{monsterKeywords: []string{"forest", "wood", "briar", "thorn", "moss", "wolf", "bear"}, zoneCues: []string{"forest", "wood", "grove", "wild", "jungle"}},
+	{monsterKeywords: []string{"jungle", "vine", "tropical", "serpent", "ape", "panther", "canopy"}, zoneCues: []string{"jungle", "tropical", "canopy", "vine", "wild"}},
+	{monsterKeywords: []string{"plains", "prairie", "steppe", "savanna", "bison", "antelope", "horse"}, zoneCues: []string{"plains", "prairie", "steppe", "grass", "savanna"}},
 	{monsterKeywords: []string{"swamp", "bog", "mire", "ooze", "frog", "toad", "marsh"}, zoneCues: []string{"swamp", "bog", "marsh", "wetland", "mire"}},
 	{monsterKeywords: []string{"desert", "dune", "sand", "scorpion", "sun", "vulture"}, zoneCues: []string{"desert", "dune", "sand", "waste", "arid"}},
 	{monsterKeywords: []string{"mountain", "peak", "stone", "cliff", "goat", "eagle"}, zoneCues: []string{"mountain", "peak", "highland", "cliff", "rock"}},

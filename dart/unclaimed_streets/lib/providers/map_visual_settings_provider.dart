@@ -7,17 +7,17 @@ class MapVisualSettingsProvider extends ChangeNotifier {
   static const String _unselectedZoneKindTilingPrefsKey =
       'unselected_zone_kind_tiling_enabled';
 
-  bool _zoneKindMapStylingEnabled = false;
-  bool _unselectedZoneKindTilingEnabled = false;
+  bool _zoneKindMapStylingEnabled = true;
+  bool _unselectedZoneKindTilingEnabled = true;
 
   bool get zoneKindMapStylingEnabled => _zoneKindMapStylingEnabled;
   bool get unselectedZoneKindTilingEnabled => _unselectedZoneKindTilingEnabled;
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_zoneKindMapStylingPrefsKey) ?? false;
+    final enabled = prefs.getBool(_zoneKindMapStylingPrefsKey) ?? true;
     final tilingEnabled =
-        prefs.getBool(_unselectedZoneKindTilingPrefsKey) ?? false;
+        prefs.getBool(_unselectedZoneKindTilingPrefsKey) ?? true;
     if (_zoneKindMapStylingEnabled == enabled &&
         _unselectedZoneKindTilingEnabled == tilingEnabled) {
       return;

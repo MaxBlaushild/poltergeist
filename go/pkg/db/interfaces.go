@@ -38,11 +38,13 @@ type DbClient interface {
 	ChallengeGenerationJob() ChallengeGenerationJobHandle
 	ScenarioTemplate() ScenarioTemplateHandle
 	ChallengeTemplate() ChallengeTemplateHandle
+	ShrineTemplate() ShrineTemplateHandle
 	CharacterTemplate() CharacterTemplateHandle
 	ExpositionTemplate() ExpositionTemplateHandle
 	ScenarioTemplateGenerationJob() ScenarioTemplateGenerationJobHandle
 	ScenarioTemplateGenerationDraft() ScenarioTemplateGenerationDraftHandle
 	ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle
+	ShrineTemplateGenerationJob() ShrineTemplateGenerationJobHandle
 	ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle
 	ZoneTagGenerationJob() ZoneTagGenerationJobHandle
 	BaseDescriptionGenerationJob() BaseDescriptionGenerationJobHandle
@@ -131,6 +133,7 @@ type DbClient interface {
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
 	HealingFountain() HealingFountainHandle
+	Shrine() ShrineHandle
 	ResourceType() ResourceTypeHandle
 	Resource() ResourceHandle
 	Base() BaseHandle
@@ -504,6 +507,15 @@ type ChallengeTemplateHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+type ShrineTemplateHandle interface {
+	Create(ctx context.Context, template *models.ShrineTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ShrineTemplate, error)
+	FindAll(ctx context.Context) ([]models.ShrineTemplate, error)
+	FindByZoneKind(ctx context.Context, zoneKind string) ([]models.ShrineTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.ShrineTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
 type CharacterTemplateHandle interface {
 	Create(ctx context.Context, template *models.CharacterTemplate) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.CharacterTemplate, error)
@@ -541,6 +553,13 @@ type ChallengeTemplateGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ChallengeTemplateGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ChallengeTemplateGenerationJob, error)
 	FindByLocationArchetypeID(ctx context.Context, locationArchetypeID uuid.UUID, limit int) ([]models.ChallengeTemplateGenerationJob, error)
+}
+
+type ShrineTemplateGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ShrineTemplateGenerationJob) error
+	Update(ctx context.Context, job *models.ShrineTemplateGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ShrineTemplateGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ShrineTemplateGenerationJob, error)
 }
 
 type ZoneFlavorGenerationJobHandle interface {
@@ -1248,6 +1267,7 @@ type CharacterHandle interface {
 	Create(ctx context.Context, character *models.Character) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error)
 	FindAll(ctx context.Context) ([]*models.Character, error)
+	FindPotentiallyInZone(ctx context.Context, zone *models.Zone, pointOfInterestIDs []uuid.UUID) ([]*models.Character, error)
 	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) ([]*models.Character, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	UpdateFields(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
@@ -1264,6 +1284,10 @@ type CharacterActionHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.CharacterAction, error)
 	FindAll(ctx context.Context) ([]*models.CharacterAction, error)
 	FindGiveQuestActions(ctx context.Context) ([]*models.CharacterAction, error)
+	FindGiveQuestActionsByCharacterIDs(
+		ctx context.Context,
+		characterIDs []uuid.UUID,
+	) ([]*models.CharacterAction, error)
 	FindByCharacterID(ctx context.Context, characterID uuid.UUID) ([]*models.CharacterAction, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.CharacterAction) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -1378,6 +1402,19 @@ type HealingFountainHandle interface {
 	FindLatestVisitByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainVisit, error)
 	FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error)
 	CreateUserHealingFountainVisit(ctx context.Context, visit *models.UserHealingFountainVisit) error
+}
+
+type ShrineHandle interface {
+	Create(ctx context.Context, shrine *models.Shrine) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Shrine, error)
+	FindAll(ctx context.Context) ([]models.Shrine, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Shrine, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Shrine) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByIDs(ctx context.Context, ids []uuid.UUID) error
+	FindLatestUseByUserAndShrine(ctx context.Context, userID uuid.UUID, shrineID uuid.UUID) (*models.UserShrineUse, error)
+	FindLatestUsesByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserShrineUse, error)
+	CreateUserShrineUse(ctx context.Context, use *models.UserShrineUse) error
 }
 
 type ResourceTypeHandle interface {
@@ -1561,6 +1598,7 @@ type MonsterEncounterHandle interface {
 	ListAdmin(ctx context.Context, params MonsterEncounterAdminListParams) (*MonsterEncounterAdminListResult, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
+	FindMapByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.MonsterEncounter, error)
 	FindFirstByMonsterID(ctx context.Context, monsterID uuid.UUID) (*models.MonsterEncounter, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterEncounter) error

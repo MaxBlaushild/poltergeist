@@ -152,7 +152,7 @@ var (
 const (
 	tutorialQuestName        = "Tutorial"
 	tutorialQuestCategory    = "tutorial"
-	tutorialQuestDescription = "Follow the guided tutorial to learn the basics of Unclaimed Streets."
+	tutorialQuestDescription = "Follow the guided tutorial to learn the basics of StreetSekai."
 )
 
 func NewClient(dbClient db.DbClient) QuestlogClient {

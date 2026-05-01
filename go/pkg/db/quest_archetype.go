@@ -18,6 +18,7 @@ type questArchetypeHandle struct {
 func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *models.QuestArchetype) error {
 	if questArchetype != nil {
 		questArchetype.Category = models.NormalizeQuestCategory(questArchetype.Category)
+		questArchetype.ZoneKind = models.NormalizeZoneKind(questArchetype.ZoneKind)
 		questArchetype.RequiredStoryFlags = normalizeJSONStringArray(questArchetype.RequiredStoryFlags)
 		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
 		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)
@@ -90,6 +91,7 @@ func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*mod
 func (h *questArchetypeHandle) Update(ctx context.Context, questArchetype *models.QuestArchetype) error {
 	if questArchetype != nil {
 		questArchetype.Category = models.NormalizeQuestCategory(questArchetype.Category)
+		questArchetype.ZoneKind = models.NormalizeZoneKind(questArchetype.ZoneKind)
 		questArchetype.RequiredStoryFlags = normalizeJSONStringArray(questArchetype.RequiredStoryFlags)
 		questArchetype.SetStoryFlags = normalizeJSONStringArray(questArchetype.SetStoryFlags)
 		questArchetype.ClearStoryFlags = normalizeJSONStringArray(questArchetype.ClearStoryFlags)

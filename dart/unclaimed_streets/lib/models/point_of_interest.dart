@@ -134,6 +134,33 @@ class PointOfInterest {
     this.hasAvailableMainStoryQuest = false,
   });
 
+  PointOfInterest copyWith({
+    List<Character>? characters,
+    bool? hasAvailableQuest,
+    bool? hasAvailableMainStoryQuest,
+  }) {
+    return PointOfInterest(
+      id: id,
+      name: name,
+      lat: lat,
+      lng: lng,
+      imageURL: imageURL,
+      thumbnailUrl: thumbnailUrl,
+      description: description,
+      clue: clue,
+      originalName: originalName,
+      googleMapsPlaceId: googleMapsPlaceId,
+      googleMapsPlaceName: googleMapsPlaceName,
+      mapMarkerUrl: mapMarkerUrl,
+      markerCategory: markerCategory,
+      tags: tags,
+      characters: characters ?? this.characters,
+      hasAvailableQuest: hasAvailableQuest ?? this.hasAvailableQuest,
+      hasAvailableMainStoryQuest:
+          hasAvailableMainStoryQuest ?? this.hasAvailableMainStoryQuest,
+    );
+  }
+
   factory PointOfInterest.fromJson(Map<String, dynamic> json) {
     List<PoiTag> tags = [];
     final raw = json['tags'];

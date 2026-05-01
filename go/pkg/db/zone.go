@@ -157,7 +157,8 @@ SELECT
 	COALESCE(monster_encounters.boss_encounter_count, 0) AS boss_encounter_count,
 	COALESCE(monster_encounters.raid_encounter_count, 0) AS raid_encounter_count,
 	COALESCE(treasure_chests.treasure_chest_count, 0) AS treasure_chest_count,
-	COALESCE(healing_fountains.healing_fountain_count, 0) AS healing_fountain_count
+	COALESCE(healing_fountains.healing_fountain_count, 0) AS healing_fountain_count,
+	COALESCE(shrines.shrine_count, 0) AS shrine_count
 FROM zones
 LEFT JOIN zone_imports
 	ON zone_imports.id = zones.zone_import_id
@@ -228,6 +229,12 @@ LEFT JOIN (
 	GROUP BY zone_id
 ) AS healing_fountains
 	ON healing_fountains.zone_id = zones.id
+LEFT JOIN (
+	SELECT zone_id, COUNT(*) AS shrine_count
+	FROM shrines
+	GROUP BY zone_id
+) AS shrines
+	ON shrines.zone_id = zones.id
 ORDER BY zones.name ASC, zones.created_at DESC
 `
 
@@ -289,6 +296,7 @@ func (h *zoneHandler) FlushContent(ctx context.Context, zoneIDs []uuid.UUID, opt
 		shouldFlushMonsters := options.Includes(models.ZoneContentFlushTypeMonsters)
 		shouldFlushTreasureChests := options.Includes(models.ZoneContentFlushTypeTreasureChests)
 		shouldFlushHealingFountains := options.Includes(models.ZoneContentFlushTypeHealingFountains)
+		shouldFlushShrines := options.Includes(models.ZoneContentFlushTypeShrines)
 		shouldFlushResources := options.Includes(models.ZoneContentFlushTypeResources)
 		shouldFlushMovementPatterns := options.Includes(models.ZoneContentFlushTypeMovementPatterns)
 		shouldFlushJobs := options.Includes(models.ZoneContentFlushTypeJobs)
@@ -542,6 +550,22 @@ func (h *zoneHandler) FlushContent(ctx context.Context, zoneIDs []uuid.UUID, opt
 				}
 			}
 			summary.DeletedHealingFountainCount = len(healingFountainIDs)
+		}
+
+		if shouldFlushShrines {
+			var shrineIDs []uuid.UUID
+			if err := tx.WithContext(ctx).
+				Model(&models.Shrine{}).
+				Where("zone_id IN ?", normalizedZoneIDs).
+				Pluck("id", &shrineIDs).Error; err != nil {
+				return err
+			}
+			if len(shrineIDs) > 0 {
+				if err := deleteShrines(tx, shrineIDs); err != nil {
+					return err
+				}
+			}
+			summary.DeletedShrineCount = len(shrineIDs)
 		}
 
 		if shouldFlushResources {

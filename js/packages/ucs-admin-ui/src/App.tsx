@@ -67,6 +67,7 @@ import Expositions from './components/Expositions.tsx';
 import { Challenges } from './components/Challenges.tsx';
 import ScenarioTemplates from './components/ScenarioTemplates.tsx';
 import ChallengeTemplates from './components/ChallengeTemplates.tsx';
+import ShrineTemplates from './components/ShrineTemplates.tsx';
 import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
@@ -111,6 +112,7 @@ const Navigation = ({
   onNavigate?: () => void;
 }) => {
   const [query, setQuery] = useState('');
+  const activeNavItem = findActiveAdminNavItem(pathname);
 
   const filteredGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -138,10 +140,26 @@ const Navigation = ({
 
   return (
     <div className="admin-sidebar__inner">
-      <Link to="/" className="admin-brand" onClick={onNavigate}>
-        <div className="admin-brand__mark">US</div>
+      <div className="admin-sidebar__mobile-header">
         <div>
-          <div className="admin-brand__eyebrow">Unclaimed Streets</div>
+          <div className="admin-brand__eyebrow">Current Area</div>
+          <div className="admin-sidebar__mobile-title">
+            {pathname === '/' ? 'Admin Home' : activeNavItem?.label ?? 'Admin'}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="admin-sidebar__close"
+          onClick={onNavigate}
+        >
+          Close
+        </button>
+      </div>
+
+      <Link to="/" className="admin-brand" onClick={onNavigate}>
+        <div className="admin-brand__mark">SS</div>
+        <div>
+          <div className="admin-brand__eyebrow">StreetSekai</div>
           <div className="admin-brand__title">Admin Dashboard</div>
         </div>
       </Link>
@@ -174,6 +192,24 @@ const Navigation = ({
           <span>Home</span>
           <small>Overview, workflows, and grouped quick access.</small>
         </Link>
+      </div>
+
+      <div className="admin-sidebar__featured">
+        <div className="admin-sidebar__featured-label">Quick Access</div>
+        <div className="admin-sidebar__featured-links">
+          {featuredAdminNavItems.slice(0, 6).map((item) => (
+            <Link
+              key={item.id}
+              to={item.path}
+              onClick={onNavigate}
+              className={`admin-sidebar__featured-link ${
+                adminNavItemMatchesPath(item, pathname) ? 'is-active' : ''
+              }`}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="admin-nav-groups">
@@ -223,6 +259,32 @@ const Layout = () => {
     setNavOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!isLoggedIn || !navOpen) {
+      document.body.classList.remove('admin-body--nav-open');
+      return;
+    }
+    document.body.classList.add('admin-body--nav-open');
+    return () => {
+      document.body.classList.remove('admin-body--nav-open');
+    };
+  }, [isLoggedIn, navOpen]);
+
+  useEffect(() => {
+    if (!navOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNavOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [navOpen]);
+
   if (!isLoggedIn) {
     return <Outlet />;
   }
@@ -235,7 +297,10 @@ const Layout = () => {
         aria-label="Close navigation"
         onClick={() => setNavOpen(false)}
       />
-      <aside className={`admin-sidebar ${navOpen ? 'is-open' : ''}`}>
+      <aside
+        id="admin-sidebar"
+        className={`admin-sidebar ${navOpen ? 'is-open' : ''}`}
+      >
         <Navigation
           pathname={location.pathname}
           onNavigate={() => setNavOpen(false)}
@@ -246,9 +311,11 @@ const Layout = () => {
           <button
             type="button"
             className="admin-topbar__menu"
+            aria-controls="admin-sidebar"
+            aria-expanded={navOpen}
             onClick={() => setNavOpen((open) => !open)}
           >
-            {navOpen ? 'Close' : 'Browse'}
+            {navOpen ? 'Close Menu' : 'Browse Tools'}
           </button>
           <div className="admin-topbar__title">
             <div className="admin-topbar__eyebrow">
@@ -542,6 +609,11 @@ const router = createBrowserRouter([
       {
         path: '/challenge-templates',
         element: <ChallengeTemplates />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/shrine-templates',
+        element: <ShrineTemplates />,
         loader: onlyAuthenticated,
       },
       {

@@ -31,4 +31,5 @@ type ZoneAdminSummary struct {
 	RaidEncounterCount      int         `json:"raidEncounterCount" gorm:"column:raid_encounter_count"`
 	TreasureChestCount      int         `json:"treasureChestCount" gorm:"column:treasure_chest_count"`
 	HealingFountainCount    int         `json:"healingFountainCount" gorm:"column:healing_fountain_count"`
+	ShrineCount             int         `json:"shrineCount" gorm:"column:shrine_count"`
 }

@@ -18,7 +18,7 @@ import (
 )
 
 const questArchetypeSuggestionPromptTemplate = `
-You are designing reusable quest archetype bundles for Unclaimed Streets, an urban fantasy MMORPG.
+You are designing reusable quest archetype bundles for StreetSekai, an urban fantasy MMORPG.
 
 Generate exactly %d quest archetype bundles.
 

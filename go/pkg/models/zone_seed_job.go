@@ -105,6 +105,7 @@ type ZoneSeedJob struct {
 	OptionEncounterCount   int                `json:"optionEncounterCount"`
 	TreasureChestCount     int                `json:"treasureChestCount"`
 	HealingFountainCount   int                `json:"healingFountainCount"`
+	ShrineCount            int                `json:"shrineCount"`
 	HerbalismResourceCount int                `json:"herbalismResourceCount" gorm:"column:herbalism_resource_count"`
 	MiningResourceCount    int                `json:"miningResourceCount" gorm:"column:mining_resource_count"`
 	ResourceCount          int                `json:"resourceCount"`

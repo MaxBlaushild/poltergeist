@@ -11,6 +11,7 @@ type QuestArchetype struct {
 	ID                             uuid.UUID                   `json:"id"`
 	Name                           string                      `json:"name"`
 	Description                    string                      `json:"description"`
+	ZoneKind                       string                      `json:"zoneKind,omitempty" gorm:"column:zone_kind"`
 	Category                       string                      `json:"category" gorm:"column:category;default:'side'"`
 	QuestGiverCharacterID          *uuid.UUID                  `json:"questGiverCharacterId,omitempty" gorm:"column:quest_giver_character_id;type:uuid"`
 	QuestGiverCharacter            *Character                  `json:"questGiverCharacter,omitempty" gorm:"foreignKey:QuestGiverCharacterID"`

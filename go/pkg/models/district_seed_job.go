@@ -81,6 +81,7 @@ type DistrictZoneSeedSettings struct {
 	OptionEncounterCount int         `json:"optionEncounterCount"`
 	TreasureChestCount   int         `json:"treasureChestCount"`
 	HealingFountainCount int         `json:"healingFountainCount"`
+	ShrineCount          int         `json:"shrineCount"`
 	RequiredPlaceTags    StringArray `json:"requiredPlaceTags,omitempty"`
 	ShopkeeperItemTags   StringArray `json:"shopkeeperItemTags,omitempty"`
 }
@@ -96,7 +97,8 @@ func (s DistrictZoneSeedSettings) HasContent() bool {
 		s.InputEncounterCount > 0 ||
 		s.OptionEncounterCount > 0 ||
 		s.TreasureChestCount > 0 ||
-		s.HealingFountainCount > 0 {
+		s.HealingFountainCount > 0 ||
+		s.ShrineCount > 0 {
 		return true
 	}
 	for _, tag := range []string(s.RequiredPlaceTags) {

@@ -76,7 +76,7 @@ func buildMainStoryCharacterGenerationPrompt(
 		))
 	}
 	return fmt.Sprintf(`
-You are designing recurring NPCs for a district-scale urban fantasy main story in Unclaimed Streets.
+You are designing recurring NPCs for a district-scale urban fantasy main story in StreetSekai.
 
 Create one concrete, reusable NPC for each required story character key.
 These characters should feel like they belong to the same story, district, and tone as the beats below.

@@ -17,7 +17,7 @@ import (
 )
 
 const inventoryItemSuggestionPromptTemplate = `
-You are designing draft inventory items for Unclaimed Streets, an urban fantasy MMORPG.
+You are designing draft inventory items for StreetSekai, an urban fantasy MMORPG.
 %s
 %s
 

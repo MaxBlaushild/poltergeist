@@ -60,6 +60,13 @@ GoRouter createRouter({
     },
     routes: [
       GoRoute(
+        path: '/',
+        builder: (context, state) => HomeScreen(
+          key: ValueKey(state.uri.toString()),
+          from: state.uri.queryParameters['from'],
+        ),
+      ),
+      GoRoute(
         path: '/logout',
         builder: (context, state) => const LogoutScreen(),
       ),
@@ -68,13 +75,6 @@ GoRouter createRouter({
         builder: (context, state, child) =>
             LayoutShell(routeUri: state.uri, child: child),
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => HomeScreen(
-              key: ValueKey(state.uri.toString()),
-              from: state.uri.queryParameters['from'],
-            ),
-          ),
           GoRoute(
             path: '/single-player',
             pageBuilder: (_, state) =>

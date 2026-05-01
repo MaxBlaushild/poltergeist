@@ -62,6 +62,29 @@ class Character {
     this.relationship,
   });
 
+  Character copyWith({
+    bool? hasAvailableQuest,
+    bool? hasAvailableMainStoryQuest,
+    CharacterRelationshipState? relationship,
+  }) {
+    return Character(
+      id: id,
+      name: name,
+      description: description,
+      mapIconUrl: mapIconUrl,
+      dialogueImageUrl: dialogueImageUrl,
+      thumbnailUrl: thumbnailUrl,
+      pointOfInterestId: pointOfInterestId,
+      pointOfInterestLat: pointOfInterestLat,
+      pointOfInterestLng: pointOfInterestLng,
+      locations: locations,
+      hasAvailableQuest: hasAvailableQuest ?? this.hasAvailableQuest,
+      hasAvailableMainStoryQuest:
+          hasAvailableMainStoryQuest ?? this.hasAvailableMainStoryQuest,
+      relationship: relationship ?? this.relationship,
+    );
+  }
+
   factory Character.fromJson(Map<String, dynamic> json) {
     double? parseCoordinate(dynamic raw) {
       if (raw == null) return null;

@@ -66,6 +66,7 @@ func (h *questHandle) preloadDetail(ctx context.Context) *gorm.DB {
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 	if quest != nil {
 		quest.Category = models.NormalizeQuestCategory(quest.Category)
+		quest.ZoneKind = models.NormalizeZoneKind(quest.ZoneKind)
 		quest.RequiredStoryFlags = normalizeJSONStringArray(quest.RequiredStoryFlags)
 		quest.SetStoryFlags = normalizeJSONStringArray(quest.SetStoryFlags)
 		quest.ClearStoryFlags = normalizeJSONStringArray(quest.ClearStoryFlags)
@@ -108,6 +109,7 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	}
 	updates.DifficultyMode = models.NormalizeQuestDifficultyMode(string(updates.DifficultyMode))
 	updates.Category = models.NormalizeQuestCategory(updates.Category)
+	updates.ZoneKind = models.NormalizeZoneKind(updates.ZoneKind)
 	updates.RequiredStoryFlags = normalizeJSONStringArray(updates.RequiredStoryFlags)
 	updates.SetStoryFlags = normalizeJSONStringArray(updates.SetStoryFlags)
 	updates.ClearStoryFlags = normalizeJSONStringArray(updates.ClearStoryFlags)
@@ -150,6 +152,7 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"owner_user_id":                     updates.OwnerUserID,
 		"ephemeral":                         updates.Ephemeral,
 		"zone_id":                           updates.ZoneID,
+		"zone_kind":                         updates.ZoneKind,
 		"quest_archetype_id":                updates.QuestArchetypeID,
 		"quest_giver_character_id":          updates.QuestGiverCharacterID,
 		"main_story_previous_quest_id":      updates.MainStoryPreviousQuestID,

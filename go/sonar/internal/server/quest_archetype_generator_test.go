@@ -63,3 +63,41 @@ func TestSelectQuestMonsterTemplateMatchesPrefersQuestThemedExistingTemplates(t 
 		t.Fatalf("expected Shadow Courier to be selected, got %q", matches[0].template.Name)
 	}
 }
+
+func TestSelectQuestMonsterTemplateMatchesPrefersMatchingZoneKind(t *testing.T) {
+	preferredZoneKind := &models.ZoneKind{Slug: "forest", Name: "Forest"}
+	matches := selectQuestMonsterTemplateMatches(
+		[]models.MonsterTemplate{
+			{
+				ID:          uuid.New(),
+				MonsterType: models.MonsterTemplateTypeMonster,
+				ZoneKind:    "desert",
+				Name:        "Trail Stalker",
+				Description: "A hunter that shadows travelers between waystones.",
+			},
+			{
+				ID:          uuid.New(),
+				MonsterType: models.MonsterTemplateTypeMonster,
+				ZoneKind:    "forest",
+				Name:        "Canopy Stalker",
+				Description: "A hunter that shadows travelers between waystones.",
+			},
+		},
+		questMonsterTemplateRequest{
+			Count:             1,
+			MonsterType:       models.MonsterTemplateTypeMonster,
+			PreferredZoneKind: preferredZoneKind,
+			ThemePrompt:       "ambush on a caravan trail",
+			EncounterConcept:  "predator stalking from cover",
+			LocationConcept:   "mossy woodland path",
+		},
+		1,
+	)
+
+	if len(matches) != 1 {
+		t.Fatalf("expected one match, got %d", len(matches))
+	}
+	if matches[0].template.Name != "Canopy Stalker" {
+		t.Fatalf("expected forest-matched template to be selected, got %q", matches[0].template.Name)
+	}
+}

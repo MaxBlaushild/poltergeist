@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -13,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+const contentMapMarkerExistenceCacheTTL = 5 * time.Minute
 
 type sharedContentMapMarkerDefinition struct {
 	ID                string
@@ -74,6 +77,19 @@ type contentMapMarkersPageResponse struct {
 }
 
 type contentMapMarkerExistenceCache map[string]bool
+
+type contentMapMarkerExistenceCacheEntry struct {
+	exists     bool
+	expiresAt  time.Time
+	lastLookup time.Time
+}
+
+var contentMapMarkerExistenceProcessCache = struct {
+	sync.RWMutex
+	entries map[string]contentMapMarkerExistenceCacheEntry
+}{
+	entries: map[string]contentMapMarkerExistenceCacheEntry{},
+}
 
 var sharedContentMapMarkerDefinitions = []sharedContentMapMarkerDefinition{
 	{
@@ -165,6 +181,15 @@ var sharedContentMapMarkerDefinitions = []sharedContentMapMarkerDefinition{
 		DefaultStatusKey:  baseDiscoveredStatusKey,
 		ActionPath:        "/sonar/admin/thumbnails/base",
 		SupportsZoneKinds: false,
+	},
+	{
+		ID:                "shrine-discovered",
+		Label:             "Shrine Marker",
+		DefaultPrompt:     shrineDiscoveredIconText,
+		DefaultKey:        shrineDiscoveredIconKey,
+		DefaultStatusKey:  shrineDiscoveredStatusKey,
+		ActionPath:        "/sonar/admin/thumbnails/shrine-discovered",
+		SupportsZoneKinds: true,
 	},
 }
 
@@ -345,9 +370,24 @@ func (s *server) staticThumbnailExistsCached(
 	if exists, ok := cache[destinationKey]; ok {
 		return exists
 	}
+	now := time.Now()
+	contentMapMarkerExistenceProcessCache.RLock()
+	processEntry, ok := contentMapMarkerExistenceProcessCache.entries[destinationKey]
+	contentMapMarkerExistenceProcessCache.RUnlock()
+	if ok && now.Before(processEntry.expiresAt) {
+		cache[destinationKey] = processEntry.exists
+		return processEntry.exists
+	}
 	lastModified, err := s.awsClient.GetObjectLastModified(jobs.ThumbnailBucket, destinationKey)
 	exists := err == nil && lastModified != nil
 	cache[destinationKey] = exists
+	contentMapMarkerExistenceProcessCache.Lock()
+	contentMapMarkerExistenceProcessCache.entries[destinationKey] = contentMapMarkerExistenceCacheEntry{
+		exists:     exists,
+		lastLookup: now,
+		expiresAt:  now.Add(contentMapMarkerExistenceCacheTTL),
+	}
+	contentMapMarkerExistenceProcessCache.Unlock()
 	return exists
 }
 

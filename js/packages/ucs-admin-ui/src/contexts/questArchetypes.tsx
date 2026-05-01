@@ -48,6 +48,7 @@ export type QuestArchetypeNodeDraft = {
 export type QuestArchetypeDraft = {
   name: string;
   description: string;
+  zoneKind?: string | null;
   category?: 'side' | 'main_story';
   questGiverCharacterId?: string | null;
   closurePolicy?: QuestClosurePolicy;
@@ -97,6 +98,7 @@ export type QuestTemplateGeneratorStepDraft = {
 export type QuestTemplateGeneratorDraft = {
   name?: string;
   themePrompt?: string;
+  zoneKind?: string | null;
   characterTags?: string[];
   internalTags?: string[];
   steps: QuestTemplateGeneratorStepDraft[];
@@ -339,6 +341,7 @@ export const QuestArchetypesProvider = ({
       {
         name: draft.name,
         description: draft.description,
+        zoneKind: draft.zoneKind ?? '',
         category: draft.category,
         questGiverCharacterId: draft.questGiverCharacterId,
         closurePolicy: draft.closurePolicy,
@@ -380,6 +383,7 @@ export const QuestArchetypesProvider = ({
       {
         name: draft.name?.trim() || '',
         themePrompt: draft.themePrompt?.trim() || '',
+        zoneKind: draft.zoneKind ?? '',
         characterTags: draft.characterTags ?? [],
         internalTags: draft.internalTags ?? [],
         steps: draft.steps.map((step) => ({

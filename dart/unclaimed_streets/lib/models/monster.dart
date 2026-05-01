@@ -414,6 +414,7 @@ class MonsterEncounter {
   final int monsterCount;
   final List<MonsterEncounterMember> members;
   final List<Monster> monsters;
+  final bool hasFullDetails;
 
   const MonsterEncounter({
     required this.id,
@@ -434,6 +435,7 @@ class MonsterEncounter {
     this.monsterCount = 0,
     this.members = const [],
     this.monsters = const [],
+    this.hasFullDetails = true,
   });
 
   factory MonsterEncounter.fromJson(Map<String, dynamic> json) {
@@ -510,6 +512,7 @@ class MonsterEncounter {
           (monsters.isNotEmpty ? monsters.length : members.length),
       members: members,
       monsters: monsters,
+      hasFullDetails: json['hasFullDetails'] as bool? ?? true,
     );
   }
 

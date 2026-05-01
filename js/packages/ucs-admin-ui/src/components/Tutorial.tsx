@@ -1689,7 +1689,7 @@ export const Tutorial = () => {
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
                   Shown after the player places their base and before the
-                  Welcome to Unclaimed Streets overlay appears.
+                  Welcome to StreetSekai overlay appears.
                 </p>
               </div>
 

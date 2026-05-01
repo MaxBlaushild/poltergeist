@@ -1,6 +1,7 @@
 package server
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -249,5 +250,17 @@ func TestResolveZoneSeedDraftRequestSkipsRecommendationCapWhenPlaceCountOverridd
 		if strings.Contains(warning, "Capped POI recommendation") {
 			t.Fatalf("expected no cap warning when place count is explicitly overridden, got %v", settings.AutoSeedAudit.Warnings)
 		}
+	}
+}
+
+func TestZoneSeedShopkeeperItemTagsForKindMergesZoneKindDefaults(t *testing.T) {
+	zoneKind := &models.ZoneKind{
+		DefaultShopkeeperItemTags: models.StringArray{" Potions ", "herbs", "POTIONS"},
+	}
+
+	got := zoneSeedShopkeeperItemTagsForKind(zoneKind, []string{"maps", "Herbs"})
+	want := []string{"potions", "herbs", "maps"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected merged shopkeeper tags %v, got %v", want, got)
 	}
 }

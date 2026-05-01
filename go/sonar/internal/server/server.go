@@ -62,6 +62,7 @@ const (
 	raidUndiscoveredIconKey            = "thumbnails/placeholders/raid-undiscovered.png"
 	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
 	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
+	shrineDiscoveredIconKey            = "thumbnails/placeholders/shrine-discovered.png"
 	baseDiscoveredIconKey              = "thumbnails/placeholders/base-discovered.png"
 	baseGrassTileKeyPrefix             = "thumbnails/placeholders/base-grass"
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
@@ -74,6 +75,7 @@ const (
 	raidUndiscoveredStatusKey          = "admin:thumbnails:raid-undiscovered:requested-at"
 	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
 	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
+	shrineDiscoveredStatusKey          = "admin:thumbnails:shrine-discovered:requested-at"
 	baseDiscoveredStatusKey            = "admin:thumbnails:base-discovered:requested-at"
 	baseGrassTileStatusKeyPrefix       = "admin:thumbnails:base-grass"
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
@@ -86,6 +88,7 @@ const (
 	raidUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	characterUndiscoveredIconText      = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	healingFountainDiscoveredIconText  = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
+	shrineDiscoveredIconText           = "A discovered magical shrine in a retro 16-bit RPG style. Top-down map-ready icon art, sacred stone altar, blessing glow, ancient sigils, no text, no logos, centered composition, crisp outlines, limited palette."
 	baseDiscoveredIconText             = "A discovered adventurer base marker in a retro 16-bit fantasy MMORPG style. Top-down map-ready icon art, sturdy camp or homestead sigil, welcoming hearth glow, no text, no logos, centered composition, crisp outlines, limited palette."
 	baseGrassTileText                  = "A seamless top-down grass terrain tile for a retro 16-bit fantasy MMORPG base builder. Overhead view, softly varied green blades, subtle earth patches, crisp pixel edges, no structures, no text, no logos, tileable and clean."
 	userProfilePlaceholderText         = "A polished fantasy RPG profile portrait avatar. Head-and-shoulders, centered composition, expressive face, clean background, no text, no logos, game-ready artwork."
@@ -455,6 +458,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/scenario-template-generation-jobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioTemplateGenerationDrafts))
 	r.POST("/sonar/admin/scenario-template-generation-drafts/:id/convert", middleware.WithAuthentication(s.authClient, s.livenessClient, s.convertScenarioTemplateGenerationDraft))
 	r.DELETE("/sonar/admin/scenario-template-generation-drafts/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioTemplateGenerationDraft))
+	r.POST("/sonar/admin/shrine-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createShrineTemplateGenerationJob))
+	r.GET("/sonar/admin/shrine-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplateGenerationJobs))
+	r.GET("/sonar/admin/shrine-template-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplateGenerationJob))
 	r.POST("/sonar/admin/challenge-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallengeTemplateGenerationJob))
 	r.GET("/sonar/admin/challenge-template-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplateGenerationJobs))
 	r.GET("/sonar/admin/challenge-template-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeTemplateGenerationJob))
@@ -475,6 +481,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/shrine-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateShrineDiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateBaseDiscoveredIcon))
 	r.GET("/sonar/admin/thumbnails/poi-marker-categories", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listPointOfInterestMarkerCategoryIcons))
 	r.POST("/sonar/admin/thumbnails/poi-marker-categories/:category", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointOfInterestMarkerCategoryIcon))
@@ -489,6 +496,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/:encounterType/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/shrine-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineDiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/base/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseDiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/poi-marker-categories/:category/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestMarkerCategoryIconStatus))
 	r.GET("/sonar/admin/thumbnails/base-grass/:gridX/:gridY/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseGrassTileStatus))
@@ -501,10 +509,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/shrine-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteShrineDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/base", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseDiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/poi-marker-categories/:category", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePointOfInterestMarkerCategoryIcon))
 	r.DELETE("/sonar/admin/thumbnails/base-grass/:gridX/:gridY", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteBaseGrassTile))
 	r.GET("/sonar/zones/:id/pins", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZonePins))
+	r.GET("/sonar/zones/:id/map-snapshot", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneMapSnapshot))
+	r.GET("/sonar/zones/:id/quest-availability-overlay", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneQuestAvailabilityOverlay))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -662,6 +673,19 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/healing-fountains/:id/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainImage))
+	r.GET("/sonar/shrine-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplates))
+	r.GET("/sonar/shrine-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrineTemplate))
+	r.POST("/sonar/shrine-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createShrineTemplate))
+	r.PUT("/sonar/shrine-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateShrineTemplate))
+	r.DELETE("/sonar/shrine-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteShrineTemplate))
+	r.GET("/sonar/shrines", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrines))
+	r.GET("/sonar/shrines/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrine))
+	r.GET("/sonar/zones/:id/shrines", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getShrinesForZone))
+	r.POST("/sonar/shrines", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createShrine))
+	r.PUT("/sonar/shrines/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateShrine))
+	r.PATCH("/sonar/shrines/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateShrineLocation))
+	r.DELETE("/sonar/shrines/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteShrine))
+	r.POST("/sonar/shrines/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useShrine))
 	r.GET("/sonar/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResources))
 	r.GET("/sonar/resources/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResource))
 	r.GET("/sonar/zones/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getResourcesForZone))
@@ -2088,15 +2112,52 @@ func (s *server) mainStoryQuestUnlockedForUser(
 }
 
 func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]characterQuestAvailability, error) {
-	actions, err := s.dbClient.CharacterAction().FindAll(ctx)
+	actions, err := s.dbClient.CharacterAction().FindGiveQuestActions(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return s.questAvailabilityByCharacterFromActions(ctx, userID, actions)
+}
 
+func (s *server) questAvailabilityByCharacterIDs(
+	ctx context.Context,
+	userID uuid.UUID,
+	characterIDs []uuid.UUID,
+) (map[uuid.UUID]characterQuestAvailability, error) {
+	uniqueCharacterIDs := make([]uuid.UUID, 0, len(characterIDs))
+	seenCharacterIDs := make(map[uuid.UUID]struct{}, len(characterIDs))
+	for _, characterID := range characterIDs {
+		if characterID == uuid.Nil {
+			continue
+		}
+		if _, exists := seenCharacterIDs[characterID]; exists {
+			continue
+		}
+		seenCharacterIDs[characterID] = struct{}{}
+		uniqueCharacterIDs = append(uniqueCharacterIDs, characterID)
+	}
+	if len(uniqueCharacterIDs) == 0 {
+		return map[uuid.UUID]characterQuestAvailability{}, nil
+	}
+	actions, err := s.dbClient.CharacterAction().FindGiveQuestActionsByCharacterIDs(
+		ctx,
+		uniqueCharacterIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return s.questAvailabilityByCharacterFromActions(ctx, userID, actions)
+}
+
+func (s *server) questAvailabilityByCharacterFromActions(
+	ctx context.Context,
+	userID uuid.UUID,
+	actions []*models.CharacterAction,
+) (map[uuid.UUID]characterQuestAvailability, error) {
 	questsByCharacter := map[uuid.UUID][]uuid.UUID{}
 	questIDsSet := map[uuid.UUID]struct{}{}
 	for _, action := range actions {
-		if action == nil || action.ActionType != models.ActionTypeGiveQuest {
+		if action == nil {
 			continue
 		}
 		questIDStr := extractActionQuestID(action.Metadata)
@@ -3762,6 +3823,7 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
 		Name                           string                              `json:"name"`
 		Description                    string                              `json:"description"`
+		ZoneKind                       string                              `json:"zoneKind"`
 		Category                       string                              `json:"category"`
 		QuestGiverCharacterID          *uuid.UUID                          `json:"questGiverCharacterId"`
 		ClosurePolicy                  string                              `json:"closurePolicy"`
@@ -3849,6 +3911,11 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	if strings.TrimSpace(requestBody.Category) != "" {
 		category = models.NormalizeQuestCategory(requestBody.Category)
 	}
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, requestBody.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	questGiverCandidate := questArchetype.QuestGiverCharacterID
 	if requestBody.QuestGiverCharacterID != nil {
 		questGiverCandidate = requestBody.QuestGiverCharacterID
@@ -3873,6 +3940,7 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 
 	questArchetype.Name = name
 	questArchetype.Description = description
+	questArchetype.ZoneKind = models.ZoneKindPromptSlug(zoneKind)
 	questArchetype.Category = category
 	questArchetype.QuestGiverCharacterID = questGiverCharacterID
 	questArchetype.ClosurePolicy = models.NormalizeQuestClosurePolicy(
@@ -5101,6 +5169,7 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
 		Name                           string                              `json:"name"`
 		Description                    string                              `json:"description"`
+		ZoneKind                       string                              `json:"zoneKind"`
 		Category                       string                              `json:"category"`
 		QuestGiverCharacterID          *uuid.UUID                          `json:"questGiverCharacterId"`
 		ClosurePolicy                  string                              `json:"closurePolicy"`
@@ -5189,6 +5258,11 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	category := models.NormalizeQuestCategory(requestBody.Category)
+	zoneKind, err := s.resolveOptionalZoneKind(ctx, requestBody.ZoneKind)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	questGiverCharacterID, err := s.normalizeQuestArchetypeQuestGiverCharacterID(
 		ctx,
 		category,
@@ -5202,6 +5276,7 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	questArchType := &models.QuestArchetype{
 		Name:                        name,
 		Description:                 description,
+		ZoneKind:                    models.ZoneKindPromptSlug(zoneKind),
 		Category:                    category,
 		QuestGiverCharacterID:       questGiverCharacterID,
 		ClosurePolicy:               models.NormalizeQuestClosurePolicy(requestBody.ClosurePolicy, category),
@@ -5834,136 +5909,67 @@ func characterInZone(zone *models.Zone, zonePoiIDs map[uuid.UUID]struct{}, chara
 }
 
 func (s *server) getZonePins(ctx *gin.Context) {
+	requestStartedAt := time.Now()
 	id := ctx.Param("id")
 	zoneID, err := uuid.Parse(id)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
 		return
 	}
+	trace := newZoneRequestTrace(ctx, "zone-pins", zoneID)
 
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+	trace.Logf("start user=%s", user.ID.String())
 
+	zoneLookupStartedAt := time.Now()
 	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	trace.Step("zone.lookup", zoneLookupStartedAt, "")
 
-	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zoneID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	characters, err := s.dbClient.Character().FindAll(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	characterIDs := make([]uuid.UUID, 0, len(characters))
-	for _, character := range characters {
-		if character == nil || character.ID == uuid.Nil {
-			continue
-		}
-		characterIDs = append(characterIDs, character.ID)
-	}
-	relationshipMap, err := s.loadUserCharacterRelationshipMap(ctx, user.ID, characterIDs)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	storyFlagsStartedAt := time.Now()
 	activeStoryFlags, err := s.loadUserStoryFlagMap(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	activeFetchCharacterIDs, err := s.activeFetchQuestCharacterIDsForUser(ctx, user.ID)
+	trace.Step(
+		"story-flags",
+		storyFlagsStartedAt,
+		"count=%d",
+		len(activeStoryFlags),
+	)
+
+	snapshotStartedAt := time.Now()
+	snapshot, err := s.zonePinSnapshotForUser(
+		ctx.Request.Context(),
+		user,
+		zone,
+		activeStoryFlags,
+		true,
+		trace,
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := s.applyStoryWorldChangesToPointOfInterests(ctx, pointsOfInterest, activeStoryFlags); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	trace.Step(
+		"pin-snapshot",
+		snapshotStartedAt,
+		"pois=%d characters=%d includesQuestAvailability=%t",
+		len(snapshot.PointsOfInterest),
+		len(snapshot.Characters),
+		snapshot.IncludesQuestAvailability,
+	)
 
-	zonePoiIDs := make(map[uuid.UUID]struct{}, len(pointsOfInterest))
-	markerCache := contentMapMarkerExistenceCache{}
-	zoneKindSlug := models.NormalizeZoneKind(zone.Kind)
-	for i := range pointsOfInterest {
-		hasAvailable := false
-		hasAvailableMainStory := false
-		zonePoiIDs[pointsOfInterest[i].ID] = struct{}{}
-		applyPointOfInterestStoryVariant(&pointsOfInterest[i], activeStoryFlags)
-		pointsOfInterest[i].MapMarkerURL = s.resolvePointOfInterestMapMarkerURL(
-			ctx.Request.Context(),
-			pointsOfInterest[i].MarkerCategory,
-			effectiveContentMapMarkerZoneKind(pointsOfInterest[i].ZoneKind, zone),
-			markerCache,
-		)
-		for j := range pointsOfInterest[i].Characters {
-			pointsOfInterest[i].Characters[j].HasAvailableQuest =
-				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableQuest
-			pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest =
-				availability[pointsOfInterest[i].Characters[j].ID].HasAvailableMainStoryQuest
-			applyCharacterStoryVariant(&pointsOfInterest[i].Characters[j], activeStoryFlags)
-			applyCharacterRelationship(&pointsOfInterest[i].Characters[j], relationshipMap)
-			if pointsOfInterest[i].Characters[j].HasAvailableQuest {
-				hasAvailable = true
-			}
-			if pointsOfInterest[i].Characters[j].HasAvailableMainStoryQuest {
-				hasAvailableMainStory = true
-			}
-		}
-		pointsOfInterest[i].HasAvailableQuest = hasAvailable
-		pointsOfInterest[i].HasAvailableMainStoryQuest = hasAvailableMainStory
-	}
-
-	visibleCharacters := make([]*models.Character, 0, len(characters))
-	for i := range characters {
-		ch := characters[i]
-		if ch == nil ||
-			!characterVisibleToUser(user.ID, ch) ||
-			!fetchQuestCharacterVisibleToUser(ch, activeFetchCharacterIDs) {
-			continue
-		}
-		if err := s.applyStoryWorldChangesToCharacter(ctx, ch, activeStoryFlags); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		ch.HasAvailableQuest = availability[ch.ID].HasAvailableQuest
-		ch.HasAvailableMainStoryQuest = availability[ch.ID].HasAvailableMainStoryQuest
-		applyCharacterStoryVariant(ch, activeStoryFlags)
-		applyCharacterRelationship(ch, relationshipMap)
-		if markerURL := s.resolveSharedContentMapMarkerURL(
-			ctx.Request.Context(),
-			sharedContentMapMarkerDefinitions[7],
-			zoneKindSlug,
-			ch.MapIconURL,
-			markerCache,
-		); markerURL != "" {
-			ch.MapIconURL = markerURL
-		}
-		if !characterInZone(zone, zonePoiIDs, ch) {
-			continue
-		}
-		visibleCharacters = append(visibleCharacters, ch)
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"pointsOfInterest": pointsOfInterest,
-		"characters":       visibleCharacters,
-	})
+	trace.Step("request.total", requestStartedAt, "")
+	ctx.JSON(http.StatusOK, serializeZonePinSnapshot(snapshot))
 }
 
 func (s *server) getZone(ctx *gin.Context) {
@@ -6486,6 +6492,7 @@ type zoneSeedDraftRequest struct {
 	OptionEncounterCount   *int     `json:"optionEncounterCount"`
 	TreasureChestCount     *int     `json:"treasureChestCount"`
 	HealingFountainCount   *int     `json:"healingFountainCount"`
+	ShrineCount            *int     `json:"shrineCount"`
 	HerbalismResourceCount *int     `json:"herbalismResourceCount"`
 	MiningResourceCount    *int     `json:"miningResourceCount"`
 	ResourceCount          *int     `json:"resourceCount"`
@@ -6505,6 +6512,7 @@ type normalizedZoneSeedDraftRequest struct {
 	OptionEncounterCount   int
 	TreasureChestCount     int
 	HealingFountainCount   int
+	ShrineCount            int
 	HerbalismResourceCount int
 	MiningResourceCount    int
 	ResourceCount          int
@@ -6555,6 +6563,7 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 		OptionEncounterCount:   counts.OptionEncounterCount,
 		TreasureChestCount:     counts.TreasureChestCount,
 		HealingFountainCount:   counts.HealingFountainCount,
+		ShrineCount:            counts.ShrineCount,
 		HerbalismResourceCount: counts.HerbalismResourceCount,
 		MiningResourceCount:    counts.MiningResourceCount,
 		ResourceCount:          counts.ResourceCount,
@@ -6572,6 +6581,14 @@ func (s *server) createAndEnqueueZoneSeedJob(
 ) (*models.ZoneSeedJob, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("zone seed settings are required")
+	}
+	shopkeeperItemTags, err := s.resolveZoneSeedShopkeeperItemTags(
+		ctx,
+		settings.ZoneKind,
+		settings.ShopkeeperItemTags,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	job := &models.ZoneSeedJob{
@@ -6594,11 +6611,12 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		OptionEncounterCount:   settings.OptionEncounterCount,
 		TreasureChestCount:     settings.TreasureChestCount,
 		HealingFountainCount:   settings.HealingFountainCount,
+		ShrineCount:            settings.ShrineCount,
 		HerbalismResourceCount: settings.HerbalismResourceCount,
 		MiningResourceCount:    settings.MiningResourceCount,
 		ResourceCount:          settings.ResourceCount,
 		RequiredPlaceTags:      models.StringArray(settings.RequiredPlaceTags),
-		ShopkeeperItemTags:     models.StringArray(settings.ShopkeeperItemTags),
+		ShopkeeperItemTags:     models.StringArray(shopkeeperItemTags),
 		AutoSeedAudit:          settings.AutoSeedAudit,
 		CountAudit:             settings.CountAudit,
 	}
@@ -8734,6 +8752,10 @@ func (s *server) generateHealingFountainDiscoveredIcon(ctx *gin.Context) {
 	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[8])
 }
 
+func (s *server) generateShrineDiscoveredIcon(ctx *gin.Context) {
+	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[10])
+}
+
 func (s *server) generateBaseDiscoveredIcon(ctx *gin.Context) {
 	s.generateSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[9])
 }
@@ -8800,6 +8822,10 @@ func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
 
 func (s *server) getHealingFountainDiscoveredIconStatus(ctx *gin.Context) {
 	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[8])
+}
+
+func (s *server) getShrineDiscoveredIconStatus(ctx *gin.Context) {
+	s.getSharedContentMapMarkerStatus(ctx, sharedContentMapMarkerDefinitions[10])
 }
 
 func (s *server) getBaseDiscoveredIconStatus(ctx *gin.Context) {
@@ -8941,6 +8967,10 @@ func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {
 
 func (s *server) deleteHealingFountainDiscoveredIcon(ctx *gin.Context) {
 	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[8])
+}
+
+func (s *server) deleteShrineDiscoveredIcon(ctx *gin.Context) {
+	s.deleteSharedContentMapMarker(ctx, sharedContentMapMarkerDefinitions[10])
 }
 
 func (s *server) deleteBaseDiscoveredIcon(ctx *gin.Context) {

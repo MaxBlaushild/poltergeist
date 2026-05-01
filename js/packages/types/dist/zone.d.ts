@@ -60,4 +60,5 @@ export type ZoneAdminSummary = {
     raidEncounterCount: number;
     treasureChestCount: number;
     healingFountainCount: number;
+    shrineCount: number;
 };

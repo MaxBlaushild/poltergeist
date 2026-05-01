@@ -1,6 +1,6 @@
 {
-    "name": "unclaimed_streets",
-    "short_name": "unclaimed_streets",
+    "name": "StreetSekai",
+    "short_name": "StreetSekai",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

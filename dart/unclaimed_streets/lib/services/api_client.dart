@@ -42,6 +42,7 @@ class ApiClient {
     _client.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          options.extra['_requestStartedAt'] ??= DateTime.now();
           final prefs = await SharedPreferences.getInstance();
           final token = prefs.getString(_tokenKey);
           if (token != null) {
@@ -51,10 +52,70 @@ class ApiClient {
           if (loc != null) {
             options.headers['X-User-Location'] = loc.headerValue;
           }
+          final traceId = options.headers['X-Map-Trace-Id']?.toString().trim();
+          final traceLabel = options.extra['traceLabel']?.toString().trim();
+          if (kDebugMode &&
+              ((traceId != null && traceId.isNotEmpty) ||
+                  (traceLabel != null && traceLabel.isNotEmpty))) {
+            debugPrint(
+              'ApiClient trace start '
+              '${options.method} ${options.uri} '
+              'traceId=${traceId ?? '-'} traceLabel=${traceLabel ?? '-'}',
+            );
+          }
           return handler.next(options);
         },
-        onResponse: (response, handler) => handler.next(response),
+        onResponse: (response, handler) {
+          if (kDebugMode) {
+            final startedAt =
+                response.requestOptions.extra['_requestStartedAt'] as DateTime?;
+            final traceId = response.requestOptions.headers['X-Map-Trace-Id']
+                ?.toString()
+                .trim();
+            final traceLabel = response.requestOptions.extra['traceLabel']
+                ?.toString()
+                .trim();
+            if ((traceId != null && traceId.isNotEmpty) ||
+                (traceLabel != null && traceLabel.isNotEmpty)) {
+              final elapsedMs = startedAt == null
+                  ? -1
+                  : DateTime.now().difference(startedAt).inMilliseconds;
+              debugPrint(
+                'ApiClient trace done '
+                '${response.requestOptions.method} ${response.requestOptions.uri} '
+                'status=${response.statusCode} '
+                'elapsedMs=$elapsedMs '
+                'traceId=${traceId ?? '-'} traceLabel=${traceLabel ?? '-'}',
+              );
+            }
+          }
+          return handler.next(response);
+        },
         onError: (error, handler) async {
+          if (kDebugMode) {
+            final startedAt =
+                error.requestOptions.extra['_requestStartedAt'] as DateTime?;
+            final traceId = error.requestOptions.headers['X-Map-Trace-Id']
+                ?.toString()
+                .trim();
+            final traceLabel = error.requestOptions.extra['traceLabel']
+                ?.toString()
+                .trim();
+            if ((traceId != null && traceId.isNotEmpty) ||
+                (traceLabel != null && traceLabel.isNotEmpty)) {
+              final elapsedMs = startedAt == null
+                  ? -1
+                  : DateTime.now().difference(startedAt).inMilliseconds;
+              debugPrint(
+                'ApiClient trace error '
+                '${error.requestOptions.method} ${error.requestOptions.uri} '
+                'status=${error.response?.statusCode} '
+                'elapsedMs=$elapsedMs '
+                'traceId=${traceId ?? '-'} traceLabel=${traceLabel ?? '-'} '
+                'error=${error.message}',
+              );
+            }
+          }
           if (error.response?.statusCode == 401 ||
               error.response?.statusCode == 403) {
             final skipAuthError =
@@ -87,13 +148,20 @@ class ApiClient {
     String url, {
     Map<String, dynamic>? params,
     bool skipAuthError = false,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
   }) async {
+    final requestExtra = <String, dynamic>{
+      'skipAuthError': skipAuthError,
+      if (extra != null) ...extra,
+    };
     final response = await _client.get<T>(
       url,
       queryParameters: params,
       options: Options(
         responseType: ResponseType.json,
-        extra: {'skipAuthError': skipAuthError},
+        headers: headers,
+        extra: requestExtra,
       ),
     );
     return response.data as T;

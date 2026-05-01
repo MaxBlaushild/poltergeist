@@ -16,6 +16,7 @@ const (
 	ZoneContentFlushTypeMonsters         ZoneContentFlushType = "monsters"
 	ZoneContentFlushTypeTreasureChests   ZoneContentFlushType = "treasureChests"
 	ZoneContentFlushTypeHealingFountains ZoneContentFlushType = "healingFountains"
+	ZoneContentFlushTypeShrines          ZoneContentFlushType = "shrines"
 	ZoneContentFlushTypeResources        ZoneContentFlushType = "resources"
 	ZoneContentFlushTypeMovementPatterns ZoneContentFlushType = "movementPatterns"
 	ZoneContentFlushTypeJobs             ZoneContentFlushType = "jobs"
@@ -30,6 +31,7 @@ var allZoneContentFlushTypes = []ZoneContentFlushType{
 	ZoneContentFlushTypeMonsters,
 	ZoneContentFlushTypeTreasureChests,
 	ZoneContentFlushTypeHealingFountains,
+	ZoneContentFlushTypeShrines,
 	ZoneContentFlushTypeResources,
 	ZoneContentFlushTypeMovementPatterns,
 	ZoneContentFlushTypeJobs,

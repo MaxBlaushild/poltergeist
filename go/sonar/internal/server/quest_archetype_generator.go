@@ -31,6 +31,7 @@ type questTemplateGeneratorStepRequest struct {
 type questTemplateGeneratorRequest struct {
 	Name          string                              `json:"name"`
 	ThemePrompt   string                              `json:"themePrompt"`
+	ZoneKind      string                              `json:"zoneKind"`
 	CharacterTags []string                            `json:"characterTags"`
 	InternalTags  []string                            `json:"internalTags"`
 	Steps         []questTemplateGeneratorStepRequest `json:"steps"`
@@ -91,6 +92,10 @@ func (s *server) generateQuestArchetypeFromSteps(
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("at least one step is required")
 	}
+	preferredZoneKind, err := s.resolveOptionalZoneKind(ctx, requestBody.ZoneKind)
+	if err != nil {
+		return nil, err
+	}
 
 	monsterTemplates, err := s.dbClient.MonsterTemplate().FindAllActive(ctx)
 	if err != nil {
@@ -100,7 +105,14 @@ func (s *server) generateQuestArchetypeFromSteps(
 	var rootNodeID uuid.UUID
 	var previousNode *models.QuestArchetypeNode
 	for idx, step := range steps {
-		node, err := s.createGeneratedQuestTemplateStepNode(ctx, requestBody.ThemePrompt, idx, step, &monsterTemplates)
+		node, err := s.createGeneratedQuestTemplateStepNode(
+			ctx,
+			requestBody.ThemePrompt,
+			idx,
+			step,
+			preferredZoneKind,
+			&monsterTemplates,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +137,7 @@ func (s *server) generateQuestArchetypeFromSteps(
 		ID:                          uuid.New(),
 		Name:                        name,
 		Description:                 description,
+		ZoneKind:                    models.ZoneKindPromptSlug(preferredZoneKind),
 		AcceptanceDialogue:          dialogueSequenceFromLines(buildGeneratedQuestTemplateAcceptanceDialogue(requestBody.ThemePrompt, steps)),
 		ImageURL:                    "",
 		DifficultyMode:              models.QuestDifficultyModeScale,
@@ -201,6 +214,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	themePrompt string,
 	stepIndex int,
 	step normalizedQuestTemplateGeneratorStep,
+	preferredZoneKind *models.ZoneKind,
 	monsterTemplates *[]models.MonsterTemplate,
 ) (*models.QuestArchetypeNode, error) {
 	payload := questArchetypeNodePayload{
@@ -212,7 +226,13 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 	}
 	switch step.Content {
 	case questTemplateGeneratorContentScenario:
-		template, err := s.createGeneratedScenarioTemplate(ctx, themePrompt, stepIndex, step)
+		template, err := s.createGeneratedScenarioTemplate(
+			ctx,
+			themePrompt,
+			stepIndex,
+			step,
+			preferredZoneKind,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -226,6 +246,7 @@ func (s *server) createGeneratedQuestTemplateStepNode(
 			questMonsterTemplateRequest{
 				Count:             1,
 				MonsterType:       models.MonsterTemplateTypeMonster,
+				PreferredZoneKind: preferredZoneKind,
 				ThemePrompt:       themePrompt,
 				EncounterConcept:  buildGeneratedQuestTemplateName("", themePrompt, []normalizedQuestTemplateGeneratorStep{step}),
 				LocationConcept:   generatedQuestMonsterLocationConcept(step),
@@ -295,9 +316,11 @@ func (s *server) createGeneratedScenarioTemplate(
 	themePrompt string,
 	stepIndex int,
 	step normalizedQuestTemplateGeneratorStep,
+	preferredZoneKind *models.ZoneKind,
 ) (*models.ScenarioTemplate, error) {
 	prompt := buildGeneratedScenarioTemplatePrompt(themePrompt, stepIndex, step)
 	template := &models.ScenarioTemplate{
+		ZoneKind:                  models.ZoneKindPromptSlug(preferredZoneKind),
 		Prompt:                    prompt,
 		ImageURL:                  "",
 		ThumbnailURL:              "",

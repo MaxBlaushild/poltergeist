@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -45,6 +46,71 @@ func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.
 func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, error) {
 	var characters []*models.Character
 	if err := h.preloadBase(ctx).
+		Find(&characters).Error; err != nil {
+		return nil, err
+	}
+	return characters, nil
+}
+
+func (h *characterHandler) FindPotentiallyInZone(
+	ctx context.Context,
+	zone *models.Zone,
+	pointOfInterestIDs []uuid.UUID,
+) ([]*models.Character, error) {
+	if zone == nil {
+		return []*models.Character{}, nil
+	}
+
+	conditions := make([]string, 0, 3)
+	args := make([]interface{}, 0, 9)
+	if len(pointOfInterestIDs) > 0 {
+		conditions = append(conditions, "point_of_interest_id IN ?")
+		args = append(args, pointOfInterestIDs)
+	}
+
+	polygon := zone.GetPolygon()
+	if len(polygon) > 0 {
+		bounds := polygon.Bound()
+		if !bounds.IsEmpty() {
+			minLat := bounds.Min.Y()
+			maxLat := bounds.Max.Y()
+			minLng := bounds.Min.X()
+			maxLng := bounds.Max.X()
+
+			conditions = append(conditions, `id IN (
+				SELECT DISTINCT character_id
+				FROM character_locations
+				WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?
+			)`)
+			args = append(args, minLat, maxLat, minLng, maxLng)
+
+			conditions = append(conditions, `point_of_interest_id IN (
+				SELECT id
+				FROM points_of_interest
+				WHERE lat ~ ?
+				  AND lng ~ ?
+				  AND CAST(lat AS double precision) BETWEEN ? AND ?
+				  AND CAST(lng AS double precision) BETWEEN ? AND ?
+			)`)
+			args = append(
+				args,
+				`^-?[0-9]+(\.[0-9]+)?$`,
+				`^-?[0-9]+(\.[0-9]+)?$`,
+				minLat,
+				maxLat,
+				minLng,
+				maxLng,
+			)
+		}
+	}
+
+	if len(conditions) == 0 {
+		return []*models.Character{}, nil
+	}
+
+	var characters []*models.Character
+	if err := h.preloadBase(ctx).
+		Where(strings.Join(conditions, " OR "), args...).
 		Find(&characters).Error; err != nil {
 		return nil, err
 	}

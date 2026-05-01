@@ -6,6 +6,8 @@ import '../providers/auth_provider.dart';
 import '../services/notification_permission_service.dart';
 import '../services/push_notification_service.dart';
 
+enum _LogisterStage { phone, profile, notifications }
+
 class LogisterModal extends StatelessWidget {
   const LogisterModal({
     super.key,
@@ -25,22 +27,24 @@ class LogisterModal extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
+            constraints: const BoxConstraints(maxWidth: 440),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: colorScheme.surface.withOpacity(0.97),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: colorScheme.outlineVariant),
+                color: colorScheme.surface.withValues(alpha: 0.98),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.7),
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 20,
-                    offset: const Offset(0, 12),
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 36,
+                    offset: const Offset(0, 18),
                   ),
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(28),
                 child: Consumer<AuthProvider>(
                   builder: (context, auth, _) {
                     return _LogisterForm(
@@ -79,7 +83,9 @@ class _LogisterFormState extends State<_LogisterForm> {
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
-  bool _loading = false;
+  bool _requestingCode = false;
+  bool _submittingCode = false;
+  bool _submittingProfile = false;
   bool _showProfileSetup = false;
   bool _showNotificationSetup = false;
   bool _notificationLoading = false;
@@ -112,6 +118,9 @@ class _LogisterFormState extends State<_LogisterForm> {
 
   void _handleFormChanged() {
     if (!mounted) return;
+    if (widget.auth.error != null) {
+      widget.auth.clearError();
+    }
     setState(() {});
   }
 
@@ -122,23 +131,30 @@ class _LogisterFormState extends State<_LogisterForm> {
     return '+$code$local';
   }
 
-  Future<void> _getCode() async {
+  Future<void> _getCode({bool showConfirmation = false}) async {
     final phone = _formattedPhoneNumber();
     if (phone.isEmpty) return;
-    setState(() => _loading = true);
-    await widget.auth.getVerificationCode(phone);
-    setState(() => _loading = false);
+    setState(() => _requestingCode = true);
+    final sent = await widget.auth.getVerificationCode(phone);
+    if (!mounted) return;
+    setState(() => _requestingCode = false);
+    if (sent && showConfirmation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sent a fresh verification code.')),
+      );
+    }
   }
 
   Future<void> _submit() async {
     final phone = _formattedPhoneNumber();
     final code = _codeController.text.trim();
     if (phone.isEmpty || code.isEmpty) return;
-    setState(() => _loading = true);
+    setState(() => _submittingCode = true);
     try {
       final needsProfile = await widget.auth.logister(phone, code);
+      if (!mounted) return;
       setState(() {
-        _loading = false;
+        _submittingCode = false;
         _showProfileSetup = needsProfile;
       });
       if (!needsProfile && mounted) {
@@ -147,7 +163,8 @@ class _LogisterFormState extends State<_LogisterForm> {
         widget.onSuccess();
       }
     } catch (_) {
-      setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _submittingCode = false);
     }
   }
 
@@ -155,12 +172,12 @@ class _LogisterFormState extends State<_LogisterForm> {
     final username = _nameController.text.trim();
     final hasUsername = username.length >= 2;
     if (!hasUsername) return;
-    setState(() => _loading = true);
+    setState(() => _submittingProfile = true);
     try {
       if (widget.auth.isDryRunRegistrationActive) {
         await widget.auth.logout();
         if (!mounted) return;
-        setState(() => _loading = false);
+        setState(() => _submittingProfile = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Dry-run registration complete. No user was saved.'),
@@ -173,13 +190,14 @@ class _LogisterFormState extends State<_LogisterForm> {
       await widget.auth.completeRegistration(username: username);
       if (!mounted) return;
       setState(() {
-        _loading = false;
+        _submittingProfile = false;
         _showProfileSetup = false;
         _showNotificationSetup = true;
       });
       await _loadNotificationPermissionState();
     } catch (_) {
-      setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _submittingProfile = false);
     }
   }
 
@@ -264,201 +282,139 @@ class _LogisterFormState extends State<_LogisterForm> {
   }
 
   void _handleBack() {
-    if (_showProfileSetup || _showNotificationSetup) {
+    if (_showProfileSetup ||
+        _showNotificationSetup ||
+        widget.auth.isWaitingForVerificationCode) {
       widget.auth.cancelRegistrationFlow();
     }
     widget.onSkip();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final auth = widget.auth;
-    final waiting = auth.isWaitingForVerificationCode;
+  _LogisterStage get _stage {
+    if (_showProfileSetup) return _LogisterStage.profile;
+    if (_showNotificationSetup) return _LogisterStage.notifications;
+    return _LogisterStage.phone;
+  }
+
+  String get _phonePreview {
+    final phone = _formattedPhoneNumber();
+    return phone.isEmpty ? 'your phone' : phone;
+  }
+
+  InputDecoration _inputDecoration(
+    BuildContext context,
+    String label, {
+    String? hintText,
+    String? prefixText,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final canRequestCode = _formattedPhoneNumber().isNotEmpty;
-    final canSubmitCode =
-        _formattedPhoneNumber().isNotEmpty &&
-        _codeController.text.trim().length == 6;
-    final canSubmitProfile = _nameController.text.trim().length >= 2;
+    return InputDecoration(
+      labelText: label,
+      hintText: hintText,
+      prefixText: prefixText,
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.26),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.4),
+      ),
+    );
+  }
 
-    if (_showProfileSetup) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildErrorBanner(BuildContext context, String message) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Set up your profile',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+          Icon(
+            Icons.error_outline,
+            size: 18,
+            color: colorScheme.onErrorContainer,
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Choose a username so your crew can recognize you.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
-            ),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Username',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FilledButton(
-                onPressed: (_loading || !canSubmitProfile)
-                    ? null
-                    : _submitProfileSetup,
-                child: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Continue'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onErrorContainer,
               ),
-              const SizedBox(width: 12),
-              TextButton(onPressed: _handleBack, child: const Text('Back')),
-            ],
+            ),
           ),
         ],
-      );
-    }
+      ),
+    );
+  }
 
-    if (_showNotificationSetup) {
-      final enabled =
-          _notificationPermissionState == NotificationPermissionState.granted;
-      final canRequest =
-          _notificationPermissionState !=
-          NotificationPermissionState.unsupported;
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Stay in the loop',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Turn on notifications for party invites and combat updates.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.75),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.45),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: colorScheme.outlineVariant),
-            ),
-            child: SwitchListTile(
-              value: enabled,
-              onChanged: (_notificationLoading || !canRequest)
-                  ? null
-                  : _onNotificationToggle,
-              title: const Text('Allow push notifications'),
-              subtitle: Text(_notificationStatusText()),
-              secondary: _notificationLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.notifications_active_outlined),
-            ),
-          ),
-          if (_notificationPermissionState ==
-              NotificationPermissionState.denied)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                'Notifications are currently blocked. You can continue and enable them later in browser settings.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.72),
-                ),
-              ),
-            ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FilledButton.icon(
-                onPressed: _completeNotificationSetup,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Continue'),
-              ),
-              const SizedBox(width: 12),
-              TextButton(
-                onPressed: _completeNotificationSetup,
-                child: const Text('Skip for now'),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
+  Widget _buildPhoneStage(
+    BuildContext context, {
+    required bool waiting,
+    required bool isCodeActionBusy,
+    required bool canRequestCode,
+    required bool canSubmitCode,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final countryField = TextField(
+      controller: _countryCodeController,
+      decoration: _inputDecoration(
+        context,
+        'Country',
+        hintText: '1',
+        prefixText: '+',
+      ),
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      textInputAction: TextInputAction.next,
+      autofillHints: const [AutofillHints.telephoneNumberCountryCode],
+    );
+    final phoneField = TextField(
+      controller: _phoneController,
+      decoration: _inputDecoration(
+        context,
+        'Phone number',
+        hintText: '234 567 8900',
+      ),
+      keyboardType: TextInputType.phone,
+      textInputAction: waiting ? TextInputAction.next : TextInputAction.go,
+      autofillHints: const [AutofillHints.telephoneNumber],
+      onSubmitted: (_) {
+        if (!waiting) {
+          _getCode();
+        }
+      },
+    );
 
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Sign in to Unclaimed Streets',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Enter your phone number to receive a code.',
+          waiting
+              ? 'Enter the 6-digit code sent to $_phonePreview.'
+              : 'Use your phone number to enter StreetSekai.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
+            color: colorScheme.onSurface.withValues(alpha: 0.72),
+            height: 1.45,
           ),
         ),
-        const SizedBox(height: 16),
-        if (auth.error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              auth.error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        Builder(
-          builder: (context) {
-            final isNarrow = MediaQuery.of(context).size.width < 420;
-            final countryField = TextField(
-              controller: _countryCodeController,
-              decoration: const InputDecoration(
-                labelText: 'Country code',
-                prefixText: '+',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            );
-            final phoneField = TextField(
-              controller: _phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
-                hintText: '234 567 8900',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.phone,
-              onSubmitted: (_) => _getCode(),
-            );
-
-            if (isNarrow) {
+        const SizedBox(height: 20),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 360) {
               return Column(
                 children: [
                   countryField,
@@ -470,7 +426,7 @@ class _LogisterFormState extends State<_LogisterForm> {
 
             return Row(
               children: [
-                SizedBox(width: 140, child: countryField),
+                SizedBox(width: 112, child: countryField),
                 const SizedBox(width: 12),
                 Expanded(child: phoneField),
               ],
@@ -479,54 +435,337 @@ class _LogisterFormState extends State<_LogisterForm> {
         ),
         if (waiting) ...[
           const SizedBox(height: 12),
-          const Text(
-            "We've sent a 6-digit verification code. It may take a moment to arrive.",
-            style: TextStyle(fontSize: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.24,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              'Code sent to $_phonePreview. It may take a moment to arrive.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.72),
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           TextField(
             controller: _codeController,
-            decoration: const InputDecoration(
-              labelText: 'Verification code',
-              border: OutlineInputBorder(),
+            decoration: _inputDecoration(
+              context,
+              'Verification code',
+              hintText: '123456',
             ),
             keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             maxLength: 6,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) {
+              if (canSubmitCode && !isCodeActionBusy) {
+                _submit();
+              }
+            },
+            autofillHints: const [AutofillHints.oneTimeCode],
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: waiting
+                ? (isCodeActionBusy || !canSubmitCode ? null : _submit)
+                : (isCodeActionBusy || !canRequestCode ? null : _getCode),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: waiting
+                ? (_submittingCode
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Continue'))
+                : (_requestingCode
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Send code')),
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (waiting)
-              FilledButton.icon(
-                onPressed: (_loading || !canSubmitCode) ? null : _submit,
-                icon: const Icon(Icons.lock_open),
-                label: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Enter gate'),
-              )
-            else
-              FilledButton.icon(
-                onPressed: (_loading || !canRequestCode) ? null : _getCode,
-                icon: const Icon(Icons.wifi_tethering),
-                label: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Send code'),
+              TextButton(
+                onPressed: (isCodeActionBusy || !canRequestCode)
+                    ? null
+                    : () => _getCode(showConfirmation: true),
+                child: Text(_requestingCode ? 'Sending...' : 'Resend code'),
               ),
-            const SizedBox(width: 12),
+            const Spacer(),
             TextButton(onPressed: _handleBack, child: const Text('Back')),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildProfileStage(BuildContext context, {required bool canSubmit}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Choose the name your party will know you by.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.72),
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: _nameController,
+          decoration: _inputDecoration(
+            context,
+            'Username',
+            hintText: 'Mapwalker',
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (canSubmit && !_submittingProfile) {
+              _submitProfileSetup();
+            }
+          },
+          autofillHints: const [AutofillHints.username],
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: (_submittingProfile || !canSubmit)
+                ? null
+                : _submitProfileSetup,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: _submittingProfile
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Continue'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(onPressed: _handleBack, child: const Text('Back')),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationStage(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final enabled =
+        _notificationPermissionState == NotificationPermissionState.granted;
+    final canRequest =
+        _notificationPermissionState != NotificationPermissionState.unsupported;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Turn on notifications for party invites, quest nudges, and combat updates. You can always change this later.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.72),
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colorScheme.outlineVariant),
+          ),
+          child: SwitchListTile(
+            value: enabled,
+            onChanged: (_notificationLoading || !canRequest)
+                ? null
+                : _onNotificationToggle,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 4,
+            ),
+            title: const Text('Allow notifications'),
+            subtitle: Text(_notificationStatusText()),
+            secondary: _notificationLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.notifications_none_rounded),
+          ),
+        ),
+        if (_notificationPermissionState == NotificationPermissionState.denied)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              'Notifications are blocked right now. You can finish setup and enable them later in browser or system settings.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+            ),
+          ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _completeNotificationSetup,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: const Text('Finish setup'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _completeNotificationSetup,
+            child: const Text('Skip for now'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = widget.auth;
+    final waiting = auth.isWaitingForVerificationCode;
+    final colorScheme = Theme.of(context).colorScheme;
+    final isCodeActionBusy = _requestingCode || _submittingCode;
+    final canRequestCode = _formattedPhoneNumber().isNotEmpty;
+    final canSubmitCode =
+        _formattedPhoneNumber().isNotEmpty &&
+        _codeController.text.trim().length == 6;
+    final canSubmitProfile = _nameController.text.trim().length >= 2;
+    final stage = _stage;
+    final stepLabel = switch (stage) {
+      _LogisterStage.phone => 'Step 1 of 3',
+      _LogisterStage.profile => 'Step 2 of 3',
+      _LogisterStage.notifications => 'Step 3 of 3',
+    };
+    final title = switch (stage) {
+      _LogisterStage.phone => waiting ? 'Check your code' : 'Sign in',
+      _LogisterStage.profile => 'Set up your profile',
+      _LogisterStage.notifications => 'Notifications',
+    };
+
+    final body = switch (stage) {
+      _LogisterStage.phone => _buildPhoneStage(
+        context,
+        waiting: waiting,
+        isCodeActionBusy: isCodeActionBusy,
+        canRequestCode: canRequestCode,
+        canSubmitCode: canSubmitCode,
+      ),
+      _LogisterStage.profile => _buildProfileStage(
+        context,
+        canSubmit: canSubmitProfile,
+      ),
+      _LogisterStage.notifications => _buildNotificationStage(context),
+    };
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: KeyedSubtree(
+        key: ValueKey(stage),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'StreetSekai',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      onPressed: _handleBack,
+                      tooltip: 'Close',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.close),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.4,
+                        ),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        stepLabel,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (auth.error != null) ...[
+              const SizedBox(height: 18),
+              _buildErrorBanner(context, auth.error!),
+            ],
+            const SizedBox(height: 20),
+            body,
+          ],
+        ),
+      ),
     );
   }
 }

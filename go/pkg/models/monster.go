@@ -162,6 +162,7 @@ func NormalizeMonsterTemplateType(raw string) MonsterTemplateType {
 }
 
 func (m *Monster) BeforeSave(tx *gorm.DB) error {
+	m.ZoneKind = NormalizeZoneKind(m.ZoneKind)
 	if err := m.SetGeometry(m.Latitude, m.Longitude); err != nil {
 		return err
 	}

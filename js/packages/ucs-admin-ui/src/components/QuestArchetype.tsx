@@ -38,6 +38,7 @@ import {
   normalizeMaterialRewards,
   summarizeMaterialRewards,
 } from './MaterialRewardsEditor.tsx';
+import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 import './questArchetypeTheme.css';
 import { useSearchParams } from 'react-router-dom';
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
@@ -3411,6 +3412,7 @@ type QuestArchetypeSpellRewardRow = {
 type QuestArchetypeFormState = {
   name: string;
   description: string;
+  zoneKind: string;
   category: 'side' | 'main_story';
   questGiverCharacterId: string;
   closurePolicy: QuestClosurePolicy;
@@ -3451,6 +3453,7 @@ type QuestArchetypeFormState = {
 const createEmptyQuestArchetypeForm = (): QuestArchetypeFormState => ({
   name: '',
   description: '',
+  zoneKind: '',
   category: 'side',
   questGiverCharacterId: '',
   closurePolicy: 'remote',
@@ -3495,6 +3498,7 @@ const buildQuestArchetypeFormFromRecord = (
 ): QuestArchetypeFormState => ({
   name: archetype.name ?? '',
   description: archetype.description ?? '',
+  zoneKind: archetype.zoneKind ?? '',
   category: archetype.category === 'main_story' ? 'main_story' : 'side',
   questGiverCharacterId: archetype.questGiverCharacterId ?? '',
   closurePolicy: archetype.closurePolicy ?? 'remote',
@@ -3632,6 +3636,7 @@ const normalizeQuestArchetypeDraft = (
   return {
     name: form.name.trim(),
     description: form.description.trim(),
+    zoneKind: form.zoneKind.trim() || null,
     category: form.category,
     questGiverCharacterId:
       form.category === 'main_story' && form.questGiverCharacterId
@@ -3699,6 +3704,7 @@ type QuestTemplateGeneratorStepFormState = {
 type QuestTemplateGeneratorFormState = {
   name: string;
   themePrompt: string;
+  zoneKind: string;
   characterTagsText: string;
   internalTagsText: string;
   steps: QuestTemplateGeneratorStepFormState[];
@@ -3724,6 +3730,7 @@ const createEmptyQuestTemplateGeneratorForm =
   (): QuestTemplateGeneratorFormState => ({
     name: '',
     themePrompt: '',
+    zoneKind: '',
     characterTagsText: '',
     internalTagsText: '',
     steps: [
@@ -3736,6 +3743,7 @@ const normalizeQuestTemplateGeneratorDraft = (
 ): QuestTemplateGeneratorDraft => ({
   name: form.name.trim(),
   themePrompt: form.themePrompt.trim(),
+  zoneKind: form.zoneKind.trim() || null,
   characterTags: form.characterTagsText
     .split(',')
     .map((tag) => tag.trim())
@@ -3789,6 +3797,7 @@ export const QuestArchetypeComponent = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
+  const { zoneKinds, zoneKindBySlug } = useZoneKinds();
   const {
     questArchetypes,
     locationArchetypes,
@@ -4904,6 +4913,15 @@ export const QuestArchetypeComponent = () => {
                         {(selectedArchetype.internalTags ?? []).length > 0
                           ? (selectedArchetype.internalTags ?? []).join(', ')
                           : 'None'}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Zone Kind</div>
+                      <div className="qa-stat-value">
+                        {zoneKindLabel(
+                          selectedArchetype.zoneKind,
+                          zoneKindBySlug
+                        )}
                       </div>
                     </div>
                     <div className="qa-stat">
@@ -6807,6 +6825,13 @@ export const QuestArchetypeComponent = () => {
                       ? `Template tags: ${selectedArchetype.internalTags?.join(', ')}`
                       : 'Template tags: none'}
                   </p>
+                  <p className="qa-muted" style={{ marginTop: 8 }}>
+                    Archetype zone kind:{' '}
+                    {zoneKindLabel(
+                      selectedArchetype.zoneKind,
+                      zoneKindBySlug
+                    )}
+                  </p>
                   {selectedGenerateZone && (
                     <div className="qa-inline" style={{ marginTop: 12 }}>
                       <span className="qa-chip muted">
@@ -6987,6 +7012,30 @@ export const QuestArchetypeComponent = () => {
                   }
                   placeholder="merchant, outlaw, druid"
                 />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Zone Kind</div>
+                <select
+                  className="qa-select"
+                  value={generatorForm.zoneKind}
+                  onChange={(e) =>
+                    setGeneratorForm((prev) => ({
+                      ...prev,
+                      zoneKind: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">No zone kind preference</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option key={zoneKind.id} value={zoneKind.slug}>
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="qa-helper">
+                  Generated scenario and monster templates will lean toward this
+                  zone kind when it fits.
+                </div>
               </div>
               <div className="qa-field">
                 <div className="qa-label">Internal Tags</div>
@@ -7441,6 +7490,30 @@ export const QuestArchetypeComponent = () => {
                   <option value="side">Side Quest</option>
                   <option value="main_story">Main Story</option>
                 </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Zone Kind</div>
+                <select
+                  className="qa-select"
+                  value={createForm.zoneKind}
+                  onChange={(e) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      zoneKind: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">No zone kind preference</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option key={zoneKind.id} value={zoneKind.slug}>
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="qa-helper">
+                  Optional flavor direction for generated quest content and any
+                  quest-specific scenario or monster templates.
+                </div>
               </div>
               <div className="qa-field">
                 <div className="qa-label">
@@ -8210,6 +8283,30 @@ export const QuestArchetypeComponent = () => {
                 </select>
               </div>
               <div className="qa-field">
+                <div className="qa-label">Zone Kind</div>
+                <select
+                  className="qa-select"
+                  value={editForm.zoneKind}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      zoneKind: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">No zone kind preference</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option key={zoneKind.id} value={zoneKind.slug}>
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="qa-helper">
+                  Optional flavor direction for generated quest content and any
+                  quest-specific scenario or monster templates.
+                </div>
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">
                   {editForm.category === 'main_story'
                     ? 'Quest Giver'
@@ -8864,6 +8961,7 @@ export const QuestArchetypeComponent = () => {
                     ...editingArchetype,
                     name: draft.name,
                     description: draft.description,
+                    zoneKind: draft.zoneKind ?? '',
                     category: draft.category,
                     questGiverCharacterId: draft.questGiverCharacterId,
                     closurePolicy: draft.closurePolicy,

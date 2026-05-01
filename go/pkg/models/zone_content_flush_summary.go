@@ -14,6 +14,7 @@ type ZoneContentFlushSummary struct {
 	DeletedMonsterCount                int `json:"deletedMonsterCount"`
 	DeletedTreasureChestCount          int `json:"deletedTreasureChestCount"`
 	DeletedHealingFountainCount        int `json:"deletedHealingFountainCount"`
+	DeletedShrineCount                 int `json:"deletedShrineCount"`
 	DeletedResourceCount               int `json:"deletedResourceCount"`
 	DeletedMovementPatternCount        int `json:"deletedMovementPatternCount"`
 	DeletedZoneSeedJobCount            int `json:"deletedZoneSeedJobCount"`

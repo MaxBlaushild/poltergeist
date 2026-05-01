@@ -48,7 +48,7 @@ export const AdminHome = () => {
     <div className="dashboard-home">
       <section className="dashboard-hero">
         <div className="dashboard-hero__copy">
-          <div className="dashboard-kicker">Unclaimed Streets Admin</div>
+          <div className="dashboard-kicker">StreetSekai Admin</div>
           <h1>
             Control center for worldbuilding, quest design, and live operations.
           </h1>

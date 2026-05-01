@@ -54,6 +54,7 @@ type ZoneSeedCounts = {
   optionEncounterCount: number;
   treasureChestCount: number;
   healingFountainCount: number;
+  shrineCount: number;
   herbalismResourceCount: number;
   miningResourceCount: number;
   resourceCount: number;
@@ -98,6 +99,7 @@ type ZoneSeedJob = {
   optionEncounterCount: number;
   treasureChestCount?: number;
   healingFountainCount?: number;
+  shrineCount?: number;
   herbalismResourceCount?: number;
   miningResourceCount?: number;
   resourceCount?: number;
@@ -133,6 +135,7 @@ const defaultSeedCountInputs: SeedCountInputMap = {
   optionEncounterCount: '0',
   treasureChestCount: '0',
   healingFountainCount: '0',
+  shrineCount: '0',
   herbalismResourceCount: '0',
   miningResourceCount: '0',
   resourceCount: '0',
@@ -182,6 +185,11 @@ const seedCountFields: Array<{
     key: 'healingFountainCount',
     label: 'Healing fountains',
     description: 'Random healing fountain placements',
+  },
+  {
+    key: 'shrineCount',
+    label: 'Shrines',
+    description: 'Random blessing shrine placements',
   },
   {
     key: 'herbalismResourceCount',
@@ -625,6 +633,7 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
   optionEncounterCount: job.optionEncounterCount ?? 0,
   treasureChestCount: job.treasureChestCount ?? 0,
   healingFountainCount: job.healingFountainCount ?? 0,
+  shrineCount: job.shrineCount ?? 0,
   herbalismResourceCount:
     job.herbalismResourceCount ??
     splitLegacyResourceCount(job.resourceCount ?? 0).herbalismResourceCount,
@@ -632,15 +641,13 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
     job.miningResourceCount ??
     splitLegacyResourceCount(job.resourceCount ?? 0).miningResourceCount,
   resourceCount:
-    (job.herbalismResourceCount ?? 0) +
-      (job.miningResourceCount ?? 0) >
-    0
+    (job.herbalismResourceCount ?? 0) + (job.miningResourceCount ?? 0) > 0
       ? (job.herbalismResourceCount ?? 0) + (job.miningResourceCount ?? 0)
-      : job.resourceCount ?? 0,
+      : (job.resourceCount ?? 0),
 });
 
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
-  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
+  `${counts.placeCount} POIs/challenges, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.shrineCount} shrines, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
 
 const formatCountMode = (mode?: CountMode) => {
   switch (mode) {
@@ -742,6 +749,7 @@ const inferAutoSeedCounts = (
     optionEncounterCount: inferAutoCount(areaAcres, 1.1),
     treasureChestCount: inferAutoCount(areaAcres, 1.35),
     healingFountainCount: inferAutoCount(areaAcres, 0.75),
+    shrineCount: inferAutoCount(areaAcres, 0.6),
     herbalismResourceCount,
     miningResourceCount,
     resourceCount: totalResourceCount,
@@ -948,6 +956,24 @@ export const ZoneSeedJobs = () => {
     }
     return zoneKindBySlug.get(zoneKind) ?? null;
   }, [zoneKind, zoneKindBySlug]);
+  const effectivePreviewZoneKind = useMemo(() => {
+    if (zoneKind) {
+      return selectedOverrideKind;
+    }
+    if (bulkSelectedZoneIds.length > 0) {
+      return null;
+    }
+    return selectedZoneAssignedKind;
+  }, [
+    bulkSelectedZoneIds.length,
+    selectedOverrideKind,
+    selectedZoneAssignedKind,
+    zoneKind,
+  ]);
+  const effectivePreviewShopkeeperTags = useMemo(
+    () => effectivePreviewZoneKind?.defaultShopkeeperItemTags ?? [],
+    [effectivePreviewZoneKind]
+  );
 
   const autoAreaSquareFeet = useMemo(
     () => getZoneAreaSquareFeet(selectedZone),
@@ -1507,6 +1533,7 @@ export const ZoneSeedJobs = () => {
                   <button
                     type="button"
                     key={zone.id}
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       setDraftZoneId(zone.id);
                       setDraftZoneQuery(zone.name);
@@ -1672,6 +1699,18 @@ export const ZoneSeedJobs = () => {
               {selectedOverrideKind?.description && (
                 <p className="mt-1 text-[11px] text-slate-600">
                   {selectedOverrideKind.description}
+                </p>
+              )}
+              {!zoneKind && bulkSelectedZoneIds.length > 0 && (
+                <p className="mt-1 text-[11px] text-emerald-700">
+                  Each selected zone will also inherit any default shopkeeper
+                  item tags from its own assigned kind.
+                </p>
+              )}
+              {effectivePreviewShopkeeperTags.length > 0 && (
+                <p className="mt-1 text-[11px] text-emerald-700">
+                  Default shopkeeper tags from this kind:{' '}
+                  {effectivePreviewShopkeeperTags.join(', ')}.
                 </p>
               )}
             </div>
@@ -1857,7 +1896,8 @@ export const ZoneSeedJobs = () => {
             </div>
             <p className="mt-1 text-xs text-gray-400">
               One shopkeeper will be generated per tag at a random location in
-              the zone. Auto mode does not infer these tags for you.
+              the zone. Any tags entered here are merged with the effective zone
+              kind&apos;s default shopkeeper tags.
             </p>
           </div>
           <button
@@ -1983,6 +2023,7 @@ export const ZoneSeedJobs = () => {
                     <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
                       <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
                           setJobFilterZoneId('');
                           setFilterZoneQuery('');
@@ -1996,6 +2037,7 @@ export const ZoneSeedJobs = () => {
                         <button
                           type="button"
                           key={zone.id}
+                          onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
                             setJobFilterZoneId(zone.id);
                             setFilterZoneQuery(zone.name);
@@ -2523,6 +2565,9 @@ export const ZoneSeedJobs = () => {
                               <div>
                                 {job.healingFountainCount ?? 0} random healing
                                 fountains
+                              </div>
+                              <div>
+                                {job.shrineCount ?? 0} random shrines
                               </div>
                               <div>
                                 {job.herbalismResourceCount ??

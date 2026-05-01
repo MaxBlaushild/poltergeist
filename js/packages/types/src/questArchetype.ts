@@ -135,6 +135,7 @@ export interface QuestArchetype {
   id: string;
   name: string;
   description: string;
+  zoneKind?: string | null;
   category?: 'side' | 'main_story';
   questGiverCharacterId?: string | null;
   questGiverCharacter?: Character | null;

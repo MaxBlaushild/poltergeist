@@ -40,11 +40,13 @@ type client struct {
 	challengeGenerationJobHandle          *challengeGenerationJobHandle
 	scenarioTemplateHandle                *scenarioTemplateHandle
 	challengeTemplateHandle               *challengeTemplateHandle
+	shrineTemplateHandle                  *shrineTemplateHandle
 	characterTemplateHandle               *characterTemplateHandle
 	expositionTemplateHandle              *expositionTemplateHandle
 	scenarioTemplateGenerationJobHandle   *scenarioTemplateGenerationJobHandle
 	scenarioTemplateGenerationDraftHandle *scenarioTemplateGenerationDraftHandle
 	challengeTemplateGenerationJobHandle  *challengeTemplateGenerationJobHandle
+	shrineTemplateGenerationJobHandle     *shrineTemplateGenerationJobHandle
 	zoneFlavorGenerationJobHandle         *zoneFlavorGenerationJobHandle
 	zoneTagGenerationJobHandle            *zoneTagGenerationJobHandle
 	baseDescriptionGenerationJobHandle    *baseDescriptionGenerationJobHandle
@@ -125,6 +127,7 @@ type client struct {
 	movementPatternHandle                 *movementPatternHandler
 	treasureChestHandle                   *treasureChestHandle
 	healingFountainHandle                 *healingFountainHandle
+	shrineHandle                          *shrineHandle
 	resourceTypeHandle                    *resourceTypeHandle
 	resourceHandle                        *resourceHandle
 	baseHandle                            *baseHandle
@@ -228,11 +231,13 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		challengeGenerationJobHandle:          &challengeGenerationJobHandle{db: db},
 		scenarioTemplateHandle:                &scenarioTemplateHandle{db: db},
 		challengeTemplateHandle:               &challengeTemplateHandle{db: db},
+		shrineTemplateHandle:                  &shrineTemplateHandle{db: db},
 		characterTemplateHandle:               &characterTemplateHandle{db: db},
 		expositionTemplateHandle:              &expositionTemplateHandle{db: db},
 		scenarioTemplateGenerationJobHandle:   &scenarioTemplateGenerationJobHandle{db: db},
 		scenarioTemplateGenerationDraftHandle: &scenarioTemplateGenerationDraftHandle{db: db},
 		challengeTemplateGenerationJobHandle:  &challengeTemplateGenerationJobHandle{db: db},
+		shrineTemplateGenerationJobHandle:     &shrineTemplateGenerationJobHandle{db: db},
 		zoneFlavorGenerationJobHandle:         &zoneFlavorGenerationJobHandle{db: db},
 		zoneTagGenerationJobHandle:            &zoneTagGenerationJobHandle{db: db},
 		baseDescriptionGenerationJobHandle:    &baseDescriptionGenerationJobHandle{db: db},
@@ -321,6 +326,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		movementPatternHandle:                 &movementPatternHandler{db: db},
 		treasureChestHandle:                   &treasureChestHandle{db: db},
 		healingFountainHandle:                 &healingFountainHandle{db: db},
+		shrineHandle:                          &shrineHandle{db: db},
 		resourceTypeHandle:                    &resourceTypeHandle{db: db},
 		resourceHandle:                        &resourceHandle{db: db},
 		baseHandle:                            &baseHandle{db: db},
@@ -662,6 +668,10 @@ func (c *client) ChallengeTemplate() ChallengeTemplateHandle {
 	return c.challengeTemplateHandle
 }
 
+func (c *client) ShrineTemplate() ShrineTemplateHandle {
+	return c.shrineTemplateHandle
+}
+
 func (c *client) CharacterTemplate() CharacterTemplateHandle {
 	return c.characterTemplateHandle
 }
@@ -680,6 +690,10 @@ func (c *client) ScenarioTemplateGenerationDraft() ScenarioTemplateGenerationDra
 
 func (c *client) ChallengeTemplateGenerationJob() ChallengeTemplateGenerationJobHandle {
 	return c.challengeTemplateGenerationJobHandle
+}
+
+func (c *client) ShrineTemplateGenerationJob() ShrineTemplateGenerationJobHandle {
+	return c.shrineTemplateGenerationJobHandle
 }
 
 func (c *client) ZoneFlavorGenerationJob() ZoneFlavorGenerationJobHandle {
@@ -848,6 +862,10 @@ func (c *client) TreasureChest() TreasureChestHandle {
 
 func (c *client) HealingFountain() HealingFountainHandle {
 	return c.healingFountainHandle
+}
+
+func (c *client) Shrine() ShrineHandle {
+	return c.shrineHandle
 }
 
 func (c *client) ResourceType() ResourceTypeHandle {

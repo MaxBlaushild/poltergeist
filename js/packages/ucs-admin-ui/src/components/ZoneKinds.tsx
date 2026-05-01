@@ -13,6 +13,7 @@ type ZoneKindRatioField = {
     | 'optionEncounterCountRatio'
     | 'treasureChestCountRatio'
     | 'healingFountainCountRatio'
+    | 'shrineCountRatio'
     | 'herbalismResourceCountRatio'
     | 'miningResourceCountRatio';
   label: string;
@@ -23,6 +24,7 @@ type ZoneKindFormState = {
   name: string;
   slug: string;
   description: string;
+  defaultShopkeeperItemTags: string;
   overlayColor: string;
   placeCountRatio: string;
   monsterCountRatio: string;
@@ -32,6 +34,7 @@ type ZoneKindFormState = {
   optionEncounterCountRatio: string;
   treasureChestCountRatio: string;
   healingFountainCountRatio: string;
+  shrineCountRatio: string;
   herbalismResourceCountRatio: string;
   miningResourceCountRatio: string;
 };
@@ -124,6 +127,11 @@ const ratioFields: ZoneKindRatioField[] = [
     key: 'healingFountainCountRatio',
     label: 'Healing fountains',
     description: 'Restorative nodes',
+  },
+  {
+    key: 'shrineCountRatio',
+    label: 'Shrines',
+    description: 'Blessing shrine density',
   },
   {
     key: 'herbalismResourceCountRatio',
@@ -242,6 +250,7 @@ const zoneKindPatternCueLabels = (zoneKind: ZoneKind) => {
     },
     { label: 'treasure-rich', value: zoneKind.treasureChestCountRatio },
     { label: 'restorative', value: zoneKind.healingFountainCountRatio },
+    { label: 'shrine-rich', value: zoneKind.shrineCountRatio },
     {
       label: 'herbalism-rich',
       value: zoneKind.herbalismResourceCountRatio,
@@ -306,7 +315,8 @@ const resolveZoneKindPatternPrompt = (
   return buildDefaultZoneKindPatternPrompt(zoneKind);
 };
 
-const buildDefaultZoneShroudPatternPrompt = () => `Create a seamless repeating square texture tile for a fantasy RPG fog-of-war overlay.
+const buildDefaultZoneShroudPatternPrompt =
+  () => `Create a seamless repeating square texture tile for a fantasy RPG fog-of-war overlay.
 
 Shroud treatment:
 - purpose: conceal undiscovered map zones without revealing their biome or zone kind
@@ -345,6 +355,7 @@ const emptyForm = (): ZoneKindFormState => ({
   name: '',
   slug: '',
   description: '',
+  defaultShopkeeperItemTags: '',
   overlayColor: defaultZoneKindOverlayColor,
   placeCountRatio: '1',
   monsterCountRatio: '1',
@@ -354,6 +365,7 @@ const emptyForm = (): ZoneKindFormState => ({
   optionEncounterCountRatio: '1',
   treasureChestCountRatio: '1',
   healingFountainCountRatio: '1',
+  shrineCountRatio: '1',
   herbalismResourceCountRatio: '1',
   miningResourceCountRatio: '1',
 });
@@ -375,6 +387,23 @@ const normalizeOverlayColorDraft = (value?: string | null) => {
   return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : '';
 };
 
+const normalizeShopkeeperTagDraftList = (value: string) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  value
+    .split(/[\n,]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .forEach((tag) => {
+      if (!tag || seen.has(tag)) return;
+      seen.add(tag);
+      normalized.push(tag);
+    });
+  return normalized;
+};
+
+const formatShopkeeperTagDraftList = (tags?: string[] | null) =>
+  (tags ?? []).join(', ');
+
 const formatRatio = (value: number) =>
   `${value.toFixed(Number.isInteger(value) ? 1 : 2)}x`;
 
@@ -393,6 +422,9 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
   name: zoneKind.name,
   slug: zoneKind.slug,
   description: zoneKind.description || '',
+  defaultShopkeeperItemTags: formatShopkeeperTagDraftList(
+    zoneKind.defaultShopkeeperItemTags
+  ),
   overlayColor:
     normalizeOverlayColorDraft(zoneKind.overlayColor) ||
     defaultZoneKindOverlayColor,
@@ -404,6 +436,7 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
   optionEncounterCountRatio: String(zoneKind.optionEncounterCountRatio ?? 1),
   treasureChestCountRatio: String(zoneKind.treasureChestCountRatio ?? 1),
   healingFountainCountRatio: String(zoneKind.healingFountainCountRatio ?? 1),
+  shrineCountRatio: String(zoneKind.shrineCountRatio ?? 1),
   herbalismResourceCountRatio: String(
     zoneKind.herbalismResourceCountRatio ?? zoneKind.resourceCountRatio ?? 1
   ),
@@ -427,6 +460,9 @@ const parseZoneKindForm = (
     name,
     slug: normalizeSlugDraft(form.slug || name),
     description: form.description.trim(),
+    defaultShopkeeperItemTags: normalizeShopkeeperTagDraftList(
+      form.defaultShopkeeperItemTags
+    ),
     overlayColor: '',
     placeCountRatio: 1,
     monsterCountRatio: 1,
@@ -436,13 +472,15 @@ const parseZoneKindForm = (
     optionEncounterCountRatio: 1,
     treasureChestCountRatio: 1,
     healingFountainCountRatio: 1,
+    shrineCountRatio: 1,
     herbalismResourceCountRatio: 1,
     miningResourceCountRatio: 1,
     resourceCountRatio: 1,
   };
 
   const overlayColor =
-    normalizeOverlayColorDraft(form.overlayColor) || defaultZoneKindOverlayColor;
+    normalizeOverlayColorDraft(form.overlayColor) ||
+    defaultZoneKindOverlayColor;
   if (!overlayColor) {
     return { error: 'Overlay color must be a valid hex color.' };
   }
@@ -498,9 +536,9 @@ export const ZoneKinds = () => {
     try {
       const [zoneKindsResponse, zonesResponse, zoneShroudResponse] =
         await Promise.all([
-        apiClient.get<ZoneKind[]>('/sonar/zoneKinds'),
-        apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones'),
-        apiClient.get<ZoneShroudConfig>('/sonar/admin/zone-shroud-config'),
+          apiClient.get<ZoneKind[]>('/sonar/zoneKinds'),
+          apiClient.get<ZoneAdminSummary[]>('/sonar/admin/zones'),
+          apiClient.get<ZoneShroudConfig>('/sonar/admin/zone-shroud-config'),
         ]);
       setZoneKinds(zoneKindsResponse);
       setZones(zonesResponse);
@@ -744,26 +782,23 @@ export const ZoneKinds = () => {
     return () => window.clearTimeout(timeoutId);
   }, [backfillStatus, pollBackfillStatus]);
 
-  const pendingPatternGenerationKey = useMemo(
-    () => {
-      const zoneKindKey = zoneKinds
-        .filter((zoneKind) =>
-          isZoneKindPatternTilePending(zoneKind.patternTileGenerationStatus)
-        )
-        .map(
-          (zoneKind) =>
-            `${zoneKind.id}:${zoneKind.patternTileGenerationStatus}:${zoneKind.updatedAt}`
-        )
-        .join('|');
-      const shroudKey =
-        zoneShroudConfig &&
-        isZoneKindPatternTilePending(zoneShroudConfig.patternTileGenerationStatus)
-          ? `shroud:${zoneShroudConfig.patternTileGenerationStatus}:${zoneShroudConfig.updatedAt}`
-          : '';
-      return [zoneKindKey, shroudKey].filter(Boolean).join('|');
-    },
-    [zoneKinds, zoneShroudConfig]
-  );
+  const pendingPatternGenerationKey = useMemo(() => {
+    const zoneKindKey = zoneKinds
+      .filter((zoneKind) =>
+        isZoneKindPatternTilePending(zoneKind.patternTileGenerationStatus)
+      )
+      .map(
+        (zoneKind) =>
+          `${zoneKind.id}:${zoneKind.patternTileGenerationStatus}:${zoneKind.updatedAt}`
+      )
+      .join('|');
+    const shroudKey =
+      zoneShroudConfig &&
+      isZoneKindPatternTilePending(zoneShroudConfig.patternTileGenerationStatus)
+        ? `shroud:${zoneShroudConfig.patternTileGenerationStatus}:${zoneShroudConfig.updatedAt}`
+        : '';
+    return [zoneKindKey, shroudKey].filter(Boolean).join('|');
+  }, [zoneKinds, zoneShroudConfig]);
 
   useEffect(() => {
     if (!pendingPatternGenerationKey) {
@@ -917,7 +952,8 @@ export const ZoneKinds = () => {
                 className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                   zoneShroudConfig?.patternTileGenerationStatus === 'failed'
                     ? 'bg-red-100 text-red-700'
-                    : zoneShroudConfig?.patternTileGenerationStatus === 'complete'
+                    : zoneShroudConfig?.patternTileGenerationStatus ===
+                        'complete'
                       ? 'bg-emerald-100 text-emerald-700'
                       : isZoneKindPatternTilePending(
                             zoneShroudConfig?.patternTileGenerationStatus
@@ -986,7 +1022,9 @@ export const ZoneKinds = () => {
               zoneShroudConfig,
               shroudPatternPromptDraft
             )}
-            onChange={(event) => setShroudPatternPromptDraft(event.target.value)}
+            onChange={(event) =>
+              setShroudPatternPromptDraft(event.target.value)
+            }
             spellCheck={false}
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1012,7 +1050,9 @@ export const ZoneKinds = () => {
               type="button"
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
               onClick={() =>
-                setShroudPatternPromptDraft(buildDefaultZoneShroudPatternPrompt())
+                setShroudPatternPromptDraft(
+                  buildDefaultZoneShroudPatternPrompt()
+                )
               }
             >
               Use Boilerplate
@@ -1042,7 +1082,8 @@ export const ZoneKinds = () => {
               isZoneKindBackfillPending(backfillStatus?.status)
             }
           >
-            {backfillStarting || isZoneKindBackfillPending(backfillStatus?.status)
+            {backfillStarting ||
+            isZoneKindBackfillPending(backfillStatus?.status)
               ? 'Running...'
               : 'Backfill Missing Kinds'}
           </button>
@@ -1207,6 +1248,26 @@ export const ZoneKinds = () => {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                Default shopkeeper item tags
+              </label>
+              <textarea
+                className="min-h-[72px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={createForm.defaultShopkeeperItemTags}
+                onChange={(event) =>
+                  setCreateField(
+                    'defaultShopkeeperItemTags',
+                    event.target.value
+                  )
+                }
+                placeholder="potions, herbs, charms"
+              />
+              <p className="mt-1 text-[11px] text-gray-500">
+                Comma or newline separated. These tags are automatically added
+                to zone seed jobs whenever this kind is used for a zone.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
                 Map overlay color
               </label>
               <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-slate-50 px-3 py-3">
@@ -1322,14 +1383,27 @@ export const ZoneKinds = () => {
                           </span>
                           <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
                             Overlay{' '}
-                            {normalizeOverlayColorDraft(zoneKind.overlayColor) ||
-                              defaultZoneKindOverlayColor}
+                            {normalizeOverlayColorDraft(
+                              zoneKind.overlayColor
+                            ) || defaultZoneKindOverlayColor}
                           </span>
                         </div>
                         {zoneKind.description && (
                           <p className="mt-2 text-sm text-gray-600">
                             {zoneKind.description}
                           </p>
+                        )}
+                        {zoneKind.defaultShopkeeperItemTags.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {zoneKind.defaultShopkeeperItemTags.map((tag) => (
+                              <span
+                                key={`${zoneKind.id}-shopkeeper-tag-${tag}`}
+                                className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                       <div className="flex gap-2">
@@ -1381,9 +1455,11 @@ export const ZoneKinds = () => {
                             </h4>
                             <span
                               className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                                zoneKind.patternTileGenerationStatus === 'failed'
+                                zoneKind.patternTileGenerationStatus ===
+                                'failed'
                                   ? 'bg-red-100 text-red-700'
-                                  : zoneKind.patternTileGenerationStatus === 'complete'
+                                  : zoneKind.patternTileGenerationStatus ===
+                                      'complete'
                                     ? 'bg-emerald-100 text-emerald-700'
                                     : isZoneKindPatternTilePending(
                                           zoneKind.patternTileGenerationStatus
@@ -1398,8 +1474,8 @@ export const ZoneKinds = () => {
                             </span>
                           </div>
                           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                            Generate a seamless, S3-hosted pattern tile that
-                            the mobile client can use as the zone fill texture.
+                            Generate a seamless, S3-hosted pattern tile that the
+                            mobile client can use as the zone fill texture.
                           </p>
                           {zoneKind.patternTileUrl ? (
                             <a
@@ -1470,7 +1546,9 @@ export const ZoneKinds = () => {
                           <button
                             type="button"
                             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                            onClick={() => void handleGeneratePatternTile(zoneKind)}
+                            onClick={() =>
+                              void handleGeneratePatternTile(zoneKind)
+                            }
                             disabled={
                               saving ||
                               generatingPatternKindId === zoneKind.id ||
@@ -1572,6 +1650,27 @@ export const ZoneKinds = () => {
 
                           <div>
                             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Default shopkeeper item tags
+                            </label>
+                            <textarea
+                              className="min-h-[72px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              value={editForm.defaultShopkeeperItemTags}
+                              onChange={(event) =>
+                                setEditField(
+                                  'defaultShopkeeperItemTags',
+                                  event.target.value
+                                )
+                              }
+                              placeholder="potions, herbs, charms"
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500">
+                              Comma or newline separated. These tags will be
+                              merged into zone seed jobs that use this kind.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
                               Map overlay color
                             </label>
                             <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-slate-50 px-3 py-3">
@@ -1584,7 +1683,10 @@ export const ZoneKinds = () => {
                                   ) || defaultZoneKindOverlayColor
                                 }
                                 onChange={(event) =>
-                                  setEditField('overlayColor', event.target.value)
+                                  setEditField(
+                                    'overlayColor',
+                                    event.target.value
+                                  )
                                 }
                               />
                               <div className="min-w-0">
@@ -1660,7 +1762,8 @@ export const ZoneKinds = () => {
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               Pick a zone kind per zone. Seed jobs will use the assigned kind by
-              default whenever no explicit override is provided.
+              default whenever no explicit override is provided, including any
+              default shopkeeper item tags attached to that kind.
             </p>
           </div>
           <div className="w-full max-w-sm">
@@ -1693,7 +1796,7 @@ export const ZoneKinds = () => {
                 ? zoneKindBySlug.get(zone.kind)
                 : null;
               const currentKindLabel = zone.kind
-                ? matchedKind?.name ?? `Unknown (${zone.kind})`
+                ? (matchedKind?.name ?? `Unknown (${zone.kind})`)
                 : 'Unassigned';
 
               return (
@@ -1721,7 +1824,7 @@ export const ZoneKinds = () => {
                           ? 'bg-amber-100 text-amber-800'
                           : zone.kind
                             ? 'bg-slate-100 text-slate-700'
-                          : 'bg-gray-100 text-gray-500'
+                            : 'bg-gray-100 text-gray-500'
                       }`}
                     >
                       {matchedKind && (

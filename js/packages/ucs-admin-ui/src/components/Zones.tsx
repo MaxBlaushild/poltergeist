@@ -182,7 +182,8 @@ const getZoneActivityLabel = (zone: ZoneAdminSummary) => {
     zone.monsterEncounterCount +
     zone.pointOfInterestCount +
     zone.treasureChestCount +
-    zone.healingFountainCount;
+    zone.healingFountainCount +
+    zone.shrineCount;
 
   if (totalContent >= 30) {
     return 'Dense';
@@ -896,6 +897,7 @@ export const Zones = () => {
           totals.raidEncounterCount += zone.raidEncounterCount;
           totals.treasureChestCount += zone.treasureChestCount;
           totals.healingFountainCount += zone.healingFountainCount;
+          totals.shrineCount += zone.shrineCount;
           return totals;
         },
         {
@@ -911,6 +913,7 @@ export const Zones = () => {
           raidEncounterCount: 0,
           treasureChestCount: 0,
           healingFountainCount: 0,
+          shrineCount: 0,
         }
       ),
     [zoneSummaries]
@@ -954,7 +957,8 @@ export const Zones = () => {
         left.monsterCount +
         left.monsterEncounterCount +
         left.treasureChestCount +
-        left.healingFountainCount;
+        left.healingFountainCount +
+        left.shrineCount;
       const rightRichness =
         right.pointOfInterestCount +
         right.questCount +
@@ -964,7 +968,8 @@ export const Zones = () => {
         right.monsterCount +
         right.monsterEncounterCount +
         right.treasureChestCount +
-        right.healingFountainCount;
+        right.healingFountainCount +
+        right.shrineCount;
 
       return (
         rightRichness - leftRichness || left.name.localeCompare(right.name)
@@ -1906,6 +1911,7 @@ export const Zones = () => {
                   label: 'Fountains',
                   value: zone.healingFountainCount,
                 },
+                { label: 'Shrines', value: zone.shrineCount },
               ];
 
               return (
@@ -2060,26 +2066,12 @@ export const Zones = () => {
       </div>
       {showCreateZone && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-6"
         >
           <div
+            className="my-4 w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl sm:my-8 sm:p-6"
             style={{
-              backgroundColor: '#fff',
-              padding: '20px',
-              borderRadius: '8px',
-              width: 'min(900px, calc(100vw - 40px))',
-              maxHeight: 'calc(100vh - 40px)',
-              overflowY: 'auto',
+              maxHeight: 'calc(100vh - 32px)',
             }}
           >
             <h2>Create Zone</h2>

@@ -96,7 +96,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.0,
                     child: Text(
-                      'Unclaimed Streets',
+                      'StreetSekai',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         letterSpacing: 3,
                         fontWeight: FontWeight.w600,
@@ -108,7 +108,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.06,
                     child: Text(
-                      'Step into the uncharted and map what the world hides.',
+                      'Your city, summoned into another world.',
                       style: Theme.of(context).textTheme.displaySmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onBackground,
@@ -119,7 +119,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.12,
                     child: Text(
-                      'Explore real landscapes, uncover mythic locations, and grow your strength with every quest. Unclaimed Streets guides your crew through discoveries that feel grounded, mysterious, and alive.',
+                      'StreetSekai turns real streets into a living fantasy map. Explore your neighborhood as quest territory, uncover hidden points of interest, grow stronger through discovery, and build your legend one block at a time.',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: colorScheme.onBackground.withOpacity(0.8),
                         height: 1.4,
@@ -131,7 +131,7 @@ class _HomeContentState extends State<_HomeContent> {
                     delay: 0.18,
                     child: FilledButton(
                       onPressed: () => setState(() => _showLogister = true),
-                      child: const Text('Get Started'),
+                      child: const Text('Start Your Quest'),
                     ),
                   ),
                 ],
@@ -352,7 +352,7 @@ class _ExpeditionCallout extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'The expedition begins with your signal.',
+            'The crossing begins with your signal.',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurface,
@@ -360,7 +360,7 @@ class _ExpeditionCallout extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Claim your route, connect with your crew, and set your sights on the next quest chain.',
+            'Open the gate, gather your party, and turn the blocks around you into quest routes.',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurface.withOpacity(0.75),
             ),
@@ -371,12 +371,12 @@ class _ExpeditionCallout extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onStart,
                 icon: const Icon(Icons.wifi_tethering),
-                label: const Text('Begin expedition'),
+                label: const Text('Open the gate'),
               ),
               const SizedBox(width: 12),
               OutlinedButton(
                 onPressed: onStart,
-                child: const Text('Join your crew'),
+                child: const Text('Join your party'),
               ),
             ],
           ),
@@ -412,14 +412,14 @@ class _ExpeditionDossier extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Expedition dossier',
+            'StreetSekai dossier',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
-            'Your crew is ready. Confirm your signal to unlock the world map, quest log, and strength track.',
+            'Once you cross over, your city becomes a layered fantasy map with quests, progression, and mythic landmarks hiding in plain sight.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurface.withOpacity(0.72),
             ),
@@ -428,24 +428,24 @@ class _ExpeditionDossier extends StatelessWidget {
           _DossierItem(
             icon: Icons.map,
             title: 'World map',
-            description: 'Live exploration with mythic overlays',
+            description: 'Real streets revealed as a fantasy overworld',
           ),
           const SizedBox(height: 12),
           _DossierItem(
             icon: Icons.shield,
             title: 'Strength track',
-            description: 'Level up after every quest chain',
+            description: 'Grow stronger with every quest you clear',
           ),
           const SizedBox(height: 12),
           _DossierItem(
             icon: Icons.task_alt,
             title: 'Quest log',
-            description: 'Track real and mystical objectives',
+            description: 'Follow objectives tied to real places nearby',
           ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: onStart,
-            child: const Text('Claim your signal'),
+            child: const Text('Enter StreetSekai'),
           ),
         ],
       ),
@@ -581,7 +581,7 @@ class _ExpeditionSteps extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Launch sequence',
+            'How the crossing works',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
@@ -590,19 +590,19 @@ class _ExpeditionSteps extends StatelessWidget {
           const _ExpeditionStep(
             index: '01',
             title: 'Send your signal',
-            description: 'Request the access pulse for your phone number.',
+            description: 'Request a gate code for your phone number.',
           ),
           const SizedBox(height: 12),
           const _ExpeditionStep(
             index: '02',
             title: 'Confirm the gate',
-            description: 'Verify the pulse and lock in your expedition crew.',
+            description: 'Verify the code and bind yourself to this world.',
           ),
           const SizedBox(height: 12),
           const _ExpeditionStep(
             index: '03',
             title: 'Enter the world',
-            description: 'Open the map, track quests, and begin exploring.',
+            description: 'Open the map, find your first quest, and start exploring.',
           ),
         ],
       ),

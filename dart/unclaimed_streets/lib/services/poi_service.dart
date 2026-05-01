@@ -13,6 +13,7 @@ import '../models/quest.dart';
 import '../models/healing_fountain.dart';
 import '../models/resource.dart';
 import '../models/scenario.dart';
+import '../models/shrine.dart';
 import '../models/treasure_chest.dart';
 import '../models/tutorial.dart';
 import '../models/tutorial_guide_chat.dart';
@@ -66,10 +67,175 @@ class ZonePinsPayload {
   }
 }
 
+class ZoneMapSnapshotPayload {
+  const ZoneMapSnapshotPayload({
+    required this.includesQuestAvailability,
+    required this.pointsOfInterest,
+    required this.characters,
+    required this.treasureChests,
+    required this.healingFountains,
+    required this.shrines,
+    required this.resources,
+    required this.scenarios,
+    required this.expositions,
+    required this.monsters,
+    required this.challenges,
+  });
+
+  final bool includesQuestAvailability;
+  final List<PointOfInterest> pointsOfInterest;
+  final List<Character> characters;
+  final List<TreasureChest> treasureChests;
+  final List<HealingFountain> healingFountains;
+  final List<Shrine> shrines;
+  final List<ResourceNode> resources;
+  final List<Scenario> scenarios;
+  final List<Exposition> expositions;
+  final List<MonsterEncounter> monsters;
+  final List<Challenge> challenges;
+
+  factory ZoneMapSnapshotPayload.fromJson(Map<String, dynamic> json) {
+    return ZoneMapSnapshotPayload(
+      includesQuestAvailability:
+          json['includesQuestAvailability'] as bool? ?? false,
+      pointsOfInterest:
+          (json['pointsOfInterest'] as List<dynamic>? ?? const <dynamic>[])
+              .map((e) => PointOfInterest.fromJson(e as Map<String, dynamic>))
+              .toList(),
+      characters: (json['characters'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Character.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      treasureChests:
+          (json['treasureChests'] as List<dynamic>? ?? const <dynamic>[])
+              .map((e) => TreasureChest.fromJson(e as Map<String, dynamic>))
+              .toList(),
+      healingFountains:
+          (json['healingFountains'] as List<dynamic>? ?? const <dynamic>[])
+              .map((e) => HealingFountain.fromJson(e as Map<String, dynamic>))
+              .toList(),
+      shrines: (json['shrines'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Shrine.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      resources: (json['resources'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => ResourceNode.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      scenarios: (json['scenarios'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Scenario.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      expositions: (json['expositions'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Exposition.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      monsters: (json['monsters'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => MonsterEncounter.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      challenges: (json['challenges'] as List<dynamic>? ?? const <dynamic>[])
+          .map((e) => Challenge.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class QuestAvailabilityOverlayCharacter {
+  const QuestAvailabilityOverlayCharacter({
+    required this.id,
+    required this.hasAvailableQuest,
+    required this.hasAvailableMainStoryQuest,
+  });
+
+  final String id;
+  final bool hasAvailableQuest;
+  final bool hasAvailableMainStoryQuest;
+
+  factory QuestAvailabilityOverlayCharacter.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return QuestAvailabilityOverlayCharacter(
+      id: json['id']?.toString() ?? '',
+      hasAvailableQuest: json['hasAvailableQuest'] == true,
+      hasAvailableMainStoryQuest: json['hasAvailableMainStoryQuest'] == true,
+    );
+  }
+}
+
+class QuestAvailabilityOverlayPointOfInterest {
+  const QuestAvailabilityOverlayPointOfInterest({
+    required this.id,
+    required this.hasAvailableQuest,
+    required this.hasAvailableMainStoryQuest,
+    required this.characters,
+  });
+
+  final String id;
+  final bool hasAvailableQuest;
+  final bool hasAvailableMainStoryQuest;
+  final List<QuestAvailabilityOverlayCharacter> characters;
+
+  factory QuestAvailabilityOverlayPointOfInterest.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return QuestAvailabilityOverlayPointOfInterest(
+      id: json['id']?.toString() ?? '',
+      hasAvailableQuest: json['hasAvailableQuest'] == true,
+      hasAvailableMainStoryQuest: json['hasAvailableMainStoryQuest'] == true,
+      characters: (json['characters'] as List<dynamic>? ?? const <dynamic>[])
+          .map(
+            (e) => QuestAvailabilityOverlayCharacter.fromJson(
+              e as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class ZoneQuestAvailabilityOverlayPayload {
+  const ZoneQuestAvailabilityOverlayPayload({
+    required this.pointsOfInterest,
+    required this.characters,
+  });
+
+  final List<QuestAvailabilityOverlayPointOfInterest> pointsOfInterest;
+  final List<QuestAvailabilityOverlayCharacter> characters;
+
+  factory ZoneQuestAvailabilityOverlayPayload.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return ZoneQuestAvailabilityOverlayPayload(
+      pointsOfInterest:
+          (json['pointsOfInterest'] as List<dynamic>? ?? const <dynamic>[])
+              .map(
+                (e) => QuestAvailabilityOverlayPointOfInterest.fromJson(
+                  e as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
+      characters: (json['characters'] as List<dynamic>? ?? const <dynamic>[])
+          .map(
+            (e) => QuestAvailabilityOverlayCharacter.fromJson(
+              e as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
 class PoiService {
   final ApiClient _api;
 
   PoiService(this._api);
+
+  Map<String, dynamic>? _traceHeaders(String? traceId) {
+    final normalized = traceId?.trim() ?? '';
+    if (normalized.isEmpty) return null;
+    return {'X-Map-Trace-Id': normalized};
+  }
+
+  Map<String, dynamic>? _traceExtra(String? traceLabel) {
+    final normalized = traceLabel?.trim() ?? '';
+    if (normalized.isEmpty) return null;
+    return {'traceLabel': normalized};
+  }
 
   Future<List<Character>> getCharacters() async {
     final list = await _api.get<List<dynamic>>('/sonar/characters');
@@ -78,18 +244,48 @@ class PoiService {
         .toList();
   }
 
-  Future<List<BasePin>> getVisibleBases() async {
-    final list = await _api.get<List<dynamic>>('/sonar/bases');
+  Future<List<BasePin>> getVisibleBases({String? traceId}) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/bases',
+      headers: _traceHeaders(traceId),
+      extra: _traceExtra('bases'),
+    );
     return list
         .map((e) => BasePin.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<ZonePinsPayload> getZonePins(String zoneId) async {
+  Future<ZonePinsPayload> getZonePins(String zoneId, {String? traceId}) async {
     final raw = await _api.get<Map<String, dynamic>>(
       '/sonar/zones/$zoneId/pins',
+      headers: _traceHeaders(traceId),
+      extra: _traceExtra('zone-pins:$zoneId'),
     );
     return ZonePinsPayload.fromJson(raw);
+  }
+
+  Future<ZoneMapSnapshotPayload> getZoneMapSnapshot(
+    String zoneId, {
+    String? traceId,
+  }) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      '/sonar/zones/$zoneId/map-snapshot',
+      headers: _traceHeaders(traceId),
+      extra: _traceExtra('zone-map-snapshot:$zoneId'),
+    );
+    return ZoneMapSnapshotPayload.fromJson(raw);
+  }
+
+  Future<ZoneQuestAvailabilityOverlayPayload> getZoneQuestAvailabilityOverlay(
+    String zoneId, {
+    String? traceId,
+  }) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      '/sonar/zones/$zoneId/quest-availability-overlay',
+      headers: _traceHeaders(traceId),
+      extra: _traceExtra('zone-quest-overlay:$zoneId'),
+    );
+    return ZoneQuestAvailabilityOverlayPayload.fromJson(raw);
   }
 
   Future<Quest?> getQuestById(String questId) async {
@@ -130,6 +326,17 @@ class PoiService {
         .toList();
   }
 
+  Future<ResourceNode?> getResourceById(String resourceId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/resources/$resourceId',
+      );
+      return ResourceNode.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<Exposition>> getExpositionsForZone(String zoneId) async {
     final list = await _api.get<List<dynamic>>(
       '/sonar/zones/$zoneId/expositions',
@@ -156,6 +363,22 @@ class PoiService {
         '/sonar/healing-fountains/$fountainId',
       );
       return HealingFountain.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<Shrine>> getShrinesForZone(String zoneId) async {
+    final list = await _api.get<List<dynamic>>('/sonar/zones/$zoneId/shrines');
+    return list.map((e) => Shrine.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Shrine?> getShrineById(String shrineId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/shrines/$shrineId',
+      );
+      return Shrine.fromJson(data);
     } catch (_) {
       return null;
     }
@@ -444,8 +667,12 @@ class PoiService {
     return PartySubmissionStatus.fromJson(raw);
   }
 
-  Future<List<Zone>> getZones() async {
-    final list = await _api.get<List<dynamic>>('/sonar/zones');
+  Future<List<Zone>> getZones({String? traceId}) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones',
+      headers: _traceHeaders(traceId),
+      extra: _traceExtra('zones-shell'),
+    );
     final zones = <Zone>[];
     for (var i = 0; i < list.length; i++) {
       try {
@@ -586,6 +813,11 @@ class PoiService {
     final raw = await _api.post<dynamic>(
       '/sonar/healing-fountains/$fountainId/unlock',
     );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> useShrine(String shrineId) async {
+    final raw = await _api.post<dynamic>('/sonar/shrines/$shrineId/use');
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 

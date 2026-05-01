@@ -76,6 +76,24 @@ type HealingFountainRecord = {
   longitude: number;
 };
 
+type ShrineRecord = {
+  id: string;
+  shrineTemplateId: string;
+  name: string;
+  description: string;
+  blessingName: string;
+  effectDescription: string;
+  effectKind: string;
+  baseMagnitude: number;
+  zoneId: string;
+  latitude: number;
+  longitude: number;
+  cooldownSeconds: number;
+  availableNow: boolean;
+  cooldownSecondsRemaining: number;
+  mapMarkerUrl?: string;
+};
+
 type ScenarioRecord = {
   id: string;
   pointOfInterestId?: string | null;
@@ -124,6 +142,7 @@ type AdminMapPinKind =
   | 'resource'
   | 'treasureChest'
   | 'healingFountain'
+  | 'shrine'
   | 'scenario'
   | 'exposition'
   | 'monster'
@@ -147,6 +166,7 @@ const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
   resource: 'resource node',
   treasureChest: 'treasure chest',
   healingFountain: 'healing fountain',
+  shrine: 'shrine',
   scenario: 'scenario',
   exposition: 'exposition',
   monster: 'monster encounter',
@@ -167,6 +187,8 @@ const monsterMysteryImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
 const healingFountainDiscoveredImageUrl =
   'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
+const shrineDiscoveredImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/shrine-discovered.png';
 
 const markerStyleByKind: Record<
   AdminMapPinKind,
@@ -212,6 +234,13 @@ const markerStyleByKind: Record<
     shortLabel: 'HF',
     fullLabel: 'Healing Fountain',
     fallbackImage: healingFountainDiscoveredImageUrl,
+  },
+  shrine: {
+    ring: '#a855f7',
+    badge: '#7e22ce',
+    shortLabel: 'SH',
+    fullLabel: 'Shrine',
+    fallbackImage: shrineDiscoveredImageUrl,
   },
   scenario: {
     ring: '#14b8a6',
@@ -842,6 +871,7 @@ export const Zone = () => {
   const [healingFountains, setHealingFountains] = useState<
     HealingFountainRecord[]
   >([]);
+  const [shrines, setShrines] = useState<ShrineRecord[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
   const [expositions, setExpositions] = useState<ExpositionRecord[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<
@@ -1022,6 +1052,7 @@ export const Zone = () => {
           fetchedResources,
           fetchedTreasureChests,
           fetchedHealingFountains,
+          fetchedShrines,
           fetchedScenarios,
           fetchedExpositions,
           fetchedMonsterEncounters,
@@ -1035,6 +1066,7 @@ export const Zone = () => {
           apiClient.get<HealingFountainRecord[]>(
             `/sonar/zones/${resolvedZoneId}/healing-fountains`
           ),
+          apiClient.get<ShrineRecord[]>(`/sonar/zones/${resolvedZoneId}/shrines`),
           apiClient.get<ScenarioRecord[]>(
             `/sonar/zones/${resolvedZoneId}/scenarios`
           ),
@@ -1055,6 +1087,7 @@ export const Zone = () => {
         setResources(fetchedResources);
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
+        setShrines(fetchedShrines);
         setScenarios(fetchedScenarios);
         setExpositions(fetchedExpositions);
         setMonsterEncounters(fetchedMonsterEncounters);
@@ -1070,6 +1103,7 @@ export const Zone = () => {
         setResources([]);
         setTreasureChests([]);
         setHealingFountains([]);
+        setShrines([]);
         setScenarios([]);
         setExpositions([]);
         setMonsterEncounters([]);
@@ -1241,6 +1275,12 @@ export const Zone = () => {
             { latitude, longitude }
           );
           break;
+        case 'shrine':
+          await apiClient.patch(`/sonar/shrines/${pin.entityId}/location`, {
+            latitude,
+            longitude,
+          });
+          break;
         case 'scenario':
           await apiClient.patch(`/sonar/scenarios/${pin.entityId}/location`, {
             latitude,
@@ -1364,6 +1404,10 @@ export const Zone = () => {
           setHealingFountains((prev) =>
             prev.filter((entry) => entry.id !== pin.entityId)
           );
+          break;
+        case 'shrine':
+          await apiClient.delete(`/sonar/shrines/${pin.entityId}`);
+          setShrines((prev) => prev.filter((entry) => entry.id !== pin.entityId));
           break;
         case 'scenario':
           await apiClient.delete(`/sonar/scenarios/${pin.entityId}`);
@@ -1697,6 +1741,23 @@ export const Zone = () => {
         draggable: true,
       }));
 
+    const shrinePins = shrines
+      .filter((shrine) => isValidCoordinate(shrine.latitude, shrine.longitude))
+      .map((shrine) => ({
+        id: `shrine:${shrine.id}`,
+        entityId: shrine.id,
+        kind: 'shrine' as const,
+        name: shrine.name || shrine.blessingName || 'Shrine',
+        coordinates: resolveCoordinates(
+          `shrine:${shrine.id}`,
+          shrine.longitude,
+          shrine.latitude
+        ),
+        imageUrl:
+          shrine.mapMarkerUrl?.trim() || markerStyleByKind.shrine.fallbackImage,
+        draggable: true,
+      }));
+
     const scenarioPins = scenarios
       .filter((scenario) =>
         isValidCoordinate(scenario.latitude, scenario.longitude)
@@ -1859,6 +1920,7 @@ export const Zone = () => {
       ...resourcePins,
       ...treasureChestPins,
       ...healingFountainPins,
+      ...shrinePins,
       ...scenarioPins,
       ...expositionPins,
       ...monsterPins,
@@ -1870,6 +1932,7 @@ export const Zone = () => {
     resources,
     treasureChests,
     healingFountains,
+    shrines,
     scenarios,
     expositions,
     monsterEncounters,
@@ -2223,6 +2286,7 @@ export const Zone = () => {
               ['resource', 'Resource'],
               ['treasureChest', 'Treasure Chest'],
               ['healingFountain', 'Healing Fountain'],
+              ['shrine', 'Shrine'],
               ['scenario', 'Scenario'],
               ['exposition', 'Exposition'],
               ['monster', 'Monster'],

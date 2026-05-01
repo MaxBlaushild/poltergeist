@@ -813,57 +813,57 @@ func (s *server) resolveMonsterEncounterRewardsForUser(
 		if err != nil {
 			return rewardMode, rewardSize, 0, 0, nil, nil, err
 		}
-		plan = ensureMonsterEncounterRandomRewardHasItem(plan, itemByID, userLevel, rewardSeed)
 		guaranteedItems := monsterEncounterRewardItemsToScenarioRewards(encounter.ItemRewards)
-		for _, reward := range encounter.ItemRewards {
-			if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
-				continue
-			}
-			if _, ok := itemByID[reward.InventoryItemID]; ok {
-				continue
-			}
-			item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
-			if err != nil {
-				return rewardMode, rewardSize, 0, 0, nil, nil, err
-			}
-			if item != nil {
-				itemByID[reward.InventoryItemID] = *item
-			}
+		if err := s.hydrateMonsterEncounterRewardItemMap(ctx, itemByID, encounter.ItemRewards); err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
 		}
 		itemGrants := models.MergeRandomRewardItemGrants(
 			plan.ItemGrants,
 			scenarioRewardItemsToRandomRewardItemGrants(guaranteedItems),
 		)
-		payloads := make([]monsterRewardItemPayload, 0, len(itemGrants))
-		rewardItems := make([]scenarioRewardItem, 0, len(itemGrants))
-		for _, grant := range itemGrants {
-			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
-				continue
-			}
-			payload := monsterRewardItemPayload{
-				InventoryItemID: grant.InventoryItemID,
-				Quantity:        grant.Quantity,
-			}
-			if item, ok := itemByID[grant.InventoryItemID]; ok {
-				itemCopy := item
-				payload.InventoryItem = &itemCopy
-			}
-			payloads = append(payloads, payload)
-			rewardItems = append(rewardItems, scenarioRewardItem{
-				InventoryItemID: grant.InventoryItemID,
-				Quantity:        grant.Quantity,
-			})
-		}
-		return rewardMode, rewardSize, plan.Experience, plan.Gold, payloads, rewardItems, nil
+		itemGrants = ensureMonsterRewardItemGrantsIncludeEquipment(
+			itemGrants,
+			itemByID,
+			userLevel,
+			rewardSeed,
+		)
+		return rewardMode,
+			rewardSize,
+			plan.Experience,
+			plan.Gold,
+			randomRewardItemGrantsToMonsterRewardPayloads(itemGrants, itemByID),
+			randomRewardItemGrantsToScenarioRewardItems(itemGrants),
+			nil
 	}
 
-	itemPayloads, rewardItems, err := s.buildMonsterEncounterRewardPayloads(ctx, encounter.ItemRewards)
-	if err != nil {
+	itemByID := make(map[int]models.InventoryItem, len(encounter.ItemRewards))
+	if err := s.hydrateMonsterEncounterRewardItemMap(ctx, itemByID, encounter.ItemRewards); err != nil {
 		return rewardMode, rewardSize, 0, 0, nil, nil, err
+	}
+	itemGrants := scenarioRewardItemsToRandomRewardItemGrants(
+		monsterEncounterRewardItemsToScenarioRewards(encounter.ItemRewards),
+	)
+	if !randomRewardItemGrantsIncludeEquipment(itemGrants, itemByID) {
+		userLevel, err := s.currentUserLevel(ctx, userID)
+		if err != nil {
+			return rewardMode, rewardSize, 0, 0, nil, nil, err
+		}
+		itemGrants = ensureMonsterRewardItemGrantsIncludeEquipment(
+			itemGrants,
+			itemByID,
+			userLevel,
+			fmt.Sprintf("monster-encounter:%s:user:%s", encounter.ID, userID),
+		)
 	}
 	rewardExperience := max(0, encounter.RewardExperience)
 	rewardGold := max(0, encounter.RewardGold)
-	return rewardMode, rewardSize, rewardExperience, rewardGold, itemPayloads, rewardItems, nil
+	return rewardMode,
+		rewardSize,
+		rewardExperience,
+		rewardGold,
+		randomRewardItemGrantsToMonsterRewardPayloads(itemGrants, itemByID),
+		randomRewardItemGrantsToScenarioRewardItems(itemGrants),
+		nil
 }
 
 func (s *server) monsterEncounterResponseFrom(

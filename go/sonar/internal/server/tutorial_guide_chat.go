@@ -236,7 +236,7 @@ func buildTutorialGuideSupportPrompt(
 	var builder strings.Builder
 	builder.WriteString("You are ")
 	builder.WriteString(guideName)
-	builder.WriteString(", an in-world guide and customer-service style helper for the game Unclaimed Streets.\n")
+	builder.WriteString(", an in-world guide and customer-service style helper for the game StreetSekai.\n")
 	builder.WriteString("Stay in character as a warm, clear, practical guide.\n")
 	builder.WriteString("Answer the player's question about the game, their next steps, or current objectives.\n")
 	builder.WriteString("Important rules:\n")

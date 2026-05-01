@@ -19,3 +19,12 @@ func TestZoneKindReferenceTablesIncludesInventoryItemSuggestionJobs(t *testing.T
 	}
 	t.Fatal("expected inventory_item_suggestion_jobs to participate in zone kind reference replacement")
 }
+
+func TestZoneKindReferenceTablesIncludesQuestArchetypes(t *testing.T) {
+	for _, tableName := range zoneKindReferenceTables {
+		if tableName == "quest_archetypes" {
+			return
+		}
+	}
+	t.Fatal("expected quest_archetypes to participate in zone kind reference replacement")
+}

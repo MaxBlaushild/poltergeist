@@ -15,6 +15,7 @@ type ZoneSeedResolvedCounts struct {
 	OptionEncounterCount   int `json:"optionEncounterCount"`
 	TreasureChestCount     int `json:"treasureChestCount"`
 	HealingFountainCount   int `json:"healingFountainCount"`
+	ShrineCount            int `json:"shrineCount"`
 	HerbalismResourceCount int `json:"herbalismResourceCount"`
 	MiningResourceCount    int `json:"miningResourceCount"`
 	ResourceCount          int `json:"resourceCount"`
@@ -29,6 +30,7 @@ func (c ZoneSeedResolvedCounts) HasContent() bool {
 		c.OptionEncounterCount != 0 ||
 		c.TreasureChestCount != 0 ||
 		c.HealingFountainCount != 0 ||
+		c.ShrineCount != 0 ||
 		c.HerbalismResourceCount != 0 ||
 		c.MiningResourceCount != 0 ||
 		c.ResourceCount != 0

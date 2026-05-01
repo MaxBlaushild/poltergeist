@@ -30,6 +30,14 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
   bool _spawningNearbyContent = false;
   bool _triggeringTutorial = false;
 
+  void _handleLogout() {
+    final router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      router.go('/logout');
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -459,7 +467,7 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                             _spawningNearbyContent ||
                             _triggeringTutorial)
                         ? null
-                        : () => context.go('/logout'),
+                        : _handleLogout,
                     icon: const Icon(Icons.logout_rounded),
                     label: const Text('Log out'),
                   ),

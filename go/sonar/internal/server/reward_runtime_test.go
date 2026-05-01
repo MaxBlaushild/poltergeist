@@ -6,25 +6,30 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 )
 
-func TestEnsureMonsterEncounterRandomRewardHasItemPreservesExistingGrants(t *testing.T) {
-	plan := models.RandomRewardPlan{
-		Experience: 100,
-		Gold:       25,
-		ItemGrants: []models.RandomRewardItemGrant{
-			{InventoryItemID: 99, Quantity: 2},
+func TestEnsureMonsterRewardItemGrantsIncludeEquipmentPreservesExistingEquipment(t *testing.T) {
+	itemByID := map[int]models.InventoryItem{
+		99: {
+			ID:         99,
+			Name:       "Iron Sword",
+			ItemLevel:  25,
+			RarityTier: "Common",
+			EquipSlot:  stringPtrRewardRuntime("dominant_hand"),
 		},
 	}
-
-	got := ensureMonsterEncounterRandomRewardHasItem(plan, map[int]models.InventoryItem{}, 25, "seed")
-	if len(got.ItemGrants) != 1 {
-		t.Fatalf("expected existing item grants to remain untouched, got %d", len(got.ItemGrants))
+	grants := []models.RandomRewardItemGrant{
+		{InventoryItemID: 99, Quantity: 2},
 	}
-	if got.ItemGrants[0].InventoryItemID != 99 || got.ItemGrants[0].Quantity != 2 {
-		t.Fatalf("expected existing grant to be preserved, got %+v", got.ItemGrants[0])
+
+	got := ensureMonsterRewardItemGrantsIncludeEquipment(grants, itemByID, 25, "seed")
+	if len(got) != 1 {
+		t.Fatalf("expected existing equipment grants to remain untouched, got %d", len(got))
+	}
+	if got[0].InventoryItemID != 99 || got[0].Quantity != 2 {
+		t.Fatalf("expected existing grant to be preserved, got %+v", got[0])
 	}
 }
 
-func TestEnsureMonsterEncounterRandomRewardHasItemAddsConsumableFallback(t *testing.T) {
+func TestEnsureMonsterRewardItemGrantsIncludeEquipmentAddsEquipmentWhenMissing(t *testing.T) {
 	itemByID := map[int]models.InventoryItem{
 		1: {ID: 1, Name: "Potion", ItemLevel: 20, RarityTier: "Common"},
 		2: {ID: 2, Name: "Elixir", ItemLevel: 40, RarityTier: "Common"},
@@ -37,19 +42,23 @@ func TestEnsureMonsterEncounterRandomRewardHasItemAddsConsumableFallback(t *test
 		},
 	}
 
-	got := ensureMonsterEncounterRandomRewardHasItem(models.RandomRewardPlan{}, itemByID, 22, "encounter-seed")
-	if len(got.ItemGrants) != 1 {
-		t.Fatalf("expected one fallback item grant, got %d", len(got.ItemGrants))
+	grants := []models.RandomRewardItemGrant{
+		{InventoryItemID: 1, Quantity: 2},
 	}
-	if got.ItemGrants[0].InventoryItemID != 1 {
-		t.Fatalf("expected consumable fallback item 1, got %d", got.ItemGrants[0].InventoryItemID)
+
+	got := ensureMonsterRewardItemGrantsIncludeEquipment(grants, itemByID, 22, "encounter-seed")
+	if len(got) != 2 {
+		t.Fatalf("expected consumable plus equipment grant, got %d", len(got))
 	}
-	if got.ItemGrants[0].Quantity != 1 {
-		t.Fatalf("expected fallback quantity 1, got %d", got.ItemGrants[0].Quantity)
+	if got[0].InventoryItemID != 1 || got[0].Quantity != 2 {
+		t.Fatalf("expected consumable grant to be preserved, got %+v", got[0])
+	}
+	if got[1].InventoryItemID != 3 || got[1].Quantity != 1 {
+		t.Fatalf("expected fallback equipment item 3 x1, got %+v", got[1])
 	}
 }
 
-func TestEnsureMonsterEncounterRandomRewardHasItemFallsBackToEquippable(t *testing.T) {
+func TestEnsureMonsterRewardItemGrantsIncludeEquipmentFallsBackToEquippable(t *testing.T) {
 	itemByID := map[int]models.InventoryItem{
 		7: {
 			ID:         7,
@@ -60,12 +69,12 @@ func TestEnsureMonsterEncounterRandomRewardHasItemFallsBackToEquippable(t *testi
 		},
 	}
 
-	got := ensureMonsterEncounterRandomRewardHasItem(models.RandomRewardPlan{}, itemByID, 20, "encounter-seed")
-	if len(got.ItemGrants) != 1 {
-		t.Fatalf("expected one fallback item grant, got %d", len(got.ItemGrants))
+	got := ensureMonsterRewardItemGrantsIncludeEquipment(nil, itemByID, 20, "encounter-seed")
+	if len(got) != 1 {
+		t.Fatalf("expected one fallback item grant, got %d", len(got))
 	}
-	if got.ItemGrants[0].InventoryItemID != 7 {
-		t.Fatalf("expected equippable fallback item 7, got %d", got.ItemGrants[0].InventoryItemID)
+	if got[0].InventoryItemID != 7 {
+		t.Fatalf("expected equippable fallback item 7, got %d", got[0].InventoryItemID)
 	}
 }
 

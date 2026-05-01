@@ -197,6 +197,9 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 	if err := p.seedHealingFountainsForZone(ctx, zone, job); err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed healing fountains: %w", err))
 	}
+	if err := p.seedShrinesForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed shrines: %w", err))
+	}
 	if err := p.seedResourcesForZone(ctx, zone, job); err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed resources: %w", err))
 	}
@@ -791,6 +794,74 @@ func (p *ApplyZoneSeedDraftProcessor) seedHealingFountainsForZone(
 		}
 		if err := p.dbClient.HealingFountain().Create(ctx, fountain); err != nil {
 			return fmt.Errorf("failed to create healing fountain %d/%d: %w", i+1, fountainCount, err)
+		}
+	}
+
+	return nil
+}
+
+const zoneSeedShrineDefaultCooldownSeconds = 7 * 24 * 60 * 60
+
+func (p *ApplyZoneSeedDraftProcessor) seedShrinesForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	shrineCount := job.ShrineCount
+	if shrineCount <= 0 {
+		return nil
+	}
+
+	effectiveZoneKind := models.NormalizeZoneKind(job.ZoneKind)
+	if effectiveZoneKind == "" && zone != nil {
+		effectiveZoneKind = models.NormalizeZoneKind(zone.Kind)
+	}
+
+	templates, err := ensureShrineTemplatePool(
+		ctx,
+		p.dbClient,
+		p.deepPriest,
+		effectiveZoneKind,
+		shrineCount,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to ensure shrine template pool: %w", err)
+	}
+	if len(templates) == 0 {
+		return fmt.Errorf("no shrine templates available for zone kind %q", effectiveZoneKind)
+	}
+
+	templateOrder := rand.Perm(len(templates))
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	for i := 0; i < shrineCount; i++ {
+		if len(templateOrder) == 0 {
+			templateOrder = rand.Perm(len(templates))
+		}
+		template := templates[templateOrder[0]]
+		templateOrder = templateOrder[1:]
+		location := p.randomLocationForZone(zone, fallbackLocations)
+
+		shrineZoneKind := effectiveZoneKind
+		if shrineZoneKind == "" {
+			shrineZoneKind = models.NormalizeZoneKind(template.ZoneKind)
+		}
+		shrine := &models.Shrine{
+			ShrineTemplateID: template.ID,
+			ZoneID:           zone.ID,
+			ZoneKind:         shrineZoneKind,
+			Latitude:         location.Latitude,
+			Longitude:        location.Longitude,
+			CooldownSeconds:  zoneSeedShrineDefaultCooldownSeconds,
+			Invalidated:      false,
+		}
+		if err := p.dbClient.Shrine().Create(ctx, shrine); err != nil {
+			return fmt.Errorf(
+				"failed to create shrine %d/%d from template %s: %w",
+				i+1,
+				shrineCount,
+				template.ID,
+				err,
+			)
 		}
 	}
 

@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/point_of_interest.dart';
 
@@ -12,34 +17,58 @@ const _poiCategoryPlaceholderUrlPrefix =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-marker-category-';
 const _thumbnailSize = 192;
 const _cornerRadius = 14;
+const _thumbnailDiskCacheDirectoryName = 'poi_thumbnail_cache';
+const _thumbnailDiskMaxCacheBytes = 96 * 1024 * 1024;
+const _thumbnailDiskMaxCacheEntries = 512;
 
 final Map<String, Uint8List> _thumbnailCache = {};
 final Map<String, Future<Uint8List?>> _thumbnailInFlight = {};
 final Map<String, Uint8List> _sourceImageCache = {};
 final Map<String, Future<Uint8List?>> _sourceImageInFlight = {};
+Directory? _thumbnailCacheDirectory;
+Future<Directory>? _thumbnailCacheDirectoryFuture;
+Future<void>? _thumbnailCacheCleanupFuture;
 
 Future<Uint8List?> _loadThumbnailCached(
   String cacheKey,
   Future<Uint8List?> Function() loader,
-) {
+) async {
   final cached = _thumbnailCache[cacheKey];
-  if (cached != null) return Future.value(cached);
+  if (cached != null) return cached;
   final inFlight = _thumbnailInFlight[cacheKey];
   if (inFlight != null) return inFlight;
-  final future = loader()
-      .then((bytes) {
-        if (bytes != null) {
-          _thumbnailCache[cacheKey] = bytes;
-        }
-        _thumbnailInFlight.remove(cacheKey);
-        return bytes;
-      })
-      .catchError((_) {
-        _thumbnailInFlight.remove(cacheKey);
-        return null;
-      });
+  final future = () async {
+    try {
+      final diskBytes = await _readThumbnailFromDisk(cacheKey);
+      if (diskBytes != null) {
+        _thumbnailCache[cacheKey] = diskBytes;
+        return diskBytes;
+      }
+
+      final bytes = await loader();
+      if (bytes != null) {
+        _thumbnailCache[cacheKey] = bytes;
+        unawaited(_writeThumbnailToDisk(cacheKey, bytes));
+      }
+      return bytes;
+    } catch (_) {
+      return null;
+    } finally {
+      _thumbnailInFlight.remove(cacheKey);
+    }
+  }();
   _thumbnailInFlight[cacheKey] = future;
   return future;
+}
+
+Future<Uint8List?> _loadThumbnailFromDiskCacheOnly(String cacheKey) async {
+  final cached = _thumbnailCache[cacheKey];
+  if (cached != null) return cached;
+  final diskBytes = await _readThumbnailFromDisk(cacheKey);
+  if (diskBytes != null) {
+    _thumbnailCache[cacheKey] = diskBytes;
+  }
+  return diskBytes;
 }
 
 Future<Uint8List?> _loadSourceCached(String url) {
@@ -79,11 +108,25 @@ Uint8List? peekPoiThumbnail(String? imageUrl) {
   return _thumbnailCache['plain_v8|$url'];
 }
 
+Future<Uint8List?> loadCachedPoiThumbnail(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _loadThumbnailFromDiskCacheOnly('plain_v8|$url');
+}
+
 Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
   return _thumbnailCache['quest_v10|$url'];
+}
+
+Future<Uint8List?> loadCachedPoiThumbnailWithQuestMarker(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _loadThumbnailFromDiskCacheOnly('quest_v10|$url');
 }
 
 Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
@@ -93,18 +136,178 @@ Uint8List? peekPoiThumbnailWithMainStoryMarker(String? imageUrl) {
   return _thumbnailCache['main_story_v11|$url'];
 }
 
+Future<Uint8List?> loadCachedPoiThumbnailWithMainStoryMarker(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _loadThumbnailFromDiskCacheOnly('main_story_v11|$url');
+}
+
 Uint8List? peekPoiCategoryThumbnail(PoiMarkerCategory category) {
   return _thumbnailCache['poi_category_plain_v2|${category.wireValue}'];
+}
+
+Future<Uint8List?> loadCachedPoiCategoryThumbnail(PoiMarkerCategory category) {
+  return _loadThumbnailFromDiskCacheOnly(
+    'poi_category_plain_v2|${category.wireValue}',
+  );
 }
 
 Uint8List? peekPoiCategoryThumbnailWithQuestMarker(PoiMarkerCategory category) {
   return _thumbnailCache['poi_category_quest_v4|${category.wireValue}'];
 }
 
+Future<Uint8List?> loadCachedPoiCategoryThumbnailWithQuestMarker(
+  PoiMarkerCategory category,
+) {
+  return _loadThumbnailFromDiskCacheOnly(
+    'poi_category_quest_v4|${category.wireValue}',
+  );
+}
+
 Uint8List? peekPoiCategoryThumbnailWithMainStoryMarker(
   PoiMarkerCategory category,
 ) {
   return _thumbnailCache['poi_category_main_story_v5|${category.wireValue}'];
+}
+
+Future<Uint8List?> loadCachedPoiCategoryThumbnailWithMainStoryMarker(
+  PoiMarkerCategory category,
+) {
+  return _loadThumbnailFromDiskCacheOnly(
+    'poi_category_main_story_v5|${category.wireValue}',
+  );
+}
+
+Future<Directory> _ensureThumbnailCacheDirectory() async {
+  if (_thumbnailCacheDirectory != null) {
+    return _thumbnailCacheDirectory!;
+  }
+  final existingFuture = _thumbnailCacheDirectoryFuture;
+  if (existingFuture != null) {
+    return existingFuture;
+  }
+  final future = () async {
+    final root = await getApplicationSupportDirectory();
+    final directory = Directory(
+      '${root.path}/$_thumbnailDiskCacheDirectoryName',
+    );
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    _thumbnailCacheDirectory = directory;
+    return directory;
+  }();
+  _thumbnailCacheDirectoryFuture = future;
+  final directory = await future;
+  if (identical(_thumbnailCacheDirectoryFuture, future)) {
+    _thumbnailCacheDirectoryFuture = null;
+  }
+  return directory;
+}
+
+Future<File> _thumbnailCacheFileForKey(String cacheKey) async {
+  final directory = await _ensureThumbnailCacheDirectory();
+  final filename = '${sha1.convert(utf8.encode(cacheKey)).toString()}.png';
+  return File('${directory.path}/$filename');
+}
+
+Future<Uint8List?> _readThumbnailFromDisk(String cacheKey) async {
+  try {
+    final file = await _thumbnailCacheFileForKey(cacheKey);
+    if (!await file.exists()) {
+      return null;
+    }
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) {
+      return null;
+    }
+    unawaited(_touchThumbnailCacheFile(file));
+    return bytes;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _writeThumbnailToDisk(String cacheKey, Uint8List bytes) async {
+  if (bytes.isEmpty) return;
+  try {
+    final file = await _thumbnailCacheFileForKey(cacheKey);
+    await file.parent.create(recursive: true);
+    final tempFile = File('${file.path}.tmp');
+    await tempFile.writeAsBytes(bytes, flush: true);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    final storedFile = await tempFile.rename(file.path);
+    await _touchThumbnailCacheFile(storedFile);
+    unawaited(_cleanupThumbnailCacheIfNeeded());
+  } catch (_) {
+    // Disk cache writes are best-effort.
+  }
+}
+
+Future<void> _cleanupThumbnailCacheIfNeeded() {
+  final existingFuture = _thumbnailCacheCleanupFuture;
+  if (existingFuture != null) {
+    return existingFuture;
+  }
+  final future = _cleanupThumbnailCache();
+  _thumbnailCacheCleanupFuture = future;
+  return future.whenComplete(() {
+    if (identical(_thumbnailCacheCleanupFuture, future)) {
+      _thumbnailCacheCleanupFuture = null;
+    }
+  });
+}
+
+Future<void> _cleanupThumbnailCache() async {
+  try {
+    final directory = await _ensureThumbnailCacheDirectory();
+    final files = await directory
+        .list()
+        .where((entity) => entity is File)
+        .cast<File>()
+        .where((file) => !file.path.endsWith('.tmp'))
+        .toList();
+    if (files.isEmpty) {
+      return;
+    }
+
+    final entries = <_CachedThumbnailDiskEntry>[];
+    var totalBytes = 0;
+    for (final file in files) {
+      try {
+        final stat = await file.stat();
+        totalBytes += stat.size;
+        entries.add(
+          _CachedThumbnailDiskEntry(
+            file: file,
+            sizeBytes: stat.size,
+            modifiedAt: stat.modified,
+          ),
+        );
+      } catch (_) {}
+    }
+
+    entries.sort((a, b) => a.modifiedAt.compareTo(b.modifiedAt));
+    while (entries.length > _thumbnailDiskMaxCacheEntries ||
+        totalBytes > _thumbnailDiskMaxCacheBytes) {
+      final entry = entries.removeAt(0);
+      totalBytes -= entry.sizeBytes;
+      try {
+        await entry.file.delete();
+      } catch (_) {}
+    }
+  } catch (_) {
+    // Disk cache cleanup is best-effort.
+  }
+}
+
+Future<void> _touchThumbnailCacheFile(File file) async {
+  try {
+    await file.setLastModified(DateTime.now());
+  } catch (_) {}
 }
 
 /// Fetches the POI image (or placeholder), resizes to a square, applies
@@ -1282,4 +1485,16 @@ void _drawCurrentUserBaseBadge(
   _fillDiamond(image, centerX, centerY, 10, outlineColor);
   _fillDiamond(image, centerX, centerY, 6, accentColor);
   _fillDiamond(image, centerX, centerY, 3, centerFillColor);
+}
+
+class _CachedThumbnailDiskEntry {
+  const _CachedThumbnailDiskEntry({
+    required this.file,
+    required this.sizeBytes,
+    required this.modifiedAt,
+  });
+
+  final File file;
+  final int sizeBytes;
+  final DateTime modifiedAt;
 }

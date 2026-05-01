@@ -69,6 +69,7 @@ const minimumQuestMonsterTemplateMatchScore = 2
 type questMonsterTemplateRequest struct {
 	Count             int
 	MonsterType       models.MonsterTemplateType
+	PreferredZoneKind *models.ZoneKind
 	ThemePrompt       string
 	EncounterConcept  string
 	LocationConcept   string
@@ -172,6 +173,10 @@ func selectQuestMonsterTemplateMatches(
 		if template.MonsterType == request.MonsterType {
 			score++
 		}
+		if preferredZoneKind := models.ZoneKindPromptSlug(request.PreferredZoneKind); preferredZoneKind != "" &&
+			models.NormalizeZoneKind(template.ZoneKind) == preferredZoneKind {
+			score += 3
+		}
 		if score < minimumQuestMonsterTemplateMatchScore {
 			continue
 		}
@@ -196,6 +201,20 @@ func buildQuestMonsterTemplateQuerySet(request questMonsterTemplateRequest) map[
 	queryTokens := generatedQuestTemplateTokens(request.ThemePrompt)
 	queryTokens = append(queryTokens, generatedQuestTemplateTokens(request.EncounterConcept)...)
 	queryTokens = append(queryTokens, generatedQuestTemplateTokens(request.LocationConcept)...)
+	if request.PreferredZoneKind != nil {
+		queryTokens = append(
+			queryTokens,
+			generatedQuestTemplateTokens(models.ZoneKindPromptLabel(request.PreferredZoneKind))...,
+		)
+		queryTokens = append(
+			queryTokens,
+			generatedQuestTemplateTokens(models.ZoneKindPromptSlug(request.PreferredZoneKind))...,
+		)
+		queryTokens = append(
+			queryTokens,
+			generatedQuestTemplateTokens(models.ZoneKindPromptSeed(request.PreferredZoneKind))...,
+		)
+	}
 	for _, tone := range request.EncounterTone {
 		queryTokens = append(queryTokens, generatedQuestTemplateTokens(tone)...)
 	}
@@ -311,7 +330,7 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 			questMonsterPromptLocationTypes(request.LocationArchetype),
 			questMonsterPromptList(request.EncounterTone),
 			questMonsterPromptList(request.SeedHints),
-			models.ZoneKindsPromptOptions(zoneKinds),
+			questMonsterZoneKindPromptBlock(zoneKinds, request.PreferredZoneKind),
 			monsterTemplateTypePromptGuidance(request.MonsterType),
 			formatMonsterTemplateNamesForPrompt(existingNames),
 			request.Count,
@@ -329,7 +348,7 @@ func (s *server) buildQuestSpecificMonsterTemplateSpecs(
 					candidate.ZoneKind = normalizeGeneratedMonsterTemplateZoneKind(
 						candidate.ZoneKind,
 						zoneKinds,
-						nil,
+						request.PreferredZoneKind,
 					)
 					if candidate.Name == "" {
 						continue
@@ -392,6 +411,33 @@ func questMonsterPromptList(values []string) string {
 		return "none"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func questMonsterZoneKindPromptBlock(
+	zoneKinds []models.ZoneKind,
+	preferred *models.ZoneKind,
+) string {
+	lines := make([]string, 0, len(zoneKinds)+8)
+	if preferred != nil {
+		if label := strings.TrimSpace(models.ZoneKindPromptLabel(preferred)); label != "" {
+			lines = append(lines, fmt.Sprintf("- preferred zone kind: %s", label))
+		}
+		if slug := strings.TrimSpace(models.ZoneKindPromptSlug(preferred)); slug != "" {
+			lines = append(lines, fmt.Sprintf("- preferred zone kind slug: %s", slug))
+		}
+		if seed := strings.TrimSpace(models.ZoneKindPromptSeed(preferred)); seed != "" {
+			lines = append(lines, fmt.Sprintf("- preferred zone kind creative seed: %s", seed))
+		}
+		lines = append(lines, "")
+	}
+	lines = append(lines, "Allowed zone kinds:", models.ZoneKindsPromptOptions(zoneKinds))
+	lines = append(lines, "", "Additional rules:")
+	lines = append(lines, "- Return zoneKind as one allowed slug exactly as written.")
+	lines = append(lines, "- Choose the strongest environmental fit for the quest encounter and location context.")
+	if preferred != nil {
+		lines = append(lines, "- If the preferred zone kind is still a strong fit, keep it.")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func questMonsterPromptLocationName(location *models.LocationArchetype) string {

@@ -5,6 +5,7 @@ export type ZoneKind = {
   slug: string;
   name: string;
   description: string;
+  defaultShopkeeperItemTags: string[];
   overlayColor: string;
   patternTileUrl: string;
   patternTilePrompt: string;
@@ -18,6 +19,7 @@ export type ZoneKind = {
   optionEncounterCountRatio: number;
   treasureChestCountRatio: number;
   healingFountainCountRatio: number;
+  shrineCountRatio: number;
   herbalismResourceCountRatio: number;
   miningResourceCountRatio: number;
   resourceCountRatio: number;
