@@ -221,6 +221,13 @@ export const adminNavigationGroups: AdminNavGroup[] = [
         description: 'Inspect users, progress, unlocks, and live state.',
       },
       {
+        id: 'reward-profiles',
+        label: 'Reward Profiles',
+        path: '/reward-profiles',
+        description:
+          'Edit the seeded random-reward archetypes that bias content drops.',
+      },
+      {
         id: 'characters',
         label: 'Characters',
         path: '/characters',

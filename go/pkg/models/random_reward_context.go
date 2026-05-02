@@ -31,8 +31,140 @@ type RandomRewardContext struct {
 	StatTags                []string
 	Proficiencies           []string
 	InternalTags            []string
+	RewardProfileSlugs      []string
+	PreferredItemTags       []string
+	PreferredMaterialKeys   []BaseResourceKey
+	PreferredDamageTags     []string
 	ResourceTypeIDs         []uuid.UUID
 	ElementalTags           []string
+	PreferEquipment         bool
+	PreferUtility           bool
+	PreferKnowledge         bool
+	PreferNonEquipment      bool
+}
+
+func (c *RandomRewardContext) ApplyRewardProfiles(rewardProfiles []RewardProfile) {
+	if c == nil || len(rewardProfiles) == 0 {
+		return
+	}
+
+	resourceTypeIDs := append([]uuid.UUID{}, c.ResourceTypeIDs...)
+	seenResourceTypeIDs := map[uuid.UUID]struct{}{}
+	for _, resourceTypeID := range resourceTypeIDs {
+		if resourceTypeID == uuid.Nil {
+			continue
+		}
+		seenResourceTypeIDs[resourceTypeID] = struct{}{}
+	}
+
+	materialKeys := make([]BaseResourceKey, 0, len(c.PreferredMaterialKeys))
+	seenMaterialKeys := map[BaseResourceKey]struct{}{}
+	for _, existingKey := range c.PreferredMaterialKeys {
+		resourceKey := NormalizeBaseResourceKey(string(existingKey))
+		if resourceKey == "" {
+			continue
+		}
+		if _, exists := seenMaterialKeys[resourceKey]; exists {
+			continue
+		}
+		seenMaterialKeys[resourceKey] = struct{}{}
+		materialKeys = append(materialKeys, resourceKey)
+	}
+
+	for _, rewardProfile := range rewardProfiles {
+		slug := NormalizeRewardProfileSlug(rewardProfile.Slug)
+		if slug != "" {
+			c.RewardProfileSlugs = MergeTagLists(c.RewardProfileSlugs, []string{slug})
+		}
+		c.PreferredItemTags = MergeTagLists(c.PreferredItemTags, []string(rewardProfile.PreferredItemTags))
+		c.PreferredDamageTags = MergeTagLists(c.PreferredDamageTags, []string(rewardProfile.PreferredDamageAffinities))
+		for _, rawResourceKey := range rewardProfile.PreferredMaterialKeys {
+			resourceKey := NormalizeBaseResourceKey(rawResourceKey)
+			if resourceKey == "" {
+				continue
+			}
+			if _, exists := seenMaterialKeys[resourceKey]; exists {
+				continue
+			}
+			seenMaterialKeys[resourceKey] = struct{}{}
+			materialKeys = append(materialKeys, resourceKey)
+		}
+		for _, rawResourceTypeID := range rewardProfile.PreferredResourceTypeIDs {
+			resourceTypeID, err := uuid.Parse(strings.TrimSpace(rawResourceTypeID))
+			if err != nil || resourceTypeID == uuid.Nil {
+				continue
+			}
+			if _, exists := seenResourceTypeIDs[resourceTypeID]; exists {
+				continue
+			}
+			seenResourceTypeIDs[resourceTypeID] = struct{}{}
+			resourceTypeIDs = append(resourceTypeIDs, resourceTypeID)
+		}
+		c.PreferEquipment = c.PreferEquipment || rewardProfile.PreferEquipment
+		c.PreferUtility = c.PreferUtility || rewardProfile.PreferUtility
+		c.PreferKnowledge = c.PreferKnowledge || rewardProfile.PreferKnowledge
+		c.PreferNonEquipment = c.PreferNonEquipment || rewardProfile.PreferNonEquipment
+	}
+
+	c.PreferredMaterialKeys = materialKeys
+	c.ResourceTypeIDs = resourceTypeIDs
+}
+
+func (c *RandomRewardContext) hasInternalTag(value string) bool {
+	if c == nil {
+		return false
+	}
+	target := strings.ToLower(strings.TrimSpace(value))
+	if target == "" {
+		return false
+	}
+	for _, rawTag := range c.InternalTags {
+		if strings.ToLower(strings.TrimSpace(rawTag)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func DefaultRewardProfileSlugsForContext(c *RandomRewardContext) []string {
+	if c == nil {
+		return []string{}
+	}
+
+	switch c.ContentKind {
+	case RandomRewardContentChallenge:
+		switch c.SubmissionType {
+		case QuestNodeSubmissionTypeText:
+			return []string{"social"}
+		default:
+			return []string{"exploration"}
+		}
+	case RandomRewardContentPointOfInterest:
+		switch c.PointOfInterestCategory {
+		case PointOfInterestMarkerCategoryArchive, PointOfInterestMarkerCategoryMuseum, PointOfInterestMarkerCategoryLandmark, PointOfInterestMarkerCategoryCivic:
+			return []string{"lore"}
+		case PointOfInterestMarkerCategoryMarket, PointOfInterestMarkerCategoryCoffeehouse, PointOfInterestMarkerCategoryTavern, PointOfInterestMarkerCategoryEatery, PointOfInterestMarkerCategoryTheater:
+			return []string{"social"}
+		case PointOfInterestMarkerCategoryPark, PointOfInterestMarkerCategoryWaterfront:
+			return []string{"nature"}
+		case PointOfInterestMarkerCategoryArena:
+			return []string{"combat"}
+		default:
+			return []string{"exploration"}
+		}
+	case RandomRewardContentExposition:
+		return []string{"lore"}
+	case RandomRewardContentMonster, RandomRewardContentMonsterEncounter:
+		return []string{"combat"}
+	case RandomRewardContentTreasureChest:
+		return []string{"treasure"}
+	case RandomRewardContentScenario, RandomRewardContentQuestTurnIn:
+		if c.hasInternalTag("main_story") {
+			return []string{"story"}
+		}
+	}
+
+	return []string{}
 }
 
 func (c *RandomRewardContext) PreferredRewardTags() []string {
@@ -65,49 +197,53 @@ func (c *RandomRewardContext) PreferredRewardTags() []string {
 	for _, elementalTag := range c.ElementalTags {
 		addTag(elementalTag)
 	}
+	for _, preferredTag := range c.PreferredItemTags {
+		addTag(preferredTag)
+	}
+	for _, preferredDamageTag := range c.PreferredDamageTags {
+		addTag(preferredDamageTag)
+	}
+
+	if len(c.PreferredItemTags) == 0 {
+		switch c.ContentKind {
+		case RandomRewardContentChallenge:
+			switch c.SubmissionType {
+			case QuestNodeSubmissionTypeText:
+				addMany("social", "scholar", "guide")
+			case QuestNodeSubmissionTypeVideo:
+				addMany("scout", "guide", "street", "wild")
+			default:
+				addMany("scout", "guide", "street")
+			}
+		case RandomRewardContentPointOfInterest:
+			switch c.PointOfInterestCategory {
+			case PointOfInterestMarkerCategoryArchive, PointOfInterestMarkerCategoryMuseum, PointOfInterestMarkerCategoryLandmark, PointOfInterestMarkerCategoryCivic:
+				addMany("guide", "scholar", "relic", "arcane")
+			case PointOfInterestMarkerCategoryMarket:
+				addMany("broker", "social", "guide", "street")
+			case PointOfInterestMarkerCategoryPark, PointOfInterestMarkerCategoryWaterfront:
+				addMany("nature", "wild", "scout")
+			case PointOfInterestMarkerCategoryCoffeehouse, PointOfInterestMarkerCategoryTavern, PointOfInterestMarkerCategoryEatery, PointOfInterestMarkerCategoryTheater:
+				addMany("social", "guide", "court")
+			case PointOfInterestMarkerCategoryArena:
+				addMany("martial", "hunter", "frontline")
+			default:
+				addMany("guide", "street", "scout")
+			}
+		case RandomRewardContentExposition:
+			addMany("scholar", "guide", "arcane", "ritual", "relic")
+		case RandomRewardContentMonster, RandomRewardContentMonsterEncounter:
+			addMany("martial", "hunter", "frontline", "defender")
+		}
+	}
 
 	switch c.ContentKind {
-	case RandomRewardContentChallenge:
-		switch c.SubmissionType {
-		case QuestNodeSubmissionTypeText:
-			addMany("social", "scholar", "guide")
-		case QuestNodeSubmissionTypeVideo:
-			addMany("scout", "guide", "street", "wild")
-		default:
-			addMany("scout", "guide", "street")
-		}
-	case RandomRewardContentPointOfInterest:
-		switch c.PointOfInterestCategory {
-		case PointOfInterestMarkerCategoryArchive, PointOfInterestMarkerCategoryMuseum, PointOfInterestMarkerCategoryLandmark, PointOfInterestMarkerCategoryCivic:
-			addMany("guide", "scholar", "relic", "arcane")
-		case PointOfInterestMarkerCategoryMarket:
-			addMany("broker", "social", "guide", "street")
-		case PointOfInterestMarkerCategoryPark, PointOfInterestMarkerCategoryWaterfront:
-			addMany("nature", "wild", "scout")
-		case PointOfInterestMarkerCategoryCoffeehouse, PointOfInterestMarkerCategoryTavern, PointOfInterestMarkerCategoryEatery, PointOfInterestMarkerCategoryTheater:
-			addMany("social", "guide", "court")
-		case PointOfInterestMarkerCategoryArena:
-			addMany("martial", "hunter", "frontline")
-		default:
-			addMany("guide", "street", "scout")
-		}
-	case RandomRewardContentExposition:
-		addMany("scholar", "guide", "arcane", "ritual", "relic")
-	case RandomRewardContentScenario:
+	case RandomRewardContentScenario, RandomRewardContentQuestTurnIn:
 		for _, proficiencyTag := range randomRewardTagsFromProficiencies(c.Proficiencies) {
 			addTag(proficiencyTag)
 		}
-		if strings.Contains(strings.ToLower(strings.Join(c.InternalTags, ",")), "main_story") {
+		if c.hasInternalTag("main_story") && len(c.PreferredItemTags) == 0 {
 			addMany("guide", "relic")
-		}
-	case RandomRewardContentMonster, RandomRewardContentMonsterEncounter:
-		addMany("martial", "hunter", "frontline", "defender")
-	case RandomRewardContentQuestTurnIn:
-		if strings.Contains(strings.ToLower(strings.Join(c.InternalTags, ",")), "main_story") {
-			addMany("guide", "relic")
-		}
-		for _, proficiencyTag := range randomRewardTagsFromProficiencies(c.Proficiencies) {
-			addTag(proficiencyTag)
 		}
 	}
 
@@ -139,6 +275,13 @@ func (c *RandomRewardContext) HasSignals() bool {
 		return true
 	}
 	if len(c.ResourceTypeIDs) > 0 {
+		return true
+	}
+	if len(c.PreferredMaterialKeys) > 0 ||
+		c.PreferEquipment ||
+		c.PreferUtility ||
+		c.PreferKnowledge ||
+		c.PreferNonEquipment {
 		return true
 	}
 	return len(c.PreferredRewardTags()) > 0
@@ -317,6 +460,7 @@ func rewardItemProvidesUtility(item InventoryItem) bool {
 		item.ConsumeManaDelta != 0 ||
 		item.ConsumeRevivePartyMemberHealth != 0 ||
 		item.ConsumeReviveAllDownedPartyMembersHealth != 0 ||
+		item.UnlockLocksStrength != nil ||
 		item.ConsumeCreateBase ||
 		len(item.ConsumeStatusesToAdd) > 0 ||
 		len(item.ConsumeStatusesToRemove) > 0 ||
@@ -335,6 +479,9 @@ func rewardContextPrefersKnowledgeRewards(rewardContext *RandomRewardContext) bo
 	if rewardContext == nil {
 		return false
 	}
+	if rewardContext.PreferKnowledge {
+		return true
+	}
 
 	for _, tag := range rewardContext.PreferredRewardTags() {
 		switch tag {
@@ -348,6 +495,9 @@ func rewardContextPrefersKnowledgeRewards(rewardContext *RandomRewardContext) bo
 func rewardContextPrefersUtilityRewards(rewardContext *RandomRewardContext) bool {
 	if rewardContext == nil {
 		return false
+	}
+	if rewardContext.PreferUtility {
+		return true
 	}
 
 	switch rewardContext.ContentKind {
@@ -368,6 +518,9 @@ func rewardContextPrefersCombatEquipment(rewardContext *RandomRewardContext) boo
 	if rewardContext == nil {
 		return false
 	}
+	if rewardContext.PreferEquipment {
+		return true
+	}
 
 	switch rewardContext.ContentKind {
 	case RandomRewardContentMonster, RandomRewardContentMonsterEncounter:
@@ -386,6 +539,9 @@ func rewardContextPrefersCombatEquipment(rewardContext *RandomRewardContext) boo
 func rewardContextPrefersNonEquipment(rewardContext *RandomRewardContext) bool {
 	if rewardContext == nil {
 		return false
+	}
+	if rewardContext.PreferNonEquipment {
+		return true
 	}
 
 	switch rewardContext.ContentKind {

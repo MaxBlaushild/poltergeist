@@ -14,6 +14,7 @@ export * from './district';
 export * from './inventoryItem';
 export * from './resourceType';
 export * from './resource';
+export * from './rewardProfile';
 export * from './inventoryItemSuggestion';
 export * from './spell';
 export * from './matchInventoryItemEffect';

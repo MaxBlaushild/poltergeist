@@ -2016,20 +2016,25 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			sourceID = encounter.ID
 			materialRewards = encounter.MaterialRewards
 		}
+		baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+			ctx,
+			rewardMode,
+			materialRewards,
+			fmt.Sprintf("%s:%s:user:%s:materials", sourceType, sourceID, participant.UserID),
+			func() *models.RandomRewardContext {
+				if encounter != nil {
+					return buildRandomRewardContextForMonsterEncounter(encounter)
+				}
+				return buildRandomRewardContextForMonster(monster)
+			}(),
+		)
+		if err != nil {
+			return nil, err
+		}
 		baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 			ctx,
 			participant.UserID,
-			resolveBaseMaterialRewardsForContext(
-				rewardMode,
-				materialRewards,
-				fmt.Sprintf("%s:%s:user:%s:materials", sourceType, sourceID, participant.UserID),
-				func() *models.RandomRewardContext {
-					if encounter != nil {
-						return buildRandomRewardContextForMonsterEncounter(encounter)
-					}
-					return buildRandomRewardContextForMonster(monster)
-				}(),
-			),
+			baseMaterialRewards,
 			sourceType,
 			&sourceID,
 		)

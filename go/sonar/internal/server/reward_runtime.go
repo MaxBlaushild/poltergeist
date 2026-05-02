@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/rewards"
 	"github.com/google/uuid"
 )
 
@@ -33,6 +34,10 @@ func (s *server) randomRewardPlanForUser(
 	normalizedSeed := strings.TrimSpace(seed)
 	if normalizedSeed == "" {
 		normalizedSeed = fmt.Sprintf("user:%s", userID)
+	}
+	rewardContext, err = rewards.ApplyDefaultRewardProfiles(ctx, s.dbClient, rewardContext)
+	if err != nil {
+		return models.RandomRewardPlan{}, nil, 0, err
 	}
 	plan := models.BuildRandomRewardPlanForContext(
 		userLevel,

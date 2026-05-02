@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
 
 func TestFilterRewardItemsForContextPrefersKnowledgeAndZoneMatch(t *testing.T) {
 	zoneKind := "haunted-streets"
@@ -126,6 +130,60 @@ func TestBuildRandomRewardPlanForContextUsesPointOfInterestProfile(t *testing.T)
 	}
 	if plan.ItemGrants[0].InventoryItemID != 7 {
 		t.Fatalf("expected market POI rewards to prefer the guide's satchel, got item %d", plan.ItemGrants[0].InventoryItemID)
+	}
+}
+
+func TestDefaultRewardProfileSlugsForContext(t *testing.T) {
+	marketPOI := DefaultRewardProfileSlugsForContext(&RandomRewardContext{
+		ContentKind:             RandomRewardContentPointOfInterest,
+		PointOfInterestCategory: PointOfInterestMarkerCategoryMarket,
+	})
+	if len(marketPOI) != 1 || marketPOI[0] != "social" {
+		t.Fatalf("expected market POI to map to social profile, got %#v", marketPOI)
+	}
+
+	mainStoryScenario := DefaultRewardProfileSlugsForContext(&RandomRewardContext{
+		ContentKind:  RandomRewardContentScenario,
+		InternalTags: []string{"main_story"},
+	})
+	if len(mainStoryScenario) != 1 || mainStoryScenario[0] != "story" {
+		t.Fatalf("expected main story scenario to map to story profile, got %#v", mainStoryScenario)
+	}
+}
+
+func TestApplyRewardProfilesMergesPreferences(t *testing.T) {
+	resourceTypeID := uuid.New()
+	context := &RandomRewardContext{
+		PreferredItemTags:     []string{"guide"},
+		PreferredMaterialKeys: []BaseResourceKey{BaseResourceHerbs},
+		ResourceTypeIDs:       []uuid.UUID{resourceTypeID},
+	}
+	context.ApplyRewardProfiles([]RewardProfile{
+		{
+			Slug:                      "combat",
+			PreferredItemTags:         StringArray{"martial", "hunter"},
+			PreferredMaterialKeys:     StringArray{"monster_parts", "iron"},
+			PreferredDamageAffinities: StringArray{"fire"},
+			PreferredResourceTypeIDs:  StringArray{uuid.NewString(), resourceTypeID.String()},
+			PreferEquipment:           true,
+			PreferUtility:             true,
+		},
+	})
+
+	if !context.PreferEquipment || !context.PreferUtility {
+		t.Fatalf("expected profile preferences to enable equipment and utility flags")
+	}
+	if len(context.PreferredItemTags) != 3 {
+		t.Fatalf("expected merged preferred item tags, got %#v", context.PreferredItemTags)
+	}
+	if len(context.PreferredMaterialKeys) != 3 {
+		t.Fatalf("expected merged preferred material keys, got %#v", context.PreferredMaterialKeys)
+	}
+	if len(context.PreferredDamageTags) != 1 || context.PreferredDamageTags[0] != "fire" {
+		t.Fatalf("expected fire damage preference, got %#v", context.PreferredDamageTags)
+	}
+	if len(context.ResourceTypeIDs) != 2 {
+		t.Fatalf("expected merged resource type IDs, got %#v", context.ResourceTypeIDs)
 	}
 }
 

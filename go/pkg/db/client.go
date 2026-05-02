@@ -73,6 +73,7 @@ type client struct {
 	tagGroupHandle                        *tagGroupHandle
 	zoneHandle                            *zoneHandler
 	zoneKindHandle                        *zoneKindHandle
+	rewardProfileHandle                   *rewardProfileHandle
 	zoneGenreHandle                       *zoneGenreHandler
 	zoneGenreScoreHandle                  *zoneGenreScoreHandler
 	locationArchetypeHandle               *locationArchetypeHandle
@@ -265,6 +266,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		tagGroupHandle:                        &tagGroupHandle{db: db},
 		zoneHandle:                            &zoneHandler{db: db},
 		zoneKindHandle:                        &zoneKindHandle{db: db},
+		rewardProfileHandle:                   &rewardProfileHandle{db: db},
 		zoneGenreHandle:                       &zoneGenreHandler{db: db},
 		zoneGenreScoreHandle:                  &zoneGenreScoreHandler{db: db},
 		locationArchetypeHandle:               &locationArchetypeHandle{db: db},
@@ -564,6 +566,10 @@ func (c *client) Zone() ZoneHandle {
 
 func (c *client) ZoneKind() ZoneKindHandle {
 	return c.zoneKindHandle
+}
+
+func (c *client) RewardProfile() RewardProfileHandle {
+	return c.rewardProfileHandle
 }
 
 func (c *client) ZoneGenre() ZoneGenreHandle {

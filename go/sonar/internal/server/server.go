@@ -417,6 +417,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/zone-genres", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneGenre))
 	r.PATCH("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneGenre))
 	r.DELETE("/sonar/admin/zone-genres/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneGenre))
+	r.GET("/sonar/admin/reward-profiles", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRewardProfiles))
+	r.POST("/sonar/admin/reward-profiles", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createRewardProfile))
+	r.PATCH("/sonar/admin/reward-profiles/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateRewardProfile))
+	r.DELETE("/sonar/admin/reward-profiles/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteRewardProfile))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
 	r.POST("/sonar/zones/:id/discover", middleware.WithAuthentication(s.authClient, s.livenessClient, s.discoverZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
@@ -12440,16 +12444,22 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+		ctx,
+		challenge.RewardMode,
+		challenge.MaterialRewards,
+		fmt.Sprintf("challenge:%s:user:%s:materials", challenge.ID, user.ID),
+		buildRandomRewardContextForChallenge(challenge),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	baseResourcesAwarded, err := s.awardBaseResourcesToParticipants(
 		ctx,
 		participantIDs,
 		user.ID,
-		resolveBaseMaterialRewardsForContext(
-			challenge.RewardMode,
-			challenge.MaterialRewards,
-			fmt.Sprintf("challenge:%s:user:%s:materials", challenge.ID, user.ID),
-			buildRandomRewardContextForChallenge(challenge),
-		),
+		baseMaterialRewards,
 		"challenge",
 		&challenge.ID,
 	)
@@ -14104,15 +14114,21 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+		c,
+		pointOfInterest.RewardMode,
+		pointOfInterest.MaterialRewards,
+		fmt.Sprintf("point_of_interest:%s:user:%s:materials", pointOfInterest.ID, user.ID),
+		buildRandomRewardContextForPointOfInterest(pointOfInterest),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		c,
 		user.ID,
-		resolveBaseMaterialRewardsForContext(
-			pointOfInterest.RewardMode,
-			pointOfInterest.MaterialRewards,
-			fmt.Sprintf("point_of_interest:%s:user:%s:materials", pointOfInterest.ID, user.ID),
-			buildRandomRewardContextForPointOfInterest(pointOfInterest),
-		),
+		baseMaterialRewards,
 		"point_of_interest",
 		&pointOfInterest.ID,
 	)
@@ -17324,15 +17340,21 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+		ctx,
+		treasureChest.RewardMode,
+		treasureChest.MaterialRewards,
+		fmt.Sprintf("treasure_chest:%s:user:%s:materials", treasureChest.ID, user.ID),
+		buildRandomRewardContextForTreasureChest(treasureChest),
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		user.ID,
-		resolveBaseMaterialRewardsForContext(
-			treasureChest.RewardMode,
-			treasureChest.MaterialRewards,
-			fmt.Sprintf("treasure_chest:%s:user:%s:materials", treasureChest.ID, user.ID),
-			buildRandomRewardContextForTreasureChest(treasureChest),
-		),
+		baseMaterialRewards,
 		"treasure_chest",
 		&treasureChest.ID,
 	)
@@ -19868,28 +19890,34 @@ func (s *server) performScenario(ctx *gin.Context) {
 				}
 			}
 		}
+		baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+			ctx,
+			scenarioRewardMode,
+			func() models.BaseMaterialRewards {
+				if !scenario.OpenEnded &&
+					scenario.SuccessRewardMode == models.ScenarioSuccessRewardModeIndividual &&
+					selectedOption != nil {
+					return selectedOption.MaterialRewards
+				}
+				return scenario.MaterialRewards
+			}(),
+			fmt.Sprintf("scenario:%s:user:%s:materials", scenario.ID, user.ID),
+			buildRandomRewardContextForScenario(
+				scenario,
+				selectedOption,
+				statTag,
+				proficiencies,
+			),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		baseResourcesAwarded, err = s.awardBaseResourcesToParticipants(
 			ctx,
 			participantIDs,
 			user.ID,
-			resolveBaseMaterialRewardsForContext(
-				scenarioRewardMode,
-				func() models.BaseMaterialRewards {
-					if !scenario.OpenEnded &&
-						scenario.SuccessRewardMode == models.ScenarioSuccessRewardModeIndividual &&
-						selectedOption != nil {
-						return selectedOption.MaterialRewards
-					}
-					return scenario.MaterialRewards
-				}(),
-				fmt.Sprintf("scenario:%s:user:%s:materials", scenario.ID, user.ID),
-				buildRandomRewardContextForScenario(
-					scenario,
-					selectedOption,
-					statTag,
-					proficiencies,
-				),
-			),
+			baseMaterialRewards,
 			"scenario",
 			&scenario.ID,
 		)

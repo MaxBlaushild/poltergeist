@@ -71,6 +71,7 @@ type DbClient interface {
 	TagGroup() TagGroupHandle
 	Zone() ZoneHandle
 	ZoneKind() ZoneKindHandle
+	RewardProfile() RewardProfileHandle
 	ZoneGenre() ZoneGenreHandle
 	ZoneGenreScore() ZoneGenreScoreHandle
 	LocationArchetype() LocationArchetypeHandle
@@ -837,6 +838,15 @@ type ZoneGenreHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneGenre, error)
 	FindByName(ctx context.Context, name string) (*models.ZoneGenre, error)
 	Update(ctx context.Context, genre *models.ZoneGenre) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type RewardProfileHandle interface {
+	Create(ctx context.Context, rewardProfile *models.RewardProfile) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.RewardProfile, error)
+	FindBySlug(ctx context.Context, slug string) (*models.RewardProfile, error)
+	FindAll(ctx context.Context, includeInactive bool) ([]models.RewardProfile, error)
+	Update(ctx context.Context, rewardProfile *models.RewardProfile) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

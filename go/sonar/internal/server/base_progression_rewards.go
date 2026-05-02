@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/rewards"
 	"github.com/google/uuid"
 )
 
@@ -198,24 +199,28 @@ func preferredBaseResourceOrderForContext(
 		}
 	}
 
-	switch rewardContext.ContentKind {
-	case models.RandomRewardContentMonster, models.RandomRewardContentMonsterEncounter:
-		addMany(models.BaseResourceMonsterParts, models.BaseResourceIron, models.BaseResourceHerbs)
-	case models.RandomRewardContentExposition:
-		addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust, models.BaseResourceHerbs)
-	case models.RandomRewardContentPointOfInterest:
-		switch rewardContext.PointOfInterestCategory {
-		case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum, models.PointOfInterestMarkerCategoryLandmark, models.PointOfInterestMarkerCategoryCivic:
+	if len(rewardContext.PreferredMaterialKeys) > 0 {
+		addMany(rewardContext.PreferredMaterialKeys...)
+	} else {
+		switch rewardContext.ContentKind {
+		case models.RandomRewardContentMonster, models.RandomRewardContentMonsterEncounter:
+			addMany(models.BaseResourceMonsterParts, models.BaseResourceIron, models.BaseResourceHerbs)
+		case models.RandomRewardContentExposition:
 			addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust, models.BaseResourceHerbs)
-		case models.PointOfInterestMarkerCategoryMarket, models.PointOfInterestMarkerCategoryCoffeehouse, models.PointOfInterestMarkerCategoryTavern, models.PointOfInterestMarkerCategoryEatery:
-			addMany(models.BaseResourceHerbs, models.BaseResourceIron, models.BaseResourceTimber)
-		case models.PointOfInterestMarkerCategoryPark, models.PointOfInterestMarkerCategoryWaterfront:
-			addMany(models.BaseResourceHerbs, models.BaseResourceTimber, models.BaseResourceStone)
-		case models.PointOfInterestMarkerCategoryArena:
-			addMany(models.BaseResourceIron, models.BaseResourceMonsterParts, models.BaseResourceHerbs)
+		case models.RandomRewardContentPointOfInterest:
+			switch rewardContext.PointOfInterestCategory {
+			case models.PointOfInterestMarkerCategoryArchive, models.PointOfInterestMarkerCategoryMuseum, models.PointOfInterestMarkerCategoryLandmark, models.PointOfInterestMarkerCategoryCivic:
+				addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust, models.BaseResourceHerbs)
+			case models.PointOfInterestMarkerCategoryMarket, models.PointOfInterestMarkerCategoryCoffeehouse, models.PointOfInterestMarkerCategoryTavern, models.PointOfInterestMarkerCategoryEatery:
+				addMany(models.BaseResourceHerbs, models.BaseResourceIron, models.BaseResourceTimber)
+			case models.PointOfInterestMarkerCategoryPark, models.PointOfInterestMarkerCategoryWaterfront:
+				addMany(models.BaseResourceHerbs, models.BaseResourceTimber, models.BaseResourceStone)
+			case models.PointOfInterestMarkerCategoryArena:
+				addMany(models.BaseResourceIron, models.BaseResourceMonsterParts, models.BaseResourceHerbs)
+			}
+		case models.RandomRewardContentTreasureChest:
+			addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust)
 		}
-	case models.RandomRewardContentTreasureChest:
-		addMany(models.BaseResourceRelicShards, models.BaseResourceArcaneDust)
 	}
 
 	for _, tag := range rewardContext.PreferredRewardTags() {
@@ -261,6 +266,20 @@ func resolveBaseMaterialRewards(
 	randomSeed string,
 ) []models.BaseResourceDelta {
 	return resolveBaseMaterialRewardsForContext(rewardMode, explicit, randomSeed, nil)
+}
+
+func (s *server) resolveBaseMaterialRewardsForUserContext(
+	ctx context.Context,
+	rewardMode models.RewardMode,
+	explicit models.BaseMaterialRewards,
+	randomSeed string,
+	rewardContext *models.RandomRewardContext,
+) (models.BaseMaterialRewards, error) {
+	rewardContext, err := rewards.ApplyDefaultRewardProfiles(ctx, s.dbClient, rewardContext)
+	if err != nil {
+		return nil, err
+	}
+	return resolveBaseMaterialRewardsForContext(rewardMode, explicit, randomSeed, rewardContext), nil
 }
 
 func resolveBaseMaterialRewardsForContext(

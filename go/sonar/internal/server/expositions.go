@@ -731,15 +731,21 @@ func (s *server) performExposition(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+			ctx,
+			exposition.RewardMode,
+			exposition.MaterialRewards,
+			fmt.Sprintf("exposition:%s:user:%s:materials", exposition.ID, user.ID),
+			buildRandomRewardContextForExposition(exposition),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		baseResourcesAwarded, err = s.awardBaseResourcesToUser(
 			ctx,
 			user.ID,
-			resolveBaseMaterialRewardsForContext(
-				exposition.RewardMode,
-				exposition.MaterialRewards,
-				fmt.Sprintf("exposition:%s:user:%s:materials", exposition.ID, user.ID),
-				buildRandomRewardContextForExposition(exposition),
-			),
+			baseMaterialRewards,
 			"exposition",
 			&exposition.ID,
 		)

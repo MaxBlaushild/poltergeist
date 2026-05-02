@@ -149,15 +149,21 @@ func (s *server) closeQuestAcceptance(
 		return nil, err
 	}
 
+	baseMaterialRewards, err := s.resolveBaseMaterialRewardsForUserContext(
+		ctx,
+		quest.RewardMode,
+		quest.MaterialRewards,
+		fmt.Sprintf("quest:%s:user:%s:materials", quest.ID, userID),
+		buildRandomRewardContextForQuest(quest),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	baseResourcesAwarded, err := s.awardBaseResourcesToUser(
 		ctx,
 		userID,
-		resolveBaseMaterialRewardsForContext(
-			quest.RewardMode,
-			quest.MaterialRewards,
-			fmt.Sprintf("quest:%s:user:%s:materials", quest.ID, userID),
-			buildRandomRewardContextForQuest(quest),
-		),
+		baseMaterialRewards,
 		"quest_turn_in",
 		&quest.ID,
 	)

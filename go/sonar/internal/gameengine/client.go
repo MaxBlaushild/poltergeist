@@ -15,6 +15,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/rewards"
 	"github.com/google/uuid"
 	"github.com/paulmach/orb"
 )
@@ -716,12 +717,20 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		for _, item := range allItems {
 			itemByID[item.ID] = item
 		}
+		rewardContext, err := rewards.ApplyDefaultRewardProfiles(
+			ctx,
+			c.db,
+			buildRandomRewardContextForQuestTurnIn(quest),
+		)
+		if err != nil {
+			return 0, nil, nil, err
+		}
 		plan := models.BuildRandomRewardPlanForContext(
 			userLevel.Level,
 			randomRewardSize,
 			fmt.Sprintf("quest:%s:user:%s", quest.ID, userID),
 			allItems,
-			buildRandomRewardContextForQuestTurnIn(quest),
+			rewardContext,
 		)
 		goldAwarded = plan.Gold
 		experienceAwarded = plan.Experience

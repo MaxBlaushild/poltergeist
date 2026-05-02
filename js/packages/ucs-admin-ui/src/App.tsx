@@ -29,6 +29,7 @@ import Armory from './components/Armory.tsx';
 import { Zones } from './components/Zones.tsx';
 import ZoneGenres from './components/ZoneGenres.tsx';
 import ZoneKinds from './components/ZoneKinds.tsx';
+import RewardProfiles from './components/RewardProfiles.tsx';
 import { Zone } from './components/Zone.tsx';
 import { Districts } from './components/Districts.tsx';
 import { DistrictEditor } from './components/District.tsx';
@@ -404,6 +405,11 @@ const router = createBrowserRouter([
       {
         path: '/zone-kinds',
         element: <ZoneKinds />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: '/reward-profiles',
+        element: <RewardProfiles />,
         loader: onlyAuthenticated,
       },
       {
