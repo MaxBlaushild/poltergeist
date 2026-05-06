@@ -81,9 +81,17 @@ func SummonDeepPriest() DeepPriest {
 }
 
 func (d *deepPriest) PetitionTheFount(question *Question) (*Answer, error) {
+	return d.petitionTheFountWithClient(question, d.consultHTTPClient())
+}
+
+func (d *deepPriest) PetitionTheFountWithTimeout(question *Question, timeout time.Duration) (*Answer, error) {
+	return d.petitionTheFountWithClient(question, d.consultHTTPClientWithTimeout(timeout))
+}
+
+func (d *deepPriest) petitionTheFountWithClient(question *Question, client *http.Client) (*Answer, error) {
 	var answer Answer
 	if err := d.postJSON(
-		d.consultHTTPClient(),
+		client,
 		"consultation",
 		"/consult",
 		question,
@@ -158,6 +166,16 @@ func (d *deepPriest) consultHTTPClient() *http.Client {
 		d.consultClient = &http.Client{Timeout: defaultConsultTimeout}
 	}
 	return d.consultClient
+}
+
+func (d *deepPriest) consultHTTPClientWithTimeout(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		return d.consultHTTPClient()
+	}
+	base := d.consultHTTPClient()
+	cloned := *base
+	cloned.Timeout = timeout
+	return &cloned
 }
 
 func (d *deepPriest) imageHTTPClient() *http.Client {

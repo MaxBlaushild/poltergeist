@@ -559,6 +559,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetype))
 	r.POST("/sonar/questArchetypes/generate-template", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeFromGenerator))
 	r.POST("/sonar/questArchetypeSuggestionJobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeSuggestionJob))
+	r.POST("/sonar/questArchetypeSuggestionJobs/generatePreset", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeSuggestionPreset))
 	r.GET("/sonar/questArchetypeSuggestionJobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeSuggestionJobs))
 	r.GET("/sonar/questArchetypeSuggestionJobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeSuggestionJob))
 	r.GET("/sonar/questArchetypeSuggestionJobs/:id/drafts", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeSuggestionDrafts))

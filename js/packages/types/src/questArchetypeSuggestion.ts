@@ -4,7 +4,7 @@ import { QuestArchetype } from './questArchetype';
 
 export interface QuestArchetypeSuggestionStep {
   source: 'location' | 'proximity' | (string & {});
-  content: 'challenge' | 'scenario' | 'monster' | (string & {});
+  content: 'challenge' | 'scenario' | 'monster' | 'exposition' | (string & {});
   locationConcept: string;
   locationArchetypeName?: string;
   locationArchetypeId?: string | null;
@@ -20,6 +20,11 @@ export interface QuestArchetypeSuggestionStep {
   scenarioPrompt?: string;
   scenarioOpenEnded?: boolean;
   scenarioBeats?: string[];
+  expositionTitle?: string;
+  expositionDescription?: string;
+  expositionSpeakerName?: string;
+  expositionPortraitUrl?: string;
+  expositionDialogue?: string[];
   monsterTemplateNames?: string[];
   monsterTemplateIds?: string[];
   encounterTone?: string[];
@@ -42,6 +47,7 @@ export interface QuestArchetypeSuggestionJob {
   updatedAt: string;
   status: string;
   count: number;
+  yeetIt: boolean;
   zoneKind: string;
   themePrompt: string;
   familyTags: string[];
@@ -52,6 +58,18 @@ export interface QuestArchetypeSuggestionJob {
   requiredLocationMetadataTags: string[];
   createdCount: number;
   errorMessage?: string | null;
+}
+
+export interface QuestArchetypeSuggestionPreset {
+  count: number;
+  zoneKind: string;
+  themePrompt: string;
+  familyTags: string[];
+  familyMixTargets: Record<string, number>;
+  characterTags: string[];
+  internalTags: string[];
+  requiredLocationArchetypeIds: string[];
+  requiredLocationMetadataTags: string[];
 }
 
 export interface QuestArchetypeSuggestionDraft {

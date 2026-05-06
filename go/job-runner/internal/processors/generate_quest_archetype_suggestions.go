@@ -46,15 +46,15 @@ Return JSON only:
   "drafts": [
     {
       "name": "string",
-      "hook": "string",
-      "description": "string",
-      "acceptanceDialogue": ["line 1", "line 2", "line 3"],
+      "hook": "vivid 1-2 sentence quest teaser",
+      "description": "2-4 sentence live situation synopsis with stakes",
+      "acceptanceDialogue": ["specific in-world line 1", "specific in-world line 2", "specific in-world line 3"],
       "characterTags": ["tag_a", "tag_b"],
       "internalTags": ["tag_a", "tag_b"],
       "difficultyMode": "scale|fixed",
       "difficulty": 1,
       "monsterEncounterTargetLevel": 1,
-      "whyThisScales": "string",
+      "whyThisScales": "concrete explanation of how the premise escalates or adapts across zones/levels",
       "challengeTemplateSeeds": ["seed one", "seed two"],
       "scenarioTemplateSeeds": ["seed one", "seed two"],
       "monsterTemplateSeeds": ["seed one", "seed two"],
@@ -62,13 +62,13 @@ Return JSON only:
         {
           "nodeKey": "unique_lowercase_key",
           "source": "location|proximity",
-          "content": "challenge|scenario|monster",
+          "content": "challenge|scenario|monster|exposition",
           "locationConcept": "string",
           "locationArchetypeName": "name from allowed location archetypes or empty string for proximity steps",
           "locationMetadataTags": ["market", "storefront"],
           "distanceMeters": 120,
-          "templateConcept": "string",
-          "potentialContent": ["idea one", "idea two", "idea three"],
+          "templateConcept": "concrete beat or encounter premise, not a vague label",
+          "potentialContent": ["sceneable detail one", "pressure point two", "complication three"],
           "challengeQuestion": "required for challenge steps",
           "challengeDescription": "required for challenge steps",
           "challengeSubmissionType": "photo|text|video",
@@ -77,6 +77,11 @@ Return JSON only:
           "scenarioPrompt": "required for scenario steps",
           "scenarioOpenEnded": true,
           "scenarioBeats": ["beat one", "beat two"],
+          "expositionTitle": "required for exposition steps",
+          "expositionDescription": "required for exposition steps",
+          "expositionSpeakerName": "required for exposition steps",
+          "expositionPortraitUrl": "optional portrait url for exposition steps",
+          "expositionDialogue": ["line one", "line two"],
           "monsterTemplateNames": ["names chosen from allowed monster templates"],
           "encounterTone": ["urban", "scrappy"],
           "outcomes": [
@@ -102,6 +107,10 @@ Rules:
 - Default to street-level urban fantasy when no preferred zone kind is provided.
 - If a preferred zone kind is provided, make the quest premise and node content feel naturally suited to it while remaining reusable.
 - Let the zone kind flavor influence hooks, descriptions, scenario prompts, challenge descriptions, metadata tags, and encounter tone where appropriate.
+- Write the top-level hook like a quest board teaser or urgent NPC pitch, not a bland summary.
+- Write the top-level description like a dungeon master framing the situation in 2-4 sentences with a clear live problem, concrete context, and stakes.
+- Write acceptanceDialogue like 2-4 short in-world lines from someone handing the job over, with urgency, specificity, and personality.
+- Write whyThisScales as a concrete explanation of how the same premise can escalate, intensify, or stay fresh as the content scales.
 - Prefer 3-6 graph nodes with 1-2 meaningful branch points when branching helps.
 - At least one third of drafts should be mostly non-combat.
 - At least one third of drafts should end in combat.
@@ -111,6 +120,7 @@ Rules:
 - Success/failure branches may reconverge on a later node.
 - The root node must be a location-based node, not a proximity node.
 - Challenge nodes must use source "location".
+- Exposition nodes must use source "location".
 - Proximity nodes may only use content "scenario" or "monster".
 - Use lowercase snake_case tags for characterTags, internalTags, and locationMetadataTags.
 - Every node must include 2-5 locationMetadataTags.
@@ -124,7 +134,21 @@ Rules:
 - If the content is about how the player would help, investigate, negotiate, persuade, intervene, solve a problem, or respond to a roleplaying situation, that is a scenario step instead of a challenge step.
 - challengeQuestion should be an imperative action, not a mystery question.
 - Make challengeQuestion and challengeDescription explicit and production-usable.
-- Make scenarioPrompt explicit and production-usable.
+- Make challengeDescription concrete enough that the player can picture what they are looking for at the real location and why it matters, without relying on fictional hidden evidence.
+- When challenge flavor references a fantasy object or clue, bridge it back to observable reality with phrases like "what looks like", "could pass for", "resembles", or "a book/sign/detail of your choice" instead of implying the magical thing literally exists.
+- Example: say "Photograph what looks like a hidden sigil within a book of your choice" rather than "Photograph the hidden sigil within the tome."
+- Write scenarioPrompt like a dungeon master setting a live scene for players in 2-4 sentences.
+- The first 1-3 sentences should paint a concrete, vivid situation with specific sensory or social context, clear actors or forces in motion, and immediate stakes.
+- The final sentence should pose the player-facing problem or question they must solve within that scene.
+- Avoid thin prompts like "The ritual is underway." or "A confrontation is brewing." without explaining what is happening, where, and why it matters.
+- Make scenarioPrompt explicit, vivid, and production-usable.
+- Use exposition nodes for lore reveals, witness accounts, ambient warnings, magical residue, discoverable testimony, briefings, and omen-reading beats that deepen the quest without demanding an open-ended player answer.
+- expositionTitle should feel like a reusable 2-5 word template title, not a full sentence.
+- expositionDescription should read like a dungeon master introducing a vivid discoverable moment in 2-4 sentences, with concrete imagery and why this reveal matters right now.
+- expositionSpeakerName should be a reusable 2-4 word voice label like "Witness Echo", "Marginal Warning", or "Shrine Whisper", not a specifically named NPC.
+- expositionPortraitUrl may be empty, but when present it must be a direct https URL, not a made-up social profile or unrelated web page.
+- expositionDialogue should contain 2-4 short in-world lines that can be delivered as found writing, a witness echo, a magical imprint, or an unnamed local voice.
+- Exposition content should stay reusable and should not depend on a specifically named NPC, business, or one-off landmark.
 - Use failure branches for fail-forward consequences, setbacks, detours, or escalations instead of dead ends.
 - Around half the drafts should include at least one failure branch when it fits naturally.
 - When a draft clearly belongs to one primary family such as investigation, delivery, negotiation, pursuit, containment, omen_chasing, ritual_interruption, survival, rescue, or combat_finale, include that exact slug in internalTags.
@@ -133,11 +157,17 @@ Rules:
 - Vary the core conflict, route texture, and final payoff across the batch instead of submitting palette swaps of the same quest.
 - Spread the batch across multiple quest families such as delivery, investigation, negotiation, pursuit, containment, omen-chasing, ritual interruption, survival, or rescue when they fit the requested direction.
 - Avoid repeating the same location fantasy, monster fantasy, or final beat more than twice across the batch.
+- templateConcept and potentialContent should be concrete, sceneable ideas that help later generation feel vivid instead of generic.
 `
 
 const (
 	questArchetypeSuggestionDuplicateSimilarityThreshold = 0.72
 	questArchetypeSuggestionRecentSimilarityPenaltyStart = 0.48
+	questArchetypeSuggestionConsultTimeout               = 90 * time.Second
+	questArchetypeSuggestionAvoidancePromptLimit         = 12
+	questArchetypeSuggestionLocationPromptLimit          = 40
+	questArchetypeSuggestionMonsterPromptLimit           = 72
+	questArchetypeSuggestionSpeakerPortraitPlaceholderURL = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png"
 )
 
 type questArchetypeSuggestionResponse struct {
@@ -179,6 +209,11 @@ type questArchetypeSuggestionStepPayload struct {
 	ScenarioPrompt          string   `json:"scenarioPrompt"`
 	ScenarioOpenEnded       bool     `json:"scenarioOpenEnded"`
 	ScenarioBeats           []string `json:"scenarioBeats"`
+	ExpositionTitle         string   `json:"expositionTitle"`
+	ExpositionDescription   string   `json:"expositionDescription"`
+	ExpositionSpeakerName   string   `json:"expositionSpeakerName"`
+	ExpositionPortraitURL   string   `json:"expositionPortraitUrl"`
+	ExpositionDialogue      []string `json:"expositionDialogue"`
 	MonsterTemplateNames    []string `json:"monsterTemplateNames"`
 	EncounterTone           []string `json:"encounterTone"`
 }
@@ -263,6 +298,16 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 	if err != nil {
 		return fmt.Errorf("failed to load quest archetypes: %w", err)
 	}
+	promptLocationArchetypes := selectQuestArchetypeSuggestionLocationArchetypesForPrompt(
+		locationArchetypes,
+		job.RequiredLocationArchetypeIDs,
+		questArchetypeSuggestionLocationPromptLimit,
+	)
+	promptMonsterTemplates := selectQuestArchetypeSuggestionMonsterTemplatesForPrompt(
+		monsterTemplates,
+		job.ZoneKind,
+		questArchetypeSuggestionMonsterPromptLimit,
+	)
 
 	prompt := fmt.Sprintf(
 		questArchetypeSuggestionPromptTemplate,
@@ -275,16 +320,16 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 		renderTagList(job.InternalTags),
 		buildRequiredLocationArchetypesPrompt(job.RequiredLocationArchetypeIDs, locationArchetypes),
 		renderTagList(job.RequiredLocationMetadataTags),
-		buildQuestArchetypeSuggestionAvoidance(recentArchetypes, 18),
-		buildAllowedLocationArchetypesPrompt(locationArchetypes),
-		buildAllowedMonsterTemplatesPrompt(monsterTemplates),
+		buildQuestArchetypeSuggestionAvoidance(recentArchetypes, questArchetypeSuggestionAvoidancePromptLimit),
+		buildAllowedLocationArchetypesPrompt(promptLocationArchetypes),
+		buildAllowedMonsterTemplatesPrompt(promptMonsterTemplates),
 		candidateCount,
 	)
 	if zoneKindBlock := zoneKindInstructionBlock(zoneKind); zoneKindBlock != "" {
 		prompt = strings.TrimSpace(zoneKindBlock + "\n\n" + prompt)
 	}
 
-	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	answer, err := petitionForQuestArchetypeSuggestions(p.deepPriestClient, prompt)
 	if err != nil {
 		return fmt.Errorf("failed to generate quest archetype suggestions: %w", err)
 	}
@@ -344,6 +389,26 @@ func (p *GenerateQuestArchetypeSuggestionsProcessor) generateDrafts(
 	}
 
 	return nil
+}
+
+type questArchetypeSuggestionTimedPetitioner interface {
+	PetitionTheFountWithTimeout(
+		question *deep_priest.Question,
+		timeout time.Duration,
+	) (*deep_priest.Answer, error)
+}
+
+func petitionForQuestArchetypeSuggestions(
+	client deep_priest.DeepPriest,
+	prompt string,
+) (*deep_priest.Answer, error) {
+	if timedClient, ok := client.(questArchetypeSuggestionTimedPetitioner); ok {
+		return timedClient.PetitionTheFountWithTimeout(
+			&deep_priest.Question{Question: prompt},
+			questArchetypeSuggestionConsultTimeout,
+		)
+	}
+	return client.PetitionTheFount(&deep_priest.Question{Question: prompt})
 }
 
 type questArchetypeSuggestionDraftEvaluation struct {
@@ -724,6 +789,9 @@ func questArchetypeSuggestionDraftTokenSet(
 			strings.TrimSpace(node.ChallengeDescription),
 			strings.TrimSpace(node.ScenarioPrompt),
 			strings.Join(node.ScenarioBeats, " "),
+			strings.TrimSpace(node.ExpositionTitle),
+			strings.TrimSpace(node.ExpositionDescription),
+			strings.Join(node.ExpositionDialogue, " "),
 			strings.Join(node.MonsterTemplateNames, " "),
 			strings.Join(node.EncounterTone, " "),
 			fmt.Sprintf("node count %d", len(nodes)),
@@ -846,6 +914,9 @@ func questArchetypeSuggestionPlaceholderCount(
 			count++
 		}
 		if strings.EqualFold(strings.TrimSpace(node.ScenarioPrompt), "Generated scenario template.") {
+			count++
+		}
+		if strings.EqualFold(strings.TrimSpace(node.ExpositionDescription), "Generated exposition template.") {
 			count++
 		}
 	}
@@ -994,10 +1065,15 @@ func questArchetypeSuggestionDraftNodesForAnalysis(
 			ChallengeQuestion:     step.ChallengeQuestion,
 			ChallengeDescription:  step.ChallengeDescription,
 			ScenarioPrompt:        step.ScenarioPrompt,
-			ScenarioOpenEnded:     step.ScenarioOpenEnded,
-			ScenarioBeats:         append([]string(nil), step.ScenarioBeats...),
-			MonsterTemplateNames:  append([]string(nil), step.MonsterTemplateNames...),
-			MonsterTemplateIDs:    append([]string(nil), step.MonsterTemplateIDs...),
+				ScenarioOpenEnded:     step.ScenarioOpenEnded,
+				ScenarioBeats:         append([]string(nil), step.ScenarioBeats...),
+				ExpositionTitle:       step.ExpositionTitle,
+				ExpositionDescription: step.ExpositionDescription,
+				ExpositionSpeakerName: step.ExpositionSpeakerName,
+				ExpositionPortraitURL: step.ExpositionPortraitURL,
+				ExpositionDialogue:    append([]string(nil), step.ExpositionDialogue...),
+				MonsterTemplateNames:  append([]string(nil), step.MonsterTemplateNames...),
+				MonsterTemplateIDs:    append([]string(nil), step.MonsterTemplateIDs...),
 			EncounterTone:         append([]string(nil), step.EncounterTone...),
 		}
 		if index+1 < len(draft.Steps) {
@@ -1140,6 +1216,66 @@ func buildQuestArchetypeSuggestionAvoidance(
 	return strings.Join(lines, "\n")
 }
 
+func selectQuestArchetypeSuggestionLocationArchetypesForPrompt(
+	items []*models.LocationArchetype,
+	requiredIDs []string,
+	limit int,
+) []*models.LocationArchetype {
+	if limit <= 0 || len(items) == 0 {
+		return nil
+	}
+	requiredSet := map[uuid.UUID]struct{}{}
+	for _, rawID := range requiredIDs {
+		parsedID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil || parsedID == uuid.Nil {
+			continue
+		}
+		requiredSet[parsedID] = struct{}{}
+	}
+
+	required := make([]*models.LocationArchetype, 0, len(requiredSet))
+	others := make([]*models.LocationArchetype, 0, len(items))
+	seen := map[uuid.UUID]struct{}{}
+	for _, item := range items {
+		if item == nil || item.ID == uuid.Nil {
+			continue
+		}
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		if _, exists := requiredSet[item.ID]; exists {
+			required = append(required, item)
+			continue
+		}
+		others = append(others, item)
+	}
+
+	sort.Slice(required, func(left, right int) bool {
+		return strings.ToLower(strings.TrimSpace(required[left].Name)) <
+			strings.ToLower(strings.TrimSpace(required[right].Name))
+	})
+	sort.Slice(others, func(left, right int) bool {
+		return strings.ToLower(strings.TrimSpace(others[left].Name)) <
+			strings.ToLower(strings.TrimSpace(others[right].Name))
+	})
+
+	selected := make([]*models.LocationArchetype, 0, minInt(limit, len(required)+len(others)))
+	selected = append(selected, required...)
+	if len(selected) >= limit {
+		return selected[:limit]
+	}
+	remaining := limit - len(selected)
+	if remaining > len(others) {
+		remaining = len(others)
+	}
+	selected = append(selected, others[:remaining]...)
+	return selected
+}
+
 func buildAllowedLocationArchetypesPrompt(items []*models.LocationArchetype) string {
 	if len(items) == 0 {
 		return "- none"
@@ -1211,6 +1347,103 @@ func buildAllowedMonsterTemplatesPrompt(items []models.MonsterTemplate) string {
 		return "- none"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func selectQuestArchetypeSuggestionMonsterTemplatesForPrompt(
+	items []models.MonsterTemplate,
+	preferredZoneKind string,
+	limit int,
+) []models.MonsterTemplate {
+	if limit <= 0 || len(items) == 0 {
+		return nil
+	}
+	normalizedZoneKind := models.NormalizeZoneKind(preferredZoneKind)
+	if normalizedZoneKind == "" {
+		sorted := filterAndSortQuestArchetypeSuggestionMonsterTemplates(items)
+		if len(sorted) > limit {
+			return sorted[:limit]
+		}
+		return sorted
+	}
+
+	zoneMatches := make([]models.MonsterTemplate, 0, len(items))
+	generic := make([]models.MonsterTemplate, 0, len(items))
+	others := make([]models.MonsterTemplate, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		switch models.NormalizeZoneKind(item.ZoneKind) {
+		case normalizedZoneKind:
+			zoneMatches = append(zoneMatches, item)
+		case "":
+			generic = append(generic, item)
+		default:
+			others = append(others, item)
+		}
+	}
+	zoneMatches = filterAndSortQuestArchetypeSuggestionMonsterTemplates(zoneMatches)
+	generic = filterAndSortQuestArchetypeSuggestionMonsterTemplates(generic)
+	others = filterAndSortQuestArchetypeSuggestionMonsterTemplates(others)
+
+	selected := make([]models.MonsterTemplate, 0, minInt(limit, len(zoneMatches)+len(generic)+len(others)))
+	appendLimitedQuestArchetypeSuggestionMonsterTemplates := func(source []models.MonsterTemplate) {
+		if len(selected) >= limit || len(source) == 0 {
+			return
+		}
+		remaining := limit - len(selected)
+		if remaining > len(source) {
+			remaining = len(source)
+		}
+		selected = append(selected, source[:remaining]...)
+	}
+	appendLimitedQuestArchetypeSuggestionMonsterTemplates(zoneMatches)
+	appendLimitedQuestArchetypeSuggestionMonsterTemplates(generic)
+	appendLimitedQuestArchetypeSuggestionMonsterTemplates(others)
+	return selected
+}
+
+func filterAndSortQuestArchetypeSuggestionMonsterTemplates(
+	items []models.MonsterTemplate,
+) []models.MonsterTemplate {
+	if len(items) == 0 {
+		return nil
+	}
+	filtered := make([]models.MonsterTemplate, 0, len(items))
+	seen := map[uuid.UUID]struct{}{}
+	for _, item := range items {
+		if item.ID == uuid.Nil || strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		filtered = append(filtered, item)
+	}
+	sort.Slice(filtered, func(left, right int) bool {
+		leftWeight := questArchetypeSuggestionMonsterTemplatePromptWeight(filtered[left])
+		rightWeight := questArchetypeSuggestionMonsterTemplatePromptWeight(filtered[right])
+		if leftWeight != rightWeight {
+			return leftWeight < rightWeight
+		}
+		return strings.ToLower(strings.TrimSpace(filtered[left].Name)) <
+			strings.ToLower(strings.TrimSpace(filtered[right].Name))
+	})
+	return filtered
+}
+
+func questArchetypeSuggestionMonsterTemplatePromptWeight(
+	item models.MonsterTemplate,
+) int {
+	switch item.MonsterType {
+	case models.MonsterTemplateTypeBoss:
+		return 1
+	case models.MonsterTemplateTypeRaid:
+		return 2
+	default:
+		return 0
+	}
 }
 
 type locationArchetypeIndexEntry struct {
@@ -1343,8 +1576,9 @@ func sanitizeQuestArchetypeSuggestionDraft(
 	}
 	hook := strings.TrimSpace(payload.Hook)
 	whyThisScales := strings.TrimSpace(payload.WhyThisScales)
+	acceptanceDialogue := normalizeSuggestionLines(payload.AcceptanceDialogue)
 
-	return &models.QuestArchetypeSuggestionDraft{
+	draft := &models.QuestArchetypeSuggestionDraft{
 		ID:                          uuid.New(),
 		CreatedAt:                   now,
 		UpdatedAt:                   now,
@@ -1353,7 +1587,7 @@ func sanitizeQuestArchetypeSuggestionDraft(
 		Hook:                        hook,
 		Description:                 description,
 		ZoneKind:                    models.NormalizeZoneKind(zoneKind),
-		AcceptanceDialogue:          normalizeSuggestionLines(payload.AcceptanceDialogue),
+		AcceptanceDialogue:          acceptanceDialogue,
 		CharacterTags:               normalizeSuggestionTags(payload.CharacterTags),
 		InternalTags:                normalizeSuggestionTags(payload.InternalTags),
 		DifficultyMode:              difficultyMode,
@@ -1367,6 +1601,8 @@ func sanitizeQuestArchetypeSuggestionDraft(
 		MonsterTemplateSeeds:        normalizeSuggestionLines(payload.MonsterTemplateSeeds),
 		Warnings:                    normalizeSuggestionLines(warnings),
 	}
+	enrichQuestArchetypeSuggestionDraftNarrative(draft)
+	return draft
 }
 
 type sanitizedQuestArchetypeSuggestionNodeInput struct {
@@ -1544,11 +1780,16 @@ func sanitizeQuestArchetypeSuggestionNode(
 		ChallengeSubmissionType: step.ChallengeSubmissionType,
 		ChallengeProficiency:    step.ChallengeProficiency,
 		ChallengeStatTags:       step.ChallengeStatTags,
-		ScenarioPrompt:          step.ScenarioPrompt,
-		ScenarioOpenEnded:       step.ScenarioOpenEnded,
-		ScenarioBeats:           step.ScenarioBeats,
-		MonsterTemplateNames:    step.MonsterTemplateNames,
-		MonsterTemplateIDs:      step.MonsterTemplateIDs,
+			ScenarioPrompt:          step.ScenarioPrompt,
+			ScenarioOpenEnded:       step.ScenarioOpenEnded,
+			ScenarioBeats:           step.ScenarioBeats,
+			ExpositionTitle:         step.ExpositionTitle,
+			ExpositionDescription:   step.ExpositionDescription,
+			ExpositionSpeakerName:   step.ExpositionSpeakerName,
+			ExpositionPortraitURL:   step.ExpositionPortraitURL,
+			ExpositionDialogue:      step.ExpositionDialogue,
+			MonsterTemplateNames:    step.MonsterTemplateNames,
+			MonsterTemplateIDs:      step.MonsterTemplateIDs,
 		EncounterTone:           step.EncounterTone,
 	}, warnings
 }
@@ -1714,11 +1955,16 @@ func questArchetypeSuggestionNodesAsSteps(
 			ChallengeSubmissionType: node.ChallengeSubmissionType,
 			ChallengeProficiency:    node.ChallengeProficiency,
 			ChallengeStatTags:       append([]string(nil), node.ChallengeStatTags...),
-			ScenarioPrompt:          node.ScenarioPrompt,
-			ScenarioOpenEnded:       node.ScenarioOpenEnded,
-			ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
-			MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
-			MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
+				ScenarioPrompt:          node.ScenarioPrompt,
+				ScenarioOpenEnded:       node.ScenarioOpenEnded,
+				ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
+				ExpositionTitle:         node.ExpositionTitle,
+				ExpositionDescription:   node.ExpositionDescription,
+				ExpositionSpeakerName:   node.ExpositionSpeakerName,
+				ExpositionPortraitURL:   node.ExpositionPortraitURL,
+				ExpositionDialogue:      append([]string(nil), node.ExpositionDialogue...),
+				MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
+				MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
 			EncounterTone:           append([]string(nil), node.EncounterTone...),
 		})
 	}
@@ -1757,6 +2003,10 @@ func sanitizeQuestArchetypeSuggestionStep(
 	warnings := []string{}
 	source := normalizeSuggestionSource(payload.Source)
 	content := normalizeSuggestionContent(payload.Content)
+	if content == "exposition" && source != "location" {
+		source = "location"
+		warnings = append(warnings, "exposition step must use a location source and was coerced to location")
+	}
 
 	step := models.QuestArchetypeSuggestionStep{
 		Source:                source,
@@ -1834,12 +2084,45 @@ func sanitizeQuestArchetypeSuggestionStep(
 			step.ChallengeProficiency = nil
 			step.ChallengeStatTags = nil
 			warnings = append(warnings, "challenge read like a roleplaying or investigation scenario and was converted to an open-ended scenario")
+		} else if suggestionChallengeNeedsRealityBridge(step.ChallengeQuestion, step.ChallengeDescription) {
+			step.ChallengeQuestion, step.ChallengeDescription = bridgeSuggestionChallengeToReality(step)
 		}
 	case "scenario":
 		step.ScenarioPrompt = strings.TrimSpace(payload.ScenarioPrompt)
 		if step.ScenarioPrompt == "" {
 			step.ScenarioPrompt = strings.TrimSpace(step.TemplateConcept)
 			warnings = append(warnings, "scenario prompt was empty and fell back to template concept")
+		}
+		if suggestionScenarioPromptNeedsExpansion(step.ScenarioPrompt) {
+			step.ScenarioPrompt = enrichSuggestionScenarioPrompt(step, "")
+		}
+	case "exposition":
+		step.ExpositionTitle = strings.TrimSpace(payload.ExpositionTitle)
+		step.ExpositionDescription = strings.TrimSpace(payload.ExpositionDescription)
+		step.ExpositionSpeakerName = strings.TrimSpace(payload.ExpositionSpeakerName)
+		step.ExpositionPortraitURL = normalizeSuggestionAbsoluteURL(payload.ExpositionPortraitURL)
+		step.ExpositionDialogue = []string(normalizeSuggestionLines(payload.ExpositionDialogue))
+		if step.ExpositionTitle == "" {
+			step.ExpositionTitle = buildSuggestionExpositionFallbackTitle(step)
+			warnings = append(warnings, "exposition title was empty and fell back to a generated title")
+		}
+		if step.ExpositionSpeakerName == "" {
+			step.ExpositionSpeakerName = buildSuggestionExpositionSpeakerName(step)
+		}
+		if step.ExpositionPortraitURL == "" {
+			step.ExpositionPortraitURL = buildSuggestionExpositionPortraitURL(step)
+		}
+		if suggestionNarrativeTextNeedsExpansion(step.ExpositionDescription, 16, 2, nil) {
+			step.ExpositionDescription = buildSuggestionExpositionDescription(step)
+			if strings.TrimSpace(payload.ExpositionDescription) == "" {
+				warnings = append(warnings, "exposition description was empty")
+			}
+		}
+		if suggestionExpositionDialogueNeedsExpansion(step.ExpositionDialogue) {
+			step.ExpositionDialogue = buildSuggestionExpositionDialogue(step)
+			if len(payload.ExpositionDialogue) == 0 {
+				warnings = append(warnings, "exposition dialogue was empty")
+			}
 		}
 	case "monster":
 		resolvedNames := []string{}
@@ -1896,6 +2179,74 @@ var suggestionChallengeScenarioLikePhrases = []string{
 	"lost journal",
 }
 
+var suggestionChallengeRealityBridgePhrases = []string{
+	"what looks like",
+	"could pass for",
+	"that resembles",
+	"that feels like",
+	"of your choice",
+	"actually present on site",
+	"real-world",
+	"something at the location",
+}
+
+var suggestionChallengeFantasyCuePhrases = []string{
+	"sigil",
+	"rune",
+	"glyph",
+	"tome",
+	"grimoire",
+	"spellbook",
+	"relic",
+	"artifact",
+	"ritual circle",
+	"altar",
+	"wardstone",
+	"omen",
+	"prophecy",
+	"totem",
+	"idol",
+}
+
+var suggestionScenarioPromptGenericLeadPhrases = []string{
+	"the ritual is underway",
+	"a ritual is underway",
+	"a confrontation is brewing",
+	"the confrontation is brewing",
+	"tension is rising",
+	"a tense situation is unfolding",
+	"a complication unfolds",
+	"something is wrong",
+	"trouble is brewing",
+	"an exchange goes wrong",
+	"a deal is about to go bad",
+}
+
+var suggestionDraftDescriptionGenericLeadPhrases = []string{
+	"generated quest archetype draft",
+	"a quest about",
+	"a live problem unfolds",
+	"a tense situation unfolds",
+	"something is wrong",
+	"trouble is brewing",
+}
+
+var suggestionDraftHookGenericLeadPhrases = []string{
+	"generated quest archetype draft",
+	"help solve",
+	"help deal with",
+	"something is wrong",
+	"trouble is brewing",
+	"a tense situation",
+}
+
+var suggestionDraftWhyThisScalesGenericLeadPhrases = []string{
+	"this scales because",
+	"it scales because",
+	"it can happen anywhere",
+	"the quest can scale",
+}
+
 func shouldConvertSuggestionChallengeToScenario(question string, description string) bool {
 	trimmedQuestion := strings.TrimSpace(strings.ToLower(question))
 	if trimmedQuestion == "" {
@@ -1922,6 +2273,748 @@ func shouldConvertSuggestionChallengeToScenario(question string, description str
 	return false
 }
 
+func suggestionChallengeNeedsRealityBridge(question string, description string) bool {
+	combined := strings.ToLower(strings.TrimSpace(question + " " + description))
+	if combined == "" {
+		return false
+	}
+	for _, phrase := range suggestionChallengeRealityBridgePhrases {
+		if strings.Contains(combined, phrase) {
+			return false
+		}
+	}
+	for _, phrase := range suggestionChallengeFantasyCuePhrases {
+		if strings.Contains(combined, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func bridgeSuggestionChallengeToReality(
+	step models.QuestArchetypeSuggestionStep,
+) (string, string) {
+	target := suggestionChallengeRealityBridgeTarget(step)
+	if target == "" {
+		return step.ChallengeQuestion, step.ChallengeDescription
+	}
+	return fmt.Sprintf(
+			"%s %s.",
+			suggestionChallengeRealityBridgeAction(step.ChallengeQuestion, string(step.ChallengeSubmissionType)),
+			target,
+		),
+		buildSuggestionChallengeRealityBridgeDescription(step, target)
+}
+
+func suggestionChallengeRealityBridgeAction(question string, submissionType string) string {
+	normalizedQuestion := strings.ToLower(strings.TrimSpace(question))
+	switch {
+	case strings.HasPrefix(normalizedQuestion, "photograph "):
+		return "Photograph"
+	case strings.HasPrefix(normalizedQuestion, "capture "):
+		return "Capture"
+	case strings.HasPrefix(normalizedQuestion, "record "):
+		return "Record"
+	case strings.HasPrefix(normalizedQuestion, "film "):
+		return "Film"
+	case strings.HasPrefix(normalizedQuestion, "document "):
+		return "Document"
+	case strings.HasPrefix(normalizedQuestion, "identify "):
+		return "Identify"
+	case strings.HasPrefix(normalizedQuestion, "describe "):
+		return "Describe"
+	}
+	switch strings.TrimSpace(strings.ToLower(submissionType)) {
+	case "video":
+		return "Record"
+	case "text":
+		return "Describe"
+	default:
+		return "Photograph"
+	}
+}
+
+func suggestionChallengeRealityBridgeTarget(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	base := strings.TrimSpace(step.ChallengeQuestion)
+	normalized := strings.TrimSpace(strings.TrimRight(base, ".!?"))
+	lower := strings.ToLower(normalized)
+	for _, prefix := range []string{
+		"photograph ",
+		"capture ",
+		"record ",
+		"film ",
+		"document ",
+		"identify ",
+		"describe ",
+	} {
+		if strings.HasPrefix(lower, prefix) {
+			normalized = strings.TrimSpace(normalized[len(prefix):])
+			lower = strings.ToLower(normalized)
+			break
+		}
+	}
+	if normalized == "" {
+		normalized = strings.TrimSpace(step.TemplateConcept)
+		lower = strings.ToLower(normalized)
+	}
+	if normalized == "" {
+		return ""
+	}
+
+	replaced := lower
+	containerReplacements := []struct {
+		old string
+		new string
+	}{
+		{"within the tome", "within a book of your choice"},
+		{"in the tome", "in a book of your choice"},
+		{"inside the tome", "inside a book of your choice"},
+		{"within the grimoire", "within a book or display of your choice"},
+		{"in the grimoire", "in a book or display of your choice"},
+		{"inside the grimoire", "inside a book or display of your choice"},
+	}
+	for _, replacement := range containerReplacements {
+		replaced = strings.ReplaceAll(replaced, replacement.old, replacement.new)
+	}
+	replaced = strings.TrimPrefix(replaced, "the ")
+	replaced = strings.TrimPrefix(replaced, "a ")
+	replaced = strings.TrimPrefix(replaced, "an ")
+	switch {
+	case strings.Contains(replaced, "hidden sigil"):
+		replaced = strings.Replace(replaced, "hidden sigil", "what looks like a hidden sigil", 1)
+	case strings.Contains(replaced, "sigil"):
+		replaced = strings.Replace(replaced, "sigil", "what looks like a sigil", 1)
+	case strings.Contains(replaced, "runes"):
+		replaced = strings.Replace(replaced, "runes", "details that look like arcane runes", 1)
+	case strings.Contains(replaced, "rune"):
+		replaced = strings.Replace(replaced, "rune", "what looks like an arcane rune", 1)
+	case strings.Contains(replaced, "glyph"):
+		replaced = strings.Replace(replaced, "glyph", "what looks like a glyph", 1)
+	case strings.Contains(replaced, "relic"):
+		replaced = strings.Replace(replaced, "relic", "an object that feels like a relic", 1)
+	case strings.Contains(replaced, "artifact"):
+		replaced = strings.Replace(replaced, "artifact", "an object that feels like an artifact", 1)
+	case strings.Contains(replaced, "altar"):
+		replaced = strings.Replace(replaced, "altar", "a display or arrangement that could pass for an altar", 1)
+	case strings.Contains(replaced, "ritual circle"):
+		replaced = strings.Replace(replaced, "ritual circle", "an arrangement that could pass for a ritual circle", 1)
+	case strings.Contains(replaced, "wardstone"):
+		replaced = strings.Replace(replaced, "wardstone", "a protective-looking stone or detail", 1)
+	case strings.Contains(replaced, "omen"):
+		replaced = strings.Replace(replaced, "omen", "a sign or detail that feels like an omen", 1)
+	case strings.Contains(replaced, "tome"):
+		replaced = strings.Replace(replaced, "tome", "a book of your choice", 1)
+	case strings.Contains(replaced, "grimoire"):
+		replaced = strings.Replace(replaced, "grimoire", "a book or display of your choice", 1)
+	}
+
+	replaced = strings.TrimSpace(strings.Trim(replaced, ".!?"))
+	if replaced == "" {
+		return ""
+	}
+	if !strings.HasPrefix(replaced, "what looks like") &&
+		!strings.HasPrefix(replaced, "something at the location that could pass for") &&
+		!strings.HasPrefix(replaced, "details that look like") &&
+		!strings.HasPrefix(replaced, "an object that feels like") &&
+		!strings.HasPrefix(replaced, "a display or arrangement that could pass for") &&
+		!strings.HasPrefix(replaced, "a sign or detail that feels like") &&
+		!strings.HasPrefix(replaced, "a protective-looking") {
+		replaced = "something at the location that could pass for " + strings.TrimPrefix(replaced, "the ")
+	}
+	return replaced
+}
+
+func buildSuggestionChallengeRealityBridgeDescription(
+	step models.QuestArchetypeSuggestionStep,
+	target string,
+) string {
+	referent := strings.TrimSpace(strings.Trim(target, ".!?"))
+	for _, prefix := range []string{
+		"what looks like ",
+		"something at the location that could pass for ",
+		"details that look like ",
+		"an object that feels like ",
+		"a display or arrangement that could pass for ",
+		"a sign or detail that feels like ",
+	} {
+		if strings.HasPrefix(referent, prefix) {
+			referent = strings.TrimSpace(strings.TrimPrefix(referent, prefix))
+			break
+		}
+	}
+
+	combined := strings.ToLower(strings.Join([]string{
+		step.ChallengeQuestion,
+		step.ChallengeDescription,
+		step.TemplateConcept,
+		step.LocationConcept,
+		strings.Join(step.PotentialContent, " "),
+	}, " "))
+	scope := "a real-world detail, object, sign, pattern, or decoration"
+	switch {
+	case strings.Contains(combined, "book"), strings.Contains(combined, "tome"), strings.Contains(combined, "grimoire"), strings.Contains(combined, "page"):
+		scope = "a real-world book, page, shelf display, sign, or decorative detail"
+	case strings.Contains(combined, "altar"), strings.Contains(combined, "ritual"), strings.Contains(combined, "shrine"):
+		scope = "a real-world arrangement, display, architectural detail, or decorative setup"
+	case strings.Contains(combined, "relic"), strings.Contains(combined, "artifact"), strings.Contains(combined, "idol"):
+		scope = "a real-world object, display, label, or decorative detail"
+	}
+
+	finish := "capture the clearest match you can find"
+	switch strings.TrimSpace(strings.ToLower(string(step.ChallengeSubmissionType))) {
+	case "video":
+		finish = "record the clearest match you can find"
+	case "text":
+		finish = "describe the clearest match you can find"
+	}
+
+	return fmt.Sprintf(
+		"Look for %s at the location that could pass for %s. Use something actually present on site, then %s.",
+		scope,
+		referent,
+		finish,
+	)
+}
+
+func suggestionExpositionDialogueNeedsExpansion(lines []string) bool {
+	if len(lines) < 2 {
+		return true
+	}
+	combined := strings.Join(lines, " ")
+	return suggestionNarrativeTextNeedsExpansion(combined, 10, 1, nil)
+}
+
+func buildSuggestionExpositionFallbackTitle(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	concept := strings.TrimSpace(step.TemplateConcept)
+	if concept != "" {
+		words := strings.Fields(strings.ReplaceAll(normalizeSuggestionScenarioFragment(concept), "_", " "))
+		if len(words) > 5 {
+			words = words[:5]
+		}
+		if len(words) >= 2 {
+			return titleCaseSuggestionWords(words)
+		}
+	}
+
+	combined := strings.ToLower(strings.Join([]string{
+		step.TemplateConcept,
+		step.LocationConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+		strings.Join(step.PotentialContent, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "omen"), strings.Contains(combined, "prophecy"):
+		return "Omen Trace"
+	case strings.Contains(combined, "ritual"), strings.Contains(combined, "sigil"), strings.Contains(combined, "rune"):
+		return "Lingering Ward"
+	case strings.Contains(combined, "book"), strings.Contains(combined, "archive"), strings.Contains(combined, "tome"):
+		return "Marginal Warning"
+	case strings.Contains(combined, "witness"), strings.Contains(combined, "testimony"), strings.Contains(combined, "echo"):
+		return "Witness Echo"
+	case len(step.LocationMetadataTags) > 0:
+		return titleCaseSuggestionWords([]string{humanizeSuggestionTag(step.LocationMetadataTags[0]), "echo"})
+	default:
+		return "Lingering Echo"
+	}
+}
+
+func buildSuggestionExpositionSpeakerName(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	if name := strings.TrimSpace(step.ExpositionSpeakerName); name != "" {
+		return name
+	}
+	if title := strings.TrimSpace(step.ExpositionTitle); title != "" {
+		lower := strings.ToLower(title)
+		if strings.Contains(lower, "echo") ||
+			strings.Contains(lower, "warning") ||
+			strings.Contains(lower, "note") ||
+			strings.Contains(lower, "voice") ||
+			strings.Contains(lower, "whisper") ||
+			strings.Contains(lower, "imprint") {
+			return title
+		}
+	}
+	combined := strings.ToLower(strings.Join([]string{
+		step.ExpositionTitle,
+		step.TemplateConcept,
+		step.LocationConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+		strings.Join(step.PotentialContent, " "),
+		strings.Join(step.ExpositionDialogue, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "witness"), strings.Contains(combined, "testimony"), strings.Contains(combined, "message"):
+		return "Witness Echo"
+	case strings.Contains(combined, "book"), strings.Contains(combined, "archive"), strings.Contains(combined, "tome"), strings.Contains(combined, "margin"):
+		return "Marginal Warning"
+	case strings.Contains(combined, "omen"), strings.Contains(combined, "prophecy"), strings.Contains(combined, "star"), strings.Contains(combined, "celestial"):
+		return "Omen Reader"
+	case strings.Contains(combined, "ritual"), strings.Contains(combined, "sigil"), strings.Contains(combined, "rune"), strings.Contains(combined, "ward"):
+		return "Ward Echo"
+	case strings.Contains(combined, "shrine"), strings.Contains(combined, "prayer"), strings.Contains(combined, "altar"), strings.Contains(combined, "bell"):
+		return "Shrine Whisper"
+	case strings.Contains(combined, "market"), strings.Contains(combined, "street"), strings.Contains(combined, "alley"), strings.Contains(combined, "vendor"):
+		return "Street Witness"
+	default:
+		return "Witness Echo"
+	}
+}
+
+func buildSuggestionExpositionPortraitURL(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	if portraitURL := normalizeSuggestionAbsoluteURL(step.ExpositionPortraitURL); portraitURL != "" {
+		return portraitURL
+	}
+	return questArchetypeSuggestionSpeakerPortraitPlaceholderURL
+}
+
+func buildSuggestionExpositionDescription(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	location := strings.TrimSpace(step.LocationConcept)
+	if location == "" {
+		location = "site"
+	}
+
+	fragments := make([]string, 0, 6)
+	appendSuggestionScenarioFragment(&fragments, step.ExpositionDescription)
+	appendSuggestionScenarioFragment(&fragments, step.TemplateConcept)
+	for _, item := range step.PotentialContent {
+		appendSuggestionScenarioFragment(&fragments, item)
+	}
+	for _, line := range step.ExpositionDialogue {
+		appendSuggestionScenarioFragment(&fragments, line)
+	}
+	if len(fragments) == 0 {
+		fragments = append(fragments, "a discoverable magical trace is still hanging over the scene")
+	}
+
+	opening := buildSuggestionScenarioOpeningSentence(location, fragments[0])
+	detail := ""
+	for _, fragment := range fragments[1:] {
+		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
+		if candidate == "" || strings.EqualFold(candidate, opening) {
+			continue
+		}
+		detail = candidate
+		break
+	}
+	if detail == "" {
+		detail = buildSuggestionExpositionFallbackDetail(step)
+	}
+
+	closing := buildSuggestionExpositionFallbackClosing(step)
+	parts := []string{opening}
+	if detail != "" && !strings.EqualFold(detail, opening) {
+		parts = append(parts, detail)
+	}
+	if closing != "" && !strings.EqualFold(closing, opening) && !strings.EqualFold(closing, detail) {
+		parts = append(parts, closing)
+	}
+	return strings.Join(parts, " ")
+}
+
+func buildSuggestionExpositionDialogue(
+	step models.QuestArchetypeSuggestionStep,
+) []string {
+	lineOne := fmt.Sprintf(
+		"The %s still feels wrong if you stop long enough to read it.",
+		strings.TrimSpace(step.LocationConcept),
+	)
+	if strings.TrimSpace(step.LocationConcept) == "" {
+		lineOne = "Something here is still trying to tell the story of what went wrong."
+	}
+
+	lineTwo := ""
+	for _, fragment := range append([]string{step.TemplateConcept}, step.PotentialContent...) {
+		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
+		if candidate == "" {
+			continue
+		}
+		lineTwo = candidate
+		break
+	}
+	if lineTwo == "" {
+		lineTwo = buildSuggestionExpositionFallbackDetail(step)
+	}
+
+	lineThree := buildSuggestionExpositionFallbackClosing(step)
+	return normalizeSuggestionLines([]string{lineOne, lineTwo, lineThree})
+}
+
+func normalizeSuggestionAbsoluteURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+		return value
+	}
+	return ""
+}
+
+func buildSuggestionExpositionFallbackDetail(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	if len(step.LocationMetadataTags) >= 2 {
+		return fmt.Sprintf(
+			"The %s and %s details around it make the warning feel immediate instead of decorative.",
+			humanizeSuggestionTag(step.LocationMetadataTags[0]),
+			humanizeSuggestionTag(step.LocationMetadataTags[1]),
+		)
+	}
+	if len(step.LocationMetadataTags) == 1 {
+		return fmt.Sprintf(
+			"The %s details around it make the warning feel immediate instead of decorative.",
+			humanizeSuggestionTag(step.LocationMetadataTags[0]),
+		)
+	}
+	return "The scene reads like a discoverable warning left behind for whoever reaches it next."
+}
+
+func buildSuggestionExpositionFallbackClosing(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	combined := strings.ToLower(strings.Join([]string{
+		step.TemplateConcept,
+		step.ExpositionTitle,
+		strings.Join(step.PotentialContent, " "),
+	}, " "))
+	switch {
+	case strings.Contains(combined, "omen"), strings.Contains(combined, "prophecy"):
+		return "Taken together, the signs read like a warning about what is already moving through the district."
+	case strings.Contains(combined, "ritual"), strings.Contains(combined, "summon"), strings.Contains(combined, "circle"):
+		return "Whatever started here is still pushing outward, and the residue makes that impossible to ignore."
+	case strings.Contains(combined, "witness"), strings.Contains(combined, "testimony"), strings.Contains(combined, "message"):
+		return "It feels less like a solved clue than a message meant to reach the next person in time."
+	default:
+		return "It gives the route a clearer sense of what happened here and why the pressure is still rising."
+	}
+}
+
+func titleCaseSuggestionWords(words []string) string {
+	if len(words) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(words))
+	for _, raw := range words {
+		for _, token := range strings.Fields(strings.ReplaceAll(raw, "_", " ")) {
+			word := strings.TrimSpace(token)
+			if word == "" {
+				continue
+			}
+			runes := []rune(strings.ToLower(word))
+			if len(runes) == 0 {
+				continue
+			}
+			runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+			parts = append(parts, string(runes))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func enrichQuestArchetypeSuggestionDraftNarrative(
+	draft *models.QuestArchetypeSuggestionDraft,
+) {
+	if draft == nil {
+		return
+	}
+	if suggestionNarrativeTextNeedsExpansion(
+		draft.Description,
+		18,
+		2,
+		suggestionDraftDescriptionGenericLeadPhrases,
+	) {
+		draft.Description = buildQuestArchetypeSuggestionDescription(draft)
+	}
+	if suggestionNarrativeTextNeedsExpansion(
+		draft.Hook,
+		10,
+		1,
+		suggestionDraftHookGenericLeadPhrases,
+	) {
+		draft.Hook = buildQuestArchetypeSuggestionHook(draft)
+	}
+	if suggestionAcceptanceDialogueNeedsExpansion(draft.AcceptanceDialogue) {
+		draft.AcceptanceDialogue = buildQuestArchetypeSuggestionAcceptanceDialogue(draft)
+	}
+	if suggestionNarrativeTextNeedsExpansion(
+		draft.WhyThisScales,
+		12,
+		1,
+		suggestionDraftWhyThisScalesGenericLeadPhrases,
+	) {
+		draft.WhyThisScales = buildQuestArchetypeSuggestionWhyThisScales(draft)
+	}
+}
+
+func suggestionAcceptanceDialogueNeedsExpansion(lines models.StringArray) bool {
+	if len(lines) < 2 {
+		return true
+	}
+	return suggestionNarrativeTextNeedsExpansion(
+		strings.Join(lines, " "),
+		18,
+		2,
+		nil,
+	)
+}
+
+func suggestionNarrativeTextNeedsExpansion(
+	text string,
+	minWords int,
+	minSentences int,
+	genericLeadPhrases []string,
+) bool {
+	normalized := suggestionScenarioComparableText(text)
+	if normalized == "" {
+		return true
+	}
+	if minWords > 0 && len(strings.Fields(normalized)) < minWords {
+		return true
+	}
+	if minSentences > 0 && suggestionScenarioSentenceCount(text) < minSentences {
+		return true
+	}
+	for _, phrase := range genericLeadPhrases {
+		if strings.HasPrefix(normalized, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildQuestArchetypeSuggestionDescription(
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	location := questArchetypeSuggestionPrimaryLocationLabel(draft)
+	fragments := questArchetypeSuggestionNarrativeFragments(draft)
+	opening := ""
+	if len(fragments) > 0 {
+		if location != "" {
+			opening = buildSuggestionScenarioOpeningSentence(location, fragments[0])
+		} else {
+			opening = ensureSuggestionSentence(fragments[0])
+		}
+	}
+	if opening == "" {
+		if location != "" {
+			opening = fmt.Sprintf("At the %s, a live problem is already unfolding.", location)
+		} else {
+			opening = "A live urban-fantasy problem is already unfolding."
+		}
+	}
+
+	detail := ""
+	for _, fragment := range fragments[1:] {
+		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
+		if candidate == "" || strings.EqualFold(candidate, opening) {
+			continue
+		}
+		detail = candidate
+		break
+	}
+	if detail == "" {
+		detail = questArchetypeSuggestionClosingPressureLine(draft)
+	}
+
+	closing := questArchetypeSuggestionClosingPressureLine(draft)
+	parts := []string{opening}
+	if detail != "" && !strings.EqualFold(detail, opening) {
+		parts = append(parts, detail)
+	}
+	if closing != "" && !strings.EqualFold(closing, opening) && !strings.EqualFold(closing, detail) {
+		parts = append(parts, closing)
+	}
+	return strings.Join(parts, " ")
+}
+
+func buildQuestArchetypeSuggestionHook(
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	if first := suggestionFirstSentence(draft.Description); first != "" {
+		return first
+	}
+	location := questArchetypeSuggestionPrimaryLocationLabel(draft)
+	fragments := questArchetypeSuggestionNarrativeFragments(draft)
+	if len(fragments) > 0 {
+		if location != "" {
+			return buildSuggestionScenarioOpeningSentence(location, fragments[0])
+		}
+		return ensureSuggestionSentence(fragments[0])
+	}
+	if location != "" {
+		return fmt.Sprintf("At the %s, a live problem is already demanding intervention.", location)
+	}
+	return "A live urban-fantasy problem is already demanding intervention."
+}
+
+func buildQuestArchetypeSuggestionAcceptanceDialogue(
+	draft *models.QuestArchetypeSuggestionDraft,
+) models.StringArray {
+	lineOne := suggestionFirstSentence(draft.Description)
+	if lineOne == "" {
+		lineOne = buildQuestArchetypeSuggestionHook(draft)
+	}
+
+	lineTwo := ""
+	fragments := questArchetypeSuggestionNarrativeFragments(draft)
+	for _, fragment := range fragments[1:] {
+		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
+		if candidate == "" || strings.EqualFold(candidate, lineOne) {
+			continue
+		}
+		lineTwo = candidate
+		break
+	}
+	if lineTwo == "" {
+		lineTwo = questArchetypeSuggestionClosingPressureLine(draft)
+	}
+
+	lineThree := "Step in, read the scene quickly, and keep the whole mess from getting worse."
+	switch {
+	case questArchetypeSuggestionEndsInCombat(draft):
+		lineThree = "Get there fast and keep it from breaking into open violence."
+	case questArchetypeSuggestionDraftFailureBranchCount(draft) > 0:
+		lineThree = "I need someone who can improvise when the first clean answer falls apart."
+	case questArchetypeSuggestionIsMostlyNonCombat(draft):
+		lineThree = "I need someone who can read the room before panic or pride makes this worse."
+	}
+
+	return normalizeSuggestionLines([]string{lineOne, lineTwo, lineThree})
+}
+
+func buildQuestArchetypeSuggestionWhyThisScales(
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	locationScope := "different city landmarks"
+	if normalizedZoneKind := models.NormalizeZoneKind(draft.ZoneKind); normalizedZoneKind != "" {
+		locationScope = fmt.Sprintf("different %s landmarks", humanizeSuggestionTag(normalizedZoneKind))
+	}
+
+	opening := fmt.Sprintf(
+		"This premise scales cleanly because the same kind of live crisis can erupt around %s without losing its identity.",
+		locationScope,
+	)
+	detail := "Each step gives the problem more room to spread, so higher-level versions can widen the consequences and pressure without rewriting the quest."
+	switch {
+	case questArchetypeSuggestionEndsInCombat(draft):
+		detail = "As stakes rise, the route can grow from tense investigation or social pressure into open violence without changing the core problem."
+	case questArchetypeSuggestionDraftFailureBranchCount(draft) > 0:
+		detail = "Its fail-forward branches let setbacks turn into detours and escalations instead of dead ends, so the quest keeps feeling alive at higher pressure."
+	case questArchetypeSuggestionIsMostlyNonCombat(draft):
+		detail = "As player power rises, the tension can deepen through harder choices, sharper observation, and more dangerous social consequences instead of just bigger numbers."
+	}
+	return strings.Join([]string{opening, detail}, " ")
+}
+
+func questArchetypeSuggestionPrimaryLocationLabel(
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	if draft == nil {
+		return ""
+	}
+	for _, step := range draft.Steps {
+		if location := strings.TrimSpace(step.LocationConcept); location != "" {
+			return location
+		}
+		if location := strings.TrimSpace(step.LocationArchetypeName); location != "" {
+			return location
+		}
+	}
+	if normalizedZoneKind := models.NormalizeZoneKind(draft.ZoneKind); normalizedZoneKind != "" {
+		return fmt.Sprintf("%s district", humanizeSuggestionTag(normalizedZoneKind))
+	}
+	return ""
+}
+
+func questArchetypeSuggestionNarrativeFragments(
+	draft *models.QuestArchetypeSuggestionDraft,
+) []string {
+	if draft == nil {
+		return nil
+	}
+	fragments := make([]string, 0, len(draft.Steps)*3)
+	for _, step := range draft.Steps {
+		appendSuggestionScenarioFragment(
+			&fragments,
+			questArchetypeSuggestionNarrativeFragmentForStep(step),
+		)
+		for _, beat := range step.ScenarioBeats {
+			appendSuggestionScenarioFragment(&fragments, beat)
+		}
+		for _, option := range step.PotentialContent {
+			appendSuggestionScenarioFragment(&fragments, option)
+		}
+		if concept := strings.TrimSpace(step.TemplateConcept); concept != "" {
+			appendSuggestionScenarioFragment(&fragments, concept)
+		}
+	}
+	return fragments
+}
+
+func questArchetypeSuggestionNarrativeFragmentForStep(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	switch step.Content {
+	case "scenario":
+		if body, _ := splitSuggestionScenarioPrompt(step.ScenarioPrompt); strings.TrimSpace(body) != "" {
+			return body
+		}
+		if len(step.ScenarioBeats) > 0 {
+			return strings.TrimSpace(step.ScenarioBeats[0])
+		}
+	case "exposition":
+		if description := strings.TrimSpace(step.ExpositionDescription); description != "" {
+			return description
+		}
+		if len(step.ExpositionDialogue) > 0 {
+			return strings.TrimSpace(step.ExpositionDialogue[0])
+		}
+	case "challenge":
+		if description := strings.TrimSpace(step.ChallengeDescription); description != "" {
+			return description
+		}
+	case "monster":
+		if len(step.PotentialContent) > 0 {
+			return strings.TrimSpace(step.PotentialContent[0])
+		}
+	}
+	if concept := strings.TrimSpace(step.TemplateConcept); concept != "" {
+		return concept
+	}
+	if len(step.PotentialContent) > 0 {
+		return strings.TrimSpace(step.PotentialContent[0])
+	}
+	return ""
+}
+
+func questArchetypeSuggestionClosingPressureLine(
+	draft *models.QuestArchetypeSuggestionDraft,
+) string {
+	if draft == nil {
+		return ""
+	}
+	switch {
+	case questArchetypeSuggestionEndsInCombat(draft):
+		return "If nobody gets ahead of it quickly, the whole situation is going to break into open violence."
+	case questArchetypeSuggestionDraftFailureBranchCount(draft) > 0:
+		return "Every wrong move has room to turn into a harsher detour, so the pressure keeps climbing even when the first plan fails."
+	case questArchetypeSuggestionIsMostlyNonCombat(draft):
+		return "The real danger is letting hesitation, pride, or confusion give the problem room to spread."
+	default:
+		return "The route is built to keep the pressure rising until someone steps in and changes the situation."
+	}
+}
+
 func buildScenarioPromptFromSuggestionChallenge(step models.QuestArchetypeSuggestionStep) string {
 	location := strings.TrimSpace(step.LocationConcept)
 	if location == "" {
@@ -1932,11 +3025,19 @@ func buildScenarioPromptFromSuggestionChallenge(step models.QuestArchetypeSugges
 	if problem == "" {
 		problem = strings.TrimSpace(step.ChallengeQuestion)
 	}
-	problem = ensureSuggestionSentence(problem)
-	if problem == "" {
-		return fmt.Sprintf("At the %s, a complication unfolds that needs your response. What do you do?", location)
+	scenarioStep := step
+	scenarioStep.ScenarioPrompt = problem
+	if scenarioStep.TemplateConcept == "" {
+		scenarioStep.TemplateConcept = strings.TrimSpace(step.ChallengeQuestion)
 	}
-	return fmt.Sprintf("At the %s, this complication unfolds: %s What do you do?", location, problem)
+	if len(scenarioStep.ScenarioBeats) == 0 && len(step.PotentialContent) > 0 {
+		scenarioStep.ScenarioBeats = append([]string(nil), step.PotentialContent...)
+	}
+	prompt := enrichSuggestionScenarioPrompt(scenarioStep, "What do you do?")
+	if prompt != "" {
+		return prompt
+	}
+	return fmt.Sprintf("At the %s, a volatile complication is already unfolding. What do you do?", location)
 }
 
 func ensureSuggestionSentence(input string) string {
@@ -1949,6 +3050,254 @@ func ensureSuggestionSentence(input string) string {
 		return trimmed
 	}
 	return trimmed + "."
+}
+
+func suggestionFirstSentence(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return ""
+	}
+	for index, char := range trimmed {
+		if char == '.' || char == '!' || char == '?' {
+			return strings.TrimSpace(trimmed[:index+1])
+		}
+	}
+	return ensureSuggestionSentence(trimmed)
+}
+
+func ensureSuggestionQuestion(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimRight(trimmed, ".!")
+	if strings.HasSuffix(trimmed, "?") {
+		return trimmed
+	}
+	return trimmed + "?"
+}
+
+func suggestionScenarioPromptNeedsExpansion(prompt string) bool {
+	normalized := suggestionScenarioComparableText(prompt)
+	if normalized == "" {
+		return true
+	}
+	if len(strings.Fields(normalized)) < 18 {
+		return true
+	}
+	if suggestionScenarioSentenceCount(normalized) < 2 {
+		return true
+	}
+	for _, phrase := range suggestionScenarioPromptGenericLeadPhrases {
+		if strings.HasPrefix(normalized, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func enrichSuggestionScenarioPrompt(
+	step models.QuestArchetypeSuggestionStep,
+	fallbackQuestion string,
+) string {
+	body, question := splitSuggestionScenarioPrompt(step.ScenarioPrompt)
+	fragments := make([]string, 0, 5)
+	appendSuggestionScenarioFragment(&fragments, body)
+	for _, beat := range step.ScenarioBeats {
+		appendSuggestionScenarioFragment(&fragments, beat)
+	}
+	for _, option := range step.PotentialContent {
+		appendSuggestionScenarioFragment(&fragments, option)
+	}
+	appendSuggestionScenarioFragment(&fragments, step.TemplateConcept)
+
+	location := strings.TrimSpace(step.LocationConcept)
+	if location == "" {
+		location = "site"
+	}
+
+	if len(fragments) == 0 {
+		fragments = append(fragments, "a volatile magical complication is already in motion")
+	}
+
+	opening := buildSuggestionScenarioOpeningSentence(location, fragments[0])
+	detail := ""
+	for _, fragment := range fragments[1:] {
+		candidate := ensureSuggestionSentence(normalizeSuggestionScenarioFragment(fragment))
+		if candidate == "" {
+			continue
+		}
+		if strings.EqualFold(candidate, opening) {
+			continue
+		}
+		detail = candidate
+		break
+	}
+	if detail == "" {
+		detail = buildSuggestionScenarioFallbackDetail(step)
+	}
+
+	if question == "" {
+		question = fallbackQuestion
+	}
+	if question == "" {
+		question = buildSuggestionScenarioFallbackQuestion(step)
+	}
+	question = ensureSuggestionQuestion(question)
+
+	parts := []string{}
+	if opening != "" {
+		parts = append(parts, opening)
+	}
+	if detail != "" {
+		parts = append(parts, detail)
+	}
+	if question != "" {
+		parts = append(parts, question)
+	}
+	return strings.Join(parts, " ")
+}
+
+func splitSuggestionScenarioPrompt(prompt string) (string, string) {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return "", ""
+	}
+	lastQuestionMark := strings.LastIndex(trimmed, "?")
+	if lastQuestionMark < 0 {
+		return trimmed, ""
+	}
+	sentenceStart := 0
+	for index := lastQuestionMark - 1; index >= 0; index-- {
+		switch trimmed[index] {
+		case '.', '!', '?':
+			sentenceStart = index + 1
+			index = -1
+		}
+	}
+	question := strings.TrimSpace(trimmed[sentenceStart : lastQuestionMark+1])
+	body := strings.TrimSpace(trimmed[:sentenceStart])
+	if body == "" && question != trimmed {
+		body = strings.TrimSpace(strings.Replace(trimmed, question, "", 1))
+	}
+	return body, question
+}
+
+func appendSuggestionScenarioFragment(fragments *[]string, raw string) {
+	normalized := normalizeSuggestionScenarioFragment(raw)
+	if normalized == "" {
+		return
+	}
+	for _, existing := range *fragments {
+		if strings.EqualFold(existing, normalized) {
+			return
+		}
+	}
+	*fragments = append(*fragments, normalized)
+}
+
+func normalizeSuggestionScenarioFragment(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	trimmed = strings.Trim(trimmed, " \t\r\n.,;:!?")
+	if trimmed == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(trimmed), " ")
+}
+
+func buildSuggestionScenarioOpeningSentence(location string, fragment string) string {
+	normalized := normalizeSuggestionScenarioFragment(fragment)
+	if normalized == "" {
+		return ""
+	}
+	lowerLead := strings.ToLower(normalized)
+	if strings.HasPrefix(lowerLead, "the ") ||
+		strings.HasPrefix(lowerLead, "a ") ||
+		strings.HasPrefix(lowerLead, "an ") {
+		normalized = lowerCaseSuggestionFirstRune(normalized)
+	}
+	return fmt.Sprintf("At the %s, %s.", location, normalized)
+}
+
+func buildSuggestionScenarioFallbackDetail(step models.QuestArchetypeSuggestionStep) string {
+	if len(step.LocationMetadataTags) >= 2 {
+		return fmt.Sprintf(
+			"The %s and %s details around the scene make it clear the problem is already spilling into the space around you.",
+			humanizeSuggestionTag(step.LocationMetadataTags[0]),
+			humanizeSuggestionTag(step.LocationMetadataTags[1]),
+		)
+	}
+	if len(step.LocationMetadataTags) == 1 {
+		return fmt.Sprintf(
+			"The %s details around the scene make it clear the problem is already escalating.",
+			humanizeSuggestionTag(step.LocationMetadataTags[0]),
+		)
+	}
+	return "The pressure is immediate, and every moment of hesitation gives the situation more room to spread."
+}
+
+func buildSuggestionScenarioFallbackQuestion(step models.QuestArchetypeSuggestionStep) string {
+	templateConcept := strings.ToLower(strings.TrimSpace(step.TemplateConcept))
+	switch {
+	case strings.Contains(templateConcept, "stop"), strings.Contains(templateConcept, "interrupt"):
+		return "How do you stop it?"
+	case strings.Contains(templateConcept, "convince"),
+		strings.Contains(templateConcept, "persuade"),
+		strings.Contains(templateConcept, "negotiate"),
+		strings.Contains(templateConcept, "mediate"):
+		return "How do you handle the negotiation?"
+	case strings.Contains(templateConcept, "escape"),
+		strings.Contains(templateConcept, "survive"),
+		strings.Contains(templateConcept, "evacuate"):
+		return "How do you get everyone through it?"
+	default:
+		return "What do you do?"
+	}
+}
+
+func humanizeSuggestionTag(tag string) string {
+	trimmed := strings.TrimSpace(tag)
+	if trimmed == "" {
+		return "ambient"
+	}
+	return strings.ReplaceAll(trimmed, "_", " ")
+}
+
+func suggestionScenarioComparableText(input string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(input)), " "))
+}
+
+func suggestionScenarioSentenceCount(input string) int {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return 0
+	}
+	count := 0
+	open := false
+	for _, char := range trimmed {
+		if char != ' ' && char != '\n' && char != '\t' && char != '\r' {
+			open = true
+		}
+		if char == '.' || char == '!' || char == '?' {
+			if open {
+				count++
+				open = false
+			}
+		}
+	}
+	if open {
+		count++
+	}
+	return count
+}
+
+func lowerCaseSuggestionFirstRune(input string) string {
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+	runes[0] = []rune(strings.ToLower(string(runes[0])))[0]
+	return string(runes)
 }
 
 func normalizeSuggestionSource(raw string) string {
@@ -1964,6 +3313,8 @@ func normalizeSuggestionContent(raw string) string {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
 	case "scenario":
 		return "scenario"
+	case "exposition":
+		return "exposition"
 	case "monster", "monster_encounter":
 		return "monster"
 	default:

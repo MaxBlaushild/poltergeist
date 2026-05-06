@@ -493,10 +493,11 @@ export const Expositions: React.FC = () => {
       (line) =>
         (line.speaker ?? 'character') === 'character' &&
         line.text.trim().length > 0 &&
-        !(line.characterId ?? '').trim()
+        !(line.characterId ?? '').trim() &&
+        !(line.speakerName ?? '').trim()
     );
     if (missingCharacter) {
-      return 'Every character dialogue line needs a speaker selected.';
+      return 'Every exposition dialogue line needs either a linked character or a speaker label.';
     }
     return '';
   };
@@ -1075,11 +1076,15 @@ export const Expositions: React.FC = () => {
 
           <DialogueMessageListEditor
             label="Dialogue"
-            helperText="Each line in an exposition must have a speaking character."
+            helperText="Each exposition line needs either a linked character or a reusable speaker label. Portrait URL is optional for reusable speakers."
             value={form.dialogue}
             onChange={(dialogue) => setForm((prev) => ({ ...prev, dialogue }))}
             characterOptions={characterOptions}
-            requireCharacterSelection
+            allowSpeakerNameFallback
+            speakerNameLabel="Speaker Label"
+            speakerNamePlaceholder="Witness Echo"
+            portraitUrlLabel="Portrait URL"
+            portraitUrlPlaceholder="https://example.com/witness-echo.png"
           />
 
           <div className="grid gap-4 lg:grid-cols-2">

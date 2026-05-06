@@ -42,6 +42,8 @@ import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
 import './questArchetypeTheme.css';
 import { useSearchParams } from 'react-router-dom';
 import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
+import ContentDashboard from './ContentDashboard.tsx';
+import { countBy } from './contentDashboardUtils.ts';
 
 interface FlowNodeProps {
   node: QuestArchetypeNode;
@@ -298,6 +300,16 @@ const resolveChallengeProficiency = (
 
 type QuestBranchOutcome = 'success' | 'failure';
 
+type QuestArchetypeStructureSummary = {
+  nodeCount: number;
+  challengeCount: number;
+  branchTransitionCount: number;
+  failureBranchCount: number;
+};
+
+const ALL_ZONE_KIND_FILTER_VALUE = '__all__';
+const UNASSIGNED_ZONE_KIND_FILTER_VALUE = '__unassigned__';
+
 const normalizeQuestNodeFailurePolicy = (
   policy?: QuestNodeFailurePolicy | null
 ): QuestNodeFailurePolicy => (policy === 'transition' ? 'transition' : 'retry');
@@ -322,6 +334,46 @@ const challengeBranchTargets = (
     targets.push({ outcome: 'failure', node: challenge.failureUnlockedNode });
   }
   return targets;
+};
+
+const summarizeQuestArchetypeStructure = (
+  archetype: QuestArchetype | null | undefined
+): QuestArchetypeStructureSummary => {
+  const routes = buildQuestFlowRoute(archetype?.root ?? null);
+  let challengeCount = 0;
+  let branchTransitionCount = 0;
+  let failureBranchCount = 0;
+
+  routes.forEach((route) => {
+    const challenges = route.node.challenges ?? [];
+    challengeCount += challenges.length;
+    challenges.forEach((challenge) => {
+      const targets = challengeBranchTargets(challenge);
+      branchTransitionCount += targets.length;
+      failureBranchCount += targets.filter(
+        (target) => target.outcome === 'failure'
+      ).length;
+    });
+  });
+
+  return {
+    nodeCount: routes.length,
+    challengeCount,
+    branchTransitionCount,
+    failureBranchCount,
+  };
+};
+
+const formatQuestArchetypeStructureLabel = (
+  summary: QuestArchetypeStructureSummary | null | undefined
+) => {
+  if (!summary || summary.nodeCount <= 1) {
+    return 'Single node';
+  }
+  if (summary.failureBranchCount > 0) {
+    return summary.nodeCount >= 5 ? 'Branching expedition' : 'Fail-forward';
+  }
+  return summary.nodeCount >= 5 ? 'Long linear route' : 'Linear multi-step';
 };
 
 const validateQuestArchetypeNodeEditor = (
@@ -1091,6 +1143,14 @@ const buildNodeDraft = (
             message.speaker === 'user'
               ? undefined
               : message.characterId?.trim() || undefined,
+          speakerName:
+            message.speaker === 'user'
+              ? undefined
+              : message.speakerName?.trim() || undefined,
+          portraitUrl:
+            message.speaker === 'user'
+              ? undefined
+              : message.portraitUrl?.trim() || undefined,
         }))
       : undefined,
   expositionRewardMode:
@@ -1714,7 +1774,7 @@ const QuestArchetypeNodeConfigFields: React.FC<
               <div className="qa-field">
                 <DialogueMessageListEditor
                   label={`${prefix} Dialogue`}
-                  helperText="Every line in an exposition needs a speaking character."
+                  helperText="Each exposition line needs either a linked character or a reusable speaker label. Portrait URL is optional for reusable speakers."
                   value={editor.expositionDialogue}
                   onChange={(value) =>
                     setEditor((prev) => ({
@@ -1723,7 +1783,11 @@ const QuestArchetypeNodeConfigFields: React.FC<
                     }))
                   }
                   characterOptions={characterOptions}
-                  requireCharacterSelection
+                  allowSpeakerNameFallback
+                  speakerNameLabel="Speaker Label"
+                  speakerNamePlaceholder="Witness Echo"
+                  portraitUrlLabel="Portrait URL"
+                  portraitUrlPlaceholder="https://example.com/witness-echo.png"
                 />
               </div>
               <div className="qa-grid qa-grid-2">
@@ -3874,6 +3938,8 @@ export const QuestArchetypeComponent = () => {
   const [proficiencySearch, setProficiencySearch] = useState<string>('');
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [archetypeSearch, setArchetypeSearch] = useState<string>('');
+  const [archetypeZoneKindFilter, setArchetypeZoneKindFilter] =
+    useState<string>(ALL_ZONE_KIND_FILTER_VALUE);
   const [selectedArchetypeId, setSelectedArchetypeId] = useState<string>('');
   const [selectedArchetypeIds, setSelectedArchetypeIds] = useState<string[]>(
     []
@@ -3974,16 +4040,130 @@ export const QuestArchetypeComponent = () => {
       ),
     [monsterProgressionOptions]
   );
+  const sortedZoneKinds = useMemo(
+    () =>
+      [...zoneKinds].sort((left, right) => left.name.localeCompare(right.name)),
+    [zoneKinds]
+  );
+  const archetypeStructureById = useMemo(
+    () =>
+      new Map(
+        questArchetypes.map(
+          (archetype) =>
+            [
+              archetype.id,
+              summarizeQuestArchetypeStructure(archetype),
+            ] as const
+        )
+      ),
+    [questArchetypes]
+  );
 
   const filteredArchetypes = useMemo(
-    () =>
-      questArchetypes.filter((archetype) =>
-        archetype.name
-          .toLowerCase()
-          .includes(archetypeSearch.trim().toLowerCase())
-      ),
-    [questArchetypes, archetypeSearch]
+    () => {
+      const query = archetypeSearch.trim().toLowerCase();
+      return questArchetypes.filter((archetype) => {
+        const matchesSearch = archetype.name.toLowerCase().includes(query);
+        if (!matchesSearch) {
+          return false;
+        }
+        const normalizedZoneKind = archetype.zoneKind?.trim() ?? '';
+        if (archetypeZoneKindFilter === ALL_ZONE_KIND_FILTER_VALUE) {
+          return true;
+        }
+        if (archetypeZoneKindFilter === UNASSIGNED_ZONE_KIND_FILTER_VALUE) {
+          return normalizedZoneKind.length === 0;
+        }
+        return normalizedZoneKind === archetypeZoneKindFilter;
+      });
+    },
+    [archetypeSearch, archetypeZoneKindFilter, questArchetypes]
   );
+  const dashboardMetrics = useMemo(() => {
+    const visibleCount = filteredArchetypes.length;
+    const zoneTaggedCount = filteredArchetypes.filter((archetype) =>
+      Boolean(archetype.zoneKind?.trim())
+    ).length;
+    const mainStoryCount = filteredArchetypes.filter(
+      (archetype) => archetype.category === 'main_story'
+    ).length;
+    const failureBranchCount = filteredArchetypes.filter(
+      (archetype) =>
+        (archetypeStructureById.get(archetype.id)?.failureBranchCount ?? 0) > 0
+    ).length;
+
+    return [
+      {
+        label: 'Visible Archetypes',
+        value: visibleCount,
+        note: `${questArchetypes.length} total`,
+      },
+      {
+        label: 'Zone-Kind Tagged',
+        value: zoneTaggedCount,
+        note: `${Math.max(0, visibleCount - zoneTaggedCount)} unassigned`,
+      },
+      { label: 'Main Story', value: mainStoryCount },
+      {
+        label: 'Fail-Forward Routes',
+        value: failureBranchCount,
+        note: `${Math.max(0, visibleCount - failureBranchCount)} without failure branches`,
+      },
+    ];
+  }, [archetypeStructureById, filteredArchetypes, questArchetypes.length]);
+  const dashboardSections = useMemo(
+    () => [
+      {
+        title: 'Zone Kind Coverage',
+        note: 'Quest archetype support across the currently visible zone filters.',
+        buckets: countBy(
+          filteredArchetypes,
+          (archetype) =>
+            archetype.zoneKind?.trim()
+              ? zoneKindLabel(archetype.zoneKind, zoneKindBySlug)
+              : 'Unassigned',
+          {
+            emptyLabel: 'Unassigned',
+            seedLabels: sortedZoneKinds.map((zoneKind) => zoneKind.name),
+          }
+        ),
+      },
+      {
+        title: 'Quest Categories',
+        note: 'How the current archetype pool splits between mainline and side content.',
+        buckets: countBy(filteredArchetypes, (archetype) =>
+          archetype.category === 'main_story' ? 'Main Story' : 'Side Quest'
+        ),
+      },
+      {
+        title: 'Difficulty Model',
+        note: 'Whether current archetypes pin difficulty or scale it to the zone.',
+        buckets: countBy(filteredArchetypes, (archetype) =>
+          archetype.difficultyMode === 'fixed'
+            ? 'Fixed difficulty'
+            : 'Scaled difficulty'
+        ),
+      },
+      {
+        title: 'Route Shape',
+        note: 'Node-count and failure-path profile for the visible quest graphs.',
+        buckets: countBy(filteredArchetypes, (archetype) =>
+          formatQuestArchetypeStructureLabel(
+            archetypeStructureById.get(archetype.id)
+          )
+        ),
+      },
+    ],
+    [
+      archetypeStructureById,
+      filteredArchetypes,
+      sortedZoneKinds,
+      zoneKindBySlug,
+    ]
+  );
+  const hasActiveArchetypeFilters =
+    archetypeSearch.trim().length > 0 ||
+    archetypeZoneKindFilter !== ALL_ZONE_KIND_FILTER_VALUE;
 
   const selectAllFilteredArchetypes = useCallback(() => {
     setSelectedArchetypeIds(
@@ -4698,6 +4878,20 @@ export const QuestArchetypeComponent = () => {
           </div>
         </header>
 
+        <div style={{ marginBottom: 20 }}>
+          <ContentDashboard
+            title="Quest Archetype Dashboard"
+            subtitle="Aggregate quest archetype coverage for the current search and zone-kind filters."
+            status={
+              hasActiveArchetypeFilters
+                ? 'Reflects current filters'
+                : 'All quest archetypes'
+            }
+            metrics={dashboardMetrics}
+            sections={dashboardSections}
+          />
+        </div>
+
         <section className="qa-layout">
           <aside className="qa-sidebar">
             <div className="qa-card qa-sidebar-card">
@@ -4711,6 +4905,26 @@ export const QuestArchetypeComponent = () => {
                 value={archetypeSearch}
                 onChange={(e) => setArchetypeSearch(e.target.value)}
               />
+              <select
+                className="qa-select"
+                style={{ marginTop: 10 }}
+                value={archetypeZoneKindFilter}
+                onChange={(event) =>
+                  setArchetypeZoneKindFilter(event.target.value)
+                }
+              >
+                <option value={ALL_ZONE_KIND_FILTER_VALUE}>
+                  All zone kinds
+                </option>
+                <option value={UNASSIGNED_ZONE_KIND_FILTER_VALUE}>
+                  Unassigned
+                </option>
+                {sortedZoneKinds.map((zoneKind) => (
+                  <option key={zoneKind.id} value={zoneKind.slug}>
+                    {zoneKind.name}
+                  </option>
+                ))}
+              </select>
               <div
                 style={{
                   display: 'flex',
@@ -4751,7 +4965,7 @@ export const QuestArchetypeComponent = () => {
               <div className="qa-sidebar-list">
                 {filteredArchetypes.length === 0 ? (
                   <div className="qa-empty">
-                    No archetypes match that search.
+                    No archetypes match that search or zone kind filter.
                   </div>
                 ) : (
                   filteredArchetypes.map((questArchetype) => {
@@ -4793,6 +5007,14 @@ export const QuestArchetypeComponent = () => {
                               {questArchetype.name}
                             </div>
                             <div className="qa-meta">
+                              Zone:{' '}
+                              {questArchetype.zoneKind?.trim()
+                                ? zoneKindLabel(
+                                    questArchetype.zoneKind,
+                                    zoneKindBySlug
+                                  )
+                                : 'Unassigned'}{' '}
+                              ·{' '}
                               Root: {rootLocation} ·{' '}
                               {questArchetype.root?.challenges?.length ?? 0}{' '}
                               challenges

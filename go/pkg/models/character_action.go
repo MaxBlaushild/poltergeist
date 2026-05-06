@@ -35,6 +35,8 @@ type DialogueMessage struct {
 	Order       int            `json:"order"`
 	Effect      DialogueEffect `json:"effect,omitempty"`
 	CharacterID *uuid.UUID     `json:"characterId,omitempty"`
+	SpeakerName string         `json:"speakerName,omitempty"`
+	PortraitURL string         `json:"portraitUrl,omitempty"`
 }
 
 // DialogueSequence is a custom type for []DialogueMessage that implements sql.Scanner and driver.Valuer
@@ -100,12 +102,20 @@ func normalizeDialogueMessage(message DialogueMessage, order int) DialogueMessag
 		resolved := *message.CharacterID
 		characterID = &resolved
 	}
+	speakerName := ""
+	portraitURL := ""
+	if speaker == "character" {
+		speakerName = strings.TrimSpace(message.SpeakerName)
+		portraitURL = strings.TrimSpace(message.PortraitURL)
+	}
 	return DialogueMessage{
 		Speaker:     speaker,
 		Text:        strings.TrimSpace(message.Text),
 		Order:       order,
 		Effect:      NormalizeDialogueEffect(string(message.Effect)),
 		CharacterID: characterID,
+		SpeakerName: speakerName,
+		PortraitURL: portraitURL,
 	}
 }
 
@@ -125,12 +135,28 @@ func normalizeDialogueSequence(messages []DialogueMessage) DialogueSequence {
 }
 
 func DialogueSequenceFromStringLines(lines []string) DialogueSequence {
+	return DialogueSequenceFromSpeakerNameLines(lines, "")
+}
+
+func DialogueSequenceFromSpeakerNameLines(lines []string, speakerName string) DialogueSequence {
+	return DialogueSequenceFromSpeakerIdentityLines(lines, speakerName, "")
+}
+
+func DialogueSequenceFromSpeakerIdentityLines(
+	lines []string,
+	speakerName string,
+	portraitURL string,
+) DialogueSequence {
+	trimmedSpeakerName := strings.TrimSpace(speakerName)
+	trimmedPortraitURL := strings.TrimSpace(portraitURL)
 	messages := make([]DialogueMessage, 0, len(lines))
 	for _, line := range lines {
 		messages = append(messages, DialogueMessage{
-			Speaker: "character",
-			Text:    line,
-			Order:   len(messages),
+			Speaker:     "character",
+			Text:        line,
+			Order:       len(messages),
+			SpeakerName: trimmedSpeakerName,
+			PortraitURL: trimmedPortraitURL,
 		})
 	}
 	return normalizeDialogueSequence(messages)

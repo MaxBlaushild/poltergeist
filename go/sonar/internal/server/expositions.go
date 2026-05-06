@@ -49,6 +49,8 @@ func (s *server) parseExpositionDialogue(
 		if text == "" {
 			continue
 		}
+		speakerName := strings.TrimSpace(raw.SpeakerName)
+		portraitURL := strings.TrimSpace(raw.PortraitURL)
 		var characterID *uuid.UUID
 		if raw.CharacterID != nil && *raw.CharacterID != uuid.Nil {
 			character, err := s.dbClient.Character().FindByID(ctx, *raw.CharacterID)
@@ -61,12 +63,17 @@ func (s *server) parseExpositionDialogue(
 			resolved := *raw.CharacterID
 			characterID = &resolved
 		}
+		if characterID == nil && speakerName == "" {
+			return nil, fmt.Errorf("exposition dialogue lines require either characterId or speakerName")
+		}
 		dialogue = append(dialogue, models.DialogueMessage{
 			Speaker:     "character",
 			Text:        text,
 			Order:       len(dialogue),
 			Effect:      models.NormalizeDialogueEffect(string(raw.Effect)),
 			CharacterID: characterID,
+			SpeakerName: speakerName,
+			PortraitURL: portraitURL,
 		})
 	}
 	if len(dialogue) == 0 {

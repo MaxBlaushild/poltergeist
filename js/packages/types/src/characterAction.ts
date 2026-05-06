@@ -21,6 +21,8 @@ export interface DialogueMessage {
   order: number;
   effect?: DialogueEffect;
   characterId?: string;
+  speakerName?: string;
+  portraitUrl?: string;
 }
 
 export interface ShopInventoryItem {

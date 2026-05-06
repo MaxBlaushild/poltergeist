@@ -59,6 +59,11 @@ type QuestArchetypeSuggestionStep struct {
 	ScenarioPrompt          string                  `json:"scenarioPrompt,omitempty"`
 	ScenarioOpenEnded       bool                    `json:"scenarioOpenEnded"`
 	ScenarioBeats           []string                `json:"scenarioBeats,omitempty"`
+	ExpositionTitle         string                  `json:"expositionTitle,omitempty"`
+	ExpositionDescription   string                  `json:"expositionDescription,omitempty"`
+	ExpositionSpeakerName   string                  `json:"expositionSpeakerName,omitempty"`
+	ExpositionPortraitURL   string                  `json:"expositionPortraitUrl,omitempty"`
+	ExpositionDialogue      []string                `json:"expositionDialogue,omitempty"`
 	MonsterTemplateNames    []string                `json:"monsterTemplateNames,omitempty"`
 	MonsterTemplateIDs      []string                `json:"monsterTemplateIds,omitempty"`
 	EncounterTone           []string                `json:"encounterTone,omitempty"`
@@ -116,6 +121,11 @@ type QuestArchetypeSuggestionNode struct {
 	ScenarioPrompt          string                               `json:"scenarioPrompt,omitempty"`
 	ScenarioOpenEnded       bool                                 `json:"scenarioOpenEnded"`
 	ScenarioBeats           []string                             `json:"scenarioBeats,omitempty"`
+	ExpositionTitle         string                               `json:"expositionTitle,omitempty"`
+	ExpositionDescription   string                               `json:"expositionDescription,omitempty"`
+	ExpositionSpeakerName   string                               `json:"expositionSpeakerName,omitempty"`
+	ExpositionPortraitURL   string                               `json:"expositionPortraitUrl,omitempty"`
+	ExpositionDialogue      []string                             `json:"expositionDialogue,omitempty"`
 	MonsterTemplateNames    []string                             `json:"monsterTemplateNames,omitempty"`
 	MonsterTemplateIDs      []string                             `json:"monsterTemplateIds,omitempty"`
 	EncounterTone           []string                             `json:"encounterTone,omitempty"`
@@ -226,6 +236,7 @@ type QuestArchetypeSuggestionJob struct {
 	UpdatedAt                    time.Time                                `json:"updatedAt"`
 	Status                       string                                   `json:"status"`
 	Count                        int                                      `json:"count"`
+	YeetIt                       bool                                     `json:"yeetIt" gorm:"column:yeet_it"`
 	ZoneKind                     string                                   `json:"zoneKind" gorm:"column:zone_kind"`
 	ThemePrompt                  string                                   `json:"themePrompt" gorm:"column:theme_prompt"`
 	FamilyTags                   StringArray                              `json:"familyTags" gorm:"column:family_tags;type:jsonb"`

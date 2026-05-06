@@ -19,6 +19,7 @@ import (
 
 type questArchetypeSuggestionJobRequest struct {
 	Count                        int            `json:"count"`
+	YeetIt                       bool           `json:"yeetIt"`
 	ZoneKind                     string         `json:"zoneKind"`
 	ThemePrompt                  string         `json:"themePrompt"`
 	FamilyTags                   []string       `json:"familyTags"`
@@ -67,6 +68,7 @@ func (s *server) createQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		UpdatedAt:                    time.Now(),
 		Status:                       models.QuestArchetypeSuggestionJobStatusQueued,
 		Count:                        body.Count,
+		YeetIt:                       body.YeetIt,
 		ZoneKind:                     models.ZoneKindPromptSlug(zoneKind),
 		ThemePrompt:                  strings.TrimSpace(body.ThemePrompt),
 		FamilyTags:                   normalizeQuestTemplateInternalTags(body.FamilyTags),
@@ -161,6 +163,18 @@ func (s *server) getQuestArchetypeSuggestionJobs(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	for index := range jobsList {
+		if !jobsList[index].YeetIt || jobsList[index].Status != models.QuestArchetypeSuggestionJobStatusCompleted {
+			continue
+		}
+		updatedJob, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, &jobsList[index])
+		if finalizeErr != nil {
+			log.Printf("Failed to finalize yeeted quest archetype suggestion job %s: %v", jobsList[index].ID, finalizeErr)
+		}
+		if updatedJob != nil {
+			jobsList[index] = *updatedJob
+		}
+	}
 	ctx.JSON(http.StatusOK, jobsList)
 }
 
@@ -179,6 +193,15 @@ func (s *server) getQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype suggestion job not found"})
 		return
 	}
+	if job.YeetIt && job.Status == models.QuestArchetypeSuggestionJobStatusCompleted {
+		updatedJob, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, job)
+		if finalizeErr != nil {
+			log.Printf("Failed to finalize yeeted quest archetype suggestion job %s: %v", job.ID, finalizeErr)
+		}
+		if updatedJob != nil {
+			job = updatedJob
+		}
+	}
 	ctx.JSON(http.StatusOK, job)
 }
 
@@ -188,12 +211,92 @@ func (s *server) getQuestArchetypeSuggestionDrafts(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype suggestion job ID"})
 		return
 	}
+	job, err := s.dbClient.QuestArchetypeSuggestionJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype suggestion job not found"})
+		return
+	}
+	if job.YeetIt && job.Status == models.QuestArchetypeSuggestionJobStatusCompleted {
+		if _, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, job); finalizeErr != nil {
+			log.Printf("Failed to finalize yeeted quest archetype suggestion job %s: %v", job.ID, finalizeErr)
+		}
+	}
 	drafts, err := s.dbClient.QuestArchetypeSuggestionDraft().FindByJobID(ctx, jobID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, drafts)
+}
+
+func (s *server) maybeFinalizeYeetedQuestArchetypeSuggestionJob(
+	ctx context.Context,
+	job *models.QuestArchetypeSuggestionJob,
+) (*models.QuestArchetypeSuggestionJob, error) {
+	if job == nil || !job.YeetIt || job.Status != models.QuestArchetypeSuggestionJobStatusCompleted {
+		return job, nil
+	}
+
+	drafts, err := s.dbClient.QuestArchetypeSuggestionDraft().FindByJobID(ctx, job.ID)
+	if err != nil {
+		return job, fmt.Errorf("failed to load quest archetype suggestion drafts: %w", err)
+	}
+	if len(drafts) == 0 {
+		return job, nil
+	}
+
+	needsFinalization := false
+	convertedCount := 0
+	for _, draft := range drafts {
+		if draft.QuestArchetypeID != nil {
+			convertedCount++
+			continue
+		}
+		needsFinalization = true
+	}
+	if !needsFinalization {
+		if job.CreatedCount != convertedCount {
+			job.CreatedCount = convertedCount
+			job.ErrorMessage = nil
+			job.UpdatedAt = time.Now()
+			if err := s.dbClient.QuestArchetypeSuggestionJob().Update(ctx, job); err != nil {
+				return job, fmt.Errorf("failed to refresh yeeted quest archetype suggestion job counts: %w", err)
+			}
+		}
+		return job, nil
+	}
+
+	for index := range drafts {
+		draft := &drafts[index]
+		if draft.QuestArchetypeID != nil {
+			continue
+		}
+		if _, err := s.materializeQuestArchetypeSuggestionDraft(ctx, draft); err != nil {
+			msg := fmt.Sprintf("failed to yeet draft %q into a live archetype: %v", draft.Name, err)
+			job.Status = models.QuestArchetypeSuggestionJobStatusFailed
+			job.ErrorMessage = &msg
+			job.CreatedCount = convertedCount
+			job.UpdatedAt = time.Now()
+			if updateErr := s.dbClient.QuestArchetypeSuggestionJob().Update(ctx, job); updateErr != nil {
+				log.Printf("Failed to mark yeeted quest archetype suggestion job %s as failed: %v", job.ID, updateErr)
+			}
+			return job, err
+		}
+		convertedCount++
+	}
+
+	job.Status = models.QuestArchetypeSuggestionJobStatusCompleted
+	job.ErrorMessage = nil
+	job.CreatedCount = convertedCount
+	job.UpdatedAt = time.Now()
+	if err := s.dbClient.QuestArchetypeSuggestionJob().Update(ctx, job); err != nil {
+		return job, fmt.Errorf("failed to finalize yeeted quest archetype suggestion job: %w", err)
+	}
+	return job, nil
 }
 
 func (s *server) deleteQuestArchetypeSuggestionDraft(ctx *gin.Context) {
@@ -417,6 +520,11 @@ func questArchetypeSuggestionNodeFromStep(
 		ScenarioPrompt:          step.ScenarioPrompt,
 		ScenarioOpenEnded:       step.ScenarioOpenEnded,
 		ScenarioBeats:           append([]string(nil), step.ScenarioBeats...),
+		ExpositionTitle:         step.ExpositionTitle,
+		ExpositionDescription:   step.ExpositionDescription,
+		ExpositionSpeakerName:   step.ExpositionSpeakerName,
+		ExpositionPortraitURL:   step.ExpositionPortraitURL,
+		ExpositionDialogue:      append([]string(nil), step.ExpositionDialogue...),
 		MonsterTemplateNames:    append([]string(nil), step.MonsterTemplateNames...),
 		MonsterTemplateIDs:      append([]string(nil), step.MonsterTemplateIDs...),
 		EncounterTone:           append([]string(nil), step.EncounterTone...),
@@ -444,6 +552,11 @@ func questArchetypeSuggestionStepFromNode(
 		ScenarioPrompt:          node.ScenarioPrompt,
 		ScenarioOpenEnded:       node.ScenarioOpenEnded,
 		ScenarioBeats:           append([]string(nil), node.ScenarioBeats...),
+		ExpositionTitle:         node.ExpositionTitle,
+		ExpositionDescription:   node.ExpositionDescription,
+		ExpositionSpeakerName:   node.ExpositionSpeakerName,
+		ExpositionPortraitURL:   node.ExpositionPortraitURL,
+		ExpositionDialogue:      append([]string(nil), node.ExpositionDialogue...),
 		MonsterTemplateNames:    append([]string(nil), node.MonsterTemplateNames...),
 		MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
 		EncounterTone:           append([]string(nil), node.EncounterTone...),
@@ -478,6 +591,17 @@ func (s *server) createQuestArchetypeSuggestionNode(
 		if step.DistanceMeters != nil {
 			payload.EncounterProximityMeters = step.DistanceMeters
 		}
+	case "exposition":
+		if step.LocationArchetypeID == nil || *step.LocationArchetypeID == uuid.Nil {
+			return nil, fmt.Errorf("location exposition step %q is missing a resolved location archetype", step.LocationConcept)
+		}
+		template, err := s.createQuestArchetypeSuggestionExpositionTemplate(ctx, step, preferredZoneKind)
+		if err != nil {
+			return nil, err
+		}
+		payload.NodeType = string(models.QuestArchetypeNodeTypeExposition)
+		payload.LocationArchetypeID = step.LocationArchetypeID
+		payload.ExpositionTemplateID = &template.ID
 	case "monster":
 		locationArchetype, err := s.resolveQuestArchetypeSuggestionStepLocationArchetype(ctx, step)
 		if err != nil {
@@ -731,6 +855,92 @@ func (s *server) createQuestArchetypeSuggestionChallengeTemplate(
 	}
 	if err := s.dbClient.ChallengeTemplate().Create(ctx, template); err != nil {
 		return nil, fmt.Errorf("failed to create challenge template: %w", err)
+	}
+	return template, nil
+}
+
+func buildQuestArchetypeSuggestionExpositionTemplate(
+	step models.QuestArchetypeSuggestionStep,
+	preferredZoneKind *models.ZoneKind,
+) *models.ExpositionTemplate {
+	title := strings.TrimSpace(step.ExpositionTitle)
+	if title == "" {
+		title = strings.TrimSpace(step.TemplateConcept)
+	}
+	if title == "" {
+		title = "Lingering Echo"
+	}
+
+	description := strings.TrimSpace(step.ExpositionDescription)
+	if description == "" {
+		description = "Generated exposition template."
+	}
+
+	dialogue := models.DialogueSequenceFromSpeakerIdentityLines(
+		step.ExpositionDialogue,
+		questArchetypeSuggestionExpositionSpeakerName(step),
+		questArchetypeSuggestionExpositionPortraitURL(step),
+	)
+	if len(dialogue) == 0 {
+		dialogue = models.DialogueSequenceFromSpeakerIdentityLines([]string{
+			"Something here is still trying to warn the next person through.",
+			"Read the scene closely before you move on.",
+		}, questArchetypeSuggestionExpositionSpeakerName(step), questArchetypeSuggestionExpositionPortraitURL(step))
+	}
+
+	return &models.ExpositionTemplate{
+		ZoneKind:           models.ZoneKindPromptSlug(preferredZoneKind),
+		Title:              title,
+		Description:        description,
+		Dialogue:           dialogue,
+		RequiredStoryFlags: models.StringArray{},
+		ImageURL:           "",
+		ThumbnailURL:       "",
+		RewardMode:         models.RewardModeRandom,
+		RandomRewardSize:   models.RandomRewardSizeSmall,
+		RewardExperience:   0,
+		RewardGold:         0,
+		MaterialRewards:    models.BaseMaterialRewards{},
+		ItemRewards:        models.ExpositionTemplateItemRewards{},
+		SpellRewards:       models.ExpositionTemplateSpellRewards{},
+	}
+}
+
+func questArchetypeSuggestionExpositionSpeakerName(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	if name := strings.TrimSpace(step.ExpositionSpeakerName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(step.ExpositionTitle); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(step.TemplateConcept); name != "" {
+		return name
+	}
+	if location := strings.TrimSpace(step.LocationConcept); location != "" {
+		return location + " Echo"
+	}
+	return "Witness Echo"
+}
+
+func questArchetypeSuggestionExpositionPortraitURL(
+	step models.QuestArchetypeSuggestionStep,
+) string {
+	if portraitURL := strings.TrimSpace(step.ExpositionPortraitURL); portraitURL != "" {
+		return portraitURL
+	}
+	return "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png"
+}
+
+func (s *server) createQuestArchetypeSuggestionExpositionTemplate(
+	ctx context.Context,
+	step models.QuestArchetypeSuggestionStep,
+	preferredZoneKind *models.ZoneKind,
+) (*models.ExpositionTemplate, error) {
+	template := buildQuestArchetypeSuggestionExpositionTemplate(step, preferredZoneKind)
+	if err := s.dbClient.ExpositionTemplate().Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to create exposition template: %w", err)
 	}
 	return template, nil
 }

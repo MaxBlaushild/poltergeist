@@ -4,6 +4,8 @@ class DialogueMessage {
   final int order;
   final String? effect;
   final String? characterId;
+  final String? speakerName;
+  final String? portraitUrl;
 
   const DialogueMessage({
     required this.speaker,
@@ -11,6 +13,8 @@ class DialogueMessage {
     required this.order,
     this.effect,
     this.characterId,
+    this.speakerName,
+    this.portraitUrl,
   });
 
   factory DialogueMessage.fromJson(Map<String, dynamic> json) {
@@ -24,6 +28,12 @@ class DialogueMessage {
       characterId: (json['characterId'] as String?)?.trim().isEmpty ?? true
           ? null
           : (json['characterId'] as String).trim(),
+      speakerName: (json['speakerName'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (json['speakerName'] as String).trim(),
+      portraitUrl: (json['portraitUrl'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (json['portraitUrl'] as String).trim(),
     );
   }
 }

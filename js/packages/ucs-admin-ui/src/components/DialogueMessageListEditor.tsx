@@ -34,6 +34,11 @@ type DialogueMessageListEditorProps = {
   allowSpeakerToggle?: boolean;
   characterOptions?: Array<{ value: string; label: string }>;
   requireCharacterSelection?: boolean;
+  allowSpeakerNameFallback?: boolean;
+  speakerNameLabel?: string;
+  speakerNamePlaceholder?: string;
+  portraitUrlLabel?: string;
+  portraitUrlPlaceholder?: string;
 };
 
 const normalizeDialogueMessages = (messages: DialogueMessage[]) =>
@@ -46,6 +51,14 @@ const normalizeDialogueMessages = (messages: DialogueMessage[]) =>
       message.speaker === 'user'
         ? undefined
         : message.characterId?.trim() || undefined,
+    speakerName:
+      message.speaker === 'user'
+        ? undefined
+        : message.speakerName?.trim() || undefined,
+    portraitUrl:
+      message.speaker === 'user'
+        ? undefined
+        : message.portraitUrl?.trim() || undefined,
   }));
 
 const dialogueControlStyle: React.CSSProperties = {
@@ -77,6 +90,11 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
   allowSpeakerToggle = false,
   characterOptions = [],
   requireCharacterSelection = false,
+  allowSpeakerNameFallback = false,
+  speakerNameLabel = 'Speaker Label',
+  speakerNamePlaceholder = 'Witness Echo',
+  portraitUrlLabel = 'Portrait URL',
+  portraitUrlPlaceholder = 'https://example.com/witness-echo.png',
 }) => {
   const messages = normalizeDialogueMessages(value ?? []);
   const resolvedHelperText = helperText
@@ -95,9 +113,13 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
         text: '',
         order: messages.length,
         characterId:
-          defaultSpeaker === 'character' && characterOptions.length > 0
+          defaultSpeaker === 'character' &&
+          characterOptions.length > 0 &&
+          !allowSpeakerNameFallback
             ? characterOptions[0].value
             : undefined,
+        speakerName: undefined,
+        portraitUrl: undefined,
       },
     ]);
   };
@@ -192,7 +214,17 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                       characterId:
                         nextSpeaker === 'character'
                           ? message.characterId ??
-                            (characterOptions[0]?.value || undefined)
+                            (!allowSpeakerNameFallback
+                              ? characterOptions[0]?.value || undefined
+                              : undefined)
+                          : undefined,
+                      speakerName:
+                        nextSpeaker === 'character'
+                          ? message.speakerName ?? undefined
+                          : undefined,
+                      portraitUrl:
+                        nextSpeaker === 'character'
+                          ? message.portraitUrl ?? undefined
                           : undefined,
                     });
                   }}
@@ -227,7 +259,7 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                     minWidth: '160px',
                   }}
                 >
-                  {!requireCharacterSelection ? (
+                  {!requireCharacterSelection || allowSpeakerNameFallback ? (
                     <option value="">Any character</option>
                   ) : null}
                   {characterOptions.map((option) => (
@@ -236,6 +268,40 @@ export const DialogueMessageListEditor: React.FC<DialogueMessageListEditorProps>
                     </option>
                   ))}
                 </select>
+              ) : null}
+              {message.speaker === 'character' && allowSpeakerNameFallback ? (
+                <>
+                  <input
+                    type="text"
+                    value={message.speakerName ?? ''}
+                    onChange={(event) =>
+                      updateMessage(index, {
+                        speakerName: event.target.value || undefined,
+                      })
+                    }
+                    placeholder={speakerNamePlaceholder}
+                    aria-label={speakerNameLabel}
+                    style={{
+                      ...dialogueControlStyle,
+                      minWidth: '160px',
+                    }}
+                  />
+                  <input
+                    type="url"
+                    value={message.portraitUrl ?? ''}
+                    onChange={(event) =>
+                      updateMessage(index, {
+                        portraitUrl: event.target.value || undefined,
+                      })
+                    }
+                    placeholder={portraitUrlPlaceholder}
+                    aria-label={portraitUrlLabel}
+                    style={{
+                      ...dialogueControlStyle,
+                      minWidth: '220px',
+                    }}
+                  />
+                </>
               ) : null}
               <select
                 value={message.effect ?? ''}

@@ -224,12 +224,12 @@ func buildGeneratedExpositionTemplate(
 		description = "A lingering fragment of local memory clings to this place."
 	}
 
-	dialogue := models.DialogueSequenceFromStringLines(spec.Dialogue)
+	dialogue := models.DialogueSequenceFromSpeakerNameLines(spec.Dialogue, title)
 	if len(dialogue) == 0 {
-		dialogue = models.DialogueSequenceFromStringLines([]string{
+		dialogue = models.DialogueSequenceFromSpeakerNameLines([]string{
 			"The place remembers more than it should.",
 			"Something in the air is trying to warn passersby away.",
-		})
+		}, title)
 	}
 
 	rewardMode := models.NormalizeRewardMode(spec.RewardMode)

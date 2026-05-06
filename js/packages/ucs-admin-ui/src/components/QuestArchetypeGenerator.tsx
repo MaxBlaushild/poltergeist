@@ -5,6 +5,7 @@ import {
   QuestArchetypeSuggestionDraft,
   QuestArchetypeSuggestionJob,
   QuestArchetypeSuggestionNode,
+  QuestArchetypeSuggestionPreset,
 } from '@poltergeist/types';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useZoneKinds, zoneKindLabel } from './zoneKindHelpers.ts';
@@ -12,6 +13,7 @@ import './questArchetypeTheme.css';
 
 type GeneratorFormState = {
   count: string;
+  yeetIt: boolean;
   zoneKind: string;
   themePrompt: string;
   familyTagsText: string;
@@ -20,6 +22,43 @@ type GeneratorFormState = {
   internalTagsText: string;
   requiredLocationArchetypeIds: string[];
   requiredLocationMetadataTagsText: string;
+};
+
+type QuestArchetypeSuggestionJobPayload = {
+  count: number;
+  yeetIt: boolean;
+  zoneKind: string;
+  themePrompt: string;
+  familyTags: string[];
+  familyMixTargets: Record<string, number>;
+  characterTags: string[];
+  internalTags: string[];
+  requiredLocationArchetypeIds: string[];
+  requiredLocationMetadataTags: string[];
+};
+
+type QuestPresetZoneKind = {
+  slug: string;
+  name: string;
+  description?: string | null;
+};
+
+type QuestPresetLocationArchetype = {
+  id: string;
+  name: string;
+  includedTypes?: string[] | null;
+};
+
+type QuestPresetSeed = {
+  label: string;
+  themePrompts: string[];
+  familyTags: string[];
+  familyFocuses: string[];
+  characterTags: string[];
+  internalTags: string[];
+  metadataTags: string[];
+  locationKeywords: string[];
+  zoneKindKeywords: string[];
 };
 
 const QUEST_FAMILY_OPTIONS = [
@@ -35,6 +74,121 @@ const QUEST_FAMILY_OPTIONS = [
   { slug: 'combat_finale', label: 'Combat Finale' },
 ];
 
+const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
+  {
+    label: 'Smuggler Web',
+    themePrompts: [
+      'A contraband route is under pressure from rival crews, civic inspectors, and nervous couriers.',
+      'Street-level smugglers need deniable help moving sensitive cargo through a district full of watchers.',
+    ],
+    familyTags: ['criminal', 'trade', 'civic'],
+    familyFocuses: ['delivery', 'investigation', 'negotiation'],
+    characterTags: ['courier', 'fence', 'dockhand', 'customs_clerk', 'fixer'],
+    internalTags: ['smuggling', 'handoff', 'contraband', 'route_pressure', 'black_market'],
+    metadataTags: ['market', 'warehouse', 'alley', 'waterfront', 'checkpoint'],
+    locationKeywords: ['market', 'warehouse', 'harbor', 'gate', 'bridge', 'station'],
+    zoneKindKeywords: ['harbor', 'market', 'river', 'canal', 'urban'],
+  },
+  {
+    label: 'Occult Blackout',
+    themePrompts: [
+      'Protect a district during a magical blackout caused by unstable wards and opportunistic spirits.',
+      'A surge of omen-laden failures is spreading through ritual infrastructure that should have been stable.',
+    ],
+    familyTags: ['occult', 'civic', 'storm'],
+    familyFocuses: ['investigation', 'ritual_interruption', 'containment'],
+    characterTags: ['medium', 'lamplighter', 'groundskeeper', 'apprentice_mage', 'sacristan'],
+    internalTags: ['wards', 'blackout', 'omens', 'sigils', 'spirit_leak'],
+    metadataTags: ['shrine', 'plaza', 'rooftop', 'substation', 'memorial'],
+    locationKeywords: ['shrine', 'chapel', 'tower', 'plaza', 'park', 'cemetery'],
+    zoneKindKeywords: ['ruin', 'cemetery', 'old', 'temple', 'urban'],
+  },
+  {
+    label: 'Rooftop Chase',
+    themePrompts: [
+      'A dangerous messenger has taken to the rooftops with something too important to lose.',
+      'Someone fast, desperate, and magically assisted is turning the skyline into a pursuit corridor.',
+    ],
+    familyTags: ['criminal', 'speed', 'surveillance'],
+    familyFocuses: ['pursuit', 'delivery', 'combat_finale'],
+    characterTags: ['runner', 'lookout', 'messenger', 'bounty_hunter', 'acrobat'],
+    internalTags: ['rooftops', 'chase', 'signal_flares', 'tight_deadlines', 'crossings'],
+    metadataTags: ['rooftop', 'stairwell', 'balcony', 'skybridge', 'billboard'],
+    locationKeywords: ['tower', 'bridge', 'stairs', 'roof', 'balcony', 'high'],
+    zoneKindKeywords: ['downtown', 'highrise', 'urban', 'industrial'],
+  },
+  {
+    label: 'Floodwall Breach',
+    themePrompts: [
+      'A district barrier is failing, and local crews need help containing the breach before panic spreads.',
+      'Something has compromised the floodwall, forcing street-level responders to improvise under pressure.',
+    ],
+    familyTags: ['civic', 'disaster', 'infrastructure'],
+    familyFocuses: ['containment', 'survival', 'rescue'],
+    characterTags: ['engineer', 'boatman', 'first_responder', 'maintenance_crew', 'lookout'],
+    internalTags: ['barrier', 'breach', 'stabilization', 'evacuation', 'emergency_routes'],
+    metadataTags: ['waterfront', 'pump', 'levee', 'floodgate', 'service_tunnel'],
+    locationKeywords: ['water', 'tunnel', 'bridge', 'station', 'service', 'gate'],
+    zoneKindKeywords: ['coast', 'harbor', 'river', 'swamp', 'canal'],
+  },
+  {
+    label: 'Missing Envoy',
+    themePrompts: [
+      'A politically sensitive envoy vanished between two supposedly safe meeting points.',
+      'Multiple factions want a missing emissary found first, but each one wants a different outcome.',
+    ],
+    familyTags: ['diplomacy', 'intrigue', 'civic'],
+    familyFocuses: ['investigation', 'negotiation', 'rescue'],
+    characterTags: ['envoy', 'bodyguard', 'clerk', 'mediator', 'fixer'],
+    internalTags: ['missing_person', 'faction_pressure', 'quiet_recovery', 'back_channels', 'escort'],
+    metadataTags: ['courtyard', 'meeting_hall', 'garden', 'checkpoint', 'arcade'],
+    locationKeywords: ['hall', 'court', 'garden', 'market', 'embassy', 'office'],
+    zoneKindKeywords: ['court', 'garden', 'urban', 'old', 'plaza'],
+  },
+  {
+    label: 'Market Infestation',
+    themePrompts: [
+      'Predatory creatures are feeding on the district economy by nesting inside supply routes and vendor spaces.',
+      'A lively market is being slowly strangled by an infestation nobody can fully pin down yet.',
+    ],
+    familyTags: ['trade', 'creatures', 'civic'],
+    familyFocuses: ['investigation', 'containment', 'combat_finale'],
+    characterTags: ['vendor', 'ratcatcher', 'porter', 'apothecary', 'market_guard'],
+    internalTags: ['infestation', 'supply_chain', 'vendor_panic', 'nests', 'scarcity'],
+    metadataTags: ['market', 'stall', 'storage', 'drain', 'loading_dock'],
+    locationKeywords: ['market', 'storage', 'drain', 'dock', 'alley', 'basement'],
+    zoneKindKeywords: ['market', 'industrial', 'urban', 'sewer'],
+  },
+  {
+    label: 'Star Omen Trail',
+    themePrompts: [
+      'A chain of uncanny signs is pointing toward a district-scale event that only a few people can read in time.',
+      'Celestial omens are surfacing in public spaces, and someone needs to chase the pattern before others weaponize it.',
+    ],
+    familyTags: ['occult', 'scholarly', 'omens'],
+    familyFocuses: ['omen_chasing', 'investigation', 'ritual_interruption'],
+    characterTags: ['astrologer', 'librarian', 'scribe', 'watcher', 'ritualist'],
+    internalTags: ['omens', 'sky_signs', 'pattern_reading', 'star_charts', 'prophecy'],
+    metadataTags: ['observatory', 'library', 'courtyard', 'monument', 'rooftop'],
+    locationKeywords: ['library', 'tower', 'observatory', 'monument', 'roof', 'plaza'],
+    zoneKindKeywords: ['arcane', 'temple', 'old', 'mountain', 'ruin'],
+  },
+  {
+    label: 'Strike Rescue',
+    themePrompts: [
+      'A labor action has frozen a district, leaving vulnerable people and vital goods stranded between factions.',
+      'A transport strike turned ugly, and now relief, diplomacy, and extraction are tangled together.',
+    ],
+    familyTags: ['labor', 'civic', 'trade'],
+    familyFocuses: ['negotiation', 'rescue', 'delivery'],
+    characterTags: ['organizer', 'porter', 'medic', 'quartermaster', 'teamster'],
+    internalTags: ['strike', 'mutual_aid', 'relief_runs', 'picket_lines', 'tense_standoffs'],
+    metadataTags: ['depot', 'station', 'clinic', 'queue', 'warehouse'],
+    locationKeywords: ['station', 'depot', 'clinic', 'warehouse', 'market', 'yard'],
+    zoneKindKeywords: ['industrial', 'urban', 'harbor', 'market'],
+  },
+];
+
 const emptyFamilyMixTargets = () =>
   QUEST_FAMILY_OPTIONS.reduce<Record<string, string>>((accumulator, family) => {
     accumulator[family.slug] = '0';
@@ -42,7 +196,8 @@ const emptyFamilyMixTargets = () =>
   }, {});
 
 const emptyGeneratorForm = (): GeneratorFormState => ({
-  count: '12',
+  count: '2',
+  yeetIt: false,
   zoneKind: '',
   themePrompt: '',
   familyTagsText: '',
@@ -87,6 +242,46 @@ const parseTags = (value: string) =>
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
+
+const requestedQuestArchetypeSuggestionBatchCount = (value: string) =>
+  Math.max(1, parseInt(value, 10) || 1);
+
+const buildQuestArchetypeSuggestionJobPayload = (
+  form: GeneratorFormState
+): QuestArchetypeSuggestionJobPayload => ({
+  count: requestedQuestArchetypeSuggestionBatchCount(form.count),
+  yeetIt: form.yeetIt,
+  zoneKind: form.zoneKind.trim(),
+  themePrompt: form.themePrompt.trim(),
+  familyTags: parseTags(form.familyTagsText),
+  familyMixTargets: buildFamilyMixTargetsPayload(form.familyMixTargets),
+  characterTags: parseTags(form.characterTagsText),
+  internalTags: parseTags(form.internalTagsText),
+  requiredLocationArchetypeIds: form.requiredLocationArchetypeIds,
+  requiredLocationMetadataTags: parseTags(
+    form.requiredLocationMetadataTagsText
+  ),
+});
+
+const buildGeneratorFormFromPreset = (
+  preset: QuestArchetypeSuggestionPreset,
+  requestedCount: number,
+  zoneKindHint: string,
+  yeetIt: boolean
+): GeneratorFormState => ({
+  count: String(requestedCount),
+  yeetIt,
+  zoneKind: zoneKindHint || preset.zoneKind?.trim() || '',
+  themePrompt: preset.themePrompt ?? '',
+  familyTagsText: (preset.familyTags ?? []).join(', '),
+  familyMixTargets: buildFamilyMixTargetFormState(preset.familyMixTargets),
+  characterTagsText: (preset.characterTags ?? []).join(', '),
+  internalTagsText: (preset.internalTags ?? []).join(', '),
+  requiredLocationArchetypeIds: preset.requiredLocationArchetypeIds ?? [],
+  requiredLocationMetadataTagsText: (
+    preset.requiredLocationMetadataTags ?? []
+  ).join(', '),
+});
 
 const extractApiErrorMessage = (error: unknown, fallback: string) => {
   if (
@@ -180,6 +375,199 @@ const formatFamilyMixTargets = (
   return parts.length > 0 ? parts.join(', ') : 'none';
 };
 
+const buildFamilyMixTargetFormState = (
+  targets?: Record<string, number> | null
+): Record<string, string> => {
+  const next = emptyFamilyMixTargets();
+  Object.entries(targets ?? {}).forEach(([slug, count]) => {
+    if (!(slug in next)) {
+      return;
+    }
+    next[slug] = String(Math.max(0, count || 0));
+  });
+  return next;
+};
+
+const randomInt = (min: number, max: number) =>
+  Math.floor(Math.random() * (max - min + 1)) + min;
+
+const shuffleArray = <T,>(items: T[]): T[] => {
+  const next = [...items];
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(0, index);
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+  return next;
+};
+
+const sampleMany = <T,>(items: T[], count: number): T[] =>
+  shuffleArray(items).slice(0, Math.max(0, Math.min(count, items.length)));
+
+const sampleOne = <T,>(items: T[]): T | null =>
+  items.length > 0 ? items[randomInt(0, items.length - 1)] : null;
+
+const uniqueStrings = (items: string[]) => Array.from(new Set(items));
+
+const buildRandomPresetFamilyMixTargets = (
+  familyFocuses: string[],
+  maxTotal: number
+): Record<string, string> => {
+  const next = emptyFamilyMixTargets();
+  const cappedTotal = Math.max(1, maxTotal);
+  const focusCount = Math.max(
+    1,
+    Math.min(cappedTotal, Math.min(3, familyFocuses.length))
+  );
+  const selectedFamilies = sampleMany(familyFocuses, focusCount);
+  let remaining = cappedTotal;
+  selectedFamilies.forEach((slug, index) => {
+    if (remaining <= 0) {
+      return;
+    }
+    const remainingSlots = selectedFamilies.length - index - 1;
+    const minimum = 1;
+    const familyMaximum = slug === 'combat_finale' ? 1 : 2;
+    const maximum = Math.max(
+      minimum,
+      Math.min(familyMaximum, remaining-remainingSlots)
+    );
+    const assigned = Math.min(
+      remaining,
+      index === selectedFamilies.length - 1 ? remaining : randomInt(minimum, maximum)
+    );
+    next[slug] = String(Math.max(minimum, assigned));
+    remaining -= Math.max(minimum, assigned);
+  });
+  return next;
+};
+
+const choosePresetZoneKindSlug = (
+  preset: QuestPresetSeed,
+  zoneKinds: QuestPresetZoneKind[]
+): string => {
+  if (zoneKinds.length === 0) return '';
+  const matching = zoneKinds.filter((zoneKind) => {
+    const haystack = [
+      zoneKind.slug,
+      zoneKind.name,
+      zoneKind.description ?? '',
+    ]
+      .join(' ')
+      .toLowerCase();
+    return preset.zoneKindKeywords.some((keyword) =>
+      haystack.includes(keyword.toLowerCase())
+    );
+  });
+  const selected = sampleOne(matching.length > 0 ? matching : zoneKinds);
+  return selected?.slug?.trim() || '';
+};
+
+const scorePresetLocationArchetype = (
+  archetype: QuestPresetLocationArchetype,
+  keywords: string[]
+) => {
+  const haystack = [
+    archetype.name,
+    ...(archetype.includedTypes ?? []),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return keywords.reduce(
+    (score, keyword) => (haystack.includes(keyword.toLowerCase()) ? score + 1 : score),
+    0
+  );
+};
+
+const choosePresetLocationArchetypeIds = (
+  preset: QuestPresetSeed,
+  locationArchetypes: QuestPresetLocationArchetype[]
+): string[] => {
+  if (locationArchetypes.length === 0) return [];
+  const ranked = locationArchetypes
+    .map((archetype) => ({
+      archetype,
+      score: scorePresetLocationArchetype(archetype, preset.locationKeywords),
+    }))
+    .sort((left, right) => right.score - left.score);
+  const pool = ranked.filter((entry) => entry.score > 0);
+  const sourcePool = (pool.length > 0 ? pool : ranked)
+    .slice(0, Math.min(8, Math.max(3, pool.length || ranked.length)))
+    .map((entry) => entry.archetype);
+  if (sourcePool.length === 0) {
+    return [];
+  }
+  const desiredCount = Math.min(
+    sourcePool.length,
+    randomInt(0, Math.min(2, sourcePool.length))
+  );
+  if (desiredCount <= 0) {
+    return [];
+  }
+  return sampleMany(sourcePool, desiredCount).map((archetype) => archetype.id);
+};
+
+const buildRandomPresetForm = (
+  zoneKinds: QuestPresetZoneKind[],
+  locationArchetypes: QuestPresetLocationArchetype[],
+  options?: {
+    preferredCount?: number;
+    preferredZoneKind?: string;
+    yeetIt?: boolean;
+  }
+): GeneratorFormState => {
+  const preset = sampleOne(QUEST_PRESET_LIBRARY) ?? QUEST_PRESET_LIBRARY[0];
+  const selectedCount = Math.max(
+    1,
+    Math.min(12, Math.trunc(options?.preferredCount ?? 2) || 2)
+  );
+  const familyMixTargets = buildRandomPresetFamilyMixTargets(
+    preset.familyFocuses,
+    selectedCount
+  );
+  const preferredZoneKind = options?.preferredZoneKind?.trim() ?? '';
+  const resolvedZoneKind =
+    preferredZoneKind ||
+    choosePresetZoneKindSlug(preset, zoneKinds);
+
+  return {
+    count: String(selectedCount),
+    yeetIt: options?.yeetIt ?? false,
+    zoneKind: resolvedZoneKind,
+    themePrompt: sampleOne(preset.themePrompts) ?? '',
+    familyTagsText: uniqueStrings(
+      sampleMany(
+        uniqueStrings([...preset.familyTags, ...preset.familyFocuses]),
+        randomInt(3, Math.min(5, preset.familyTags.length + preset.familyFocuses.length))
+      )
+    ).join(', '),
+    familyMixTargets,
+    characterTagsText: sampleMany(
+      uniqueStrings(preset.characterTags),
+      Math.min(preset.characterTags.length, randomInt(2, 4))
+    ).join(', '),
+    internalTagsText: uniqueStrings(
+      [
+        ...sampleMany(
+          uniqueStrings(preset.internalTags),
+          Math.min(preset.internalTags.length, randomInt(3, 5))
+        ),
+        ...sampleMany(
+          uniqueStrings(preset.metadataTags),
+          Math.min(preset.metadataTags.length, randomInt(1, 2))
+        ),
+      ]
+    ).join(', '),
+    requiredLocationArchetypeIds: choosePresetLocationArchetypeIds(
+      preset,
+      locationArchetypes
+    ),
+    requiredLocationMetadataTagsText: sampleMany(
+      uniqueStrings(preset.metadataTags),
+      Math.min(preset.metadataTags.length, randomInt(3, 4))
+    ).join(', '),
+  };
+};
+
 export const QuestArchetypeGenerator = () => {
   const { apiClient } = useAPI();
   const { locationArchetypes } = useQuestArchetypes();
@@ -191,8 +579,15 @@ export const QuestArchetypeGenerator = () => {
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [queueing, setQueueing] = useState(false);
+  const [generatingPreset, setGeneratingPreset] = useState(false);
+  const [queueingPresetZoneKinds, setQueueingPresetZoneKinds] = useState(false);
+  const [presetZoneKind, setPresetZoneKind] = useState<string>('');
+  const [presetQueueZoneKinds, setPresetQueueZoneKinds] = useState<string[]>([]);
   const [pageError, setPageError] = useState<string | null>(null);
   const [jobActionError, setJobActionError] = useState<string | null>(null);
+  const [presetStatusMessage, setPresetStatusMessage] = useState<string | null>(
+    null
+  );
   const [convertingDraftId, setConvertingDraftId] = useState<string | null>(
     null
   );
@@ -222,6 +617,17 @@ export const QuestArchetypeGenerator = () => {
   const requestedFamilyMixCount = useMemo(
     () => familyMixTargetCount(form.familyMixTargets),
     [form.familyMixTargets]
+  );
+  const requestedBatchCount = useMemo(
+    () => requestedQuestArchetypeSuggestionBatchCount(form.count),
+    [form.count]
+  );
+  const presetQueueZoneKindLabels = useMemo(
+    () =>
+      presetQueueZoneKinds
+        .map((slug) => zoneKindLabel(slug, zoneKindBySlug))
+        .filter(Boolean),
+    [presetQueueZoneKinds, zoneKindBySlug]
   );
 
   const fetchJobs = useCallback(async () => {
@@ -311,19 +717,7 @@ export const QuestArchetypeGenerator = () => {
     try {
       const created = await apiClient.post<QuestArchetypeSuggestionJob>(
         '/sonar/questArchetypeSuggestionJobs',
-        {
-          count: Math.max(1, parseInt(form.count, 10) || 1),
-          zoneKind: form.zoneKind.trim(),
-          themePrompt: form.themePrompt.trim(),
-          familyTags: parseTags(form.familyTagsText),
-          familyMixTargets: buildFamilyMixTargetsPayload(form.familyMixTargets),
-          characterTags: parseTags(form.characterTagsText),
-          internalTags: parseTags(form.internalTagsText),
-          requiredLocationArchetypeIds: form.requiredLocationArchetypeIds,
-          requiredLocationMetadataTags: parseTags(
-            form.requiredLocationMetadataTagsText
-          ),
-        }
+        buildQuestArchetypeSuggestionJobPayload(form)
       );
       setJobs((current) => [
         created,
@@ -386,6 +780,158 @@ export const QuestArchetypeGenerator = () => {
     }
   };
 
+  const handleGeneratePreset = async () => {
+    setGeneratingPreset(true);
+    setJobActionError(null);
+    setPresetStatusMessage(null);
+    const requestedCount = Math.max(1, parseInt(form.count, 10) || 2);
+    const presetZoneKindHint = presetZoneKind.trim() || form.zoneKind.trim();
+    try {
+      const preset = await apiClient.post<QuestArchetypeSuggestionPreset>(
+        '/sonar/questArchetypeSuggestionJobs/generatePreset',
+        {
+          count: requestedCount,
+          zoneKind: presetZoneKindHint,
+          themePrompt: form.themePrompt.trim(),
+          familyTags: parseTags(form.familyTagsText),
+          familyMixTargets: buildFamilyMixTargetsPayload(form.familyMixTargets),
+          characterTags: parseTags(form.characterTagsText),
+          internalTags: parseTags(form.internalTagsText),
+          requiredLocationArchetypeIds: form.requiredLocationArchetypeIds,
+          requiredLocationMetadataTags: parseTags(
+            form.requiredLocationMetadataTagsText
+          ),
+        }
+      );
+      const nextForm = buildGeneratorFormFromPreset(
+        preset,
+        requestedCount,
+        presetZoneKindHint,
+        form.yeetIt
+      );
+      setForm(nextForm);
+      setPresetZoneKind(nextForm.zoneKind);
+      setPresetStatusMessage('Loaded an LLM-generated preset.');
+    } catch (error) {
+      console.error('Failed to generate quest archetype preset', error);
+      const fallbackForm = buildRandomPresetForm(
+          zoneKinds as QuestPresetZoneKind[],
+          locationArchetypes as QuestPresetLocationArchetype[],
+          {
+            preferredCount: requestedCount,
+            preferredZoneKind: presetZoneKindHint,
+            yeetIt: form.yeetIt,
+          }
+        );
+      setForm(fallbackForm);
+      setPresetZoneKind(fallbackForm.zoneKind);
+      setPresetStatusMessage(
+        'LLM preset generation was unavailable, so a local fallback preset was loaded.'
+      );
+    } finally {
+      setGeneratingPreset(false);
+    }
+  };
+
+  const handleQueuePresetJobsForZoneKinds = async () => {
+    if (presetQueueZoneKinds.length === 0) {
+      return;
+    }
+    setQueueingPresetZoneKinds(true);
+    setJobActionError(null);
+    setPresetStatusMessage(null);
+
+    const createdJobs: QuestArchetypeSuggestionJob[] = [];
+    const fallbackZoneKinds: string[] = [];
+    const failedZoneKinds: string[] = [];
+
+    for (const zoneKindSlug of presetQueueZoneKinds) {
+      let queuedForm: GeneratorFormState;
+      try {
+        const preset = await apiClient.post<QuestArchetypeSuggestionPreset>(
+          '/sonar/questArchetypeSuggestionJobs/generatePreset',
+          {
+            ...buildQuestArchetypeSuggestionJobPayload(form),
+            count: requestedBatchCount,
+            zoneKind: zoneKindSlug,
+          }
+        );
+        queuedForm = buildGeneratorFormFromPreset(
+          preset,
+          requestedBatchCount,
+          zoneKindSlug,
+          form.yeetIt
+        );
+      } catch (error) {
+        console.error(
+          `Failed to generate LLM preset for zone kind ${zoneKindSlug}`,
+          error
+        );
+        queuedForm = buildRandomPresetForm(
+          zoneKinds as QuestPresetZoneKind[],
+          locationArchetypes as QuestPresetLocationArchetype[],
+          {
+            preferredCount: requestedBatchCount,
+            preferredZoneKind: zoneKindSlug,
+            yeetIt: form.yeetIt,
+          }
+        );
+        fallbackZoneKinds.push(zoneKindLabel(zoneKindSlug, zoneKindBySlug));
+      }
+
+      try {
+        const created = await apiClient.post<QuestArchetypeSuggestionJob>(
+          '/sonar/questArchetypeSuggestionJobs',
+          buildQuestArchetypeSuggestionJobPayload(queuedForm)
+        );
+        createdJobs.push(created);
+      } catch (error) {
+        console.error(
+          `Failed to queue preset quest archetype suggestion job for ${zoneKindSlug}`,
+          error
+        );
+        failedZoneKinds.push(zoneKindLabel(zoneKindSlug, zoneKindBySlug));
+      }
+    }
+
+    if (createdJobs.length > 0) {
+      const newestFirst = [...createdJobs].reverse();
+      setJobs((current) => [
+        ...newestFirst,
+        ...current.filter(
+          (job) => !createdJobs.some((created) => created.id === job.id)
+        ),
+      ]);
+      setSelectedJobId(newestFirst[0].id);
+      setDrafts([]);
+    }
+
+    if (failedZoneKinds.length > 0 && createdJobs.length === 0) {
+      setJobActionError(
+        `Failed to queue preset jobs for ${failedZoneKinds.join(', ')}.`
+      );
+    } else {
+      const messageParts = [
+        `Queued ${createdJobs.length} preset ${form.yeetIt ? 'yeet' : 'draft'} job${
+          createdJobs.length === 1 ? '' : 's'
+        }.`,
+      ];
+      if (fallbackZoneKinds.length > 0) {
+        messageParts.push(
+          `Local fallback presets were used for ${fallbackZoneKinds.join(', ')}.`
+        );
+      }
+      if (failedZoneKinds.length > 0) {
+        messageParts.push(
+          `Queueing still failed for ${failedZoneKinds.join(', ')}.`
+        );
+      }
+      setPresetStatusMessage(messageParts.join(' '));
+    }
+
+    setQueueingPresetZoneKinds(false);
+  };
+
   return (
     <div className="qa-theme">
       <div className="qa-shell">
@@ -408,8 +954,9 @@ export const QuestArchetypeGenerator = () => {
           <div className="qa-panel">
             <div className="qa-card-title">Queue Suggestion Job</div>
             <p className="qa-muted" style={{ marginTop: 8 }}>
-              Use this to generate reusable draft bundles with explicit node
-              content, location metadata tags, and suggested template copy.
+              Use this to generate reusable quest archetype bundles with
+              explicit node content, location metadata tags, and suggested
+              template copy.
             </p>
             <div className="qa-form-grid" style={{ marginTop: 18 }}>
               <div className="qa-field">
@@ -448,6 +995,36 @@ export const QuestArchetypeGenerator = () => {
                   ))}
                 </select>
               </div>
+              <label
+                className="qa-field"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  justifyContent: 'flex-start',
+                  paddingTop: 30,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.yeetIt}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      yeetIt: event.target.checked,
+                    }))
+                  }
+                />
+                <div>
+                  <div className="qa-label" style={{ marginBottom: 0 }}>
+                    Yeet it
+                  </div>
+                  <div className="qa-muted" style={{ marginTop: 4 }}>
+                    Auto-convert generated drafts into live quest archetypes
+                    when the job completes.
+                  </div>
+                </div>
+              </label>
               <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
                 <div className="qa-label">Theme Prompt</div>
                 <textarea
@@ -561,13 +1138,37 @@ export const QuestArchetypeGenerator = () => {
                 />
               </div>
               <div className="qa-field" style={{ gridColumn: '1 / -1' }}>
-                <div className="qa-label">Required Location Archetypes</div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                >
+                  <div className="qa-label">Required Location Archetypes</div>
+                  {form.requiredLocationArchetypeIds.length > 0 && (
+                    <button
+                      type="button"
+                      className="qa-button secondary"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          requiredLocationArchetypeIds: [],
+                        }))
+                      }
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
                 <div
                   className="qa-muted"
                   style={{ marginTop: 6, marginBottom: 10 }}
                 >
-                  Every generated draft should include each checked archetype at
-                  least once.
+                  Leave everything unchecked to allow flexible routing. If you
+                  check archetypes here, every generated draft should include
+                  each one at least once.
                 </div>
                 <div
                   className="qa-tree"
@@ -643,7 +1244,37 @@ export const QuestArchetypeGenerator = () => {
               </div>
             </div>
 
-            <div className="qa-actions" style={{ marginTop: 18 }}>
+            <div
+              className="qa-form-grid"
+              style={{
+                marginTop: 18,
+                gridTemplateColumns: 'minmax(0, 260px) auto auto auto',
+                alignItems: 'end',
+              }}
+            >
+              <label className="qa-field" style={{ marginBottom: 0 }}>
+                <div className="qa-label">Preset Zone Kind</div>
+                <select
+                  className="qa-input"
+                  value={presetZoneKind}
+                  onChange={(event) => setPresetZoneKind(event.target.value)}
+                >
+                  <option value="">Use current form zone kind</option>
+                  {zoneKinds.map((zoneKind) => (
+                    <option key={`preset-zone-kind-${zoneKind.id}`} value={zoneKind.slug}>
+                      {zoneKind.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="qa-btn qa-btn-outline"
+                onClick={() => void handleGeneratePreset()}
+                type="button"
+                disabled={generatingPreset}
+              >
+                {generatingPreset ? 'Generating Preset...' : 'Suggest Preset'}
+              </button>
               <button
                 className="qa-btn qa-btn-primary"
                 onClick={() => void handleQueueJob()}
@@ -653,7 +1284,11 @@ export const QuestArchetypeGenerator = () => {
                     Math.max(1, parseInt(form.count, 10) || 1)
                 }
               >
-                {queueing ? 'Queueing...' : 'Queue Draft Job'}
+                {queueing
+                  ? 'Queueing...'
+                  : form.yeetIt
+                    ? 'Queue Yeet Job'
+                    : 'Queue Draft Job'}
               </button>
               <button
                 className="qa-btn qa-btn-outline"
@@ -663,6 +1298,129 @@ export const QuestArchetypeGenerator = () => {
                 {loadingJobs ? 'Refreshing...' : 'Refresh Jobs'}
               </button>
             </div>
+
+            <div className="qa-field" style={{ marginTop: 18 }}>
+              <div className="qa-label">Preset Queue Zone Kinds</div>
+              <div
+                className="qa-muted"
+                style={{ marginTop: 6, marginBottom: 10 }}
+              >
+                Select multiple zone kinds to generate one preset-backed{' '}
+                {form.yeetIt ? 'yeet' : 'draft'} job per zone kind using the
+                current form as hints.
+              </div>
+              <div
+                className="qa-tree"
+                style={{ maxHeight: 180, overflowY: 'auto', padding: 8 }}
+              >
+                {zoneKinds.length === 0 ? (
+                  <div className="qa-node-card">
+                    <div className="qa-muted">No zone kinds available.</div>
+                  </div>
+                ) : (
+                  zoneKinds.map((zoneKind) => {
+                    const checked = presetQueueZoneKinds.includes(zoneKind.slug);
+                    return (
+                      <label
+                        key={`preset-queue-zone-kind-${zoneKind.id}`}
+                        className="qa-node-card"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) =>
+                            setPresetQueueZoneKinds((current) =>
+                              event.target.checked
+                                ? [...current, zoneKind.slug]
+                                : current.filter((slug) => slug !== zoneKind.slug)
+                            )
+                          }
+                        />
+                        <div>
+                          <div
+                            className="qa-meta"
+                            style={{ fontWeight: 600 }}
+                          >
+                            {zoneKind.name}
+                          </div>
+                          {zoneKind.description ? (
+                            <div
+                              className="qa-muted"
+                              style={{ marginTop: 4 }}
+                            >
+                              {zoneKind.description}
+                            </div>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <div
+                className="qa-actions"
+                style={{ marginTop: 12, alignItems: 'center' }}
+              >
+                <span className="qa-muted">
+                  Selected: {presetQueueZoneKindLabels.join(', ') || 'none'}
+                </span>
+                {presetQueueZoneKinds.length > 0 && (
+                  <button
+                    type="button"
+                    className="qa-button secondary"
+                    onClick={() => setPresetQueueZoneKinds([])}
+                  >
+                    Clear Selection
+                  </button>
+                )}
+                {zoneKinds.length > 0 &&
+                  presetQueueZoneKinds.length !== zoneKinds.length && (
+                    <button
+                      type="button"
+                      className="qa-button secondary"
+                      onClick={() =>
+                        setPresetQueueZoneKinds(zoneKinds.map((zoneKind) => zoneKind.slug))
+                      }
+                    >
+                      Select All
+                    </button>
+                  )}
+                <button
+                  className="qa-btn qa-btn-primary"
+                  type="button"
+                  onClick={() => void handleQueuePresetJobsForZoneKinds()}
+                  disabled={
+                    queueingPresetZoneKinds ||
+                    presetQueueZoneKinds.length === 0 ||
+                    requestedFamilyMixCount > requestedBatchCount
+                  }
+                >
+                  {queueingPresetZoneKinds
+                    ? 'Queueing Preset Jobs...'
+                    : `Queue ${presetQueueZoneKinds.length || ''} Preset ${form.yeetIt ? 'Yeet' : 'Draft'} Job${
+                        presetQueueZoneKinds.length === 1 ? '' : 's'
+                      }`}
+                </button>
+              </div>
+            </div>
+
+            <div className="qa-actions" style={{ marginTop: 18 }}>
+              <span className="qa-muted">
+                Preset batch size follows the current form count.
+              </span>
+            </div>
+
+            {presetStatusMessage && (
+              <div className="qa-chip muted" style={{ marginTop: 14 }}>
+                {presetStatusMessage}
+              </div>
+            )}
 
             {(jobActionError || pageError) && (
               <div className="qa-chip danger" style={{ marginTop: 14 }}>
@@ -716,7 +1474,11 @@ export const QuestArchetypeGenerator = () => {
                       </div>
                     </div>
                     <div className="qa-meta">
-                      Drafts: {job.createdCount}/{job.count}
+                      {job.yeetIt ? 'Live archetypes' : 'Drafts'}:{' '}
+                      {job.createdCount}/{job.count}
+                    </div>
+                    <div className="qa-meta" style={{ marginTop: 8 }}>
+                      Mode: {job.yeetIt ? 'Yeet' : 'Draft'}
                     </div>
                     {job.zoneKind?.trim() && (
                       <div className="qa-meta" style={{ marginTop: 8 }}>
@@ -746,6 +1508,18 @@ export const QuestArchetypeGenerator = () => {
                         {job.themePrompt}
                       </div>
                     )}
+                    {job.errorMessage?.trim() && (
+                      <div
+                        className="qa-chip danger"
+                        style={{
+                          marginTop: 10,
+                          display: 'block',
+                          whiteSpace: 'normal',
+                        }}
+                      >
+                        Failed reason: {job.errorMessage}
+                      </div>
+                    )}
                   </button>
                 ))
               )}
@@ -759,7 +1533,7 @@ export const QuestArchetypeGenerator = () => {
               <div className="qa-card-title">Generated Drafts</div>
               <div className="qa-meta">
                 {selectedJob
-                  ? `Showing drafts for job ${selectedJob.id.slice(0, 8)}...`
+                  ? `Showing ${selectedJob.yeetIt ? 'generated results' : 'drafts'} for job ${selectedJob.id.slice(0, 8)}...`
                   : 'Select a job to inspect its generated drafts.'}
               </div>
             </div>
@@ -776,16 +1550,40 @@ export const QuestArchetypeGenerator = () => {
             </div>
           )}
 
+          {!loadingDrafts && selectedJob?.errorMessage?.trim() && (
+            <div
+              className="qa-chip danger"
+              style={{
+                marginTop: 16,
+                display: 'block',
+                whiteSpace: 'normal',
+              }}
+            >
+              Failed reason: {selectedJob.errorMessage}
+            </div>
+          )}
+
           {!loadingDrafts && selectedJob && drafts.length === 0 && (
             <div className="qa-muted" style={{ marginTop: 16 }}>
               {isPendingStatus(selectedJob.status)
-                ? 'This job is still generating drafts.'
-                : 'No drafts were generated for this job.'}
+                ? selectedJob.yeetIt
+                  ? 'This yeet job is still generating and will auto-convert into live quest archetypes when it finishes.'
+                  : 'This job is still generating drafts.'
+                : selectedJob.yeetIt
+                  ? 'This yeet job did not leave any draft history behind.'
+                  : 'No drafts were generated for this job.'}
             </div>
           )}
 
           {!loadingDrafts && drafts.length > 0 && (
             <div className="qa-tree" style={{ marginTop: 18 }}>
+              {selectedJob?.yeetIt && (
+                <div className="qa-chip success" style={{ marginBottom: 12 }}>
+                  This yeet job auto-converted its generated drafts into live
+                  quest archetypes. The converted records are shown below for
+                  review.
+                </div>
+              )}
               {drafts.map((draft) => {
                 const draftNodes = draftNodesForReview(draft);
                 const failureBranchCount = draftFailureBranchCount(draftNodes);
@@ -946,6 +1744,35 @@ export const QuestArchetypeGenerator = () => {
                                   Beats:{' '}
                                   {(node.scenarioBeats ?? []).join(', ') ||
                                     'none'}
+                                </div>
+                              </div>
+                            )}
+
+                            {node.content === 'exposition' && (
+                              <div style={{ marginTop: 12 }}>
+                                <div className="qa-stat-label">
+                                  Exposition Template Draft
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Title: {node.expositionTitle || 'none'}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Description:{' '}
+                                  {node.expositionDescription || 'none'}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Speaker:{' '}
+                                  {node.expositionSpeakerName || 'none'}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Portrait URL:{' '}
+                                  {node.expositionPortraitUrl || 'none'}
+                                </div>
+                                <div className="qa-meta" style={{ marginTop: 6 }}>
+                                  Dialogue:{' '}
+                                  {(node.expositionDialogue ?? []).length > 0
+                                    ? (node.expositionDialogue ?? []).join(' / ')
+                                    : 'none'}
                                 </div>
                               </div>
                             )}

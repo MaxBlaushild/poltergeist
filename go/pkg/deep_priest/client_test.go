@@ -53,3 +53,25 @@ func TestPetitionTheFountTimeout(t *testing.T) {
 		t.Fatalf("expected timeout error, got: %v", err)
 	}
 }
+
+func TestPetitionTheFountWithTimeoutOverridesDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(35 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"answer":"ok"}`))
+	}))
+	defer server.Close()
+
+	client := &deepPriest{
+		baseURL:       server.URL,
+		consultClient: &http.Client{Timeout: 10 * time.Millisecond},
+	}
+
+	answer, err := client.PetitionTheFountWithTimeout(&Question{Question: "hello"}, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("PetitionTheFountWithTimeout returned error: %v", err)
+	}
+	if answer == nil || answer.Answer != "ok" {
+		t.Fatalf("unexpected answer: %#v", answer)
+	}
+}

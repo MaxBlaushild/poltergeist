@@ -1,6 +1,7 @@
 package processors
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -99,6 +100,276 @@ func TestSanitizeQuestArchetypeSuggestionStepKeepsConcreteChallenge(t *testing.T
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings for concrete challenge, got %v", warnings)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionStepBridgesFantasyLiteralChallengeToReality(t *testing.T) {
+	step, warnings := sanitizeQuestArchetypeSuggestionStep(
+		questArchetypeSuggestionStepPayload{
+			Source:                  "location",
+			Content:                 "challenge",
+			LocationConcept:         "cozy book nook",
+			LocationArchetypeName:   "Cozy Book Nook",
+			LocationMetadataTags:    []string{"scholarly", "mystical", "secretive"},
+			TemplateConcept:         "identify the hidden sigil",
+			ChallengeQuestion:       "Photograph the hidden sigil within the tome.",
+			ChallengeDescription:    "Look for arcane symbols or hidden runes within the tome's pages. Capture a photo of the sigil.",
+			ChallengeSubmissionType: "photo",
+		},
+		map[string]locationArchetypeIndexEntry{
+			"cozy book nook": {Name: "Cozy Book Nook"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+	)
+
+	if step.Content != "challenge" {
+		t.Fatalf("expected fantasy-literal task to remain a challenge, got %q", step.Content)
+	}
+	if step.ChallengeQuestion != "Photograph what looks like a hidden sigil within a book of your choice." {
+		t.Fatalf("expected question to bridge back to a real-world proxy, got %q", step.ChallengeQuestion)
+	}
+	if !strings.Contains(step.ChallengeDescription, "Use something actually present on site") {
+		t.Fatalf("expected description to clarify the real-world stand-in, got %q", step.ChallengeDescription)
+	}
+	if !strings.Contains(step.ChallengeDescription, "could pass for a hidden sigil within a book of your choice") {
+		t.Fatalf("expected description to preserve flavorful target with a proxy, got %q", step.ChallengeDescription)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings for a bridged concrete challenge, got %v", warnings)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionStepExpandsSparseScenarioPrompt(t *testing.T) {
+	step, _ := sanitizeQuestArchetypeSuggestionStep(
+		questArchetypeSuggestionStepPayload{
+			Source:                "location",
+			Content:               "scenario",
+			LocationConcept:       "moonlit observatory",
+			LocationArchetypeName: "Moonlit Observatory",
+			LocationMetadataTags:  []string{"ritual_site", "storm_struck"},
+			TemplateConcept:       "Interrupt the runaway rite before the district tears open",
+			ScenarioPrompt:        "The ritual is underway. How do you stop it?",
+			ScenarioBeats: []string{
+				"Blue fire is crawling up the cracked brass lenses",
+				"Masked chanters are forcing terrified onlookers to keep the circle intact",
+			},
+		},
+		map[string]locationArchetypeIndexEntry{
+			"moonlit observatory": {Name: "Moonlit Observatory"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+	)
+
+	if !strings.Contains(step.ScenarioPrompt, "At the moonlit observatory,") {
+		t.Fatalf("expected expanded prompt to anchor the location, got %q", step.ScenarioPrompt)
+	}
+	if !strings.Contains(step.ScenarioPrompt, "Blue fire is crawling up the cracked brass lenses.") {
+		t.Fatalf("expected expanded prompt to include a vivid beat, got %q", step.ScenarioPrompt)
+	}
+	if !strings.Contains(step.ScenarioPrompt, "How do you stop it?") {
+		t.Fatalf("expected expanded prompt to preserve the player-facing problem, got %q", step.ScenarioPrompt)
+	}
+	if suggestionScenarioSentenceCount(step.ScenarioPrompt) < 3 {
+		t.Fatalf("expected expanded prompt to have multiple scene-setting sentences, got %q", step.ScenarioPrompt)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionStepKeepsDetailedScenarioPrompt(t *testing.T) {
+	original := "At the rooftop shrine, copper bells are screaming in the wind while masked chanters pull sparks out of the wardstones. Every flare is waking more of the district's ghosts, and nearby worshippers are starting to panic. How do you stop it?"
+	step, _ := sanitizeQuestArchetypeSuggestionStep(
+		questArchetypeSuggestionStepPayload{
+			Source:                "location",
+			Content:               "scenario",
+			LocationConcept:       "rooftop shrine",
+			LocationArchetypeName: "Rooftop Shrine",
+			LocationMetadataTags:  []string{"shrine", "storm"},
+			TemplateConcept:       "Break the rooftop rite",
+			ScenarioPrompt:        original,
+			ScenarioBeats: []string{
+				"Copper bells scream in the wind",
+				"Nearby worshippers panic as ghosts stir awake",
+			},
+		},
+		map[string]locationArchetypeIndexEntry{
+			"rooftop shrine": {Name: "Rooftop Shrine"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+	)
+
+	if step.ScenarioPrompt != original {
+		t.Fatalf("expected detailed scenario prompt to remain unchanged, got %q", step.ScenarioPrompt)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionStepBuildsExpositionFromSparseFields(t *testing.T) {
+	locationID := uuid.New()
+	step, warnings := sanitizeQuestArchetypeSuggestionStep(
+		questArchetypeSuggestionStepPayload{
+			Source:                "proximity",
+			Content:               "exposition",
+			LocationConcept:       "cozy book nook",
+			LocationArchetypeName: "Cozy Book Nook",
+			LocationMetadataTags:  []string{"scholarly", "mystical", "secretive"},
+			TemplateConcept:       "read the margin warning",
+			PotentialContent: []string{
+				"charred notes in the margins",
+				"the warning feels freshly relevant",
+			},
+		},
+		map[string]locationArchetypeIndexEntry{
+			"cozy book nook": {ID: locationID, Name: "Cozy Book Nook"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+	)
+
+	if step.Content != "exposition" {
+		t.Fatalf("expected exposition content, got %q", step.Content)
+	}
+	if step.Source != "location" {
+		t.Fatalf("expected exposition step to be coerced to location, got %q", step.Source)
+	}
+	if step.LocationArchetypeID == nil || *step.LocationArchetypeID != locationID {
+		t.Fatalf("expected resolved location archetype id, got %+v", step.LocationArchetypeID)
+	}
+	if step.ExpositionTitle != "Read The Margin Warning" {
+		t.Fatalf("expected generated exposition title, got %q", step.ExpositionTitle)
+	}
+	if !strings.Contains(step.ExpositionDescription, "At the cozy book nook,") {
+		t.Fatalf("expected generated exposition description to anchor the location, got %q", step.ExpositionDescription)
+	}
+	if len(step.ExpositionDialogue) < 2 {
+		t.Fatalf("expected exposition dialogue fallback lines, got %+v", step.ExpositionDialogue)
+	}
+	if strings.TrimSpace(step.ExpositionSpeakerName) == "" {
+		t.Fatalf("expected generated exposition speaker name, got %+v", step)
+	}
+	if step.ExpositionPortraitURL != "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png" {
+		t.Fatalf("expected generated exposition portrait placeholder, got %q", step.ExpositionPortraitURL)
+	}
+	if len(warnings) == 0 {
+		t.Fatalf("expected warnings for sparse exposition fields")
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionDraftExpandsNarrativeFields(t *testing.T) {
+	draft := sanitizeQuestArchetypeSuggestionDraft(
+		questArchetypeSuggestionDraftPayload{
+			Name:               "Observatory Breach",
+			Hook:               "Trouble is brewing.",
+			Description:        "A tense situation unfolds.",
+			WhyThisScales:      "It scales because it can happen anywhere.",
+			AcceptanceDialogue: []string{},
+			Nodes: []questArchetypeSuggestionNodePayload{
+				{
+					NodeKey: "entry",
+					questArchetypeSuggestionStepPayload: questArchetypeSuggestionStepPayload{
+						Source:                "location",
+						Content:               "scenario",
+						LocationConcept:       "moonlit observatory",
+						LocationArchetypeName: "Moonlit Observatory",
+						LocationMetadataTags:  []string{"ritual_site", "storm_struck"},
+						TemplateConcept:       "Interrupt the runaway rite before the district tears open",
+						ScenarioPrompt:        "The ritual is underway. How do you stop it?",
+						ScenarioBeats: []string{
+							"Blue fire is crawling up the cracked brass lenses",
+							"Masked chanters are forcing terrified onlookers to keep the circle intact",
+						},
+						PotentialContent: []string{
+							"The ward-lines are already snapping and spilling sparks into the rain",
+						},
+					},
+					Outcomes: []questArchetypeSuggestionOutcomePayload{
+						{Outcome: "success", NextNodeKey: "aftermath"},
+						{Outcome: "failure", NextNodeKey: "aftermath"},
+					},
+				},
+				{
+					NodeKey: "aftermath",
+					questArchetypeSuggestionStepPayload: questArchetypeSuggestionStepPayload{
+						Source:               "location",
+						Content:              "monster",
+						LocationConcept:      "observatory stairs",
+						LocationMetadataTags: []string{"stairs", "lightning_scars"},
+						TemplateConcept:      "Fight through the thing the rite wakes up",
+					},
+				},
+			},
+		},
+		"city",
+		map[string]locationArchetypeIndexEntry{
+			"moonlit observatory": {Name: "Moonlit Observatory"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+		nil,
+	)
+
+	if !strings.Contains(draft.Description, "At the moonlit observatory,") {
+		t.Fatalf("expected description to anchor the scene, got %q", draft.Description)
+	}
+	if !strings.Contains(draft.Description, "Blue fire is crawling up the cracked brass lenses.") {
+		t.Fatalf("expected description to include vivid detail, got %q", draft.Description)
+	}
+	if draft.Hook != suggestionFirstSentence(draft.Description) {
+		t.Fatalf("expected hook to align with the opening narrative beat, got %q / %q", draft.Hook, draft.Description)
+	}
+	if len(draft.AcceptanceDialogue) < 3 {
+		t.Fatalf("expected acceptance dialogue to be synthesized, got %v", draft.AcceptanceDialogue)
+	}
+	if !strings.Contains(strings.ToLower(draft.AcceptanceDialogue[0]), "moonlit observatory") {
+		t.Fatalf("expected acceptance dialogue to carry scene context, got %v", draft.AcceptanceDialogue)
+	}
+	if !strings.Contains(draft.WhyThisScales, "This premise scales cleanly because") {
+		t.Fatalf("expected synthesized scaling explanation, got %q", draft.WhyThisScales)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionDraftKeepsDetailedNarrativeFields(t *testing.T) {
+	description := "At the floodlit market gate, rain hisses off fresh ward-paint while rival couriers argue over a package neither side trusts. Onlookers are starting to choose sides, and every raised voice is drawing more attention to the contraband in plain sight. If nobody cuts through the panic, the whole handoff is going to collapse into a public scandal."
+	hook := "At the floodlit market gate, rain hisses off fresh ward-paint while rival couriers argue over a package neither side trusts."
+	whyThisScales := "This premise scales cleanly because the same kind of public handoff can erupt at markets, checkpoints, or transit hubs, while the social pressure and factional consequences can widen as the stakes rise."
+	dialogue := []string{
+		"At the floodlit market gate, rain is hissing off fresh ward-paint while two courier crews tear into each other over a package neither side trusts.",
+		"People are already choosing sides, and if this turns public we lose the package and the route behind it.",
+		"Get in there, calm it down, and make sure the handoff doesn't become a spectacle.",
+	}
+	draft := sanitizeQuestArchetypeSuggestionDraft(
+		questArchetypeSuggestionDraftPayload{
+			Name:               "Floodlit Handoff",
+			Hook:               hook,
+			Description:        description,
+			WhyThisScales:      whyThisScales,
+			AcceptanceDialogue: dialogue,
+			Steps: []questArchetypeSuggestionStepPayload{
+				{
+					Source:                "location",
+					Content:               "scenario",
+					LocationConcept:       "floodlit market gate",
+					LocationArchetypeName: "Floodlit Market Gate",
+					LocationMetadataTags:  []string{"market", "checkpoint"},
+					TemplateConcept:       "Keep the handoff from becoming a scandal",
+					ScenarioPrompt:        description,
+				},
+			},
+		},
+		"city",
+		map[string]locationArchetypeIndexEntry{
+			"floodlit market gate": {Name: "Floodlit Market Gate"},
+		},
+		map[string]monsterTemplateIndexEntry{},
+		nil,
+	)
+
+	if draft.Hook != hook {
+		t.Fatalf("expected detailed hook to be preserved, got %q", draft.Hook)
+	}
+	if draft.Description != description {
+		t.Fatalf("expected detailed description to be preserved, got %q", draft.Description)
+	}
+	if draft.WhyThisScales != whyThisScales {
+		t.Fatalf("expected detailed whyThisScales to be preserved, got %q", draft.WhyThisScales)
+	}
+	if strings.Join(draft.AcceptanceDialogue, " | ") != strings.Join(dialogue, " | ") {
+		t.Fatalf("expected detailed acceptance dialogue to be preserved, got %v", draft.AcceptanceDialogue)
 	}
 }
 
@@ -352,6 +623,58 @@ func TestSanitizeQuestArchetypeSuggestionDraftKeepsTerminalBranchNodeTerminal(t 
 		`node 2: success branch was missing and defaulted to node "fallback"`,
 	) {
 		t.Fatalf("did not expect synthetic branch merge warning, got %v", draft.Warnings)
+	}
+}
+
+func TestSelectQuestArchetypeSuggestionLocationArchetypesForPromptKeepsRequiredUnderCap(t *testing.T) {
+	requiredID := uuid.New()
+	otherAID := uuid.New()
+	otherBID := uuid.New()
+
+	selected := selectQuestArchetypeSuggestionLocationArchetypesForPrompt(
+		[]*models.LocationArchetype{
+			{ID: otherBID, Name: "Zoo"},
+			{ID: requiredID, Name: "Arcade"},
+			{ID: otherAID, Name: "Bakery"},
+		},
+		[]string{requiredID.String()},
+		2,
+	)
+
+	if len(selected) != 2 {
+		t.Fatalf("expected 2 selected archetypes, got %d", len(selected))
+	}
+	if selected[0] == nil || selected[0].ID != requiredID {
+		t.Fatalf("expected required archetype to be kept first, got %#v", selected[0])
+	}
+	if selected[1] == nil || selected[1].ID != otherAID {
+		t.Fatalf("expected alphabetical supplemental archetype, got %#v", selected[1])
+	}
+}
+
+func TestSelectQuestArchetypeSuggestionMonsterTemplatesForPromptPrefersZoneMatches(t *testing.T) {
+	selected := selectQuestArchetypeSuggestionMonsterTemplatesForPrompt(
+		[]models.MonsterTemplate{
+			{ID: uuid.New(), Name: "Bridge Wisp", ZoneKind: "", MonsterType: models.MonsterTemplateTypeMonster},
+			{ID: uuid.New(), Name: "City Watcher", ZoneKind: "city", MonsterType: models.MonsterTemplateTypeMonster},
+			{ID: uuid.New(), Name: "Harbor Brute", ZoneKind: "harbor", MonsterType: models.MonsterTemplateTypeMonster},
+			{ID: uuid.New(), Name: "City Tyrant", ZoneKind: "city", MonsterType: models.MonsterTemplateTypeBoss},
+		},
+		"city",
+		3,
+	)
+
+	if len(selected) != 3 {
+		t.Fatalf("expected 3 selected monster templates, got %d", len(selected))
+	}
+	if selected[0].Name != "City Watcher" {
+		t.Fatalf("expected city monster match first, got %q", selected[0].Name)
+	}
+	if selected[1].Name != "City Tyrant" {
+		t.Fatalf("expected city boss match second, got %q", selected[1].Name)
+	}
+	if selected[2].Name != "Bridge Wisp" {
+		t.Fatalf("expected generic monster before unrelated zone, got %q", selected[2].Name)
 	}
 }
 
