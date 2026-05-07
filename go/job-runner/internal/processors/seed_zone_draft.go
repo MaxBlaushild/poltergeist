@@ -120,17 +120,6 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	}
 
 	characters := []models.ZoneSeedCharacterDraft{}
-	if len(places) > 0 {
-		characters = p.generateCharacters(*zone, branding, places)
-	}
-	shopkeeperItemTags := normalizeZoneSeedShopkeeperItemTags(job.ShopkeeperItemTags)
-	if len(shopkeeperItemTags) > 0 {
-		characters = append(characters, generateZoneSeedShopkeepers(*zone, shopkeeperItemTags)...)
-	}
-
-	quests := []models.ZoneSeedQuestDraft{}
-	mainQuests := []models.ZoneSeedMainQuestDraft{}
-
 	poiDrafts := make([]models.ZoneSeedPointOfInterestDraft, 0, len(places))
 	for _, place := range places {
 		poiDrafts = append(poiDrafts, models.ZoneSeedPointOfInterestDraft{
@@ -146,12 +135,36 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 			EditorialSummary: place.EditorialSummary.Text,
 		})
 	}
+	if len(places) > 0 {
+		characters = p.generateCharacters(*zone, branding, places)
+	}
+	shopkeeperItemTags := normalizeZoneSeedShopkeeperItemTags(job.ShopkeeperItemTags)
+	if len(shopkeeperItemTags) > 0 {
+		characters = append(characters, generateZoneSeedShopkeepers(*zone, shopkeeperItemTags)...)
+	}
+	effectiveZoneKind := strings.TrimSpace(job.ZoneKind)
+	if effectiveZoneKind == "" {
+		effectiveZoneKind = strings.TrimSpace(zone.Kind)
+	}
+	expositions := generateZoneSeedExpositions(
+		job.ID,
+		*zone,
+		branding,
+		effectiveZoneKind,
+		poiDrafts,
+		characters,
+		job.ExpositionCount,
+	)
+
+	quests := []models.ZoneSeedQuestDraft{}
+	mainQuests := []models.ZoneSeedMainQuestDraft{}
 
 	job.Draft = models.ZoneSeedDraft{
 		FantasyName:      branding.FantasyName,
 		ZoneDescription:  branding.ZoneDescription,
 		PointsOfInterest: poiDrafts,
 		Characters:       characters,
+		Expositions:      expositions,
 		Quests:           quests,
 		MainQuests:       mainQuests,
 	}
@@ -749,6 +762,377 @@ func generateZoneSeedShopkeeperName(tag string, zoneName string, used map[string
 	fallback := "Avery Merchant"
 	used[fallback] = struct{}{}
 	return fallback
+}
+
+type zoneSeedExpositionTheme struct {
+	titleObject string
+	subject     string
+	twist       string
+	meetingSpot string
+}
+
+func generateZoneSeedExpositions(
+	jobID uuid.UUID,
+	zone models.Zone,
+	branding *zoneBrandingResponse,
+	zoneKind string,
+	pois []models.ZoneSeedPointOfInterestDraft,
+	characters []models.ZoneSeedCharacterDraft,
+	count int,
+) []models.ZoneSeedExpositionDraft {
+	if count <= 0 {
+		return nil
+	}
+
+	results := make([]models.ZoneSeedExpositionDraft, 0, count)
+	for index := 0; index < count; index++ {
+		hash := stableZoneSeedDraftHash(
+			fmt.Sprintf("%s|%s|%s|%d", jobID.String(), zone.ID.String(), zoneKind, index),
+		)
+		var poi *models.ZoneSeedPointOfInterestDraft
+		if len(pois) > 0 {
+			poi = &pois[hash%len(pois)]
+		}
+		results = append(
+			results,
+			buildZoneSeedExpositionDraft(hash, zone, branding, zoneKind, poi, characters),
+		)
+	}
+	return results
+}
+
+func buildZoneSeedExpositionDraft(
+	hash int,
+	zone models.Zone,
+	branding *zoneBrandingResponse,
+	zoneKind string,
+	poi *models.ZoneSeedPointOfInterestDraft,
+	characters []models.ZoneSeedCharacterDraft,
+) models.ZoneSeedExpositionDraft {
+	themes := zoneSeedExpositionThemes()
+	theme := themes[hash%len(themes)]
+	districtLabel := zoneSeedExpositionDistrictLabel(branding, zone)
+	placeLabel := zoneSeedExpositionPlaceLabel(poi)
+	flavorDeadline := zoneSeedExpositionFlavorDeadline(zoneKind)
+	speakerOne, speakerTwo := zoneSeedExpositionSpeakerNames(hash, poi, characters)
+	latitude, longitude := zoneSeedExpositionCoordinates(zone, poi)
+	dialogue := sanitizeZoneSeedExpositionDialogue(models.DialogueSequence{
+		{
+			Speaker:     "character",
+			SpeakerName: speakerOne,
+			Text: fmt.Sprintf(
+				"Keep your voice down. If %s slips any farther, the whole district will start naming names.",
+				theme.subject,
+			),
+		},
+		{
+			Speaker:     "character",
+			SpeakerName: speakerTwo,
+			Text:        fmt.Sprintf("It already would, if they knew %s.", theme.twist),
+		},
+		{
+			Speaker:     "character",
+			SpeakerName: speakerOne,
+			Text: fmt.Sprintf(
+				"Then meet me %s before %s and bring only what you can hide under a cloak.",
+				theme.meetingSpot,
+				flavorDeadline,
+			),
+		},
+		{
+			Speaker:     "character",
+			SpeakerName: speakerTwo,
+			Text: fmt.Sprintf(
+				"And if the %s is gone when I arrive?",
+				strings.ToLower(theme.titleObject),
+			),
+		},
+	})
+
+	draft := models.ZoneSeedExpositionDraft{
+		DraftID: uuid.New(),
+		Title:   zoneSeedExpositionTitle(hash, theme),
+		Description: truncate(
+			fmt.Sprintf(
+				"Near %s, a hushed exchange hints that %s in %s.",
+				placeLabel,
+				theme.subject,
+				districtLabel,
+			),
+			220,
+		),
+		Dialogue: dialogue,
+	}
+	if poi != nil {
+		draft.PlaceID = strings.TrimSpace(poi.PlaceID)
+	}
+	if latitude != 0 || longitude != 0 {
+		draft.Latitude = float64Ptr(latitude)
+		draft.Longitude = float64Ptr(longitude)
+	}
+	return draft
+}
+
+func zoneSeedExpositionThemes() []zoneSeedExpositionTheme {
+	return []zoneSeedExpositionTheme{
+		{
+			titleObject: "Lantern Ledger",
+			subject:     "a missing ledger has already crossed too many hands",
+			twist:       "the watch captain was paid to lose the original",
+			meetingSpot: "by the shuttered stair",
+		},
+		{
+			titleObject: "Second Key",
+			subject:     "someone found the second key before the rightful heir did",
+			twist:       "the lock it opens was moved three streets ago",
+			meetingSpot: "under the oldest arch",
+		},
+		{
+			titleObject: "Quiet Procession",
+			subject:     "tonight's procession is missing one of its torchbearers",
+			twist:       "the replacement does not know the oath",
+			meetingSpot: "beside the back lanterns",
+		},
+		{
+			titleObject: "Borrowed Relic",
+			subject:     "a borrowed relic is still out in the district",
+			twist:       "the lender never meant to see it returned",
+			meetingSpot: "where the alley bends",
+		},
+		{
+			titleObject: "Late Courier",
+			subject:     "the courier should have arrived before sunset",
+			twist:       "someone else intercepted the route markers",
+			meetingSpot: "at the rain barrel door",
+		},
+		{
+			titleObject: "Smuggler's Map",
+			subject:     "a smuggler's map keeps changing owners by candlelight",
+			twist:       "half of it is written in a dead neighborhood code",
+			meetingSpot: "behind the closed shutters",
+		},
+		{
+			titleObject: "Festival Debt",
+			subject:     "an old festival debt is coming due tonight",
+			twist:       "the debtor already promised the same coin twice",
+			meetingSpot: "beneath the hanging banners",
+		},
+		{
+			titleObject: "Hidden Guest",
+			subject:     "an important guest was moved without the gatekeepers noticing",
+			twist:       "the decoy stayed behind on purpose",
+			meetingSpot: "near the service door",
+		},
+		{
+			titleObject: "Moon-Salt Crate",
+			subject:     "a moon-salt crate vanished before inventory was called",
+			twist:       "the tally marks were forged a week ago",
+			meetingSpot: "by the stacked pallets",
+		},
+		{
+			titleObject: "Broken Oath",
+			subject:     "someone broke an oath and the district has not noticed yet",
+			twist:       "the witness is still deciding who deserves to know",
+			meetingSpot: "at the unlit side gate",
+		},
+	}
+}
+
+func zoneSeedExpositionTitle(hash int, theme zoneSeedExpositionTheme) string {
+	prefixes := []string{
+		"Whispers of the",
+		"The",
+		"After the",
+		"Rumor of the",
+		"Under the",
+	}
+	prefix := prefixes[hash%len(prefixes)]
+	object := strings.TrimSpace(theme.titleObject)
+	if object == "" {
+		object = "Quiet Matter"
+	}
+	return fmt.Sprintf("%s %s", prefix, object)
+}
+
+func zoneSeedExpositionDistrictLabel(branding *zoneBrandingResponse, zone models.Zone) string {
+	if branding != nil && strings.TrimSpace(branding.FantasyName) != "" {
+		return strings.TrimSpace(branding.FantasyName)
+	}
+	if strings.TrimSpace(zone.Name) != "" {
+		return strings.TrimSpace(zone.Name)
+	}
+	return "the district"
+}
+
+func zoneSeedExpositionPlaceLabel(poi *models.ZoneSeedPointOfInterestDraft) string {
+	if poi == nil {
+		return "the edge of the district"
+	}
+	types := strings.Join(poi.Types, ",")
+	switch {
+	case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"):
+		return "the coffeehouse tables"
+	case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+		return "the tavern corner"
+	case strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+		return "the dining room hush"
+	case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
+		return "the park path"
+	case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
+		return "the quiet stacks"
+	case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+		return "the market row"
+	case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+		return "the waterfront rail"
+	default:
+		return "the local landmark"
+	}
+}
+
+func zoneSeedExpositionFlavorDeadline(zoneKind string) string {
+	switch models.NormalizeZoneKind(zoneKind) {
+	case "city", "industrial", "academy":
+		return "the ward bells ring"
+	case "forest", "jungle":
+		return "the canopy goes black"
+	case "swamp":
+		return "the marsh fog swallows the boardwalk"
+	case "coast", "port", "riverlands", "tidal-flats", "reef":
+		return "the tide turns"
+	case "mountain", "highlands", "badlands", "desert", "tundra":
+		return "the wind changes"
+	case "graveyard", "ruins", "sunken-ruins", "temple-grounds":
+		return "the candles burn low"
+	case "volcanic", "cave":
+		return "the heat shifts"
+	default:
+		return "moonrise"
+	}
+}
+
+func zoneSeedExpositionSpeakerNames(
+	hash int,
+	poi *models.ZoneSeedPointOfInterestDraft,
+	characters []models.ZoneSeedCharacterDraft,
+) (string, string) {
+	placeID := ""
+	if poi != nil {
+		placeID = strings.TrimSpace(poi.PlaceID)
+	}
+	matchingNames := make([]string, 0, 2)
+	allNames := make([]string, 0, len(characters))
+	for _, character := range characters {
+		name := strings.TrimSpace(character.Name)
+		if name == "" {
+			continue
+		}
+		allNames = append(allNames, name)
+		if placeID != "" && strings.TrimSpace(character.PlaceID) == placeID {
+			matchingNames = append(matchingNames, name)
+		}
+	}
+	roleChoices := zoneSeedExpositionRoleChoices(poi)
+	speakerOne := ""
+	speakerTwo := ""
+	if len(matchingNames) > 0 {
+		speakerOne = matchingNames[hash%len(matchingNames)]
+	}
+	if speakerOne == "" && len(allNames) > 0 {
+		speakerOne = allNames[hash%len(allNames)]
+	}
+	if speakerOne == "" {
+		speakerOne = roleChoices[hash%len(roleChoices)]
+	}
+	if len(matchingNames) > 1 {
+		speakerTwo = matchingNames[(hash/7+1)%len(matchingNames)]
+	}
+	if speakerTwo == "" {
+		speakerTwo = roleChoices[(hash/5+1)%len(roleChoices)]
+	}
+	if strings.EqualFold(speakerOne, speakerTwo) {
+		speakerTwo = roleChoices[(hash/3+2)%len(roleChoices)]
+	}
+	return speakerOne, speakerTwo
+}
+
+func zoneSeedExpositionRoleChoices(poi *models.ZoneSeedPointOfInterestDraft) []string {
+	if poi == nil {
+		return []string{"Local", "Courier", "Night Watcher", "Vendor"}
+	}
+	types := strings.Join(poi.Types, ",")
+	switch {
+	case strings.Contains(types, "cafe"), strings.Contains(types, "coffee"), strings.Contains(types, "restaurant"), strings.Contains(types, "bakery"):
+		return []string{"Server", "Cook", "Regular", "Courier"}
+	case strings.Contains(types, "bar"), strings.Contains(types, "night_club"):
+		return []string{"Barkeep", "Singer", "Patron", "Door Warden"}
+	case strings.Contains(types, "park"), strings.Contains(types, "garden"), strings.Contains(types, "trail"):
+		return []string{"Groundskeeper", "Runner", "Gardener", "Scout"}
+	case strings.Contains(types, "museum"), strings.Contains(types, "gallery"), strings.Contains(types, "library"), strings.Contains(types, "book_store"):
+		return []string{"Archivist", "Researcher", "Caretaker", "Copyist"}
+	case strings.Contains(types, "market"), strings.Contains(types, "store"), strings.Contains(types, "shopping"):
+		return []string{"Vendor", "Factor", "Messenger", "Cashier"}
+	case strings.Contains(types, "beach"), strings.Contains(types, "water"), strings.Contains(types, "marina"):
+		return []string{"Dockhand", "Fisher", "Ferryman", "Lookout"}
+	default:
+		return []string{"Local", "Courier", "Watcher", "Traveler"}
+	}
+}
+
+func zoneSeedExpositionCoordinates(
+	zone models.Zone,
+	poi *models.ZoneSeedPointOfInterestDraft,
+) (float64, float64) {
+	if poi != nil &&
+		poi.Latitude >= -90 &&
+		poi.Latitude <= 90 &&
+		poi.Longitude >= -180 &&
+		poi.Longitude <= 180 {
+		return poi.Latitude, poi.Longitude
+	}
+	point := zone.GetRandomPoint()
+	if (point.Y() != 0 || point.X() != 0) &&
+		point.Y() >= -90 &&
+		point.Y() <= 90 &&
+		point.X() >= -180 &&
+		point.X() <= 180 {
+		return point.Y(), point.X()
+	}
+	return zone.Latitude, zone.Longitude
+}
+
+func sanitizeZoneSeedExpositionDialogue(lines models.DialogueSequence) models.DialogueSequence {
+	seen := map[string]struct{}{}
+	sanitized := make(models.DialogueSequence, 0, 4)
+	for _, raw := range lines {
+		speakerName := strings.TrimSpace(raw.SpeakerName)
+		text := strings.TrimSpace(strings.ReplaceAll(raw.Text, "\n", " "))
+		if speakerName == "" || text == "" {
+			continue
+		}
+		if len(text) > 180 {
+			text = strings.TrimSpace(text[:180])
+		}
+		key := strings.ToLower(speakerName + "|" + text)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		sanitized = append(sanitized, models.DialogueMessage{
+			Speaker:     "character",
+			SpeakerName: speakerName,
+			Text:        text,
+			Order:       len(sanitized),
+			Effect:      models.NormalizeDialogueEffect(string(raw.Effect)),
+			PortraitURL: strings.TrimSpace(raw.PortraitURL),
+		})
+		if len(sanitized) >= 4 {
+			break
+		}
+	}
+	if sanitized == nil {
+		return models.DialogueSequence{}
+	}
+	return sanitized
 }
 
 func (p *SeedZoneDraftProcessor) requestCharacterDrafts(

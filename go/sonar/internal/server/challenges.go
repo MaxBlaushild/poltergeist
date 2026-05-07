@@ -260,6 +260,24 @@ func (s *server) getAdminChallenges(ctx *gin.Context) {
 	})
 }
 
+func (s *server) getAdminChallengeDashboard(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	summary, err := s.dbClient.Challenge().SummarizeAdmin(ctx, db.ChallengeAdminListParams{
+		Query:     ctx.Query("query"),
+		ZoneQuery: ctx.Query("zoneQuery"),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, summary)
+}
+
 func (s *server) getChallenge(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {

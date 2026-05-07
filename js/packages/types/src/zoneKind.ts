@@ -18,6 +18,7 @@ export type ZoneKind = {
   raidEncounterCountRatio: number;
   inputEncounterCountRatio: number;
   optionEncounterCountRatio: number;
+  expositionCountRatio: number;
   treasureChestCountRatio: number;
   healingFountainCountRatio: number;
   shrineCountRatio: number;

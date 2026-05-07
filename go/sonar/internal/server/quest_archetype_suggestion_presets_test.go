@@ -188,3 +188,58 @@ func TestSanitizeQuestArchetypeSuggestionPresetResponseAllowsNoRequiredLocationA
 		t.Fatalf("expected no required location archetypes, got %#v", preset.RequiredLocationArchetypeIDs)
 	}
 }
+
+func TestSanitizeQuestArchetypeSuggestionPresetResponseBuildsZoneAwareFamilyMixFallback(t *testing.T) {
+	s := &server{}
+
+	preset, err := s.sanitizeQuestArchetypeSuggestionPresetResponse(
+		context.Background(),
+		questArchetypeSuggestionPresetLLMResponse{},
+		questArchetypeSuggestionPresetPayload{
+			Count:    2,
+			ZoneKind: "Academy",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if preset.FamilyMixTargets["omen_chasing"] != 1 {
+		t.Fatalf("expected academy fallback to include omen_chasing, got %#v", preset.FamilyMixTargets)
+	}
+	if preset.FamilyMixTargets["ritual_interruption"] != 1 {
+		t.Fatalf("expected academy fallback to include ritual_interruption, got %#v", preset.FamilyMixTargets)
+	}
+	if preset.FamilyMixTargets["investigation"] != 0 {
+		t.Fatalf("expected academy fallback not to collapse into investigation, got %#v", preset.FamilyMixTargets)
+	}
+}
+
+func TestSanitizeQuestArchetypeSuggestionPresetResponseRebalancesGenericInvestigationMixForZoneFlavor(t *testing.T) {
+	s := &server{}
+
+	preset, err := s.sanitizeQuestArchetypeSuggestionPresetResponse(
+		context.Background(),
+		questArchetypeSuggestionPresetLLMResponse{
+			Count:    2,
+			ZoneKind: "Harbor District",
+			FamilyMixTargets: map[string]int{
+				"investigation": 2,
+			},
+		},
+		questArchetypeSuggestionPresetPayload{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if preset.FamilyMixTargets["delivery"] != 1 {
+		t.Fatalf("expected harbor zone kind to rebalance toward delivery, got %#v", preset.FamilyMixTargets)
+	}
+	if preset.FamilyMixTargets["rescue"] != 1 {
+		t.Fatalf("expected harbor zone kind to rebalance toward rescue, got %#v", preset.FamilyMixTargets)
+	}
+	if preset.FamilyMixTargets["investigation"] != 0 {
+		t.Fatalf("expected generic investigation mix to be replaced for harbor flavor, got %#v", preset.FamilyMixTargets)
+	}
+}

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,124 @@ type challengeHandle struct {
 type challengeAdminListRow struct {
 	ID        uuid.UUID `gorm:"column:id"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+type challengeAdminSummaryRow struct {
+	EffectiveZoneKind  string                         `gorm:"column:effective_zone_kind"`
+	HasPointOfInterest bool                           `gorm:"column:has_point_of_interest"`
+	HasPolygon         bool                           `gorm:"column:has_polygon"`
+	IsRecurring        bool                           `gorm:"column:is_recurring"`
+	SubmissionType     models.QuestNodeSubmissionType `gorm:"column:submission_type"`
+	Difficulty         int                            `gorm:"column:difficulty"`
+	StatTags           models.StringArray             `gorm:"column:stat_tags"`
+}
+
+func challengeDifficultyBandLabel(value int) string {
+	switch {
+	case value <= 2:
+		return "0-2"
+	case value <= 5:
+		return "3-5"
+	case value <= 8:
+		return "6-8"
+	default:
+		return "9+"
+	}
+}
+
+func challengeDashboardBucketsFromCounts(
+	counts map[string]int,
+) []ChallengeAdminDashboardBucket {
+	buckets := make([]ChallengeAdminDashboardBucket, 0, len(counts))
+	for key, count := range counts {
+		buckets = append(buckets, ChallengeAdminDashboardBucket{
+			Key:   key,
+			Count: count,
+		})
+	}
+	sort.Slice(buckets, func(i, j int) bool {
+		if buckets[i].Count != buckets[j].Count {
+			return buckets[i].Count > buckets[j].Count
+		}
+		return buckets[i].Key < buckets[j].Key
+	})
+	return buckets
+}
+
+func summarizeChallengeAdminRows(
+	rows []challengeAdminSummaryRow,
+) *ChallengeAdminDashboardSummary {
+	summary := &ChallengeAdminDashboardSummary{
+		ZoneKindCounts:       []ChallengeAdminDashboardBucket{},
+		SubmissionTypeCounts: []ChallengeAdminDashboardBucket{},
+		DifficultyBandCounts: []ChallengeAdminDashboardBucket{},
+		PlacementCounts:      []ChallengeAdminDashboardBucket{},
+		StatTagCounts:        []ChallengeAdminDashboardBucket{},
+	}
+	zoneKindCounts := make(map[string]int)
+	submissionTypeCounts := make(map[string]int)
+	difficultyBandCounts := make(map[string]int)
+	placementCounts := make(map[string]int)
+	statTagCounts := make(map[string]int)
+
+	for _, row := range rows {
+		summary.TotalChallenges++
+		if row.HasPointOfInterest {
+			summary.PointOfInterestCount++
+		}
+		if row.HasPolygon {
+			summary.PolygonCount++
+		}
+		if row.IsRecurring {
+			summary.RecurringCount++
+		}
+
+		zoneKindCounts[strings.TrimSpace(row.EffectiveZoneKind)]++
+
+		switch row.SubmissionType {
+		case models.QuestNodeSubmissionTypePhoto:
+			submissionTypeCounts["Photo"]++
+		case models.QuestNodeSubmissionTypeText:
+			submissionTypeCounts["Text"]++
+		default:
+			submissionTypeCounts["Video"]++
+		}
+
+		difficultyBandCounts[challengeDifficultyBandLabel(row.Difficulty)]++
+
+		switch {
+		case row.HasPolygon:
+			placementCounts["Polygon area"]++
+		case row.HasPointOfInterest:
+			placementCounts["Point of interest"]++
+		default:
+			placementCounts["Coordinates"]++
+		}
+
+		seenStatTags := make(map[string]struct{})
+		for _, rawTag := range row.StatTags {
+			tag := strings.TrimSpace(rawTag)
+			if tag == "" {
+				continue
+			}
+			if _, exists := seenStatTags[tag]; exists {
+				continue
+			}
+			seenStatTags[tag] = struct{}{}
+			statTagCounts[tag]++
+		}
+	}
+
+	summary.ZoneKindCounts = challengeDashboardBucketsFromCounts(zoneKindCounts)
+	summary.SubmissionTypeCounts = challengeDashboardBucketsFromCounts(
+		submissionTypeCounts,
+	)
+	summary.DifficultyBandCounts = challengeDashboardBucketsFromCounts(
+		difficultyBandCounts,
+	)
+	summary.PlacementCounts = challengeDashboardBucketsFromCounts(placementCounts)
+	summary.StatTagCounts = challengeDashboardBucketsFromCounts(statTagCounts)
+	return summary
 }
 
 func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
@@ -155,6 +274,28 @@ func (h *challengeHandle) ListAdmin(
 	}, nil
 }
 
+func (h *challengeHandle) SummarizeAdmin(
+	ctx context.Context,
+	params ChallengeAdminListParams,
+) (*ChallengeAdminDashboardSummary, error) {
+	rows := []challengeAdminSummaryRow{}
+	if err := h.adminListBaseQuery(ctx, params).
+		Select(`
+			COALESCE(NULLIF(challenges.zone_kind, ''), NULLIF(zones.kind, ''), '') AS effective_zone_kind,
+			CASE WHEN challenges.point_of_interest_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_point_of_interest,
+			CASE WHEN challenges.polygon IS NOT NULL THEN TRUE ELSE FALSE END AS has_polygon,
+			CASE WHEN COALESCE(challenges.recurrence_frequency, '') <> '' THEN TRUE ELSE FALSE END AS is_recurring,
+			challenges.submission_type,
+			challenges.difficulty,
+			COALESCE(challenges.stat_tags, '[]'::jsonb) AS stat_tags
+		`).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return summarizeChallengeAdminRows(rows), nil
+}
+
 func (h *challengeHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error) {
 	var challenges []models.Challenge
 	if err := h.visibleQuery(ctx).
@@ -261,7 +402,7 @@ func (h *challengeHandle) ReplaceItemChoiceRewards(ctx context.Context, challeng
 			reward.ChallengeID = challengeID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}

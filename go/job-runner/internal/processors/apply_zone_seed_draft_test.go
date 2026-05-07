@@ -197,6 +197,110 @@ func TestFallbackZoneSeedReusableChallengeTemplateAvoidsSpecificPOIName(t *testi
 	}
 }
 
+func TestSelectZoneSeedQuestGiverCandidatePrefersRootLocationMatchedDraftCharacter(t *testing.T) {
+	bookshopPOIID := uuid.New()
+	cafePOIID := uuid.New()
+	bookshopPlaceID := "bookshop-place"
+	cafePlaceID := "cafe-place"
+
+	archetype := &models.QuestArchetype{
+		Root: models.QuestArchetypeNode{
+			LocationArchetype: &models.LocationArchetype{
+				Name:          "Bookshop",
+				IncludedTypes: googlemaps.PlaceTypeSlice{googlemaps.TypeBookStore},
+			},
+		},
+	}
+	bookshopCharacter := &models.Character{
+		ID:                uuid.New(),
+		Name:              "Archivist Vale",
+		PointOfInterestID: &bookshopPOIID,
+	}
+	cafeCharacter := &models.Character{
+		ID:                uuid.New(),
+		Name:              "Bramble",
+		PointOfInterestID: &cafePOIID,
+	}
+
+	context := &zoneSeedQuestGiverContext{
+		draftCharacters: []*models.Character{cafeCharacter, bookshopCharacter},
+		pointOfInterestByID: map[uuid.UUID]*models.PointOfInterest{
+			bookshopPOIID: {
+				ID:                  bookshopPOIID,
+				GoogleMapsPlaceID:   &bookshopPlaceID,
+				GoogleMapsPlaceName: nil,
+			},
+			cafePOIID: {
+				ID:                  cafePOIID,
+				GoogleMapsPlaceID:   &cafePlaceID,
+				GoogleMapsPlaceName: nil,
+			},
+		},
+		poiDraftByPlaceID: map[string]*models.ZoneSeedPointOfInterestDraft{
+			bookshopPlaceID: {
+				PlaceID: bookshopPlaceID,
+				Types:   []string{"book_store"},
+			},
+			cafePlaceID: {
+				PlaceID: cafePlaceID,
+				Types:   []string{"cafe"},
+			},
+		},
+		assignments: map[uuid.UUID]int{},
+	}
+
+	selected := selectZoneSeedQuestGiverCandidate(archetype, nil, context, false)
+	if selected == nil || selected.ID != bookshopCharacter.ID {
+		t.Fatalf("expected bookshop-aligned draft character, got %+v", selected)
+	}
+}
+
+func TestSelectZoneSeedQuestGiverCandidateBalancesAssignments(t *testing.T) {
+	first := &models.Character{ID: uuid.New(), Name: "First Draft"}
+	second := &models.Character{ID: uuid.New(), Name: "Second Draft"}
+
+	context := &zoneSeedQuestGiverContext{
+		draftCharacters: []*models.Character{first, second},
+		assignments: map[uuid.UUID]int{
+			first.ID:  2,
+			second.ID: 0,
+		},
+	}
+
+	selected := selectZoneSeedQuestGiverCandidate(&models.QuestArchetype{}, nil, context, false)
+	if selected == nil || selected.ID != second.ID {
+		t.Fatalf("expected lower-assignment draft character, got %+v", selected)
+	}
+}
+
+func TestSelectZoneSeedQuestGiverCandidateRequiresTagMatchWhenRequested(t *testing.T) {
+	matching := &models.Character{
+		ID:           uuid.New(),
+		Name:         "Watch Captain",
+		InternalTags: models.StringArray{"guard", "watch"},
+	}
+	nonMatching := &models.Character{
+		ID:           uuid.New(),
+		Name:         "Tea Seller",
+		InternalTags: models.StringArray{"merchant"},
+	}
+
+	context := &zoneSeedQuestGiverContext{
+		zoneCharacters: []*models.Character{nonMatching, matching},
+		assignments:    map[uuid.UUID]int{},
+	}
+
+	selected := selectZoneSeedQuestGiverCandidate(
+		&models.QuestArchetype{},
+		map[string]struct{}{"guard": {}},
+		context,
+		true,
+	)
+	if selected == nil || selected.ID != matching.ID {
+		t.Fatalf("expected tag-matching quest giver, got %+v", selected)
+	}
+}
+
 func TestZoneSeedBuildResourcePoolsFiltersToEligibleTypes(t *testing.T) {
 	typeIDOne := uuid.New()
 	typeIDTwo := uuid.New()

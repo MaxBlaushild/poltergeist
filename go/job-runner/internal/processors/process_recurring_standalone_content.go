@@ -184,7 +184,11 @@ func (p *ProcessRecurringStandaloneContentProcessor) processScenario(
 	if err := p.dbClient.Scenario().Create(ctx, newScenario); err != nil {
 		return err
 	}
-	if err := p.dbClient.Scenario().ReplaceOptions(ctx, newScenario.ID, scenario.Options); err != nil {
+	if err := p.dbClient.Scenario().ReplaceOptions(
+		ctx,
+		newScenario.ID,
+		stripScenarioOptionItemRewards(scenario.Options),
+	); err != nil {
 		return err
 	}
 	if err := p.dbClient.Scenario().ReplaceItemRewards(ctx, newScenario.ID, scenario.ItemRewards); err != nil {

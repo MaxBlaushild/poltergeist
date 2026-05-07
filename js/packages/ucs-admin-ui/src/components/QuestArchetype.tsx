@@ -4339,6 +4339,10 @@ export const QuestArchetypeComponent = () => {
   );
 
   useEffect(() => {
+    void refreshQuestArchetypes();
+  }, [refreshQuestArchetypes]);
+
+  useEffect(() => {
     if (!deepLinkedArchetypeId) {
       attemptedDeepLinkRefreshIdRef.current = '';
       appliedDeepLinkedArchetypeIdRef.current = '';

@@ -3,6 +3,11 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -184,16 +189,78 @@ type ClientConfig struct {
 	User     string
 	Password string
 	Name     string
+	SslMode  string
+}
+
+const (
+	defaultMaxOpenConns           = 5
+	defaultMaxIdleConns           = 2
+	defaultConnMaxLifetimeMinutes = 30
+	defaultConnMaxIdleTimeMinutes = 10
+)
+
+func resolveSSLMode(cfg ClientConfig) string {
+	if sslMode := strings.TrimSpace(cfg.SslMode); sslMode != "" {
+		return sslMode
+	}
+	if sslMode := strings.TrimSpace(os.Getenv("DB_SSL_MODE")); sslMode != "" {
+		return sslMode
+	}
+
+	switch strings.TrimSpace(strings.ToLower(cfg.Host)) {
+	case "", "localhost", "127.0.0.1", "::1":
+		return "disable"
+	default:
+		return "require"
+	}
+}
+
+func intFromEnv(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		log.Printf("[db] invalid %s=%q; using fallback %d", key, raw, fallback)
+		return fallback
+	}
+
+	return parsed
+}
+
+func durationMinutesFromEnv(key string, fallbackMinutes int) time.Duration {
+	minutes := intFromEnv(key, fallbackMinutes)
+	return time.Duration(minutes) * time.Minute
 }
 
 func NewClient(cfg ClientConfig) (DbClient, error) {
+	sslMode := resolveSSLMode(cfg)
+	maxOpenConns := intFromEnv("DB_MAX_OPEN_CONNS", defaultMaxOpenConns)
+	maxIdleConns := intFromEnv("DB_MAX_IDLE_CONNS", defaultMaxIdleConns)
+	connMaxLifetime := durationMinutesFromEnv("DB_CONN_MAX_LIFETIME_MINUTES", defaultConnMaxLifetimeMinutes)
+	connMaxIdleTime := durationMinutesFromEnv("DB_CONN_MAX_IDLE_TIME_MINUTES", defaultConnMaxIdleTimeMinutes)
+	log.Printf(
+		"[db] opening postgres connection host=%s port=%s db=%s user=%s sslmode=%s max_open=%d max_idle=%d conn_max_lifetime=%s conn_max_idle_time=%s",
+		cfg.Host,
+		cfg.Port,
+		cfg.Name,
+		cfg.User,
+		sslMode,
+		maxOpenConns,
+		maxIdleConns,
+		connMaxLifetime,
+		connMaxIdleTime,
+	)
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s",
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
 		cfg.Host,
 		cfg.User,
 		cfg.Password,
 		cfg.Name,
 		cfg.Port,
+		sslMode,
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
@@ -202,6 +269,15 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
 
 	return &client{
 		db:                                    db,

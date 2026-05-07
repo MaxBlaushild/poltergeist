@@ -10,6 +10,7 @@ import {
   Candidate,
   Character,
   CharacterLocation,
+  Quest,
   Resource,
   TreasureChest,
   ZoneGenre,
@@ -138,6 +139,7 @@ type ResourceRecord = Resource;
 
 type AdminMapPinKind =
   | 'pointOfInterest'
+  | 'quest'
   | 'character'
   | 'resource'
   | 'treasureChest'
@@ -162,6 +164,7 @@ type AdminMapPin = {
 
 const pinDeleteLabelByKind: Record<AdminMapPinKind, string> = {
   pointOfInterest: 'point of interest',
+  quest: 'quest',
   character: 'character',
   resource: 'resource node',
   treasureChest: 'treasure chest',
@@ -206,6 +209,13 @@ const markerStyleByKind: Record<
     shortLabel: 'POI',
     fullLabel: 'Point of Interest',
     fallbackImage: poiMysteryImageUrl,
+  },
+  quest: {
+    ring: '#4338ca',
+    badge: '#312e81',
+    shortLabel: 'QU',
+    fullLabel: 'Quest',
+    fallbackImage: scenarioMysteryImageUrl,
   },
   character: {
     ring: '#ec4899',
@@ -866,6 +876,7 @@ export const Zone = () => {
   const { pointsOfInterest, loading, error, refreshPointsOfInterest } =
     useZonePointsOfInterest(resolvedZoneId);
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [quests, setQuests] = useState<Quest[]>([]);
   const [resources, setResources] = useState<ResourceRecord[]>([]);
   const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
   const [healingFountains, setHealingFountains] = useState<
@@ -1049,6 +1060,7 @@ export const Zone = () => {
       try {
         const [
           fetchedCharacters,
+          fetchedQuests,
           fetchedResources,
           fetchedTreasureChests,
           fetchedHealingFountains,
@@ -1059,6 +1071,7 @@ export const Zone = () => {
           fetchedChallenges,
         ] = await Promise.all([
           apiClient.get<Character[]>('/sonar/characters'),
+          apiClient.get<Quest[]>(`/sonar/admin/zones/${resolvedZoneId}/quests`),
           apiClient.get<ResourceRecord[]>(`/sonar/zones/${resolvedZoneId}/resources`),
           apiClient.get<TreasureChest[]>(
             `/sonar/zones/${resolvedZoneId}/treasure-chests`
@@ -1084,6 +1097,7 @@ export const Zone = () => {
           return false;
         }
         setCharacters(fetchedCharacters);
+        setQuests(fetchedQuests);
         setResources(fetchedResources);
         setTreasureChests(fetchedTreasureChests);
         setHealingFountains(fetchedHealingFountains);
@@ -1100,6 +1114,7 @@ export const Zone = () => {
           return false;
         }
         setCharacters([]);
+        setQuests([]);
         setResources([]);
         setTreasureChests([]);
         setHealingFountains([]);
@@ -1389,6 +1404,10 @@ export const Zone = () => {
             return next;
           });
           break;
+        case 'quest':
+          await apiClient.delete(`/sonar/quests/${pin.entityId}`);
+          setQuests((prev) => prev.filter((entry) => entry.id !== pin.entityId));
+          break;
         case 'resource':
           await apiClient.delete(`/sonar/resources/${pin.entityId}`);
           setResources((prev) => prev.filter((entry) => entry.id !== pin.entityId));
@@ -1646,6 +1665,80 @@ export const Zone = () => {
         .filter((point) => !deletedPointOfInterestIds.has(point.id))
         .map((point) => [point.id, point] as const)
     );
+    const characterById = new Map(
+      characters.map((character) => [character.id, character] as const)
+    );
+    const collectQuestNodeCoordinates = (quest: Quest): [number, number][] => {
+      const coordinates: [number, number][] = [];
+      const pushIfValid = (
+        latitude?: number | null,
+        longitude?: number | null
+      ) => {
+        if (!isValidCoordinate(Number(latitude), Number(longitude))) {
+          return;
+        }
+        coordinates.push([Number(longitude), Number(latitude)]);
+      };
+
+      (quest.nodes ?? []).forEach((node) => {
+        pushIfValid(node.challenge?.latitude, node.challenge?.longitude);
+        pushIfValid(node.scenario?.latitude, node.scenario?.longitude);
+        pushIfValid(node.exposition?.latitude, node.exposition?.longitude);
+        pushIfValid(
+          node.monsterEncounter?.latitude,
+          node.monsterEncounter?.longitude
+        );
+        pushIfValid(node.monster?.latitude, node.monster?.longitude);
+      });
+
+      return coordinates;
+    };
+    const averageCoordinates = (
+      coordinates: [number, number][]
+    ): [number, number] | null => {
+      if (coordinates.length === 0) {
+        return null;
+      }
+      if (coordinates.length === 1) {
+        return coordinates[0];
+      }
+      const [sumLongitude, sumLatitude] = coordinates.reduce(
+        (acc, [longitude, latitude]) => [
+          acc[0] + longitude,
+          acc[1] + latitude,
+        ],
+        [0, 0]
+      );
+      return [
+        sumLongitude / coordinates.length,
+        sumLatitude / coordinates.length,
+      ];
+    };
+    const resolveQuestGiverCoordinates = (
+      quest: Quest
+    ): [number, number] | null => {
+      const questGiverCharacterId = quest.questGiverCharacterId?.trim();
+      if (!questGiverCharacterId) {
+        return null;
+      }
+      const character = characterById.get(questGiverCharacterId);
+      if (!character) {
+        return null;
+      }
+      const pointOfInterestId = character.pointOfInterestId?.trim();
+      if (pointOfInterestId) {
+        const point = pointOfInterestById.get(pointOfInterestId);
+        if (point && isValidCoordinate(point.latitude, point.longitude)) {
+          return [point.longitude, point.latitude];
+        }
+      }
+      for (const location of character.locations ?? []) {
+        if (isValidCoordinate(location.latitude, location.longitude)) {
+          return [location.longitude, location.latitude];
+        }
+      }
+      return null;
+    };
 
     const poiPins = pointsOfInterest
       .map((point) => {
@@ -1844,6 +1937,45 @@ export const Zone = () => {
         ),
       }));
 
+    const questPins = quests
+      .map((quest) => {
+        const nodeCoordinates = collectQuestNodeCoordinates(quest);
+        const derivedCoordinates =
+          averageCoordinates(nodeCoordinates) ??
+          resolveQuestGiverCoordinates(quest) ??
+          (zone ? ([zone.longitude, zone.latitude] as [number, number]) : null);
+        if (!derivedCoordinates) {
+          return null;
+        }
+        const [longitude, latitude] = derivedCoordinates;
+        if (!isValidCoordinate(latitude, longitude)) {
+          return null;
+        }
+
+        const questGiver = quest.questGiverCharacterId
+          ? characterById.get(quest.questGiverCharacterId)
+          : undefined;
+        const imageUrl =
+          quest.imageUrl?.trim() ||
+          questGiver?.thumbnailUrl?.trim() ||
+          questGiver?.mapIconUrl?.trim() ||
+          markerStyleByKind.quest.fallbackImage;
+
+        return {
+          id: `quest:${quest.id}`,
+          entityId: quest.id,
+          kind: 'quest' as const,
+          name:
+            quest.category === 'main_story'
+              ? `${quest.name || 'Quest'} (Main Story)`
+              : quest.name || 'Quest',
+          coordinates: resolveCoordinates(`quest:${quest.id}`, longitude, latitude),
+          imageUrl,
+          draggable: false,
+        };
+      })
+      .filter((pin): pin is AdminMapPin => pin !== null);
+
     const characterPins = characters.flatMap((character) => {
       const pins: AdminMapPin[] = [];
       const imageUrl =
@@ -1916,6 +2048,7 @@ export const Zone = () => {
 
     return [
       ...poiPins,
+      ...questPins,
       ...characterPins,
       ...resourcePins,
       ...treasureChestPins,
@@ -1927,7 +2060,9 @@ export const Zone = () => {
       ...challengePins,
     ];
   }, [
+    zone,
     pointsOfInterest,
+    quests,
     characters,
     resources,
     treasureChests,
@@ -2282,6 +2417,7 @@ export const Zone = () => {
           {(
             [
               ['pointOfInterest', 'POI'],
+              ['quest', 'Quest'],
               ['character', 'Character'],
               ['resource', 'Resource'],
               ['treasureChest', 'Treasure Chest'],

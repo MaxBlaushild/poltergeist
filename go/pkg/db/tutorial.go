@@ -137,7 +137,7 @@ func (h *tutorialHandle) ActivateForUser(
 				reward.ScenarioOptionID = option.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}
@@ -146,7 +146,7 @@ func (h *tutorialHandle) ActivateForUser(
 				reward.ScenarioOptionID = option.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}
@@ -157,7 +157,7 @@ func (h *tutorialHandle) ActivateForUser(
 			reward.ScenarioID = scenario.ID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -166,7 +166,7 @@ func (h *tutorialHandle) ActivateForUser(
 			reward.ScenarioID = scenario.ID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -317,7 +317,7 @@ func (h *tutorialHandle) ActivateMonsterForUser(
 				reward.MonsterID = monster.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}

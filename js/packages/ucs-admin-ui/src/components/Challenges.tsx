@@ -17,12 +17,6 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import ContentDashboard from './ContentDashboard.tsx';
 import {
-  countBy,
-  countManyBy,
-  difficultyBandLabel,
-  useAdminAggregateDataset,
-} from './contentDashboardUtils.ts';
-import {
   useZoneKinds,
   zoneKindDescription,
   zoneKindLabel,
@@ -125,6 +119,83 @@ type PaginatedResponse<T> = {
   page: number;
   pageSize: number;
 };
+
+type DashboardSummaryBucket = {
+  key: string;
+  count: number;
+};
+
+type ChallengeDashboardSummary = {
+  totalChallenges: number;
+  pointOfInterestCount: number;
+  polygonCount: number;
+  recurringCount: number;
+  zoneKindCounts: DashboardSummaryBucket[];
+  submissionTypeCounts: DashboardSummaryBucket[];
+  difficultyBandCounts: DashboardSummaryBucket[];
+  placementCounts: DashboardSummaryBucket[];
+  statTagCounts: DashboardSummaryBucket[];
+};
+
+const emptyChallengeDashboardSummary = (): ChallengeDashboardSummary => ({
+  totalChallenges: 0,
+  pointOfInterestCount: 0,
+  polygonCount: 0,
+  recurringCount: 0,
+  zoneKindCounts: [],
+  submissionTypeCounts: [],
+  difficultyBandCounts: [],
+  placementCounts: [],
+  statTagCounts: [],
+});
+
+const normalizeChallengeDashboardSummary = (
+  value: Partial<ChallengeDashboardSummary> | null | undefined
+): ChallengeDashboardSummary => ({
+  totalChallenges: value?.totalChallenges ?? 0,
+  pointOfInterestCount: value?.pointOfInterestCount ?? 0,
+  polygonCount: value?.polygonCount ?? 0,
+  recurringCount: value?.recurringCount ?? 0,
+  zoneKindCounts: Array.isArray(value?.zoneKindCounts)
+    ? value.zoneKindCounts
+    : [],
+  submissionTypeCounts: Array.isArray(value?.submissionTypeCounts)
+    ? value.submissionTypeCounts
+    : [],
+  difficultyBandCounts: Array.isArray(value?.difficultyBandCounts)
+    ? value.difficultyBandCounts
+    : [],
+  placementCounts: Array.isArray(value?.placementCounts)
+    ? value.placementCounts
+    : [],
+  statTagCounts: Array.isArray(value?.statTagCounts) ? value.statTagCounts : [],
+});
+
+const sortDashboardBuckets = <T extends { label: string; value: number }>(
+  buckets: T[]
+): T[] =>
+  [...buckets].sort((left, right) => {
+    if (right.value !== left.value) {
+      return right.value - left.value;
+    }
+    return left.label.localeCompare(right.label);
+  });
+
+const dashboardCountsToMap = (buckets: DashboardSummaryBucket[]) => {
+  const counts = new Map<string, number>();
+  buckets.forEach((bucket) => {
+    counts.set((bucket.key ?? '').trim(), bucket.count ?? 0);
+  });
+  return counts;
+};
+
+const dashboardCountsToBuckets = (buckets: DashboardSummaryBucket[]) =>
+  sortDashboardBuckets(
+    buckets.map((bucket) => ({
+      label: (bucket.key ?? '').trim(),
+      value: bucket.count ?? 0,
+    }))
+  );
 
 const challengeListPageSize = 25;
 
@@ -535,93 +606,106 @@ export const Challenges = () => {
     }),
     [deferredQuery, deferredZoneQuery]
   );
-  const {
-    items: dashboardRecords,
-    loading: dashboardLoading,
-    error: dashboardError,
-  } = useAdminAggregateDataset<ChallengeRecord>(
-    '/sonar/admin/challenges',
-    dashboardParams
-  );
-  const dashboardMetrics = useMemo(() => {
-    const totalChallenges = dashboardRecords.length;
-    const pointOfInterestCount = dashboardRecords.filter((record) =>
-      Boolean(record.pointOfInterestId)
-    ).length;
-    const polygonCount = dashboardRecords.filter(
-      (record) => (record.polygonPoints?.length ?? 0) >= 3
-    ).length;
-    const recurringCount = dashboardRecords.filter((record) =>
-      Boolean(record.recurrenceFrequency?.trim())
-    ).length;
+  const [dashboardSummary, setDashboardSummary] = useState<
+    ChallengeDashboardSummary
+  >(emptyChallengeDashboardSummary);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
 
+    const loadDashboardSummary = async () => {
+      setDashboardLoading(true);
+      setDashboardError(null);
+      try {
+        const response = await apiClient.get<ChallengeDashboardSummary>(
+          '/sonar/admin/challenges/dashboard',
+          dashboardParams
+        );
+        if (!active) return;
+        setDashboardSummary(normalizeChallengeDashboardSummary(response));
+      } catch (error) {
+        console.error('Failed to load challenge dashboard summary', error);
+        if (!active) return;
+        setDashboardSummary(emptyChallengeDashboardSummary());
+        setDashboardError('Failed to load challenge dashboard summary.');
+      } finally {
+        if (active) {
+          setDashboardLoading(false);
+        }
+      }
+    };
+
+    void loadDashboardSummary();
+    return () => {
+      active = false;
+    };
+  }, [apiClient, dashboardParams]);
+  const dashboardMetrics = useMemo(() => {
     return [
-      { label: 'Challenges', value: totalChallenges },
-      { label: 'POI-linked', value: pointOfInterestCount },
-      { label: 'Area-based', value: polygonCount },
-      { label: 'Recurring', value: recurringCount },
+      { label: 'Challenges', value: dashboardSummary.totalChallenges ?? 0 },
+      {
+        label: 'POI-linked',
+        value: dashboardSummary.pointOfInterestCount ?? 0,
+      },
+      { label: 'Area-based', value: dashboardSummary.polygonCount ?? 0 },
+      { label: 'Recurring', value: dashboardSummary.recurringCount ?? 0 },
     ];
-  }, [dashboardRecords]);
+  }, [dashboardSummary]);
   const dashboardSections = useMemo(
-    () => [
-      {
-        title: 'Zone Kinds',
-        note: 'Effective challenge placement across zone kinds.',
-        buckets: countBy(
-          dashboardRecords,
-          (record) =>
-            zoneKindLabel(
-              record.zoneKind?.trim() || zoneDefaultKindById.get(record.zoneId),
-              zoneKindBySlug
-            ),
-          {
-            seedLabels: zoneKinds.map((zoneKind) => zoneKind.name),
-          }
-        ),
-      },
-      {
-        title: 'Submission Types',
-        note: 'How players complete the current challenge set.',
-        buckets: countBy(dashboardRecords, (record) =>
-          record.submissionType === 'photo'
-            ? 'Photo'
-            : record.submissionType === 'text'
-              ? 'Text'
-              : 'Video'
-        ),
-      },
-      {
-        title: 'Difficulty Bands',
-        note: 'Challenge difficulty spread for the current filters.',
-        buckets: countBy(
-          dashboardRecords,
-          (record) => difficultyBandLabel(record.difficulty),
-          { limit: 4 }
-        ),
-      },
-      {
-        title: 'Placement',
-        note: 'Whether challenges use POIs, points, or polygon areas.',
-        buckets: countBy(dashboardRecords, (record) => {
-          if ((record.polygonPoints?.length ?? 0) >= 3) {
-            return 'Polygon area';
-          }
-          if (record.pointOfInterestId) {
-            return 'Point of interest';
-          }
-          return 'Coordinates';
-        }),
-      },
-      {
-        title: 'Stat Tags',
-        note: 'The stat checks most frequently represented in live challenges.',
-        buckets: countManyBy(dashboardRecords, (record) => record.statTags, {
-          includeEmpty: false,
-        }),
-        emptyLabel: 'No stat tags yet.',
-      },
-    ],
-    [dashboardRecords, zoneDefaultKindById, zoneKindBySlug, zoneKinds]
+    () => {
+      const zoneKindCounts = dashboardCountsToMap(dashboardSummary.zoneKindCounts);
+      const seededZoneKindBuckets = zoneKinds.map((zoneKind) => ({
+        label: zoneKind.name,
+        value: zoneKindCounts.get((zoneKind.slug ?? '').trim()) ?? 0,
+      }));
+      const knownZoneKindSlugs = new Set(
+        zoneKinds.map((zoneKind) => (zoneKind.slug ?? '').trim()).filter(Boolean)
+      );
+      const extraZoneKindBuckets = Array.from(zoneKindCounts.entries())
+        .filter(([slug]) => !knownZoneKindSlugs.has(slug))
+        .map(([slug, value]) => ({
+          label: zoneKindLabel(slug, zoneKindBySlug),
+          value,
+        }));
+
+      return [
+        {
+          title: 'Zone Kinds',
+          note: 'Effective challenge placement across zone kinds.',
+          buckets: sortDashboardBuckets([
+            ...seededZoneKindBuckets,
+            ...extraZoneKindBuckets,
+          ]),
+        },
+        {
+          title: 'Submission Types',
+          note: 'How players complete the current challenge set.',
+          buckets: dashboardCountsToBuckets(
+            dashboardSummary.submissionTypeCounts
+          ),
+        },
+        {
+          title: 'Difficulty Bands',
+          note: 'Challenge difficulty spread for the current filters.',
+          buckets: dashboardCountsToBuckets(
+            dashboardSummary.difficultyBandCounts
+          ),
+        },
+        {
+          title: 'Placement',
+          note: 'Whether challenges use POIs, points, or polygon areas.',
+          buckets: dashboardCountsToBuckets(dashboardSummary.placementCounts),
+        },
+        {
+          title: 'Stat Tags',
+          note: 'The stat checks most frequently represented in live challenges.',
+          buckets: dashboardCountsToBuckets(dashboardSummary.statTagCounts),
+          emptyLabel: 'No stat tags yet.',
+        },
+      ];
+    },
+    [dashboardSummary, zoneKindBySlug, zoneKinds]
   );
 
   const loadPointsOfInterestForZone = useCallback(

@@ -82,7 +82,7 @@ const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
       'Street-level smugglers need deniable help moving sensitive cargo through a district full of watchers.',
     ],
     familyTags: ['criminal', 'trade', 'civic'],
-    familyFocuses: ['delivery', 'investigation', 'negotiation'],
+    familyFocuses: ['delivery', 'negotiation', 'pursuit'],
     characterTags: ['courier', 'fence', 'dockhand', 'customs_clerk', 'fixer'],
     internalTags: ['smuggling', 'handoff', 'contraband', 'route_pressure', 'black_market'],
     metadataTags: ['market', 'warehouse', 'alley', 'waterfront', 'checkpoint'],
@@ -96,7 +96,7 @@ const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
       'A surge of omen-laden failures is spreading through ritual infrastructure that should have been stable.',
     ],
     familyTags: ['occult', 'civic', 'storm'],
-    familyFocuses: ['investigation', 'ritual_interruption', 'containment'],
+    familyFocuses: ['ritual_interruption', 'containment', 'omen_chasing'],
     characterTags: ['medium', 'lamplighter', 'groundskeeper', 'apprentice_mage', 'sacristan'],
     internalTags: ['wards', 'blackout', 'omens', 'sigils', 'spirit_leak'],
     metadataTags: ['shrine', 'plaza', 'rooftop', 'substation', 'memorial'],
@@ -138,7 +138,7 @@ const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
       'Multiple factions want a missing emissary found first, but each one wants a different outcome.',
     ],
     familyTags: ['diplomacy', 'intrigue', 'civic'],
-    familyFocuses: ['investigation', 'negotiation', 'rescue'],
+    familyFocuses: ['negotiation', 'rescue', 'investigation'],
     characterTags: ['envoy', 'bodyguard', 'clerk', 'mediator', 'fixer'],
     internalTags: ['missing_person', 'faction_pressure', 'quiet_recovery', 'back_channels', 'escort'],
     metadataTags: ['courtyard', 'meeting_hall', 'garden', 'checkpoint', 'arcade'],
@@ -152,7 +152,7 @@ const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
       'A lively market is being slowly strangled by an infestation nobody can fully pin down yet.',
     ],
     familyTags: ['trade', 'creatures', 'civic'],
-    familyFocuses: ['investigation', 'containment', 'combat_finale'],
+    familyFocuses: ['containment', 'delivery', 'combat_finale'],
     characterTags: ['vendor', 'ratcatcher', 'porter', 'apothecary', 'market_guard'],
     internalTags: ['infestation', 'supply_chain', 'vendor_panic', 'nests', 'scarcity'],
     metadataTags: ['market', 'stall', 'storage', 'drain', 'loading_dock'],
@@ -166,7 +166,7 @@ const QUEST_PRESET_LIBRARY: QuestPresetSeed[] = [
       'Celestial omens are surfacing in public spaces, and someone needs to chase the pattern before others weaponize it.',
     ],
     familyTags: ['occult', 'scholarly', 'omens'],
-    familyFocuses: ['omen_chasing', 'investigation', 'ritual_interruption'],
+    familyFocuses: ['omen_chasing', 'ritual_interruption', 'investigation'],
     characterTags: ['astrologer', 'librarian', 'scribe', 'watcher', 'ritualist'],
     internalTags: ['omens', 'sky_signs', 'pattern_reading', 'star_charts', 'prophecy'],
     metadataTags: ['observatory', 'library', 'courtyard', 'monument', 'rooftop'],
@@ -414,31 +414,81 @@ const buildRandomPresetFamilyMixTargets = (
 ): Record<string, string> => {
   const next = emptyFamilyMixTargets();
   const cappedTotal = Math.max(1, maxTotal);
-  const focusCount = Math.max(
-    1,
-    Math.min(cappedTotal, Math.min(3, familyFocuses.length))
-  );
-  const selectedFamilies = sampleMany(familyFocuses, focusCount);
+  const orderedFamilies = uniqueStrings(familyFocuses);
+  const focusCount = Math.max(1, Math.min(cappedTotal, Math.min(3, orderedFamilies.length)));
+  const selectedFamilies = orderedFamilies.slice(0, focusCount);
   let remaining = cappedTotal;
-  selectedFamilies.forEach((slug, index) => {
-    if (remaining <= 0) {
-      return;
+
+  for (const slug of selectedFamilies) {
+    if (remaining <= 0) break;
+    next[slug] = '1';
+    remaining -= 1;
+  }
+
+  while (remaining > 0) {
+    let progressed = false;
+    for (const slug of selectedFamilies) {
+      if (remaining <= 0) break;
+      const current = parseInt(next[slug] ?? '0', 10) || 0;
+      const familyMaximum = slug === 'combat_finale' ? 1 : 2;
+      if (current >= familyMaximum) {
+        continue;
+      }
+      next[slug] = String(current + 1);
+      remaining -= 1;
+      progressed = true;
     }
-    const remainingSlots = selectedFamilies.length - index - 1;
-    const minimum = 1;
-    const familyMaximum = slug === 'combat_finale' ? 1 : 2;
-    const maximum = Math.max(
-      minimum,
-      Math.min(familyMaximum, remaining-remainingSlots)
-    );
-    const assigned = Math.min(
-      remaining,
-      index === selectedFamilies.length - 1 ? remaining : randomInt(minimum, maximum)
-    );
-    next[slug] = String(Math.max(minimum, assigned));
-    remaining -= Math.max(minimum, assigned);
-  });
+    if (!progressed) {
+      break;
+    }
+  }
   return next;
+};
+
+const scorePresetAgainstZoneKind = (
+  preset: QuestPresetSeed,
+  zoneKind: QuestPresetZoneKind | null
+) => {
+  if (!zoneKind) return 0;
+  const haystack = [
+    zoneKind.slug,
+    zoneKind.name,
+    zoneKind.description ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  return preset.zoneKindKeywords.reduce(
+    (score, keyword) => (haystack.includes(keyword.toLowerCase()) ? score + 1 : score),
+    0
+  );
+};
+
+const choosePresetSeed = (
+  zoneKinds: QuestPresetZoneKind[],
+  preferredZoneKind: string
+) => {
+  const normalizedPreferredZoneKind = preferredZoneKind.trim();
+  if (!normalizedPreferredZoneKind) {
+    return sampleOne(QUEST_PRESET_LIBRARY) ?? QUEST_PRESET_LIBRARY[0];
+  }
+  const preferredZoneKindDetails =
+    zoneKinds.find((zoneKind) => zoneKind.slug.trim() === normalizedPreferredZoneKind) ?? {
+      slug: normalizedPreferredZoneKind,
+      name: normalizedPreferredZoneKind,
+      description: '',
+    };
+  const rankedPresets = QUEST_PRESET_LIBRARY.map((preset) => ({
+    preset,
+    score: scorePresetAgainstZoneKind(preset, preferredZoneKindDetails),
+  })).sort((left, right) => right.score - left.score);
+  const bestScore = rankedPresets[0]?.score ?? 0;
+  if (bestScore <= 0) {
+    return sampleOne(QUEST_PRESET_LIBRARY) ?? QUEST_PRESET_LIBRARY[0];
+  }
+  const bestMatches = rankedPresets
+    .filter((entry) => entry.score === bestScore)
+    .map((entry) => entry.preset);
+  return sampleOne(bestMatches) ?? bestMatches[0] ?? QUEST_PRESET_LIBRARY[0];
 };
 
 const choosePresetZoneKindSlug = (
@@ -515,7 +565,8 @@ const buildRandomPresetForm = (
     yeetIt?: boolean;
   }
 ): GeneratorFormState => {
-  const preset = sampleOne(QUEST_PRESET_LIBRARY) ?? QUEST_PRESET_LIBRARY[0];
+  const preferredZoneKind = options?.preferredZoneKind?.trim() ?? '';
+  const preset = choosePresetSeed(zoneKinds, preferredZoneKind);
   const selectedCount = Math.max(
     1,
     Math.min(12, Math.trunc(options?.preferredCount ?? 2) || 2)
@@ -524,7 +575,6 @@ const buildRandomPresetForm = (
     preset.familyFocuses,
     selectedCount
   );
-  const preferredZoneKind = options?.preferredZoneKind?.trim() ?? '';
   const resolvedZoneKind =
     preferredZoneKind ||
     choosePresetZoneKindSlug(preset, zoneKinds);
@@ -833,7 +883,7 @@ export const QuestArchetypeGenerator = () => {
     }
   };
 
-  const handleQueuePresetJobsForZoneKinds = async () => {
+  const handleQueuePresetJobsForZoneKinds = async (yeetIt: boolean) => {
     if (presetQueueZoneKinds.length === 0) {
       return;
     }
@@ -860,7 +910,7 @@ export const QuestArchetypeGenerator = () => {
           preset,
           requestedBatchCount,
           zoneKindSlug,
-          form.yeetIt
+          yeetIt
         );
       } catch (error) {
         console.error(
@@ -873,7 +923,7 @@ export const QuestArchetypeGenerator = () => {
           {
             preferredCount: requestedBatchCount,
             preferredZoneKind: zoneKindSlug,
-            yeetIt: form.yeetIt,
+            yeetIt,
           }
         );
         fallbackZoneKinds.push(zoneKindLabel(zoneKindSlug, zoneKindBySlug));
@@ -912,7 +962,7 @@ export const QuestArchetypeGenerator = () => {
       );
     } else {
       const messageParts = [
-        `Queued ${createdJobs.length} preset ${form.yeetIt ? 'yeet' : 'draft'} job${
+        `Queued ${createdJobs.length} preset ${yeetIt ? 'yeet' : 'draft'} job${
           createdJobs.length === 1 ? '' : 's'
         }.`,
       ];
@@ -1305,9 +1355,10 @@ export const QuestArchetypeGenerator = () => {
                 className="qa-muted"
                 style={{ marginTop: 6, marginBottom: 10 }}
               >
-                Select multiple zone kinds to generate one preset-backed{' '}
-                {form.yeetIt ? 'yeet' : 'draft'} job per zone kind using the
-                current form as hints.
+                Select multiple zone kinds to generate one preset-backed job
+                per zone kind using the current form as hints, then choose
+                whether to queue drafts or auto-convert them into live
+                archetypes.
               </div>
               <div
                 className="qa-tree"
@@ -1392,9 +1443,9 @@ export const QuestArchetypeGenerator = () => {
                     </button>
                   )}
                 <button
-                  className="qa-btn qa-btn-primary"
+                  className="qa-btn qa-btn-outline"
                   type="button"
-                  onClick={() => void handleQueuePresetJobsForZoneKinds()}
+                  onClick={() => void handleQueuePresetJobsForZoneKinds(false)}
                   disabled={
                     queueingPresetZoneKinds ||
                     presetQueueZoneKinds.length === 0 ||
@@ -1403,7 +1454,23 @@ export const QuestArchetypeGenerator = () => {
                 >
                   {queueingPresetZoneKinds
                     ? 'Queueing Preset Jobs...'
-                    : `Queue ${presetQueueZoneKinds.length || ''} Preset ${form.yeetIt ? 'Yeet' : 'Draft'} Job${
+                    : `Queue ${presetQueueZoneKinds.length || ''} Preset Draft Job${
+                        presetQueueZoneKinds.length === 1 ? '' : 's'
+                      }`}
+                </button>
+                <button
+                  className="qa-btn qa-btn-primary"
+                  type="button"
+                  onClick={() => void handleQueuePresetJobsForZoneKinds(true)}
+                  disabled={
+                    queueingPresetZoneKinds ||
+                    presetQueueZoneKinds.length === 0 ||
+                    requestedFamilyMixCount > requestedBatchCount
+                  }
+                >
+                  {queueingPresetZoneKinds
+                    ? 'Queueing Preset Jobs...'
+                    : `Queue ${presetQueueZoneKinds.length || ''} Preset Yeet Job${
                         presetQueueZoneKinds.length === 1 ? '' : 's'
                       }`}
                 </button>

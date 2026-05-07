@@ -440,7 +440,7 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 			if option.Proficiencies == nil {
 				option.Proficiencies = models.StringArray{}
 			}
-			if err := tx.Create(&option).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&option).Error; err != nil {
 				return err
 			}
 
@@ -449,7 +449,7 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 				reward.ScenarioOptionID = option.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}
@@ -458,7 +458,7 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 				reward.ScenarioOptionID = option.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}
@@ -467,7 +467,7 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 				reward.ScenarioOptionID = option.ID
 				reward.CreatedAt = now
 				reward.UpdatedAt = now
-				if err := tx.Create(&reward).Error; err != nil {
+				if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 					return err
 				}
 			}
@@ -487,7 +487,7 @@ func (h *scenarioHandle) ReplaceItemRewards(ctx context.Context, scenarioID uuid
 			reward.ScenarioID = scenarioID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -506,7 +506,7 @@ func (h *scenarioHandle) ReplaceItemChoiceRewards(ctx context.Context, scenarioI
 			reward.ScenarioID = scenarioID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -525,7 +525,7 @@ func (h *scenarioHandle) ReplaceSpellRewards(ctx context.Context, scenarioID uui
 			reward.ScenarioID = scenarioID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}

@@ -39,6 +39,7 @@ type ZoneKind struct {
 	RaidEncounterCountRatio     float64     `json:"raidEncounterCountRatio" gorm:"column:raid_encounter_count_ratio"`
 	InputEncounterCountRatio    float64     `json:"inputEncounterCountRatio" gorm:"column:input_encounter_count_ratio"`
 	OptionEncounterCountRatio   float64     `json:"optionEncounterCountRatio" gorm:"column:option_encounter_count_ratio"`
+	ExpositionCountRatio        float64     `json:"expositionCountRatio" gorm:"column:exposition_count_ratio"`
 	TreasureChestCountRatio     float64     `json:"treasureChestCountRatio" gorm:"column:treasure_chest_count_ratio"`
 	HealingFountainCountRatio   float64     `json:"healingFountainCountRatio" gorm:"column:healing_fountain_count_ratio"`
 	ShrineCountRatio            float64     `json:"shrineCountRatio" gorm:"column:shrine_count_ratio"`
@@ -132,6 +133,7 @@ func (z *ZoneKind) BeforeSave(tx *gorm.DB) error {
 	z.RaidEncounterCountRatio = normalizeZoneKindRatio(z.RaidEncounterCountRatio)
 	z.InputEncounterCountRatio = normalizeZoneKindRatio(z.InputEncounterCountRatio)
 	z.OptionEncounterCountRatio = normalizeZoneKindRatio(z.OptionEncounterCountRatio)
+	z.ExpositionCountRatio = normalizeZoneKindRatio(z.ExpositionCountRatio)
 	z.TreasureChestCountRatio = normalizeZoneKindRatio(z.TreasureChestCountRatio)
 	z.HealingFountainCountRatio = normalizeZoneKindRatio(z.HealingFountainCountRatio)
 	z.ShrineCountRatio = normalizeZoneKindRatio(z.ShrineCountRatio)
@@ -165,7 +167,7 @@ func (z ZoneKind) ApplyToCounts(counts ZoneSeedResolvedCounts) ZoneSeedResolvedC
 		RaidEncounterCount:     apply(counts.RaidEncounterCount, z.RaidEncounterCountRatio),
 		InputEncounterCount:    apply(counts.InputEncounterCount, z.InputEncounterCountRatio),
 		OptionEncounterCount:   apply(counts.OptionEncounterCount, z.OptionEncounterCountRatio),
-		ExpositionCount:        counts.ExpositionCount,
+		ExpositionCount:        apply(counts.ExpositionCount, z.ExpositionCountRatio),
 		TreasureChestCount:     apply(counts.TreasureChestCount, z.TreasureChestCountRatio),
 		HealingFountainCount:   apply(counts.HealingFountainCount, z.HealingFountainCountRatio),
 		ShrineCount:            apply(counts.ShrineCount, z.ShrineCountRatio),

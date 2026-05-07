@@ -774,26 +774,6 @@ func sanitizeScenarioRewards(rewards []scenarioGenerationRewardPayload, allowedI
 	return result
 }
 
-func sanitizeScenarioOptionRewards(rewards []scenarioGenerationRewardPayload, allowedItemIDs map[int]struct{}, maxCount int) []models.ScenarioOptionItemReward {
-	result := make([]models.ScenarioOptionItemReward, 0, min(len(rewards), maxCount))
-	for _, reward := range rewards {
-		if len(result) >= maxCount {
-			break
-		}
-		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
-			continue
-		}
-		if _, ok := allowedItemIDs[reward.InventoryItemID]; !ok {
-			continue
-		}
-		result = append(result, models.ScenarioOptionItemReward{
-			InventoryItemID: reward.InventoryItemID,
-			Quantity:        clampInt(reward.Quantity, 1, 2),
-		})
-	}
-	return result
-}
-
 func sanitizeScenarioOptions(options []choiceScenarioGenerationOptionPayload, allowedItemIDs map[int]struct{}) []models.ScenarioOption {
 	if len(options) == 0 {
 		return nil
@@ -840,10 +820,23 @@ func sanitizeScenarioOptions(options []choiceScenarioGenerationOptionPayload, al
 			Difficulty:       difficulty,
 			RewardExperience: clampInt(option.RewardExperience, 0, 80),
 			RewardGold:       clampInt(option.RewardGold, 0, 80),
-			ItemRewards:      sanitizeScenarioOptionRewards(option.ItemRewards, allowedItemIDs, 2),
+			ItemRewards:      []models.ScenarioOptionItemReward{},
 		})
 	}
 
+	return result
+}
+
+func stripScenarioOptionItemRewards(options []models.ScenarioOption) []models.ScenarioOption {
+	if len(options) == 0 {
+		return nil
+	}
+
+	result := make([]models.ScenarioOption, 0, len(options))
+	for _, option := range options {
+		option.ItemRewards = []models.ScenarioOptionItemReward{}
+		result = append(result, option)
+	}
 	return result
 }
 
@@ -979,7 +972,9 @@ func buildScenarioFromTemplate(
 	}
 
 	return scenario,
-		scenarioTemplateOptionsToScenarioOptions(template.Options),
+		stripScenarioOptionItemRewards(
+			scenarioTemplateOptionsToScenarioOptions(template.Options),
+		),
 		scenarioTemplateRewardsToScenarioItemRewards(template.ItemRewards),
 		scenarioTemplateRewardsToScenarioItemChoiceRewards(template.ItemChoiceRewards),
 		scenarioTemplateSpellRewardsToScenarioSpellRewards(template.SpellRewards)
@@ -1009,7 +1004,7 @@ func scenarioTemplateOptionsToScenarioOptions(options models.ScenarioTemplateOpt
 			SuccessManaRestoreType:    option.SuccessManaRestoreType,
 			SuccessManaRestoreValue:   max(option.SuccessManaRestoreValue, 0),
 			SuccessStatuses:           option.SuccessStatuses,
-			ItemRewards:               scenarioTemplateRewardsToScenarioOptionItemRewards(option.ItemRewards),
+			ItemRewards:               []models.ScenarioOptionItemReward{},
 			ItemChoiceRewards:         scenarioTemplateRewardsToScenarioOptionItemChoiceRewards(option.ItemChoiceRewards),
 			SpellRewards:              scenarioTemplateSpellRewardsToScenarioOptionSpellRewards(option.SpellRewards),
 		})
@@ -1053,20 +1048,6 @@ func scenarioTemplateSpellRewardsToScenarioSpellRewards(rewards models.ScenarioT
 		}
 		out = append(out, models.ScenarioSpellReward{
 			SpellID: reward.SpellID,
-		})
-	}
-	return out
-}
-
-func scenarioTemplateRewardsToScenarioOptionItemRewards(rewards models.ScenarioTemplateRewards) []models.ScenarioOptionItemReward {
-	out := make([]models.ScenarioOptionItemReward, 0, len(rewards))
-	for _, reward := range rewards {
-		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
-			continue
-		}
-		out = append(out, models.ScenarioOptionItemReward{
-			InventoryItemID: reward.InventoryItemID,
-			Quantity:        reward.Quantity,
 		})
 	}
 	return out

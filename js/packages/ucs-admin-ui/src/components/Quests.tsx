@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import type APIClient from '@poltergeist/api-client';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
 import {
   Candidate,
@@ -39,8 +40,10 @@ import { DialogueMessageListEditor } from './DialogueMessageListEditor.tsx';
 import './questArchetypeTheme.css';
 import './questsTheme.css';
 import {
+  effectiveZoneKindSlug,
   useZoneKinds,
   zoneKindDescription,
+  zoneKindLabel,
   zoneKindSelectPlaceholderLabel,
   zoneKindSummaryLabel,
 } from './zoneKindHelpers.ts';
@@ -244,6 +247,10 @@ const emptyQuestForm = {
   spellRewards: [] as { spellId: string }[],
 };
 
+const questLibraryNoZoneFilterValue = '__quest-library-no-zone__';
+const questLibraryUnassignedZoneKindFilterValue =
+  '__quest-library-unassigned-zone-kind__';
+
 const cloneCharacterLocationDrafts = (
   locations: { latitude: number; longitude: number }[] | null | undefined
 ) =>
@@ -363,6 +370,330 @@ const normalizeQuestDetail = (quest: Quest): Quest => ({
   nodeCount: quest.nodes?.length ?? quest.nodeCount ?? 0,
   detailLoaded: true,
 });
+
+type QuestScreenSupportingData = {
+  pointsOfInterest: PointOfInterestWithCharacters[];
+  characters: Character[];
+  inventoryItems: InventoryItem[];
+  spells: Spell[];
+  scenarios: ScenarioNodeOption[];
+  expositions: ExpositionNodeOption[];
+  monsterRecords: MonsterRecord[];
+  monsterEncounters: MonsterNodeOption[];
+  challenges: ChallengeNodeOption[];
+};
+
+const emptyQuestScreenSupportingData = (): QuestScreenSupportingData => ({
+  pointsOfInterest: [],
+  characters: [],
+  inventoryItems: [],
+  spells: [],
+  scenarios: [],
+  expositions: [],
+  monsterRecords: [],
+  monsterEncounters: [],
+  challenges: [],
+});
+
+const cloneQuestScreenSupportingData = (
+  data: QuestScreenSupportingData
+): QuestScreenSupportingData => ({
+  pointsOfInterest: [...data.pointsOfInterest],
+  characters: [...data.characters],
+  inventoryItems: [...data.inventoryItems],
+  spells: [...data.spells],
+  scenarios: [...data.scenarios],
+  expositions: [...data.expositions],
+  monsterRecords: [...data.monsterRecords],
+  monsterEncounters: [...data.monsterEncounters],
+  challenges: [...data.challenges],
+});
+
+let questScreenCacheToken: string | null = null;
+let cachedQuestSummaries: Quest[] | null = null;
+let cachedQuestSummariesRequest: Promise<Quest[]> | null = null;
+let cachedQuestSupportingData: QuestScreenSupportingData | null = null;
+let cachedQuestSupportingDataRequest: Promise<QuestScreenSupportingData> | null =
+  null;
+const questDatasetAllZonesKey = '__all__';
+let cachedQuestScenariosByZoneKey: Record<string, ScenarioNodeOption[]> = {};
+let cachedQuestScenarioRequestsByZoneKey = new Map<
+  string,
+  Promise<ScenarioNodeOption[]>
+>();
+let cachedQuestMonsterRecordsByZoneKey: Record<string, MonsterRecord[]> = {};
+let cachedQuestMonsterRecordRequestsByZoneKey = new Map<
+  string,
+  Promise<MonsterRecord[]>
+>();
+let cachedQuestMonsterEncountersByZoneKey: Record<string, MonsterNodeOption[]> =
+  {};
+let cachedQuestMonsterEncounterRequestsByZoneKey = new Map<
+  string,
+  Promise<MonsterNodeOption[]>
+>();
+
+const questDatasetZoneKey = (zoneId?: string | null) =>
+  (zoneId ?? '').trim() || questDatasetAllZonesKey;
+
+const resetQuestScreenCaches = () => {
+  cachedQuestSummaries = null;
+  cachedQuestSummariesRequest = null;
+  cachedQuestSupportingData = null;
+  cachedQuestSupportingDataRequest = null;
+  cachedQuestScenariosByZoneKey = {};
+  cachedQuestScenarioRequestsByZoneKey.clear();
+  cachedQuestMonsterRecordsByZoneKey = {};
+  cachedQuestMonsterRecordRequestsByZoneKey.clear();
+  cachedQuestMonsterEncountersByZoneKey = {};
+  cachedQuestMonsterEncounterRequestsByZoneKey.clear();
+};
+
+const ensureQuestScreenCacheScope = () => {
+  const token = localStorage.getItem('token');
+  if (questScreenCacheToken === token) {
+    return;
+  }
+  questScreenCacheToken = token;
+  resetQuestScreenCaches();
+};
+
+const writeQuestSummariesCache = (quests: Quest[]) => {
+  ensureQuestScreenCacheScope();
+  cachedQuestSummaries = [...quests];
+};
+
+const writeQuestSupportingDataCache = <
+  K extends keyof QuestScreenSupportingData,
+>(
+  key: K,
+  value: QuestScreenSupportingData[K]
+) => {
+  ensureQuestScreenCacheScope();
+  if (!cachedQuestSupportingData) {
+    return;
+  }
+  cachedQuestSupportingData = {
+    ...cachedQuestSupportingData,
+    [key]: Array.isArray(value) ? [...value] : value,
+  };
+};
+
+const loadQuestSummariesOnce = async (
+  apiClient: APIClient
+): Promise<Quest[]> => {
+  ensureQuestScreenCacheScope();
+  if (cachedQuestSummaries) {
+    return [...cachedQuestSummaries];
+  }
+  if (!cachedQuestSummariesRequest) {
+    cachedQuestSummariesRequest = apiClient
+      .get<Quest[]>('/sonar/admin/quests')
+      .then((result) => {
+        const normalized = Array.isArray(result)
+          ? result.map(normalizeQuestSummary)
+          : [];
+        writeQuestSummariesCache(normalized);
+        return [...normalized];
+      })
+      .finally(() => {
+        cachedQuestSummariesRequest = null;
+      });
+  }
+  const quests = await cachedQuestSummariesRequest;
+  return [...quests];
+};
+
+const loadQuestSupportingDataOnce = async (
+  apiClient: APIClient
+): Promise<QuestScreenSupportingData> => {
+  ensureQuestScreenCacheScope();
+  if (cachedQuestSupportingData) {
+    return cloneQuestScreenSupportingData(cachedQuestSupportingData);
+  }
+  if (!cachedQuestSupportingDataRequest) {
+    cachedQuestSupportingDataRequest = Promise.allSettled([
+      apiClient.get<PointOfInterestWithCharacters[]>('/sonar/pointsOfInterest'),
+      apiClient.get<Character[]>('/sonar/characters'),
+      apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
+      apiClient.get<Spell[]>('/sonar/spells'),
+      apiClient.get<{ items: ExpositionNodeOption[] }>(
+        '/sonar/admin/expositions'
+      ),
+      apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
+    ])
+      .then((results) => {
+        const [
+          poiResult,
+          charactersResult,
+          inventoryResult,
+          spellsResult,
+          expositionsResult,
+          challengesResult,
+        ] = results;
+
+        const next = emptyQuestScreenSupportingData();
+
+        if (poiResult.status === 'fulfilled') {
+          next.pointsOfInterest = Array.isArray(poiResult.value)
+            ? poiResult.value
+            : [];
+        } else {
+          console.error('Failed to load points of interest', poiResult.reason);
+        }
+
+        if (charactersResult.status === 'fulfilled') {
+          next.characters = Array.isArray(charactersResult.value)
+            ? charactersResult.value
+            : [];
+        } else {
+          console.error('Failed to load characters', charactersResult.reason);
+        }
+
+        if (inventoryResult.status === 'fulfilled') {
+          next.inventoryItems = Array.isArray(inventoryResult.value)
+            ? inventoryResult.value
+            : [];
+        } else {
+          console.error(
+            'Failed to load inventory items',
+            inventoryResult.reason
+          );
+        }
+
+        if (spellsResult.status === 'fulfilled') {
+          next.spells = Array.isArray(spellsResult.value)
+            ? spellsResult.value
+            : [];
+        } else {
+          console.error('Failed to load spells', spellsResult.reason);
+        }
+
+        if (expositionsResult.status === 'fulfilled') {
+          next.expositions = Array.isArray(expositionsResult.value?.items)
+            ? expositionsResult.value.items
+            : [];
+        } else {
+          console.error('Failed to load expositions', expositionsResult.reason);
+        }
+
+        if (challengesResult.status === 'fulfilled') {
+          next.challenges = Array.isArray(challengesResult.value)
+            ? challengesResult.value
+            : [];
+        } else {
+          console.error('Failed to load challenges', challengesResult.reason);
+        }
+
+        cachedQuestSupportingData = cloneQuestScreenSupportingData(next);
+        return cloneQuestScreenSupportingData(next);
+      })
+      .finally(() => {
+        cachedQuestSupportingDataRequest = null;
+      });
+  }
+  const data = await cachedQuestSupportingDataRequest;
+  return cloneQuestScreenSupportingData(data);
+};
+
+const loadQuestScenariosForZone = async (
+  apiClient: APIClient,
+  zoneId?: string | null
+): Promise<ScenarioNodeOption[]> => {
+  ensureQuestScreenCacheScope();
+  const normalizedZoneId = (zoneId ?? '').trim();
+  const key = questDatasetZoneKey(normalizedZoneId);
+  const cached = cachedQuestScenariosByZoneKey[key];
+  if (cached) {
+    return [...cached];
+  }
+  const pending = cachedQuestScenarioRequestsByZoneKey.get(key);
+  if (pending) {
+    return [...(await pending)];
+  }
+
+  const endpoint = normalizedZoneId
+    ? `/sonar/zones/${normalizedZoneId}/scenarios`
+    : '/sonar/scenarios';
+  const request = apiClient
+    .get<ScenarioNodeOption[]>(endpoint)
+    .then((result) => {
+      const normalized = Array.isArray(result) ? result : [];
+      cachedQuestScenariosByZoneKey[key] = [...normalized];
+      return [...normalized];
+    })
+    .finally(() => {
+      cachedQuestScenarioRequestsByZoneKey.delete(key);
+    });
+  cachedQuestScenarioRequestsByZoneKey.set(key, request);
+  return [...(await request)];
+};
+
+const loadQuestMonsterRecordsForZone = async (
+  apiClient: APIClient,
+  zoneId?: string | null
+): Promise<MonsterRecord[]> => {
+  ensureQuestScreenCacheScope();
+  const normalizedZoneId = (zoneId ?? '').trim();
+  const key = questDatasetZoneKey(normalizedZoneId);
+  const cached = cachedQuestMonsterRecordsByZoneKey[key];
+  if (cached) {
+    return [...cached];
+  }
+  const pending = cachedQuestMonsterRecordRequestsByZoneKey.get(key);
+  if (pending) {
+    return [...(await pending)];
+  }
+
+  const endpoint = normalizedZoneId
+    ? `/sonar/zones/${normalizedZoneId}/monsters`
+    : '/sonar/monsters';
+  const request = apiClient
+    .get<MonsterRecord[]>(endpoint)
+    .then((result) => {
+      const normalized = Array.isArray(result) ? result : [];
+      cachedQuestMonsterRecordsByZoneKey[key] = [...normalized];
+      return [...normalized];
+    })
+    .finally(() => {
+      cachedQuestMonsterRecordRequestsByZoneKey.delete(key);
+    });
+  cachedQuestMonsterRecordRequestsByZoneKey.set(key, request);
+  return [...(await request)];
+};
+
+const loadQuestMonsterEncountersForZone = async (
+  apiClient: APIClient,
+  zoneId?: string | null
+): Promise<MonsterNodeOption[]> => {
+  ensureQuestScreenCacheScope();
+  const normalizedZoneId = (zoneId ?? '').trim();
+  const key = questDatasetZoneKey(normalizedZoneId);
+  const cached = cachedQuestMonsterEncountersByZoneKey[key];
+  if (cached) {
+    return [...cached];
+  }
+  const pending = cachedQuestMonsterEncounterRequestsByZoneKey.get(key);
+  if (pending) {
+    return [...(await pending)];
+  }
+
+  const endpoint = normalizedZoneId
+    ? `/sonar/zones/${normalizedZoneId}/monster-encounters`
+    : '/sonar/monster-encounters';
+  const request = apiClient
+    .get<MonsterNodeOption[]>(endpoint)
+    .then((result) => {
+      const normalized = Array.isArray(result) ? result : [];
+      cachedQuestMonsterEncountersByZoneKey[key] = [...normalized];
+      return [...normalized];
+    })
+    .finally(() => {
+      cachedQuestMonsterEncounterRequestsByZoneKey.delete(key);
+    });
+  cachedQuestMonsterEncounterRequestsByZoneKey.set(key, request);
+  return [...(await request)];
+};
 
 const questStatOptions = [
   { id: 'strength', label: 'Strength' },
@@ -636,6 +967,12 @@ const emptyQuestSpellReward = {
 
 const adminEntityLinkClass =
   'inline-flex rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100';
+
+const adminCharacterHref = (id: string) =>
+  `/characters?id=${encodeURIComponent(id)}`;
+
+const adminPointOfInterestHref = (id: string) =>
+  `/points-of-interest/${encodeURIComponent(id)}`;
 
 const parsePolygonPoints = (input: string): [number, number][] | null => {
   if (!input.trim()) return null;
@@ -977,6 +1314,19 @@ export const Quests = () => {
     MonsterNodeOption[]
   >([]);
   const [challenges, setChallenges] = useState<ChallengeNodeOption[]>([]);
+  const [scenarioCatalogLoading, setScenarioCatalogLoading] = useState(false);
+  const [scenarioCatalogError, setScenarioCatalogError] = useState<
+    string | null
+  >(null);
+  const [monsterRecordCatalogLoading, setMonsterRecordCatalogLoading] =
+    useState(false);
+  const [monsterRecordCatalogError, setMonsterRecordCatalogError] = useState<
+    string | null
+  >(null);
+  const [monsterEncounterCatalogLoading, setMonsterEncounterCatalogLoading] =
+    useState(false);
+  const [monsterEncounterCatalogError, setMonsterEncounterCatalogError] =
+    useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [questDetailLoadingId, setQuestDetailLoadingId] = useState<
     string | null
@@ -986,6 +1336,8 @@ export const Quests = () => {
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [questZoneFilterId, setQuestZoneFilterId] = useState('');
+  const [questZoneKindFilter, setQuestZoneKindFilter] = useState('');
   const [zoneSearch, setZoneSearch] = useState('');
   const [characterSearch, setCharacterSearch] = useState('');
   const [characterZoneFilterId, setCharacterZoneFilterId] = useState('');
@@ -1079,6 +1431,209 @@ export const Quests = () => {
   const questNodeMarkers = useRef<mapboxgl.Marker[]>([]);
   const selectedQuestIdRef = useRef('');
   const didHydrateDeepLinkedQuestRef = useRef(false);
+  const scenarioCatalogRequestKeyRef = useRef<string | null>(null);
+  const monsterRecordCatalogRequestKeyRef = useRef<string | null>(null);
+  const monsterEncounterCatalogRequestKeyRef = useRef<string | null>(null);
+
+  const updateQuests = useCallback(
+    (updater: Quest[] | ((prev: Quest[]) => Quest[])) => {
+      setQuests((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (prev: Quest[]) => Quest[])(prev)
+            : updater;
+        writeQuestSummariesCache(next);
+        return next;
+      });
+    },
+    []
+  );
+  const updatePointsOfInterest = useCallback(
+    (
+      updater:
+        | PointOfInterestWithCharacters[]
+        | ((
+            prev: PointOfInterestWithCharacters[]
+          ) => PointOfInterestWithCharacters[])
+    ) => {
+      setPointsOfInterest((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        writeQuestSupportingDataCache('pointsOfInterest', next);
+        return next;
+      });
+    },
+    []
+  );
+  const updateCharacters = useCallback(
+    (updater: Character[] | ((prev: Character[]) => Character[])) => {
+      setCharacters((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        writeQuestSupportingDataCache('characters', next);
+        return next;
+      });
+    },
+    []
+  );
+  const updateScenarios = useCallback(
+    (
+      updater:
+        | ScenarioNodeOption[]
+        | ((prev: ScenarioNodeOption[]) => ScenarioNodeOption[])
+    ) => {
+      setScenarios((prev) =>
+        typeof updater === 'function' ? updater(prev) : updater
+      );
+    },
+    []
+  );
+  const updateMonsterEncounters = useCallback(
+    (
+      updater:
+        | MonsterNodeOption[]
+        | ((prev: MonsterNodeOption[]) => MonsterNodeOption[])
+    ) => {
+      setMonsterEncounters((prev) =>
+        typeof updater === 'function' ? updater(prev) : updater
+      );
+    },
+    []
+  );
+  const updateChallenges = useCallback(
+    (
+      updater:
+        | ChallengeNodeOption[]
+        | ((prev: ChallengeNodeOption[]) => ChallengeNodeOption[])
+    ) => {
+      setChallenges((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        writeQuestSupportingDataCache('challenges', next);
+        return next;
+      });
+    },
+    []
+  );
+
+  const loadScenarioCatalog = useCallback(
+    async (zoneId?: string | null) => {
+      const key = questDatasetZoneKey(zoneId);
+      scenarioCatalogRequestKeyRef.current = key;
+      setScenarioCatalogError(null);
+
+      const cached = cachedQuestScenariosByZoneKey[key];
+      if (cached) {
+        updateScenarios(cached);
+        setScenarioCatalogLoading(false);
+        return cached;
+      }
+
+      setScenarioCatalogLoading(true);
+      updateScenarios([]);
+      try {
+        const next = await loadQuestScenariosForZone(apiClient, zoneId);
+        if (scenarioCatalogRequestKeyRef.current !== key) {
+          return next;
+        }
+        updateScenarios(next);
+        return next;
+      } catch (error) {
+        if (scenarioCatalogRequestKeyRef.current === key) {
+          console.error('Failed to load quest scenarios', error);
+          setScenarioCatalogError(
+            error instanceof Error ? error.message : 'Failed to load scenarios.'
+          );
+          updateScenarios([]);
+        }
+        return [];
+      } finally {
+        if (scenarioCatalogRequestKeyRef.current === key) {
+          setScenarioCatalogLoading(false);
+        }
+      }
+    },
+    [apiClient, updateScenarios]
+  );
+
+  const loadMonsterRecordCatalog = useCallback(
+    async (zoneId?: string | null) => {
+      const key = questDatasetZoneKey(zoneId);
+      monsterRecordCatalogRequestKeyRef.current = key;
+      setMonsterRecordCatalogError(null);
+
+      const cached = cachedQuestMonsterRecordsByZoneKey[key];
+      if (cached) {
+        setMonsterRecords(cached);
+        setMonsterRecordCatalogLoading(false);
+        return cached;
+      }
+
+      setMonsterRecordCatalogLoading(true);
+      setMonsterRecords([]);
+      try {
+        const next = await loadQuestMonsterRecordsForZone(apiClient, zoneId);
+        if (monsterRecordCatalogRequestKeyRef.current !== key) {
+          return next;
+        }
+        setMonsterRecords(next);
+        return next;
+      } catch (error) {
+        if (monsterRecordCatalogRequestKeyRef.current === key) {
+          console.error('Failed to load quest monsters', error);
+          setMonsterRecordCatalogError(
+            error instanceof Error ? error.message : 'Failed to load monsters.'
+          );
+          setMonsterRecords([]);
+        }
+        return [];
+      } finally {
+        if (monsterRecordCatalogRequestKeyRef.current === key) {
+          setMonsterRecordCatalogLoading(false);
+        }
+      }
+    },
+    [apiClient]
+  );
+
+  const loadMonsterEncounterCatalog = useCallback(
+    async (zoneId?: string | null) => {
+      const key = questDatasetZoneKey(zoneId);
+      monsterEncounterCatalogRequestKeyRef.current = key;
+      setMonsterEncounterCatalogError(null);
+
+      const cached = cachedQuestMonsterEncountersByZoneKey[key];
+      if (cached) {
+        updateMonsterEncounters(cached);
+        setMonsterEncounterCatalogLoading(false);
+        return cached;
+      }
+
+      setMonsterEncounterCatalogLoading(true);
+      updateMonsterEncounters([]);
+      try {
+        const next = await loadQuestMonsterEncountersForZone(apiClient, zoneId);
+        if (monsterEncounterCatalogRequestKeyRef.current !== key) {
+          return next;
+        }
+        updateMonsterEncounters(next);
+        return next;
+      } catch (error) {
+        if (monsterEncounterCatalogRequestKeyRef.current === key) {
+          console.error('Failed to load quest monster encounters', error);
+          setMonsterEncounterCatalogError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load monster encounters.'
+          );
+          updateMonsterEncounters([]);
+        }
+        return [];
+      } finally {
+        if (monsterEncounterCatalogRequestKeyRef.current === key) {
+          setMonsterEncounterCatalogLoading(false);
+        }
+      }
+    },
+    [apiClient, updateMonsterEncounters]
+  );
 
   const setActiveQuestId = (questId: string) => {
     selectedQuestIdRef.current = questId;
@@ -1107,6 +1662,81 @@ export const Quests = () => {
     () => quests.find((quest) => quest.id === selectedQuestId) ?? null,
     [quests, selectedQuestId]
   );
+  const zoneById = useMemo(
+    () => new Map(zones.map((zone) => [zone.id, zone] as const)),
+    [zones]
+  );
+  const pointOfInterestById = useMemo(
+    () =>
+      new Map(
+        pointsOfInterest.map(
+          (pointOfInterest) => [pointOfInterest.id, pointOfInterest] as const
+        )
+      ),
+    [pointsOfInterest]
+  );
+  const getQuestZone = useCallback(
+    (quest: Quest) => {
+      const zoneId = quest.zoneId?.trim() ?? '';
+      return zoneId ? (zoneById.get(zoneId) ?? null) : null;
+    },
+    [zoneById]
+  );
+  const getQuestEffectiveZoneKind = useCallback(
+    (quest: Quest) =>
+      effectiveZoneKindSlug(quest.zoneKind, getQuestZone(quest)?.kind),
+    [getQuestZone]
+  );
+  const questZoneFilterOptions = useMemo(() => {
+    const options = zones
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((zone) => ({
+        value: zone.id,
+        label: zone.name,
+      }));
+
+    if (!quests.some((quest) => !(quest.zoneId?.trim() ?? ''))) {
+      return options;
+    }
+
+    return [
+      { value: questLibraryNoZoneFilterValue, label: 'No Zone' },
+      ...options,
+    ];
+  }, [quests, zones]);
+  const questZoneKindFilterOptions = useMemo(() => {
+    const optionLabels = new Map<string, string>();
+
+    zoneKinds.forEach((zoneKind) => {
+      const slug = zoneKind.slug?.trim() ?? '';
+      if (!slug) return;
+      optionLabels.set(slug, zoneKind.name?.trim() || slug);
+    });
+
+    quests.forEach((quest) => {
+      const slug = getQuestEffectiveZoneKind(quest);
+      if (!slug || optionLabels.has(slug)) return;
+      optionLabels.set(slug, zoneKindLabel(slug, zoneKindBySlug));
+    });
+
+    const options = Array.from(optionLabels, ([value, label]) => ({
+      value,
+      label,
+    })).sort((left, right) => left.label.localeCompare(right.label));
+
+    if (!quests.some((quest) => !getQuestEffectiveZoneKind(quest))) {
+      return options;
+    }
+
+    return [
+      {
+        value: questLibraryUnassignedZoneKindFilterValue,
+        label: 'Unassigned',
+      },
+      ...options,
+    ];
+  }, [getQuestEffectiveZoneKind, quests, zoneKindBySlug, zoneKinds]);
   const pointOfInterestCharacters = useMemo(
     () =>
       pointsOfInterest.flatMap(
@@ -1142,8 +1772,8 @@ export const Quests = () => {
     [selectedQuest?.nodes]
   );
   const selectedQuestZone = useMemo(
-    () => zones.find((zone) => zone.id === questForm.zoneId) ?? null,
-    [questForm.zoneId, zones]
+    () => zoneById.get(questForm.zoneId) ?? null,
+    [questForm.zoneId, zoneById]
   );
   const selectedQuestZoneDefaultKind = useMemo(
     () => selectedQuestZone?.kind?.trim() ?? '',
@@ -1156,9 +1786,26 @@ export const Quests = () => {
       ) ?? null,
     [questGiverCharacters, questForm.questGiverCharacterId]
   );
+  const selectedQuestGiverPointOfInterest = useMemo(() => {
+    if (!selectedQuestGiver) return null;
+    const pointOfInterestId =
+      selectedQuestGiver.pointOfInterestId?.trim() ||
+      selectedQuestGiver.pointOfInterest?.id?.trim() ||
+      '';
+    if (!pointOfInterestId) return null;
+    const pointOfInterest = pointOfInterestById.get(pointOfInterestId);
+    if (pointOfInterest) {
+      return pointOfInterest;
+    }
+    const fallbackName = selectedQuestGiver.pointOfInterest?.name?.trim() ?? '';
+    return {
+      id: pointOfInterestId,
+      name: fallbackName || 'Unknown Point of Interest',
+    };
+  }, [pointOfInterestById, selectedQuestGiver]);
   const characterFilterZone = useMemo(
-    () => zones.find((zone) => zone.id === characterZoneFilterId) ?? null,
-    [characterZoneFilterId, zones]
+    () => zoneById.get(characterZoneFilterId) ?? null,
+    [characterZoneFilterId, zoneById]
   );
   const selectedQuestNodeCounts = useMemo(() => {
     const counts: Record<QuestNodeType, number> = {
@@ -1272,11 +1919,9 @@ export const Quests = () => {
     let isMounted = true;
     const loadQuestSummaries = async () => {
       try {
-        const result = await apiClient.get<Quest[]>('/sonar/admin/quests');
+        const result = await loadQuestSummariesOnce(apiClient);
         if (!isMounted) return;
-        setQuests(
-          Array.isArray(result) ? result.map(normalizeQuestSummary) : []
-        );
+        updateQuests(result);
         setLoadError(null);
       } catch (error) {
         if (!isMounted) return;
@@ -1293,118 +1938,36 @@ export const Quests = () => {
     return () => {
       isMounted = false;
     };
-  }, [apiClient]);
+  }, [apiClient, updateQuests]);
 
   useEffect(() => {
     let isMounted = true;
     const loadSupportingData = async () => {
-      const results = await Promise.allSettled([
-        apiClient.get<PointOfInterestWithCharacters[]>(
-          '/sonar/pointsOfInterest'
-        ),
-        apiClient.get<Character[]>('/sonar/characters'),
-        apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
-        apiClient.get<Spell[]>('/sonar/spells'),
-        apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
-        apiClient.get<{ items: ExpositionNodeOption[] }>(
-          '/sonar/admin/expositions'
-        ),
-        apiClient.get<MonsterRecord[]>('/sonar/monsters'),
-        apiClient.get<MonsterNodeOption[]>('/sonar/monster-encounters'),
-        apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
-      ]);
-
+      const result = await loadQuestSupportingDataOnce(apiClient);
       if (!isMounted) return;
-
-      const [
-        poiResult,
-        charactersResult,
-        inventoryResult,
-        spellsResult,
-        scenariosResult,
-        expositionsResult,
-        monsterRecordsResult,
-        monstersResult,
-        challengesResult,
-      ] = results;
-
-      if (poiResult.status === 'fulfilled') {
-        setPointsOfInterest(poiResult.value);
-      } else {
-        console.error('Failed to load points of interest', poiResult.reason);
-      }
-
-      if (charactersResult.status === 'fulfilled') {
-        setCharacters(charactersResult.value);
-      } else {
-        console.error('Failed to load characters', charactersResult.reason);
-      }
-
-      if (inventoryResult.status === 'fulfilled') {
-        setInventoryItems(inventoryResult.value);
-      } else {
-        console.error('Failed to load inventory items', inventoryResult.reason);
-      }
-
-      if (spellsResult.status === 'fulfilled') {
-        setSpells(spellsResult.value);
-      } else {
-        console.error('Failed to load spells', spellsResult.reason);
-      }
-
-      if (scenariosResult.status === 'fulfilled') {
-        setScenarios(
-          Array.isArray(scenariosResult.value) ? scenariosResult.value : []
-        );
-      } else {
-        console.error('Failed to load scenarios', scenariosResult.reason);
-      }
-
-      if (expositionsResult.status === 'fulfilled') {
-        setExpositions(
-          Array.isArray(expositionsResult.value?.items)
-            ? expositionsResult.value.items
-            : []
-        );
-      } else {
-        console.error('Failed to load expositions', expositionsResult.reason);
-      }
-
-      if (monsterRecordsResult.status === 'fulfilled') {
-        setMonsterRecords(
-          Array.isArray(monsterRecordsResult.value)
-            ? monsterRecordsResult.value
-            : []
-        );
-      } else {
-        console.error('Failed to load monsters', monsterRecordsResult.reason);
-      }
-
-      if (monstersResult.status === 'fulfilled') {
-        setMonsterEncounters(
-          Array.isArray(monstersResult.value) ? monstersResult.value : []
-        );
-      } else {
-        console.error(
-          'Failed to load monster encounters',
-          monstersResult.reason
-        );
-      }
-
-      if (challengesResult.status === 'fulfilled') {
-        setChallenges(
-          Array.isArray(challengesResult.value) ? challengesResult.value : []
-        );
-      } else {
-        console.error('Failed to load challenges', challengesResult.reason);
-      }
+      updatePointsOfInterest(result.pointsOfInterest);
+      updateCharacters(result.characters);
+      setInventoryItems(result.inventoryItems);
+      setSpells(result.spells);
+      updateScenarios(result.scenarios);
+      setExpositions(result.expositions);
+      setMonsterRecords(result.monsterRecords);
+      updateMonsterEncounters(result.monsterEncounters);
+      updateChallenges(result.challenges);
     };
 
     loadSupportingData();
     return () => {
       isMounted = false;
     };
-  }, [apiClient]);
+  }, [
+    apiClient,
+    updateChallenges,
+    updateCharacters,
+    updateMonsterEncounters,
+    updatePointsOfInterest,
+    updateScenarios,
+  ]);
 
   useEffect(() => {
     const query = proficiencySearch.trim();
@@ -1434,7 +1997,7 @@ export const Quests = () => {
       const response = await apiClient.get<PointOfInterest[]>(
         '/sonar/pointsOfInterest'
       );
-      setPointsOfInterest(response);
+      updatePointsOfInterest(response);
     } catch (error) {
       console.error('Failed to refresh points of interest', error);
     }
@@ -1457,6 +2020,22 @@ export const Quests = () => {
     setCharacterSearch('');
     setCharacterZoneError(null);
   }, [questForm.zoneId]);
+
+  useEffect(() => {
+    const key = questDatasetZoneKey(questForm.zoneId);
+    scenarioCatalogRequestKeyRef.current = key;
+    monsterRecordCatalogRequestKeyRef.current = key;
+    monsterEncounterCatalogRequestKeyRef.current = key;
+    updateScenarios(cachedQuestScenariosByZoneKey[key] ?? []);
+    setMonsterRecords(cachedQuestMonsterRecordsByZoneKey[key] ?? []);
+    updateMonsterEncounters(cachedQuestMonsterEncountersByZoneKey[key] ?? []);
+    setScenarioCatalogLoading(false);
+    setScenarioCatalogError(null);
+    setMonsterRecordCatalogLoading(false);
+    setMonsterRecordCatalogError(null);
+    setMonsterEncounterCatalogLoading(false);
+    setMonsterEncounterCatalogError(null);
+  }, [questForm.zoneId, updateMonsterEncounters, updateScenarios]);
 
   useEffect(() => {
     if (
@@ -1867,10 +2446,46 @@ export const Quests = () => {
   }, [quests]);
 
   const filteredQuests = useMemo(() => {
-    if (!searchQuery.trim()) return quests;
-    const term = searchQuery.toLowerCase();
-    return quests.filter((quest) => quest.name.toLowerCase().includes(term));
-  }, [quests, searchQuery]);
+    const term = searchQuery.trim().toLowerCase();
+
+    return quests.filter((quest) => {
+      if (term && !quest.name.toLowerCase().includes(term)) {
+        return false;
+      }
+
+      const zoneId = quest.zoneId?.trim() ?? '';
+      if (questZoneFilterId === questLibraryNoZoneFilterValue) {
+        if (zoneId) {
+          return false;
+        }
+      } else if (questZoneFilterId && zoneId !== questZoneFilterId) {
+        return false;
+      }
+
+      const effectiveZoneKind = getQuestEffectiveZoneKind(quest);
+      if (questZoneKindFilter === questLibraryUnassignedZoneKindFilterValue) {
+        if (effectiveZoneKind) {
+          return false;
+        }
+      } else if (
+        questZoneKindFilter &&
+        effectiveZoneKind !== questZoneKindFilter
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    getQuestEffectiveZoneKind,
+    questZoneFilterId,
+    questZoneKindFilter,
+    quests,
+    searchQuery,
+  ]);
+  const questLibraryFiltersActive = Boolean(
+    searchQuery.trim() || questZoneFilterId || questZoneKindFilter
+  );
 
   const allFilteredQuestsSelected = useMemo(
     () =>
@@ -2504,7 +3119,7 @@ export const Quests = () => {
     questId: string,
     updater: (quest: Quest) => Quest
   ) => {
-    setQuests((prev) =>
+    updateQuests((prev) =>
       prev.map((quest) => (quest.id === questId ? updater(quest) : quest))
     );
   };
@@ -2567,7 +3182,7 @@ export const Quests = () => {
       };
       const created = await apiClient.post<Quest>('/sonar/quests', payload);
       const normalizedQuest = normalizeQuestDetail(created);
-      setQuests((prev) => [normalizedQuest, ...prev]);
+      updateQuests((prev) => [normalizedQuest, ...prev]);
       setActiveQuestId(normalizedQuest.id);
       setQuestForm(buildQuestFormFromQuest(normalizedQuest));
       setShowCreateQuest(false);
@@ -2864,7 +3479,7 @@ export const Quests = () => {
     setDeletingQuestId(selectedQuest.id);
     try {
       await apiClient.delete(`/sonar/quests/${selectedQuest.id}`);
-      setQuests((prev) =>
+      updateQuests((prev) =>
         prev.filter((quest) => quest.id !== selectedQuest.id)
       );
       setSelectedQuestIds((prev) => {
@@ -2892,7 +3507,7 @@ export const Quests = () => {
     setDeletingQuestId(quest.id);
     try {
       await apiClient.delete(`/sonar/quests/${quest.id}`);
-      setQuests((prev) => prev.filter((item) => item.id !== quest.id));
+      updateQuests((prev) => prev.filter((item) => item.id !== quest.id));
       setSelectedQuestIds((prev) => {
         const next = new Set(prev);
         next.delete(quest.id);
@@ -2980,7 +3595,9 @@ export const Quests = () => {
       });
 
       if (deletedIds.size > 0) {
-        setQuests((prev) => prev.filter((quest) => !deletedIds.has(quest.id)));
+        updateQuests((prev) =>
+          prev.filter((quest) => !deletedIds.has(quest.id))
+        );
         setSelectedQuestIds((prev) => {
           const next = new Set(prev);
           deletedIds.forEach((questId) => next.delete(questId));
@@ -3022,7 +3639,7 @@ export const Quests = () => {
         const detail = normalizeQuestDetail(
           await apiClient.get<Quest>(`/sonar/quests/${quest.id}`)
         );
-        setQuests((prev) =>
+        updateQuests((prev) =>
           prev.map((item) => (item.id === detail.id ? detail : item))
         );
         if (selectedQuestIdRef.current === detail.id) {
@@ -3159,7 +3776,11 @@ export const Quests = () => {
   };
 
   const toggleQuickCreate = (type: 'scenario' | 'monster' | 'challenge') => {
-    setQuickCreateOpen((prev) => ({ ...prev, [type]: !prev[type] }));
+    const nextOpen = !quickCreateOpen[type];
+    setQuickCreateOpen((prev) => ({ ...prev, [type]: nextOpen }));
+    if (type === 'monster' && nextOpen && questForm.zoneId) {
+      void loadMonsterRecordCatalog(questForm.zoneId || null);
+    }
   };
 
   const handleAddQuickScenarioOption = () => {
@@ -3267,7 +3888,14 @@ export const Quests = () => {
         itemChoiceRewards: [],
         spellRewards: [],
       });
-      setScenarios((prev) => [created, ...prev]);
+      const scenarioCacheKey = questDatasetZoneKey(questForm.zoneId);
+      cachedQuestScenariosByZoneKey[scenarioCacheKey] = [
+        created,
+        ...(cachedQuestScenariosByZoneKey[scenarioCacheKey] ?? []).filter(
+          (scenario) => scenario.id !== created.id
+        ),
+      ];
+      updateScenarios((prev) => [created, ...prev]);
       setNodeForm((prev) => ({ ...prev, scenarioId: created.id }));
       setQuickCreateScenarioForm(emptyQuickCreateScenarioForm());
       setQuickCreateOpen((prev) => ({ ...prev, scenario: false }));
@@ -3334,7 +3962,7 @@ export const Quests = () => {
           proficiency: quickCreateChallengeForm.proficiency.trim(),
         }
       );
-      setChallenges((prev) => [created, ...prev]);
+      updateChallenges((prev) => [created, ...prev]);
       setNodeForm((prev) => ({
         ...prev,
         challengeId: created.id,
@@ -3397,7 +4025,14 @@ export const Quests = () => {
         longitude,
         monsterIds: quickCreateMonsterEncounterForm.monsterIds,
       });
-      setMonsterEncounters((prev) => [created, ...prev]);
+      const monsterEncounterCacheKey = questDatasetZoneKey(questForm.zoneId);
+      cachedQuestMonsterEncountersByZoneKey[monsterEncounterCacheKey] = [
+        created,
+        ...(
+          cachedQuestMonsterEncountersByZoneKey[monsterEncounterCacheKey] ?? []
+        ).filter((encounter) => encounter.id !== created.id),
+      ];
+      updateMonsterEncounters((prev) => [created, ...prev]);
       setNodeForm((prev) => ({ ...prev, monsterEncounterId: created.id }));
       setQuickCreateMonsterEncounterForm(
         emptyQuickCreateMonsterEncounterForm()
@@ -3660,14 +4295,14 @@ export const Quests = () => {
         nextLocations,
         selectedQuestGiver?.locations
       );
-      setCharacters((prev) =>
+      updateCharacters((prev) =>
         prev.map((character) =>
           character.id === questForm.questGiverCharacterId
             ? { ...character, locations: nextCharacterLocations }
             : character
         )
       );
-      setPointsOfInterest((prev) =>
+      updatePointsOfInterest((prev) =>
         prev.map((pointOfInterest) => ({
           ...pointOfInterest,
           characters: (pointOfInterest.characters ?? []).map((character) =>
@@ -3969,13 +4604,47 @@ export const Quests = () => {
                   ))}
                 </select>
                 {questForm.questGiverCharacterId && (
-                  <button
-                    type="button"
-                    className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={openCharacterLocations}
-                  >
-                    Edit Character Locations
-                  </button>
+                  <div className="mt-2 space-y-2">
+                    <button
+                      type="button"
+                      className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      onClick={openCharacterLocations}
+                    >
+                      Edit Character Locations
+                    </button>
+                    {selectedQuestGiver ? (
+                      <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                        <div className="font-medium text-gray-700">
+                          {selectedQuestGiver.name}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Link
+                            to={adminCharacterHref(selectedQuestGiver.id)}
+                            className={adminEntityLinkClass}
+                          >
+                            Open Character
+                          </Link>
+                          {selectedQuestGiverPointOfInterest ? (
+                            <>
+                              <span>
+                                At {selectedQuestGiverPointOfInterest.name}
+                              </span>
+                              <Link
+                                to={adminPointOfInterestHref(
+                                  selectedQuestGiverPointOfInterest.id
+                                )}
+                                className={adminEntityLinkClass}
+                              >
+                                Open POI
+                              </Link>
+                            </>
+                          ) : (
+                            <span>No linked point of interest</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 )}
               </div>
               <div>
@@ -4395,6 +5064,46 @@ export const Quests = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              <div className="mb-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <select
+                  aria-label="Filter quests by zone"
+                  className="block w-full border border-gray-300 rounded-md p-2"
+                  value={questZoneFilterId}
+                  onChange={(e) => setQuestZoneFilterId(e.target.value)}
+                >
+                  <option value="">All Zones</option>
+                  {questZoneFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Filter quests by zone kind"
+                  className="block w-full border border-gray-300 rounded-md p-2"
+                  value={questZoneKindFilter}
+                  onChange={(e) => setQuestZoneKindFilter(e.target.value)}
+                >
+                  <option value="">All Zone Kinds</option>
+                  {questZoneKindFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setQuestZoneFilterId('');
+                    setQuestZoneKindFilter('');
+                  }}
+                  disabled={!questLibraryFiltersActive}
+                >
+                  Clear Filters
+                </button>
+              </div>
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -4432,6 +5141,12 @@ export const Quests = () => {
               <div className="qa-library-list">
                 {filteredQuests.map((quest) => {
                   const isActive = selectedQuestId === quest.id;
+                  const questZone = getQuestZone(quest);
+                  const questZoneName = questZone?.name
+                    ? questZone.name
+                    : quest.zoneId?.trim()
+                      ? 'Unknown Zone'
+                      : 'No Zone';
                   return (
                     <div
                       key={quest.id}
@@ -4450,6 +5165,16 @@ export const Quests = () => {
                       >
                         <div className="qa-library-item-title">
                           {quest.name}
+                        </div>
+                        <div className="qa-library-item-meta">
+                          <span>{questZoneName}</span>
+                          <span>
+                            {zoneKindSummaryLabel(
+                              quest.zoneKind,
+                              questZone?.kind,
+                              zoneKindBySlug
+                            )}
+                          </span>
                         </div>
                         <div className="qa-library-item-meta">
                           <span>
@@ -4595,7 +5320,39 @@ export const Quests = () => {
                     <div className="qa-stat">
                       <div className="qa-stat-label">Quest Giver</div>
                       <div className="qa-stat-value">
-                        {selectedQuestGiver?.name ?? 'Unassigned'}
+                        {selectedQuestGiver ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{selectedQuestGiver.name}</span>
+                            <Link
+                              to={adminCharacterHref(selectedQuestGiver.id)}
+                              className={adminEntityLinkClass}
+                            >
+                              Open Character
+                            </Link>
+                          </div>
+                        ) : (
+                          'Unassigned'
+                        )}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Quest Giver POI</div>
+                      <div className="qa-stat-value">
+                        {selectedQuestGiverPointOfInterest ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{selectedQuestGiverPointOfInterest.name}</span>
+                            <Link
+                              to={adminPointOfInterestHref(
+                                selectedQuestGiverPointOfInterest.id
+                              )}
+                              className={adminEntityLinkClass}
+                            >
+                              Open POI
+                            </Link>
+                          </div>
+                        ) : (
+                          'No linked POI'
+                        )}
                       </div>
                     </div>
                     <div className="qa-stat">
@@ -4963,13 +5720,47 @@ export const Quests = () => {
                         ))}
                       </select>
                       {questForm.questGiverCharacterId && (
-                        <button
-                          type="button"
-                          className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                          onClick={openCharacterLocations}
-                        >
-                          Edit Character Locations
-                        </button>
+                        <div className="mt-2 space-y-2">
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            onClick={openCharacterLocations}
+                          >
+                            Edit Character Locations
+                          </button>
+                          {selectedQuestGiver ? (
+                            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                              <div className="font-medium text-gray-700">
+                                {selectedQuestGiver.name}
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Link
+                                  to={adminCharacterHref(selectedQuestGiver.id)}
+                                  className={adminEntityLinkClass}
+                                >
+                                  Open Character
+                                </Link>
+                                {selectedQuestGiverPointOfInterest ? (
+                                  <>
+                                    <span>
+                                      At {selectedQuestGiverPointOfInterest.name}
+                                    </span>
+                                    <Link
+                                      to={adminPointOfInterestHref(
+                                        selectedQuestGiverPointOfInterest.id
+                                      )}
+                                      className={adminEntityLinkClass}
+                                    >
+                                      Open POI
+                                    </Link>
+                                  </>
+                                ) : (
+                                  <span>No linked point of interest</span>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
                     <div>
@@ -5638,6 +6429,11 @@ export const Quests = () => {
                             <select
                               className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                               value={nodeForm.scenarioId}
+                              onFocus={() =>
+                                void loadScenarioCatalog(
+                                  questForm.zoneId || null
+                                )
+                              }
                               onChange={(e) =>
                                 setNodeForm((prev) => ({
                                   ...prev,
@@ -5652,6 +6448,15 @@ export const Quests = () => {
                                 </option>
                               ))}
                             </select>
+                            {scenarioCatalogLoading ? (
+                              <div className="mt-2 text-xs text-gray-500">
+                                Loading scenarios...
+                              </div>
+                            ) : scenarioCatalogError ? (
+                              <div className="mt-2 text-xs text-red-600">
+                                {scenarioCatalogError}
+                              </div>
+                            ) : null}
                             {nodeForm.scenarioId ? (
                               <div className="mt-2">
                                 <Link
@@ -5974,6 +6779,11 @@ export const Quests = () => {
                             <select
                               className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                               value={nodeForm.monsterEncounterId}
+                              onFocus={() =>
+                                void loadMonsterEncounterCatalog(
+                                  questForm.zoneId || null
+                                )
+                              }
                               onChange={(e) =>
                                 setNodeForm((prev) => ({
                                   ...prev,
@@ -5994,6 +6804,15 @@ export const Quests = () => {
                                 </option>
                               ))}
                             </select>
+                            {monsterEncounterCatalogLoading ? (
+                              <div className="mt-2 text-xs text-gray-500">
+                                Loading monster encounters...
+                              </div>
+                            ) : monsterEncounterCatalogError ? (
+                              <div className="mt-2 text-xs text-red-600">
+                                {monsterEncounterCatalogError}
+                              </div>
+                            ) : null}
                             {nodeForm.monsterEncounterId ? (
                               <div className="mt-2">
                                 <Link
@@ -6137,8 +6956,21 @@ export const Quests = () => {
                                     Monsters
                                   </div>
                                   <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3">
-                                    {availableMonstersForQuickCreate.length ===
-                                    0 ? (
+                                    {!questForm.zoneId ? (
+                                      <div className="text-sm text-gray-500">
+                                        Select a quest zone to load monsters for
+                                        a new encounter.
+                                      </div>
+                                    ) : monsterRecordCatalogLoading ? (
+                                      <div className="text-sm text-gray-500">
+                                        Loading monsters...
+                                      </div>
+                                    ) : monsterRecordCatalogError ? (
+                                      <div className="text-sm text-red-600">
+                                        {monsterRecordCatalogError}
+                                      </div>
+                                    ) : availableMonstersForQuickCreate.length ===
+                                      0 ? (
                                       <div className="text-sm text-gray-500">
                                         No monsters available in this quest
                                         zone.

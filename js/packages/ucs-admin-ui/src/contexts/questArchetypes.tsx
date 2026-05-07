@@ -262,6 +262,13 @@ export const QuestArchetypesProvider = ({
     [apiClient]
   );
 
+  const fetchQuestArchetypeSummaries = useCallback(async () => {
+    const questArchetypes = await apiClient.get<QuestArchetype[]>(
+      '/sonar/questArchetypes'
+    );
+    setQuestArchetypes(questArchetypes);
+  }, [apiClient]);
+
   const fetchQuestArchetypes = useCallback(async () => {
     const questArchetypes = await apiClient.get<QuestArchetype[]>(
       '/sonar/questArchetypes'
@@ -277,24 +284,24 @@ export const QuestArchetypesProvider = ({
     setQuestArchetypes(populatedQuestArchetypes);
   }, [apiClient, populateChallengesForNode]);
 
-  const fetchLocationArchetypes = async () => {
+  const fetchLocationArchetypes = useCallback(async () => {
     const locationArchetypes = await apiClient.get<LocationArchetype[]>(
       '/sonar/locationArchetypes'
     );
     setLocationArchetypes(locationArchetypes.map(normalizeLocationArchetype));
-  };
+  }, [apiClient, normalizeLocationArchetype]);
 
-  const fetchPlaceTypes = async () => {
+  const fetchPlaceTypes = useCallback(async () => {
     const placeTypes = await apiClient.get<string[]>('/sonar/placeTypes');
     setPlaceTypes(placeTypes);
-  };
+  }, [apiClient]);
 
-  const fetchZoneQuestArchetypes = async () => {
+  const fetchZoneQuestArchetypes = useCallback(async () => {
     const zoneQuestArchetypes = await apiClient.get<ZoneQuestArchetype[]>(
       '/sonar/zoneQuestArchetypes'
     );
     setZoneQuestArchetypes(zoneQuestArchetypes);
-  };
+  }, [apiClient]);
 
   useEffect(() => {
     if (!user) {
@@ -307,14 +314,20 @@ export const QuestArchetypesProvider = ({
 
     const fetchData = async () => {
       await Promise.all([
-        fetchQuestArchetypes(),
+        fetchQuestArchetypeSummaries(),
         fetchLocationArchetypes(),
         fetchPlaceTypes(),
         fetchZoneQuestArchetypes(),
       ]);
     };
-    fetchData();
-  }, [user]); // Remove function dependencies since they're defined in component scope
+    void fetchData();
+  }, [
+    user,
+    fetchLocationArchetypes,
+    fetchPlaceTypes,
+    fetchQuestArchetypeSummaries,
+    fetchZoneQuestArchetypes,
+  ]);
 
   const createLocationArchetype = async (
     locationArchetype: LocationArchetype

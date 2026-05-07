@@ -122,12 +122,14 @@ func (ZoneSeedJob) TableName() string {
 }
 
 type ZoneSeedDraft struct {
-	FantasyName      string                         `json:"fantasyName,omitempty"`
-	ZoneDescription  string                         `json:"zoneDescription,omitempty"`
-	PointsOfInterest []ZoneSeedPointOfInterestDraft `json:"pointsOfInterest,omitempty"`
-	Characters       []ZoneSeedCharacterDraft       `json:"characters,omitempty"`
-	Quests           []ZoneSeedQuestDraft           `json:"quests,omitempty"`
-	MainQuests       []ZoneSeedMainQuestDraft       `json:"mainQuests,omitempty"`
+	FantasyName            string                          `json:"fantasyName,omitempty"`
+	ZoneDescription        string                          `json:"zoneDescription,omitempty"`
+	PointsOfInterest       []ZoneSeedPointOfInterestDraft  `json:"pointsOfInterest,omitempty"`
+	Characters             []ZoneSeedCharacterDraft        `json:"characters,omitempty"`
+	Expositions            []ZoneSeedExpositionDraft       `json:"expositions,omitempty"`
+	Quests                 []ZoneSeedQuestDraft            `json:"quests,omitempty"`
+	MainQuests             []ZoneSeedMainQuestDraft        `json:"mainQuests,omitempty"`
+	GeneratedQuestRequests []ZoneSeedGeneratedQuestRequest `json:"generatedQuestRequests,omitempty"`
 }
 
 type ZoneSeedPointOfInterestDraft struct {
@@ -154,6 +156,16 @@ type ZoneSeedCharacterDraft struct {
 	ShopItemTags StringArray `json:"shopItemTags,omitempty"`
 }
 
+type ZoneSeedExpositionDraft struct {
+	DraftID     uuid.UUID        `json:"draftId"`
+	Title       string           `json:"title"`
+	Description string           `json:"description"`
+	PlaceID     string           `json:"placeId,omitempty"`
+	Latitude    *float64         `json:"latitude,omitempty"`
+	Longitude   *float64         `json:"longitude,omitempty"`
+	Dialogue    DialogueSequence `json:"dialogue,omitempty"`
+}
+
 type ZoneSeedQuestDraft struct {
 	DraftID                uuid.UUID                     `json:"draftId"`
 	Name                   string                        `json:"name"`
@@ -173,6 +185,18 @@ type ZoneSeedQuestRewardItemDraft struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	RarityTier  string `json:"rarityTier,omitempty"`
+}
+
+type ZoneSeedGeneratedQuestRequest struct {
+	DraftID                 uuid.UUID   `json:"draftId"`
+	QuestArchetypeID        uuid.UUID   `json:"questArchetypeId"`
+	QuestArchetypeName      string      `json:"questArchetypeName,omitempty"`
+	QuestGiverCharacterID   *uuid.UUID  `json:"questGiverCharacterId,omitempty"`
+	QuestGiverCharacterName string      `json:"questGiverCharacterName,omitempty"`
+	QuestGenerationJobID    *uuid.UUID  `json:"questGenerationJobId,omitempty"`
+	QuestGenerationStatus   string      `json:"questGenerationStatus,omitempty"`
+	QuestGenerationError    *string     `json:"questGenerationError,omitempty"`
+	GeneratedQuestIDs       StringArray `json:"generatedQuestIds,omitempty"`
 }
 
 type ZoneSeedMainQuestDraft struct {
@@ -228,8 +252,10 @@ func (d ZoneSeedDraft) Value() (driver.Value, error) {
 		d.ZoneDescription == "" &&
 		len(d.PointsOfInterest) == 0 &&
 		len(d.Characters) == 0 &&
+		len(d.Expositions) == 0 &&
 		len(d.Quests) == 0 &&
-		len(d.MainQuests) == 0 {
+		len(d.MainQuests) == 0 &&
+		len(d.GeneratedQuestRequests) == 0 {
 		return nil, nil
 	}
 	return json.Marshal(d)

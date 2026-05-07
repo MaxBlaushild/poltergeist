@@ -68,6 +68,9 @@ Rules:
 - Name or strongly evoke zone-specific routes, landmarks, institutions, factions, terrain, or social pressure.
 - Do not return a theme prompt that could fit a different zone kind unchanged.
 - Let the zone kind also shape the tags, route texture, and location choices.
+- Let the zone kind shape familyMixTargets first and foremost; that field should be one of the clearest signals of the zone's quest texture.
+- Do not default to investigation just because it is broadly useful. Only include investigation when the zone kind, theme, or institutions genuinely call for it.
+- Example biases: harbors lean delivery, rescue, and containment; rooftops and transit corridors lean pursuit and delivery; temples and arcane campuses lean ritual_interruption, omen_chasing, and containment; markets and civic plazas lean negotiation, delivery, or rescue; ruins, sewers, and hostile wilds lean survival and containment.
 - familyTags, characterTags, internalTags, and requiredLocationMetadataTags should use lowercase snake_case when possible.
 - familyMixTargets keys must be chosen only from the known family slugs list.
 - Keep familyMixTargets ambitious but coherent. The total should not exceed count.
@@ -114,6 +117,62 @@ type questArchetypeSuggestionPresetResponse struct {
 	InternalTags                 models.StringArray                              `json:"internalTags"`
 	RequiredLocationArchetypeIDs models.StringArray                              `json:"requiredLocationArchetypeIds"`
 	RequiredLocationMetadataTags models.StringArray                              `json:"requiredLocationMetadataTags"`
+}
+
+type questArchetypeSuggestionPresetZoneFamilyProfile struct {
+	keywords []string
+	families []string
+}
+
+var questArchetypeSuggestionPresetZoneFamilyProfiles = []questArchetypeSuggestionPresetZoneFamilyProfile{
+	{
+		keywords: []string{"harbor", "dock", "port", "waterfront", "coast", "river", "canal", "marina", "levee", "flood", "tide", "ferry"},
+		families: []string{"delivery", "rescue", "containment", "pursuit"},
+	},
+	{
+		keywords: []string{"market", "bazaar", "merchant", "trade", "vendor", "arcade", "shopping"},
+		families: []string{"delivery", "negotiation", "containment", "rescue"},
+	},
+	{
+		keywords: []string{"academy", "library", "college", "campus", "school", "university", "observatory", "archive", "scholar", "scholarly"},
+		families: []string{"omen_chasing", "ritual_interruption", "negotiation", "investigation"},
+	},
+	{
+		keywords: []string{"temple", "shrine", "cathedral", "sanctum", "sacred", "ritual", "pilgrim", "monastery"},
+		families: []string{"ritual_interruption", "omen_chasing", "negotiation", "rescue"},
+	},
+	{
+		keywords: []string{"arcane", "mage", "magical", "occult", "spell", "enchant", "ley", "astral"},
+		families: []string{"ritual_interruption", "omen_chasing", "containment", "investigation"},
+	},
+	{
+		keywords: []string{"industrial", "factory", "rail", "depot", "warehouse", "foundry", "yard", "substation", "plant", "refinery"},
+		families: []string{"containment", "delivery", "rescue", "combat_finale"},
+	},
+	{
+		keywords: []string{"court", "civic", "government", "plaza", "embassy", "administrative", "garden", "palace", "capitol"},
+		families: []string{"negotiation", "delivery", "rescue", "investigation"},
+	},
+	{
+		keywords: []string{"highrise", "rooftop", "tower", "skybridge", "skyline", "bridge", "downtown", "vertical"},
+		families: []string{"pursuit", "delivery", "combat_finale", "containment"},
+	},
+	{
+		keywords: []string{"cemetery", "grave", "crypt", "sewer", "underground", "ruin", "ruined", "catacomb"},
+		families: []string{"survival", "containment", "omen_chasing", "combat_finale"},
+	},
+	{
+		keywords: []string{"wild", "forest", "swamp", "marsh", "mountain", "cliff", "cavern", "jungle", "wilderness"},
+		families: []string{"survival", "rescue", "pursuit", "containment"},
+	},
+	{
+		keywords: []string{"festival", "theater", "nightlife", "club", "nightclub", "entertainment", "carnival"},
+		families: []string{"negotiation", "pursuit", "delivery", "combat_finale"},
+	},
+	{
+		keywords: []string{"residential", "tenement", "neighborhood", "district", "city", "urban", "street", "alley"},
+		families: []string{"delivery", "negotiation", "pursuit", "rescue"},
+	},
 }
 
 func (s *server) generateQuestArchetypeSuggestionPreset(ctx *gin.Context) {
@@ -219,15 +278,6 @@ func (s *server) sanitizeQuestArchetypeSuggestionPresetResponse(
 		count = 12
 	}
 
-	familyMixTargets := models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(generated.FamilyMixTargets)
-	if len(familyMixTargets) == 0 {
-		familyMixTargets = models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(hints.FamilyMixTargets)
-	}
-	familyMixCount := sumQuestArchetypeSuggestionFamilyMixTargets(familyMixTargets)
-	if familyMixCount > count {
-		familyMixTargets = trimQuestArchetypeSuggestionPresetFamilyMixTargets(familyMixTargets, count)
-	}
-
 	zoneKindRaw := strings.TrimSpace(generated.ZoneKind)
 	if zoneKindRaw == "" {
 		zoneKindRaw = strings.TrimSpace(hints.ZoneKind)
@@ -239,6 +289,35 @@ func (s *server) sanitizeQuestArchetypeSuggestionPresetResponse(
 	zoneKind := models.ZoneKindPromptSlug(resolvedZoneKind)
 	if zoneKind == "" {
 		zoneKind = models.NormalizeZoneKind(zoneKindRaw)
+	}
+
+	hintedFamilyMixTargets := models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(hints.FamilyMixTargets)
+	familyMixTargets := models.NormalizeQuestArchetypeSuggestionFamilyMixTargets(generated.FamilyMixTargets)
+	if len(familyMixTargets) == 0 {
+		familyMixTargets = hintedFamilyMixTargets
+	}
+	if len(familyMixTargets) == 0 {
+		familyMixTargets = buildQuestArchetypeSuggestionPresetZoneKindFamilyMixTargets(
+			resolvedZoneKind,
+			zoneKind,
+			count,
+		)
+	} else if len(hintedFamilyMixTargets) == 0 &&
+		questArchetypeSuggestionPresetFamilyMixNeedsZoneKindRebalance(
+			familyMixTargets,
+			resolvedZoneKind,
+			zoneKind,
+			count,
+		) {
+		familyMixTargets = buildQuestArchetypeSuggestionPresetZoneKindFamilyMixTargets(
+			resolvedZoneKind,
+			zoneKind,
+			count,
+		)
+	}
+	familyMixCount := sumQuestArchetypeSuggestionFamilyMixTargets(familyMixTargets)
+	if familyMixCount > count {
+		familyMixTargets = trimQuestArchetypeSuggestionPresetFamilyMixTargets(familyMixTargets, count)
 	}
 
 	familyTags := normalizeQuestTemplateInternalTags(generated.FamilyTags)
@@ -523,6 +602,201 @@ func trimQuestArchetypeSuggestionPresetFamilyMixTargets(
 		remaining -= count
 	}
 	return out
+}
+
+func buildQuestArchetypeSuggestionPresetZoneKindFamilyMixTargets(
+	zoneKind *models.ZoneKind,
+	zoneKindSlug string,
+	count int,
+) models.QuestArchetypeSuggestionFamilyMixTargets {
+	if count <= 0 {
+		return models.QuestArchetypeSuggestionFamilyMixTargets{}
+	}
+
+	rankedFamilies := rankQuestArchetypeSuggestionPresetZoneKindFamilies(zoneKind, zoneKindSlug)
+	if len(rankedFamilies) == 0 {
+		rankedFamilies = []string{"delivery", "negotiation", "containment"}
+	}
+
+	selectedCount := 1
+	switch {
+	case count >= 4:
+		selectedCount = 3
+	case count >= 2:
+		selectedCount = 2
+	}
+	if selectedCount > len(rankedFamilies) {
+		selectedCount = len(rankedFamilies)
+	}
+	selectedFamilies := rankedFamilies[:selectedCount]
+
+	out := models.QuestArchetypeSuggestionFamilyMixTargets{}
+	remaining := count
+	for _, family := range selectedFamilies {
+		if remaining <= 0 {
+			break
+		}
+		out[family] = 1
+		remaining--
+	}
+
+	for remaining > 0 {
+		progressed := false
+		for _, family := range selectedFamilies {
+			if remaining <= 0 {
+				break
+			}
+			maxPerFamily := 2
+			if family == "combat_finale" {
+				maxPerFamily = 1
+			}
+			if out[family] >= maxPerFamily {
+				continue
+			}
+			out[family]++
+			remaining--
+			progressed = true
+		}
+		if !progressed {
+			break
+		}
+	}
+
+	return out
+}
+
+func questArchetypeSuggestionPresetFamilyMixNeedsZoneKindRebalance(
+	targets models.QuestArchetypeSuggestionFamilyMixTargets,
+	zoneKind *models.ZoneKind,
+	zoneKindSlug string,
+	count int,
+) bool {
+	if count <= 0 || len(targets) == 0 {
+		return false
+	}
+
+	preferred := buildQuestArchetypeSuggestionPresetZoneKindFamilyMixTargets(zoneKind, zoneKindSlug, count)
+	if len(preferred) == 0 {
+		return false
+	}
+
+	total := sumQuestArchetypeSuggestionFamilyMixTargets(targets)
+	investigationCount := targets["investigation"]
+	if investigationCount <= 0 || total <= 0 {
+		return false
+	}
+
+	if len(targets) == 1 && investigationCount == total {
+		return len(preferred) > 1 || preferred["investigation"] == 0
+	}
+
+	hasPreferredNonInvestigation := false
+	for family := range preferred {
+		if family == "investigation" {
+			continue
+		}
+		if targets[family] > 0 {
+			hasPreferredNonInvestigation = true
+			break
+		}
+	}
+	if hasPreferredNonInvestigation {
+		return false
+	}
+
+	return investigationCount*2 >= total
+}
+
+func rankQuestArchetypeSuggestionPresetZoneKindFamilies(
+	zoneKind *models.ZoneKind,
+	zoneKindSlug string,
+) []string {
+	haystack := buildQuestArchetypeSuggestionPresetZoneKindFlavorHaystack(zoneKind, zoneKindSlug)
+	if haystack == "" {
+		return nil
+	}
+
+	scores := make(map[string]int)
+	for _, profile := range questArchetypeSuggestionPresetZoneFamilyProfiles {
+		matched := false
+		for _, keyword := range profile.keywords {
+			normalizedKeyword := strings.ToLower(strings.TrimSpace(keyword))
+			if normalizedKeyword == "" || !strings.Contains(haystack, normalizedKeyword) {
+				continue
+			}
+			matched = true
+			break
+		}
+		if !matched {
+			continue
+		}
+		for index, family := range profile.families {
+			if family == "" {
+				continue
+			}
+			scores[family] += len(profile.families) - index
+		}
+	}
+
+	if len(scores) == 0 {
+		return nil
+	}
+
+	tieBreakOrder := map[string]int{}
+	for index, family := range []string{
+		"delivery",
+		"negotiation",
+		"pursuit",
+		"containment",
+		"omen_chasing",
+		"ritual_interruption",
+		"survival",
+		"rescue",
+		"combat_finale",
+		"investigation",
+	} {
+		tieBreakOrder[family] = index
+	}
+
+	ranked := make([]string, 0, len(scores))
+	for _, family := range models.QuestArchetypeSuggestionKnownFamilySlugs() {
+		if scores[family] <= 0 {
+			continue
+		}
+		ranked = append(ranked, family)
+	}
+
+	sort.Slice(ranked, func(left, right int) bool {
+		leftFamily := ranked[left]
+		rightFamily := ranked[right]
+		if scores[leftFamily] != scores[rightFamily] {
+			return scores[leftFamily] > scores[rightFamily]
+		}
+		if tieBreakOrder[leftFamily] != tieBreakOrder[rightFamily] {
+			return tieBreakOrder[leftFamily] < tieBreakOrder[rightFamily]
+		}
+		return leftFamily < rightFamily
+	})
+
+	return ranked
+}
+
+func buildQuestArchetypeSuggestionPresetZoneKindFlavorHaystack(
+	zoneKind *models.ZoneKind,
+	zoneKindSlug string,
+) string {
+	parts := []string{
+		strings.TrimSpace(zoneKindSlug),
+		strings.TrimSpace(models.ZoneKindPromptLabel(zoneKind)),
+	}
+	if zoneKind != nil {
+		parts = append(parts, strings.TrimSpace(zoneKind.Description))
+	}
+	joined := strings.ToLower(strings.Join(parts, " "))
+	if joined == "" {
+		return ""
+	}
+	return strings.ReplaceAll(joined, "-", " ")
 }
 
 func deriveQuestArchetypeSuggestionPresetFamilyTags(

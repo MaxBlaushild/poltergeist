@@ -8,6 +8,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type monsterHandle struct {
@@ -287,7 +288,7 @@ func (h *monsterHandle) ReplaceItemRewards(ctx context.Context, monsterID uuid.U
 			reward.MonsterID = monsterID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}

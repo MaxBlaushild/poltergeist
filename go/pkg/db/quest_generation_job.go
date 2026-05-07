@@ -33,6 +33,18 @@ func (h *questGenerationJobHandle) FindByID(ctx context.Context, id uuid.UUID) (
 	return &job, nil
 }
 
+func (h *questGenerationJobHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.QuestGenerationJob, error) {
+	if len(ids) == 0 {
+		return []models.QuestGenerationJob{}, nil
+	}
+
+	var jobs []models.QuestGenerationJob
+	if err := h.db.WithContext(ctx).Where("id IN ?", ids).Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+	return jobs, nil
+}
+
 func (h *questGenerationJobHandle) FindByZoneQuestArchetypeID(ctx context.Context, zoneQuestArchetypeID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error) {
 	var jobs []*models.QuestGenerationJob
 	query := h.db.WithContext(ctx).

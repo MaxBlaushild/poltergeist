@@ -383,6 +383,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsters))
 	r.GET("/sonar/admin/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminMonsterEncounters))
 	r.GET("/sonar/admin/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminChallenges))
+	r.GET("/sonar/admin/challenges/dashboard", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminChallengeDashboard))
 	r.GET("/sonar/admin/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarios))
 	r.GET("/sonar/admin/expositions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminExpositions))
 	r.GET("/sonar/admin/scenario-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminScenarioTemplates))
@@ -436,6 +437,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
 	r.POST("/sonar/admin/zones/flush-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkFlushZoneContent))
 	r.POST("/sonar/admin/zones/:id/flush-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.flushZoneContent))
+	r.GET("/sonar/admin/zones/:id/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAdminZoneQuests))
 	r.POST("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createDistrictSeedJob))
 	r.GET("/sonar/admin/district-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJobs))
 	r.GET("/sonar/admin/district-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getDistrictSeedJob))
@@ -6768,6 +6770,11 @@ func (s *server) getZoneSeedJobs(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	jobsList, err = s.enrichZoneSeedJobsWithQuestGenerationStatus(ctx, jobsList)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	ctx.JSON(http.StatusOK, jobsList)
 }
 
@@ -6811,7 +6818,73 @@ func (s *server) getZoneSeedJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
 		return
 	}
+	enrichedJobs, err := s.enrichZoneSeedJobsWithQuestGenerationStatus(ctx, []models.ZoneSeedJob{*job})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(enrichedJobs) == 0 {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+	job = &enrichedJobs[0]
 	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) enrichZoneSeedJobsWithQuestGenerationStatus(
+	ctx context.Context,
+	zoneSeedJobs []models.ZoneSeedJob,
+) ([]models.ZoneSeedJob, error) {
+	if len(zoneSeedJobs) == 0 {
+		return zoneSeedJobs, nil
+	}
+
+	questGenerationJobIDs := make([]uuid.UUID, 0)
+	seenQuestGenerationJobIDs := make(map[uuid.UUID]struct{})
+	for i := range zoneSeedJobs {
+		for _, request := range zoneSeedJobs[i].Draft.GeneratedQuestRequests {
+			if request.QuestGenerationJobID == nil {
+				continue
+			}
+			if _, seen := seenQuestGenerationJobIDs[*request.QuestGenerationJobID]; seen {
+				continue
+			}
+			seenQuestGenerationJobIDs[*request.QuestGenerationJobID] = struct{}{}
+			questGenerationJobIDs = append(questGenerationJobIDs, *request.QuestGenerationJobID)
+		}
+	}
+
+	if len(questGenerationJobIDs) == 0 {
+		return zoneSeedJobs, nil
+	}
+
+	questGenerationJobs, err := s.dbClient.QuestGenerationJob().FindByIDs(ctx, questGenerationJobIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	questGenerationJobByID := make(map[uuid.UUID]models.QuestGenerationJob, len(questGenerationJobs))
+	for _, questGenerationJob := range questGenerationJobs {
+		questGenerationJobByID[questGenerationJob.ID] = questGenerationJob
+	}
+
+	for jobIdx := range zoneSeedJobs {
+		for requestIdx := range zoneSeedJobs[jobIdx].Draft.GeneratedQuestRequests {
+			request := &zoneSeedJobs[jobIdx].Draft.GeneratedQuestRequests[requestIdx]
+			if request.QuestGenerationJobID == nil {
+				continue
+			}
+			questGenerationJob, found := questGenerationJobByID[*request.QuestGenerationJobID]
+			if !found {
+				continue
+			}
+			request.QuestGenerationStatus = questGenerationJob.Status
+			request.QuestGenerationError = questGenerationJob.ErrorMessage
+			request.GeneratedQuestIDs = append(models.StringArray(nil), questGenerationJob.QuestIDs...)
+		}
+	}
+
+	return zoneSeedJobs, nil
 }
 
 func (s *server) approveZoneSeedJob(ctx *gin.Context) {

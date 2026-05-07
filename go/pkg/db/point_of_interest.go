@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type pointOfInterestHandle struct {
@@ -449,7 +450,7 @@ func (c *pointOfInterestHandle) ReplaceItemRewards(ctx context.Context, pointOfI
 			reward.PointOfInterestID = pointOfInterestID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -468,7 +469,7 @@ func (c *pointOfInterestHandle) ReplaceSpellRewards(ctx context.Context, pointOf
 			reward.PointOfInterestID = pointOfInterestID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}

@@ -31,6 +31,7 @@ type zoneKindPayload struct {
 	RaidEncounterCountRatio     float64  `json:"raidEncounterCountRatio"`
 	InputEncounterCountRatio    float64  `json:"inputEncounterCountRatio"`
 	OptionEncounterCountRatio   float64  `json:"optionEncounterCountRatio"`
+	ExpositionCountRatio        float64  `json:"expositionCountRatio"`
 	TreasureChestCountRatio     float64  `json:"treasureChestCountRatio"`
 	HealingFountainCountRatio   float64  `json:"healingFountainCountRatio"`
 	ShrineCountRatio            float64  `json:"shrineCountRatio"`
@@ -78,6 +79,7 @@ func normalizeZoneKindPayload(body zoneKindPayload) (*models.ZoneKind, error) {
 		RaidEncounterCountRatio:     body.RaidEncounterCountRatio,
 		InputEncounterCountRatio:    body.InputEncounterCountRatio,
 		OptionEncounterCountRatio:   body.OptionEncounterCountRatio,
+		ExpositionCountRatio:        body.ExpositionCountRatio,
 		TreasureChestCountRatio:     body.TreasureChestCountRatio,
 		HealingFountainCountRatio:   body.HealingFountainCountRatio,
 		ShrineCountRatio:            body.ShrineCountRatio,
@@ -113,6 +115,7 @@ func zoneKindPatternCues(zoneKind models.ZoneKind) []string {
 				zoneKind.OptionEncounterCountRatio,
 			),
 		},
+		{label: "story-rich", value: zoneKind.ExpositionCountRatio},
 		{label: "treasure-rich", value: zoneKind.TreasureChestCountRatio},
 		{label: "restorative", value: zoneKind.HealingFountainCountRatio},
 		{label: "shrine-rich", value: zoneKind.ShrineCountRatio},

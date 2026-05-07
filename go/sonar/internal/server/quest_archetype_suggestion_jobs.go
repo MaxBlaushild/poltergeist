@@ -164,7 +164,7 @@ func (s *server) getQuestArchetypeSuggestionJobs(ctx *gin.Context) {
 		return
 	}
 	for index := range jobsList {
-		if !jobsList[index].YeetIt || jobsList[index].Status != models.QuestArchetypeSuggestionJobStatusCompleted {
+		if !shouldAttemptYeetedQuestArchetypeSuggestionFinalization(&jobsList[index]) {
 			continue
 		}
 		updatedJob, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, &jobsList[index])
@@ -193,7 +193,7 @@ func (s *server) getQuestArchetypeSuggestionJob(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype suggestion job not found"})
 		return
 	}
-	if job.YeetIt && job.Status == models.QuestArchetypeSuggestionJobStatusCompleted {
+	if shouldAttemptYeetedQuestArchetypeSuggestionFinalization(job) {
 		updatedJob, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, job)
 		if finalizeErr != nil {
 			log.Printf("Failed to finalize yeeted quest archetype suggestion job %s: %v", job.ID, finalizeErr)
@@ -220,7 +220,7 @@ func (s *server) getQuestArchetypeSuggestionDrafts(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype suggestion job not found"})
 		return
 	}
-	if job.YeetIt && job.Status == models.QuestArchetypeSuggestionJobStatusCompleted {
+	if shouldAttemptYeetedQuestArchetypeSuggestionFinalization(job) {
 		if _, finalizeErr := s.maybeFinalizeYeetedQuestArchetypeSuggestionJob(ctx, job); finalizeErr != nil {
 			log.Printf("Failed to finalize yeeted quest archetype suggestion job %s: %v", job.ID, finalizeErr)
 		}
@@ -237,7 +237,7 @@ func (s *server) maybeFinalizeYeetedQuestArchetypeSuggestionJob(
 	ctx context.Context,
 	job *models.QuestArchetypeSuggestionJob,
 ) (*models.QuestArchetypeSuggestionJob, error) {
-	if job == nil || !job.YeetIt || job.Status != models.QuestArchetypeSuggestionJobStatusCompleted {
+	if !shouldAttemptYeetedQuestArchetypeSuggestionFinalization(job) {
 		return job, nil
 	}
 
@@ -259,7 +259,10 @@ func (s *server) maybeFinalizeYeetedQuestArchetypeSuggestionJob(
 		needsFinalization = true
 	}
 	if !needsFinalization {
-		if job.CreatedCount != convertedCount {
+		if job.Status != models.QuestArchetypeSuggestionJobStatusCompleted ||
+			job.CreatedCount != convertedCount ||
+			job.ErrorMessage != nil {
+			job.Status = models.QuestArchetypeSuggestionJobStatusCompleted
 			job.CreatedCount = convertedCount
 			job.ErrorMessage = nil
 			job.UpdatedAt = time.Now()
@@ -297,6 +300,21 @@ func (s *server) maybeFinalizeYeetedQuestArchetypeSuggestionJob(
 		return job, fmt.Errorf("failed to finalize yeeted quest archetype suggestion job: %w", err)
 	}
 	return job, nil
+}
+
+func shouldAttemptYeetedQuestArchetypeSuggestionFinalization(
+	job *models.QuestArchetypeSuggestionJob,
+) bool {
+	if job == nil || !job.YeetIt {
+		return false
+	}
+	switch job.Status {
+	case models.QuestArchetypeSuggestionJobStatusCompleted,
+		models.QuestArchetypeSuggestionJobStatusFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *server) deleteQuestArchetypeSuggestionDraft(ctx *gin.Context) {
@@ -365,6 +383,40 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	if draft == nil {
 		return nil, fmt.Errorf("draft is required")
 	}
+	preferredZoneKind, err := s.resolveOptionalZoneKind(ctx, draft.ZoneKind)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load suggestion draft zone kind: %w", err)
+	}
+	locationArchetypes, err := s.dbClient.LocationArchetype().FindAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load location archetypes: %w", err)
+	}
+	requiredLocationArchetypeIDs := models.StringArray{}
+	if draft.JobID != uuid.Nil {
+		job, jobErr := s.dbClient.QuestArchetypeSuggestionJob().FindByID(ctx, draft.JobID)
+		if jobErr != nil {
+			return nil, fmt.Errorf("failed to load suggestion job for location repair: %w", jobErr)
+		}
+		if job != nil {
+			requiredLocationArchetypeIDs = job.RequiredLocationArchetypeIDs
+		}
+	}
+	if changed, ensureErr := s.ensureQuestArchetypeSuggestionDraftLocationArchetypes(
+		ctx,
+		draft,
+		preferredZoneKind,
+		locationArchetypes,
+		requiredLocationArchetypeIDs,
+	); ensureErr != nil {
+		return nil, ensureErr
+	} else if changed {
+		draft.UpdatedAt = time.Now()
+		if draft.JobID != uuid.Nil {
+			if err := s.dbClient.QuestArchetypeSuggestionDraft().Update(ctx, draft); err != nil {
+				return nil, fmt.Errorf("failed to persist repaired suggestion draft: %w", err)
+			}
+		}
+	}
 	draftNodes := questArchetypeSuggestionDraftNodes(draft)
 	if len(draftNodes) == 0 {
 		return nil, fmt.Errorf("draft does not contain any nodes")
@@ -376,10 +428,6 @@ func (s *server) materializeQuestArchetypeSuggestionDraft(
 	monsterTemplates, err := s.dbClient.MonsterTemplate().FindAllActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load monster templates: %w", err)
-	}
-	preferredZoneKind, err := s.resolveOptionalZoneKind(ctx, draft.ZoneKind)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load suggestion draft zone kind: %w", err)
 	}
 
 	nodes := make([]*models.QuestArchetypeNode, 0, len(draftNodes))
@@ -561,6 +609,274 @@ func questArchetypeSuggestionStepFromNode(
 		MonsterTemplateIDs:      append([]string(nil), node.MonsterTemplateIDs...),
 		EncounterTone:           append([]string(nil), node.EncounterTone...),
 	}
+}
+
+type questArchetypeSuggestionLocationRepairEntry struct {
+	ID           uuid.UUID
+	Name         string
+	NameTokens   map[string]struct{}
+	IntentTokens map[string]struct{}
+}
+
+func repairQuestArchetypeSuggestionDraftLocationArchetypes(
+	draft *models.QuestArchetypeSuggestionDraft,
+	locationArchetypes []*models.LocationArchetype,
+	requiredLocationArchetypeIDs []string,
+) bool {
+	if draft == nil || len(locationArchetypes) == 0 {
+		return false
+	}
+	entries := buildQuestArchetypeSuggestionLocationRepairEntries(locationArchetypes)
+	requiredSet := buildQuestArchetypeSuggestionRequiredLocationIDSet(requiredLocationArchetypeIDs)
+	changed := false
+
+	if len(draft.Nodes) > 0 {
+		for index := range draft.Nodes {
+			if repairQuestArchetypeSuggestionNodeLocationArchetype(&draft.Nodes[index], entries, requiredSet) {
+				changed = true
+			}
+		}
+		if changed {
+			draft.Steps = make(models.QuestArchetypeSuggestionSteps, 0, len(draft.Nodes))
+			for _, node := range draft.Nodes {
+				draft.Steps = append(draft.Steps, questArchetypeSuggestionStepFromNode(node))
+			}
+		}
+		return changed
+	}
+
+	for index := range draft.Steps {
+		if repairQuestArchetypeSuggestionStepLocationArchetype(&draft.Steps[index], entries, requiredSet) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func buildQuestArchetypeSuggestionLocationRepairEntries(
+	locationArchetypes []*models.LocationArchetype,
+) []questArchetypeSuggestionLocationRepairEntry {
+	entries := make([]questArchetypeSuggestionLocationRepairEntry, 0, len(locationArchetypes))
+	for _, archetype := range locationArchetypes {
+		if archetype == nil || archetype.ID == uuid.Nil {
+			continue
+		}
+		name := strings.TrimSpace(archetype.Name)
+		if name == "" {
+			continue
+		}
+		intentParts := make([]string, 0, len(archetype.IncludedTypes))
+		for _, placeType := range archetype.IncludedTypes {
+			trimmed := strings.TrimSpace(string(placeType))
+			if trimmed != "" {
+				intentParts = append(intentParts, trimmed)
+			}
+		}
+		entries = append(entries, questArchetypeSuggestionLocationRepairEntry{
+			ID:           archetype.ID,
+			Name:         name,
+			NameTokens:   questArchetypeSuggestionTokenSet(name),
+			IntentTokens: questArchetypeSuggestionTokenSet(strings.Join(intentParts, " ")),
+		})
+	}
+	return entries
+}
+
+func buildQuestArchetypeSuggestionRequiredLocationIDSet(
+	requiredLocationArchetypeIDs []string,
+) map[uuid.UUID]struct{} {
+	if len(requiredLocationArchetypeIDs) == 0 {
+		return nil
+	}
+	requiredSet := make(map[uuid.UUID]struct{}, len(requiredLocationArchetypeIDs))
+	for _, rawID := range requiredLocationArchetypeIDs {
+		parsedID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil || parsedID == uuid.Nil {
+			continue
+		}
+		requiredSet[parsedID] = struct{}{}
+	}
+	return requiredSet
+}
+
+func repairQuestArchetypeSuggestionNodeLocationArchetype(
+	node *models.QuestArchetypeSuggestionNode,
+	entries []questArchetypeSuggestionLocationRepairEntry,
+	requiredSet map[uuid.UUID]struct{},
+) bool {
+	if node == nil {
+		return false
+	}
+	step := questArchetypeSuggestionStepFromNode(*node)
+	if !repairQuestArchetypeSuggestionStepLocationArchetype(&step, entries, requiredSet) {
+		return false
+	}
+	node.LocationArchetypeID = step.LocationArchetypeID
+	node.LocationArchetypeName = step.LocationArchetypeName
+	return true
+}
+
+func repairQuestArchetypeSuggestionStepLocationArchetype(
+	step *models.QuestArchetypeSuggestionStep,
+	entries []questArchetypeSuggestionLocationRepairEntry,
+	requiredSet map[uuid.UUID]struct{},
+) bool {
+	if step == nil || step.Source != "location" {
+		return false
+	}
+	if step.LocationArchetypeID != nil && *step.LocationArchetypeID != uuid.Nil {
+		return false
+	}
+	resolvedID, resolvedName, ok := resolveQuestArchetypeSuggestionStepLocationArchetypeFallback(
+		*step,
+		entries,
+		requiredSet,
+	)
+	if !ok {
+		return false
+	}
+	step.LocationArchetypeID = &resolvedID
+	step.LocationArchetypeName = resolvedName
+	return true
+}
+
+func resolveQuestArchetypeSuggestionStepLocationArchetypeFallback(
+	step models.QuestArchetypeSuggestionStep,
+	entries []questArchetypeSuggestionLocationRepairEntry,
+	requiredSet map[uuid.UUID]struct{},
+) (uuid.UUID, string, bool) {
+	if len(entries) == 0 {
+		return uuid.Nil, "", false
+	}
+
+	filteredEntries := filterQuestArchetypeSuggestionLocationRepairEntries(entries, requiredSet)
+	if len(filteredEntries) == 0 {
+		filteredEntries = entries
+	}
+
+	queryName := strings.TrimSpace(step.LocationArchetypeName)
+	for _, entry := range filteredEntries {
+		if strings.EqualFold(strings.TrimSpace(entry.Name), queryName) && queryName != "" {
+			return entry.ID, entry.Name, true
+		}
+	}
+
+	nameTokens := questArchetypeSuggestionTokenSet(queryName)
+	queryTokens := questArchetypeSuggestionTokenSet(strings.Join([]string{
+		queryName,
+		step.LocationConcept,
+		step.TemplateConcept,
+		strings.Join(step.LocationMetadataTags, " "),
+	}, " "))
+
+	if len(queryTokens) > 0 {
+		if resolvedID, resolvedName, ok := scoreQuestArchetypeSuggestionLocationRepairEntries(
+			filteredEntries,
+			nameTokens,
+			queryTokens,
+			requiredSet,
+		); ok {
+			return resolvedID, resolvedName, true
+		}
+		if len(filteredEntries) != len(entries) {
+			if resolvedID, resolvedName, ok := scoreQuestArchetypeSuggestionLocationRepairEntries(
+				entries,
+				nameTokens,
+				queryTokens,
+				requiredSet,
+			); ok {
+				return resolvedID, resolvedName, true
+			}
+		}
+	}
+
+	if len(filteredEntries) == 1 {
+		return filteredEntries[0].ID, filteredEntries[0].Name, true
+	}
+	return uuid.Nil, "", false
+}
+
+func filterQuestArchetypeSuggestionLocationRepairEntries(
+	entries []questArchetypeSuggestionLocationRepairEntry,
+	requiredSet map[uuid.UUID]struct{},
+) []questArchetypeSuggestionLocationRepairEntry {
+	if len(requiredSet) == 0 {
+		return entries
+	}
+	filtered := make([]questArchetypeSuggestionLocationRepairEntry, 0, len(requiredSet))
+	for _, entry := range entries {
+		if _, exists := requiredSet[entry.ID]; !exists {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+func scoreQuestArchetypeSuggestionLocationRepairEntries(
+	entries []questArchetypeSuggestionLocationRepairEntry,
+	nameTokens map[string]struct{},
+	queryTokens map[string]struct{},
+	requiredSet map[uuid.UUID]struct{},
+) (uuid.UUID, string, bool) {
+	bestScore := 0
+	bestBaseScore := 0
+	bestEntry := questArchetypeSuggestionLocationRepairEntry{}
+	for _, entry := range entries {
+		baseScore := 0
+		if len(nameTokens) > 0 {
+			baseScore += questArchetypeSuggestionTokenOverlap(nameTokens, entry.NameTokens) * 5
+		}
+		baseScore += questArchetypeSuggestionTokenOverlap(queryTokens, entry.NameTokens) * 4
+		baseScore += questArchetypeSuggestionTokenOverlap(queryTokens, entry.IntentTokens) * 2
+		if baseScore <= 0 {
+			continue
+		}
+		score := baseScore
+		if _, exists := requiredSet[entry.ID]; exists {
+			score += 2
+		}
+		if score > bestScore || (score == bestScore && baseScore > bestBaseScore) {
+			bestScore = score
+			bestBaseScore = baseScore
+			bestEntry = entry
+		}
+	}
+	if bestEntry.ID == uuid.Nil || bestBaseScore <= 0 {
+		return uuid.Nil, "", false
+	}
+	return bestEntry.ID, bestEntry.Name, true
+}
+
+func questArchetypeSuggestionTokenSet(raw string) map[string]struct{} {
+	out := map[string]struct{}{}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	for _, part := range strings.FieldsFunc(normalized, func(char rune) bool {
+		return !(char >= 'a' && char <= 'z') && !(char >= '0' && char <= '9')
+	}) {
+		trimmed := strings.TrimSpace(part)
+		if len(trimmed) < 3 {
+			continue
+		}
+		out[trimmed] = struct{}{}
+	}
+	return out
+}
+
+func questArchetypeSuggestionTokenOverlap(
+	left map[string]struct{},
+	right map[string]struct{},
+) int {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	count := 0
+	for token := range left {
+		if _, exists := right[token]; exists {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *server) createQuestArchetypeSuggestionNode(

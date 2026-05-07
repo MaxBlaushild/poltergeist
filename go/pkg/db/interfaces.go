@@ -976,6 +976,7 @@ type QuestGenerationJobHandle interface {
 	Create(ctx context.Context, job *models.QuestGenerationJob) error
 	Update(ctx context.Context, job *models.QuestGenerationJob) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestGenerationJob, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.QuestGenerationJob, error)
 	FindByZoneQuestArchetypeID(ctx context.Context, zoneQuestArchetypeID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error)
 	FindByQuestArchetypeIDAndZoneID(ctx context.Context, questArchetypeID uuid.UUID, zoneID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error)
 	TryStart(ctx context.Context, id uuid.UUID) (bool, error)
@@ -1337,6 +1338,7 @@ type QuestHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)
+	FindDetailedByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)
 	FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error)
 	FindAll(ctx context.Context) ([]models.Quest, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Quest, error)
@@ -1515,6 +1517,7 @@ type ChallengeHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Challenge, error)
 	FindAll(ctx context.Context) ([]models.Challenge, error)
 	ListAdmin(ctx context.Context, params ChallengeAdminListParams) (*ChallengeAdminListResult, error)
+	SummarizeAdmin(ctx context.Context, params ChallengeAdminListParams) (*ChallengeAdminDashboardSummary, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)
@@ -1581,6 +1584,23 @@ type ChallengeAdminListParams struct {
 type ChallengeAdminListResult struct {
 	Challenges []models.Challenge
 	Total      int64
+}
+
+type ChallengeAdminDashboardBucket struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
+type ChallengeAdminDashboardSummary struct {
+	TotalChallenges      int                             `json:"totalChallenges"`
+	PointOfInterestCount int                             `json:"pointOfInterestCount"`
+	PolygonCount         int                             `json:"polygonCount"`
+	RecurringCount       int                             `json:"recurringCount"`
+	ZoneKindCounts       []ChallengeAdminDashboardBucket `json:"zoneKindCounts"`
+	SubmissionTypeCounts []ChallengeAdminDashboardBucket `json:"submissionTypeCounts"`
+	DifficultyBandCounts []ChallengeAdminDashboardBucket `json:"difficultyBandCounts"`
+	PlacementCounts      []ChallengeAdminDashboardBucket `json:"placementCounts"`
+	StatTagCounts        []ChallengeAdminDashboardBucket `json:"statTagCounts"`
 }
 
 type ScenarioAdminListParams struct {

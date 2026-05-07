@@ -145,10 +145,43 @@ func TestBuildScenarioFromTemplateCopiesTemplateContent(t *testing.T) {
 	if !scenario.ScaleWithUserLevel || scenario.RecurringScenarioID == nil || scenario.RecurrenceFrequency == nil || scenario.NextRecurrenceAt == nil {
 		t.Fatalf("expected scenario to inherit zone-seed recurrence settings, got %+v", scenario)
 	}
-	if len(options) != 1 || len(options[0].ItemRewards) != 1 || len(options[0].ItemChoiceRewards) != 1 || len(options[0].SpellRewards) != 1 {
+	if len(options) != 1 || len(options[0].ItemRewards) != 0 || len(options[0].ItemChoiceRewards) != 1 || len(options[0].SpellRewards) != 1 {
 		t.Fatalf("expected option rewards to be copied from the template, got %+v", options)
 	}
 	if len(itemRewards) != 1 || len(itemChoiceRewards) != 1 || len(spellRewards) != 1 {
 		t.Fatalf("expected top-level rewards to be copied from the template, got item=%+v choice=%+v spell=%+v", itemRewards, itemChoiceRewards, spellRewards)
+	}
+}
+
+func TestStripScenarioOptionItemRewardsRemovesOnlyGuaranteedOptionItems(t *testing.T) {
+	spellID := uuid.New()
+	options := []models.ScenarioOption{
+		{
+			OptionText: "Press on",
+			ItemRewards: []models.ScenarioOptionItemReward{
+				{InventoryItemID: 210, Quantity: 1},
+			},
+			ItemChoiceRewards: []models.ScenarioOptionItemChoiceReward{
+				{InventoryItemID: 211, Quantity: 1},
+			},
+			SpellRewards: []models.ScenarioOptionSpellReward{
+				{SpellID: spellID},
+			},
+		},
+	}
+
+	stripped := stripScenarioOptionItemRewards(options)
+
+	if len(stripped) != 1 {
+		t.Fatalf("expected one option, got %+v", stripped)
+	}
+	if len(stripped[0].ItemRewards) != 0 {
+		t.Fatalf("expected guaranteed option item rewards to be removed, got %+v", stripped[0].ItemRewards)
+	}
+	if len(stripped[0].ItemChoiceRewards) != 1 {
+		t.Fatalf("expected item choice rewards to remain, got %+v", stripped[0].ItemChoiceRewards)
+	}
+	if len(stripped[0].SpellRewards) != 1 {
+		t.Fatalf("expected spell rewards to remain, got %+v", stripped[0].SpellRewards)
 	}
 }

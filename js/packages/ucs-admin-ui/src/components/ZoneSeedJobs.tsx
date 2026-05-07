@@ -35,11 +35,44 @@ type ZoneSeedCharacterDraft = {
   shopItemTags?: string[];
 };
 
+type ZoneSeedDialogueMessage = {
+  speaker?: string;
+  text: string;
+  order?: number;
+  effect?: string;
+  speakerName?: string;
+  portraitUrl?: string;
+};
+
+type ZoneSeedExpositionDraft = {
+  draftId: string;
+  title: string;
+  description: string;
+  placeId?: string;
+  latitude?: number;
+  longitude?: number;
+  dialogue?: ZoneSeedDialogueMessage[];
+};
+
+type ZoneSeedGeneratedQuestRequest = {
+  draftId: string;
+  questArchetypeId: string;
+  questArchetypeName?: string;
+  questGiverCharacterId?: string;
+  questGiverCharacterName?: string;
+  questGenerationJobId?: string;
+  questGenerationStatus?: string;
+  questGenerationError?: string;
+  generatedQuestIds?: string[];
+};
+
 type ZoneSeedDraft = {
   fantasyName?: string;
   zoneDescription?: string;
   pointsOfInterest?: ZoneSeedPointOfInterestDraft[];
   characters?: ZoneSeedCharacterDraft[];
+  expositions?: ZoneSeedExpositionDraft[];
+  generatedQuestRequests?: ZoneSeedGeneratedQuestRequest[];
 };
 
 type SeedMode = 'manual' | 'auto';
@@ -53,6 +86,7 @@ type ZoneSeedCounts = {
   raidEncounterCount: number;
   inputEncounterCount: number;
   optionEncounterCount: number;
+  expositionCount: number;
   treasureChestCount: number;
   healingFountainCount: number;
   shrineCount: number;
@@ -98,6 +132,7 @@ type ZoneSeedJob = {
   raidEncounterCount: number;
   inputEncounterCount: number;
   optionEncounterCount: number;
+  expositionCount?: number;
   treasureChestCount?: number;
   healingFountainCount?: number;
   shrineCount?: number;
@@ -135,6 +170,7 @@ const defaultSeedCountInputs: SeedCountInputMap = {
   raidEncounterCount: '0',
   inputEncounterCount: '0',
   optionEncounterCount: '0',
+  expositionCount: '0',
   treasureChestCount: '0',
   healingFountainCount: '0',
   shrineCount: '0',
@@ -182,6 +218,11 @@ const seedCountFields: Array<{
     key: 'optionEncounterCount',
     label: 'Option scenarios',
     description: 'Random scalable option scenarios',
+  },
+  {
+    key: 'expositionCount',
+    label: 'Expositions',
+    description: 'Ambient overheard story snippets',
   },
   {
     key: 'treasureChestCount',
@@ -611,6 +652,24 @@ const statusBadgeClass = (status: string) => {
   }
 };
 
+const questGenerationStatusBadgeClass = (status?: string) => {
+  switch (status) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    default:
+      return 'bg-gray-600';
+  }
+};
+
+const isQuestGenerationActive = (status?: string) =>
+  status === 'queued' || status === 'in_progress';
+
 const zoneSeedJobStateOptions = [
   'queued',
   'in_progress',
@@ -639,6 +698,7 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
   raidEncounterCount: job.raidEncounterCount ?? 0,
   inputEncounterCount: job.inputEncounterCount ?? 0,
   optionEncounterCount: job.optionEncounterCount ?? 0,
+  expositionCount: job.expositionCount ?? 0,
   treasureChestCount: job.treasureChestCount ?? 0,
   healingFountainCount: job.healingFountainCount ?? 0,
   shrineCount: job.shrineCount ?? 0,
@@ -655,7 +715,7 @@ const getJobFinalCounts = (job: ZoneSeedJob): ZoneSeedCounts => ({
 });
 
 const formatZoneSeedCounts = (counts: ZoneSeedCounts) =>
-  `${counts.placeCount} POIs/challenges, ${counts.questCount} quests, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.shrineCount} shrines, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
+  `${counts.placeCount} POIs/challenges, ${counts.questCount} quests, ${counts.monsterCount} monster encounters, ${counts.bossEncounterCount} boss encounters, ${counts.raidEncounterCount} raid encounters, ${counts.inputEncounterCount} input scenarios, ${counts.optionEncounterCount} option scenarios, ${counts.expositionCount} expositions, ${counts.treasureChestCount} treasure chests, ${counts.healingFountainCount} healing fountains, ${counts.shrineCount} shrines, ${counts.herbalismResourceCount} herbalism resources, ${counts.miningResourceCount} mining resources`;
 
 const formatCountMode = (mode?: CountMode) => {
   switch (mode) {
@@ -756,6 +816,7 @@ const inferAutoSeedCounts = (
     raidEncounterCount: inferAutoCount(areaAcres, 0.55),
     inputEncounterCount: inferAutoCount(areaAcres, 1.1),
     optionEncounterCount: inferAutoCount(areaAcres, 1.1),
+    expositionCount: inferAutoCount(areaAcres, 0.9),
     treasureChestCount: inferAutoCount(areaAcres, 1.35),
     healingFountainCount: inferAutoCount(areaAcres, 0.75),
     shrineCount: inferAutoCount(areaAcres, 0.6),
@@ -1117,6 +1178,41 @@ export const ZoneSeedJobs = () => {
   useEffect(() => {
     fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
   }, [fetchJobs, jobFilterZoneId, jobFilterStatuses]);
+
+  const hasLiveZoneSeedActivity = useMemo(
+    () =>
+      jobs.some((job) => {
+        if (
+          job.status === 'queued' ||
+          job.status === 'in_progress' ||
+          job.status === 'approved' ||
+          job.status === 'applying'
+        ) {
+          return true;
+        }
+        return (job.draft?.generatedQuestRequests || []).some((request) =>
+          isQuestGenerationActive(request.questGenerationStatus)
+        );
+      }),
+    [jobs]
+  );
+
+  useEffect(() => {
+    if (!hasLiveZoneSeedActivity) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    fetchJobs,
+    hasLiveZoneSeedActivity,
+    jobFilterStatuses,
+    jobFilterZoneId,
+  ]);
 
   useEffect(() => {
     if (selectedZone?.name) {
@@ -2162,6 +2258,12 @@ export const ZoneSeedJobs = () => {
                 const currentAwareExistingCounts =
                   job.countAudit?.existingCounts;
                 const currentAwareQueuedCounts = job.countAudit?.queuedCounts;
+                const generatedQuestRequests =
+                  job.draft?.generatedQuestRequests || [];
+                const failedGeneratedQuestRequests =
+                  generatedQuestRequests.filter(
+                    (request) => request.questGenerationStatus === 'failed'
+                  );
                 return (
                   <div
                     key={job.id}
@@ -2323,6 +2425,22 @@ export const ZoneSeedJobs = () => {
                         </div>
                       )}
 
+                    {!job.errorMessage &&
+                      failedGeneratedQuestRequests.length > 0 && (
+                        <div className="mt-3 rounded border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {failedGeneratedQuestRequests.length} generated side
+                          quest
+                          {failedGeneratedQuestRequests.length === 1
+                            ? ''
+                            : 's'}{' '}
+                          failed after apply. Expand Draft details to inspect
+                          the failure reason
+                          {failedGeneratedQuestRequests.length === 1
+                            ? '.'
+                            : 's.'}
+                        </div>
+                      )}
+
                     {job.draft && (
                       <details className="mt-3">
                         <summary className="cursor-pointer text-sm font-medium text-gray-700">
@@ -2422,6 +2540,136 @@ export const ZoneSeedJobs = () => {
                                 </div>
                               ))}
                             </div>
+                          </div>
+                          <div>
+                            <div className="font-semibold">Expositions</div>
+                            {(job.draft.expositions || []).length === 0 ? (
+                              <div className="mt-2 rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+                                {job.expositionCount && job.expositionCount > 0
+                                  ? 'This job will fall back to template-based exposition seeding when applied.'
+                                  : 'No expositions requested for this seed job.'}
+                              </div>
+                            ) : (
+                              <div className="mt-2 space-y-3 text-xs text-gray-600">
+                                {(job.draft.expositions || []).map(
+                                  (exposition) => (
+                                    <div
+                                      key={exposition.draftId}
+                                      className="rounded border border-gray-100 bg-gray-50 p-3"
+                                    >
+                                      <div className="text-sm font-semibold text-gray-800">
+                                        {exposition.title ||
+                                          'Untitled exposition'}
+                                      </div>
+                                      {exposition.placeId && (
+                                        <div>
+                                          Place ID: {exposition.placeId}
+                                        </div>
+                                      )}
+                                      {typeof exposition.latitude ===
+                                        'number' &&
+                                        typeof exposition.longitude ===
+                                          'number' && (
+                                          <div>
+                                            Coordinates: {exposition.latitude},{' '}
+                                            {exposition.longitude}
+                                          </div>
+                                        )}
+                                      {exposition.description && (
+                                        <div className="mt-1 whitespace-pre-wrap text-gray-500">
+                                          {exposition.description}
+                                        </div>
+                                      )}
+                                      {(exposition.dialogue || []).length >
+                                        0 && (
+                                        <div className="mt-2 space-y-1 rounded border border-white bg-white p-2 text-gray-700">
+                                          {(exposition.dialogue || []).map(
+                                            (line, index) => (
+                                              <div
+                                                key={`${exposition.draftId}-line-${index}`}
+                                              >
+                                                <span className="font-medium text-gray-900">
+                                                  {line.speakerName ||
+                                                    'Unknown'}:
+                                                </span>{' '}
+                                                {line.text}
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold">
+                              Generated side quests
+                            </div>
+                            {generatedQuestRequests.length === 0 ? (
+                              <div className="mt-2 rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+                                {job.questCount > 0
+                                  ? 'Side quest generation jobs will appear here after apply starts.'
+                                  : 'No generated side quests requested for this seed job.'}
+                              </div>
+                            ) : (
+                              <div className="mt-2 space-y-3 text-xs text-gray-600">
+                                {generatedQuestRequests.map((request) => (
+                                  <div
+                                    key={request.draftId}
+                                    className="rounded border border-gray-100 bg-gray-50 p-3"
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm font-semibold text-gray-800">
+                                          {request.questArchetypeName ||
+                                            'Unnamed archetype'}
+                                        </div>
+                                        <div>
+                                          Archetype ID:{' '}
+                                          {request.questArchetypeId || 'n/a'}
+                                        </div>
+                                        {request.questGiverCharacterName && (
+                                          <div>
+                                            Quest giver:{' '}
+                                            {request.questGiverCharacterName}
+                                          </div>
+                                        )}
+                                        {request.questGenerationJobId && (
+                                          <div>
+                                            Generation job:{' '}
+                                            {request.questGenerationJobId}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <span
+                                        className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold text-white ${questGenerationStatusBadgeClass(
+                                          request.questGenerationStatus
+                                        )}`}
+                                      >
+                                        {(request.questGenerationStatus ||
+                                          'unknown'
+                                        ).replace(/_/g, ' ')}
+                                      </span>
+                                    </div>
+                                    {request.generatedQuestIds &&
+                                      request.generatedQuestIds.length > 0 && (
+                                        <div className="mt-2">
+                                          Generated quest IDs:{' '}
+                                          {request.generatedQuestIds.join(', ')}
+                                        </div>
+                                      )}
+                                    {request.questGenerationError && (
+                                      <div className="mt-2 rounded border border-red-100 bg-red-50 px-3 py-2 text-red-700 whitespace-pre-wrap">
+                                        {request.questGenerationError}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div>
                             {job.countMode === 'current_aware' &&
@@ -2548,6 +2796,10 @@ export const ZoneSeedJobs = () => {
                                 POIs
                               </div>
                               <div>
+                                {job.questCount ?? 0} side quests generated
+                                from matching archetypes
+                              </div>
+                              <div>
                                 {job.monsterCount ?? 0} random monster
                                 encounters (scalable)
                               </div>
@@ -2566,6 +2818,9 @@ export const ZoneSeedJobs = () => {
                               <div>
                                 {job.optionEncounterCount ?? 0} random option
                                 scenarios (scalable)
+                              </div>
+                              <div>
+                                {job.expositionCount ?? 0} ambient expositions
                               </div>
                               <div>
                                 {job.treasureChestCount ?? 0} random treasure

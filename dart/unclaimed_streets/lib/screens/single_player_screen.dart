@@ -5860,8 +5860,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           traceId: traceId,
         ),
       );
-      final pinContent = await pinContentFuture;
+      var pinContent = await pinContentFuture;
       final baseContent = await baseContentFuture;
+      final latestCachedPinContent =
+          _zonePinContentCache[zoneId.trim()]?.content;
+      if (latestCachedPinContent != null) {
+        pinContent = latestCachedPinContent;
+      }
       final chests = baseContent.treasureChests;
       final healingFountains = baseContent.healingFountains;
       final shrines = baseContent.shrines;
@@ -9068,9 +9073,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isZoneScopedContentVisibleForSelectedZone(String zoneId) {
+    // Cached snapshots can keep multiple zones loaded, but the map should only
+    // render zone-scoped pins for the active selection.
     final normalizedZoneId = zoneId.trim();
+    final selectedZoneId = _effectiveSelectedZone()?.id.trim() ?? '';
     return normalizedZoneId.isNotEmpty &&
-        _loadedZoneContentIds.contains(normalizedZoneId);
+        selectedZoneId.isNotEmpty &&
+        normalizedZoneId == selectedZoneId;
   }
 
   bool _poiMatchesActiveTagFilter(PointOfInterest poi) {
@@ -12259,25 +12268,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isPoiInSelectedZone(PointOfInterest poi) {
+    final selectedZone = _effectiveSelectedZone();
+    if (selectedZone == null) return false;
     final lat = double.tryParse(poi.lat);
     final lng = double.tryParse(poi.lng);
     if (lat == null || lng == null) return false;
-    return _isCoordinateInLoadedZones(lat, lng);
+    return _isCoordinateInSelectedZone(lat, lng);
   }
 
-  bool _isCoordinateInLoadedZones(double lat, double lng) {
-    if (_loadedZoneContentIds.isEmpty) {
-      return false;
-    }
-    final zoneProvider = context.read<ZoneProvider>();
-    for (final zoneId in _loadedZoneContentIds) {
-      final zone = zoneProvider.zoneById(zoneId);
-      if (zone == null) continue;
-      if (_isPointInZone(zone, lat, lng)) {
-        return true;
-      }
-    }
-    return false;
+  bool _isCoordinateInSelectedZone(double lat, double lng) {
+    final selectedZone = _effectiveSelectedZone();
+    return selectedZone != null && _isPointInZone(selectedZone, lat, lng);
   }
 
   double _poiMarkerOpacity(
@@ -13262,7 +13263,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return points
         .where(
           (point) =>
-              _isCoordinateInLoadedZones(point.latitude, point.longitude),
+              _isCoordinateInSelectedZone(point.latitude, point.longitude),
         )
         .toList();
   }

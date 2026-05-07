@@ -36,6 +36,7 @@ func TestZoneSeedInferAutoCountsAppliesMinimumFloors(t *testing.T) {
 		counts.RaidEncounterCount != 1 ||
 		counts.InputEncounterCount != 1 ||
 		counts.OptionEncounterCount != 1 ||
+		counts.ExpositionCount != 1 ||
 		counts.TreasureChestCount != 1 ||
 		counts.HealingFountainCount != 1 ||
 		counts.HerbalismResourceCount != 1 ||

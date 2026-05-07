@@ -12,6 +12,7 @@ type ZoneKindRatioField = {
     | 'raidEncounterCountRatio'
     | 'inputEncounterCountRatio'
     | 'optionEncounterCountRatio'
+    | 'expositionCountRatio'
     | 'treasureChestCountRatio'
     | 'healingFountainCountRatio'
     | 'shrineCountRatio'
@@ -34,6 +35,7 @@ type ZoneKindFormState = {
   raidEncounterCountRatio: string;
   inputEncounterCountRatio: string;
   optionEncounterCountRatio: string;
+  expositionCountRatio: string;
   treasureChestCountRatio: string;
   healingFountainCountRatio: string;
   shrineCountRatio: string;
@@ -124,6 +126,11 @@ const ratioFields: ZoneKindRatioField[] = [
     key: 'optionEncounterCountRatio',
     label: 'Option scenarios',
     description: 'Choice-driven scenarios',
+  },
+  {
+    key: 'expositionCountRatio',
+    label: 'Expositions',
+    description: 'Ambient overheard story snippets',
   },
   {
     key: 'treasureChestCountRatio',
@@ -256,6 +263,7 @@ const zoneKindPatternCueLabels = (zoneKind: ZoneKind) => {
         zoneKind.optionEncounterCountRatio
       ),
     },
+    { label: 'story-rich', value: zoneKind.expositionCountRatio },
     { label: 'treasure-rich', value: zoneKind.treasureChestCountRatio },
     { label: 'restorative', value: zoneKind.healingFountainCountRatio },
     { label: 'shrine-rich', value: zoneKind.shrineCountRatio },
@@ -372,6 +380,7 @@ const emptyForm = (): ZoneKindFormState => ({
   raidEncounterCountRatio: '1',
   inputEncounterCountRatio: '1',
   optionEncounterCountRatio: '1',
+  expositionCountRatio: '1',
   treasureChestCountRatio: '1',
   healingFountainCountRatio: '1',
   shrineCountRatio: '1',
@@ -444,6 +453,7 @@ const formFromZoneKind = (zoneKind: ZoneKind): ZoneKindFormState => ({
   raidEncounterCountRatio: String(zoneKind.raidEncounterCountRatio ?? 1),
   inputEncounterCountRatio: String(zoneKind.inputEncounterCountRatio ?? 1),
   optionEncounterCountRatio: String(zoneKind.optionEncounterCountRatio ?? 1),
+  expositionCountRatio: String(zoneKind.expositionCountRatio ?? 1),
   treasureChestCountRatio: String(zoneKind.treasureChestCountRatio ?? 1),
   healingFountainCountRatio: String(zoneKind.healingFountainCountRatio ?? 1),
   shrineCountRatio: String(zoneKind.shrineCountRatio ?? 1),
@@ -481,6 +491,7 @@ const parseZoneKindForm = (
     raidEncounterCountRatio: 1,
     inputEncounterCountRatio: 1,
     optionEncounterCountRatio: 1,
+    expositionCountRatio: 1,
     treasureChestCountRatio: 1,
     healingFountainCountRatio: 1,
     shrineCountRatio: 1,

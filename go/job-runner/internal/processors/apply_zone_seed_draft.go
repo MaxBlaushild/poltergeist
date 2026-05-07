@@ -191,7 +191,7 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		)
 	}
 
-	questQueued, questFailed, err := p.seedQuestsForZone(ctx, zone, job)
+	questQueued, questFailed, err := p.seedQuestsForZone(ctx, zone, job, characterByDraftID)
 	if err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed quests: %w", err))
 	}
@@ -582,6 +582,7 @@ func (p *ApplyZoneSeedDraftProcessor) seedQuestsForZone(
 	ctx context.Context,
 	zone *models.Zone,
 	job *models.ZoneSeedJob,
+	characterByDraftID map[uuid.UUID]*models.Character,
 ) (queued int, failed int, err error) {
 	questCount := job.QuestCount
 	if questCount <= 0 {
@@ -627,14 +628,30 @@ func (p *ApplyZoneSeedDraftProcessor) seedQuestsForZone(
 		return 0, 0, fmt.Errorf("no side quest archetypes available for zone kind %q", effectiveZoneKind)
 	}
 
-	return p.enqueueZoneSeedQuestGenerationJobs(ctx, zone, archetypePool, questCount)
+	return p.enqueueZoneSeedQuestGenerationJobs(
+		ctx,
+		zone,
+		job,
+		archetypePool,
+		questCount,
+		characterByDraftID,
+		zoneSeedPOIDraftsByPlaceID(job.Draft.PointsOfInterest),
+	)
+}
+
+type queuedZoneSeedQuestGeneration struct {
+	job     *models.QuestGenerationJob
+	payload jobs.GenerateQuestForZoneTaskPayload
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
 	ctx context.Context,
 	zone *models.Zone,
+	zoneSeedJob *models.ZoneSeedJob,
 	archetypePool []*models.QuestArchetype,
 	questCount int,
+	characterByDraftID map[uuid.UUID]*models.Character,
+	poiDraftByPlaceID map[string]*models.ZoneSeedPointOfInterestDraft,
 ) (queued int, failed int, err error) {
 	if zone == nil {
 		return 0, 0, fmt.Errorf("zone is required")
@@ -643,7 +660,19 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
 		return 0, 0, nil
 	}
 
+	questGiverContext, err := p.buildZoneSeedQuestGiverContext(
+		ctx,
+		zone,
+		characterByDraftID,
+		poiDraftByPlaceID,
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to prepare zone seed quest giver context: %w", err)
+	}
+
 	order := rand.Perm(len(archetypePool))
+	trackedRequests := make([]models.ZoneSeedGeneratedQuestRequest, 0, questCount)
+	queuedGenerations := make([]queuedZoneSeedQuestGeneration, 0, questCount)
 	for i := 0; i < questCount; i++ {
 		if len(order) == 0 {
 			order = rand.Perm(len(archetypePool))
@@ -655,18 +684,38 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
 			continue
 		}
 
+		questGiverCharacter, giverErr := p.resolveZoneSeedQuestGiverCharacter(
+			ctx,
+			zone,
+			archetype,
+			questGiverContext,
+		)
+		if giverErr != nil {
+			return queued, failed, fmt.Errorf(
+				"failed to resolve quest giver for archetype %s: %w",
+				archetype.ID,
+				giverErr,
+			)
+		}
+
 		now := time.Now()
-		job := &models.QuestGenerationJob{
+		questGenerationJob := &models.QuestGenerationJob{
 			ID:               uuid.New(),
 			CreatedAt:        now,
 			UpdatedAt:        now,
 			ZoneID:           zone.ID,
 			QuestArchetypeID: archetype.ID,
-			Status:           models.QuestGenerationStatusQueued,
-			TotalCount:       1,
-			QuestIDs:         models.StringArray{},
+			QuestGiverCharacterID: func() *uuid.UUID {
+				if questGiverCharacter == nil {
+					return nil
+				}
+				return &questGiverCharacter.ID
+			}(),
+			Status:     models.QuestGenerationStatusQueued,
+			TotalCount: 1,
+			QuestIDs:   models.StringArray{},
 		}
-		if err := p.dbClient.QuestGenerationJob().Create(ctx, job); err != nil {
+		if err := p.dbClient.QuestGenerationJob().Create(ctx, questGenerationJob); err != nil {
 			return queued, failed, fmt.Errorf(
 				"failed to create quest generation job %d/%d for archetype %s: %w",
 				i+1,
@@ -676,23 +725,64 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
 			)
 		}
 
-		payload, marshalErr := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
-			ZoneID:               zone.ID,
-			QuestArchetypeID:     archetype.ID,
-			QuestGenerationJobID: &job.ID,
+		trackedRequests = append(trackedRequests, models.ZoneSeedGeneratedQuestRequest{
+			DraftID:                 uuid.New(),
+			QuestArchetypeID:        archetype.ID,
+			QuestArchetypeName:      strings.TrimSpace(archetype.Name),
+			QuestGiverCharacterID:   questGenerationJob.QuestGiverCharacterID,
+			QuestGiverCharacterName: zoneSeedCharacterName(questGiverCharacter),
+			QuestGenerationJobID:    &questGenerationJob.ID,
+			QuestGenerationStatus:   models.QuestGenerationStatusQueued,
+			GeneratedQuestIDs:       models.StringArray{},
 		})
+		queuedGenerations = append(queuedGenerations, queuedZoneSeedQuestGeneration{
+			job: questGenerationJob,
+			payload: jobs.GenerateQuestForZoneTaskPayload{
+				ZoneID:           zone.ID,
+				QuestArchetypeID: archetype.ID,
+				QuestGiverCharacterID: func() *uuid.UUID {
+					if questGiverCharacter == nil {
+						return nil
+					}
+					return &questGiverCharacter.ID
+				}(),
+				QuestGenerationJobID: &questGenerationJob.ID,
+			},
+		})
+	}
+
+	if zoneSeedJob != nil {
+		zoneSeedJob.Draft.GeneratedQuestRequests = trackedRequests
+		zoneSeedJob.UpdatedAt = time.Now()
+		if err := p.dbClient.ZoneSeedJob().Update(ctx, zoneSeedJob); err != nil {
+			for _, queuedGeneration := range queuedGenerations {
+				p.failZoneSeedQuestGenerationJob(
+					ctx,
+					queuedGeneration.job,
+					fmt.Errorf("failed to persist zone seed quest generation tracking: %w", err),
+				)
+			}
+			return 0, len(queuedGenerations), fmt.Errorf(
+				"failed to update zone seed job with quest generation tracking: %w",
+				err,
+			)
+		}
+	}
+
+	for _, queuedGeneration := range queuedGenerations {
+		payload, marshalErr := json.Marshal(queuedGeneration.payload)
 		if marshalErr != nil {
-			p.failZoneSeedQuestGenerationJob(ctx, job, marshalErr)
+			p.failZoneSeedQuestGenerationJob(ctx, queuedGeneration.job, marshalErr)
 			failed++
 			continue
 		}
 		if p.asyncClient == nil {
-			p.failZoneSeedQuestGenerationJob(ctx, job, fmt.Errorf("async client unavailable"))
+			p.failZoneSeedQuestGenerationJob(ctx, queuedGeneration.job, fmt.Errorf("async client unavailable"))
 			failed++
 			continue
 		}
 		if _, enqueueErr := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); enqueueErr != nil {
-			p.failZoneSeedQuestGenerationJob(ctx, job, enqueueErr)
+			p.failZoneSeedQuestGenerationJob(ctx, queuedGeneration.job, enqueueErr)
 			failed++
 			continue
 		}
@@ -701,6 +791,13 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueZoneSeedQuestGenerationJobs(
 	}
 
 	return queued, failed, nil
+}
+
+func zoneSeedCharacterName(character *models.Character) string {
+	if character == nil {
+		return ""
+	}
+	return strings.TrimSpace(character.Name)
 }
 
 func (p *ApplyZoneSeedDraftProcessor) failZoneSeedQuestGenerationJob(
@@ -718,6 +815,286 @@ func (p *ApplyZoneSeedDraftProcessor) failZoneSeedQuestGenerationJob(
 	if updateErr := p.dbClient.QuestGenerationJob().Update(ctx, job); updateErr != nil {
 		log.Printf("Failed to mark zone seed quest generation job %s as failed: %v", job.ID, updateErr)
 	}
+}
+
+type zoneSeedQuestGiverContext struct {
+	pointOfInterestByID map[uuid.UUID]*models.PointOfInterest
+	zoneCharacters      []*models.Character
+	draftCharacters     []*models.Character
+	poiDraftByPlaceID   map[string]*models.ZoneSeedPointOfInterestDraft
+	assignments         map[uuid.UUID]int
+}
+
+type zoneSeedQuestGiverCandidate struct {
+	character    *models.Character
+	tagMatches   int
+	rootLocation bool
+	hasZonePOI   bool
+	draftNative  bool
+	assignments  int
+}
+
+func zoneSeedPOIDraftsByPlaceID(
+	drafts []models.ZoneSeedPointOfInterestDraft,
+) map[string]*models.ZoneSeedPointOfInterestDraft {
+	indexed := make(map[string]*models.ZoneSeedPointOfInterestDraft, len(drafts))
+	for idx := range drafts {
+		placeID := strings.TrimSpace(drafts[idx].PlaceID)
+		if placeID == "" {
+			continue
+		}
+		indexed[placeID] = &drafts[idx]
+	}
+	return indexed
+}
+
+func (p *ApplyZoneSeedDraftProcessor) buildZoneSeedQuestGiverContext(
+	ctx context.Context,
+	zone *models.Zone,
+	characterByDraftID map[uuid.UUID]*models.Character,
+	poiDraftByPlaceID map[string]*models.ZoneSeedPointOfInterestDraft,
+) (*zoneSeedQuestGiverContext, error) {
+	if zone == nil {
+		return nil, fmt.Errorf("zone is required")
+	}
+
+	pointsOfInterest, err := p.dbClient.PointOfInterest().FindAllForZone(ctx, zone.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	pointOfInterestByID := make(map[uuid.UUID]*models.PointOfInterest, len(pointsOfInterest))
+	pointOfInterestIDs := make([]uuid.UUID, 0, len(pointsOfInterest))
+	for idx := range pointsOfInterest {
+		poi := pointsOfInterest[idx]
+		pointOfInterestByID[poi.ID] = &pointsOfInterest[idx]
+		pointOfInterestIDs = append(pointOfInterestIDs, poi.ID)
+	}
+
+	zoneCharacters, err := p.dbClient.Character().FindPotentiallyInZone(ctx, zone, pointOfInterestIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	draftCharacters := make([]*models.Character, 0, len(characterByDraftID))
+	for _, character := range characterByDraftID {
+		if character == nil {
+			continue
+		}
+		draftCharacters = append(draftCharacters, character)
+	}
+	sort.Slice(draftCharacters, func(i, j int) bool {
+		return draftCharacters[i].ID.String() < draftCharacters[j].ID.String()
+	})
+
+	return &zoneSeedQuestGiverContext{
+		pointOfInterestByID: pointOfInterestByID,
+		zoneCharacters:      zoneCharacters,
+		draftCharacters:     draftCharacters,
+		poiDraftByPlaceID:   poiDraftByPlaceID,
+		assignments:         map[uuid.UUID]int{},
+	}, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) resolveZoneSeedQuestGiverCharacter(
+	ctx context.Context,
+	zone *models.Zone,
+	archetype *models.QuestArchetype,
+	context *zoneSeedQuestGiverContext,
+) (*models.Character, error) {
+	if zone == nil {
+		return nil, fmt.Errorf("zone is required")
+	}
+	if archetype == nil {
+		return nil, fmt.Errorf("quest archetype is required")
+	}
+	if context == nil {
+		return nil, fmt.Errorf("quest giver context is required")
+	}
+
+	if archetype.QuestGiverCharacterID != nil && *archetype.QuestGiverCharacterID != uuid.Nil {
+		character, err := p.dbClient.Character().FindByID(ctx, *archetype.QuestGiverCharacterID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load explicit quest giver: %w", err)
+		}
+		if character != nil {
+			context.assignments[character.ID]++
+			return character, nil
+		}
+	}
+
+	desiredTags := normalizeDistrictSeedTags(archetype.CharacterTags)
+	if candidate := selectZoneSeedQuestGiverCandidate(archetype, desiredTags, context, true); candidate != nil {
+		context.assignments[candidate.ID]++
+		return candidate, nil
+	}
+	if candidate := selectZoneSeedQuestGiverCandidate(archetype, desiredTags, context, false); candidate != nil {
+		context.assignments[candidate.ID]++
+		return candidate, nil
+	}
+
+	generated, err := p.generateZoneSeedQuestGiverCharacter(ctx, zone, archetype)
+	if err != nil {
+		return nil, err
+	}
+	if generated != nil {
+		context.assignments[generated.ID]++
+		context.zoneCharacters = append(context.zoneCharacters, generated)
+		if generated.PointOfInterestID != nil && generated.PointOfInterest != nil {
+			context.pointOfInterestByID[*generated.PointOfInterestID] = generated.PointOfInterest
+		}
+	}
+	return generated, nil
+}
+
+func selectZoneSeedQuestGiverCandidate(
+	archetype *models.QuestArchetype,
+	desiredTags map[string]struct{},
+	context *zoneSeedQuestGiverContext,
+	requireTagMatch bool,
+) *models.Character {
+	if archetype == nil || context == nil {
+		return nil
+	}
+	if requireTagMatch && len(desiredTags) == 0 {
+		return nil
+	}
+
+	candidates := make([]zoneSeedQuestGiverCandidate, 0)
+	seen := map[uuid.UUID]struct{}{}
+
+	consider := func(character *models.Character, draftNative bool) {
+		if character == nil || character.ID == uuid.Nil {
+			return
+		}
+		if _, exists := seen[character.ID]; exists {
+			return
+		}
+		seen[character.ID] = struct{}{}
+		if models.CharacterHasInternalTag(character, models.CharacterInternalTagGeneratedFetchQuest) {
+			return
+		}
+
+		tagMatches := districtSeedMatchCount(character.InternalTags, desiredTags)
+		if requireTagMatch && tagMatches == 0 {
+			return
+		}
+
+		candidates = append(candidates, zoneSeedQuestGiverCandidate{
+			character:    character,
+			tagMatches:   tagMatches,
+			rootLocation: zoneSeedQuestGiverMatchesRootLocation(archetype, character, context),
+			hasZonePOI:   character.PointOfInterestID != nil && *character.PointOfInterestID != uuid.Nil,
+			draftNative:  draftNative,
+			assignments:  context.assignments[character.ID],
+		})
+	}
+
+	for _, character := range context.draftCharacters {
+		consider(character, true)
+	}
+	for _, character := range context.zoneCharacters {
+		consider(character, false)
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if left.tagMatches != right.tagMatches {
+			return left.tagMatches > right.tagMatches
+		}
+		if left.rootLocation != right.rootLocation {
+			return left.rootLocation
+		}
+		if left.assignments != right.assignments {
+			return left.assignments < right.assignments
+		}
+		if left.draftNative != right.draftNative {
+			return left.draftNative
+		}
+		if left.hasZonePOI != right.hasZonePOI {
+			return left.hasZonePOI
+		}
+		leftName := strings.ToLower(strings.TrimSpace(left.character.Name))
+		rightName := strings.ToLower(strings.TrimSpace(right.character.Name))
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		return left.character.ID.String() < right.character.ID.String()
+	})
+
+	return candidates[0].character
+}
+
+func zoneSeedQuestGiverMatchesRootLocation(
+	archetype *models.QuestArchetype,
+	character *models.Character,
+	context *zoneSeedQuestGiverContext,
+) bool {
+	if archetype == nil || character == nil || context == nil {
+		return false
+	}
+	locationArchetype := archetype.Root.LocationArchetype
+	if locationArchetype == nil || character.PointOfInterestID == nil || *character.PointOfInterestID == uuid.Nil {
+		return false
+	}
+
+	poi := context.pointOfInterestByID[*character.PointOfInterestID]
+	if poi == nil && character.PointOfInterest != nil {
+		poi = character.PointOfInterest
+	}
+	if poi == nil || poi.GoogleMapsPlaceID == nil {
+		return false
+	}
+
+	poiDraft := context.poiDraftByPlaceID[strings.TrimSpace(*poi.GoogleMapsPlaceID)]
+	if poiDraft == nil {
+		return false
+	}
+	return matchZoneSeedPOILocationArchetype([]*models.LocationArchetype{locationArchetype}, poiDraft) != nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) generateZoneSeedQuestGiverCharacter(
+	ctx context.Context,
+	zone *models.Zone,
+	archetype *models.QuestArchetype,
+) (*models.Character, error) {
+	districtProcessor := SeedDistrictProcessor{
+		dbClient:       p.dbClient,
+		deepPriest:     p.deepPriest,
+		locationSeeder: p.locationSeeder,
+		asyncClient:    p.asyncClient,
+	}
+
+	anchorPOI, err := districtProcessor.ensureDistrictSeedAnchorPOI(ctx, zone, archetype)
+	if err != nil {
+		return nil, fmt.Errorf("failed to anchor generated quest giver: %w", err)
+	}
+
+	generated, err := districtProcessor.generateDistrictSeedCharacter(ctx, zone, archetype, anchorPOI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to draft generated quest giver: %w", err)
+	}
+
+	character, err := districtProcessor.createDistrictSeedCharacter(
+		ctx,
+		zone,
+		anchorPOI,
+		generated,
+		archetype.CharacterTags,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generated quest giver: %w", err)
+	}
+
+	if character != nil && anchorPOI != nil {
+		character.PointOfInterest = anchorPOI
+	}
+	return character, nil
 }
 
 func (p *ApplyZoneSeedDraftProcessor) generateZoneSeedQuestArchetypes(
@@ -1297,6 +1674,10 @@ func (p *ApplyZoneSeedDraftProcessor) seedExpositionsForZone(
 	zone *models.Zone,
 	job *models.ZoneSeedJob,
 ) error {
+	if len(job.Draft.Expositions) > 0 {
+		return p.seedDraftedExpositionsForZone(ctx, zone, job)
+	}
+
 	expositionCount := job.ExpositionCount
 	if expositionCount <= 0 {
 		return nil
@@ -1395,6 +1776,112 @@ func (p *ApplyZoneSeedDraftProcessor) seedExpositionsForZone(
 	}
 
 	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedDraftedExpositionsForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	if len(job.Draft.Expositions) == 0 {
+		return nil
+	}
+
+	effectiveZoneKind := models.NormalizeZoneKind(job.ZoneKind)
+	if effectiveZoneKind == "" && zone != nil {
+		effectiveZoneKind = models.NormalizeZoneKind(zone.Kind)
+	}
+
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	for index, draft := range job.Draft.Expositions {
+		location, err := p.resolveZoneSeedDraftExpositionLocation(ctx, zone, draft, fallbackLocations)
+		if err != nil {
+			return fmt.Errorf("failed to resolve exposition draft location %d/%d: %w", index+1, len(job.Draft.Expositions), err)
+		}
+
+		title := strings.TrimSpace(draft.Title)
+		if title == "" {
+			title = fmt.Sprintf("Overheard Conversation %d", index+1)
+		}
+		description := strings.TrimSpace(draft.Description)
+		if description == "" {
+			description = "A fragment of conversation hints at unfinished business somewhere in the district."
+		}
+		dialogue := sanitizeZoneSeedExpositionDialogue(draft.Dialogue)
+		if len(dialogue) == 0 {
+			dialogue = models.DialogueSequence{
+				{
+					Speaker:     "character",
+					SpeakerName: "Local",
+					Text:        "Not here. Too many ears.",
+					Order:       0,
+				},
+				{
+					Speaker:     "character",
+					SpeakerName: "Courier",
+					Text:        "Then move before moonrise and tell no one why.",
+					Order:       1,
+				},
+			}
+		}
+
+		exposition := &models.Exposition{
+			ID:                uuid.New(),
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+			ZoneID:            zone.ID,
+			ZoneKind:          effectiveZoneKind,
+			PointOfInterestID: location.PointOfInterestID,
+			Latitude:          location.Latitude,
+			Longitude:         location.Longitude,
+			Title:             title,
+			Description:       description,
+			Dialogue:          dialogue,
+			RewardMode:        models.RewardModeRandom,
+			RandomRewardSize:  models.RandomRewardSizeSmall,
+		}
+		if err := p.dbClient.Exposition().Create(ctx, exposition); err != nil {
+			return fmt.Errorf("failed to create drafted exposition %d/%d: %w", index+1, len(job.Draft.Expositions), err)
+		}
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) resolveZoneSeedDraftExpositionLocation(
+	ctx context.Context,
+	zone *models.Zone,
+	draft models.ZoneSeedExpositionDraft,
+	fallbackLocations []zoneSeedScenarioLocation,
+) (zoneSeedExpositionLocation, error) {
+	trimmedPlaceID := strings.TrimSpace(draft.PlaceID)
+	if trimmedPlaceID != "" {
+		poi, err := p.dbClient.PointOfInterest().FindByGoogleMapsPlaceID(ctx, trimmedPlaceID)
+		if err != nil {
+			return zoneSeedExpositionLocation{}, fmt.Errorf("failed to load point of interest %q: %w", trimmedPlaceID, err)
+		}
+		if location, ok := zoneSeedLocationFromPointOfInterest(poi); ok {
+			return location, nil
+		}
+	}
+
+	if draft.Latitude != nil &&
+		draft.Longitude != nil &&
+		*draft.Latitude >= -90 &&
+		*draft.Latitude <= 90 &&
+		*draft.Longitude >= -180 &&
+		*draft.Longitude <= 180 {
+		return zoneSeedExpositionLocation{
+			Latitude:  *draft.Latitude,
+			Longitude: *draft.Longitude,
+		}, nil
+	}
+
+	fallback := p.randomLocationForZone(zone, fallbackLocations)
+	return zoneSeedExpositionLocation{
+		Latitude:  fallback.Latitude,
+		Longitude: fallback.Longitude,
+	}, nil
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(

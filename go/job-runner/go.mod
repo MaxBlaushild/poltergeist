@@ -34,7 +34,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/ethereum v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
-	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/polymarket v0.0.0
@@ -44,8 +44,11 @@ require (
 	github.com/ethereum/go-ethereum v1.14.0
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.1
+	github.com/paulmach/orb v0.12.0
+	github.com/redis/go-redis/v9 v9.14.0
 	github.com/spf13/viper v1.21.0
 	gorm.io/datatypes v1.2.7
+	gorm.io/gorm v1.30.0
 )
 
 require (
@@ -78,15 +81,12 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.17.2 // indirect
-	github.com/lib/pq v1.11.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
-	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/prometheus/client_golang v1.19.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/redis/go-redis/v9 v9.14.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
@@ -109,6 +109,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 	gorm.io/driver/postgres v1.5.2 // indirect
-	gorm.io/gorm v1.30.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

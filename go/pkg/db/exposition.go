@@ -168,7 +168,7 @@ func (h *expositionHandle) ReplaceItemRewards(ctx context.Context, expositionID 
 			reward.ExpositionID = expositionID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}
@@ -187,7 +187,7 @@ func (h *expositionHandle) ReplaceSpellRewards(ctx context.Context, expositionID
 			reward.ExpositionID = expositionID
 			reward.CreatedAt = now
 			reward.UpdatedAt = now
-			if err := tx.Create(&reward).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&reward).Error; err != nil {
 				return err
 			}
 		}

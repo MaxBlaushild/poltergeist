@@ -226,6 +226,16 @@ func (h *questHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]mod
 	return quests, nil
 }
 
+func (h *questHandle) FindDetailedByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error) {
+	var quests []models.Quest
+	if err := h.preloadDetail(ctx).
+		Where("zone_id = ?", zoneID).
+		Find(&quests).Error; err != nil {
+		return nil, err
+	}
+	return quests, nil
+}
+
 func (h *questHandle) FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error) {
 	var quests []models.Quest
 	if err := h.db.WithContext(ctx).

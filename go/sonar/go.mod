@@ -39,7 +39,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000
-	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/logger v0.0.0-00010101000000-000000000000

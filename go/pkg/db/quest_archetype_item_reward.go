@@ -7,6 +7,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type questArchetypeItemRewardHandle struct {
@@ -32,7 +33,7 @@ func (h *questArchetypeItemRewardHandle) ReplaceForQuestArchetype(ctx context.Co
 			}
 			rewards[i].UpdatedAt = now
 		}
-		return tx.Create(&rewards).Error
+		return tx.Omit(clause.Associations).Create(&rewards).Error
 	})
 }
 
