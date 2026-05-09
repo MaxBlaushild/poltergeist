@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/monster.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../utils/sticky_proximity_access.dart';
 import 'paper_texture.dart';
 
@@ -47,6 +48,10 @@ class _MonsterPanelState extends State<MonsterPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final location = context.watch<LocationProvider>().location;
     final distance = location == null
         ? null
@@ -61,6 +66,7 @@ class _MonsterPanelState extends State<MonsterPanel> {
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final mysteryState = !hasProximityAccess;
     final canFight = widget.onFight != null;
@@ -176,17 +182,7 @@ class _MonsterPanelState extends State<MonsterPanel> {
   }
 
   String get _encounterImageUrl {
-    final thumb = widget.encounter.thumbnailUrl.trim();
-    if (thumb.isNotEmpty) return thumb;
-    final image = widget.encounter.imageUrl.trim();
-    if (image.isNotEmpty) return image;
-    if (widget.encounter.monsters.isNotEmpty) {
-      final monsterThumb = widget.encounter.monsters.first.thumbnailUrl.trim();
-      if (monsterThumb.isNotEmpty) return monsterThumb;
-      final monsterImage = widget.encounter.monsters.first.imageUrl.trim();
-      if (monsterImage.isNotEmpty) return monsterImage;
-    }
-    return '';
+    return monsterEncounterPresentationImageUrl(widget.encounter);
   }
 }
 

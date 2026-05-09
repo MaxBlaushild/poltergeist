@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/base.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import 'paper_texture.dart';
 
 class BasePanel extends StatelessWidget {
@@ -56,6 +57,10 @@ class BasePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final location = context.watch<LocationProvider>().location;
     final distance = location == null
         ? null
@@ -66,7 +71,8 @@ class BasePanel extends StatelessWidget {
             base.longitude,
           );
     final withinRange =
-        distance != null && distance <= kProximityUnlockRadiusMeters;
+        proximityBypassEnabled ||
+        (distance != null && distance <= kProximityUnlockRadiusMeters);
     return AdaptivePaperSheet(
       maxHeightFactor: 0.42,
       header: Padding(

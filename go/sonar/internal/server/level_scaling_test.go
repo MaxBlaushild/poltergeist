@@ -31,6 +31,31 @@ func TestScaledScenarioDifficultyForUserLevel(t *testing.T) {
 	}
 }
 
+func TestAdjustedContentLevel(t *testing.T) {
+	testCases := []struct {
+		level    int
+		offset   int
+		expected int
+	}{
+		{level: 1, offset: 0, expected: 1},
+		{level: 10, offset: 4, expected: 14},
+		{level: 10, offset: -3, expected: 7},
+		{level: 2, offset: -5, expected: 1},
+	}
+
+	for _, tc := range testCases {
+		if got := adjustedContentLevel(tc.level, tc.offset); got != tc.expected {
+			t.Fatalf(
+				"expected adjusted content level for level %d offset %d to be %d, got %d",
+				tc.level,
+				tc.offset,
+				tc.expected,
+				got,
+			)
+		}
+	}
+}
+
 func TestScaledEncounterMonsterLevelForUserLevel(t *testing.T) {
 	if got := scaledEncounterMonsterLevelForUserLevel(25, 1); got != 23 {
 		t.Fatalf("expected 1-monster scaled level to be 23, got %d", got)

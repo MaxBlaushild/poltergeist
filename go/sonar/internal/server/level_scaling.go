@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 )
@@ -64,12 +65,24 @@ func scaledChallengeDifficultyForStatTags(level int, statTags []string) int {
 	return difficulty
 }
 
-func (s *server) currentUserLevel(ctx context.Context, userID uuid.UUID) (int, error) {
+func adjustedContentLevel(level int, offset int) int {
+	return normalizeScaledLevel(level + offset)
+}
+
+func (s *server) currentBaseUserLevel(ctx context.Context, userID uuid.UUID) (int, error) {
 	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, userID)
 	if err != nil {
 		return 0, err
 	}
 	return normalizeScaledLevel(userLevel.Level), nil
+}
+
+func (s *server) currentUserLevel(ctx context.Context, userID uuid.UUID) (int, error) {
+	level, err := s.currentBaseUserLevel(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return adjustedContentLevel(level, middleware.ContentLevelOffset(ctx)), nil
 }
 
 func (s *server) currentPartyMaxLevel(

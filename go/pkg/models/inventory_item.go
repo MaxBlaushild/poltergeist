@@ -79,6 +79,7 @@ type InventoryItem struct {
 	ConsumeTeachRecipeIDs                    StringArray                    `json:"consumeTeachRecipeIds" gorm:"column:consume_teach_recipe_ids;type:jsonb"`
 	AlchemyRecipes                           InventoryRecipes               `json:"alchemyRecipes" gorm:"column:alchemy_recipes;type:jsonb"`
 	WorkshopRecipes                          InventoryRecipes               `json:"workshopRecipes" gorm:"column:workshop_recipes;type:jsonb"`
+	ScrapworksRecipes                        InventorySalvageRecipes        `json:"scrapworksRecipes" gorm:"column:scrapworks_recipes;type:jsonb"`
 	InternalTags                             StringArray                    `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	ImageGenerationStatus                    string                         `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError                     *string                        `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`

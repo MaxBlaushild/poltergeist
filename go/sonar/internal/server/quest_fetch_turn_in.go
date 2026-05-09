@@ -348,26 +348,28 @@ func (s *server) submitQuestFetchTurnIn(ctx *gin.Context) {
 		return
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance, ok := nearestCharacterDistanceMeters(character, userLat, userLng)
-	if !ok {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "character location unavailable"})
-		return
-	}
-	if distance > scenarioInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of %s. Currently %.0f meters away",
-				scenarioInteractRadiusMeters,
-				response.CharacterName,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance, ok := nearestCharacterDistanceMeters(character, userLat, userLng)
+		if !ok {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "character location unavailable"})
+			return
+		}
+		if distance > scenarioInteractRadiusMeters {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"you must be within %.0f meters of %s. Currently %.0f meters away",
+					scenarioInteractRadiusMeters,
+					response.CharacterName,
+					distance,
+				),
+			})
+			return
+		}
 	}
 
 	requirements := make([]models.FetchQuestRequirement, 0, len(node.FetchRequirements))

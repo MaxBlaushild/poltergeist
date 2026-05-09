@@ -634,26 +634,26 @@ func (s *server) performExposition(ctx *gin.Context) {
 		return
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(
-		userLat,
-		userLng,
-		exposition.Latitude,
-		exposition.Longitude,
-	)
-	if distance > scenarioInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the exposition. Currently %.0f meters away",
-				scenarioInteractRadiusMeters,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(
+			userLat,
+			userLng,
+			exposition.Latitude,
+			exposition.Longitude,
+		)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			scenarioInteractRadiusMeters,
+			"the exposition",
+		) {
+			return
+		}
 	}
 
 	questTargets, err := s.findMatchingCurrentQuestNodeTargets(

@@ -129,6 +129,21 @@ class BaseService {
     );
   }
 
+  Future<BaseScrapworksSalvageablesResponse> getScrapworksSalvageables() async {
+    final data = await _api.get<Map<String, dynamic>>(
+      '/sonar/base/scrapworks/salvageables',
+    );
+    return BaseScrapworksSalvageablesResponse.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> salvageScrapworksItem(
+    String ownedInventoryItemId,
+  ) async {
+    return _api.post<Map<String, dynamic>>(
+      '/sonar/base/scrapworks/salvage/$ownedInventoryItemId',
+    );
+  }
+
   Future<BaseProgressionSnapshot> moveRooms({
     required String anchorStructureKey,
     required List<String> structureKeys,

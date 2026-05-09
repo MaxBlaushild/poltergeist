@@ -273,6 +273,33 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
     return widget.character;
   }
 
+  String _speakerNameForDialogueMessage(
+    DialogueMessage message,
+    Character activeCharacter,
+  ) {
+    if (message.speaker != 'character') {
+      return 'You';
+    }
+    final explicitSpeakerName = message.speakerName?.trim() ?? '';
+    if (explicitSpeakerName.isNotEmpty) {
+      return explicitSpeakerName;
+    }
+    return activeCharacter.name;
+  }
+
+  String? _imageUrlForDialogueMessage(
+    DialogueMessage message,
+    Character activeCharacter,
+  ) {
+    if (message.speaker == 'character') {
+      final explicitPortraitUrl = message.portraitUrl?.trim() ?? '';
+      if (explicitPortraitUrl.isNotEmpty) {
+        return explicitPortraitUrl;
+      }
+    }
+    return activeCharacter.dialogueImageUrl ?? activeCharacter.mapIconUrl;
+  }
+
   List<BoxShadow> _portraitShadowFor(String effect, double progress) {
     final glow = _portraitGlowOpacityFor(effect, progress);
     if (glow <= 0) {
@@ -428,8 +455,7 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
     final hasDecisionActions =
         !hasNext &&
         (widget.onPrimaryAction != null || widget.onSecondaryAction != null);
-    final imageUrl =
-        activeCharacter.dialogueImageUrl ?? activeCharacter.mapIconUrl;
+    final imageUrl = _imageUrlForDialogueMessage(current, activeCharacter);
     final currentEffect = _dialogueEffectName(current.effect);
     final viewer = context.watch<AuthProvider>().user;
     final renderedText = interpolateDialogueText(current.text, viewer);
@@ -445,9 +471,10 @@ class _RpgDialogueModalState extends State<RpgDialogueModal>
               final colorScheme = theme.colorScheme;
               final maxWidth = math.min(720.0, constraints.maxWidth - 32);
               final maxHeight = math.min(560.0, constraints.maxHeight - 32);
-              final speakerName = current.speaker == 'character'
-                  ? activeCharacter.name
-                  : 'You';
+              final speakerName = _speakerNameForDialogueMessage(
+                current,
+                activeCharacter,
+              );
 
               return AnimatedBuilder(
                 animation: _effectController,

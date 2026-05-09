@@ -1727,31 +1727,36 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "resource already gathered"})
 		return
 	}
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(userLat, userLng, resource.Latitude, resource.Longitude)
-	if distance > resourceInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the resource. Currently %.0f meters away",
-				resourceInteractRadiusMeters,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, resource.Latitude, resource.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			resourceInteractRadiusMeters,
+			"the resource",
+		) {
+			return
+		}
 	}
 
-	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, user.ID)
+	actualUserLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	contentLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	activeRequirement := activeResourceGatherRequirementForLevel(
 		resource.GatherRequirements,
-		userLevel.Level,
+		contentLevel,
 	)
 	if activeRequirement != nil {
 		ownedItems, err := s.dbClient.InventoryItem().GetUsersItems(ctx, user.ID)
@@ -1762,7 +1767,7 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		if !userOwnsInventoryItem(ownedItems, activeRequirement.RequiredInventoryItemID) {
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf(
-					"requires %s to gather at your current level",
+					"requires %s to gather at this content difficulty",
 					resourceGatherRequirementItemName(activeRequirement),
 				),
 			})
@@ -1794,7 +1799,7 @@ func (s *server) gatherResource(ctx *gin.Context) {
 	selectedItem, err := selectGatherRewardInventoryItem(
 		resource.ResourceTypeID,
 		effectiveGatherRewardZoneKind(resource),
-		userLevel.Level,
+		contentLevel,
 		inventoryItems,
 		nil,
 	)
@@ -1803,7 +1808,7 @@ func (s *server) gatherResource(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	rewardExperience := modestResourceExperienceReward(userLevel)
+	rewardExperience := modestResourceExperienceReward(actualUserLevel)
 	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
 		ctx,
 		user.ID,

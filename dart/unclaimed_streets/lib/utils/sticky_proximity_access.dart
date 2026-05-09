@@ -6,7 +6,11 @@ class StickyProximityAccess {
   bool resolve({
     required AppLocation? currentLocation,
     required bool withinRange,
+    bool bypassEnabled = false,
   }) {
+    if (bypassEnabled) {
+      return true;
+    }
     if (withinRange && currentLocation != null) {
       _grantedLocation ??= currentLocation;
     }

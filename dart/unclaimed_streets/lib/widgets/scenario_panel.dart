@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/scenario.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
 import 'paper_texture.dart';
@@ -211,6 +212,10 @@ class _ScenarioPanelState extends State<ScenarioPanel>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final location = context.watch<LocationProvider>().location;
     final distance = location == null
         ? null
@@ -225,6 +230,7 @@ class _ScenarioPanelState extends State<ScenarioPanel>
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final mysteryState = !hasProximityAccess;
     return AdaptivePaperSheet(

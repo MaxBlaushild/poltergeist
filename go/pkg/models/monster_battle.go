@@ -61,6 +61,7 @@ type MonsterBattleLastAction struct {
 	Heal              int        `json:"heal,omitempty"`
 	StatusesApplied   int        `json:"statusesApplied,omitempty"`
 	StatusesRemoved   int        `json:"statusesRemoved,omitempty"`
+	LastHealAbilityID *uuid.UUID `json:"lastHealAbilityId,omitempty"`
 }
 
 func (a MonsterBattleLastAction) Value() (driver.Value, error) {

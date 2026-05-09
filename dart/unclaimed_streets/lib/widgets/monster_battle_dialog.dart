@@ -100,6 +100,7 @@ class _EncounterEnemyState {
     int? currentMana,
     List<MonsterStatus>? statuses,
     Map<String, DateTime>? cooldownExpiresAtByAbilityId,
+    this.lastHealingAbilityId,
   }) : currentMana = currentMana ?? math.max(0, monster.mana),
        statuses = statuses ?? List<MonsterStatus>.from(monster.statuses),
        cooldownExpiresAtByAbilityId =
@@ -110,6 +111,7 @@ class _EncounterEnemyState {
   int currentMana;
   List<MonsterStatus> statuses;
   final Map<String, DateTime> cooldownExpiresAtByAbilityId;
+  String? lastHealingAbilityId;
 
   int get maxHealth => math.max(1, monster.maxHealth);
   int get maxMana => math.max(0, monster.maxMana);
@@ -237,6 +239,10 @@ class MonsterBattleDialog extends StatefulWidget {
 class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   static const Duration _combatTurnDuration = Duration(seconds: 150);
+  static const double _monsterLowHealthHealThreshold = 0.45;
+  static const double _bossEmergencyHealThreshold = 0.22;
+  static const int _bossHealLockTurns = 2;
+  static const int _bossMaxHealPercent = 18;
   static const double _defaultBattleLogHeight = 138;
   static const double _compactBattleLogHeight = 54;
   static const double _rootCommandPanelHeight = 158;
@@ -2270,6 +2276,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       cooldownExpiresAtByAbilityId: Map<String, DateTime>.from(
         existing.cooldownExpiresAtByAbilityId,
       ),
+      lastHealingAbilityId: existing.lastHealingAbilityId,
     );
   }
 
@@ -2797,6 +2804,30 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         .fold<int>(0, (sum, effect) => sum + math.max(0, effect.amount));
   }
 
+  bool _monsterUsesBossHealingRules(Monster monster) {
+    if (widget.isPartyBattle) return false;
+    return widget.encounter.isBossEncounter || widget.encounter.isRaidEncounter;
+  }
+
+  int _adjustedMonsterAbilityHealing(
+    _EncounterEnemyState enemy,
+    Spell ability,
+  ) {
+    var healAmount = _monsterAbilityHealing(ability);
+    if (healAmount <= 0) return 0;
+    if (_monsterUsesBossHealingRules(enemy.monster) && enemy.maxHealth > 0) {
+      final perCastCap = math.max(
+        1,
+        (enemy.maxHealth * _bossMaxHealPercent) ~/ 100,
+      );
+      healAmount = math.min(healAmount, perCastCap);
+    }
+    return math.min(
+      healAmount,
+      math.max(0, enemy.maxHealth - enemy.currentHealth),
+    );
+  }
+
   void _pruneExpiredMonsterAbilityCooldowns(_EncounterEnemyState enemy) {
     final now = DateTime.now();
     final expiredIds = <String>[];
@@ -2847,6 +2878,26 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
+  void _applyMonsterHealingLockout(_EncounterEnemyState enemy) {
+    if (!_monsterUsesBossHealingRules(enemy.monster)) return;
+    final lockoutExpiresAt = DateTime.now().add(
+      _combatTurnDuration * _bossHealLockTurns,
+    );
+    for (final ability in <Spell>[
+      ...enemy.monster.spells,
+      ...enemy.monster.techniques,
+    ]) {
+      if (_monsterAbilityHealing(ability) <= 0) continue;
+      final abilityId = ability.id.trim();
+      if (abilityId.isEmpty) continue;
+      final current = enemy.cooldownExpiresAtByAbilityId[abilityId];
+      if (current != null && current.isAfter(lockoutExpiresAt)) {
+        continue;
+      }
+      enemy.cooldownExpiresAtByAbilityId[abilityId] = lockoutExpiresAt;
+    }
+  }
+
   Spell? _pickMonsterAbility(
     _EncounterEnemyState enemy,
     Monster monster,
@@ -2859,7 +2910,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     if (abilities.isEmpty) {
       return null;
     }
-    final support = abilities
+    var support = abilities
         .where((ability) => _monsterAbilityHealing(ability) > 0)
         .toList(growable: false);
     final offense = abilities
@@ -2868,8 +2919,26 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final healthRatio = maxHealth <= 0
         ? 1.0
         : currentHealth / math.max(1, maxHealth);
+    if (_monsterUsesBossHealingRules(monster)) {
+      final lastHealingAbilityId = (enemy.lastHealingAbilityId ?? '').trim();
+      if (lastHealingAbilityId.isNotEmpty) {
+        support = support
+            .where((ability) => ability.id.trim() != lastHealingAbilityId)
+            .toList(growable: false);
+      }
+    }
 
-    if (healthRatio <= 0.45 && support.isNotEmpty) {
+    if (_monsterUsesBossHealingRules(monster)) {
+      if (healthRatio <= _bossEmergencyHealThreshold && support.isNotEmpty) {
+        support.sort(
+          (left, right) => _monsterAbilityHealing(
+            right,
+          ).compareTo(_monsterAbilityHealing(left)),
+        );
+        return support.first;
+      }
+    } else if (healthRatio <= _monsterLowHealthHealThreshold &&
+        support.isNotEmpty) {
       support.sort(
         (left, right) => _monsterAbilityHealing(
           right,
@@ -2906,10 +2975,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       return false;
     }
 
-    final healAmount = _monsterAbilityHealing(ability);
-    if (healAmount > 0 && enemy.currentHealth < enemy.maxHealth) {
+    final healAmount = _adjustedMonsterAbilityHealing(enemy, ability);
+    if (healAmount > 0) {
       setState(() {
         _consumeMonsterAbilityResources(enemy, ability);
+        _applyMonsterHealingLockout(enemy);
+        final abilityId = ability.id.trim();
+        if (abilityId.isNotEmpty) {
+          enemy.lastHealingAbilityId = abilityId;
+        }
         enemy.currentHealth = (enemy.currentHealth + healAmount)
             .clamp(0, enemy.maxHealth)
             .toInt();

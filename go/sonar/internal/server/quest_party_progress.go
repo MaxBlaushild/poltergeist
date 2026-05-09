@@ -491,6 +491,9 @@ func (s *server) userIsInRangeForQuestNode(
 	if node == nil {
 		return false, nil
 	}
+	if proximityBypassEnabled(ctx) {
+		return true, nil
+	}
 
 	userLat, userLng, err := s.getUserLatLng(ctx, userID)
 	if err != nil {
@@ -664,6 +667,9 @@ func (s *server) userIsInRangeForCharacter(
 	userID uuid.UUID,
 	characterID uuid.UUID,
 ) (bool, error) {
+	if proximityBypassEnabled(ctx) {
+		return true, nil
+	}
 	userLat, userLng, err := s.getUserLatLng(ctx, userID)
 	if err != nil {
 		return false, err

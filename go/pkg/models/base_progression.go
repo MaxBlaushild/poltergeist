@@ -51,6 +51,7 @@ type BaseStructureEffectType string
 const (
 	BaseStructureEffectRestBonus       BaseStructureEffectType = "rest_bonus"
 	BaseStructureEffectCraftUnlock     BaseStructureEffectType = "craft_unlock"
+	BaseStructureEffectSalvageUnlock   BaseStructureEffectType = "salvage_unlock"
 	BaseStructureEffectDailyChoiceBuff BaseStructureEffectType = "daily_choice_buff"
 	BaseStructureEffectRewardBias      BaseStructureEffectType = "reward_bias"
 	BaseStructureEffectZoneGenre       BaseStructureEffectType = "zone_genre"

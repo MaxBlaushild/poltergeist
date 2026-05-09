@@ -535,3 +535,50 @@ class MonsterEncounter {
     }
   }
 }
+
+const _monsterEncounterMarkerUrlFragments = <String>[
+  '/thumbnails/placeholders/monster-undiscovered',
+  '/thumbnails/placeholders/boss-undiscovered',
+  '/thumbnails/placeholders/raid-undiscovered',
+  '/thumbnails/placeholders/content-map-markers/monster-undiscovered/',
+  '/thumbnails/placeholders/content-map-markers/boss-undiscovered/',
+  '/thumbnails/placeholders/content-map-markers/raid-undiscovered/',
+];
+
+bool monsterEncounterThumbnailLooksLikeMarker(String url) {
+  final normalized = url.trim().toLowerCase();
+  if (normalized.isEmpty) return false;
+  for (final fragment in _monsterEncounterMarkerUrlFragments) {
+    if (normalized.contains(fragment)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String monsterEncounterPresentationImageUrl(MonsterEncounter encounter) {
+  final encounterThumbnail = encounter.thumbnailUrl.trim();
+  if (encounterThumbnail.isNotEmpty &&
+      !monsterEncounterThumbnailLooksLikeMarker(encounterThumbnail)) {
+    return encounterThumbnail;
+  }
+
+  final encounterImage = encounter.imageUrl.trim();
+  if (encounterImage.isNotEmpty) {
+    return encounterImage;
+  }
+
+  if (encounter.monsters.isNotEmpty) {
+    final firstMonster = encounter.monsters.first;
+    final monsterThumbnail = firstMonster.thumbnailUrl.trim();
+    if (monsterThumbnail.isNotEmpty) {
+      return monsterThumbnail;
+    }
+    final monsterImage = firstMonster.imageUrl.trim();
+    if (monsterImage.isNotEmpty) {
+      return monsterImage;
+    }
+  }
+
+  return encounterThumbnail;
+}

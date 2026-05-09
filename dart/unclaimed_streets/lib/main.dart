@@ -101,6 +101,12 @@ class SonarApp extends StatelessWidget {
 
     AppLocation? getLocation() => locationProvider.location;
     apiClient.setGetLocation(getLocation);
+    apiClient.setShouldBypassProximity(
+      () => mapVisualSettingsProvider.proximityBypassEnabled,
+    );
+    apiClient.setGetContentLevelOffset(
+      () => mapVisualSettingsProvider.contentLevelOffset,
+    );
 
     final router = createRouter(
       authProvider: authProvider,

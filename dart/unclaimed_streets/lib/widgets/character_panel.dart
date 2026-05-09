@@ -15,6 +15,7 @@ import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../screens/fetch_quest_turn_in_screen.dart';
@@ -398,10 +399,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final proximityBlockedReason = _questAcceptDisabledReason(
       location,
       distance,
-      hasProximityAccess: _proximityAccess.granted,
+      hasProximityAccess: proximityBypassEnabled || _proximityAccess.granted,
     );
     if (proximityBlockedReason != null) {
       if (mounted) {
@@ -443,11 +447,14 @@ class _CharacterPanelState extends State<CharacterPanel> {
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final proximityBlockedReason = _characterInteractionDisabledReason(
       location,
       distance,
       'turn in this quest',
-      hasProximityAccess: _proximityAccess.granted,
+      hasProximityAccess: proximityBypassEnabled || _proximityAccess.granted,
     );
     if (proximityBlockedReason != null) {
       if (mounted) {
@@ -754,10 +761,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
       return;
     }
     final poiId = widget.character.pointOfInterestId?.trim() ?? '';
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final loc =
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
-    if (loc == null) {
+    if (loc == null && !proximityBypassEnabled) {
       setState(
         () => _unlockError = 'Location not available. Enable location access.',
       );
@@ -768,12 +778,28 @@ class _CharacterPanelState extends State<CharacterPanel> {
       setState(() => _unlockError = 'Please log in to discover.');
       return;
     }
-    final distance = _questDistanceFrom(loc);
-    if (distance == null) {
+    final fallbackLocation = _questGiverCoordinates.isNotEmpty
+        ? _questGiverCoordinates.first
+        : null;
+    final requestLat = loc?.latitude ?? fallbackLocation?.latitude;
+    final requestLng = loc?.longitude ?? fallbackLocation?.longitude;
+    if ((requestLat == null || requestLng == null) && proximityBypassEnabled) {
       setState(() => _unlockError = 'Character location unavailable.');
       return;
     }
-    if (!_proximityAccess.granted && distance > _unlockRadiusMeters) {
+    final distance = _questDistanceFrom(loc);
+    if (distance == null) {
+      if (proximityBypassEnabled) {
+        // Continue with the fallback request coordinates below.
+      } else {
+        setState(() => _unlockError = 'Character location unavailable.');
+        return;
+      }
+    }
+    if (distance != null &&
+        !proximityBypassEnabled &&
+        !_proximityAccess.granted &&
+        distance > _unlockRadiusMeters) {
       setState(() {
         _unlockError =
             'Too far away (${distance.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.';
@@ -800,8 +826,8 @@ class _CharacterPanelState extends State<CharacterPanel> {
     try {
       final result = await context.read<PoiService>().unlockPointOfInterest(
         poiId,
-        loc.latitude,
-        loc.longitude,
+        requestLat!,
+        requestLng!,
         userId: userId,
       );
       await _presentDiscoveryRewards(result);
@@ -921,6 +947,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final imageUrl = (rawImageUrl != null && rawImageUrl.isNotEmpty)
         ? rawImageUrl
         : null;
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final userLocation = context.watch<LocationProvider>().location;
     final questDistance = _questDistanceFrom(userLocation);
     final liveWithinRange =
@@ -928,6 +958,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: userLocation,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final questAcceptDisabledReason = _questAcceptDisabledReason(
       userLocation,
@@ -1167,12 +1198,17 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   Widget _buildUndiscovered(BuildContext context) {
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final location = context.watch<LocationProvider>().location;
     final distance = _questDistanceFrom(location);
     final liveWithinRange = distance != null && distance <= _unlockRadiusMeters;
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
 
     return AdaptivePaperSheet(

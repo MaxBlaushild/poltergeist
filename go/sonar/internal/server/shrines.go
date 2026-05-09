@@ -285,21 +285,21 @@ func (s *server) useShrine(ctx *gin.Context) {
 		return
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(userLat, userLng, shrine.Latitude, shrine.Longitude)
-	if distance > shrineInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the shrine. Currently %.0f meters away",
-				shrineInteractRadiusMeters,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, shrine.Latitude, shrine.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			shrineInteractRadiusMeters,
+			"the shrine",
+		) {
+			return
+		}
 	}
 
 	userLevel, err := s.currentUserLevel(ctx, user.ID)

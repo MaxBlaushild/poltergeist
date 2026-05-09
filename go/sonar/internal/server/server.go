@@ -319,6 +319,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/base/chaos-engine/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useBaseChaosEngine))
 	r.GET("/sonar/base/crafting/:station/recipes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseCraftingRecipes))
 	r.POST("/sonar/base/crafting/:station/recipes/:recipeID/craft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.craftBaseRecipe))
+	r.GET("/sonar/base/scrapworks/salvageables", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBaseScrapworksSalvageables))
+	r.POST("/sonar/base/scrapworks/salvage/:ownedInventoryItemID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.salvageBaseScrapworksItem))
 	r.POST("/sonar/base/layout/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveBaseLayout))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
@@ -2524,7 +2526,7 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 			candidates = append(candidates, coordinate{lat: loc.Latitude, lng: loc.Longitude})
 		}
 	}
-	if len(candidates) > 0 {
+	if len(candidates) > 0 && !proximityBypassEnabled(ctx.Request.Context()) {
 		locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
 		if err != nil || strings.TrimSpace(locationStr) == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user location not available"})
@@ -2554,14 +2556,12 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 			}
 		}
 
-		if minDistance > questAcceptRadiusMeters {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf(
-					"you must be within %.0f meters of the quest giver. Currently %.0f meters away",
-					questAcceptRadiusMeters,
-					minDistance,
-				),
-			})
+		if !s.requireProximityWithin(
+			ctx,
+			minDistance,
+			questAcceptRadiusMeters,
+			"the quest giver",
+		) {
 			return
 		}
 	}
@@ -12006,20 +12006,20 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
-	distanceToPoi, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, challenge.PointOfInterestID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if distanceToPoi > scenarioInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
-				scenarioInteractRadiusMeters,
-				distanceToPoi,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		distanceToPoi, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, challenge.PointOfInterestID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if !s.requireProximityWithin(
+			ctx,
+			distanceToPoi,
+			scenarioInteractRadiusMeters,
+			"the point of interest to submit an answer",
+		) {
+			return
+		}
 	}
 
 	if challenge.PointOfInterestGroupID != nil {
@@ -12178,43 +12178,44 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		}
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if challenge.PointOfInterestID != nil && *challenge.PointOfInterestID != uuid.Nil {
-		distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *challenge.PointOfInterestID)
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if distance > scenarioInteractRadiusMeters {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf(
-					"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
-					scenarioInteractRadiusMeters,
-					distance,
-				),
-			})
-			return
-		}
-	} else if challenge.HasPolygon() {
-		if !challenge.ContainsPoint(userLat, userLng) {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
-			return
-		}
-	} else {
-		distance := util.HaversineDistance(
-			userLat,
-			userLng,
-			challenge.Latitude,
-			challenge.Longitude,
-		)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
+
+		if challenge.PointOfInterestID != nil && *challenge.PointOfInterestID != uuid.Nil {
+			distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *challenge.PointOfInterestID)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if !s.requireProximityWithin(
+				ctx,
+				distance,
+				scenarioInteractRadiusMeters,
+				"the point of interest to submit an answer",
+			) {
+				return
+			}
+		} else if challenge.HasPolygon() {
+			if !s.requireChallengeAreaAccess(
+				ctx,
+				challenge.ContainsPoint(userLat, userLng),
+			) {
+				return
+			}
+		} else {
+			distance := util.HaversineDistance(
+				userLat,
+				userLng,
+				challenge.Latitude,
+				challenge.Longitude,
+			)
+			if !s.requireProximityWithin(ctx, distance, 100, "the location to submit an answer") {
+				return
+			}
 		}
 	}
 
@@ -12726,86 +12727,92 @@ func (s *server) submitQuestNode(ctx *gin.Context) {
 		}
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
-	if node.ScenarioID != nil {
-		scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
-		if err != nil || scenario == nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load scenario"})
-			return
-		}
-		distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
-		}
-	} else if node.MonsterEncounterID != nil {
-		encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, *node.MonsterEncounterID)
-		if err != nil || encounter == nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster encounter"})
-			return
-		}
-		distance := util.HaversineDistance(userLat, userLng, encounter.Latitude, encounter.Longitude)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
-		}
-	} else if node.MonsterID != nil {
-		monster, err := s.dbClient.Monster().FindByID(ctx, *node.MonsterID)
-		if err != nil || monster == nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster"})
-			return
-		}
-		distance := util.HaversineDistance(userLat, userLng, monster.Latitude, monster.Longitude)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
-		}
-	} else if node.ChallengeID != nil {
-		if standaloneChallenge == nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
-			return
-		}
-		if standaloneChallenge.PointOfInterestID != nil && *standaloneChallenge.PointOfInterestID != uuid.Nil {
-			distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *standaloneChallenge.PointOfInterestID)
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if node.ScenarioID != nil {
+			scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
+			if err != nil || scenario == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load scenario"})
 				return
 			}
-			if distance > scenarioInteractRadiusMeters {
-				ctx.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf(
-						"you must be within %.0f meters of the point of interest to submit an answer. Currently %.0f meters away",
-						scenarioInteractRadiusMeters,
-						distance,
-					),
-				})
+			distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
+			if !s.requireProximityWithin(ctx, distance, 100, "the location to submit an answer") {
 				return
 			}
-		} else if standaloneChallenge.HasPolygon() {
-			if !standaloneChallenge.ContainsPoint(userLat, userLng) {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
+		} else if node.MonsterEncounterID != nil {
+			encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, *node.MonsterEncounterID)
+			if err != nil || encounter == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster encounter"})
 				return
+			}
+			distance := util.HaversineDistance(userLat, userLng, encounter.Latitude, encounter.Longitude)
+			if !s.requireProximityWithin(ctx, distance, 100, "the location to submit an answer") {
+				return
+			}
+		} else if node.MonsterID != nil {
+			monster, err := s.dbClient.Monster().FindByID(ctx, *node.MonsterID)
+			if err != nil || monster == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster"})
+				return
+			}
+			distance := util.HaversineDistance(userLat, userLng, monster.Latitude, monster.Longitude)
+			if !s.requireProximityWithin(ctx, distance, 100, "the location to submit an answer") {
+				return
+			}
+		} else if node.ChallengeID != nil {
+			if standaloneChallenge == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
+				return
+			}
+			if standaloneChallenge.PointOfInterestID != nil && *standaloneChallenge.PointOfInterestID != uuid.Nil {
+				distance, err := s.pointOfInterestDistanceFromUser(ctx, user.ID, *standaloneChallenge.PointOfInterestID)
+				if err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				if !s.requireProximityWithin(
+					ctx,
+					distance,
+					scenarioInteractRadiusMeters,
+					"the point of interest to submit an answer",
+				) {
+					return
+				}
+			} else if standaloneChallenge.HasPolygon() {
+				if !s.requireChallengeAreaAccess(
+					ctx,
+					standaloneChallenge.ContainsPoint(userLat, userLng),
+				) {
+					return
+				}
+			} else {
+				distance := util.HaversineDistance(
+					userLat,
+					userLng,
+					standaloneChallenge.Latitude,
+					standaloneChallenge.Longitude,
+				)
+				if !s.requireProximityWithin(ctx, distance, 100, "the location to submit an answer") {
+					return
+				}
 			}
 		} else {
-			distance := util.HaversineDistance(
-				userLat,
-				userLng,
-				standaloneChallenge.Latitude,
-				standaloneChallenge.Longitude,
-			)
-			if distance > 100 {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-				return
-			}
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
+			return
 		}
 	} else {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
-		return
+		if node.ScenarioID == nil &&
+			node.MonsterEncounterID == nil &&
+			node.MonsterID == nil &&
+			node.ChallengeID == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
+			return
+		}
 	}
 
 	textSubmission := requestBody.TextSubmission
@@ -14037,7 +14044,7 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 
 	distanceFromPOI := util.HaversineDistance(latPOI, lngPOI, latReq, lngReq)
 
-	if distanceFromPOI > 200 {
+	if !proximityBypassEnabled(c.Request.Context()) && distanceFromPOI > 200 {
 		c.JSON(400, gin.H{"error": fmt.Sprintf("point of interest is not within 200 meters: %f", distanceFromPOI)})
 		return
 	}
@@ -17297,22 +17304,28 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	userLat, err := strconv.ParseFloat(parts[0], 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid latitude in user location"})
-		return
-	}
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid latitude in user location"})
+			return
+		}
 
-	userLng, err := strconv.ParseFloat(parts[1], 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude in user location"})
-		return
-	}
+		userLng, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude in user location"})
+			return
+		}
 
-	distance := util.HaversineDistance(userLat, userLng, treasureChest.Latitude, treasureChest.Longitude)
-	if distance > treasureChestInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within %.0f meters of the treasure chest. Currently %.0f meters away", treasureChestInteractRadiusMeters, distance)})
-		return
+		distance := util.HaversineDistance(userLat, userLng, treasureChest.Latitude, treasureChest.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			treasureChestInteractRadiusMeters,
+			"the treasure chest",
+		) {
+			return
+		}
 	}
 
 	// Check if chest is locked
@@ -19676,17 +19689,21 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
-	if distance > scenarioInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("you must be within %.0f meters of the scenario. Currently %.0f meters away", scenarioInteractRadiusMeters, distance),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			scenarioInteractRadiusMeters,
+			"the scenario",
+		) {
+			return
+		}
 	}
 
 	var requestBody scenarioPerformRequest

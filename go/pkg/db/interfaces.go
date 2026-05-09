@@ -619,6 +619,7 @@ type InventoryItemHandle interface {
 	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
 	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
 	CraftUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, ingredients []models.InventoryRecipeIngredient) error
+	SalvageUserInventoryItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID, outputs []models.InventorySalvageOutput) (*models.OwnedInventoryItem, map[int]int, error)
 	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error

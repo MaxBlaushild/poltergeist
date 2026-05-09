@@ -224,13 +224,31 @@ func (s *server) recordMonsterBattleLastAction(
 	if battle == nil || battle.EndedAt != nil {
 		return nil
 	}
-	action.ActionType = normalizeMonsterBattleActionType(action.ActionType)
+	action = normalizeMonsterBattleLastAction(battle.LastAction, action)
 	if err := s.dbClient.MonsterBattle().RecordLastAction(ctx, battle.ID, action); err != nil {
 		return err
 	}
 	battle.LastActionSequence += 1
 	battle.LastAction = action
 	return nil
+}
+
+func normalizeMonsterBattleLastAction(
+	previous models.MonsterBattleLastAction,
+	current models.MonsterBattleLastAction,
+) models.MonsterBattleLastAction {
+	current.ActionType = normalizeMonsterBattleActionType(current.ActionType)
+	if current.ActorType == "monster" &&
+		current.Heal > 0 &&
+		current.AbilityID != nil &&
+		*current.AbilityID != uuid.Nil {
+		current.LastHealAbilityID = current.AbilityID
+		return current
+	}
+	if current.LastHealAbilityID == nil {
+		current.LastHealAbilityID = previous.LastHealAbilityID
+	}
+	return current
 }
 
 func monsterBattleLastActionFromMonsterAction(
@@ -1207,6 +1225,16 @@ func applyMonsterHealingLockout(
 	return cooldowns
 }
 
+func lastMonsterHealingAbilityID(battle *models.MonsterBattle) string {
+	if battle == nil || battle.LastAction.LastHealAbilityID == nil {
+		return ""
+	}
+	if *battle.LastAction.LastHealAbilityID == uuid.Nil {
+		return ""
+	}
+	return battle.LastAction.LastHealAbilityID.String()
+}
+
 func monsterCombatAbilities(monster *models.Monster) []models.Spell {
 	return monsterCombatAbilitiesForUserLevel(monster, 0)
 }
@@ -1262,6 +1290,19 @@ func chooseMonsterBattleAbility(
 		}
 		if monsterAbilityHasOffense(&ability) {
 			offense = append(offense, ability)
+		}
+	}
+	if monsterUsesBossHealingRules(monster) {
+		lastHealAbilityID := lastMonsterHealingAbilityID(battle)
+		if lastHealAbilityID != "" {
+			filtered := make([]models.Spell, 0, len(healingSupport))
+			for _, ability := range healingSupport {
+				if ability.ID.String() == lastHealAbilityID {
+					continue
+				}
+				filtered = append(filtered, ability)
+			}
+			healingSupport = filtered
 		}
 	}
 

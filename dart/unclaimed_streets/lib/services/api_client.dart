@@ -10,8 +10,12 @@ class ApiClient {
   static const Duration _connectTimeout = Duration(seconds: 15);
   static const Duration _receiveTimeout = Duration(seconds: 45);
   static const Duration _sendTimeout = Duration(minutes: 2);
+  static const String _debugProximityBypassHeader = 'X-Debug-Proximity-Bypass';
+  static const String _contentLevelOffsetHeader = 'X-Content-Level-Offset';
   VoidCallback? _onAuthError;
   AppLocation? Function()? _getLocation;
+  bool Function()? _shouldBypassProximity;
+  int Function()? _getContentLevelOffset;
 
   ApiClient(
     String baseUrl, {
@@ -38,6 +42,14 @@ class ApiClient {
     _getLocation = getLocation;
   }
 
+  void setShouldBypassProximity(bool Function()? shouldBypassProximity) {
+    _shouldBypassProximity = shouldBypassProximity;
+  }
+
+  void setGetContentLevelOffset(int Function()? getContentLevelOffset) {
+    _getContentLevelOffset = getContentLevelOffset;
+  }
+
   void _setupInterceptors() {
     _client.interceptors.add(
       InterceptorsWrapper(
@@ -51,6 +63,18 @@ class ApiClient {
           final loc = _getLocation?.call();
           if (loc != null) {
             options.headers['X-User-Location'] = loc.headerValue;
+          }
+          if (_shouldBypassProximity?.call() ?? false) {
+            options.headers[_debugProximityBypassHeader] = 'true';
+          } else {
+            options.headers.remove(_debugProximityBypassHeader);
+          }
+          final contentLevelOffset = _getContentLevelOffset?.call() ?? 0;
+          if (contentLevelOffset != 0) {
+            options.headers[_contentLevelOffsetHeader] = contentLevelOffset
+                .toString();
+          } else {
+            options.headers.remove(_contentLevelOffsetHeader);
           }
           final traceId = options.headers['X-Map-Trace-Id']?.toString().trim();
           final traceLabel = options.extra['traceLabel']?.toString().trim();

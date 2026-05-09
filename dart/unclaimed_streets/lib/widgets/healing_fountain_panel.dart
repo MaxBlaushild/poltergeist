@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/healing_fountain.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../services/poi_service.dart';
 import '../utils/sticky_proximity_access.dart';
 import 'discovery_proximity_section.dart';
@@ -247,27 +248,34 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
 
   Future<void> _unlockFountain() async {
     if (_loading) return;
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final location =
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
-    if (location == null) {
+    if (location == null && !proximityBypassEnabled) {
       setState(
         () => _error = 'Location not available. Enable location access.',
       );
       return;
     }
-    final distance = _distanceMeters(
-      location.latitude,
-      location.longitude,
-      _fountain.latitude,
-      _fountain.longitude,
-    );
-    if (!_proximityAccess.granted && distance > kProximityUnlockRadiusMeters) {
-      setState(
-        () => _error =
-            'Too far away (${distance.round()} m). Get within ${kProximityUnlockRadiusMeters.round()} m to unlock.',
+    if (location != null) {
+      final distance = _distanceMeters(
+        location.latitude,
+        location.longitude,
+        _fountain.latitude,
+        _fountain.longitude,
       );
-      return;
+      if (!proximityBypassEnabled &&
+          !_proximityAccess.granted &&
+          distance > kProximityUnlockRadiusMeters) {
+        setState(
+          () => _error =
+              'Too far away (${distance.round()} m). Get within ${kProximityUnlockRadiusMeters.round()} m to unlock.',
+        );
+        return;
+      }
     }
 
     setState(() {
@@ -344,6 +352,10 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final location = context.watch<LocationProvider>().location;
     final distance = location == null
         ? null
@@ -358,6 +370,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     if (!_isDiscovered) {
       return _buildUndiscovered(context, distance, hasProximityAccess);

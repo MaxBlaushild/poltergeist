@@ -173,8 +173,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   String? _busyStructureKey;
   bool _editingBaseName = false;
   bool _savingBaseDetails = false;
-  bool _selectingMoveRoom = false;
-  String? _moveAnchorStructureKey;
   _GridCell? _buildSelectionCell;
   final TextEditingController _baseNameController = TextEditingController();
   final FocusNode _baseNameFocusNode = FocusNode();
@@ -246,12 +244,6 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
         'BaseManagementContent: tutorial progress refresh failed: $error',
       );
     }
-  }
-
-  UserBaseStructureData? get _moveAnchorStructure {
-    final key = _moveAnchorStructureKey;
-    if (key == null) return null;
-    return _structureByKey[key];
   }
 
   Future<void> _mutateStructure(
@@ -690,92 +682,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
       return;
     }
     setState(() {
-      _selectingMoveRoom = false;
-      _moveAnchorStructureKey = null;
       _buildSelectionCell = cell;
     });
-  }
-
-  void _beginMoveRoomSelection() {
-    if (_snapshot?.canManage != true || _snapshot!.structures.isEmpty) return;
-    setState(() {
-      _buildSelectionCell = null;
-      _selectingMoveRoom = true;
-      _moveAnchorStructureKey = null;
-      _error = null;
-    });
-  }
-
-  void _cancelMoveRoomSelection() {
-    setState(() {
-      _selectingMoveRoom = false;
-      _moveAnchorStructureKey = null;
-    });
-  }
-
-  void _selectMoveAnchor(UserBaseStructureData structure) {
-    setState(() {
-      _selectingMoveRoom = false;
-      _moveAnchorStructureKey = structure.structureKey;
-      _buildSelectionCell = null;
-      _error = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Moving ${_friendlyStructureName(structure.structureKey)}. Tap an empty tile to place it.',
-        ),
-      ),
-    );
-  }
-
-  Future<void> _moveSelectedRoomTo(_GridCell targetCell) async {
-    final anchor = _moveAnchorStructure;
-    if (anchor == null) return;
-    if (anchor.gridX == targetCell.gridX && anchor.gridY == targetCell.gridY) {
-      return;
-    }
-
-    setState(() {
-      _busyStructureKey = anchor.structureKey;
-      _error = null;
-    });
-    try {
-      final nextSnapshot = await context.read<BaseService>().moveRooms(
-        anchorStructureKey: anchor.structureKey,
-        structureKeys: [anchor.structureKey],
-        targetGridX: targetCell.gridX,
-        targetGridY: targetCell.gridY,
-      );
-      if (!mounted) return;
-      setState(() {
-        _snapshot = nextSnapshot;
-        _busyStructureKey = null;
-        _moveAnchorStructureKey = null;
-        _selectingMoveRoom = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_friendlyStructureName(anchor.structureKey)} moved.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busyStructureKey = null;
-        _error = e.toString();
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
-    }
   }
 
   Future<void> _showRoomDetails(UserBaseStructureData structure) async {
     final definition = _definitionForKey(structure.structureKey);
     if (definition == null) return;
+    final canManageBase = _snapshot?.canManage == true;
     final hearthRecoveryState = _activeDailyStateForKey(
       _hearthRecoveryStateKey,
     );
@@ -794,7 +708,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           child: _RoomDetailsSheet(
             definition: definition,
             structure: structure,
-            canManage: _snapshot?.canManage == true,
+            canManage: canManageBase,
             isBusy: _busyStructureKey == definition.key,
             isMaxed: structure.level >= definition.maxLevel,
             resourceAmounts: _resourceAmounts,
@@ -806,7 +720,7 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
             ),
             visual: _visualForLevel(definition, structure.level),
             hearthRecoveryInfo: hearthRecoveryInfo,
-            onUseHearth: structure.structureKey == 'hearth'
+            onUseHearth: structure.structureKey == 'hearth' && canManageBase
                 ? () async {
                     Navigator.of(context).pop();
                     await _useHearth();
@@ -900,6 +814,14 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
   }
 
   Future<void> _useHearth() async {
+    if (_snapshot?.canManage != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only the base owner can use this hearth.'),
+        ),
+      );
+      return;
+    }
     if (_busyStructureKey != null) return;
     setState(() {
       _busyStructureKey = 'hearth';
@@ -1181,130 +1103,9 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
     );
   }
 
-  Widget _buildBaseStats(ThemeData theme) {
-    final snapshot = _snapshot;
-    if (snapshot == null) return const SizedBox.shrink();
-
-    final roomCount = snapshot.structures.length;
-    final highestLevel = snapshot.structures.isEmpty
-        ? 0
-        : snapshot.structures
-              .map((structure) => structure.level)
-              .reduce((a, b) => a > b ? a : b);
-    final expansionSites = _adjacentBuildCellKeys.length;
-    final activeEffects = snapshot.activeDailyEffects.length;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _BaseStatCard(
-            icon: Icons.home_work_outlined,
-            label: 'Rooms',
-            value: '$roomCount',
-          ),
-          _BaseStatCard(
-            icon: Icons.north_east_outlined,
-            label: 'Expansion Sites',
-            value: '$expansionSites',
-          ),
-          _BaseStatCard(
-            icon: Icons.stacked_line_chart,
-            label: 'Highest Level',
-            value: highestLevel > 0 ? 'Lv $highestLevel' : 'None',
-          ),
-          _BaseStatCard(
-            icon: Icons.auto_awesome_outlined,
-            label: 'Active Effects',
-            value: '$activeEffects',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMoveControls(ThemeData theme) {
-    final snapshot = _snapshot;
-    final anchor = _moveAnchorStructure;
-    if (snapshot == null ||
-        !snapshot.canManage ||
-        snapshot.structures.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    String title;
-    String description;
-    if (_selectingMoveRoom) {
-      title = 'Select Room To Move';
-      description = 'Tap the room you want to reposition on the grid.';
-    } else if (anchor != null) {
-      title = 'Place ${_friendlyStructureName(anchor.structureKey)}';
-      description =
-          'Tap an empty tile to move it there, or choose a different room.';
-    } else {
-      title = 'Move Room';
-      description = 'Reposition one room on your base grid.';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            if (_selectingMoveRoom || anchor != null)
-              TextButton(
-                onPressed: _busyStructureKey == null
-                    ? _cancelMoveRoomSelection
-                    : null,
-                child: const Text('Cancel'),
-              )
-            else
-              OutlinedButton(
-                onPressed: _busyStructureKey == null
-                    ? _beginMoveRoomSelection
-                    : null,
-                child: const Text('Move Room'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildGrid(ThemeData theme) {
     final snapshot = _snapshot;
     if (snapshot == null) return const SizedBox.shrink();
-    final moveAnchor = _moveAnchorStructure;
     final structuresByCell = <String, UserBaseStructureData>{};
     for (final structure in snapshot.structures) {
       structuresByCell['${structure.gridX}:${structure.gridY}'] = structure;
@@ -1352,33 +1153,10 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
                               ),
                         showPlus:
                             snapshot.canManage &&
-                            moveAnchor == null &&
-                            !_selectingMoveRoom &&
                             structure == null &&
                             isAdjacentBuildCell,
-                        isMoveAnchor:
-                            moveAnchor?.structureKey == structure?.structureKey,
-                        isMoveTarget:
-                            moveAnchor != null &&
-                            structure == null &&
-                            !(_busyStructureKey != null),
-                        canManage: snapshot.canManage,
                         onTap: () {
                           if (_busyStructureKey != null) {
-                            return;
-                          }
-                          if (_selectingMoveRoom) {
-                            if (structure != null) {
-                              _selectMoveAnchor(structure);
-                            }
-                            return;
-                          }
-                          if (moveAnchor != null) {
-                            if (structure == null) {
-                              _moveSelectedRoomTo(cell);
-                            } else {
-                              _selectMoveAnchor(structure);
-                            }
                             return;
                           }
                           if (structure != null) {
@@ -1398,6 +1176,142 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           }),
         );
       },
+    );
+  }
+
+  List<UserBaseStructureData> _sortedStructuresForActionList() {
+    final snapshot = _snapshot;
+    if (snapshot == null) {
+      return const <UserBaseStructureData>[];
+    }
+    final structures = List<UserBaseStructureData>.from(snapshot.structures);
+    structures.sort((left, right) {
+      final leftDefinition = _definitionForKey(left.structureKey);
+      final rightDefinition = _definitionForKey(right.structureKey);
+      final sortCompare = (leftDefinition?.sortOrder ?? 0).compareTo(
+        rightDefinition?.sortOrder ?? 0,
+      );
+      if (sortCompare != 0) {
+        return sortCompare;
+      }
+      final nameCompare = _friendlyStructureName(left.structureKey)
+          .toLowerCase()
+          .compareTo(_friendlyStructureName(right.structureKey).toLowerCase());
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      final rowCompare = left.gridY.compareTo(right.gridY);
+      if (rowCompare != 0) {
+        return rowCompare;
+      }
+      return left.gridX.compareTo(right.gridX);
+    });
+    return structures;
+  }
+
+  Widget _buildRoomActions(ThemeData theme) {
+    final snapshot = _snapshot;
+    if (snapshot == null || snapshot.structures.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final structures = _sortedStructuresForActionList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 18),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    snapshot.canManage ? 'Your Rooms' : 'Rooms In This Base',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    snapshot.canManage
+                        ? 'Open a room from here or tap the map to build onto an empty tile.'
+                        : 'Open any room to inspect it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...structures.map((structure) {
+          final definition = _definitionForKey(structure.structureKey);
+          final roomName = _friendlyStructureName(structure.structureKey);
+          final isBusy = _busyStructureKey == structure.structureKey;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        roomName,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Level ${structure.level}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (definition != null &&
+                          definition.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          definition.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FilledButton.tonal(
+                      onPressed: isBusy
+                          ? null
+                          : () => _showRoomDetails(structure),
+                      child: const Text('Open'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -1491,9 +1405,8 @@ class _BaseManagementContentState extends State<BaseManagementContent> {
           else if (buildSelectionCell != null)
             _buildBuildSelectionView(theme, buildOptions)
           else ...[
-            _buildBaseStats(theme),
-            _buildMoveControls(theme),
             _buildGrid(theme),
+            _buildRoomActions(theme),
             _buildActiveEffects(theme),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1582,57 +1495,6 @@ class _InlineEditActions extends StatelessWidget {
   }
 }
 
-class _BaseStatCard extends StatelessWidget {
-  const _BaseStatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      constraints: const BoxConstraints(minWidth: 132),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: theme.colorScheme.primary),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                value,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _BaseGridTile extends StatelessWidget {
   const _BaseGridTile({
     required this.tileSize,
@@ -1641,9 +1503,6 @@ class _BaseGridTile extends StatelessWidget {
     required this.definition,
     required this.visual,
     required this.showPlus,
-    required this.isMoveAnchor,
-    required this.isMoveTarget,
-    required this.canManage,
     required this.onTap,
   });
 
@@ -1653,9 +1512,6 @@ class _BaseGridTile extends StatelessWidget {
   final BaseStructureDefinitionData? definition;
   final BaseStructureLevelVisualData? visual;
   final bool showPlus;
-  final bool isMoveAnchor;
-  final bool isMoveTarget;
-  final bool canManage;
   final VoidCallback onTap;
 
   String get _roomImageUrl {
@@ -1677,7 +1533,6 @@ class _BaseGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasRoom = structure != null && definition != null;
-    final theme = Theme.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1703,19 +1558,10 @@ class _BaseGridTile extends StatelessWidget {
                   size: tileSize * 0.28,
                 ),
               ),
-            if (isMoveTarget)
-              Container(
-                color: theme.colorScheme.primary.withValues(alpha: 0.12),
-              ),
             if (hasRoom)
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isMoveAnchor
-                        ? theme.colorScheme.primary
-                        : _roomBorderColor,
-                    width: isMoveAnchor ? 3 : 2,
-                  ),
+                  border: Border.all(color: _roomBorderColor, width: 2),
                 ),
               ),
           ],
@@ -1822,6 +1668,10 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
   bool _loadingCrafting = false;
   String? _craftingError;
   String? _craftingRecipeId;
+  BaseScrapworksSalvageablesResponse? _scrapworksData;
+  bool _loadingScrapworks = false;
+  String? _scrapworksError;
+  String? _scrappingOwnedInventoryItemId;
   List<Zone> _chaosZones = const [];
   List<ZoneGenre> _chaosGenres = const [];
   List<InventoryItem> _chaosInventoryItems = const [];
@@ -1845,6 +1695,8 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
 
   bool get _isChaosEngineRoom =>
       widget.structure.structureKey == 'chaos_engine';
+
+  bool get _isScrapworksRoom => widget.structure.structureKey == 'scrapworks';
 
   int? get _chaosEngineRequiredInventoryItemId {
     final raw = widget.definition.effectConfig['requiredInventoryItemId'];
@@ -1903,6 +1755,7 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     super.initState();
     _syncCooldownTicker();
     _loadCraftingIfNeeded();
+    _loadScrapworksIfNeeded();
     _loadChaosEngineIfNeeded();
   }
 
@@ -1919,6 +1772,7 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
         widget.structure.level != oldWidget.structure.level ||
         widget.canManage != oldWidget.canManage) {
       _loadCraftingIfNeeded(force: true);
+      _loadScrapworksIfNeeded(force: true);
       _loadChaosEngineIfNeeded(force: true);
     }
   }
@@ -1983,6 +1837,41 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
       setState(() {
         _loadingCrafting = false;
         _craftingError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _loadScrapworksIfNeeded({bool force = false}) async {
+    if (!_isScrapworksRoom || !widget.canManage) {
+      if (!mounted) return;
+      setState(() {
+        _scrapworksData = null;
+        _loadingScrapworks = false;
+        _scrapworksError = null;
+      });
+      return;
+    }
+    if (!force && (_loadingScrapworks || _scrapworksData != null)) {
+      return;
+    }
+    setState(() {
+      _loadingScrapworks = true;
+      _scrapworksError = null;
+    });
+    try {
+      final data = await context
+          .read<BaseService>()
+          .getScrapworksSalvageables();
+      if (!mounted) return;
+      setState(() {
+        _scrapworksData = data;
+        _loadingScrapworks = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingScrapworks = false;
+        _scrapworksError = e.toString();
       });
     }
   }
@@ -2106,6 +1995,80 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
       if (mounted) {
         setState(() {
           _craftingRecipeId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _salvageScrapworksItem(
+    BaseScrapworksSalvageableData salvageable,
+  ) async {
+    if (_scrappingOwnedInventoryItemId != null) return;
+    final inventoryService = context.read<InventoryService>();
+
+    setState(() {
+      _scrappingOwnedInventoryItemId = salvageable.ownedInventoryItemId;
+      _scrapworksError = null;
+    });
+    try {
+      final response = await context.read<BaseService>().salvageScrapworksItem(
+        salvageable.ownedInventoryItemId,
+      );
+      await inventoryService.refreshOwnedInventoryItems();
+      await inventoryService.refreshEquipment();
+      if (!mounted) return;
+      await _loadScrapworksIfNeeded(force: true);
+      if (!mounted) return;
+
+      final rawYielded = response['yielded'];
+      final yieldedSummary = rawYielded is List
+          ? rawYielded
+                .whereType<Map>()
+                .map((entry) {
+                  final quantity = (entry['quantity'] as num?)?.toInt() ?? 0;
+                  final rawItem = entry['item'];
+                  final name = rawItem is Map
+                      ? rawItem['name']?.toString() ?? ''
+                      : '';
+                  if (quantity <= 0 || name.trim().isEmpty) {
+                    return '';
+                  }
+                  return '$quantity ${name.trim()}';
+                })
+                .where((entry) => entry.isNotEmpty)
+                .join(', ')
+          : '';
+      final message = response['message']?.toString().trim();
+      final snackBarText = yieldedSummary.isNotEmpty
+          ? '${message?.isNotEmpty == true ? message : 'Salvaged item.'} Recovered $yieldedSummary.'
+          : (message?.isNotEmpty == true ? message! : 'Salvaged item.');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(snackBarText)));
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      final message = responseData is Map
+          ? responseData['error']?.toString()
+          : error.message;
+      if (!mounted) return;
+      setState(() {
+        _scrapworksError = message ?? 'Failed to salvage this item.';
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_scrapworksError!)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _scrapworksError = e.toString();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_scrapworksError!)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _scrappingOwnedInventoryItemId = null;
         });
       }
     }
@@ -2398,6 +2361,121 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
     );
   }
 
+  Widget _buildScrapworksOutputChip(
+    BuildContext context,
+    BaseScrapworksOutputData output,
+  ) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Text(
+        '+${output.quantity} ${output.item.name} · Own ${output.ownedQuantity}',
+        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _buildScrapworksCard(
+    BuildContext context,
+    BaseScrapworksSalvageableData salvageable,
+  ) {
+    final theme = Theme.of(context);
+    final imageUrl = salvageable.item.imageUrl.trim();
+    final busy =
+        _scrappingOwnedInventoryItemId == salvageable.ownedInventoryItemId;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              _RoomFallbackLabel(title: salvageable.item.name),
+                        )
+                      : _RoomFallbackLabel(title: salvageable.item.name),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      salvageable.item.name,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Scrapworks tier ${salvageable.tier} salvage',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Ready ${salvageable.availableQuantity} · Equipped ${salvageable.equippedQuantity} · Total ${salvageable.ownedQuantity}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: salvageable.outputs
+                .map((output) => _buildScrapworksOutputChip(context, output))
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: busy || salvageable.availableQuantity <= 0
+                  ? null
+                  : () => _salvageScrapworksItem(salvageable),
+              child: busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Salvage 1 Item'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<ZoneGenreScore> _sortedZoneGenreScores(Zone? zone) {
     if (zone == null || zone.genreScores.isEmpty) {
       return const <ZoneGenreScore>[];
@@ -2652,15 +2730,21 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (hearthInfo.availableNow)
-                      Text(
-                        hearthInfo.hearthLevel >= 3
-                            ? 'Fully recover once per day and gain the rank 2 and rank 3 hearth blessings.'
-                            : hearthInfo.hearthLevel >= 2
-                            ? 'Fully recover once per day and gain the rank 2 hearth blessings.'
-                            : 'Fully recover once per day at this hearth.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    if (cooldownActive) ...[
+                      if (!widget.canManage)
+                        Text(
+                          'You can inspect this hearth, but only the base owner can use it.',
+                          style: theme.textTheme.bodyMedium,
+                        )
+                      else
+                        Text(
+                          hearthInfo.hearthLevel >= 3
+                              ? 'Fully recover once per day and gain the rank 2 and rank 3 hearth blessings.'
+                              : hearthInfo.hearthLevel >= 2
+                              ? 'Fully recover once per day and gain the rank 2 hearth blessings.'
+                              : 'Fully recover once per day at this hearth.',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                    if (widget.canManage && cooldownActive) ...[
                       if (hearthInfo.availableNow) const SizedBox(height: 14),
                       _buildCooldownCard(
                         context,
@@ -2669,7 +2753,7 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                         nextAvailableAt!,
                       ),
                     ],
-                    if (hearthInfo.statusesApplied > 0) ...[
+                    if (widget.canManage && hearthInfo.statusesApplied > 0) ...[
                       const SizedBox(height: 6),
                       Text(
                         '${hearthInfo.statusesApplied} blessing${hearthInfo.statusesApplied == 1 ? '' : 's'} applied on the last use.',
@@ -2678,7 +2762,7 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                         ),
                       ),
                     ],
-                    if (hearthInfo.removedWounded) ...[
+                    if (widget.canManage && hearthInfo.removedWounded) ...[
                       const SizedBox(height: 6),
                       Text(
                         'Wounded was cleared on the last use.',
@@ -2687,33 +2771,35 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.tonal(
-                        onPressed:
-                            widget.isBusy ||
-                                !hearthInfo.availableNow ||
-                                widget.onUseHearth == null
-                            ? null
-                            : () => widget.onUseHearth!.call(),
-                        child: widget.isBusy
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                    if (widget.canManage) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonal(
+                          onPressed:
+                              widget.isBusy ||
+                                  !hearthInfo.availableNow ||
+                                  widget.onUseHearth == null
+                              ? null
+                              : () => widget.onUseHearth!.call(),
+                          child: widget.isBusy
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  hearthInfo.availableNow
+                                      ? 'Make Full Recovery'
+                                      : hearthInfo.nextAvailableAt != null
+                                      ? hearthInfo.formattedNextAvailableLabel
+                                      : 'Available Tomorrow',
                                 ),
-                              )
-                            : Text(
-                                hearthInfo.availableNow
-                                    ? 'Make Full Recovery'
-                                    : hearthInfo.nextAvailableAt != null
-                                    ? hearthInfo.formattedNextAvailableLabel
-                                    : 'Available Tomorrow',
-                              ),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -2753,6 +2839,46 @@ class _RoomDetailsSheetState extends State<_RoomDetailsSheet> {
               else
                 ..._craftingData!.recipes.map(
                   (recipe) => _buildCraftingCard(context, recipe),
+                ),
+            ],
+            if (_isScrapworksRoom && widget.canManage) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Salvage',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Only unequipped copies can be broken down here.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_loadingScrapworks)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_scrapworksError != null)
+                Text(
+                  _scrapworksError!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                )
+              else if ((_scrapworksData?.salvageables.isEmpty ?? true))
+                Text(
+                  'Nothing in your inventory can be broken down here yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                ..._scrapworksData!.salvageables.map(
+                  (salvageable) => _buildScrapworksCard(context, salvageable),
                 ),
             ],
             if (widget.costs.isNotEmpty) ...[

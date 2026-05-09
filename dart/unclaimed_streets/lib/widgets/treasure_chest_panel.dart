@@ -13,6 +13,7 @@ import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
@@ -396,22 +397,29 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
 
   Future<void> _openChest({_ChestUnlockOption? selection}) async {
     if (_loading) return;
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final loc =
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
-    if (loc == null) {
+    if (loc == null && !proximityBypassEnabled) {
       setState(() => _error = 'Location not available');
       return;
     }
-    final distance = _calculateDistance(
-      loc.latitude,
-      loc.longitude,
-      widget.treasureChest.latitude,
-      widget.treasureChest.longitude,
-    );
-    if (!_proximityAccess.granted && distance > _openRadiusMeters) {
-      setState(() => _error = 'Too far away (${distance.round()} m)');
-      return;
+    if (loc != null) {
+      final distance = _calculateDistance(
+        loc.latitude,
+        loc.longitude,
+        widget.treasureChest.latitude,
+        widget.treasureChest.longitude,
+      );
+      if (!proximityBypassEnabled &&
+          !_proximityAccess.granted &&
+          distance > _openRadiusMeters) {
+        setState(() => _error = 'Too far away (${distance.round()} m)');
+        return;
+      }
     }
     setState(() {
       _loading = true;
@@ -464,6 +472,10 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final loc = context.watch<LocationProvider>().location;
     final abilities = context.watch<CharacterStatsProvider>().abilities;
     final distance = loc != null
@@ -478,6 +490,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: loc,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final isOpened = widget.treasureChest.openedByUser == true;
     final mysteryState = !hasProximityAccess && !isOpened;

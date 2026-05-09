@@ -11,6 +11,7 @@ import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
@@ -239,6 +240,10 @@ class _ResourcePanelState extends State<ResourcePanel> {
     final resourceTypeName = _resourceTypeDisplayName();
     final playerLevel = context.watch<CharacterStatsProvider>().level;
     final activeRequirement = _activeGatherRequirement(playerLevel);
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final isRequirementMissing =
         activeRequirement != null &&
         _ownedItemsLoaded &&
@@ -267,7 +272,8 @@ class _ResourcePanelState extends State<ResourcePanel> {
             widget.resource.longitude,
           );
     final withinRange =
-        distance != null && distance <= kProximityUnlockRadiusMeters;
+        proximityBypassEnabled ||
+        (distance != null && distance <= kProximityUnlockRadiusMeters);
 
     if (!withinRange) {
       return AdaptivePaperSheet(
@@ -373,7 +379,7 @@ class _ResourcePanelState extends State<ResourcePanel> {
               ),
             const SizedBox(height: 8),
             Text(
-              'Gather ${widget.resource.quantity}x $rewardLabel tuned to your level.',
+              'Gather ${widget.resource.quantity}x $rewardLabel tuned to your content level.',
               style: theme.textTheme.bodyLarge,
             ),
             const SizedBox(height: 16),
@@ -391,7 +397,9 @@ class _ResourcePanelState extends State<ResourcePanel> {
                 ),
                 _ResourceMetaChip(
                   icon: Icons.place_outlined,
-                  label: '${distance.round()} m away',
+                  label: distance == null
+                      ? 'Distance unavailable'
+                      : '${distance.round()} m away',
                 ),
               ],
             ),

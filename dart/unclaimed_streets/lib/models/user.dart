@@ -9,6 +9,8 @@ class User {
   final String? partyId;
   final bool? isActive;
   final int gold;
+  final double? latitude;
+  final double? longitude;
 
   const User({
     required this.id,
@@ -21,16 +23,24 @@ class User {
     this.partyId,
     this.isActive,
     this.gold = 0,
+    this.latitude,
+    this.longitude,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
-    String _str(String primary, String fallback) =>
+    String strFromJson(String primary, String fallback) =>
         (json[primary] ?? json[fallback]) as String? ?? '';
 
+    double? doubleFromJson(dynamic raw) {
+      if (raw is num) return raw.toDouble();
+      if (raw is String) return double.tryParse(raw.trim());
+      return null;
+    }
+
     return User(
-      id: _str('id', 'ID'),
-      phoneNumber: _str('phoneNumber', 'PhoneNumber'),
-      name: _str('name', 'Name'),
+      id: strFromJson('id', 'ID'),
+      phoneNumber: strFromJson('phoneNumber', 'PhoneNumber'),
+      name: strFromJson('name', 'Name'),
       username: json['username'] as String? ?? '',
       profilePictureUrl: json['profilePictureUrl'] as String? ?? '',
       backProfilePictureUrl:
@@ -41,6 +51,8 @@ class User {
       partyId: json['partyId'] as String?,
       isActive: json['isActive'] as bool?,
       gold: (json['gold'] as num?)?.toInt() ?? 0,
+      latitude: doubleFromJson(json['latitude'] ?? json['lat']),
+      longitude: doubleFromJson(json['longitude'] ?? json['lng']),
     );
   }
 
@@ -55,5 +67,7 @@ class User {
     'partyId': partyId,
     'isActive': isActive,
     'gold': gold,
+    'latitude': latitude,
+    'longitude': longitude,
   };
 }

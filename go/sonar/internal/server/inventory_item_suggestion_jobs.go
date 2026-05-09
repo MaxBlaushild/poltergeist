@@ -37,75 +37,76 @@ var inventoryProgressionBands = []inventoryProgressionBand{
 const inventoryResourceProgressionSuggestionCount = 10
 
 type inventoryItemUpsertRequest struct {
-	Name                                     string                         `json:"name"`
-	Archived                                 *bool                          `json:"archived"`
-	GenreID                                  string                         `json:"genreId"`
-	ZoneKind                                 *string                        `json:"zoneKind"`
-	ImageURL                                 string                         `json:"imageUrl"`
-	FlavorText                               string                         `json:"flavorText"`
-	EffectText                               string                         `json:"effectText"`
-	RarityTier                               string                         `json:"rarityTier"`
-	ResourceTypeID                           *string                        `json:"resourceTypeId"`
-	ResourceType                             *string                        `json:"resourceType"`
-	IsCaptureType                            bool                           `json:"isCaptureType"`
-	BuyPrice                                 *int                           `json:"buyPrice"`
-	UnlockTier                               *int                           `json:"unlockTier"`
-	UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
-	ItemLevel                                *int                           `json:"itemLevel"`
-	EquipSlot                                *string                        `json:"equipSlot"`
-	StrengthMod                              int                            `json:"strengthMod"`
-	DexterityMod                             int                            `json:"dexterityMod"`
-	ConstitutionMod                          int                            `json:"constitutionMod"`
-	IntelligenceMod                          int                            `json:"intelligenceMod"`
-	WisdomMod                                int                            `json:"wisdomMod"`
-	CharismaMod                              int                            `json:"charismaMod"`
-	PhysicalDamageBonusPercent               int                            `json:"physicalDamageBonusPercent"`
-	PiercingDamageBonusPercent               int                            `json:"piercingDamageBonusPercent"`
-	SlashingDamageBonusPercent               int                            `json:"slashingDamageBonusPercent"`
-	BludgeoningDamageBonusPercent            int                            `json:"bludgeoningDamageBonusPercent"`
-	FireDamageBonusPercent                   int                            `json:"fireDamageBonusPercent"`
-	IceDamageBonusPercent                    int                            `json:"iceDamageBonusPercent"`
-	LightningDamageBonusPercent              int                            `json:"lightningDamageBonusPercent"`
-	PoisonDamageBonusPercent                 int                            `json:"poisonDamageBonusPercent"`
-	ArcaneDamageBonusPercent                 int                            `json:"arcaneDamageBonusPercent"`
-	HolyDamageBonusPercent                   int                            `json:"holyDamageBonusPercent"`
-	ShadowDamageBonusPercent                 int                            `json:"shadowDamageBonusPercent"`
-	PhysicalResistancePercent                int                            `json:"physicalResistancePercent"`
-	PiercingResistancePercent                int                            `json:"piercingResistancePercent"`
-	SlashingResistancePercent                int                            `json:"slashingResistancePercent"`
-	BludgeoningResistancePercent             int                            `json:"bludgeoningResistancePercent"`
-	FireResistancePercent                    int                            `json:"fireResistancePercent"`
-	IceResistancePercent                     int                            `json:"iceResistancePercent"`
-	LightningResistancePercent               int                            `json:"lightningResistancePercent"`
-	PoisonResistancePercent                  int                            `json:"poisonResistancePercent"`
-	ArcaneResistancePercent                  int                            `json:"arcaneResistancePercent"`
-	HolyResistancePercent                    int                            `json:"holyResistancePercent"`
-	ShadowResistancePercent                  int                            `json:"shadowResistancePercent"`
-	HandItemCategory                         *string                        `json:"handItemCategory"`
-	Handedness                               *string                        `json:"handedness"`
-	DamageMin                                *int                           `json:"damageMin"`
-	DamageMax                                *int                           `json:"damageMax"`
-	DamageAffinity                           *string                        `json:"damageAffinity"`
-	SwipesPerAttack                          *int                           `json:"swipesPerAttack"`
-	BlockPercentage                          *int                           `json:"blockPercentage"`
-	DamageBlocked                            *int                           `json:"damageBlocked"`
-	SpellDamageBonusPercent                  *int                           `json:"spellDamageBonusPercent"`
-	ConsumeHealthDelta                       int                            `json:"consumeHealthDelta"`
-	ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
-	ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
-	ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
-	ConsumeDealDamage                        int                            `json:"consumeDealDamage"`
-	ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
-	ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
-	ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
-	ConsumeCreateBase                        bool                           `json:"consumeCreateBase"`
-	ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
-	ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
-	ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
-	ConsumeTeachRecipeIDs                    []string                       `json:"consumeTeachRecipeIds"`
-	AlchemyRecipes                           []inventoryRecipePayload       `json:"alchemyRecipes"`
-	WorkshopRecipes                          []inventoryRecipePayload       `json:"workshopRecipes"`
-	InternalTags                             []string                       `json:"internalTags"`
+	Name                                     string                          `json:"name"`
+	Archived                                 *bool                           `json:"archived"`
+	GenreID                                  string                          `json:"genreId"`
+	ZoneKind                                 *string                         `json:"zoneKind"`
+	ImageURL                                 string                          `json:"imageUrl"`
+	FlavorText                               string                          `json:"flavorText"`
+	EffectText                               string                          `json:"effectText"`
+	RarityTier                               string                          `json:"rarityTier"`
+	ResourceTypeID                           *string                         `json:"resourceTypeId"`
+	ResourceType                             *string                         `json:"resourceType"`
+	IsCaptureType                            bool                            `json:"isCaptureType"`
+	BuyPrice                                 *int                            `json:"buyPrice"`
+	UnlockTier                               *int                            `json:"unlockTier"`
+	UnlockLocksStrength                      *int                            `json:"unlockLocksStrength"`
+	ItemLevel                                *int                            `json:"itemLevel"`
+	EquipSlot                                *string                         `json:"equipSlot"`
+	StrengthMod                              int                             `json:"strengthMod"`
+	DexterityMod                             int                             `json:"dexterityMod"`
+	ConstitutionMod                          int                             `json:"constitutionMod"`
+	IntelligenceMod                          int                             `json:"intelligenceMod"`
+	WisdomMod                                int                             `json:"wisdomMod"`
+	CharismaMod                              int                             `json:"charismaMod"`
+	PhysicalDamageBonusPercent               int                             `json:"physicalDamageBonusPercent"`
+	PiercingDamageBonusPercent               int                             `json:"piercingDamageBonusPercent"`
+	SlashingDamageBonusPercent               int                             `json:"slashingDamageBonusPercent"`
+	BludgeoningDamageBonusPercent            int                             `json:"bludgeoningDamageBonusPercent"`
+	FireDamageBonusPercent                   int                             `json:"fireDamageBonusPercent"`
+	IceDamageBonusPercent                    int                             `json:"iceDamageBonusPercent"`
+	LightningDamageBonusPercent              int                             `json:"lightningDamageBonusPercent"`
+	PoisonDamageBonusPercent                 int                             `json:"poisonDamageBonusPercent"`
+	ArcaneDamageBonusPercent                 int                             `json:"arcaneDamageBonusPercent"`
+	HolyDamageBonusPercent                   int                             `json:"holyDamageBonusPercent"`
+	ShadowDamageBonusPercent                 int                             `json:"shadowDamageBonusPercent"`
+	PhysicalResistancePercent                int                             `json:"physicalResistancePercent"`
+	PiercingResistancePercent                int                             `json:"piercingResistancePercent"`
+	SlashingResistancePercent                int                             `json:"slashingResistancePercent"`
+	BludgeoningResistancePercent             int                             `json:"bludgeoningResistancePercent"`
+	FireResistancePercent                    int                             `json:"fireResistancePercent"`
+	IceResistancePercent                     int                             `json:"iceResistancePercent"`
+	LightningResistancePercent               int                             `json:"lightningResistancePercent"`
+	PoisonResistancePercent                  int                             `json:"poisonResistancePercent"`
+	ArcaneResistancePercent                  int                             `json:"arcaneResistancePercent"`
+	HolyResistancePercent                    int                             `json:"holyResistancePercent"`
+	ShadowResistancePercent                  int                             `json:"shadowResistancePercent"`
+	HandItemCategory                         *string                         `json:"handItemCategory"`
+	Handedness                               *string                         `json:"handedness"`
+	DamageMin                                *int                            `json:"damageMin"`
+	DamageMax                                *int                            `json:"damageMax"`
+	DamageAffinity                           *string                         `json:"damageAffinity"`
+	SwipesPerAttack                          *int                            `json:"swipesPerAttack"`
+	BlockPercentage                          *int                            `json:"blockPercentage"`
+	DamageBlocked                            *int                            `json:"damageBlocked"`
+	SpellDamageBonusPercent                  *int                            `json:"spellDamageBonusPercent"`
+	ConsumeHealthDelta                       int                             `json:"consumeHealthDelta"`
+	ConsumeManaDelta                         int                             `json:"consumeManaDelta"`
+	ConsumeRevivePartyMemberHealth           int                             `json:"consumeRevivePartyMemberHealth"`
+	ConsumeReviveAllDownedPartyMembersHealth int                             `json:"consumeReviveAllDownedPartyMembersHealth"`
+	ConsumeDealDamage                        int                             `json:"consumeDealDamage"`
+	ConsumeDealDamageHits                    *int                            `json:"consumeDealDamageHits"`
+	ConsumeDealDamageAllEnemies              int                             `json:"consumeDealDamageAllEnemies"`
+	ConsumeDealDamageAllEnemiesHits          *int                            `json:"consumeDealDamageAllEnemiesHits"`
+	ConsumeCreateBase                        bool                            `json:"consumeCreateBase"`
+	ConsumeStatusesToAdd                     []scenarioFailureStatusPayload  `json:"consumeStatusesToAdd"`
+	ConsumeStatusesToRemove                  []string                        `json:"consumeStatusesToRemove"`
+	ConsumeSpellIDs                          []string                        `json:"consumeSpellIds"`
+	ConsumeTeachRecipeIDs                    []string                        `json:"consumeTeachRecipeIds"`
+	AlchemyRecipes                           []inventoryRecipePayload        `json:"alchemyRecipes"`
+	WorkshopRecipes                          []inventoryRecipePayload        `json:"workshopRecipes"`
+	ScrapworksRecipes                        []inventorySalvageRecipePayload `json:"scrapworksRecipes"`
+	InternalTags                             []string                        `json:"internalTags"`
 }
 
 type inventoryItemSuggestionJobRequest struct {
@@ -742,6 +743,7 @@ func inventoryItemUpsertRequestFromDraftPayload(item models.InventoryItem) inven
 		ConsumeTeachRecipeIDs:                    append([]string{}, item.ConsumeTeachRecipeIDs...),
 		AlchemyRecipes:                           inventoryRecipePayloadsFromModels(item.AlchemyRecipes),
 		WorkshopRecipes:                          inventoryRecipePayloadsFromModels(item.WorkshopRecipes),
+		ScrapworksRecipes:                        inventorySalvageRecipePayloadsFromModels(item.ScrapworksRecipes),
 		InternalTags:                             append([]string{}, item.InternalTags...),
 	}
 }
@@ -768,6 +770,7 @@ func (s *server) buildInventoryProgressionDraftItem(
 	item.RarityTier = band.RarityTier
 	item.ItemLevel = band.TargetLevel
 	item.UnlockTier = intPtr(band.TargetLevel)
+	item.ScrapworksRecipes = models.InventorySalvageRecipes{}
 	sourceBuyPrice := 0
 	if item.BuyPrice != nil {
 		sourceBuyPrice = *item.BuyPrice
@@ -1235,6 +1238,14 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 	if err != nil {
 		return nil, err
 	}
+	scrapworksRecipes, err := s.parseInventorySalvageConfiguration(
+		ctx,
+		requestBody.ScrapworksRecipes,
+		currentItemID,
+	)
+	if err != nil {
+		return nil, err
+	}
 	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
 	for idx, rawSpellID := range consumeSpellIDs {
 		spellID, _ := uuid.Parse(rawSpellID)
@@ -1332,6 +1343,7 @@ func (s *server) normalizeInventoryItemUpsertRequest(
 		ConsumeTeachRecipeIDs:                    consumeTeachRecipeIDs,
 		AlchemyRecipes:                           alchemyRecipes,
 		WorkshopRecipes:                          workshopRecipes,
+		ScrapworksRecipes:                        scrapworksRecipes,
 		InternalTags:                             internalTags,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {

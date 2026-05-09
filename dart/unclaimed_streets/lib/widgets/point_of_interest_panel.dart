@@ -24,6 +24,7 @@ import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/map_visual_settings_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../services/inventory_service.dart';
@@ -420,25 +421,32 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
       return;
     }
+    final poi = widget.pointOfInterest;
+    final plat = double.tryParse(poi.lat) ?? 0.0;
+    final plng = double.tryParse(poi.lng) ?? 0.0;
+    final proximityBypassEnabled = context
+        .read<MapVisualSettingsProvider>()
+        .proximityBypassEnabled;
     final loc =
         _proximityAccess.grantedLocation ??
         context.read<LocationProvider>().location;
-    if (loc == null) {
+    if (loc == null && !proximityBypassEnabled) {
       setState(
         () => _error = 'Location not available. Enable location access.',
       );
       return;
     }
+    final requestLat = loc?.latitude ?? plat;
+    final requestLng = loc?.longitude ?? plng;
     final userId = context.read<AuthProvider>().user?.id;
     if (userId == null || userId.isEmpty) {
       setState(() => _error = 'Please log in to unlock.');
       return;
     }
-    final poi = widget.pointOfInterest;
-    final plat = double.tryParse(poi.lat) ?? 0.0;
-    final plng = double.tryParse(poi.lng) ?? 0.0;
-    final dist = _haversineMeters(loc.latitude, loc.longitude, plat, plng);
-    if (!_proximityAccess.granted && dist > _unlockRadiusMeters) {
+    final dist = _haversineMeters(requestLat, requestLng, plat, plng);
+    if (!proximityBypassEnabled &&
+        !_proximityAccess.granted &&
+        dist > _unlockRadiusMeters) {
       setState(
         () => _error =
             'Too far away (${dist.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.',
@@ -452,8 +460,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     try {
       final result = await context.read<PoiService>().unlockPointOfInterest(
         poi.id,
-        loc.latitude,
-        loc.longitude,
+        requestLat,
+        requestLng,
         userId: userId,
       );
       await _presentDiscoveryRewards(result);
@@ -1255,6 +1263,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   }
 
   Widget _buildUndiscovered(BuildContext context, PointOfInterest poi) {
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final loc = context.watch<LocationProvider>().location;
     final plat = double.tryParse(poi.lat) ?? 0.0;
     final plng = double.tryParse(poi.lng) ?? 0.0;
@@ -1265,6 +1277,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final hasProximityAccess = _proximityAccess.resolve(
       currentLocation: loc,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final tags = poi.tags;
 
@@ -1449,6 +1462,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   }
 
   Widget _buildFullPanel(BuildContext context, PointOfInterest poi) {
+    final proximityBypassEnabled = context
+        .select<MapVisualSettingsProvider, bool>(
+          (settings) => settings.proximityBypassEnabled,
+        );
     final imageUrl = (poi.imageURL != null && poi.imageURL!.isNotEmpty)
         ? poi.imageURL!
         : ((poi.thumbnailUrl != null && poi.thumbnailUrl!.isNotEmpty)
@@ -1470,6 +1487,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final canViewNearbyContent = _proximityAccess.resolve(
       currentLocation: location,
       withinRange: liveWithinRange,
+      bypassEnabled: proximityBypassEnabled,
     );
     final tags = poi.tags;
     final characters = poi.characters;

@@ -315,6 +315,122 @@ class BaseCraftingRecipesResponse {
   }
 }
 
+class BaseScrapworksOutputData {
+  const BaseScrapworksOutputData({
+    required this.item,
+    required this.quantity,
+    required this.ownedQuantity,
+  });
+
+  final InventoryItem item;
+  final int quantity;
+  final int ownedQuantity;
+
+  factory BaseScrapworksOutputData.fromJson(Map<String, dynamic> json) {
+    final rawItem = json['item'];
+    return BaseScrapworksOutputData(
+      item: rawItem is Map<String, dynamic>
+          ? InventoryItem.fromJson(rawItem)
+          : rawItem is Map
+          ? InventoryItem.fromJson(Map<String, dynamic>.from(rawItem))
+          : const InventoryItem(
+              id: 0,
+              name: '',
+              imageUrl: '',
+              flavorText: '',
+              effectText: '',
+            ),
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      ownedQuantity: (json['ownedQuantity'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class BaseScrapworksSalvageableData {
+  const BaseScrapworksSalvageableData({
+    required this.ownedInventoryItemId,
+    required this.ownedQuantity,
+    required this.equippedQuantity,
+    required this.availableQuantity,
+    required this.tier,
+    required this.item,
+    required this.outputs,
+  });
+
+  final String ownedInventoryItemId;
+  final int ownedQuantity;
+  final int equippedQuantity;
+  final int availableQuantity;
+  final int tier;
+  final InventoryItem item;
+  final List<BaseScrapworksOutputData> outputs;
+
+  factory BaseScrapworksSalvageableData.fromJson(Map<String, dynamic> json) {
+    final rawItem = json['item'];
+    final rawOutputs = json['outputs'];
+    return BaseScrapworksSalvageableData(
+      ownedInventoryItemId: json['ownedInventoryItemId']?.toString() ?? '',
+      ownedQuantity: (json['ownedQuantity'] as num?)?.toInt() ?? 0,
+      equippedQuantity: (json['equippedQuantity'] as num?)?.toInt() ?? 0,
+      availableQuantity: (json['availableQuantity'] as num?)?.toInt() ?? 0,
+      tier: (json['tier'] as num?)?.toInt() ?? 0,
+      item: rawItem is Map<String, dynamic>
+          ? InventoryItem.fromJson(rawItem)
+          : rawItem is Map
+          ? InventoryItem.fromJson(Map<String, dynamic>.from(rawItem))
+          : const InventoryItem(
+              id: 0,
+              name: '',
+              imageUrl: '',
+              flavorText: '',
+              effectText: '',
+            ),
+      outputs: rawOutputs is List
+          ? rawOutputs
+                .whereType<Map>()
+                .map(
+                  (entry) => BaseScrapworksOutputData.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .toList(growable: false)
+          : const <BaseScrapworksOutputData>[],
+    );
+  }
+}
+
+class BaseScrapworksSalvageablesResponse {
+  const BaseScrapworksSalvageablesResponse({
+    required this.roomKey,
+    required this.roomTier,
+    required this.salvageables,
+  });
+
+  final String roomKey;
+  final int roomTier;
+  final List<BaseScrapworksSalvageableData> salvageables;
+
+  factory BaseScrapworksSalvageablesResponse.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final rawSalvageables = json['salvageables'];
+    return BaseScrapworksSalvageablesResponse(
+      roomKey: json['roomKey']?.toString() ?? '',
+      roomTier: (json['roomTier'] as num?)?.toInt() ?? 0,
+      salvageables: rawSalvageables is List
+          ? rawSalvageables
+                .whereType<Map>()
+                .map(
+                  (entry) => BaseScrapworksSalvageableData.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .toList(growable: false)
+          : const <BaseScrapworksSalvageableData>[],
+    );
+  }
+}
+
 class BaseProgressionSnapshot {
   const BaseProgressionSnapshot({
     required this.base,

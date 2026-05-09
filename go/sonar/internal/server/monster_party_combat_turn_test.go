@@ -190,6 +190,109 @@ func TestChooseMonsterBattleAbilityBossPrefersHealingAtEmergency(t *testing.T) {
 	}
 }
 
+func TestChooseMonsterBattleAbilityBossAvoidsRepeatingLastHeal(t *testing.T) {
+	healOne := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 30},
+		},
+	}
+	healTwo := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Renew",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifeAllParty, Amount: 18},
+		},
+	}
+	damage := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Bolt",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 8, Hits: 1},
+		},
+	}
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: healOne},
+				{Spell: healTwo},
+				{Spell: damage},
+			},
+		},
+	}
+	battle := &models.MonsterBattle{
+		LastAction: models.MonsterBattleLastAction{
+			LastHealAbilityID: &healOne.ID,
+		},
+	}
+
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		battle,
+		20,
+		100,
+		999,
+		monster.Level,
+		time.Now(),
+	)
+	if chosen == nil || chosen.Name != "Renew" {
+		t.Fatalf("expected boss to rotate to a different heal, got %+v", chosen)
+	}
+}
+
+func TestChooseMonsterBattleAbilityBossFallsBackToOffenseWhenOnlyHealWouldRepeat(t *testing.T) {
+	heal := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Recover",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeRestoreLifePartyMember, Amount: 30},
+		},
+	}
+	damage := models.Spell{
+		ID:          uuid.New(),
+		Name:        "Bolt",
+		AbilityType: models.SpellAbilityTypeSpell,
+		Effects: models.SpellEffects{
+			{Type: models.SpellEffectTypeDealDamage, Amount: 8, Hits: 1},
+		},
+	}
+	monster := &models.Monster{
+		Level: 12,
+		Template: &models.MonsterTemplate{
+			MonsterType: models.MonsterTemplateTypeBoss,
+			Spells: []models.MonsterTemplateSpell{
+				{Spell: heal},
+				{Spell: damage},
+			},
+		},
+	}
+	battle := &models.MonsterBattle{
+		LastAction: models.MonsterBattleLastAction{
+			LastHealAbilityID: &heal.ID,
+		},
+	}
+
+	chosen := chooseMonsterBattleAbility(
+		monster,
+		battle,
+		20,
+		100,
+		999,
+		monster.Level,
+		time.Now(),
+	)
+	if chosen == nil || chosen.Name != "Bolt" {
+		t.Fatalf("expected boss to stop repeating its only heal, got %+v", chosen)
+	}
+}
+
 func TestChooseMonsterBattleAbilitySkipsUnaffordableSpell(t *testing.T) {
 	spell := models.Spell{
 		ID:          uuid.New(),
@@ -353,6 +456,42 @@ func TestApplyMonsterHealingLockoutAddsSharedCooldownToBossHeals(t *testing.T) {
 	}
 	if turns := monsterCooldownTurnsRemaining(cooldowns, damage.ID.String(), now); turns != 0 {
 		t.Fatalf("expected offensive spell to remain usable, got cooldown=%d", turns)
+	}
+}
+
+func TestNormalizeMonsterBattleLastActionPreservesLastHealAbility(t *testing.T) {
+	lastHealID := uuid.New()
+	updated := normalizeMonsterBattleLastAction(
+		models.MonsterBattleLastAction{
+			LastHealAbilityID: &lastHealID,
+		},
+		models.MonsterBattleLastAction{
+			ActionType: "attack",
+			ActorType:  "monster",
+			Damage:     12,
+		},
+	)
+	if updated.LastHealAbilityID == nil || *updated.LastHealAbilityID != lastHealID {
+		t.Fatalf("expected last heal ability to be preserved, got %+v", updated.LastHealAbilityID)
+	}
+}
+
+func TestNormalizeMonsterBattleLastActionUpdatesLastHealAbilityForMonsterHeal(t *testing.T) {
+	lastHealID := uuid.New()
+	newHealID := uuid.New()
+	updated := normalizeMonsterBattleLastAction(
+		models.MonsterBattleLastAction{
+			LastHealAbilityID: &lastHealID,
+		},
+		models.MonsterBattleLastAction{
+			ActionType: "ability",
+			ActorType:  "monster",
+			AbilityID:  &newHealID,
+			Heal:       24,
+		},
+	)
+	if updated.LastHealAbilityID == nil || *updated.LastHealAbilityID != newHealID {
+		t.Fatalf("expected last heal ability to update, got %+v", updated.LastHealAbilityID)
 	}
 }
 

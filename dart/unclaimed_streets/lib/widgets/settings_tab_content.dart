@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/map_visual_settings_provider.dart';
+import '../providers/user_level_provider.dart';
 import '../services/notification_permission_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/poi_service.dart';
@@ -143,6 +144,30 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
     return 'Failed to generate nearby scenario and monster encounter.';
   }
 
+  String _formatLevelOffset(int offset) {
+    if (offset > 0) {
+      return '+$offset';
+    }
+    if (offset < 0) {
+      return '$offset';
+    }
+    return '0';
+  }
+
+  String _contentDifficultySubtitle(int offset, int? userLevel) {
+    if (userLevel == null || userLevel <= 0) {
+      if (offset == 0) {
+        return 'Scale content to match your current level.';
+      }
+      return 'Scale content ${_formatLevelOffset(offset)} levels from your current level.';
+    }
+    final effectiveLevel = userLevel + offset <= 1 ? 1 : userLevel + offset;
+    if (offset == 0) {
+      return 'Content currently matches your level $userLevel.';
+    }
+    return 'Content scales as if you were level $effectiveLevel (${_formatLevelOffset(offset)} from level $userLevel).';
+  }
+
   String _shortId(dynamic value) {
     final raw = (value ?? '').toString().trim();
     if (raw.isEmpty) return '';
@@ -254,6 +279,8 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
     final canRequest =
         _permissionState != NotificationPermissionState.unsupported;
     final mapVisualSettings = context.watch<MapVisualSettingsProvider>();
+    final userLevel = context.watch<UserLevelProvider>().userLevel?.level;
+    final contentLevelOffset = mapVisualSettings.contentLevelOffset;
 
     return SingleChildScrollView(
       primary: false,
@@ -447,6 +474,139 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                         'Keeps each discovered zone filled with its zone-kind tile even when it is not selected.',
                       ),
                       secondary: const Icon(Icons.grid_on_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: SwitchListTile(
+                      value: mapVisualSettings.proximityBypassEnabled,
+                      onChanged: mapVisualSettings.setProximityBypassEnabled,
+                      title: const Text('Bypass proximity checks'),
+                      subtitle: const Text(
+                        'Reveal nearby-locked map content and allow interactions from anywhere.',
+                      ),
+                      secondary: const Icon(Icons.my_location_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Gameplay',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.tune_rounded),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Content difficulty',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _contentDifficultySubtitle(
+                                        contentLevelOffset,
+                                        userLevel,
+                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  _formatLevelOffset(contentLevelOffset),
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Slider(
+                            value: contentLevelOffset.toDouble(),
+                            min: MapVisualSettingsProvider.minContentLevelOffset
+                                .toDouble(),
+                            max: MapVisualSettingsProvider.maxContentLevelOffset
+                                .toDouble(),
+                            divisions:
+                                MapVisualSettingsProvider
+                                    .maxContentLevelOffset -
+                                MapVisualSettingsProvider.minContentLevelOffset,
+                            label: _formatLevelOffset(contentLevelOffset),
+                            onChanged: (value) {
+                              mapVisualSettings.setContentLevelOffset(
+                                value.round(),
+                              );
+                            },
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '${MapVisualSettingsProvider.minContentLevelOffset}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Text(
+                                'Match level',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '+${MapVisualSettingsProvider.maxContentLevelOffset}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	stdErrors "errors"
-	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -421,21 +420,21 @@ func (s *server) unlockHealingFountain(ctx *gin.Context) {
 		return
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(userLat, userLng, fountain.Latitude, fountain.Longitude)
-	if distance > healingFountainInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the healing fountain to discover it. Currently %.0f meters away",
-				healingFountainInteractRadiusMeters,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, fountain.Latitude, fountain.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			healingFountainInteractRadiusMeters,
+			"the healing fountain to discover it",
+		) {
+			return
+		}
 	}
 
 	discovery := &models.UserHealingFountainDiscovery{
@@ -535,21 +534,21 @@ func (s *server) useHealingFountain(ctx *gin.Context) {
 		return
 	}
 
-	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	distance := util.HaversineDistance(userLat, userLng, fountain.Latitude, fountain.Longitude)
-	if distance > healingFountainInteractRadiusMeters {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf(
-				"you must be within %.0f meters of the healing fountain. Currently %.0f meters away",
-				healingFountainInteractRadiusMeters,
-				distance,
-			),
-		})
-		return
+	if !proximityBypassEnabled(ctx.Request.Context()) {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, fountain.Latitude, fountain.Longitude)
+		if !s.requireProximityWithin(
+			ctx,
+			distance,
+			healingFountainInteractRadiusMeters,
+			"the healing fountain",
+		) {
+			return
+		}
 	}
 
 	stats, maxHealth, maxMana, currentHealth, currentMana, err := s.getScenarioResourceState(ctx, user.ID)

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"strconv"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
@@ -11,8 +13,74 @@ import (
 )
 
 const (
-	bearer = "Bearer"
+	bearer                     = "Bearer"
+	debugProximityBypassHeader = "X-Debug-Proximity-Bypass"
+	contentLevelOffsetHeader   = "X-Content-Level-Offset"
+	maxContentLevelOffsetAbs   = 10
 )
+
+type debugProximityBypassContextKey struct{}
+type contentLevelOffsetContextKey struct{}
+
+func DebugProximityBypassEnabled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, _ := ctx.Value(debugProximityBypassContextKey{}).(bool)
+	return enabled
+}
+
+func ContentLevelOffset(ctx context.Context) int {
+	if ctx == nil {
+		return 0
+	}
+	offset, _ := ctx.Value(contentLevelOffsetContextKey{}).(int)
+	return normalizeContentLevelOffset(offset)
+}
+
+func normalizeContentLevelOffset(offset int) int {
+	if offset < -maxContentLevelOffsetAbs {
+		return -maxContentLevelOffsetAbs
+	}
+	if offset > maxContentLevelOffsetAbs {
+		return maxContentLevelOffsetAbs
+	}
+	return offset
+}
+
+func attachRequestOverrides(ctx *gin.Context) {
+	requestCtx := ctx.Request.Context()
+	overridesApplied := false
+
+	if strings.EqualFold(
+		strings.TrimSpace(ctx.Request.Header.Get(debugProximityBypassHeader)),
+		"true",
+	) {
+		requestCtx = context.WithValue(
+			requestCtx,
+			debugProximityBypassContextKey{},
+			true,
+		)
+		overridesApplied = true
+	}
+
+	if rawOffset := strings.TrimSpace(
+		ctx.Request.Header.Get(contentLevelOffsetHeader),
+	); rawOffset != "" {
+		if offset, err := strconv.Atoi(rawOffset); err == nil {
+			requestCtx = context.WithValue(
+				requestCtx,
+				contentLevelOffsetContextKey{},
+				normalizeContentLevelOffset(offset),
+			)
+			overridesApplied = true
+		}
+	}
+
+	if overridesApplied {
+		ctx.Request = ctx.Request.WithContext(requestCtx)
+	}
+}
 
 func WithAuthentication(authClient auth.Client, livenessClient liveness.LivenessClient, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
@@ -37,6 +105,7 @@ func WithAuthentication(authClient auth.Client, livenessClient liveness.Liveness
 		}
 
 		logger.AttachAuthenticatedUser(ctx, user.ID.String())
+		attachRequestOverrides(ctx)
 
 		// Extract and save user location if provided
 		locationHeader := ctx.Request.Header.Get("X-User-Location")
@@ -76,6 +145,7 @@ func WithAuthenticationWithoutLocation(authClient auth.Client, next gin.HandlerF
 		}
 
 		logger.AttachAuthenticatedUser(ctx, user.ID.String())
+		attachRequestOverrides(ctx)
 		ctx.Set("user", user)
 
 		next(ctx)

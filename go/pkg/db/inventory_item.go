@@ -222,6 +222,109 @@ func (h *inventoryItemHandler) CraftUserInventoryItem(
 	})
 }
 
+func (h *inventoryItemHandler) SalvageUserInventoryItem(
+	ctx context.Context,
+	userID uuid.UUID,
+	ownedInventoryItemID uuid.UUID,
+	outputs []models.InventorySalvageOutput,
+) (*models.OwnedInventoryItem, map[int]int, error) {
+	if ownedInventoryItemID == uuid.Nil {
+		return nil, nil, errors.New("owned inventory item ID is required")
+	}
+	if len(outputs) == 0 {
+		return nil, nil, errors.New("at least one salvage output is required")
+	}
+
+	var updatedOwned *models.OwnedInventoryItem
+	updatedOutputQuantities := make(map[int]int, len(outputs))
+
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		owned := &models.OwnedInventoryItem{}
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", ownedInventoryItemID, userID).
+			First(owned).Error; err != nil {
+			return err
+		}
+		if owned.Quantity <= 0 {
+			return errors.New("owned inventory item has no remaining quantity")
+		}
+
+		equipped := make([]models.UserEquipment, 0)
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("owned_inventory_item_id = ?", owned.ID).
+			Find(&equipped).Error; err != nil {
+			return err
+		}
+		if owned.Quantity <= len(equipped) {
+			return errors.New("all copies of this item are currently equipped")
+		}
+
+		owned.Quantity--
+		if owned.Quantity <= 0 {
+			if err := tx.Delete(owned).Error; err != nil {
+				return err
+			}
+			updatedOwned = &models.OwnedInventoryItem{
+				ID:              owned.ID,
+				UserID:          owned.UserID,
+				InventoryItemID: owned.InventoryItemID,
+				Quantity:        0,
+				CreatedAt:       owned.CreatedAt,
+				UpdatedAt:       owned.UpdatedAt,
+			}
+		} else {
+			if err := tx.Save(owned).Error; err != nil {
+				return err
+			}
+			ownedCopy := *owned
+			updatedOwned = &ownedCopy
+		}
+
+		for _, output := range outputs {
+			if output.ItemID <= 0 || output.Quantity <= 0 {
+				return errors.New("invalid salvage output")
+			}
+
+			ownedOutput := &models.OwnedInventoryItem{}
+			err := tx.
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ? AND inventory_item_id = ?", userID, output.ItemID).
+				First(ownedOutput).Error
+			if err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				ownedOutput = &models.OwnedInventoryItem{
+					ID:              uuid.New(),
+					UserID:          &userID,
+					InventoryItemID: output.ItemID,
+					Quantity:        output.Quantity,
+				}
+				if err := tx.Create(ownedOutput).Error; err != nil {
+					return err
+				}
+				updatedOutputQuantities[output.ItemID] = ownedOutput.Quantity
+				continue
+			}
+
+			ownedOutput.Quantity += output.Quantity
+			if err := tx.Save(ownedOutput).Error; err != nil {
+				return err
+			}
+			updatedOutputQuantities[output.ItemID] = ownedOutput.Quantity
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return updatedOwned, updatedOutputQuantities, nil
+}
+
 func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
 	newEffect := models.MatchInventoryItemEffect{
 		ID:              uuid.New(),
@@ -255,6 +358,9 @@ func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *mo
 		}
 		if item.WorkshopRecipes == nil {
 			item.WorkshopRecipes = models.InventoryRecipes{}
+		}
+		if item.ScrapworksRecipes == nil {
+			item.ScrapworksRecipes = models.InventorySalvageRecipes{}
 		}
 		if item.ConsumeStatusesToRemove == nil {
 			item.ConsumeStatusesToRemove = models.StringArray{}
@@ -335,6 +441,9 @@ func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, 
 	}
 	if value, exists := updates["workshop_recipes"]; exists && value == nil {
 		updates["workshop_recipes"] = models.InventoryRecipes{}
+	}
+	if value, exists := updates["scrapworks_recipes"]; exists && value == nil {
+		updates["scrapworks_recipes"] = models.InventorySalvageRecipes{}
 	}
 	if value, exists := updates["internal_tags"]; exists && value == nil {
 		updates["internal_tags"] = models.StringArray{}

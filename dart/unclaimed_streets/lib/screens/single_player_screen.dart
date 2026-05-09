@@ -39,6 +39,7 @@ import '../providers/activity_feed_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/base_placement_provider.dart';
 import '../providers/discoveries_provider.dart';
+import '../providers/friend_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
 import '../providers/map_visual_settings_provider.dart';
@@ -179,7 +180,8 @@ const _zoneBaseContentThumbnailWarmCount = 8;
 const _defaultMapFocusZoom = 16.0;
 const _trackedQuestOverlayFocusZoom = 14.0;
 const _poiAssociationCoordinatePrecision = 4;
-const _pinSelectionHitRadiusPx = 24.0;
+const _pinSelectionHitRadiusPx = 36.0;
+const _basePinSelectionHitRadiusPx = 48.0;
 const _playerUnderfootPinDistanceMeters = 18.0;
 const _playerUnderfootPinAccuracyCapMeters = 24.0;
 const _playerUnderfootTapHalfWidthPx = 36.0;
@@ -444,13 +446,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   Circle? _playerPresencePulseCircle;
   Fill? _playerPresenceConeFill;
   Line? _playerPresenceConeLine;
+  final List<Symbol> _friendPresenceSymbols = [];
+  final List<Circle> _friendPresenceAuraCircles = [];
+  final List<Circle> _friendPresencePulseCircles = [];
+  final List<LatLng> _friendPresencePulseGeometries = [];
   Timer? _playerPresencePulseTimer;
   int _playerPresenceRefreshGeneration = 0;
+  int _friendPresenceRefreshGeneration = 0;
   LatLng? _lastPlayerPresenceLatLng;
   double? _lastResolvedPlayerHeading;
+  FriendProvider? _friendProvider;
+  String _lastFriendPresenceSignature = '';
   MapVisualSettingsProvider? _mapVisualSettingsProvider;
   bool _zoneKindMapStylingEnabled = false;
   bool _unselectedZoneKindTilingEnabled = false;
+  bool _proximityBypassEnabled = false;
+  int _contentLevelOffset = 0;
 
   @override
   void initState() {
@@ -485,6 +496,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _completedTaskProvider?.addListener(_onCompletedTaskModalChanged);
       _activityFeedProvider = context.read<ActivityFeedProvider>();
       _activityFeedProvider?.addListener(_onActivityFeedChanged);
+      _friendProvider = context.read<FriendProvider>();
+      _friendProvider?.addListener(_onFriendsChanged);
       _basePlacementProvider = context.read<BasePlacementProvider>();
       _basePlacementProvider?.addListener(_onBasePlacementRequested);
       _mapVisualSettingsProvider = context.read<MapVisualSettingsProvider>();
@@ -492,6 +505,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
           _mapVisualSettingsProvider?.zoneKindMapStylingEnabled ?? false;
       _unselectedZoneKindTilingEnabled =
           _mapVisualSettingsProvider?.unselectedZoneKindTilingEnabled ?? false;
+      _proximityBypassEnabled =
+          _mapVisualSettingsProvider?.proximityBypassEnabled ?? false;
+      _contentLevelOffset = _mapVisualSettingsProvider?.contentLevelOffset ?? 0;
       _mapVisualSettingsProvider?.addListener(_onMapVisualSettingsChanged);
       _lastAuthenticatedUserId =
           context.read<AuthProvider>().user?.id.trim() ?? '';
@@ -502,9 +518,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       );
       _onCompletedTaskModalChanged();
       _onActivityFeedChanged();
+      _onFriendsChanged();
       _updateSelectedZoneFromLocation();
       context.read<ActivityFeedProvider>().refresh();
       unawaited(context.read<PartyProvider>().fetchParty());
+      unawaited(context.read<FriendProvider>().fetchFriends());
       unawaited(_loadTutorialStatus(force: true));
       _onTutorialReplayRequested();
       _onBasePlacementRequested();
@@ -551,6 +569,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _activityFeedProvider?.removeListener(_onActivityFeedChanged);
     } catch (_) {}
     try {
+      _friendProvider?.removeListener(_onFriendsChanged);
+    } catch (_) {}
+    try {
       _basePlacementProvider?.removeListener(_onBasePlacementRequested);
     } catch (_) {}
     try {
@@ -567,14 +588,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _onZoneChanged() {
     if (!mounted) return;
     final selectedZoneId = context.read<ZoneProvider>().selectedZone?.id;
-    if (_styleLoaded &&
+    final canRefreshPins =
+        _styleLoaded &&
         _mapController != null &&
         _markersAdded &&
         !_isTutorialMapFocusActive &&
-        !_tutorialNormalPinsRevealInProgress &&
+        !_tutorialNormalPinsRevealInProgress;
+    final hasSelectedZoneSnapshot =
         _hasZoneBaseContentSnapshot(selectedZoneId) &&
-        _hasZonePinContentSnapshot(selectedZoneId)) {
+        _hasZonePinContentSnapshot(selectedZoneId);
+    if (canRefreshPins && hasSelectedZoneSnapshot) {
       _pinBatchRevealInProgress = true;
+    } else if (canRefreshPins) {
+      unawaited(_refreshZoneScopedMapPins());
     }
     unawaited(_loadTreasureChestsForSelectedZone());
     _scheduleZoneBaseContentWarmup(immediate: true);
@@ -599,23 +625,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _mapVisualSettingsProvider?.zoneKindMapStylingEnabled ?? false;
     final unselectedTilingEnabled =
         _mapVisualSettingsProvider?.unselectedZoneKindTilingEnabled ?? false;
+    final proximityBypassEnabled =
+        _mapVisualSettingsProvider?.proximityBypassEnabled ?? false;
+    final contentLevelOffset =
+        _mapVisualSettingsProvider?.contentLevelOffset ?? 0;
     if (_zoneKindMapStylingEnabled == enabled &&
-        _unselectedZoneKindTilingEnabled == unselectedTilingEnabled) {
+        _unselectedZoneKindTilingEnabled == unselectedTilingEnabled &&
+        _proximityBypassEnabled == proximityBypassEnabled &&
+        _contentLevelOffset == contentLevelOffset) {
       return;
     }
+
+    final contentLevelOffsetChanged = _contentLevelOffset != contentLevelOffset;
 
     if (mounted) {
       setState(() {
         _zoneKindMapStylingEnabled = enabled;
         _unselectedZoneKindTilingEnabled = unselectedTilingEnabled;
+        _proximityBypassEnabled = proximityBypassEnabled;
+        _contentLevelOffset = contentLevelOffset;
       });
     } else {
       _zoneKindMapStylingEnabled = enabled;
       _unselectedZoneKindTilingEnabled = unselectedTilingEnabled;
+      _proximityBypassEnabled = proximityBypassEnabled;
+      _contentLevelOffset = contentLevelOffset;
     }
 
     if (_styleLoaded && _mapController != null) {
       unawaited(_refreshZoneBoundaryRendering());
+      unawaited(_refreshZoneScopedMapPins());
+    }
+    if (contentLevelOffsetChanged) {
+      _scheduleZoneBaseContentWarmup(immediate: true);
+      _queueLoadAllIfAuthenticated();
     }
   }
 
@@ -627,6 +670,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       if (!mounted) return;
       unawaited(_drainPendingLevelUpActivities());
     });
+  }
+
+  void _onFriendsChanged() {
+    if (!mounted) return;
+    final signature = _friendPresenceSignature(_friendProvider?.friends ?? []);
+    if (signature == _lastFriendPresenceSignature) return;
+    _lastFriendPresenceSignature = signature;
+    unawaited(_refreshFriendPresence());
   }
 
   Future<void> _drainPendingLevelUpActivities() async {
@@ -738,6 +789,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _tutorialGuideButtonAcknowledged = false;
       _lastAcceptedTrackedTutorialQuestIds = <String>{};
       _hasAcceptedTrackedTutorialQuestSnapshot = false;
+      _lastFriendPresenceSignature = '';
+      unawaited(_clearPlayerPresenceOverlays());
+      unawaited(_clearFriendPresenceOverlays());
       _applyTrackedQuestOverlaySelectedItemId(
         null,
         persist: false,
@@ -749,6 +803,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (auth.loading || !auth.isAuthenticated) {
       _tutorialGuideButtonPulseController.stop();
       unawaited(_clearPlayerPresenceOverlays());
+      unawaited(_clearFriendPresenceOverlays());
       return;
     }
     _queueLoadAllIfAuthenticated();
@@ -757,8 +812,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
     unawaited(_loadBases());
     unawaited(context.read<PartyProvider>().fetchParty());
+    unawaited(context.read<FriendProvider>().fetchFriends());
     unawaited(_loadTutorialStatus(force: true));
     unawaited(_refreshPlayerPresence());
+    unawaited(_refreshFriendPresence());
   }
 
   void _queueLoadAllIfAuthenticated() {
@@ -2846,6 +2903,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _playerPresenceConeFill = null;
       _playerPresenceConeLine = null;
       _playerPresenceRefreshGeneration = 0;
+      _friendPresenceSymbols.clear();
+      _friendPresenceAuraCircles.clear();
+      _friendPresencePulseCircles.clear();
+      _friendPresencePulseGeometries.clear();
+      _friendPresenceRefreshGeneration = 0;
       _lastPlayerPresenceLatLng = null;
       _lastResolvedPlayerHeading = null;
     });
@@ -2863,6 +2925,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         await _setSymbolOverlap();
         await _ensureFocusPulseOverlayLayer();
         await _refreshPlayerPresence();
+        await _refreshFriendPresence();
         await _addPoiMarkers();
         if (_scenarioVisibilityRefreshPending) {
           _scenarioVisibilityRefreshPending = false;
@@ -3075,6 +3138,49 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     return 'player_presence_marker_${Object.hash(user?.id ?? '', signature).abs()}';
   }
 
+  List<User> _activeFriendsWithLocation() {
+    final activeFriends = (_friendProvider?.friends ?? []).where((friend) {
+      final lat = friend.latitude;
+      final lng = friend.longitude;
+      return friend.isActive == true &&
+          lat != null &&
+          lng != null &&
+          lat.isFinite &&
+          lng.isFinite &&
+          lat.abs() <= 90 &&
+          lng.abs() <= 180;
+    }).toList();
+    activeFriends.sort((a, b) => a.id.compareTo(b.id));
+    return activeFriends;
+  }
+
+  String _friendPresenceSignature(List<User> friends) {
+    final activeFriends = friends.where((friend) {
+      final lat = friend.latitude;
+      final lng = friend.longitude;
+      return friend.isActive == true &&
+          lat != null &&
+          lng != null &&
+          lat.isFinite &&
+          lng.isFinite &&
+          lat.abs() <= 90 &&
+          lng.abs() <= 180;
+    }).toList()..sort((a, b) => a.id.compareTo(b.id));
+    return activeFriends
+        .map((friend) {
+          final lat = friend.latitude!;
+          final lng = friend.longitude!;
+          final portraitUrl = friend.profilePictureUrl.trim();
+          return [
+            friend.id,
+            lat.toStringAsFixed(6),
+            lng.toStringAsFixed(6),
+            _playerPresenceUsesPortrait(friend) ? portraitUrl : 'fallback',
+          ].join('|');
+        })
+        .join('::');
+  }
+
   CircleOptions _playerPresenceAuraOptions(
     LatLng geometry, {
     required double accuracyMeters,
@@ -3110,10 +3216,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     );
   }
 
-  Future<void> _clearPlayerPresenceOverlays({bool resetTracking = true}) async {
-    _playerPresenceRefreshGeneration++;
+  void _stopPresencePulseTimerIfIdle() {
+    if (_playerPresencePulseCircle != null ||
+        _friendPresencePulseCircles.isNotEmpty) {
+      return;
+    }
     _playerPresencePulseTimer?.cancel();
     _playerPresencePulseTimer = null;
+  }
+
+  Future<void> _clearPlayerPresenceOverlays({bool resetTracking = true}) async {
+    _playerPresenceRefreshGeneration++;
 
     final c = _mapController;
     final symbol = _playerPresenceSymbol;
@@ -3132,7 +3245,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       _lastResolvedPlayerHeading = null;
     }
 
-    if (c == null) return;
+    if (c == null) {
+      _stopPresencePulseTimerIfIdle();
+      return;
+    }
 
     if (symbol != null) {
       try {
@@ -3155,6 +3271,44 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         await c.removeLines([coneLine]);
       } catch (_) {}
     }
+    _stopPresencePulseTimerIfIdle();
+  }
+
+  Future<void> _clearFriendPresenceOverlays({
+    bool bumpGeneration = true,
+  }) async {
+    if (bumpGeneration) {
+      _friendPresenceRefreshGeneration++;
+    }
+
+    final c = _mapController;
+    final symbols = _friendPresenceSymbols.toList(growable: false);
+    final auraCircles = _friendPresenceAuraCircles.toList(growable: false);
+    final pulseCircles = _friendPresencePulseCircles.toList(growable: false);
+
+    _friendPresenceSymbols.clear();
+    _friendPresenceAuraCircles.clear();
+    _friendPresencePulseCircles.clear();
+    _friendPresencePulseGeometries.clear();
+
+    if (c == null) {
+      _stopPresencePulseTimerIfIdle();
+      return;
+    }
+
+    if (symbols.isNotEmpty) {
+      try {
+        await c.removeSymbols(symbols);
+      } catch (_) {}
+    }
+
+    for (final circle in [...auraCircles, ...pulseCircles]) {
+      try {
+        await c.removeCircle(circle);
+      } catch (_) {}
+    }
+
+    _stopPresencePulseTimerIfIdle();
   }
 
   void _ensurePlayerPresencePulseTimer() {
@@ -3169,12 +3323,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final c = _mapController;
     final pulse = _playerPresencePulseCircle;
     final geometry = _lastPlayerPresenceLatLng;
-    if (c == null || pulse == null || geometry == null || !_styleLoaded) {
+    if (c == null || !_styleLoaded) {
       return;
     }
-    try {
-      await c.updateCircle(pulse, _playerPresencePulseOptions(geometry));
-    } catch (_) {}
+    if (pulse != null && geometry != null) {
+      try {
+        await c.updateCircle(pulse, _playerPresencePulseOptions(geometry));
+      } catch (_) {}
+    }
+    for (
+      var i = 0;
+      i < _friendPresencePulseCircles.length &&
+          i < _friendPresencePulseGeometries.length;
+      i++
+    ) {
+      final pulseCircle = _friendPresencePulseCircles[i];
+      final geometry = _friendPresencePulseGeometries[i];
+      try {
+        await c.updateCircle(
+          pulseCircle,
+          _playerPresencePulseOptions(geometry),
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> _refreshPlayerPresence() async {
@@ -3370,6 +3541,82 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     _ensurePlayerPresencePulseTimer();
   }
 
+  Future<void> _refreshFriendPresence() async {
+    final generation = ++_friendPresenceRefreshGeneration;
+    final c = _mapController;
+    final auth = context.read<AuthProvider>();
+
+    if (c == null || !_styleLoaded || _mapLoadFailed) {
+      await _clearFriendPresenceOverlays();
+      return;
+    }
+    if (auth.loading || !auth.isAuthenticated) {
+      await _clearFriendPresenceOverlays();
+      return;
+    }
+
+    final activeFriends = _activeFriendsWithLocation();
+    if (activeFriends.isEmpty) {
+      await _clearFriendPresenceOverlays();
+      return;
+    }
+
+    await _clearFriendPresenceOverlays(bumpGeneration: false);
+    if (!mounted || generation != _friendPresenceRefreshGeneration) return;
+
+    for (final friend in activeFriends) {
+      final portraitUrl = friend.profilePictureUrl.trim();
+      final usePortrait = _playerPresenceUsesPortrait(friend);
+      final imageId = _playerPresenceImageIdFor(friend);
+      final imageBytes =
+          peekPlayerPresenceMarker(portraitUrl, usePortrait: usePortrait) ??
+          await loadPlayerPresenceMarker(portraitUrl, usePortrait: usePortrait);
+      if (!mounted || generation != _friendPresenceRefreshGeneration) return;
+      if (imageBytes == null) continue;
+
+      await _ensureMapImage(c, imageId, imageBytes);
+      if (!mounted || generation != _friendPresenceRefreshGeneration) return;
+
+      final geometry = LatLng(friend.latitude!, friend.longitude!);
+      final symbolOptions = SymbolOptions(
+        geometry: geometry,
+        iconImage: imageId,
+        iconSize: _playerPresenceMarkerIconSize,
+        iconOpacity: 1.0,
+        iconAnchor: 'bottom',
+        iconHaloColor: _transparentMapHaloColor,
+        iconHaloWidth: 0.0,
+        zIndex: 98,
+      );
+
+      try {
+        final symbol = await c.addSymbol(symbolOptions, const {
+          'type': 'friendPresence',
+        });
+        _friendPresenceSymbols.add(symbol);
+      } catch (_) {}
+
+      try {
+        final aura = await c.addCircle(
+          _playerPresenceAuraOptions(geometry, accuracyMeters: 0),
+          const {'type': 'friendPresenceAura'},
+        );
+        _friendPresenceAuraCircles.add(aura);
+      } catch (_) {}
+
+      try {
+        final pulse = await c.addCircle(
+          _playerPresencePulseOptions(geometry),
+          const {'type': 'friendPresencePulse'},
+        );
+        _friendPresencePulseCircles.add(pulse);
+        _friendPresencePulseGeometries.add(geometry);
+      } catch (_) {}
+    }
+
+    _ensurePlayerPresencePulseTimer();
+  }
+
   Future<void> _refreshMapContent() async {
     if (_manualRefreshInFlight) {
       return;
@@ -3377,6 +3624,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final discoveriesProvider = context.read<DiscoveriesProvider>();
     final activityFeedProvider = context.read<ActivityFeedProvider>();
     final partyProvider = context.read<PartyProvider>();
+    final friendProvider = context.read<FriendProvider>();
     setState(() {
       _manualRefreshInFlight = true;
     });
@@ -3396,6 +3644,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         _runBestEffortRefresh('activity feed', activityFeedProvider.refresh()),
       );
       unawaited(_runBestEffortRefresh('party', partyProvider.fetchParty()));
+      unawaited(
+        _runBestEffortRefresh('friends', friendProvider.fetchFriends()),
+      );
       unawaited(
         _loadTutorialStatus(force: true, preserveCompletedReveal: true),
       );
@@ -7077,6 +7328,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isScenarioMystery(Scenario scenario) {
+    if (_proximityBypassEnabled) return false;
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
     final distance = _distanceMeters(
@@ -7089,6 +7341,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isMonsterMystery(MonsterEncounter monster) {
+    if (_proximityBypassEnabled) return false;
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
     final distance = _distanceMeters(
@@ -7134,6 +7387,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isChallengeMystery(Challenge challenge) {
+    if (_proximityBypassEnabled) return false;
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
     if (challenge.hasPolygon) {
@@ -7548,6 +7802,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   }
 
   bool _isResourceWithinRevealRange(ResourceNode resource) {
+    if (_proximityBypassEnabled) return true;
     final location = context.read<LocationProvider>().location;
     if (location == null) return false;
     final distance = _distanceMeters(
@@ -7655,7 +7910,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               .where((scenario) => _isTutorialFocusedScenarioId(scenario.id))
               .toList()
         : _scenarios
-              .where((scenario) => !_isScenarioRepresentedByPoi(scenario))
+              .where(
+                (scenario) =>
+                    !_isScenarioRepresentedByPoi(scenario) &&
+                    _isZoneScopedContentVisibleForSelectedZone(scenario.zoneId),
+              )
               .toList();
 
     // Remove untracked/duplicate scenario symbols that can appear due to
@@ -7897,7 +8156,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final visibleExpositions = _shouldSuppressNormalMapPinsForTutorial
         ? const <Exposition>[]
         : _expositions
-              .where((exposition) => !_isExpositionRepresentedByPoi(exposition))
+              .where(
+                (exposition) =>
+                    !_isExpositionRepresentedByPoi(exposition) &&
+                    _isZoneScopedContentVisibleForSelectedZone(
+                      exposition.zoneId,
+                    ),
+              )
               .toList();
 
     final duplicateOrOrphanSymbols = <Symbol>[];
@@ -8137,7 +8402,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               )
               .toList()
         : _monsters
-              .where((encounter) => !_isMonsterRepresentedByPoi(encounter))
+              .where(
+                (encounter) =>
+                    !_isMonsterRepresentedByPoi(encounter) &&
+                    _isZoneScopedContentVisibleForSelectedZone(
+                      encounter.zoneId,
+                    ),
+              )
               .toList();
 
     // Remove untracked/duplicate monster symbols that can appear due to
@@ -8545,7 +8816,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     await _loadChallengeMysteryThumbnail(c, allowNetwork: preferImages);
     final visibleChallenges = _shouldSuppressNormalMapPinsForTutorial
         ? const <Challenge>[]
-        : _challenges;
+        : _challenges
+              .where(
+                (challenge) => _isZoneScopedContentVisibleForSelectedZone(
+                  challenge.zoneId,
+                ),
+              )
+              .toList();
 
     final duplicateOrOrphanSymbols = <Symbol>[];
     for (final symbol in _challengeSymbols.toList()) {
@@ -8951,7 +9228,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         point,
         preferredType: type,
         preferredId: idStr,
-        directOpenPreferred: type == 'poi' || type == 'poiBorder',
+        // When MapLibre resolves an exact feature for us, honor that marker
+        // directly instead of forcing the user through the nearby-pin picker.
+        directOpenPreferred: true,
       );
       if (handled || !mounted) return;
     }
@@ -9252,7 +9531,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
             type: type,
             id: id,
             geometry: geometry,
-            hitRadiusPx: _pinSelectionHitRadiusPx,
+            hitRadiusPx: _symbolSelectionHitRadiusPx(type),
           ),
         );
       }
@@ -9312,6 +9591,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     addCircleSeeds(_challengeCircles);
 
     return annotations;
+  }
+
+  double _symbolSelectionHitRadiusPx(String type) {
+    final normalizedType = type == 'poiBorder' ? 'poi' : type;
+    switch (normalizedType) {
+      case 'base':
+        return _basePinSelectionHitRadiusPx;
+      default:
+        return _pinSelectionHitRadiusPx;
+    }
   }
 
   Future<List<_MapPinSelectionCandidate>> _pinSelectionCandidatesForPoint(
@@ -9707,10 +9996,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     if (_isMonsterMystery(monster)) {
       return _monsterMysteryImageUrlForEncounterType(monster.encounterType);
     }
-    if (monster.thumbnailUrl.trim().isNotEmpty) {
-      return monster.thumbnailUrl.trim();
+    final presentationImageUrl = monsterEncounterPresentationImageUrl(monster);
+    if (presentationImageUrl.isNotEmpty) {
+      return presentationImageUrl;
     }
-    if (monster.imageUrl.trim().isNotEmpty) return monster.imageUrl.trim();
     return _monsterMysteryImageUrlForEncounterType(monster.encounterType);
   }
 
@@ -11648,7 +11937,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     final visibleHealingFountains = _shouldSuppressNormalMapPinsForTutorial
         ? const <HealingFountain>[]
-        : _healingFountains;
+        : _healingFountains
+              .where(
+                (fountain) =>
+                    _isZoneScopedContentVisibleForSelectedZone(fountain.zoneId),
+              )
+              .toList();
     final desiredIds = visibleHealingFountains
         .map((fountain) => fountain.id)
         .toSet();
@@ -11802,7 +12096,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     final visibleShrines = _shouldSuppressNormalMapPinsForTutorial
         ? const <Shrine>[]
-        : _shrines;
+        : _shrines
+              .where(
+                (shrine) =>
+                    _isZoneScopedContentVisibleForSelectedZone(shrine.zoneId),
+              )
+              .toList();
     final desiredIds = visibleShrines.map((shrine) => shrine.id).toSet();
 
     for (final entry in _shrineSymbolById.entries.toList()) {
@@ -11950,7 +12249,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     final visibleResources = _shouldSuppressNormalMapPinsForTutorial
         ? const <ResourceNode>[]
-        : _resources;
+        : _resources
+              .where(
+                (resource) =>
+                    _isZoneScopedContentVisibleForSelectedZone(resource.zoneId),
+              )
+              .toList();
     final desiredIds = visibleResources.map((resource) => resource.id).toSet();
 
     for (final entry in _resourceSymbolById.entries.toList()) {
@@ -12092,7 +12396,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
 
     final visibleBases = _shouldSuppressNormalMapPinsForTutorial
         ? const <BasePin>[]
-        : _bases;
+        : _bases
+              .where(
+                (base) =>
+                    _isCoordinateInSelectedZone(base.latitude, base.longitude),
+              )
+              .toList();
     final desiredIds = visibleBases.map((base) => base.id).toSet();
 
     for (final entry in _baseSymbolById.entries.toList()) {
@@ -14559,26 +14868,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                 top: 0,
                 left: 0,
                 right: 0,
-                child: PointerInterceptor(
-                  child: Listener(
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: (event) {
-                      if (kDebugMode) {
-                        debugPrint(
-                          'SinglePlayer: top controls pointer down at ${event.position}',
-                        );
-                      }
-                    },
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: SizedBox(
-                            height: overlayButtonStackHeight,
-                            child: Align(
-                              alignment: Alignment.topLeft,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: PointerInterceptor(
+                          child: Listener(
+                            behavior: HitTestBehavior.translucent,
+                            onPointerDown: (event) {
+                              if (kDebugMode) {
+                                debugPrint(
+                                  'SinglePlayer: top controls pointer down at ${event.position}',
+                                );
+                              }
+                            },
+                            child: SizedBox(
+                              height: overlayButtonStackHeight,
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -14699,11 +15008,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                 top: 0,
                 left: zoneWidgetLeftInset,
                 right: zoneWidgetRightInset,
-                child: PointerInterceptor(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Align(
-                      alignment: Alignment.topCenter,
+                child: SafeArea(
+                  bottom: false,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: PointerInterceptor(
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
                           maxWidth: zoneWidgetAvailableWidth,
@@ -14721,12 +15030,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
               Positioned(
                 top: 0,
                 right: 16,
-                child: PointerInterceptor(
-                  child: SafeArea(
-                    bottom: false,
-                    child: const Align(
-                      alignment: Alignment.topRight,
-                      child: PartyMemberMapStrip(),
+                child: SafeArea(
+                  bottom: false,
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: PointerInterceptor(
+                      child: const PartyMemberMapStrip(),
                     ),
                   ),
                 ),
@@ -15847,7 +16156,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
   void _showBasePanel(BasePin base) {
     final distance = _baseDistanceFromCurrentLocation(base);
     final canEnterBase =
-        distance != null && distance <= kProximityUnlockRadiusMeters;
+        _proximityBypassEnabled ||
+        (distance != null && distance <= kProximityUnlockRadiusMeters);
     if (canEnterBase) {
       _openBaseManagement(base);
       return;
@@ -16565,7 +16875,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
         return character;
       }
     }
-    return null;
+
+    final fallbackName = _fallbackExpositionSpeakerName(exposition);
+    if (fallbackName.isEmpty) {
+      return null;
+    }
+
+    final fallbackPortraitUrl = _fallbackExpositionPortraitUrl(exposition);
+    return Character(
+      id: 'exposition-speaker-${exposition.id}',
+      name: fallbackName,
+      dialogueImageUrl: fallbackPortraitUrl.isEmpty
+          ? null
+          : fallbackPortraitUrl,
+      mapIconUrl: fallbackPortraitUrl.isEmpty ? null : fallbackPortraitUrl,
+      thumbnailUrl: fallbackPortraitUrl.isEmpty ? null : fallbackPortraitUrl,
+    );
   }
 
   Map<String, Character> _speakerCharacterMapForExposition(
@@ -16581,6 +16906,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
       }
     }
     return speakers;
+  }
+
+  String _fallbackExpositionSpeakerName(Exposition exposition) {
+    for (final message in exposition.dialogue) {
+      final speakerName = message.speakerName?.trim() ?? '';
+      if (speakerName.isNotEmpty) {
+        return speakerName;
+      }
+    }
+    return _expositionDisplayTitle(exposition);
+  }
+
+  String _fallbackExpositionPortraitUrl(Exposition exposition) {
+    for (final message in exposition.dialogue) {
+      final portraitUrl = message.portraitUrl?.trim() ?? '';
+      if (portraitUrl.isNotEmpty) {
+        return portraitUrl;
+      }
+    }
+    return '';
   }
 
   double? _expositionDistanceMeters(Exposition exposition) {
@@ -16700,7 +17045,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
     final expositionToShow = resolvedExposition;
 
     final distanceMeters = _expositionDistanceMeters(expositionToShow);
-    if (distanceMeters != null &&
+    if (!_proximityBypassEnabled &&
+        distanceMeters != null &&
         distanceMeters > kProximityUnlockRadiusMeters) {
       await _showExpositionTooFarDialog(expositionToShow, distanceMeters);
       return;
@@ -16829,9 +17175,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen>
                 )
               : distance != null && distance <= kProximityUnlockRadiusMeters)
         : false;
-    final mysteryState = !withinRange;
-    final canSubmit = !mysteryState;
-    var partySubmissionStatusLoading = !mysteryState;
+    final hasProximityAccess = _proximityBypassEnabled || withinRange;
+    final mysteryState = !hasProximityAccess;
+    final canSubmit = hasProximityAccess;
+    var partySubmissionStatusLoading = !hasProximityAccess;
     var partySubmissionLocked = false;
     String? partySubmissionStatus;
     var statusPollingStarted = false;
